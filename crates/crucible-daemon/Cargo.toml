@@ -30,7 +30,6 @@ futures = { workspace = true }
 tokio-util = { version = "0.7", features = ["rt"] }
 crucible-core = { path = "../crucible-core" }
 crucible-config = { path = "../crucible-config" }
-crucible-rig = { path = "../crucible-rig" }
 
 crucible-sqlite = { path = "../crucible-sqlite", optional = true }
 crucible-parser = { path = "../crucible-parser" }
@@ -42,7 +41,8 @@ crucible-tools = { path = "../crucible-tools" }
 crucible-acp = { path = "../crucible-acp" }
 crucible-web = { path = "../crucible-web", optional = true }
 crucible-llm = { path = "../crucible-llm", default-features = false }
-rig = { package = "rig-core", version = "0.30", features = [] }
+genai = "0.5"
+async-stream = "0.3"
 agent-client-protocol = "0.9.3"
 gix = { version = "0.69", default-features = false, features = ["blocking-network-client"] }
 mlua = { workspace = true }
@@ -72,5 +72,5 @@ test-slow = []           # Performance benchmarks and timing tests
 tempfile = { workspace = true }
 futures = { workspace = true }
 rand = { workspace = true }
-rig-core = { version = "0.30", features = [] }
 crucible-rpc = { path = "../crucible-rpc" }
+mockito = { workspace = true }

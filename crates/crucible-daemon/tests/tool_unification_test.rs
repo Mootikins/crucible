@@ -2,12 +2,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use crucible_acp::InProcessMcpHost;
-use crucible_config::DataClassification;
-use crucible_core::background::{BackgroundSpawner, JobError, JobId, JobInfo, JobResult};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
-use crucible_tools::in_process_adapter::{InProcessMcpAdapter, PLAN_TOOL_NAMES};
-use crucible_tools::mcp_server::{CrucibleMcpServer, DelegationContext};
 use tempfile::TempDir;
 
 const EXPECTED_TOOL_NAMES: &[&str] = &[
@@ -29,7 +25,6 @@ const EXPECTED_TOOL_NAMES: &[&str] = &[
 
 struct MockKnowledgeRepository;
 struct MockEmbeddingProvider;
-struct MockBackgroundSpawner;
 
 #[async_trait::async_trait]
 impl KnowledgeRepository for MockKnowledgeRepository {
@@ -82,85 +77,27 @@ impl EmbeddingProvider for MockEmbeddingProvider {
     }
 }
 
-#[async_trait::async_trait]
-impl BackgroundSpawner for MockBackgroundSpawner {
-    async fn spawn_bash(
-        &self,
-        _session_id: &str,
-        _command: String,
-        _workdir: Option<std::path::PathBuf>,
-        _timeout: Option<std::time::Duration>,
-    ) -> Result<JobId, JobError> {
-        Err(JobError::SpawnFailed("not used in test".to_string()))
-    }
-
-    async fn spawn_subagent(
-        &self,
-        _session_id: &str,
-        _prompt: String,
-        _context: Option<String>,
-    ) -> Result<JobId, JobError> {
-        Ok("job-id".to_string())
-    }
-
-    async fn spawn_subagent_blocking(
-        &self,
-        _session_id: &str,
-        _prompt: String,
-        _context: Option<String>,
-        _config: crucible_core::background::SubagentBlockingConfig,
-        _cancel_rx: Option<tokio::sync::oneshot::Receiver<()>>,
-    ) -> Result<JobResult, JobError> {
-        Err(JobError::SpawnFailed("not used in test".to_string()))
-    }
-
-    fn list_jobs(&self, _session_id: &str) -> Vec<JobInfo> {
-        vec![]
-    }
-
-    fn get_job_result(&self, _job_id: &JobId) -> Option<JobResult> {
-        None
-    }
-
-    async fn cancel_job(&self, _job_id: &JobId) -> bool {
-        false
-    }
-}
 
 fn to_set(names: &[&str]) -> HashSet<String> {
     names.iter().map(|name| (*name).to_string()).collect()
 }
 
-fn create_adapter(temp: &TempDir) -> InProcessMcpAdapter {
+#[tokio::test]
+async fn test_acp_mcp_server_tool_names() {
+    let temp = TempDir::new().expect("temp dir");
     let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
     let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
-    let server = CrucibleMcpServer::new(
-        temp.path().to_string_lossy().to_string(),
+    let host = start_mcp_host(
+        temp.path().to_path_buf(),
         knowledge_repo,
         embedding_provider,
-    );
-    InProcessMcpAdapter::new(Arc::new(server))
-}
+    )
+    .await;
 
-fn create_disabled_delegation_adapter(temp: &TempDir) -> InProcessMcpAdapter {
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let tool_names: HashSet<String> = list_tool_names_over_http(&host).await.into_iter().collect();
+    host.shutdown().await;
 
-    let server = CrucibleMcpServer::new_with_delegation(
-        temp.path().to_string_lossy().to_string(),
-        knowledge_repo,
-        embedding_provider,
-        Some(DelegationContext {
-            background_spawner: Arc::new(MockBackgroundSpawner),
-            session_id: "session-tool-unification".to_string(),
-            targets: vec![],
-            enabled: false,
-            depth: 0,
-            data_classification: DataClassification::Public,
-        }),
-    );
-
-    InProcessMcpAdapter::new(Arc::new(server))
+    assert_eq!(tool_names, to_set(EXPECTED_TOOL_NAMES));
 }
 
 fn is_permission_denied(err: &crucible_acp::ClientError) -> bool {
@@ -255,92 +192,3 @@ async fn list_tool_names_over_http(host: &InProcessMcpHost) -> Vec<String> {
         .collect()
 }
 
-#[test]
-fn test_internal_agent_tool_names() {
-    let temp = TempDir::new().expect("temp dir");
-    let adapter = create_adapter(&temp);
-    let tool_names: HashSet<String> = adapter.list_tool_names().into_iter().collect();
-
-    assert_eq!(tool_names, to_set(EXPECTED_TOOL_NAMES));
-}
-
-#[tokio::test]
-async fn test_acp_mcp_server_tool_names() {
-    let temp = TempDir::new().expect("temp dir");
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
-    let host = start_mcp_host(
-        temp.path().to_path_buf(),
-        knowledge_repo,
-        embedding_provider,
-    )
-    .await;
-
-    let tool_names: HashSet<String> = list_tool_names_over_http(&host).await.into_iter().collect();
-    host.shutdown().await;
-
-    assert_eq!(tool_names, to_set(EXPECTED_TOOL_NAMES));
-}
-
-#[tokio::test]
-async fn test_plan_mode_tool_filtering() {
-    let temp = TempDir::new().expect("temp dir");
-    let adapter = create_adapter(&temp);
-
-    let full_names: HashSet<String> = adapter.list_tool_names().into_iter().collect();
-    let plan_names: HashSet<String> = adapter
-        .create_rig_tools("plan")
-        .iter()
-        .map(|tool| tool.name())
-        .collect();
-
-    assert_eq!(full_names.len(), 14);
-    assert_eq!(plan_names, to_set(PLAN_TOOL_NAMES));
-    assert!(!plan_names.contains("create_note"));
-    assert!(!plan_names.contains("delegate_session"));
-    assert!(!plan_names.contains("cancel_job"));
-}
-
-#[tokio::test]
-async fn test_internal_agent_tool_call_e2e() {
-    let temp = TempDir::new().expect("temp dir");
-    let adapter = create_adapter(&temp);
-
-    let tools = adapter.create_rig_tools("auto");
-    let tool = tools
-        .iter()
-        .find(|tool| tool.name() == "get_kiln_info")
-        .expect("get_kiln_info should be available");
-
-    let response = tool
-        .call("{}".to_string())
-        .await
-        .expect("tool call should succeed");
-
-    assert!(!response.is_empty());
-    assert!(response.contains("name"));
-}
-
-#[tokio::test]
-async fn test_delegation_disabled_behavior() {
-    let temp = TempDir::new().expect("temp dir");
-    let adapter = create_disabled_delegation_adapter(&temp);
-
-    let tools = adapter.create_rig_tools("auto");
-    let delegate_tool = tools
-        .iter()
-        .find(|tool| tool.name() == "delegate_session")
-        .expect("delegate_session should be present");
-
-    let response = delegate_tool
-        .call(r#"{"prompt":"do work","background":true}"#.to_string())
-        .await;
-
-    match response {
-        Err(err) => assert!(err.to_string().contains("disabled")),
-        Ok(output) => assert!(
-            output.contains("disabled"),
-            "delegate_session should fail when delegation is disabled: {output:?}"
-        ),
-    }
-}
