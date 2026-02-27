@@ -45,6 +45,60 @@ pub struct CapabilityFlags {
     pub model_switching: bool,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LuaInitSessionRequest {
+    pub session_id: String,
+    pub kiln_path: String,
+    #[serde(default)]
+    pub config: serde_json::Value,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LuaInitSessionResponse {
+    pub session_id: String,
+    #[serde(default)]
+    pub commands: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub views: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LuaRegisterHooksRequest {
+    pub session_id: String,
+    pub hooks: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LuaRegisterHooksResponse {
+    pub status: String,
+    pub registered: usize,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LuaExecuteHookRequest {
+    pub session_id: String,
+    pub hook_name: String,
+    #[serde(default)]
+    pub context: serde_json::Value,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LuaExecuteHookResponse {
+    pub executed: usize,
+    #[serde(default)]
+    pub results: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LuaShutdownSessionRequest {
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LuaShutdownSessionResponse {
+    pub shutdown: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VersionCheck {
     Match,
@@ -883,6 +937,46 @@ impl DaemonClient {
             params["limit"] = serde_json::Value::Number(serde_json::Number::from(lim));
         }
         self.call("session.search", params).await
+    }
+
+    pub async fn lua_init_session(
+        &self,
+        params: LuaInitSessionRequest,
+    ) -> Result<LuaInitSessionResponse> {
+        let result = self
+            .call("lua.init_session", serde_json::to_value(params)?)
+            .await?;
+        Ok(serde_json::from_value(result)?)
+    }
+
+    pub async fn lua_register_hooks(
+        &self,
+        params: LuaRegisterHooksRequest,
+    ) -> Result<LuaRegisterHooksResponse> {
+        let result = self
+            .call("lua.register_hooks", serde_json::to_value(params)?)
+            .await?;
+        Ok(serde_json::from_value(result)?)
+    }
+
+    pub async fn lua_execute_hook(
+        &self,
+        params: LuaExecuteHookRequest,
+    ) -> Result<LuaExecuteHookResponse> {
+        let result = self
+            .call("lua.execute_hook", serde_json::to_value(params)?)
+            .await?;
+        Ok(serde_json::from_value(result)?)
+    }
+
+    pub async fn lua_shutdown_session(
+        &self,
+        params: LuaShutdownSessionRequest,
+    ) -> Result<LuaShutdownSessionResponse> {
+        let result = self
+            .call("lua.shutdown_session", serde_json::to_value(params)?)
+            .await?;
+        Ok(serde_json::from_value(result)?)
     }
 
     // =========================================================================
