@@ -1723,6 +1723,56 @@ impl DaemonClient {
         )
         .await
     }
+
+    // =========================================================================
+    // Skills Discovery RPC Methods
+    // =========================================================================
+
+    /// List discovered skills with optional scope filter.
+    pub async fn skills_list(
+        &self,
+        kiln_path: &Path,
+        scope_filter: Option<&str>,
+    ) -> Result<serde_json::Value> {
+        let mut params = serde_json::json!({ "kiln_path": kiln_path.to_string_lossy() });
+        if let Some(scope) = scope_filter {
+            params["scope_filter"] = serde_json::json!(scope);
+        }
+        self.call("skills.list", params).await
+    }
+
+    /// Get a single skill by name with full body.
+    pub async fn skills_get(
+        &self,
+        name: &str,
+        kiln_path: &Path,
+    ) -> Result<serde_json::Value> {
+        self.call(
+            "skills.get",
+            serde_json::json!({
+                "name": name,
+                "kiln_path": kiln_path.to_string_lossy(),
+            }),
+        )
+        .await
+    }
+
+    /// Search skills by text query (case-insensitive match on name + description).
+    pub async fn skills_search(
+        &self,
+        query: &str,
+        kiln_path: &Path,
+        limit: Option<usize>,
+    ) -> Result<serde_json::Value> {
+        let mut params = serde_json::json!({
+            "query": query,
+            "kiln_path": kiln_path.to_string_lossy(),
+        });
+        if let Some(l) = limit {
+            params["limit"] = serde_json::json!(l);
+        }
+        self.call("skills.search", params).await
+    }
 }
 
 #[cfg(test)]
