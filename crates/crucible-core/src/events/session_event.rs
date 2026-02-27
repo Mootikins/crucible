@@ -39,7 +39,7 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 #[derive(Default)]
-pub(crate) enum TerminalStream {
+pub enum TerminalStream {
     /// Standard output stream.
     #[default]
     Stdout,
