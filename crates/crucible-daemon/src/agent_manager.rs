@@ -269,7 +269,28 @@ struct StreamContext {
     session_state: Arc<Mutex<SessionEventState>>,
     pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
     workspace_path: PathBuf,
+    agent_stream_config: AgentStreamConfig,
+}
+
+#[derive(Clone)]
+struct AgentStreamConfig {
     model: String,
+    temperature: Option<f64>,
+    max_tokens: Option<u32>,
+    thinking_budget: Option<i64>,
+    system_prompt: String,
+}
+
+impl AgentStreamConfig {
+    fn from_session_agent(session_agent: &SessionAgent) -> Self {
+        Self {
+            model: session_agent.model.clone(),
+            temperature: session_agent.temperature,
+            max_tokens: session_agent.max_tokens,
+            thinking_budget: session_agent.thinking_budget,
+            system_prompt: session_agent.system_prompt.clone(),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -934,11 +955,12 @@ impl AgentManager {
             session_state: self.get_or_create_session_state(session_id),
             pending_permissions: self.pending_permissions.clone(),
             workspace_path: session.workspace.clone(),
-            model: agent_config.model.clone(),
+            agent_stream_config: AgentStreamConfig::from_session_agent(&agent_config),
         };
 
         let task = tokio::spawn(async move {
             let mut accumulated_response = String::new();
+            let stream_config = stream_ctx.agent_stream_config.clone();
 
             tokio::select! {
                 _ = cancel_rx => {
@@ -954,6 +976,7 @@ impl AgentManager {
                     agent,
                     content,
                     stream_ctx,
+                    stream_config,
                     &mut accumulated_response,
                     false,
                 ) => {}
@@ -1264,11 +1287,15 @@ impl AgentManager {
         )
     }
 
-    async fn apply_pre_llm_call_handlers(content: String, stream_ctx: &StreamContext) -> Option<String> {
+    async fn apply_pre_llm_call_handlers(
+        content: String,
+        stream_ctx: &StreamContext,
+        stream_config: &AgentStreamConfig,
+    ) -> Option<String> {
         let mut state = stream_ctx.session_state.lock().await;
         let pre_event = SessionEvent::PreLlmCall {
             prompt: content.clone(),
-            model: stream_ctx.model.clone(),
+            model: stream_config.model.clone(),
         };
 
         match state.reactor.emit(pre_event).await {
@@ -1765,10 +1792,13 @@ impl AgentManager {
         agent: Arc<Mutex<BoxedAgentHandle>>,
         content: String,
         stream_ctx: StreamContext,
+        stream_config: AgentStreamConfig,
         accumulated_response: &mut String,
         is_continuation: bool,
     ) {
-        let Some(content) = Self::apply_pre_llm_call_handlers(content, &stream_ctx).await else {
+        let Some(content) =
+            Self::apply_pre_llm_call_handlers(content, &stream_ctx, &stream_config).await
+        else {
             return;
         };
 
@@ -1802,13 +1832,14 @@ impl AgentManager {
                                 session_state: stream_ctx.session_state.clone(),
                                 pending_permissions: stream_ctx.pending_permissions.clone(),
                                 workspace_path: stream_ctx.workspace_path.clone(),
-                                model: stream_ctx.model.clone(),
+                                agent_stream_config: stream_ctx.agent_stream_config.clone(),
                             };
 
                             Box::pin(Self::execute_agent_stream(
                                 agent,
                                 injected_content,
                                 continuation_ctx,
+                                stream_config.clone(),
                                 accumulated_response,
                                 true,
                             ))
@@ -1834,7 +1865,7 @@ impl AgentManager {
         let duration_ms = stream_start.elapsed().as_millis() as u64;
         let response_summary: String = accumulated_response.chars().take(200).collect();
 
-        if stream_ctx.model.is_empty() {
+        if stream_config.model.is_empty() {
             warn!(
                 session_id = %stream_ctx.session_id,
                 "PostLlmCall model string is empty, possible upstream issue"
@@ -1848,7 +1879,7 @@ impl AgentManager {
                 "post_llm_call",
                 serde_json::json!({
                     "response_summary": &response_summary,
-                    "model": &stream_ctx.model,
+                    "model": &stream_config.model,
                     "duration_ms": duration_ms,
                     "token_count": Option::<u64>::None,
                 }),
@@ -1863,7 +1894,7 @@ impl AgentManager {
         let mut state = stream_ctx.session_state.lock().await;
         let post_event = SessionEvent::PostLlmCall {
             response_summary,
-            model: stream_ctx.model.clone(),
+            model: stream_config.model,
             duration_ms,
             token_count: None,
         };
