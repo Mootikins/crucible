@@ -124,6 +124,11 @@ impl NotePipeline {
         }
     }
 
+    /// Set whether to force reprocessing of all files, bypassing change detection.
+    pub fn set_force_reprocess(&mut self, force: bool) {
+        self.config.force_reprocess = force;
+    }
+
     /// Process a note through all phases
     ///
     /// This is the main entry point for note processing. It coordinates
