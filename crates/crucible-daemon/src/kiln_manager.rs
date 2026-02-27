@@ -27,6 +27,14 @@ use crucible_config::EmbeddingProviderConfig;
 use crucible_sqlite::{adapters as sqlite_adapters, SqliteClientHandle, SqliteConfig};
 
 // ===========================================================================
+// Constants
+// ===========================================================================
+
+/// Directories to exclude from file discovery and watching
+pub const EXCLUDED_DIRS: &[&str] = &[".crucible", ".git", ".obsidian", "node_modules", ".trash"];
+
+
+// ===========================================================================
 // Backend Abstraction
 // ===========================================================================
 
@@ -485,7 +493,11 @@ impl KilnManager {
 
         let filter = EventFilter::new()
             .with_extension("md")
-            .exclude_dir(kiln_path.join(".crucible"));
+            .exclude_dir(kiln_path.join(".crucible"))
+            .exclude_dir(kiln_path.join(".git"))
+            .exclude_dir(kiln_path.join(".obsidian"))
+            .exclude_dir(kiln_path.join("node_modules"))
+            .exclude_dir(kiln_path.join(".trash"));
 
         let watch_config =
             crucible_watch::traits::WatchConfig::new(format!("kiln-{}", kiln_path.display()))
@@ -613,12 +625,7 @@ fn is_markdown_file(path: &Path) -> bool {
 fn is_excluded_dir(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
-        .map(|name| {
-            matches!(
-                name,
-                ".crucible" | ".git" | ".obsidian" | "node_modules" | ".trash"
-            )
-        })
+        .map(|name| EXCLUDED_DIRS.contains(&name))
         .unwrap_or(false)
 }
 
@@ -647,6 +654,17 @@ mod tests {
         let base = tmp.path().to_path_buf();
         drop(tmp); // Remove the temp dir
         base.join("nonexistent").join("path")
+    }
+
+    #[test]
+    fn test_excluded_dirs_constant() {
+        // Verify the constant contains exactly the 5 expected directories
+        assert_eq!(EXCLUDED_DIRS.len(), 5);
+        assert!(EXCLUDED_DIRS.contains(&".crucible"));
+        assert!(EXCLUDED_DIRS.contains(&".git"));
+        assert!(EXCLUDED_DIRS.contains(&".obsidian"));
+        assert!(EXCLUDED_DIRS.contains(&"node_modules"));
+        assert!(EXCLUDED_DIRS.contains(&".trash"));
     }
 
     #[tokio::test]

@@ -15,6 +15,7 @@ use tracing::{info, warn};
 use crate::config::CliConfig;
 use crate::{factories, output};
 use crucible_rpc::DaemonClient;
+use crucible_daemon::kiln_manager::EXCLUDED_DIRS;
 
 /// Execute the process command
 ///
@@ -239,12 +240,7 @@ fn discover_markdown_files_for_watch(path: &std::path::Path) -> Vec<PathBuf> {
         entry_path
             .file_name()
             .and_then(|name| name.to_str())
-            .map(|name| {
-                matches!(
-                    name,
-                    ".crucible" | ".git" | ".obsidian" | "node_modules" | ".trash"
-                )
-            })
+            .map(|name| EXCLUDED_DIRS.contains(&name))
             .unwrap_or(false)
     };
 
