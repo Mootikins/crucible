@@ -2939,7 +2939,6 @@ dependencies = [
  "crucible-observe",
  "crucible-oil",
  "crucible-rpc",
- "crucible-skills",
  "crucible-tools",
  "crucible-web",
  "dialoguer",
