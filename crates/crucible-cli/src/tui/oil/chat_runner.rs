@@ -61,6 +61,18 @@ enum DrainMessagesOutcome {
     Processed,
 }
 
+enum EventLoopSelectOutcome {
+    Event(Option<Event>),
+    Continue,
+    Quit,
+}
+
+enum DrainPhaseOutcome {
+    Wait,
+    Continue,
+    Quit,
+}
+
 impl OilChatRunner {
     pub fn new() -> io::Result<Self> {
         Ok(Self::with_terminal(Terminal::new()?))
@@ -453,277 +465,431 @@ impl OilChatRunner {
         };
 
         loop {
-            if app.take_needs_full_redraw() {
-                self.terminal.force_full_redraw()?;
-            }
+            self.render_app_frame(app)?;
 
-            let terminal_size = self.terminal.size();
-            let ctx = ViewContext::with_terminal_size(
-                &self.focus,
-                ThemeTokens::default_ref(),
-                terminal_size,
-            );
-            let tree = app.view(&ctx);
-
-            let graduated_keys = if app.has_shell_modal() {
-                self.terminal.render_fullscreen(&tree)?
-            } else {
-                self.terminal.render(&tree)?
-            };
-            if !graduated_keys.is_empty() {
-                app.mark_graduated(graduated_keys);
-            }
-
-            let drain_outcome = self.drain_pending_messages(
+            match self.drain_phase_outcome(
                 app,
                 agent,
                 bridge,
                 &mut active_stream,
                 &mut msg_rx,
                 &mut replay_auto_exit_deadline,
-            );
-            if drain_outcome == DrainMessagesOutcome::Quit {
-                return Ok(());
-            }
-            if !Self::should_wait_for_event(drain_outcome) {
-                continue;
+            ) {
+                DrainPhaseOutcome::Quit => return Ok(()),
+                DrainPhaseOutcome::Continue => continue,
+                DrainPhaseOutcome::Wait => {}
             }
 
-            let event = tokio::select! {
+            let select_outcome = tokio::select! {
                 biased;
 
                 event_opt = event_stream.next() => {
-                    match event_opt {
-                        Some(Ok(ct_event)) => {
-                            tracing::trace!(?ct_event, "received crossterm event");
-                            Some(self.convert_event(ct_event)?)
-                        },
-                        Some(Err(e)) => return Err(e.into()),
-                        None => {
-                            tracing::warn!("EventStream returned None - stream ended");
-                            return Ok(());
-                        }
-                    }
+                    self.handle_terminal_event(event_opt)?
                 }
 
-                Some(chunk_result) = async {
-                    match &mut active_stream {
-                        Some(stream) => stream.next().await,
-                        None => std::future::pending().await,
-                    }
-                } => {
-                    match chunk_result {
-                        Ok(chunk) => {
-                            tracing::debug!(
-                                delta_len = chunk.delta.len(),
-                                done = chunk.done,
-                                has_tool_calls = chunk.tool_calls.is_some(),
-                                has_tool_results = chunk.tool_results.is_some(),
-                                "Received chunk"
-                            );
-
-                            if !chunk.delta.is_empty()
-                                && msg_tx.send(ChatAppMsg::TextDelta(chunk.delta)).is_err()
-                            {
-                                tracing::warn!("UI channel closed, TextDelta dropped");
-                            }
-
-                            if let Some(ref reasoning) = chunk.reasoning {
-                                if !reasoning.is_empty()
-                                    && msg_tx.send(ChatAppMsg::ThinkingDelta(reasoning.clone())).is_err()
-                                {
-                                    tracing::warn!("UI channel closed, ThinkingDelta dropped");
-                                }
-                            }
-
-                            if let Some(ref tool_calls) = chunk.tool_calls {
-                                for tc in tool_calls {
-                                    let args_str = match &tc.arguments {
-                                        Some(v) if !v.is_null() => v.to_string(),
-                                        _ => String::new(),
-                                    };
-                                    if msg_tx.send(ChatAppMsg::ToolCall {
-                                        name: tc.name.clone(),
-                                        args: args_str,
-                                        call_id: tc.id.clone(),
-                                    }).is_err() {
-                                        tracing::warn!(tool = %tc.name, "UI channel closed, ToolCall dropped");
-                                    }
-                                }
-                            }
-
-                            if let Some(ref tool_results) = chunk.tool_results {
-                                for tr in tool_results {
-                                    if let Some(ref error) = tr.error {
-                                        let cleaned = crucible_tools::strip_tool_error_prefix(error);
-                                        let _ = msg_tx.send(ChatAppMsg::ToolResultError {
-                                            name: tr.name.clone(),
-                                            error: cleaned,
-                                            call_id: tr.call_id.clone(),
-                                        });
-                                    } else if tr.result.starts_with("Error: ") {
-                                        // Tool returned Ok("Error: ...") — treat as error
-                                        let cleaned = crucible_tools::strip_tool_error_prefix(
-                                            tr.result.strip_prefix("Error: ").unwrap_or(&tr.result),
-                                        );
-                                        let _ = msg_tx.send(ChatAppMsg::ToolResultError {
-                                            name: tr.name.clone(),
-                                            error: cleaned,
-                                            call_id: tr.call_id.clone(),
-                                        });
-                                    } else {
-                                        if !tr.result.is_empty() {
-                                            let _ = msg_tx.send(ChatAppMsg::ToolResultDelta {
-                                                name: tr.name.clone(),
-                                                delta: tr.result.clone(),
-                                                call_id: tr.call_id.clone(),
-                                            });
-                                        }
-                                        let _ = msg_tx.send(ChatAppMsg::ToolResultComplete {
-                                            name: tr.name.clone(),
-                                            call_id: tr.call_id.clone(),
-                                        });
-                                    }
-                                }
-                            }
-
-                            if let Some(ref subagent_events) = chunk.subagent_events {
-                                for event in subagent_events {
-                                    let msg = match event.event_type {
-                                        SubagentEventType::Spawned => ChatAppMsg::SubagentSpawned {
-                                            id: event.id.clone(),
-                                            prompt: event.prompt.clone().unwrap_or_default(),
-                                        },
-                                        SubagentEventType::Completed => ChatAppMsg::SubagentCompleted {
-                                            id: event.id.clone(),
-                                            summary: event.summary.clone().unwrap_or_default(),
-                                        },
-                                        SubagentEventType::Failed => ChatAppMsg::SubagentFailed {
-                                            id: event.id.clone(),
-                                            error: event.error.clone().unwrap_or_else(|| "Unknown error".to_string()),
-                                        },
-                                    };
-                                    if msg_tx.send(msg).is_err() {
-                                        tracing::warn!(
-                                            id = %event.id,
-                                            event_type = ?event.event_type,
-                                            "UI channel closed, SubagentEvent dropped"
-                                        );
-                                    }
-                                }
-                            }
-
-                            if let Some(ref usage) = chunk.usage {
-                                if msg_tx.send(ChatAppMsg::ContextUsage {
-                                    used: usage.total_tokens as usize,
-                                    total: self.context_limit,
-                                }).is_err() {
-                                    tracing::warn!("UI channel closed, ContextUsage dropped");
-                                }
-                            }
-
-
-                            if let Some(notes_count) = chunk.precognition_notes_count {
-                                if notes_count > 0 && msg_tx.send(ChatAppMsg::PrecognitionResult { notes_count }).is_err() {
-                                    tracing::warn!("UI channel closed, PrecognitionResult dropped");
-                                }
-                            }
-
-                            if chunk.done {
-                                active_stream = None;
-                                if msg_tx.send(ChatAppMsg::StreamComplete).is_err() {
-                                    tracing::warn!("UI channel closed, StreamComplete dropped");
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            active_stream = None;
-                            if msg_tx.send(ChatAppMsg::Error(e.to_string())).is_err() {
-                                tracing::warn!("UI channel closed, Error dropped");
-                            }
-                        }
-                    }
-                    None
+                Some(chunk_result) = Self::next_active_chunk(&mut active_stream) => {
+                    self.handle_stream_chunk(chunk_result, &mut active_stream, &msg_tx);
+                    EventLoopSelectOutcome::Continue
                 }
 
                 _ = tick_interval.tick() => {
                     tracing::trace!("tick");
-                    Some(Event::Tick)
+                    EventLoopSelectOutcome::Event(Some(Event::Tick))
                 }
 
-                Some(cmd) = async {
-                    match &mut session_cmd_rx {
-                        Some(rx) => rx.recv().await,
-                        None => std::future::pending().await,
-                    }
-                } => {
+                Some(cmd) = Self::next_session_command(&mut session_cmd_rx) => {
                     Self::handle_session_command(cmd, agent, app).await;
-                    None
+                    EventLoopSelectOutcome::Continue
                 }
 
-                Some(interaction_event) = async {
-                    match &mut interaction_rx {
-                        Some(rx) => rx.recv().await,
-                        None => std::future::pending().await,
-                    }
-                } => {
-                    tracing::info!(
-                        request_id = %interaction_event.request_id,
-                        kind = %interaction_event.request.kind(),
-                        "Received interaction event"
-                    );
-                    let session_event = SessionEvent::InteractionRequested {
-                        request_id: interaction_event.request_id,
-                        request: interaction_event.request,
-                    };
-                    if let Some(msg) = Self::handle_session_event(session_event) {
-                        let _ = app.on_message(msg);
-                    }
-                    None
+                Some(interaction_event) = Self::next_interaction_event(&mut interaction_rx) => {
+                    Self::handle_interaction_event(app, interaction_event);
+                    EventLoopSelectOutcome::Continue
                 }
 
-                _ = async {
-                    match replay_auto_exit_deadline {
-                        Some(deadline_start) => {
-                            let delay_ms = self.replay_auto_exit.unwrap_or(0);
-                            tokio::time::sleep_until(
-                                deadline_start + Duration::from_millis(delay_ms),
-                            )
-                            .await;
-                        }
-                        None => std::future::pending::<()>().await,
-                    }
-                }, if self.is_replay
-                    && self.replay_remaining_completes == 0
-                    && replay_auto_exit_deadline.is_some()
-                    && self.replay_auto_exit.is_some() => {
+                _ = Self::wait_for_replay_auto_exit(replay_auto_exit_deadline, self.replay_auto_exit),
+                    if Self::should_wait_for_replay_auto_exit(
+                        self.is_replay,
+                        self.replay_remaining_completes,
+                        replay_auto_exit_deadline,
+                        self.replay_auto_exit,
+                    ) => {
                     tracing::info!("Replay auto-exit triggered");
-                    break;
+                    EventLoopSelectOutcome::Quit
                 }
             };
 
-            if let Some(ref ev) = event {
-                let action = app.update(ev.clone());
-                tracing::trace!(?ev, ?action, "processed event");
-                if self
-                    .process_action(
-                        action,
-                        app,
-                        agent,
-                        bridge,
-                        &mut active_stream,
-                        &msg_tx,
-                        background_tasks,
-                    )
-                    .await?
-                {
-                    tracing::trace!("quit action received, breaking loop");
-                    break;
-                }
+            if self
+                .handle_select_outcome(
+                    select_outcome,
+                    app,
+                    agent,
+                    bridge,
+                    &mut active_stream,
+                    &msg_tx,
+                    background_tasks,
+                )
+                .await?
+            {
+                break;
             }
         }
 
         Ok(())
+    }
+
+    fn drain_phase_outcome<A: AgentHandle>(
+        &mut self,
+        app: &mut OilChatApp,
+        agent: &mut A,
+        bridge: &AgentEventBridge,
+        active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
+        msg_rx: &mut mpsc::UnboundedReceiver<ChatAppMsg>,
+        replay_auto_exit_deadline: &mut Option<tokio::time::Instant>,
+    ) -> DrainPhaseOutcome {
+        let drain_outcome = self.drain_pending_messages(
+            app,
+            agent,
+            bridge,
+            active_stream,
+            msg_rx,
+            replay_auto_exit_deadline,
+        );
+
+        if drain_outcome == DrainMessagesOutcome::Quit {
+            return DrainPhaseOutcome::Quit;
+        }
+        if !Self::should_wait_for_event(drain_outcome) {
+            return DrainPhaseOutcome::Continue;
+        }
+
+        DrainPhaseOutcome::Wait
+    }
+
+    fn render_app_frame(&mut self, app: &mut OilChatApp) -> Result<()> {
+        if app.take_needs_full_redraw() {
+            self.terminal.force_full_redraw()?;
+        }
+
+        let terminal_size = self.terminal.size();
+        let ctx = ViewContext::with_terminal_size(
+            &self.focus,
+            ThemeTokens::default_ref(),
+            terminal_size,
+        );
+        let tree = app.view(&ctx);
+
+        let graduated_keys = if app.has_shell_modal() {
+            self.terminal.render_fullscreen(&tree)?
+        } else {
+            self.terminal.render(&tree)?
+        };
+        if !graduated_keys.is_empty() {
+            app.mark_graduated(graduated_keys);
+        }
+
+        Ok(())
+    }
+
+    async fn handle_selected_event<A: AgentHandle>(
+        &mut self,
+        event: Option<Event>,
+        app: &mut OilChatApp,
+        agent: &mut A,
+        bridge: &AgentEventBridge,
+        active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
+        msg_tx: &mpsc::UnboundedSender<ChatAppMsg>,
+        background_tasks: &mut Vec<JoinHandle<()>>,
+    ) -> Result<bool> {
+        let Some(ev) = event else {
+            return Ok(false);
+        };
+
+        let action = app.update(ev.clone());
+        tracing::trace!(?ev, ?action, "processed event");
+
+        if self
+            .process_action(
+                action,
+                app,
+                agent,
+                bridge,
+                active_stream,
+                msg_tx,
+                background_tasks,
+            )
+            .await?
+        {
+            tracing::trace!("quit action received, breaking loop");
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+
+    async fn handle_select_outcome<A: AgentHandle>(
+        &mut self,
+        select_outcome: EventLoopSelectOutcome,
+        app: &mut OilChatApp,
+        agent: &mut A,
+        bridge: &AgentEventBridge,
+        active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
+        msg_tx: &mpsc::UnboundedSender<ChatAppMsg>,
+        background_tasks: &mut Vec<JoinHandle<()>>,
+    ) -> Result<bool> {
+        let event = match select_outcome {
+            EventLoopSelectOutcome::Event(event) => event,
+            EventLoopSelectOutcome::Continue => None,
+            EventLoopSelectOutcome::Quit => return Ok(true),
+        };
+
+        self.handle_selected_event(
+            event,
+            app,
+            agent,
+            bridge,
+            active_stream,
+            msg_tx,
+            background_tasks,
+        )
+        .await
+    }
+
+    fn handle_stream_chunk(
+        &self,
+        chunk_result: ChatResult<ChatChunk>,
+        active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
+        msg_tx: &mpsc::UnboundedSender<ChatAppMsg>,
+    ) {
+        match chunk_result {
+            Ok(chunk) => {
+                tracing::debug!(
+                    delta_len = chunk.delta.len(),
+                    done = chunk.done,
+                    has_tool_calls = chunk.tool_calls.is_some(),
+                    has_tool_results = chunk.tool_results.is_some(),
+                    "Received chunk"
+                );
+
+                if !chunk.delta.is_empty() && msg_tx.send(ChatAppMsg::TextDelta(chunk.delta)).is_err() {
+                    tracing::warn!("UI channel closed, TextDelta dropped");
+                }
+
+                if let Some(ref reasoning) = chunk.reasoning {
+                    if !reasoning.is_empty()
+                        && msg_tx
+                            .send(ChatAppMsg::ThinkingDelta(reasoning.clone()))
+                            .is_err()
+                    {
+                        tracing::warn!("UI channel closed, ThinkingDelta dropped");
+                    }
+                }
+
+                if let Some(ref tool_calls) = chunk.tool_calls {
+                    for tc in tool_calls {
+                        let args_str = match &tc.arguments {
+                            Some(v) if !v.is_null() => v.to_string(),
+                            _ => String::new(),
+                        };
+                        if msg_tx
+                            .send(ChatAppMsg::ToolCall {
+                                name: tc.name.clone(),
+                                args: args_str,
+                                call_id: tc.id.clone(),
+                            })
+                            .is_err()
+                        {
+                            tracing::warn!(tool = %tc.name, "UI channel closed, ToolCall dropped");
+                        }
+                    }
+                }
+
+                if let Some(ref tool_results) = chunk.tool_results {
+                    for tr in tool_results {
+                        if let Some(ref error) = tr.error {
+                            let cleaned = crucible_tools::strip_tool_error_prefix(error);
+                            let _ = msg_tx.send(ChatAppMsg::ToolResultError {
+                                name: tr.name.clone(),
+                                error: cleaned,
+                                call_id: tr.call_id.clone(),
+                            });
+                        } else if tr.result.starts_with("Error: ") {
+                            let cleaned = crucible_tools::strip_tool_error_prefix(
+                                tr.result.strip_prefix("Error: ").unwrap_or(&tr.result),
+                            );
+                            let _ = msg_tx.send(ChatAppMsg::ToolResultError {
+                                name: tr.name.clone(),
+                                error: cleaned,
+                                call_id: tr.call_id.clone(),
+                            });
+                        } else {
+                            if !tr.result.is_empty() {
+                                let _ = msg_tx.send(ChatAppMsg::ToolResultDelta {
+                                    name: tr.name.clone(),
+                                    delta: tr.result.clone(),
+                                    call_id: tr.call_id.clone(),
+                                });
+                            }
+                            let _ = msg_tx.send(ChatAppMsg::ToolResultComplete {
+                                name: tr.name.clone(),
+                                call_id: tr.call_id.clone(),
+                            });
+                        }
+                    }
+                }
+
+                if let Some(ref subagent_events) = chunk.subagent_events {
+                    for event in subagent_events {
+                        let msg = match event.event_type {
+                            SubagentEventType::Spawned => ChatAppMsg::SubagentSpawned {
+                                id: event.id.clone(),
+                                prompt: event.prompt.clone().unwrap_or_default(),
+                            },
+                            SubagentEventType::Completed => ChatAppMsg::SubagentCompleted {
+                                id: event.id.clone(),
+                                summary: event.summary.clone().unwrap_or_default(),
+                            },
+                            SubagentEventType::Failed => ChatAppMsg::SubagentFailed {
+                                id: event.id.clone(),
+                                error: event
+                                    .error
+                                    .clone()
+                                    .unwrap_or_else(|| "Unknown error".to_string()),
+                            },
+                        };
+                        if msg_tx.send(msg).is_err() {
+                            tracing::warn!(
+                                id = %event.id,
+                                event_type = ?event.event_type,
+                                "UI channel closed, SubagentEvent dropped"
+                            );
+                        }
+                    }
+                }
+
+                if let Some(ref usage) = chunk.usage {
+                    if msg_tx
+                        .send(ChatAppMsg::ContextUsage {
+                            used: usage.total_tokens as usize,
+                            total: self.context_limit,
+                        })
+                        .is_err()
+                    {
+                        tracing::warn!("UI channel closed, ContextUsage dropped");
+                    }
+                }
+
+                if let Some(notes_count) = chunk.precognition_notes_count {
+                    if notes_count > 0
+                        && msg_tx
+                            .send(ChatAppMsg::PrecognitionResult { notes_count })
+                            .is_err()
+                    {
+                        tracing::warn!("UI channel closed, PrecognitionResult dropped");
+                    }
+                }
+
+                if chunk.done {
+                    *active_stream = None;
+                    if msg_tx.send(ChatAppMsg::StreamComplete).is_err() {
+                        tracing::warn!("UI channel closed, StreamComplete dropped");
+                    }
+                }
+            }
+            Err(e) => {
+                *active_stream = None;
+                if msg_tx.send(ChatAppMsg::Error(e.to_string())).is_err() {
+                    tracing::warn!("UI channel closed, Error dropped");
+                }
+            }
+        }
+    }
+
+    fn handle_terminal_event(
+        &mut self,
+        event_opt: Option<std::result::Result<CtEvent, io::Error>>,
+    ) -> Result<EventLoopSelectOutcome> {
+        match event_opt {
+            Some(Ok(ct_event)) => {
+                tracing::trace!(?ct_event, "received crossterm event");
+                Ok(EventLoopSelectOutcome::Event(Some(self.convert_event(ct_event)?)))
+            }
+            Some(Err(e)) => Err(e.into()),
+            None => {
+                tracing::warn!("EventStream returned None - stream ended");
+                Ok(EventLoopSelectOutcome::Quit)
+            }
+        }
+    }
+
+    fn handle_interaction_event(
+        app: &mut OilChatApp,
+        interaction_event: crucible_core::interaction::InteractionEvent,
+    ) {
+        tracing::info!(
+            request_id = %interaction_event.request_id,
+            kind = %interaction_event.request.kind(),
+            "Received interaction event"
+        );
+        let session_event = SessionEvent::InteractionRequested {
+            request_id: interaction_event.request_id,
+            request: interaction_event.request,
+        };
+        if let Some(msg) = Self::handle_session_event(session_event) {
+            let _ = app.on_message(msg);
+        }
+    }
+
+    async fn next_active_chunk(
+        active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
+    ) -> Option<ChatResult<ChatChunk>> {
+        match active_stream {
+            Some(stream) => stream.next().await,
+            None => std::future::pending().await,
+        }
+    }
+
+    async fn next_session_command(
+        session_cmd_rx: &mut Option<mpsc::UnboundedReceiver<SessionCommand>>,
+    ) -> Option<SessionCommand> {
+        match session_cmd_rx {
+            Some(rx) => rx.recv().await,
+            None => std::future::pending().await,
+        }
+    }
+
+    async fn next_interaction_event(
+        interaction_rx: &mut Option<mpsc::UnboundedReceiver<crucible_core::interaction::InteractionEvent>>,
+    ) -> Option<crucible_core::interaction::InteractionEvent> {
+        match interaction_rx {
+            Some(rx) => rx.recv().await,
+            None => std::future::pending().await,
+        }
+    }
+
+    fn should_wait_for_replay_auto_exit(
+        is_replay: bool,
+        replay_remaining_completes: usize,
+        replay_auto_exit_deadline: Option<tokio::time::Instant>,
+        replay_auto_exit: Option<u64>,
+    ) -> bool {
+        is_replay
+            && replay_remaining_completes == 0
+            && replay_auto_exit_deadline.is_some()
+            && replay_auto_exit.is_some()
+    }
+
+    async fn wait_for_replay_auto_exit(
+        replay_auto_exit_deadline: Option<tokio::time::Instant>,
+        replay_auto_exit: Option<u64>,
+    ) {
+        match replay_auto_exit_deadline {
+            Some(deadline_start) => {
+                let delay_ms = replay_auto_exit.unwrap_or(0);
+                tokio::time::sleep_until(deadline_start + Duration::from_millis(delay_ms)).await;
+            }
+            None => std::future::pending::<()>().await,
+        }
     }
 
     fn convert_event(&mut self, ct_event: CtEvent) -> io::Result<Event> {
