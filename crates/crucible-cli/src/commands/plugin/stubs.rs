@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use crucible_lua::stubs::StubGenerator;
+use crucible_rpc::{DaemonClient, LuaGenerateStubsRequest};
 
 use super::StubsArgs;
 use crate::config::CliConfig;
@@ -15,21 +15,25 @@ pub async fn execute(_config: CliConfig, args: StubsArgs) -> Result<()> {
         )
     })?;
 
-    if args.verify {
-        let cru_lua_path = output_dir.join("cru.lua");
-        let up_to_date =
-            StubGenerator::verify(&cru_lua_path).with_context(|| "Failed to verify stubs")?;
+    // Connect to daemon
+    let client = DaemonClient::connect_or_start().await?;
 
-        if up_to_date {
+    // Generate or verify stubs via daemon RPC
+    let response = client
+        .lua_generate_stubs(LuaGenerateStubsRequest {
+            output_dir: output_dir.to_string_lossy().to_string(),
+            verify: args.verify,
+        })
+        .await?;
+
+    if args.verify {
+        if response.status == "ok" {
             println!("✓ Stubs are up to date");
         } else {
             eprintln!("✗ Stubs are out of date. Run: cru plugin stubs");
             std::process::exit(1);
         }
     } else {
-        StubGenerator::generate(&output_dir)
-            .with_context(|| format!("Failed to generate stubs in {}", output_dir.display()))?;
-
         println!("✓ Stubs generated at: {}", output_dir.display());
         println!();
         println!("Configure your editor:");
