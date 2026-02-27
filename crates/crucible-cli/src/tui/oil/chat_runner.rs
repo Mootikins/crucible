@@ -706,14 +706,14 @@ impl OilChatRunner {
                 if let Some(ref tool_results) = chunk.tool_results {
                     for tr in tool_results {
                         if let Some(ref error) = tr.error {
-                            let cleaned = crucible_tools::strip_tool_error_prefix(error);
+                            let cleaned = crucible_core::error_utils::strip_tool_error_prefix(error);
                             let _ = msg_tx.send(ChatAppMsg::ToolResultError {
                                 name: tr.name.clone(),
                                 error: cleaned,
                                 call_id: tr.call_id.clone(),
                             });
                         } else if tr.result.starts_with("Error: ") {
-                            let cleaned = crucible_tools::strip_tool_error_prefix(
+                            let cleaned = crucible_core::error_utils::strip_tool_error_prefix(
                                 tr.result.strip_prefix("Error: ").unwrap_or(&tr.result),
                             );
                             let _ = msg_tx.send(ChatAppMsg::ToolResultError {
