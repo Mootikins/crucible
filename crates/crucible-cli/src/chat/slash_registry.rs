@@ -581,7 +581,10 @@ impl SlashCommandRegistryBuilder {
         self
     }
 
-    /// Register a Lua command from a discovered command annotation.
+    /// Register a Lua command from daemon-discovered command metadata.
+    ///
+    /// Discovery is daemon-owned; this builder only wires the local slash UX
+    /// handler and descriptor used by the CLI view layer.
     pub fn lua_command(mut self, cmd: &crucible_lua::DiscoveredCommand) -> Self {
         use crucible_lua::{command_to_descriptor, LuaCommandHandler};
 
