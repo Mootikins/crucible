@@ -490,18 +490,20 @@ impl Server {
                 accept_result = self.listener.accept() => {
                     match accept_result {
                         Ok((stream, _)) => {
-                            let dispatcher = self.dispatcher.clone();
-                            let km = self.kiln_manager.clone();
-                            let sm = self.session_manager.clone();
-                            let am = self.agent_manager.clone();
-                            let sub_m = self.subscription_manager.clone();
-                            let pm = self.project_manager.clone();
-                            let event_tx = self.event_tx.clone();
-                            let event_rx = self.event_tx.subscribe();
-                            let pl = self.plugin_loader.clone();
-                            let llm_config = self.llm_config.clone();
+                            let ctx = Arc::new(ServerContext {
+                                dispatcher: self.dispatcher.clone(),
+                                kiln_manager: self.kiln_manager.clone(),
+                                session_manager: self.session_manager.clone(),
+                                agent_manager: self.agent_manager.clone(),
+                                subscription_manager: self.subscription_manager.clone(),
+                                project_manager: self.project_manager.clone(),
+                                event_tx: self.event_tx.clone(),
+                                plugin_loader: self.plugin_loader.clone(),
+                                llm_config: self.llm_config.clone(),
+                            });
+                            let event_rx = ctx.event_tx.subscribe();
                             tokio::spawn(async move {
-                                if let Err(e) = handle_client(stream, dispatcher, km, sm, am, sub_m, pm, event_tx, event_rx, pl, llm_config).await {
+                                if let Err(e) = handle_client(stream, ctx, event_rx).await {
                                     error!("Client error: {}", e);
                                 }
                             });
@@ -538,9 +540,8 @@ impl Server {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn handle_client(
-    stream: UnixStream,
+#[derive(Clone)]
+struct ServerContext {
     dispatcher: Arc<RpcDispatcher>,
     kiln_manager: Arc<KilnManager>,
     session_manager: Arc<SessionManager>,
@@ -548,9 +549,14 @@ async fn handle_client(
     subscription_manager: Arc<SubscriptionManager>,
     project_manager: Arc<ProjectManager>,
     event_tx: broadcast::Sender<SessionEventMessage>,
-    mut event_rx: broadcast::Receiver<SessionEventMessage>,
     plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
     llm_config: Option<LlmConfig>,
+}
+
+async fn handle_client(
+    stream: UnixStream,
+    ctx: Arc<ServerContext>,
+    mut event_rx: broadcast::Receiver<SessionEventMessage>,
 ) -> Result<()> {
     let client_id = ClientId::new();
     let (reader, writer) = stream.into_split();
@@ -559,7 +565,7 @@ async fn handle_client(
     let mut line = String::new();
 
     let writer_clone = writer.clone();
-    let sub_manager = subscription_manager.clone();
+    let sub_manager = ctx.subscription_manager.clone();
     let event_cancel = CancellationToken::new();
     let event_cancel_clone = event_cancel.clone();
     let event_task = tokio::spawn(async move {
@@ -604,15 +610,7 @@ async fn handle_client(
                 handle_request(
                     req,
                     client_id,
-                    &dispatcher,
-                    &kiln_manager,
-                    &session_manager,
-                    &agent_manager,
-                    &subscription_manager,
-                    &project_manager,
-                    &event_tx,
-                    &plugin_loader,
-                    &llm_config,
+                    &ctx,
                 )
                 .await
             }
@@ -632,7 +630,7 @@ async fn handle_client(
     // Graceful shutdown of event forwarding
     event_cancel.cancel();
     let _ = tokio::time::timeout(std::time::Duration::from_millis(100), event_task).await;
-    subscription_manager.remove_client(client_id);
+    ctx.subscription_manager.remove_client(client_id);
 
     Ok(())
 }
@@ -705,34 +703,25 @@ async fn persist_event(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn handle_request(
     req: Request,
     client_id: ClientId,
-    dispatcher: &Arc<RpcDispatcher>,
-    kiln_manager: &Arc<KilnManager>,
-    session_manager: &Arc<SessionManager>,
-    agent_manager: &Arc<AgentManager>,
-    _subscription_manager: &Arc<SubscriptionManager>,
-    project_manager: &Arc<ProjectManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
-    plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
-    llm_config: &Option<LlmConfig>,
+    ctx: &ServerContext,
 ) -> Response {
     let req_clone = req.clone();
-    let resp = dispatcher.dispatch(client_id, req).await;
+    let resp = ctx.dispatcher.dispatch(client_id, req).await;
 
     if let Some(ref err) = resp.error {
         if err.code == METHOD_NOT_FOUND && err.message.contains("not yet migrated") {
             return handle_legacy_request(
                 req_clone,
-                kiln_manager,
-                session_manager,
-                agent_manager,
-                project_manager,
-                event_tx,
-                plugin_loader,
-                llm_config,
+                &ctx.kiln_manager,
+                &ctx.session_manager,
+                &ctx.agent_manager,
+                &ctx.project_manager,
+                &ctx.event_tx,
+                &ctx.plugin_loader,
+                &ctx.llm_config,
             )
             .await;
         }
