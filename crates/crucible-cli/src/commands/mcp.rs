@@ -17,17 +17,11 @@
 
 use anyhow::Result;
 use clap::Parser;
-use crucible_core::enrichment::EmbeddingProvider;
-use crucible_tools::mcp_gateway::McpGatewayManager;
-use crucible_tools::{ExtendedMcpServer, ExtendedMcpService};
-use std::net::SocketAddr;
+use crucible_rpc::DaemonClient;
 use std::path::PathBuf;
-use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::info;
 
 use crate::config::CliConfig;
-use crate::core_facade::KilnContext;
-use crate::factories;
 
 /// MCP server command arguments
 #[derive(Parser, Debug)]
@@ -83,113 +77,60 @@ impl Default for McpArgs {
 /// - **SSE (default)**: Starts HTTP server on specified port
 /// - **Stdio**: Uses stdin/stdout, logs to file
 pub async fn execute(config: CliConfig, args: McpArgs) -> Result<()> {
-    // Apply kiln_path override if provided
-    let config = if let Some(kiln_path) = args.kiln_path {
-        CliConfig {
-            kiln_path,
-            ..config
-        }
-    } else {
-        config
-    };
+    // Determine kiln path (override or config default)
+    let kiln_path = args.kiln_path.unwrap_or(config.kiln_path.clone());
+    let kiln_path_str = kiln_path.to_string_lossy().to_string();
 
-    info!("Starting Crucible MCP server...");
-    debug!("Kiln path: {}", config.kiln_path.display());
-    debug!("Transport: {}", if args.stdio { "stdio" } else { "SSE" });
-
-    // Initialize core facade
-    let core = {
-        let storage_handle = factories::get_storage(&config).await?;
-        Arc::new(KilnContext::from_storage_handle(
-            storage_handle,
-            config.clone(),
-        ))
-    };
-
-    // Get embedding config and create provider
-    let embedding_config = crate::factories::embedding_provider_config_from_cli(core.config());
-    let llm_provider = crucible_llm::embeddings::create_provider(embedding_config).await?;
-
-    let embedding_provider = llm_provider as Arc<dyn EmbeddingProvider>;
-
-    let knowledge_repo = core.storage_handle().as_knowledge_repository();
+    // Determine transport
+    let transport = if args.stdio { Some("stdio") } else { Some("sse") };
 
     // Determine Just directory
     let just_dir = args
         .just_dir
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+        .map(|d| d.to_string_lossy().to_string())
+        .or_else(|| {
+            std::env::current_dir()
+                .ok()
+                .map(|p| p.to_string_lossy().to_string())
+        });
 
-    // Create extended MCP server
-    let server = if args.no_just {
-        // Kiln-only mode
-        ExtendedMcpServer::kiln_only(
-            core.kiln_root().to_string_lossy().to_string(),
-            knowledge_repo,
-            embedding_provider,
-        )
-    } else {
-        // Full mode with Just
-        ExtendedMcpServer::new(
-            core.kiln_root().to_string_lossy().to_string(),
-            knowledge_repo,
-            embedding_provider,
-            &just_dir,
-        )
+    info!("Starting Crucible MCP server...");
+    info!("Kiln path: {}", kiln_path.display());
+    info!("Transport: {}", if args.stdio { "stdio" } else { "SSE" });
+
+    // Connect to daemon
+    let client = DaemonClient::connect_or_start()
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to create ExtendedMcpServer: {}", e))?
-    };
+        .map_err(|e| anyhow::anyhow!("Failed to connect to daemon: {}", e))?;
 
-    let server = if let Some(mcp_config) = &config.mcp {
-        if !mcp_config.servers.is_empty() {
-            info!(
-                "Initializing MCP gateway with {} upstream servers",
-                mcp_config.servers.len()
-            );
-            match McpGatewayManager::from_config(mcp_config).await {
-                Ok(gateway) => {
-                    let gateway_tools = gateway.tool_count();
-                    info!(
-                        "Gateway loaded {} tools from upstream servers",
-                        gateway_tools
-                    );
-                    server.with_gateway(gateway)
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to initialize gateway: {}. Continuing without gateway.",
-                        e
-                    );
-                    server
-                }
-            }
-        } else {
-            server
-        }
-    } else {
-        server
-    };
+    // Start MCP server via daemon RPC
+    client
+        .mcp_start(
+            &kiln_path_str,
+            transport,
+            Some(args.port),
+            args.no_just,
+            just_dir.as_deref(),
+        )
+        .await?;
 
-    let tool_count = server.tool_count().await;
-    info!("MCP server initialized with {} tools", tool_count);
-
-    // Wrap in service for MCP protocol handling
-    let service = ExtendedMcpService::new(server).await;
-
-    // Serve based on transport mode
+    // Display server info and wait
     if args.stdio {
         info!("Server ready - waiting for stdio connection...");
-        service.serve_stdio().await?;
     } else {
-        // SSE mode
-        let addr: SocketAddr = format!("127.0.0.1:{}", args.port).parse()?;
+        let addr = format!("127.0.0.1:{}", args.port);
         info!("Starting SSE server on http://{}", addr);
         info!("SSE endpoint: http://{}/sse", addr);
         info!("Message endpoint: http://{}/message", addr);
         info!("MCP server running. Press Ctrl+C to stop.");
-
-        service.serve_sse(addr).await?;
-        info!("Shutdown signal received");
     }
+
+    // Wait for Ctrl+C
+    tokio::signal::ctrl_c().await?;
+
+    // Stop MCP server on shutdown
+    info!("Shutdown signal received");
+    let _ = client.mcp_stop().await;
 
     info!("MCP server terminated");
     Ok(())
