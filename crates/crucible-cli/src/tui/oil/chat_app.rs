@@ -560,41 +560,6 @@ impl App for OilChatApp {
             | ChatAppMsg::ToolResultError { .. }
             | ChatAppMsg::StreamComplete
             | ChatAppMsg::StreamCancelled) => self.handle_stream_msg(msg),
-            ChatAppMsg::QueueMessage(content) => {
-                if self.is_streaming() {
-                    self.message_queue.deferred_messages.push_back(content);
-                    let count = self.message_queue.deferred_messages.len();
-                    self.add_notification(crucible_core::types::Notification::toast(format!(
-                        "{} message{} queued",
-                        count,
-                        if count == 1 { "" } else { "s" }
-                    )));
-                    Action::Continue
-                } else {
-                    self.submit_user_message(content.clone());
-                    Action::Send(ChatAppMsg::UserMessage(content))
-                }
-            }
-            ChatAppMsg::Error(msg) => {
-                self.notification_area
-                    .add(crucible_core::types::Notification::warning(msg));
-                self.container_list.cancel_streaming();
-                Action::Continue
-            }
-            ChatAppMsg::Status(status) => {
-                self.status = status;
-                Action::Continue
-            }
-            ChatAppMsg::ModeChanged(mode) => {
-                self.mode = ChatMode::parse(&mode);
-                Action::Continue
-            }
-            ChatAppMsg::ContextUsage { used, total } => {
-                self.context_used = used;
-                self.context_total = total;
-                Action::Continue
-            }
-            ChatAppMsg::ClearHistory => Action::Continue,
             msg @ (ChatAppMsg::SwitchModel(_)
             | ChatAppMsg::FetchModels
             | ChatAppMsg::ModelsLoaded(_)
@@ -604,84 +569,27 @@ impl App for OilChatApp {
             | ChatAppMsg::SetMaxTokens(_)
             | ChatAppMsg::McpStatusLoaded(_)
             | ChatAppMsg::PluginStatusLoaded(_)) => self.handle_config_msg(msg),
-            ChatAppMsg::SubagentSpawned { id, prompt } => {
-                if !self.container_list.is_streaming() {
-                    self.container_list.mark_turn_active();
-                }
-                self.container_list
-                    .add_subagent(CachedSubagent::new(id, &prompt, "subagent"));
-                Action::Continue
-            }
-            ChatAppMsg::SubagentCompleted { id, summary } => {
-                self.container_list.update_subagent(&id, |s| {
-                    s.mark_completed(&summary);
-                });
-                Action::Continue
-            }
-            ChatAppMsg::SubagentFailed { id, error } => {
-                self.container_list.update_subagent(&id, |s| {
-                    s.mark_failed(&error);
-                });
-                Action::Continue
-            }
-            ChatAppMsg::DelegationSpawned {
-                id,
-                prompt,
-                target_agent,
-            } => {
-                if !self.container_list.is_streaming() {
-                    self.container_list.mark_turn_active();
-                }
-                let mut delegation = CachedSubagent::new(id, &prompt, "delegation");
-                delegation.target_agent = target_agent.clone();
-                self.container_list.add_delegation(delegation);
-                Action::Continue
-            }
-            ChatAppMsg::DelegationCompleted { id, summary } => {
-                self.container_list.update_delegation(&id, |d| {
-                    d.mark_completed(&summary);
-                });
-                Action::Continue
-            }
-            ChatAppMsg::DelegationFailed { id, error } => {
-                self.container_list.update_delegation(&id, |d| {
-                    d.mark_failed(&error);
-                });
-                Action::Continue
-            }
-            ChatAppMsg::ToggleMessages => {
-                self.notification_area.toggle();
-                Action::Continue
-            }
-            ChatAppMsg::OpenInteraction {
-                request_id,
-                request,
-            } => self.open_interaction(request_id, request),
-            ChatAppMsg::CloseInteraction {
-                request_id: _,
-                response: _,
-            } => {
-                // Response handling will be implemented in a later task
-                self.close_interaction();
-                Action::Continue
-            }
-            ChatAppMsg::LoadHistory(items) => {
-                self.load_previous_messages(items);
-                Action::Continue
-            }
-            ChatAppMsg::PrecognitionResult { notes_count } => {
-                if notes_count > 0 {
-                    self.add_system_message(format!("📎 Found {} relevant notes", notes_count));
-                }
-                Action::Continue
-            }
-            ChatAppMsg::EnrichedMessage { .. } => {
-                // Handled by the runner — starts agent stream with enriched content
-                Action::Continue
-            }
-            ChatAppMsg::ExecuteSlashCommand(_)
+            msg @ (ChatAppMsg::SubagentSpawned { .. }
+            | ChatAppMsg::SubagentCompleted { .. }
+            | ChatAppMsg::SubagentFailed { .. }
+            | ChatAppMsg::DelegationSpawned { .. }
+            | ChatAppMsg::DelegationCompleted { .. }
+            | ChatAppMsg::DelegationFailed { .. }) => self.handle_delegation_msg(msg),
+            msg @ (ChatAppMsg::QueueMessage(_)
+            | ChatAppMsg::Error(_)
+            | ChatAppMsg::Status(_)
+            | ChatAppMsg::ModeChanged(_)
+            | ChatAppMsg::ContextUsage { .. }
+            | ChatAppMsg::ClearHistory
+            | ChatAppMsg::ToggleMessages
+            | ChatAppMsg::OpenInteraction { .. }
+            | ChatAppMsg::CloseInteraction { .. }
+            | ChatAppMsg::LoadHistory(_)
+            | ChatAppMsg::PrecognitionResult { .. }
+            | ChatAppMsg::EnrichedMessage { .. }
+            | ChatAppMsg::ExecuteSlashCommand(_)
             | ChatAppMsg::ExportSession(_)
-            | ChatAppMsg::ReloadPlugin(_) => Action::Continue,
+            | ChatAppMsg::ReloadPlugin(_)) => self.handle_ui_msg(msg),
         }
     }
 
@@ -825,6 +733,131 @@ impl OilChatApp {
             ChatAppMsg::SetThinkingBudget(_) => Action::Continue,
             ChatAppMsg::SetTemperature(_) => Action::Continue,
             ChatAppMsg::SetMaxTokens(_) => Action::Continue,
+            _ => Action::Continue,
+        }
+    }
+
+    fn handle_delegation_msg(&mut self, msg: ChatAppMsg) -> Action<ChatAppMsg> {
+        match msg {
+            ChatAppMsg::SubagentSpawned { id, prompt } => {
+                if !self.container_list.is_streaming() {
+                    self.container_list.mark_turn_active();
+                }
+                self.container_list
+                    .add_subagent(CachedSubagent::new(id, &prompt, "subagent"));
+                Action::Continue
+            }
+            ChatAppMsg::SubagentCompleted { id, summary } => {
+                self.container_list.update_subagent(&id, |s| {
+                    s.mark_completed(&summary);
+                });
+                Action::Continue
+            }
+            ChatAppMsg::SubagentFailed { id, error } => {
+                self.container_list.update_subagent(&id, |s| {
+                    s.mark_failed(&error);
+                });
+                Action::Continue
+            }
+            ChatAppMsg::DelegationSpawned {
+                id,
+                prompt,
+                target_agent,
+            } => {
+                if !self.container_list.is_streaming() {
+                    self.container_list.mark_turn_active();
+                }
+                let mut delegation = CachedSubagent::new(id, &prompt, "delegation");
+                delegation.target_agent = target_agent.clone();
+                self.container_list.add_delegation(delegation);
+                Action::Continue
+            }
+            ChatAppMsg::DelegationCompleted { id, summary } => {
+                self.container_list.update_delegation(&id, |d| {
+                    d.mark_completed(&summary);
+                });
+                Action::Continue
+            }
+            ChatAppMsg::DelegationFailed { id, error } => {
+                self.container_list.update_delegation(&id, |d| {
+                    d.mark_failed(&error);
+                });
+                Action::Continue
+            }
+            _ => Action::Continue,
+        }
+    }
+
+    fn handle_ui_msg(&mut self, msg: ChatAppMsg) -> Action<ChatAppMsg> {
+        match msg {
+            ChatAppMsg::QueueMessage(content) => {
+                if self.is_streaming() {
+                    self.message_queue.deferred_messages.push_back(content);
+                    let count = self.message_queue.deferred_messages.len();
+                    self.add_notification(crucible_core::types::Notification::toast(format!(
+                        "{} message{} queued",
+                        count,
+                        if count == 1 { "" } else { "s" }
+                    )));
+                    Action::Continue
+                } else {
+                    self.submit_user_message(content.clone());
+                    Action::Send(ChatAppMsg::UserMessage(content))
+                }
+            }
+            ChatAppMsg::Error(msg) => {
+                self.notification_area
+                    .add(crucible_core::types::Notification::warning(msg));
+                self.container_list.cancel_streaming();
+                Action::Continue
+            }
+            ChatAppMsg::Status(status) => {
+                self.status = status;
+                Action::Continue
+            }
+            ChatAppMsg::ModeChanged(mode) => {
+                self.mode = ChatMode::parse(&mode);
+                Action::Continue
+            }
+            ChatAppMsg::ContextUsage { used, total } => {
+                self.context_used = used;
+                self.context_total = total;
+                Action::Continue
+            }
+            ChatAppMsg::ClearHistory => Action::Continue,
+            ChatAppMsg::ToggleMessages => {
+                self.notification_area.toggle();
+                Action::Continue
+            }
+            ChatAppMsg::OpenInteraction {
+                request_id,
+                request,
+            } => self.open_interaction(request_id, request),
+            ChatAppMsg::CloseInteraction {
+                request_id: _,
+                response: _,
+            } => {
+                // Response handling will be implemented in a later task
+                self.close_interaction();
+                Action::Continue
+            }
+            ChatAppMsg::LoadHistory(items) => {
+                self.load_previous_messages(items);
+                Action::Continue
+            }
+            ChatAppMsg::PrecognitionResult { notes_count } => {
+                if notes_count > 0 {
+                    self.add_system_message(format!("📎 Found {} relevant notes", notes_count));
+                }
+                Action::Continue
+            }
+            ChatAppMsg::EnrichedMessage { .. } => {
+                // Handled by the runner — starts agent stream with enriched content
+                Action::Continue
+            }
+            ChatAppMsg::ExecuteSlashCommand(_)
+            | ChatAppMsg::ExportSession(_)
+            | ChatAppMsg::ReloadPlugin(_) => Action::Continue,
             _ => Action::Continue,
         }
     }
