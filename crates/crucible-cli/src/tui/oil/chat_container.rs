@@ -189,11 +189,13 @@ impl ChatContainer {
                 blocks,
                 thinking,
             } => render_assistant_blocks_with_graduation(
-                id,
-                blocks,
-                thinking.as_ref(),
-                params.is_complete,
-                params.is_continuation,
+                &RenderBlocksParams {
+                    container_id: id,
+                    blocks,
+                    thinking: thinking.as_ref(),
+                    complete: params.is_complete,
+                    is_continuation: params.is_continuation,
+                },
                 &params.render_state,
             ),
 
@@ -252,6 +254,19 @@ impl ChatContainer {
         }
     }
 }
+/// Parameters for rendering assistant text blocks with graduation support.
+///
+/// Bundles the parameters needed by `render_assistant_blocks_with_graduation`
+/// to reduce function signature complexity.
+#[derive(Debug, Clone)]
+struct RenderBlocksParams<'a> {
+    pub container_id: &'a str,
+    pub blocks: &'a [String],
+    pub thinking: Option<&'a ThinkingBlock>,
+    pub complete: bool,
+    pub is_continuation: bool,
+}
+
 
 /// Render assistant text blocks with graduation support.
 ///
@@ -261,18 +276,14 @@ impl ChatContainer {
 /// If `is_continuation` is true, no bullet is shown (it's a continuation after a tool call).
 #[allow(clippy::too_many_arguments)]
 fn render_assistant_blocks_with_graduation(
-    container_id: &str,
-    blocks: &[String],
-    thinking: Option<&ThinkingBlock>,
-    complete: bool,
-    is_continuation: bool,
+    params: &RenderBlocksParams,
     render_state: &RenderState,
 ) -> Node {
     let mut nodes = Vec::new();
 
     // Render thinking block if present and enabled
     if render_state.show_thinking {
-        if let Some(tb) = thinking {
+        if let Some(tb) = params.thinking {
             let thinking_node =
                 render_thinking_block(&tb.content, tb.token_count, render_state.width());
             let thinking_with_margin = thinking_node.with_margin(Padding {
@@ -281,7 +292,7 @@ fn render_assistant_blocks_with_graduation(
             });
             // Thinking gets its own scrollback key
             nodes.push(scrollback(
-                format!("{}-thinking", container_id),
+                format!("{}-thinking", params.container_id),
                 [thinking_with_margin],
             ));
         }
@@ -290,15 +301,15 @@ fn render_assistant_blocks_with_graduation(
     // Determine how many blocks are "complete" (can graduate)
     // If streaming (!complete), all but the last block are complete
     // If complete, all blocks are complete
-    let complete_block_count = if complete || blocks.is_empty() {
-        blocks.len()
+    let complete_block_count = if params.complete || params.blocks.is_empty() {
+        params.blocks.len()
     } else {
-        blocks.len().saturating_sub(1)
+        params.blocks.len().saturating_sub(1)
     };
 
     // Show spinner when streaming and no text yet
-    if !complete && blocks.is_empty() {
-        let spinner_node = if thinking.is_some() && render_state.show_thinking {
+    if !params.complete && params.blocks.is_empty() {
+        let spinner_node = if params.thinking.is_some() && render_state.show_thinking {
             // Thinking is visible, show plain spinner below it
             row([text(" "), spinner(None, render_state.spinner_frame)])
         } else {
@@ -312,7 +323,7 @@ fn render_assistant_blocks_with_graduation(
     }
 
     // Render text blocks
-    for (i, block) in blocks.iter().enumerate() {
+    for (i, block) in params.blocks.iter().enumerate() {
         // Skip empty blocks
         if block.is_empty() {
             continue;
@@ -320,7 +331,7 @@ fn render_assistant_blocks_with_graduation(
 
         // Use continuation margins (no bullet) if this is a continuation response
         // or if this is a subsequent block within the response
-        let margins = if is_continuation || i > 0 || thinking.is_some() {
+        let margins = if params.is_continuation || i > 0 || params.thinking.is_some() {
             Margins::assistant_continuation()
         } else {
             Margins::assistant()
@@ -342,7 +353,7 @@ fn render_assistant_blocks_with_graduation(
         // Wrap completed blocks in scrollback for graduation
         if i < complete_block_count {
             nodes.push(scrollback(
-                format!("{}-block-{}", container_id, i),
+                format!("{}-block-{}", params.container_id, i),
                 [block_node],
             ));
         } else {
@@ -352,11 +363,12 @@ fn render_assistant_blocks_with_graduation(
     }
 
     // Show spinner after text blocks while still streaming
-    if !complete && !blocks.is_empty() {
+    if !params.complete && !params.blocks.is_empty() {
         nodes.push(row([text(" "), spinner(None, render_state.spinner_frame)]));
     }
 
     col(nodes)
+
 }
 
 /// Render a group of tool calls compactly.
