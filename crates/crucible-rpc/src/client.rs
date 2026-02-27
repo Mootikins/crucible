@@ -980,6 +980,48 @@ impl DaemonClient {
     }
 
     // =========================================================================
+    // MCP Server RPC Methods
+    // =========================================================================
+
+    /// Start the daemon-managed MCP server.
+    ///
+    /// Spawns an MCP server exposing Crucible's tools for the given kiln.
+    /// Supports SSE (default) and stdio transports.
+    pub async fn mcp_start(
+        &self,
+        kiln_path: &str,
+        transport: Option<&str>,
+        port: Option<u16>,
+        no_just: bool,
+        just_dir: Option<&str>,
+    ) -> Result<serde_json::Value> {
+        let mut params = serde_json::json!({
+            "kiln_path": kiln_path,
+            "no_just": no_just,
+        });
+        if let Some(t) = transport {
+            params["transport"] = serde_json::json!(t);
+        }
+        if let Some(p) = port {
+            params["port"] = serde_json::json!(p);
+        }
+        if let Some(d) = just_dir {
+            params["just_dir"] = serde_json::json!(d);
+        }
+        self.call("mcp.start", params).await
+    }
+
+    /// Stop the daemon-managed MCP server.
+    pub async fn mcp_stop(&self) -> Result<serde_json::Value> {
+        self.call("mcp.stop", serde_json::json!({})).await
+    }
+
+    /// Get the status of the daemon-managed MCP server.
+    pub async fn mcp_status(&self) -> Result<serde_json::Value> {
+        self.call("mcp.status", serde_json::json!({})).await
+    }
+
+    // =========================================================================
     // Session RPC Methods
     // =========================================================================
 
