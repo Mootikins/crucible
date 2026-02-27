@@ -739,109 +739,7 @@ impl SessionEvent {
     ///
     /// This is used by the EventBus for glob pattern matching against handlers.
     pub fn identifier(&self) -> String {
-        match self {
-            Self::MessageReceived { participant_id, .. } => format!("message:{}", participant_id),
-            Self::AgentResponded { .. } => "agent:responded".into(),
-            Self::AgentThinking { .. } => "agent:thinking".into(),
-            Self::PreToolCall { name, .. } => format!("pre:tool:{}", name),
-            Self::PreParse { path, .. } => format!("pre:parse:{}", path.display()),
-            Self::PreLlmCall { model, .. } => format!("pre:llm:{}", model),
-            Self::PrecognitionComplete { .. } => "precognition:complete".into(),
-            Self::ClassificationRequired { kiln_path, .. } => {
-                format!("classification:required:{}", kiln_path.display())
-            }
-            Self::AwaitingInput { input_type, .. } => format!("await:{}", input_type),
-            Self::InteractionRequested {
-                request_id,
-                request,
-            } => {
-                format!("interaction:{}:{}", request.kind(), request_id)
-            }
-            Self::InteractionCompleted { request_id, .. } => {
-                format!("interaction:completed:{}", request_id)
-            }
-            Self::ToolCalled { name, .. } => name.clone(),
-            Self::ToolCompleted { name, .. } => name.clone(),
-            Self::SessionStarted { config, .. } => format!("session:{}", config.session_id),
-            Self::SessionCompacted { .. } => "session:compacted".into(),
-            Self::SessionEnded { .. } => "session:ended".into(),
-            Self::SessionStateChanged { session_id, .. } => {
-                format!("session:state_changed:{}", session_id)
-            }
-            Self::SessionPaused { session_id, .. } => format!("session:paused:{}", session_id),
-            Self::SessionResumed { session_id, .. } => format!("session:resumed:{}", session_id),
-            Self::SubagentSpawned { id, .. } => format!("subagent:spawned:{}", id),
-            Self::SubagentCompleted { id, .. } => format!("subagent:completed:{}", id),
-            Self::SubagentFailed { id, .. } => format!("subagent:failed:{}", id),
-            Self::DelegationSpawned { delegation_id, .. } => {
-                format!("delegation:spawned:{}", delegation_id)
-            }
-            Self::DelegationCompleted { delegation_id, .. } => {
-                format!("delegation:completed:{}", delegation_id)
-            }
-            Self::DelegationFailed { delegation_id, .. } => {
-                format!("delegation:failed:{}", delegation_id)
-            }
-            Self::BashTaskSpawned { id, .. } => format!("bash:spawned:{}", id),
-            Self::BashTaskCompleted { id, .. } => format!("bash:completed:{}", id),
-            Self::BashTaskFailed { id, .. } => format!("bash:failed:{}", id),
-            Self::BackgroundTaskCompleted { id, kind, .. } => format!("background:{}:{}", kind, id),
-            Self::TextDelta { seq, .. } => format!("streaming:delta:{}", seq),
-            Self::TerminalOutput {
-                session_id, stream, ..
-            } => format!("terminal:{}:{}", session_id, stream),
-            Self::FileChanged { path, .. } => path.display().to_string(),
-            Self::FileDeleted { path, .. } => path.display().to_string(),
-            Self::FileMoved { to, .. } => to.display().to_string(),
-            Self::NoteParsed { path, .. } => path.display().to_string(),
-            Self::NoteCreated { path, .. } => path.display().to_string(),
-            Self::NoteModified { path, .. } => path.display().to_string(),
-            Self::NoteDeleted { path, .. } => path.display().to_string(),
-            Self::EntityStored { entity_id, .. } => entity_id.clone(),
-            Self::EntityDeleted { entity_id, .. } => entity_id.clone(),
-            Self::BlocksUpdated { entity_id, .. } => entity_id.clone(),
-            Self::RelationStored { from_id, to_id, .. } => format!("{}:{}", from_id, to_id),
-            Self::RelationDeleted { from_id, to_id, .. } => format!("{}:{}", from_id, to_id),
-            Self::TagAssociated { entity_id, tag } => format!("{}#{}", entity_id, tag),
-            Self::EmbeddingRequested {
-                entity_id,
-                block_id,
-                ..
-            } => {
-                if let Some(block) = block_id {
-                    format!("{}#{}", entity_id, block)
-                } else {
-                    entity_id.clone()
-                }
-            }
-            Self::EmbeddingStored {
-                entity_id,
-                block_id,
-                ..
-            } => {
-                if let Some(block) = block_id {
-                    format!("{}#{}", entity_id, block)
-                } else {
-                    entity_id.clone()
-                }
-            }
-            Self::EmbeddingFailed {
-                entity_id,
-                block_id,
-                ..
-            } => {
-                if let Some(block) = block_id {
-                    format!("{}#{}", entity_id, block)
-                } else {
-                    entity_id.clone()
-                }
-            }
-            Self::EmbeddingBatchComplete { entity_id, .. } => entity_id.clone(),
-            Self::McpAttached { server, .. } => server.clone(),
-            Self::ToolDiscovered { name, .. } => name.clone(),
-            Self::Custom { name, .. } => name.clone(),
-            Self::PostLlmCall { model, .. } => format!("post:llm:{}", model),
-        }
+        identifier_for_event(self)
     }
 
     /// Check if this is a tool-related event.
@@ -1501,130 +1399,7 @@ impl SessionEvent {
     /// assert_eq!(payload, Some("Hello, world!".to_string()));
     /// ```
     pub fn payload(&self, max_len: usize) -> Option<String> {
-        let payload = match self {
-            Self::MessageReceived { content, .. } => Some(content.clone()),
-            Self::AgentResponded { content, .. } => Some(content.clone()),
-            Self::AgentThinking { thought } => Some(thought.clone()),
-            Self::ToolCalled { args, .. } => Some(args.to_string()),
-            Self::ToolCompleted { result, .. } => Some(result.clone()),
-            Self::SessionCompacted { summary, .. } => Some(summary.clone()),
-            Self::SessionEnded { reason } => Some(reason.clone()),
-            Self::SubagentSpawned { prompt, .. } => Some(prompt.clone()),
-            Self::SubagentCompleted { result, .. } => Some(result.clone()),
-            Self::SubagentFailed { error, .. } => Some(error.clone()),
-            Self::DelegationSpawned { prompt, .. } => Some(prompt.clone()),
-            Self::DelegationCompleted { result_summary, .. } => Some(result_summary.clone()),
-            Self::DelegationFailed { error, .. } => Some(error.clone()),
-            Self::BashTaskSpawned { command, .. } => Some(command.clone()),
-            Self::BashTaskCompleted { output, .. } => Some(output.clone()),
-            Self::BashTaskFailed { error, .. } => Some(error.clone()),
-            Self::BackgroundTaskCompleted { summary, .. } => Some(summary.clone()),
-            Self::Custom { payload, .. } => Some(payload.to_string()),
-            Self::SessionStarted { .. } => None,
-            Self::TextDelta { delta, .. } => Some(delta.clone()),
-            Self::NoteParsed { path, .. } => Some(path.display().to_string()),
-            Self::NoteCreated { path, title } => Some(format!(
-                "{}: {}",
-                path.display(),
-                title.as_deref().unwrap_or("(none)")
-            )),
-            Self::NoteModified { path, change_type } => {
-                Some(format!("{}: {:?}", path.display(), change_type))
-            }
-            Self::NoteDeleted { path, existed } => {
-                Some(format!("{}: existed={}", path.display(), existed))
-            }
-            Self::McpAttached { server, tool_count } => {
-                Some(format!("{}: {} tools", server, tool_count))
-            }
-            Self::ToolDiscovered {
-                name,
-                source,
-                schema,
-            } => {
-                let schema_len = schema.as_ref().map(|s| s.to_string().len()).unwrap_or(0);
-                Some(format!("{}: {:?}, schema_len={}", name, source, schema_len))
-            }
-            Self::FileChanged { path, kind } => Some(format!("{}: {:?}", path.display(), kind)),
-            Self::FileDeleted { path } => Some(path.display().to_string()),
-            Self::FileMoved { from, to } => Some(format!("{} -> {}", from.display(), to.display())),
-            Self::EntityStored {
-                entity_id,
-                entity_type,
-            } => Some(format!("{}: {:?}", entity_id, entity_type)),
-            Self::EntityDeleted {
-                entity_id,
-                entity_type,
-            } => Some(format!("{}: {:?}", entity_id, entity_type)),
-            Self::BlocksUpdated {
-                entity_id,
-                block_count,
-            } => Some(format!("{}: {} blocks", entity_id, block_count)),
-            Self::RelationStored {
-                from_id,
-                to_id,
-                relation_type,
-            } => Some(format!("{} -> {} ({})", from_id, to_id, relation_type)),
-            Self::RelationDeleted {
-                from_id,
-                to_id,
-                relation_type,
-            } => Some(format!("{} -> {} ({})", from_id, to_id, relation_type)),
-            Self::TagAssociated { entity_id, tag } => Some(format!("{}#{}", entity_id, tag)),
-            Self::EmbeddingRequested {
-                entity_id,
-                priority,
-                ..
-            } => Some(format!("{}: {:?}", entity_id, priority)),
-            Self::EmbeddingStored {
-                entity_id,
-                dimensions,
-                model,
-                ..
-            } => Some(format!(
-                "{}: {} dims, model={}",
-                entity_id, dimensions, model
-            )),
-            Self::EmbeddingFailed {
-                entity_id, error, ..
-            } => Some(format!("{}: {}", entity_id, error)),
-            Self::EmbeddingBatchComplete {
-                entity_id,
-                count,
-                duration_ms,
-            } => Some(format!(
-                "{}: {} embeddings in {}ms",
-                entity_id, count, duration_ms
-            )),
-            Self::PreToolCall { args, .. } => Some(args.to_string()),
-            Self::PreParse { path } => Some(path.display().to_string()),
-            Self::PreLlmCall { prompt, .. } => Some(prompt.clone()),
-            Self::PostLlmCall {
-                response_summary, ..
-            } => Some(response_summary.clone()),
-            Self::AwaitingInput { context, .. } => context.clone(),
-            Self::InteractionRequested { .. } => None,
-            Self::InteractionCompleted { .. } => None,
-            Self::SessionStateChanged {
-                session_id,
-                state,
-                previous_state,
-            } => Some(format!(
-                "session={}, state={:?}, previous={:?}",
-                session_id, state, previous_state
-            )),
-            Self::SessionPaused { session_id } => Some(format!("session={}", session_id)),
-            Self::SessionResumed { session_id } => Some(format!("session={}", session_id)),
-            Self::TerminalOutput { content_base64, .. } => Some(content_base64.clone()),
-            Self::PrecognitionComplete {
-                notes_count,
-                query_summary,
-                ..
-            } => Some(format!("notes={}, query={}", notes_count, query_summary)),
-            Self::ClassificationRequired { kiln_path } => Some(kiln_path.display().to_string()),
-        };
-
-        payload.map(|p| truncate(&p, max_len).to_string())
+        payload_for_event(self).map(|p| truncate(&p, max_len).to_string())
     }
 
     /// Estimate the number of tokens in this event.
@@ -1651,83 +1426,352 @@ impl SessionEvent {
     /// assert!(tokens > 10); // At least structural overhead
     /// ```
     pub fn estimate_tokens(&self) -> usize {
-        let content_len = match self {
-            Self::MessageReceived { content, .. } => content.len(),
-            Self::AgentResponded { content, .. } => content.len(),
-            Self::AgentThinking { thought } => thought.len(),
-            Self::ToolCalled { args, .. } => args.to_string().len(),
-            Self::ToolCompleted { result, error, .. } => {
-                result.len() + error.as_ref().map(|e| e.len()).unwrap_or(0)
-            }
-            Self::SessionCompacted { summary, .. } => summary.len(),
-            Self::SessionEnded { reason } => reason.len(),
-            Self::SubagentSpawned { prompt, .. } => prompt.len(),
-            Self::SubagentCompleted { result, .. } => result.len(),
-            Self::SubagentFailed { error, .. } => error.len(),
-            Self::DelegationSpawned { prompt, .. } => prompt.len(),
-            Self::DelegationCompleted { result_summary, .. } => result_summary.len(),
-            Self::DelegationFailed { error, .. } => error.len(),
-            Self::BashTaskSpawned { command, .. } => command.len(),
-            Self::BashTaskCompleted { output, .. } => output.len(),
-            Self::BashTaskFailed { error, .. } => error.len(),
-            Self::BackgroundTaskCompleted { summary, .. } => summary.len(),
-            Self::Custom { payload, .. } => payload.to_string().len(),
-            Self::SessionStarted { .. } => 100, // Fixed overhead
-            // Streaming events
-            Self::TextDelta { delta, .. } => delta.len(),
-            // Note events (small metadata)
-            Self::NoteParsed { .. } => 50,
-            Self::NoteCreated { title, .. } => title.as_ref().map(|t| t.len()).unwrap_or(0) + 50,
-            Self::NoteModified { .. } => 50,
-            Self::NoteDeleted { .. } => 50,
-            // MCP/Tool events
-            Self::McpAttached { server, .. } => server.len() + 50,
-            Self::ToolDiscovered { name, schema, .. } => {
-                name.len() + schema.as_ref().map(|s| s.to_string().len()).unwrap_or(0)
-            }
-            // File events (small metadata)
-            Self::FileChanged { .. } => 50,
-            Self::FileDeleted { .. } => 50,
-            Self::FileMoved { .. } => 50,
-            // Storage events (small metadata)
-            Self::EntityStored { .. } => 50,
-            Self::EntityDeleted { .. } => 50,
-            Self::BlocksUpdated { .. } => 50,
-            Self::RelationStored { .. } => 50,
-            Self::RelationDeleted { .. } => 50,
-            Self::TagAssociated { tag, .. } => tag.len() + 50,
-            // Embedding events (small metadata)
-            Self::EmbeddingRequested { .. } => 50,
-            Self::EmbeddingStored { .. } => 50,
-            Self::EmbeddingFailed { error, .. } => error.len() + 50,
-            Self::EmbeddingBatchComplete { .. } => 50,
-            // Pre-events (interception points)
-            Self::PreToolCall { name, .. } => name.len() + 50,
-            Self::PreParse { .. } => 50,
-            Self::PreLlmCall { prompt, .. } => prompt.len(),
-            Self::PostLlmCall {
-                response_summary, ..
-            } => response_summary.len(),
-            Self::AwaitingInput { context, .. } => context.as_ref().map_or(20, |c| c.len() + 20),
-            // Interaction events
-            Self::InteractionRequested { .. } => 100, // Request metadata
-            Self::InteractionCompleted { .. } => 50,  // Response metadata
-            // Daemon protocol events
-            Self::SessionStateChanged { .. } => 50,
-            Self::SessionPaused { .. } => 50,
-            Self::SessionResumed { .. } => 50,
-            Self::TerminalOutput { content_base64, .. } => content_base64.len(),
-            Self::PrecognitionComplete {
-                notes_count,
-                query_summary,
-                ..
-            } => notes_count.to_string().len() + query_summary.len() + 50,
-            Self::ClassificationRequired { .. } => 50,
-        };
-
+        let content_len = estimate_content_len(self);
         // Rough estimate: ~4 characters per token
         // Add fixed overhead for event structure
         (content_len / 4).max(1) + 10
+    }
+}
+
+/// Compute the identifier string for a session event.
+///
+/// Used for glob pattern matching against event handlers.
+fn identifier_for_event(event: &SessionEvent) -> String {
+    match event {
+        SessionEvent::MessageReceived { participant_id, .. } => format!("message:{}", participant_id),
+        SessionEvent::AgentResponded { .. } => "agent:responded".into(),
+        SessionEvent::AgentThinking { .. } => "agent:thinking".into(),
+        SessionEvent::PreToolCall { name, .. } => format!("pre:tool:{}", name),
+        SessionEvent::PreParse { path, .. } => format!("pre:parse:{}", path.display()),
+        SessionEvent::PreLlmCall { model, .. } => format!("pre:llm:{}", model),
+        SessionEvent::PrecognitionComplete { .. } => "precognition:complete".into(),
+        SessionEvent::ClassificationRequired { kiln_path, .. } => {
+            format!("classification:required:{}", kiln_path.display())
+        }
+        SessionEvent::AwaitingInput { input_type, .. } => format!("await:{}", input_type),
+        SessionEvent::InteractionRequested {
+            request_id,
+            request,
+        } => {
+            format!("interaction:{}:{}", request.kind(), request_id)
+        }
+        SessionEvent::InteractionCompleted { request_id, .. } => {
+            format!("interaction:completed:{}", request_id)
+        }
+        SessionEvent::ToolCalled { name, .. } => name.clone(),
+        SessionEvent::ToolCompleted { name, .. } => name.clone(),
+        SessionEvent::SessionStarted { config, .. } => format!("session:{}", config.session_id),
+        SessionEvent::SessionCompacted { .. } => "session:compacted".into(),
+        SessionEvent::SessionEnded { .. } => "session:ended".into(),
+        SessionEvent::SessionStateChanged { session_id, .. } => {
+            format!("session:state_changed:{}", session_id)
+        }
+        SessionEvent::SessionPaused { session_id, .. } => {
+            format!("session:paused:{}", session_id)
+        }
+        SessionEvent::SessionResumed { session_id, .. } => {
+            format!("session:resumed:{}", session_id)
+        }
+        SessionEvent::SubagentSpawned { id, .. } => format!("subagent:spawned:{}", id),
+        SessionEvent::SubagentCompleted { id, .. } => format!("subagent:completed:{}", id),
+        SessionEvent::SubagentFailed { id, .. } => format!("subagent:failed:{}", id),
+        SessionEvent::DelegationSpawned { delegation_id, .. } => {
+            format!("delegation:spawned:{}", delegation_id)
+        }
+        SessionEvent::DelegationCompleted { delegation_id, .. } => {
+            format!("delegation:completed:{}", delegation_id)
+        }
+        SessionEvent::DelegationFailed { delegation_id, .. } => {
+            format!("delegation:failed:{}", delegation_id)
+        }
+        SessionEvent::BashTaskSpawned { id, .. } => format!("bash:spawned:{}", id),
+        SessionEvent::BashTaskCompleted { id, .. } => format!("bash:completed:{}", id),
+        SessionEvent::BashTaskFailed { id, .. } => format!("bash:failed:{}", id),
+        SessionEvent::BackgroundTaskCompleted { id, kind, .. } => {
+            format!("background:{}:{}", kind, id)
+        }
+        SessionEvent::TextDelta { seq, .. } => format!("streaming:delta:{}", seq),
+        SessionEvent::TerminalOutput {
+            session_id, stream, ..
+        } => format!("terminal:{}:{}", session_id, stream),
+        SessionEvent::FileChanged { path, .. } => path.display().to_string(),
+        SessionEvent::FileDeleted { path, .. } => path.display().to_string(),
+        SessionEvent::FileMoved { to, .. } => to.display().to_string(),
+        SessionEvent::NoteParsed { path, .. } => path.display().to_string(),
+        SessionEvent::NoteCreated { path, .. } => path.display().to_string(),
+        SessionEvent::NoteModified { path, .. } => path.display().to_string(),
+        SessionEvent::NoteDeleted { path, .. } => path.display().to_string(),
+        SessionEvent::EntityStored { entity_id, .. } => entity_id.clone(),
+        SessionEvent::EntityDeleted { entity_id, .. } => entity_id.clone(),
+        SessionEvent::BlocksUpdated { entity_id, .. } => entity_id.clone(),
+        SessionEvent::RelationStored { from_id, to_id, .. } => format!("{}:{}", from_id, to_id),
+        SessionEvent::RelationDeleted { from_id, to_id, .. } => {
+            format!("{}:{}", from_id, to_id)
+        }
+        SessionEvent::TagAssociated { entity_id, tag } => format!("{}#{}", entity_id, tag),
+        SessionEvent::EmbeddingRequested {
+            entity_id,
+            block_id,
+            ..
+        } => {
+            if let Some(block) = block_id {
+                format!("{}#{}", entity_id, block)
+            } else {
+                entity_id.clone()
+            }
+        }
+        SessionEvent::EmbeddingStored {
+            entity_id,
+            block_id,
+            ..
+        } => {
+            if let Some(block) = block_id {
+                format!("{}#{}", entity_id, block)
+            } else {
+                entity_id.clone()
+            }
+        }
+        SessionEvent::EmbeddingFailed {
+            entity_id,
+            block_id,
+            ..
+        } => {
+            if let Some(block) = block_id {
+                format!("{}#{}", entity_id, block)
+            } else {
+                entity_id.clone()
+            }
+        }
+        SessionEvent::EmbeddingBatchComplete { entity_id, .. } => entity_id.clone(),
+        SessionEvent::McpAttached { server, .. } => server.clone(),
+        SessionEvent::ToolDiscovered { name, .. } => name.clone(),
+        SessionEvent::Custom { name, .. } => name.clone(),
+        SessionEvent::PostLlmCall { model, .. } => format!("post:llm:{}", model),
+    }
+}
+
+/// Extract the raw payload content from a session event.
+///
+/// Returns the main content or data associated with the event before truncation.
+fn payload_for_event(event: &SessionEvent) -> Option<String> {
+    match event {
+        SessionEvent::MessageReceived { content, .. } => Some(content.clone()),
+        SessionEvent::AgentResponded { content, .. } => Some(content.clone()),
+        SessionEvent::AgentThinking { thought } => Some(thought.clone()),
+        SessionEvent::ToolCalled { args, .. } => Some(args.to_string()),
+        SessionEvent::ToolCompleted { result, .. } => Some(result.clone()),
+        SessionEvent::SessionCompacted { summary, .. } => Some(summary.clone()),
+        SessionEvent::SessionEnded { reason } => Some(reason.clone()),
+        SessionEvent::SubagentSpawned { prompt, .. } => Some(prompt.clone()),
+        SessionEvent::SubagentCompleted { result, .. } => Some(result.clone()),
+        SessionEvent::SubagentFailed { error, .. } => Some(error.clone()),
+        SessionEvent::DelegationSpawned { prompt, .. } => Some(prompt.clone()),
+        SessionEvent::DelegationCompleted { result_summary, .. } => {
+            Some(result_summary.clone())
+        }
+        SessionEvent::DelegationFailed { error, .. } => Some(error.clone()),
+        SessionEvent::BashTaskSpawned { command, .. } => Some(command.clone()),
+        SessionEvent::BashTaskCompleted { output, .. } => Some(output.clone()),
+        SessionEvent::BashTaskFailed { error, .. } => Some(error.clone()),
+        SessionEvent::BackgroundTaskCompleted { summary, .. } => Some(summary.clone()),
+        SessionEvent::Custom { payload, .. } => Some(payload.to_string()),
+        SessionEvent::SessionStarted { .. } => None,
+        SessionEvent::TextDelta { delta, .. } => Some(delta.clone()),
+        SessionEvent::NoteParsed { path, .. } => Some(path.display().to_string()),
+        SessionEvent::NoteCreated { path, title } => Some(format!(
+            "{}: {}",
+            path.display(),
+            title.as_deref().unwrap_or("(none)")
+        )),
+        SessionEvent::NoteModified { path, change_type } => {
+            Some(format!("{}: {:?}", path.display(), change_type))
+        }
+        SessionEvent::NoteDeleted { path, existed } => {
+            Some(format!("{}: existed={}", path.display(), existed))
+        }
+        SessionEvent::McpAttached { server, tool_count } => {
+            Some(format!("{}: {} tools", server, tool_count))
+        }
+        SessionEvent::ToolDiscovered {
+            name,
+            source,
+            schema,
+        } => {
+            let schema_len = schema.as_ref().map(|s| s.to_string().len()).unwrap_or(0);
+            Some(format!("{}: {:?}, schema_len={}", name, source, schema_len))
+        }
+        SessionEvent::FileChanged { path, kind } => {
+            Some(format!("{}: {:?}", path.display(), kind))
+        }
+        SessionEvent::FileDeleted { path } => Some(path.display().to_string()),
+        SessionEvent::FileMoved { from, to } => {
+            Some(format!("{} -> {}", from.display(), to.display()))
+        }
+        SessionEvent::EntityStored {
+            entity_id,
+            entity_type,
+        } => Some(format!("{}: {:?}", entity_id, entity_type)),
+        SessionEvent::EntityDeleted {
+            entity_id,
+            entity_type,
+        } => Some(format!("{}: {:?}", entity_id, entity_type)),
+        SessionEvent::BlocksUpdated {
+            entity_id,
+            block_count,
+        } => Some(format!("{}: {} blocks", entity_id, block_count)),
+        SessionEvent::RelationStored {
+            from_id,
+            to_id,
+            relation_type,
+        } => Some(format!("{} -> {} ({})", from_id, to_id, relation_type)),
+        SessionEvent::RelationDeleted {
+            from_id,
+            to_id,
+            relation_type,
+        } => Some(format!("{} -> {} ({})", from_id, to_id, relation_type)),
+        SessionEvent::TagAssociated { entity_id, tag } => {
+            Some(format!("{}#{}", entity_id, tag))
+        }
+        SessionEvent::EmbeddingRequested {
+            entity_id,
+            priority,
+            ..
+        } => Some(format!("{}: {:?}", entity_id, priority)),
+        SessionEvent::EmbeddingStored {
+            entity_id,
+            dimensions,
+            model,
+            ..
+        } => Some(format!(
+            "{}: {} dims, model={}",
+            entity_id, dimensions, model
+        )),
+        SessionEvent::EmbeddingFailed {
+            entity_id, error, ..
+        } => Some(format!("{}: {}", entity_id, error)),
+        SessionEvent::EmbeddingBatchComplete {
+            entity_id,
+            count,
+            duration_ms,
+        } => Some(format!(
+            "{}: {} embeddings in {}ms",
+            entity_id, count, duration_ms
+        )),
+        SessionEvent::PreToolCall { args, .. } => Some(args.to_string()),
+        SessionEvent::PreParse { path } => Some(path.display().to_string()),
+        SessionEvent::PreLlmCall { prompt, .. } => Some(prompt.clone()),
+        SessionEvent::PostLlmCall {
+            response_summary, ..
+        } => Some(response_summary.clone()),
+        SessionEvent::AwaitingInput { context, .. } => context.clone(),
+        SessionEvent::InteractionRequested { .. } => None,
+        SessionEvent::InteractionCompleted { .. } => None,
+        SessionEvent::SessionStateChanged {
+            session_id,
+            state,
+            previous_state,
+        } => Some(format!(
+            "session={}, state={:?}, previous={:?}",
+            session_id, state, previous_state
+        )),
+        SessionEvent::SessionPaused { session_id } => {
+            Some(format!("session={}", session_id))
+        }
+        SessionEvent::SessionResumed { session_id } => {
+            Some(format!("session={}", session_id))
+        }
+        SessionEvent::TerminalOutput { content_base64, .. } => Some(content_base64.clone()),
+        SessionEvent::PrecognitionComplete {
+            notes_count,
+            query_summary,
+            ..
+        } => Some(format!("notes={}, query={}", notes_count, query_summary)),
+        SessionEvent::ClassificationRequired { kiln_path } => {
+            Some(kiln_path.display().to_string())
+        }
+    }
+}
+
+/// Estimate the content length for token estimation.
+///
+/// Returns a character count representing the meaningful content size of the event.
+fn estimate_content_len(event: &SessionEvent) -> usize {
+    match event {
+        SessionEvent::MessageReceived { content, .. } => content.len(),
+        SessionEvent::AgentResponded { content, .. } => content.len(),
+        SessionEvent::AgentThinking { thought } => thought.len(),
+        SessionEvent::ToolCalled { args, .. } => args.to_string().len(),
+        SessionEvent::ToolCompleted { result, error, .. } => {
+            result.len() + error.as_ref().map(|e| e.len()).unwrap_or(0)
+        }
+        SessionEvent::SessionCompacted { summary, .. } => summary.len(),
+        SessionEvent::SessionEnded { reason } => reason.len(),
+        SessionEvent::SubagentSpawned { prompt, .. } => prompt.len(),
+        SessionEvent::SubagentCompleted { result, .. } => result.len(),
+        SessionEvent::SubagentFailed { error, .. } => error.len(),
+        SessionEvent::DelegationSpawned { prompt, .. } => prompt.len(),
+        SessionEvent::DelegationCompleted { result_summary, .. } => result_summary.len(),
+        SessionEvent::DelegationFailed { error, .. } => error.len(),
+        SessionEvent::BashTaskSpawned { command, .. } => command.len(),
+        SessionEvent::BashTaskCompleted { output, .. } => output.len(),
+        SessionEvent::BashTaskFailed { error, .. } => error.len(),
+        SessionEvent::BackgroundTaskCompleted { summary, .. } => summary.len(),
+        SessionEvent::Custom { payload, .. } => payload.to_string().len(),
+        SessionEvent::SessionStarted { .. } => 100, // Fixed overhead
+        // Streaming events
+        SessionEvent::TextDelta { delta, .. } => delta.len(),
+        // Note events (small metadata)
+        SessionEvent::NoteParsed { .. } => 50,
+        SessionEvent::NoteCreated { title, .. } => {
+            title.as_ref().map(|t| t.len()).unwrap_or(0) + 50
+        }
+        SessionEvent::NoteModified { .. } => 50,
+        SessionEvent::NoteDeleted { .. } => 50,
+        // MCP/Tool events
+        SessionEvent::McpAttached { server, .. } => server.len() + 50,
+        SessionEvent::ToolDiscovered { name, schema, .. } => {
+            name.len() + schema.as_ref().map(|s| s.to_string().len()).unwrap_or(0)
+        }
+        // File events (small metadata)
+        SessionEvent::FileChanged { .. } => 50,
+        SessionEvent::FileDeleted { .. } => 50,
+        SessionEvent::FileMoved { .. } => 50,
+        // Storage events (small metadata)
+        SessionEvent::EntityStored { .. } => 50,
+        SessionEvent::EntityDeleted { .. } => 50,
+        SessionEvent::BlocksUpdated { .. } => 50,
+        SessionEvent::RelationStored { .. } => 50,
+        SessionEvent::RelationDeleted { .. } => 50,
+        SessionEvent::TagAssociated { tag, .. } => tag.len() + 50,
+        // Embedding events (small metadata)
+        SessionEvent::EmbeddingRequested { .. } => 50,
+        SessionEvent::EmbeddingStored { .. } => 50,
+        SessionEvent::EmbeddingFailed { error, .. } => error.len() + 50,
+        SessionEvent::EmbeddingBatchComplete { .. } => 50,
+        // Pre-events (interception points)
+        SessionEvent::PreToolCall { name, .. } => name.len() + 50,
+        SessionEvent::PreParse { .. } => 50,
+        SessionEvent::PreLlmCall { prompt, .. } => prompt.len(),
+        SessionEvent::PostLlmCall {
+            response_summary, ..
+        } => response_summary.len(),
+        SessionEvent::AwaitingInput { context, .. } => {
+            context.as_ref().map_or(20, |c| c.len() + 20)
+        }
+        // Interaction events
+        SessionEvent::InteractionRequested { .. } => 100, // Request metadata
+        SessionEvent::InteractionCompleted { .. } => 50,  // Response metadata
+        // Daemon protocol events
+        SessionEvent::SessionStateChanged { .. } => 50,
+        SessionEvent::SessionPaused { .. } => 50,
+        SessionEvent::SessionResumed { .. } => 50,
+        SessionEvent::TerminalOutput { content_base64, .. } => content_base64.len(),
+        SessionEvent::PrecognitionComplete {
+            notes_count,
+            query_summary,
+            ..
+        } => notes_count.to_string().len() + query_summary.len() + 50,
+        SessionEvent::ClassificationRequired { .. } => 50,
     }
 }
 
