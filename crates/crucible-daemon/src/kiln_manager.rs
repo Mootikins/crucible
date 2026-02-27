@@ -563,27 +563,36 @@ async fn load_enrichment_config(kiln_path: &Path) -> Option<EmbeddingProviderCon
 ///
 /// Creates a pipeline with:
 /// - In-memory change detection
-/// - Enrichment disabled (parsing only for now - embeddings can be added later)
 /// - NoteStore from the storage handle
-///
-/// This allows the daemon to process files without requiring embedding configuration.
-fn create_pipeline(handle: &StorageHandle) -> Result<NotePipeline> {
+fn pipeline_config(enrichment_config: Option<&EmbeddingProviderConfig>) -> NotePipelineConfig {
+    NotePipelineConfig {
+        parser: ParserBackend::default(),
+        skip_enrichment: enrichment_config.is_none(),
+        force_reprocess: false,
+    }
+}
+
+async fn create_pipeline(
+    handle: &StorageHandle,
+    enrichment_config: Option<&EmbeddingProviderConfig>,
+) -> Result<NotePipeline> {
     // Change detection (in-memory)
     let change_detector = Arc::new(InMemoryChangeDetectionStore::new());
 
-    // Enrichment service with embeddings disabled
-    // TODO: Add embedding support with daemon configuration
-    let enrichment_service = crate::enrichment::create_default_enrichment_service(None)?;
+    let embedding_provider = if let Some(config) = enrichment_config {
+        info!("Kiln enrichment active: embedding provider configured");
+        Some(get_or_create_embedding_provider(config).await?)
+    } else {
+        info!("Kiln enrichment skipped (no config)");
+        None
+    };
+    let enrichment_service =
+        crate::enrichment::create_default_enrichment_service(embedding_provider)?;
 
     // Get NoteStore from handle
     let note_store = handle.as_note_store();
 
-    // Pipeline configuration - skip enrichment for now (parsing only)
-    let config = NotePipelineConfig {
-        parser: ParserBackend::default(),
-        skip_enrichment: true, // No embeddings until daemon has embedding config
-        force_reprocess: false,
-    };
+    let config = pipeline_config(enrichment_config);
 
     Ok(NotePipeline::with_config(
         change_detector,
@@ -646,6 +655,7 @@ fn discover_markdown_files(kiln_path: &Path) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_config::EmbeddingProviderConfig;
     use tempfile::TempDir;
 
     /// Helper to get a path that doesn't exist and works cross-platform
@@ -665,6 +675,18 @@ mod tests {
         assert!(EXCLUDED_DIRS.contains(&".obsidian"));
         assert!(EXCLUDED_DIRS.contains(&"node_modules"));
         assert!(EXCLUDED_DIRS.contains(&".trash"));
+    }
+
+    #[test]
+    fn pipeline_config_enables_enrichment_when_provider_configured() {
+        let config = pipeline_config(Some(&EmbeddingProviderConfig::mock(Some(384))));
+        assert!(!config.skip_enrichment);
+    }
+
+    #[test]
+    fn pipeline_config_skips_enrichment_when_provider_missing() {
+        let config = pipeline_config(None);
+        assert!(config.skip_enrichment);
     }
 
     #[tokio::test]
