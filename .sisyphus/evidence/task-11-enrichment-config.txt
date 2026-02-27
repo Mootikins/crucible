@@ -1,0 +1,24 @@
+warning: associated function `start_with_env` is never used
+  --> crates/crucible-daemon/tests/common/mod.rs:69:18
+   |
+18 | impl TestDaemon {
+   | --------------- associated function in this implementation
+...
+69 |     pub async fn start_with_env(env_vars: Vec<(&str, &str)>) -> Result<Self> {
+   |                  ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `crucible-daemon` (test "e2e") generated 1 warning
+warning: `crucible-daemon` (test "notification_rpc") generated 1 warning (1 duplicate)
+warning: `crucible-daemon` (test "replay_e2e") generated 1 warning (1 duplicate)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.24s
+────────────
+ Nextest run ID 591225db-9c37-4d5c-9774-441b4aaf8a59 with nextest profile: ci
+    Starting 4 tests across 14 binaries (608 tests skipped)
+        PASS [   0.006s] (1/4) crucible-daemon kiln_manager::tests::enrichment_config_wiring_malformed_toml_skips_gracefully
+        PASS [   0.006s] (2/4) crucible-daemon kiln_manager::tests::enrichment_config_wiring_no_config_skips_enrichment
+        PASS [   0.006s] (3/4) crucible-daemon kiln_manager::tests::enrichment_config_wiring_toml_without_enrichment_section_skips
+        PASS [   0.006s] (4/4) crucible-daemon kiln_manager::tests::enrichment_config_wiring_with_config_enables_enrichment
+────────────
+     Summary [   0.007s] 4 tests run: 4 passed, 608 skipped
