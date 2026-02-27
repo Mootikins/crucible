@@ -5,7 +5,7 @@
 //! Supports toggleable plan (read-only) and act (write-enabled) modes.
 
 use anyhow::Result;
-use crucible_lua::{ChannelSessionRpc, LuaExecutor, Session, SessionCommand};
+use crucible_rpc::{DaemonClient, LuaInitSessionRequest, LuaShutdownSessionRequest};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
@@ -423,37 +423,40 @@ async fn run_interactive_chat(
     });
     let kiln_root = config.kiln_path.clone();
 
-    let (session_cmd_tx, session_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<SessionCommand>();
-
-    let _lua_executor = if let Ok(mut executor) = LuaExecutor::new() {
-        if let Err(e) = executor.load_config(Some(&kiln_root)) {
-            warn!("Failed to load Lua config: {}", e);
-        } else {
-            debug!("Lua configuration loaded");
+    let lua_session_id = resume_session_id
+        .clone()
+        .unwrap_or_else(|| format!("chat-{}", chrono::Utc::now().format("%Y%m%d-%H%M%S")));
+    let lua_client = match DaemonClient::connect_or_start().await {
+        Ok(client) => Some(client),
+        Err(e) => {
+            warn!("Failed to connect to daemon for Lua init: {}", e);
+            None
         }
-
-        let session = Session::new("chat".to_string());
-        session.bind(Box::new(ChannelSessionRpc::new(session_cmd_tx)));
-        executor.session_manager().set_current(session.clone());
-
-        // Sync hooks from Lua and fire session_start hooks
-        if let Err(e) = executor.sync_session_start_hooks() {
-            warn!("Failed to sync session_start hooks: {}", e);
-        } else {
-            let hook_count = executor.session_start_hooks().len();
-            if let Err(e) = executor.fire_session_start_hooks(&session) {
-                warn!("Error firing session_start hooks: {}", e);
-            } else {
-                debug!("Fired {} session_start hooks", hook_count);
+    };
+    let lua_initialized = if let Some(client) = lua_client.as_ref() {
+        let init_params = LuaInitSessionRequest {
+            session_id: lua_session_id.clone(),
+            kiln_path: kiln_root.to_string_lossy().to_string(),
+            config: serde_json::Value::Null,
+        };
+        match client.lua_init_session(init_params).await {
+            Ok(response) => {
+                debug!(
+                    session_id = %response.session_id,
+                    commands = response.commands.len(),
+                    views = response.views.len(),
+                    "Initialized Lua session via daemon RPC"
+                );
+                true
+            }
+            Err(e) => {
+                warn!("Failed to initialize Lua session via daemon RPC: {}", e);
+                false
             }
         }
-
-        Some(executor)
     } else {
-        None
+        false
     };
-
-    runner = runner.with_session_command_receiver(session_cmd_rx);
 
     let (files, notes) = tokio::join!(
         tokio::task::spawn_blocking({
@@ -561,7 +564,20 @@ async fn run_interactive_chat(
         }
     };
 
-    runner.run_with_factory(&bridge, factory).await
+    let run_result = runner.run_with_factory(&bridge, factory).await;
+
+    if lua_initialized {
+        if let Some(client) = lua_client.as_ref() {
+            let shutdown_params = LuaShutdownSessionRequest {
+                session_id: lua_session_id,
+            };
+            if let Err(e) = client.lua_shutdown_session(shutdown_params).await {
+                warn!("Failed to shutdown Lua session via daemon RPC: {}", e);
+            }
+        }
+    }
+
+    run_result
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -736,8 +752,6 @@ async fn fetch_resume_history(
     session_id: &str,
     kiln_path: &std::path::Path,
 ) -> Result<Vec<ChatItem>> {
-    use crucible_rpc::DaemonClient;
-
     let client = DaemonClient::connect_or_start().await?;
     let result = client
         .session_resume_from_storage(session_id, kiln_path, None, None)
