@@ -1,8 +1,6 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use rig::completion::ToolDefinition;
-use rig::tool::Tool;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, Tool as McpTool};
 
@@ -15,18 +13,8 @@ use crate::notes::{
     UpdateNoteParams,
 };
 use crate::search::{PropertySearchParams, SemanticSearchParams, TextSearchParams};
+use crate::tool_modes::PLAN_TOOL_NAMES;
 
-/// Read-only tools available in "plan" mode.
-pub const PLAN_TOOL_NAMES: &[&str] = &[
-    "semantic_search",
-    "text_search",
-    "property_search",
-    "list_notes",
-    "read_note",
-    "read_metadata",
-    "get_kiln_info",
-    "list_jobs",
-];
 
 #[derive(Clone)]
 /// Adapter for running MCP tools in-process without stdio transport.
@@ -52,24 +40,6 @@ impl InProcessMcpAdapter {
             .collect()
     }
 
-    /// Creates Rig-compatible tools, filtered by mode ("plan" uses read-only subset).
-    #[must_use]
-    pub fn create_rig_tools(&self, mode: &str) -> Vec<Box<dyn rig::tool::ToolDyn>> {
-        let all_tools = self.server.list_tools();
-        let selected_tools = if mode == "plan" {
-            filter_plan_tools(all_tools)
-        } else {
-            all_tools
-        };
-
-        selected_tools
-            .into_iter()
-            .map(|definition| {
-                Box::new(InProcessRigTool::new(definition, Arc::clone(&self.server)))
-                    as Box<dyn rig::tool::ToolDyn>
-            })
-            .collect()
-    }
 }
 
 fn filter_plan_tools(all_tools: Vec<McpTool>) -> Vec<McpTool> {
@@ -80,135 +50,7 @@ fn filter_plan_tools(all_tools: Vec<McpTool>) -> Vec<McpTool> {
         .collect()
 }
 
-#[derive(Debug, thiserror::Error)]
-#[allow(dead_code)]
-/// Error type for in-process MCP tool execution.
-/// Error type for in-process MCP tool execution.
-enum InProcessToolError {
-    /// Tool execution failed with the given error message.
-    #[error("tool execution failed: {0}")]
-    ToolExecution(String),
-}
 
-#[derive(Clone)]
-struct InProcessRigTool {
-    definition: McpTool,
-    server: Arc<CrucibleMcpServer>,
-}
-
-impl InProcessRigTool {
-    fn new(definition: McpTool, server: Arc<CrucibleMcpServer>) -> Self {
-        Self { definition, server }
-    }
-
-    async fn dispatch(&self, args: serde_json::Value) -> Result<CallToolResult, rmcp::ErrorData> {
-        let params_object = into_object(args)?;
-
-        match self.definition.name.as_ref() {
-            "create_note" => {
-                let params = parse_params::<CreateNoteParams>(params_object)?;
-                self.server.create_note(Parameters(params)).await
-            }
-            "read_note" => {
-                let params = parse_params::<ReadNoteParams>(params_object)?;
-                self.server.read_note(Parameters(params)).await
-            }
-            "read_metadata" => {
-                let params = parse_params::<ReadMetadataParams>(params_object)?;
-                self.server.read_metadata(Parameters(params)).await
-            }
-            "update_note" => {
-                let params = parse_params::<UpdateNoteParams>(params_object)?;
-                self.server.update_note(Parameters(params)).await
-            }
-            "delete_note" => {
-                let params = parse_params::<DeleteNoteParams>(params_object)?;
-                self.server.delete_note(Parameters(params)).await
-            }
-            "list_notes" => {
-                let params = parse_params::<ListNotesParams>(params_object)?;
-                self.server.list_notes(Parameters(params)).await
-            }
-            "semantic_search" => {
-                let params = parse_params::<SemanticSearchParams>(params_object)?;
-                self.server.semantic_search(Parameters(params)).await
-            }
-            "text_search" => {
-                let params = parse_params::<TextSearchParams>(params_object)?;
-                self.server.text_search(Parameters(params)).await
-            }
-            "property_search" => {
-                let params = parse_params::<PropertySearchParams>(params_object)?;
-                self.server.property_search(Parameters(params)).await
-            }
-            "get_kiln_info" => self.server.get_kiln_info().await,
-            "delegate_session" => {
-                let params = parse_params::<DelegateSessionParams>(params_object)?;
-                self.server.delegate_session(Parameters(params)).await
-            }
-            "list_jobs" => {
-                let params = parse_params::<ListJobsParams>(params_object)?;
-                self.server.list_jobs(Parameters(params)).await
-            }
-            "get_job_result" => {
-                let params = parse_params::<GetJobResultParams>(params_object)?;
-                self.server.get_job_result(Parameters(params)).await
-            }
-            "cancel_job" => {
-                let params = parse_params::<CancelJobParams>(params_object)?;
-                self.server.cancel_job(Parameters(params)).await
-            }
-            name => Err(rmcp::ErrorData::new(
-                rmcp::model::ErrorCode::METHOD_NOT_FOUND,
-                format!("Unknown MCP tool: {name}"),
-                None,
-            )),
-        }
-    }
-}
-
-impl Tool for InProcessRigTool {
-    const NAME: &'static str = "__in_process_mcp_tool";
-
-    type Error = InProcessToolError;
-    type Args = serde_json::Value;
-    type Output = String;
-
-    fn name(&self) -> String {
-        self.definition.name.to_string()
-    }
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: self.definition.name.to_string(),
-            description: self
-                .definition
-                .description
-                .clone()
-                .unwrap_or_default()
-                .to_string(),
-            parameters: self.definition.schema_as_json_value(),
-        }
-    }
-
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let result = match self.dispatch(args).await {
-            Ok(result) => result,
-            Err(err) => {
-                let cleaned = normalize_tool_error_message(&err.to_string());
-                return Ok(format!("Error: {cleaned}"));
-            }
-        };
-
-        if result.is_error.unwrap_or(false) {
-            let cleaned =
-                normalize_tool_error_message(first_text(&result).unwrap_or("Unknown error"));
-            return Ok(format!("Error: {cleaned}"));
-        }
-
-        Ok(first_text(&result).unwrap_or("").to_string())
-    }
-}
 
 fn normalize_tool_error_message(message: &str) -> String {
     let unquoted = serde_json::from_str::<String>(message).unwrap_or_else(|_| message.to_string());
