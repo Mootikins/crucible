@@ -18,6 +18,7 @@ use crucible_core::traits::{KnowledgeRepository, NoteInfo};
 use crucible_watch::{EventFilter, WatchManager, WatchManagerConfig};
 
 use crate::file_watch_bridge::create_event_bridge;
+use crate::embedding::get_or_create_embedding_provider;
 use crate::protocol::SessionEventMessage;
 
 use crucible_config::EmbeddingProviderConfig;
@@ -218,14 +219,13 @@ impl KilnManager {
             db_path
         );
 
-        // Create pipeline for this kiln
-        let pipeline = create_pipeline(&handle)?;
+        // Try to load enrichment config from kiln's crucible.toml
+        let enrichment_config = load_enrichment_config(&canonical).await;
+
+        let pipeline = create_pipeline(&handle, enrichment_config.as_ref()).await?;
         info!("Pipeline created for kiln at {:?}", canonical);
 
         let watch_manager = self.start_watch_manager(&canonical).await;
-
-        // Try to load enrichment config from kiln's crucible.toml
-        let enrichment_config = load_enrichment_config(&canonical).await;
 
         let mut conns = self.connections.write().await;
         conns.insert(

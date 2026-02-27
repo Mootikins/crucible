@@ -1,5 +1,6 @@
 use crate::config::CliConfig;
 use anyhow::{anyhow, Result};
+use crucible_daemon::kiln_manager::EXCLUDED_DIRS;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -51,6 +52,15 @@ impl FileSystemKilnStatsService {
                     stats.markdown_files += 1;
                 }
             } else if entry_path.is_dir() {
+                // Skip excluded directories
+                let dir_name = entry_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("");
+                if EXCLUDED_DIRS.contains(&dir_name) {
+                    continue;
+                }
+
                 // Recursively process subdirectory
                 self.collect_recursive(&entry_path, stats)?;
             }
@@ -189,6 +199,31 @@ mod tests {
 
         assert_eq!(stats.total_files, 2);
         assert_eq!(stats.markdown_files, 2);
+    }
+
+    #[test]
+    fn test_filesystem_service_excludes_directories() {
+        let temp = TempDir::new().unwrap();
+
+        // Create excluded directories with markdown files
+        std::fs::create_dir(temp.path().join(".crucible")).unwrap();
+        std::fs::create_dir(temp.path().join(".git")).unwrap();
+        std::fs::create_dir(temp.path().join("node_modules")).unwrap();
+
+        // Create markdown files in excluded directories (should be ignored)
+        std::fs::write(temp.path().join(".crucible/note.md"), "# Note").unwrap();
+        std::fs::write(temp.path().join(".git/config.md"), "# Config").unwrap();
+        std::fs::write(temp.path().join("node_modules/pkg.md"), "# Package").unwrap();
+
+        // Create markdown file in root (should be counted)
+        std::fs::write(temp.path().join("root.md"), "# Root").unwrap();
+
+        let service = FileSystemKilnStatsService;
+        let stats = service.collect(temp.path()).unwrap();
+
+        // Should only count the root.md file, not the ones in excluded directories
+        assert_eq!(stats.total_files, 1, "Expected 1 file (root.md), but got {}", stats.total_files);
+        assert_eq!(stats.markdown_files, 1, "Expected 1 markdown file, but got {}", stats.markdown_files);
     }
 
     #[test]
