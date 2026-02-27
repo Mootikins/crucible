@@ -5,15 +5,10 @@
 use crate::cli::SessionCommands;
 use crate::config::CliConfig;
 use anyhow::{anyhow, Result};
-use chrono::{Duration, Utc};
 use crucible_acp::discovery::default_agent_profiles;
 use crucible_config::BackendType;
 use crucible_core::session::SessionAgent;
-use crucible_core::storage::NoteStore;
-use crucible_observe::{
-    extract_session_content, list_sessions, load_events, render_to_markdown, LogEvent,
-    RenderOptions, SessionId, SessionType,
-};
+use crucible_observe::{LogEvent, SessionId, SessionType};
 use crucible_rpc::DaemonClient;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -123,6 +118,172 @@ fn sessions_dir(config: &CliConfig) -> PathBuf {
     config.kiln_path.join(".crucible").join("sessions")
 }
 
+/// Read events from a session directory's JSONL file (local fallback).
+///
+/// Used when daemon RPC is unavailable for backward compatibility.
+async fn read_session_events(session_dir: &std::path::Path) -> Result<Vec<LogEvent>> {
+    let jsonl_path = session_dir.join("session.jsonl");
+    let content = fs::read_to_string(&jsonl_path)
+        .await
+        .map_err(|e| anyhow!("Failed to read session events: {}", e))?;
+    let mut events = Vec::new();
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Ok(event) = serde_json::from_str::<LogEvent>(line) {
+            events.push(event);
+        }
+    }
+    Ok(events)
+}
+
+/// List session directory names under a sessions base path (local fallback).
+async fn list_session_dirs(sessions_path: &std::path::Path) -> Result<Vec<String>> {
+    let mut entries = fs::read_dir(sessions_path).await?;
+    let mut dirs = Vec::new();
+    while let Some(entry) = entries.next_entry().await? {
+        if entry.file_type().await?.is_dir() {
+            if let Some(name) = entry.file_name().to_str() {
+                dirs.push(name.to_string());
+            }
+        }
+    }
+    dirs.sort();
+    Ok(dirs)
+}
+
+/// Simple markdown rendering of events (local fallback).
+fn format_events_markdown(events: &[LogEvent], _include_timestamps: bool) -> String {
+    use std::fmt::Write;
+    let mut md = String::new();
+    for event in events {
+        match event {
+            LogEvent::System { content, .. } => {
+                let _ = writeln!(md, "> {}\n", content);
+            }
+            LogEvent::User { content, .. } => {
+                let _ = write!(md, "## User\n\n{}\n\n", content);
+            }
+            LogEvent::Assistant { content, model, .. } => {
+                let label = model.as_deref().unwrap_or("Assistant");
+                let _ = write!(md, "## {}\n\n{}\n\n", label, content);
+            }
+            LogEvent::Thinking { content, .. } => {
+                let _ = writeln!(
+                    md,
+                    "<details><summary>Thinking</summary>\n\n{}\n</details>\n",
+                    content
+                );
+            }
+            LogEvent::ToolCall { name, .. } => {
+                let _ = writeln!(md, "### Tool: {}\n", name);
+            }
+            _ => {}
+        }
+    }
+    md
+}
+
+/// Display events in text format.
+fn display_events_text(id: &str, events: &[LogEvent]) {
+    println!("Session: {}\n", id);
+    println!("Events: {}\n", events.len());
+
+    for event in events {
+        match event {
+            LogEvent::System { content, .. } => {
+                println!("[system] {}", truncate(content, 100));
+            }
+            LogEvent::User { content, .. } => {
+                println!("\n[user]\n{}\n", content);
+            }
+            LogEvent::Assistant { content, model, .. } => {
+                let model_str = model.as_deref().unwrap_or("unknown");
+                println!("[assistant ({})]\n{}\n", model_str, content);
+            }
+            LogEvent::ToolCall { name, id, .. } => {
+                println!("[tool:{}] id={}", name, id);
+            }
+            LogEvent::ToolResult { id, truncated, .. } => {
+                let marker = if *truncated { " (truncated)" } else { "" };
+                println!("[result:{}]{}", id, marker);
+            }
+            LogEvent::Error {
+                message,
+                recoverable,
+                ..
+            } => {
+                let level = if *recoverable { "warning" } else { "error" };
+                println!("[{}] {}", level, message);
+            }
+            LogEvent::Init {
+                session_id, model, ..
+            } => {
+                let model_str = model.as_deref().unwrap_or("unknown");
+                println!("[init] session={}, model={}", session_id, model_str);
+            }
+            LogEvent::Thinking { content, .. } => {
+                println!("[thinking] {}", truncate(content, 100));
+            }
+            LogEvent::Permission { tool, decision, .. } => {
+                println!("[permission] {}:{:?}", tool, decision);
+            }
+            LogEvent::Summary {
+                content,
+                messages_summarized,
+                ..
+            } => {
+                let count = messages_summarized
+                    .map(|n| format!(" ({n} msgs)"))
+                    .unwrap_or_default();
+                println!("[summary{}] {}", count, truncate(content, 100));
+            }
+            LogEvent::BashSpawned { id, command, .. } => {
+                println!("[bash:{}] {}", id, truncate(command, 80));
+            }
+            LogEvent::BashCompleted { id, exit_code, .. } => {
+                println!("[bash:{}] exit={}", id, exit_code);
+            }
+            LogEvent::BashFailed { id, error, .. } => {
+                println!("[bash:{}] FAILED: {}", id, truncate(error, 80));
+            }
+            LogEvent::SubagentSpawned {
+                id, session_link, ..
+            } => {
+                println!("[subagent:{}] {}", id, session_link);
+            }
+            LogEvent::SubagentCompleted {
+                id,
+                summary,
+                session_link,
+                ..
+            } => {
+                println!(
+                    "[subagent:{}] {} -> {}",
+                    id,
+                    session_link,
+                    truncate(summary, 60)
+                );
+            }
+            LogEvent::SubagentFailed {
+                id,
+                error,
+                session_link,
+                ..
+            } => {
+                println!(
+                    "[subagent:{}] {} FAILED: {}",
+                    id,
+                    session_link,
+                    truncate(error, 60)
+                );
+            }
+        }
+    }
+}
+
 /// List recent sessions
 async fn list(
     config: CliConfig,
@@ -161,14 +322,58 @@ async fn list_persisted(
         return Ok(());
     }
 
-    let mut ids = list_sessions(&sessions_path).await?;
+    // Try daemon RPC first
+    if let Ok(client) = DaemonClient::connect_or_start().await {
+        if let Ok(result) = client
+            .session_list_persisted(
+                &config.kiln_path,
+                session_type.as_deref(),
+                Some(limit as usize),
+            )
+            .await
+        {
+            let sessions = result
+                .get("sessions")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            if sessions.is_empty() {
+                println!("No sessions found.");
+                return Ok(());
+            }
+            match format.as_str() {
+                "json" => {
+                    let json = serde_json::to_string_pretty(&sessions)?;
+                    println!("{json}");
+                }
+                _ => {
+                    println!("Sessions (newest first):\n");
+                    for s in &sessions {
+                        let id = s["id"].as_str().unwrap_or("?");
+                        let msg_count = s["message_count"].as_u64().unwrap_or(0);
+                        let title = s["title"].as_str().unwrap_or("(empty)");
+                        println!("  {} ({} messages)", id, msg_count);
+                        println!("    {}\n", title);
+                    }
+                }
+            }
+            return Ok(());
+        }
+    }
+
+    // Fallback: read session directories locally
+    let mut ids = list_session_dirs(&sessions_path).await?;
 
     // Filter by type if specified
     if let Some(type_filter) = session_type {
         let filter_type: SessionType = type_filter
             .parse()
             .map_err(|_| anyhow!("Invalid session type: {}", type_filter))?;
-        ids.retain(|id| id.session_type() == filter_type);
+        ids.retain(|id_str| {
+            SessionId::parse(id_str)
+                .map(|id| id.session_type() == filter_type)
+                .unwrap_or(false)
+        });
     }
 
     // Reverse to show newest first, then take limit
@@ -187,16 +392,14 @@ async fn list_persisted(
         }
         _ => {
             println!("Sessions (newest first):\n");
-            for id in &ids {
-                // Get event count and first user message for preview
-                let session_dir = sessions_path.join(id.as_str());
-                let events = load_events(&session_dir).await.unwrap_or_default();
+            for id_str in &ids {
+                let session_dir = sessions_path.join(id_str);
+                let events = read_session_events(&session_dir).await.unwrap_or_default();
                 let msg_count = events
                     .iter()
                     .filter(|e| matches!(e, LogEvent::User { .. } | LogEvent::Assistant { .. }))
                     .count();
 
-                // Get title from first user message
                 let title = events
                     .iter()
                     .find_map(|e| match e {
@@ -212,7 +415,7 @@ async fn list_persisted(
                     })
                     .unwrap_or_else(|| "(empty)".to_string());
 
-                println!("  {} ({} messages)", id, msg_count);
+                println!("  {} ({} messages)", id_str, msg_count);
                 println!("    {}\n", title);
             }
         }
@@ -364,7 +567,7 @@ async fn search_in_memory(
     query: &str,
     limit: u32,
 ) -> Result<Vec<(String, usize, String)>> {
-    let ids = list_sessions(sessions_path).await?;
+    let ids = list_session_dirs(sessions_path).await?;
     let query_lower = query.to_lowercase();
     let mut results = Vec::new();
 
@@ -416,7 +619,10 @@ fn extract_session_id_from_path(path: &str) -> String {
 
 /// Show session details
 async fn show(config: CliConfig, id: String, format: String) -> Result<()> {
-    if let Ok(client) = DaemonClient::connect_or_start().await {
+    let client = DaemonClient::connect_or_start().await.ok();
+
+    // Check for live daemon session first
+    if let Some(client) = &client {
         if let Ok(result) = client.session_get(&id).await {
             match format.as_str() {
                 "json" => {
@@ -441,6 +647,7 @@ async fn show(config: CliConfig, id: String, format: String) -> Result<()> {
         }
     }
 
+    // Load persisted session
     let sessions_path = sessions_dir(&config);
     let session_id = SessionId::parse(&id)?;
     let session_dir = sessions_path.join(session_id.as_str());
@@ -449,7 +656,51 @@ async fn show(config: CliConfig, id: String, format: String) -> Result<()> {
         return Err(anyhow!("Session not found: {}", id));
     }
 
-    let events = load_events(&session_dir).await?;
+    // Try daemon RPC for persisted session data
+    if let Some(client) = &client {
+        let loaded = match format.as_str() {
+            "json" => {
+                if let Ok(events_json) = client.session_load_events(&session_dir).await {
+                    let json = serde_json::to_string_pretty(&events_json)?;
+                    println!("{json}");
+                    true
+                } else {
+                    false
+                }
+            }
+            "markdown" | "md" => {
+                if let Ok(md) = client
+                    .session_render_markdown(&session_dir, None, None, None, None)
+                    .await
+                {
+                    println!("{md}");
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => {
+                if let Ok(events_json) = client.session_load_events(&session_dir).await {
+                    if let Ok(events) =
+                        serde_json::from_value::<Vec<LogEvent>>(events_json)
+                    {
+                        display_events_text(&id, &events);
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+        };
+        if loaded {
+            return Ok(());
+        }
+    }
+
+    // Fallback: read events from filesystem directly
+    let events = read_session_events(&session_dir).await?;
 
     match format.as_str() {
         "json" => {
@@ -457,105 +708,11 @@ async fn show(config: CliConfig, id: String, format: String) -> Result<()> {
             println!("{json}");
         }
         "markdown" | "md" => {
-            let md = render_to_markdown(&events, &RenderOptions::default());
+            let md = format_events_markdown(&events, false);
             println!("{md}");
         }
         _ => {
-            // Text format - simplified view
-            println!("Session: {}\n", id);
-            println!("Events: {}\n", events.len());
-
-            for event in &events {
-                match event {
-                    LogEvent::System { content, .. } => {
-                        println!("[system] {}", truncate(content, 100));
-                    }
-                    LogEvent::User { content, .. } => {
-                        println!("\n[user]\n{}\n", content);
-                    }
-                    LogEvent::Assistant { content, model, .. } => {
-                        let model_str = model.as_deref().unwrap_or("unknown");
-                        println!("[assistant ({})]\n{}\n", model_str, content);
-                    }
-                    LogEvent::ToolCall { name, id, .. } => {
-                        println!("[tool:{}] id={}", name, id);
-                    }
-                    LogEvent::ToolResult { id, truncated, .. } => {
-                        let marker = if *truncated { " (truncated)" } else { "" };
-                        println!("[result:{}]{}", id, marker);
-                    }
-                    LogEvent::Error {
-                        message,
-                        recoverable,
-                        ..
-                    } => {
-                        let level = if *recoverable { "warning" } else { "error" };
-                        println!("[{}] {}", level, message);
-                    }
-                    LogEvent::Init {
-                        session_id, model, ..
-                    } => {
-                        let model_str = model.as_deref().unwrap_or("unknown");
-                        println!("[init] session={}, model={}", session_id, model_str);
-                    }
-                    LogEvent::Thinking { content, .. } => {
-                        println!("[thinking] {}", truncate(content, 100));
-                    }
-                    LogEvent::Permission { tool, decision, .. } => {
-                        println!("[permission] {}:{:?}", tool, decision);
-                    }
-                    LogEvent::Summary {
-                        content,
-                        messages_summarized,
-                        ..
-                    } => {
-                        let count = messages_summarized
-                            .map(|n| format!(" ({n} msgs)"))
-                            .unwrap_or_default();
-                        println!("[summary{}] {}", count, truncate(content, 100));
-                    }
-                    LogEvent::BashSpawned { id, command, .. } => {
-                        println!("[bash:{}] {}", id, truncate(command, 80));
-                    }
-                    LogEvent::BashCompleted { id, exit_code, .. } => {
-                        println!("[bash:{}] exit={}", id, exit_code);
-                    }
-                    LogEvent::BashFailed { id, error, .. } => {
-                        println!("[bash:{}] FAILED: {}", id, truncate(error, 80));
-                    }
-                    LogEvent::SubagentSpawned {
-                        id, session_link, ..
-                    } => {
-                        println!("[subagent:{}] {}", id, session_link);
-                    }
-                    LogEvent::SubagentCompleted {
-                        id,
-                        summary,
-                        session_link,
-                        ..
-                    } => {
-                        println!(
-                            "[subagent:{}] {} -> {}",
-                            id,
-                            session_link,
-                            truncate(summary, 60)
-                        );
-                    }
-                    LogEvent::SubagentFailed {
-                        id,
-                        error,
-                        session_link,
-                        ..
-                    } => {
-                        println!(
-                            "[subagent:{}] {} FAILED: {}",
-                            id,
-                            session_link,
-                            truncate(error, 60)
-                        );
-                    }
-                }
-            }
+            display_events_text(&id, &events);
         }
     }
 
@@ -608,17 +765,25 @@ async fn export(
         return Err(anyhow!("Session not found: {}", id));
     }
 
-    let events = load_events(&session_dir).await?;
+    // Try daemon RPC first
+    if let Ok(client) = DaemonClient::connect_or_start().await {
+        if let Ok(output_path_str) = client
+            .session_export_to_file(
+                &session_dir,
+                output.as_deref(),
+                Some(timestamps),
+            )
+            .await
+        {
+            println!("Exported session to: {}", output_path_str);
+            return Ok(());
+        }
+    }
 
-    let options = RenderOptions {
-        include_timestamps: timestamps,
-        ..Default::default()
-    };
-
-    let md = render_to_markdown(&events, &options);
-
+    // Fallback: read events and render locally
+    let events = read_session_events(&session_dir).await?;
+    let md = format_events_markdown(&events, timestamps);
     let output_path = output.unwrap_or_else(|| session_dir.join("session.md"));
-
     fs::write(&output_path, &md).await?;
     println!("Exported session to: {}", output_path.display());
 
@@ -634,74 +799,24 @@ async fn reindex(config: CliConfig, force: bool) -> Result<()> {
         return Ok(());
     }
 
-    let ids = list_sessions(&sessions_path).await?;
-    if ids.is_empty() {
+    // Quick check for empty directory
+    let dirs = list_session_dirs(&sessions_path).await?;
+    if dirs.is_empty() {
         println!("No sessions found.");
         return Ok(());
     }
 
-    println!("Found {} sessions to scan.", ids.len());
+    let client = DaemonClient::connect_or_start()
+        .await
+        .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
 
-    let storage = crate::factories::get_storage(&config).await?;
-    let note_store = storage.note_store();
+    let result = client
+        .session_reindex(&config.kiln_path, force)
+        .await?;
 
-    // Embeddings are handled by the daemon — no local embedding provider needed
-
-    let mut indexed = 0u32;
-    let mut skipped = 0u32;
-    let mut errors = 0u32;
-
-    for id in &ids {
-        let session_dir = sessions_path.join(id.as_str());
-        let path = format!("sessions/{}", id.as_str());
-
-        if !force {
-            match note_store.get(&path).await {
-                Ok(Some(_)) => {
-                    skipped += 1;
-                    continue;
-                }
-                Ok(None) => {}
-                Err(_) => {}
-            }
-        }
-
-        let events = match load_events(&session_dir).await {
-            Ok(e) => e,
-            Err(e) => {
-                eprintln!("  Error loading {}: {}", id, e);
-                errors += 1;
-                continue;
-            }
-        };
-
-        let content = match extract_session_content(id.as_str(), &events) {
-            Some(c) => c,
-            None => {
-                skipped += 1;
-                continue;
-            }
-        };
-
-        // Embeddings are generated by the daemon pipeline — store without local embedding
-        let embedding = None;
-
-        let record = content.to_note_record(embedding);
-        if let Err(e) = note_store.upsert(record).await {
-            eprintln!("  Store failed for {}: {}", id, e);
-            errors += 1;
-            continue;
-        }
-
-        let label = if force { "Re-indexed" } else { "Indexed" };
-        println!(
-            "  {} {} ({} user messages)",
-            label,
-            id,
-            content.user_messages.len()
-        );
-        indexed += 1;
-    }
+    let indexed = result["indexed"].as_u64().unwrap_or(0);
+    let skipped = result["skipped"].as_u64().unwrap_or(0);
+    let errors = result["errors"].as_u64().unwrap_or(0);
 
     println!(
         "\nIndexed {} sessions ({} skipped, {} errors)",
@@ -720,47 +835,40 @@ async fn cleanup(config: CliConfig, older_than: u32, dry_run: bool) -> Result<()
         return Ok(());
     }
 
-    let ids = list_sessions(&sessions_path).await?;
-    let cutoff = Utc::now() - Duration::days(older_than as i64);
+    let client = DaemonClient::connect_or_start()
+        .await
+        .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
 
-    let mut to_delete = Vec::new();
+    let result = client
+        .session_cleanup(&config.kiln_path, older_than as u64, dry_run)
+        .await?;
 
-    for id in ids {
-        let session_dir = sessions_path.join(id.as_str());
-        let events = load_events(&session_dir).await.unwrap_or_default();
+    let deleted = result["deleted"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let total = result["total"].as_u64().unwrap_or(0);
+    let is_dry_run = result["dry_run"].as_bool().unwrap_or(false);
 
-        // Get latest timestamp from events
-        let latest = events.iter().map(|e| e.timestamp()).max();
-
-        if let Some(ts) = latest {
-            if ts < cutoff {
-                to_delete.push((id, session_dir));
-            }
-        }
-    }
-
-    if to_delete.is_empty() {
+    if total == 0 {
         println!("No sessions older than {} days found.", older_than);
         return Ok(());
     }
 
     println!(
         "Found {} sessions older than {} days:",
-        to_delete.len(),
-        older_than
+        total, older_than
     );
 
-    for (id, _) in &to_delete {
-        println!("  {}", id);
+    for id in &deleted {
+        if let Some(s) = id.as_str() {
+            println!("  {}", s);
+        }
     }
 
-    if dry_run {
+    if is_dry_run {
         println!("\nDry run - no sessions deleted.");
     } else {
-        for (id, dir) in to_delete {
-            fs::remove_dir_all(&dir).await?;
-            println!("Deleted: {}", id);
-        }
         println!("\nCleanup complete.");
     }
 
