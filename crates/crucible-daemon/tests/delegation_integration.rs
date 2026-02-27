@@ -431,6 +431,7 @@ async fn test_root_session_delegation_succeeds() {
         None,
         None,
         None,
+        None,
     );
 
     let session = session_manager
@@ -506,6 +507,7 @@ async fn test_delegation_to_acp_agent_creates_acp_session() {
         None,
         None,
         Some(acp_config),
+        None,
         None,
     );
 

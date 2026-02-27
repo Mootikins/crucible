@@ -21,6 +21,7 @@ fn make_agent_manager() -> (AgentManager, Arc<SessionManager>, TempDir) {
         None,
         None,
         None,
+        None,
     );
     (agent_manager, session_manager, tmp)
 }
