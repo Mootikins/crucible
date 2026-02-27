@@ -346,6 +346,26 @@ impl Default for PrecognitionState {
     }
 }
 
+/// Message queue state — deferred messages and message counter
+pub(crate) struct MessageQueueState {
+    /// Messages deferred until the current stream completes
+    pub deferred_messages: VecDeque<String>,
+    /// Monotonic counter for assigning message IDs
+    pub message_counter: usize,
+    /// Timestamp of the last Ctrl-C press (for double-tap quit)
+    pub last_ctrl_c: Option<std::time::Instant>,
+}
+
+impl Default for MessageQueueState {
+    fn default() -> Self {
+        Self {
+            deferred_messages: VecDeque::new(),
+            message_counter: 0,
+            last_ctrl_c: None,
+        }
+    }
+}
+
 pub struct OilChatApp {
     // ─── Viewport Projection (daemon-derived state) ───────────────────
     // These fields mirror information received from the daemon and
@@ -400,11 +420,8 @@ pub struct OilChatApp {
     /// Permission request state
     permission: PermissionState,
     /// Messages deferred until the current stream completes
-    deferred_messages: VecDeque<String>,
-    /// Monotonic counter for assigning message IDs
-    message_counter: usize,
-    /// Timestamp of the last Ctrl-C press (for double-tap quit)
-    last_ctrl_c: Option<std::time::Instant>,
+    /// Message queue state (deferred messages, counter, Ctrl-C tracking)
+    message_queue: MessageQueueState,
     /// Files attached as extra context for the next message
     attached_context: Vec<String>,
 
@@ -459,9 +476,7 @@ impl Default for OilChatApp {
             precognition: PrecognitionState::default(),
             terminal_size: Cell::new((80, 24)),
             permission: PermissionState::default(),
-            deferred_messages: VecDeque::new(),
-            message_counter: 0,
-            last_ctrl_c: None,
+            message_queue: MessageQueueState::default(),
             attached_context: Vec::new(),
 
             // I/O / Lifecycle
@@ -553,13 +568,13 @@ impl App for OilChatApp {
                 if !self.container_list.is_streaming() {
                     self.container_list.mark_turn_active();
                 }
-                self.message_counter += 1;
-                let tool_id = format!("tool-{}", self.message_counter);
+                self.message_queue.message_counter += 1;
+                let tool_id = format!("tool-{}", self.message_queue.message_counter);
                 tracing::debug!(
                     tool_name = %name,
                     ?call_id,
                     args_len = args.len(),
-                    counter = self.message_counter,
+                    counter = self.message_queue.message_counter,
                     "Adding ToolCall"
                 );
                 let mut tool = CachedToolCall::new(tool_id, &name, &args);
@@ -617,8 +632,8 @@ impl App for OilChatApp {
             }
             ChatAppMsg::QueueMessage(content) => {
                 if self.is_streaming() {
-                    self.deferred_messages.push_back(content);
-                    let count = self.deferred_messages.len();
+                    self.message_queue.deferred_messages.push_back(content);
+                    let count = self.message_queue.deferred_messages.len();
                     self.add_notification(crucible_core::types::Notification::toast(format!(
                         "{} message{} queued",
                         count,
@@ -989,7 +1004,7 @@ impl OilChatApp {
                 }
             }
         }
-        self.message_counter = self.container_list.len();
+        self.message_queue.message_counter = self.container_list.len();
     }
 
     fn push_shell_history(&mut self, cmd: String) {
@@ -1137,7 +1152,7 @@ impl OilChatApp {
         if self.is_ctrl_c(key) {
             return self.handle_ctrl_c();
         }
-        self.last_ctrl_c = None;
+        self.message_queue.last_ctrl_c = None;
 
         // Handle Ctrl+T to toggle thinking display (works anytime, not just during streaming)
         let ctrl = key
@@ -1177,17 +1192,17 @@ impl OilChatApp {
     fn handle_ctrl_c(&mut self) -> Action<ChatAppMsg> {
         if !self.input.content().is_empty() {
             self.input.handle(InputAction::Clear);
-            self.last_ctrl_c = None;
+            self.message_queue.last_ctrl_c = None;
             return Action::Continue;
         }
 
         let now = std::time::Instant::now();
-        if let Some(last) = self.last_ctrl_c {
+        if let Some(last) = self.message_queue.last_ctrl_c {
             if now.duration_since(last) < Duration::from_millis(300) {
                 return Action::Quit;
             }
         }
-        self.last_ctrl_c = Some(now);
+        self.message_queue.last_ctrl_c = Some(now);
         self.notification_area
             .add(crucible_core::types::Notification::toast(
                 "Ctrl+C again to quit",
@@ -1910,7 +1925,10 @@ impl OilChatApp {
             .unwrap_or(ConfigValue::String("normal".to_string()));
         output.push_str(&format!("  mode: {}\n", mode));
 
-        output.push_str(&format!("  precognition: {}\n", self.precognition.precognition));
+        output.push_str(&format!(
+            "  precognition: {}\n",
+            self.precognition.precognition
+        ));
         output.push_str(&format!(
             "  precognition.results: {}\n",
             self.precognition.precognition_results
@@ -2133,10 +2151,10 @@ impl OilChatApp {
             ShellModalOutput::Close(history_item) => {
                 self.save_shell_output();
 
-                self.message_counter += 1;
+                self.message_queue.message_counter += 1;
                 self.container_list
                     .add_shell_execution(CachedShellExecution::new(
-                        format!("shell-{}", self.message_counter),
+                        format!("shell-{}", self.message_queue.message_counter),
                         &history_item.command,
                         history_item.exit_code,
                         history_item.output_tail,
@@ -2261,10 +2279,10 @@ impl OilChatApp {
     }
 
     fn close_shell_modal_with_history(&mut self, history_item: ShellHistoryItem) {
-        self.message_counter += 1;
+        self.message_queue.message_counter += 1;
         self.container_list
             .add_shell_execution(CachedShellExecution::new(
-                format!("shell-{}", self.message_counter),
+                format!("shell-{}", self.message_queue.message_counter),
                 &history_item.command,
                 history_item.exit_code,
                 history_item.output_tail,
@@ -2418,7 +2436,7 @@ impl OilChatApp {
     }
 
     fn add_user_message(&mut self, content: String) {
-        self.message_counter += 1;
+        self.message_queue.message_counter += 1;
         self.container_list.add_user_message(content);
     }
 
@@ -2431,13 +2449,13 @@ impl OilChatApp {
     }
 
     pub(crate) fn add_system_message(&mut self, content: String) {
-        self.message_counter += 1;
+        self.message_queue.message_counter += 1;
         self.container_list.add_system_message(content);
     }
 
     fn finalize_streaming(&mut self) {
         if self.container_list.is_streaming() {
-            self.message_counter += 1;
+            self.message_queue.message_counter += 1;
             self.container_list.complete_response();
         }
 
@@ -2446,8 +2464,8 @@ impl OilChatApp {
 
     pub(crate) fn reset_session(&mut self) {
         self.container_list.clear();
-        self.message_counter = 0;
-        self.deferred_messages.clear();
+        self.message_queue.message_counter = 0;
+        self.message_queue.deferred_messages.clear();
         self.context_used = 0;
         self.context_total = 0;
         self.status = "Ready".to_string();
@@ -2456,7 +2474,7 @@ impl OilChatApp {
     }
 
     fn process_deferred_queue(&mut self) -> Action<ChatAppMsg> {
-        if let Some(queued) = self.deferred_messages.pop_front() {
+        if let Some(queued) = self.message_queue.deferred_messages.pop_front() {
             self.submit_user_message(queued.clone());
             self.status = "Thinking...".to_string();
             Action::Send(ChatAppMsg::UserMessage(queued))
