@@ -734,6 +734,100 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn enrichment_config_wiring_no_config_skips_enrichment() {
+        // Scenario 1: No crucible.toml → enrichment is skipped gracefully
+        let tmp = TempDir::new().unwrap();
+        let kiln_path = tmp.path();
+
+        // No crucible.toml exists in the temp dir
+        let enrichment = load_enrichment_config(kiln_path).await;
+        assert!(enrichment.is_none(), "Expected None when no crucible.toml exists");
+
+        // Pipeline config should skip enrichment
+        let config = pipeline_config(enrichment.as_ref());
+        assert!(
+            config.skip_enrichment,
+            "skip_enrichment should be true when no config is present"
+        );
+    }
+
+    #[tokio::test]
+    async fn enrichment_config_wiring_with_config_enables_enrichment() {
+        // Scenario 2: crucible.toml with [enrichment.provider] → enrichment enabled
+        let tmp = TempDir::new().unwrap();
+        let kiln_path = tmp.path();
+
+        // Write a minimal crucible.toml with a mock enrichment provider
+        let config_content = r#"
+[enrichment.provider]
+type = "mock"
+model = "test-model"
+dimensions = 384
+
+[enrichment.pipeline]
+batch_size = 16
+"#;
+        std::fs::write(kiln_path.join("crucible.toml"), config_content).unwrap();
+
+        // load_enrichment_config should find and parse the provider
+        let enrichment = load_enrichment_config(kiln_path).await;
+        assert!(
+            enrichment.is_some(),
+            "Expected Some(EmbeddingProviderConfig) when crucible.toml has enrichment section"
+        );
+
+        // Verify it's the mock provider we configured
+        let provider = enrichment.as_ref().unwrap();
+        assert!(matches!(provider, EmbeddingProviderConfig::Mock(_)));
+        assert_eq!(provider.model(), "test-model");
+        assert_eq!(provider.dimensions(), Some(384));
+
+        // Pipeline config should enable enrichment
+        let config = pipeline_config(enrichment.as_ref());
+        assert!(
+            !config.skip_enrichment,
+            "skip_enrichment should be false when enrichment config is present"
+        );
+    }
+
+    #[tokio::test]
+    async fn enrichment_config_wiring_malformed_toml_skips_gracefully() {
+        // Edge case: malformed crucible.toml should not crash, just skip enrichment
+        let tmp = TempDir::new().unwrap();
+        let kiln_path = tmp.path();
+
+        std::fs::write(kiln_path.join("crucible.toml"), "not valid { toml ]").unwrap();
+
+        let enrichment = load_enrichment_config(kiln_path).await;
+        assert!(
+            enrichment.is_none(),
+            "Malformed TOML should return None, not panic"
+        );
+
+        let config = pipeline_config(enrichment.as_ref());
+        assert!(config.skip_enrichment);
+    }
+
+    #[tokio::test]
+    async fn enrichment_config_wiring_toml_without_enrichment_section_skips() {
+        // Edge case: valid crucible.toml but no enrichment section
+        let tmp = TempDir::new().unwrap();
+        let kiln_path = tmp.path();
+
+        // Valid TOML but no enrichment section
+        std::fs::write(kiln_path.join("crucible.toml"), "[storage]\npath = \"/tmp\"").unwrap();
+
+        let enrichment = load_enrichment_config(kiln_path).await;
+        assert!(
+            enrichment.is_none(),
+            "Config without enrichment section should return None"
+        );
+
+        let config = pipeline_config(enrichment.as_ref());
+        assert!(config.skip_enrichment);
+    }
+
+    #[tokio::test]
     async fn test_kiln_manager_new() {
         let km = KilnManager::new();
         let list = km.list().await;
@@ -931,5 +1025,75 @@ mod tests {
         let updated_time = updated_list[0].1;
 
         assert!(updated_time > initial_time);
+    }
+
+    #[tokio::test]
+    async fn test_file_deleted_removes_note_after_processing() {
+        use crucible_core::storage::NoteStore;
+
+        let tmp = TempDir::new().unwrap();
+        let kiln_path = tmp.path().join("test_kiln");
+        std::fs::create_dir_all(&kiln_path).unwrap();
+
+        // Create 3 markdown files
+        std::fs::write(
+            kiln_path.join("alpha.md"),
+            "---\ntitle: Alpha\n---\n\nAlpha content.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            kiln_path.join("beta.md"),
+            "---\ntitle: Beta\n---\n\nBeta content.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            kiln_path.join("gamma.md"),
+            "---\ntitle: Gamma\n---\n\nGamma content.\n",
+        )
+        .unwrap();
+
+        let km = KilnManager::new();
+
+        // Process all files — they should all land in the DB
+        let (processed, _skipped, errors) =
+            km.open_and_process(&kiln_path, false).await.unwrap();
+        assert!(errors.is_empty(), "processing errors: {:?}", errors);
+        assert_eq!(processed, 3, "all 3 files should be processed");
+
+        // Verify all 3 notes exist in the store
+        let handle = km.get_or_open(&kiln_path).await.unwrap();
+        let note_store = handle.as_note_store();
+        let notes = note_store.list().await.unwrap();
+        assert_eq!(notes.len(), 3, "DB should contain 3 notes after processing");
+
+        // Delete beta.md from disk
+        let beta_abs = kiln_path.join("beta.md");
+        std::fs::remove_file(&beta_abs).unwrap();
+
+        // Handle the deletion through KilnManager
+        let existed = km
+            .handle_file_deleted(&kiln_path, &beta_abs)
+            .await
+            .unwrap();
+        assert!(existed, "handle_file_deleted should report the note existed");
+
+        // Verify DB now has exactly 2 notes
+        let notes = note_store.list().await.unwrap();
+        assert_eq!(notes.len(), 2, "DB should contain 2 notes after deletion");
+
+        // Verify the deleted note is gone
+        assert!(
+            note_store.get("beta.md").await.unwrap().is_none(),
+            "deleted note should not be in the store",
+        );
+
+        // Verify the remaining 2 notes are intact
+        let alpha = note_store.get("alpha.md").await.unwrap();
+        assert!(alpha.is_some(), "alpha.md should still exist");
+        assert_eq!(alpha.unwrap().title, "Alpha");
+
+        let gamma = note_store.get("gamma.md").await.unwrap();
+        assert!(gamma.is_some(), "gamma.md should still exist");
+        assert_eq!(gamma.unwrap().title, "Gamma");
     }
 }
