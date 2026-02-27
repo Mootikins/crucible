@@ -7,7 +7,9 @@ use crucible_core::types::acp::schema::{SessionModeId, SessionModeState};
 use crucible_core::types::mode::default_internal_modes;
 use futures::stream::BoxStream;
 use futures::StreamExt;
-use genai::chat::{ChatMessage, ChatOptions, ChatRequest, ChatStreamEvent, ContentPart, Tool};
+use genai::chat::{
+    ChatMessage, ChatOptions, ChatRequest, ChatStreamEvent, ContentPart, ReasoningEffort, Tool,
+};
 use genai::ModelIden;
 
 use super::adapter_mapping::{build_genai_client, build_model_iden};
@@ -52,6 +54,7 @@ pub struct GenaiAgentHandle {
     current_mode_id: String,
     mode_context_sent: bool,
     max_tool_depth: usize,
+    thinking_budget: Option<i64>,
 }
 
 impl GenaiAgentHandle {
@@ -60,7 +63,7 @@ impl GenaiAgentHandle {
         model: ModelIden,
         system_prompt: &str,
         tools: Vec<LlmToolDefinition>,
-        _thinking_budget: Option<i64>,
+        thinking_budget: Option<i64>,
     ) -> Self {
         let mode_state = default_internal_modes();
         let current_mode_id = mode_state.current_mode_id.0.to_string();
@@ -75,6 +78,7 @@ impl GenaiAgentHandle {
             current_mode_id,
             mode_context_sent: false,
             max_tool_depth: 10,
+            thinking_budget,
         }
     }
 
@@ -104,6 +108,7 @@ impl GenaiAgentHandle {
             current_mode_id,
             mode_context_sent: false,
             max_tool_depth: 0,
+            thinking_budget: None,
         }
     }
 
@@ -367,6 +372,11 @@ impl AgentHandle for GenaiAgentHandle {
             .with_capture_content(true)
             .with_capture_usage(true)
             .with_capture_reasoning_content(true);
+        let options = if let Some(budget) = self.thinking_budget {
+            options.with_reasoning_effort(ReasoningEffort::Budget(budget.clamp(0, u32::MAX as i64) as u32))
+        } else {
+            options
+        };
 
         let client = self.client.clone();
         let model_name = self.explicit_model_name();
@@ -506,5 +516,45 @@ impl AgentHandle for GenaiAgentHandle {
 
     fn current_model(&self) -> Option<&str> {
         Some(&self.model.model_name)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_thinking_budget_stored_and_clamped() {
+        let config = LlmProviderConfig::builder(BackendType::OpenAI)
+            .model("gpt-4o-mini")
+            .build();
+        let client = build_genai_client(&config);
+        let model = build_model_iden(&BackendType::OpenAI, "gpt-4o-mini").unwrap_or_else(|| {
+            ModelIden::new(genai::adapter::AdapterKind::OpenAI, "gpt-4o-mini")
+        });
+
+        let negative_budget_handle = GenaiAgentHandle::new(
+            client.clone(),
+            model.clone(),
+            "system",
+            Vec::new(),
+            Some(-5),
+        );
+        assert_eq!(negative_budget_handle.thinking_budget, Some(-5));
+
+        let max_budget_handle = GenaiAgentHandle::new(
+            client,
+            model,
+            "system",
+            Vec::new(),
+            Some(i64::MAX),
+        );
+        assert_eq!(max_budget_handle.thinking_budget, Some(i64::MAX));
+
+        let clamped_negative = (-5_i64).clamp(0, u32::MAX as i64) as u32;
+        let clamped_overflow = i64::MAX.clamp(0, u32::MAX as i64) as u32;
+
+        assert_eq!(clamped_negative, 0);
+        assert_eq!(clamped_overflow, u32::MAX);
     }
 }

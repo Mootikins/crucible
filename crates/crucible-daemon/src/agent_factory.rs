@@ -6,27 +6,21 @@
 
 use crate::acp_handle::AcpAgentHandle;
 use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
-use crate::event_emitter::emit_event;
+use crate::provider::adapter_mapping::{build_genai_client, build_model_iden};
+use crate::provider::genai_handle::GenaiAgentHandle;
 use crate::protocol::SessionEventMessage;
 use crucible_acp::client::PermissionRequestHandler;
 use crucible_config::credentials::resolve_copilot_oauth_token;
 use crucible_config::{BackendType, DataClassification, LlmProviderConfig};
 use crucible_core::background::BackgroundSpawner;
 use crucible_core::enrichment::EmbeddingProvider;
-use crucible_core::interaction_registry::InteractionRegistry;
-use crucible_core::prompts::ModelSize;
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
+use crucible_core::traits::llm::LlmToolDefinition;
 use crucible_core::traits::mcp::McpToolInfo;
 use crucible_core::traits::KnowledgeRepository;
-use crucible_core::{EventPushCallback, InteractionContext};
-use crucible_rig::{
-    create_client, mcp_tools_from_gateway, AgentConfig, HandleBuildOpts, WorkspaceContext,
-};
-use crucible_tools::in_process_adapter::InProcessMcpAdapter;
 use crucible_tools::mcp_server::CrucibleMcpServer;
 use crucible_tools::DelegationContext;
-use rig::tool::ToolDyn;
 use std::path::Path;
 use std::sync::Arc;
 use thiserror::Error;
@@ -68,7 +62,7 @@ fn build_internal_delegation_context(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn create_internal_mcp_tools(
+async fn create_internal_mcp_tool_defs(
     workspace: &Path,
     kiln_path: Option<&Path>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
@@ -78,8 +72,8 @@ async fn create_internal_mcp_tools(
     delegation_context: Option<DelegationContext>,
     mode: &str,
     gateway_all_tools_override: Option<&[McpToolInfo]>,
-) -> Vec<Box<dyn ToolDyn>> {
-    let mut combined_tools = Vec::new();
+) -> Vec<LlmToolDefinition> {
+    let mut tool_defs = Vec::new();
 
     if let Some(kiln_path) = kiln_path {
         let knowledge_repo: Arc<dyn KnowledgeRepository> =
@@ -92,14 +86,23 @@ async fn create_internal_mcp_tools(
             embedding_provider,
             delegation_context,
         );
-        let adapter = InProcessMcpAdapter::new(Arc::new(server));
-        combined_tools.extend(adapter.create_rig_tools(mode));
+        for tool in server.list_tools() {
+            let tool_name = tool.name.to_string();
+            if mode == "plan" && !is_plan_mode_tool(&tool_name) {
+                continue;
+            }
+            tool_defs.push(LlmToolDefinition::new(
+                tool_name,
+                tool.description.map(|d| d.to_string()).unwrap_or_default(),
+                serde_json::Value::Object((*tool.input_schema).clone()),
+            ));
+        }
 
         info!(
-            count = combined_tools.len(),
+            count = tool_defs.len(),
             kiln = %kiln_path.display(),
             mode,
-            "Resolved in-process Crucible MCP adapter tools"
+            "Resolved in-process Crucible MCP tool definitions"
         );
     } else {
         debug!(
@@ -108,7 +111,7 @@ async fn create_internal_mcp_tools(
         );
     }
 
-    let user_mcp_tools: Vec<Box<dyn ToolDyn>> = if let Some(ref gw) = mcp_gateway {
+    let user_mcp_tools: Vec<LlmToolDefinition> = if let Some(ref gw) = mcp_gateway {
         let gw_read = gw.read().await;
         debug!(
             tool_count = gw_read.tool_count(),
@@ -126,9 +129,16 @@ async fn create_internal_mcp_tools(
                 &all_tools_owned
             };
             drop(gw_read);
-            let tools = mcp_tools_from_gateway(gw, server_names, all_tools)
+            let tools = all_tools
                 .into_iter()
-                .map(|tool| Box::new(tool) as Box<dyn ToolDyn>)
+                .filter(|tool| server_names.contains(&tool.upstream))
+                .map(|tool| {
+                    LlmToolDefinition::new(
+                        tool.prefixed_name.clone(),
+                        tool.description.clone().unwrap_or_default(),
+                        tool.input_schema.clone(),
+                    )
+                })
                 .collect::<Vec<_>>();
             info!(count = tools.len(), servers = ?server_names, "Resolved MCP proxy tools");
             tools
@@ -139,8 +149,12 @@ async fn create_internal_mcp_tools(
         vec![]
     };
 
-    combined_tools.extend(user_mcp_tools);
-    combined_tools
+    tool_defs.extend(user_mcp_tools);
+    tool_defs
+}
+
+fn is_plan_mode_tool(name: &str) -> bool {
+    crucible_tools::mcp_server::PLAN_TOOL_NAMES.contains(&name)
 }
 
 #[cfg(test)]
@@ -155,7 +169,7 @@ async fn create_internal_mcp_tool_names_for_tests(
     mode: &str,
     gateway_all_tools_override: Option<&[McpToolInfo]>,
 ) -> Vec<String> {
-    let tools = create_internal_mcp_tools(
+    let tools = create_internal_mcp_tool_defs(
         workspace,
         kiln_path,
         mcp_gateway,
@@ -169,7 +183,7 @@ async fn create_internal_mcp_tool_names_for_tests(
     .await;
     tools
         .into_iter()
-        .map(|t| t.name())
+        .map(|t| t.function.name)
         .collect()
 }
 
@@ -218,6 +232,8 @@ pub async fn create_agent_from_session_config(
     knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
     embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
 ) -> Result<Box<dyn AgentHandle + Send + Sync>, AgentFactoryError> {
+    // TODO: Wire event_tx for real-time session event broadcasting (streaming progress, tool call notifications)
+    let _ = event_tx;
     if agent_config.agent_type == "acp" {
         let handle = AcpAgentHandle::new(
             agent_config,
@@ -251,7 +267,7 @@ pub async fn create_agent_from_session_config(
         workspace,
         kiln_path,
     );
-    let mcp_tools = create_internal_mcp_tools(
+    let tool_defs = create_internal_mcp_tool_defs(
         workspace,
         kiln_path,
         mcp_gateway.clone(),
@@ -288,67 +304,20 @@ pub async fn create_agent_from_session_config(
         }
     }
 
-    let client =
-        create_client(&llm_config).map_err(|e| AgentFactoryError::ClientCreation(e.to_string()))?;
-
-    let mut rig_agent_config = AgentConfig::new(&agent_config.model, &agent_config.system_prompt);
-    if let Some(temp) = agent_config.temperature {
-        rig_agent_config = rig_agent_config.with_temperature(temp);
-    }
-    if let Some(tokens) = agent_config.max_tokens {
-        rig_agent_config = rig_agent_config.with_max_tokens(tokens);
-    }
-
-    debug!(
-        model = %agent_config.model,
-        prompt_len = agent_config.system_prompt.len(),
-        "Building Rig agent"
+    let model_iden = build_model_iden(&provider_type, &agent_config.model).ok_or_else(|| {
+        AgentFactoryError::ClientCreation(format!(
+            "Unsupported provider for chat: {:?}",
+            provider_type
+        ))
+    })?;
+    let genai_client = build_genai_client(&llm_config);
+    let handle = GenaiAgentHandle::new(
+        genai_client,
+        model_iden,
+        &agent_config.system_prompt,
+        tool_defs,
+        agent_config.thinking_budget,
     );
-
-    let ollama_endpoint = agent_config.endpoint.clone();
-    let thinking_budget = agent_config.thinking_budget;
-    let model_size = ModelSize::from_model_name(&agent_config.model);
-
-    // Create InteractionContext for ask_user tool support
-    let registry = Arc::new(tokio::sync::Mutex::new(InteractionRegistry::new()));
-    let event_tx_clone = event_tx.clone();
-    let push_event: EventPushCallback = Arc::new(move |_event| {
-        // TODO: Convert SessionEvent to SessionEventMessage and send
-        // For now, events are handled through the agent's event stream
-        let _ = emit_event(
-            &event_tx_clone,
-            SessionEventMessage::new("session", "interaction_event", serde_json::json!({})),
-        );
-    });
-    let interaction_ctx = Arc::new(InteractionContext::new(registry, push_event));
-
-    let delegation_targets = agent_config
-        .delegation_config
-        .as_ref()
-        .and_then(|config| config.allowed_targets.clone())
-        .unwrap_or_default();
-
-    let mut ws_ctx = WorkspaceContext::new(workspace)
-        .with_delegation_targets(delegation_targets)
-        .with_interaction_context(interaction_ctx);
-    if let Some(ref spawner) = background_spawner {
-        ws_ctx = ws_ctx.with_background_spawner(spawner.clone());
-    }
-
-    let opts = HandleBuildOpts {
-        model: agent_config.model.clone(),
-        model_size,
-        thinking_budget,
-        ollama_endpoint,
-        mcp_gateway,
-        initial_mode: None,
-        reasoning_endpoint: None,
-    };
-
-    let handle = client
-        .build_agent_handle(&rig_agent_config, &ws_ctx, mcp_tools, opts)
-        .await
-        .map_err(AgentFactoryError::AgentBuild)?;
 
     info!(
         provider = %agent_config.provider,
@@ -356,7 +325,7 @@ pub async fn create_agent_from_session_config(
         "Agent created successfully"
     );
 
-    Ok(handle)
+    Ok(Box::new(handle))
 }
 
 #[cfg(test)]
@@ -736,7 +705,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_tool_routing_calls_reach_in_process_server() {
+    async fn test_tool_definitions_include_get_kiln_info() {
         let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
         let kiln_path = temp_dir.path();
 
@@ -745,7 +714,7 @@ mod tests {
         let embedding_provider: Arc<dyn EmbeddingProvider> =
             Arc::new(EmptyEmbeddingProvider);
 
-        let tools = create_internal_mcp_tools(
+        let tools = create_internal_mcp_tool_defs(
             Path::new("/tmp"),
             Some(kiln_path),
             None,
@@ -759,20 +728,9 @@ mod tests {
         .await;
 
         let get_kiln_info_tool = tools
-            .into_iter()
-            .find(|t| t.name() == "get_kiln_info")
+            .iter()
+            .find(|t| t.function.name == "get_kiln_info")
             .expect("get_kiln_info tool should exist in in-process tools");
-
-        let result = get_kiln_info_tool.call("{}".to_string()).await;
-
-        assert!(
-            result.is_ok(),
-            "Tool call should succeed, but got error: {:?}",
-            result
-        );
-        assert!(
-            result.unwrap().contains("name"),
-            "get_kiln_info should contain name field"
-        );
+        assert!(!get_kiln_info_tool.function.description.is_empty());
     }
 }
