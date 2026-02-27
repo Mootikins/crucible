@@ -862,7 +862,7 @@ impl OilChatApp {
         }
     }
 
-    pub fn with_on_submit<F>(mut self, callback: F) -> Self
+    fn with_on_submit<F>(mut self, callback: F) -> Self
     where
         F: Fn(String) + Send + Sync + 'static,
     {
@@ -870,108 +870,108 @@ impl OilChatApp {
         self
     }
 
-    pub fn set_mode(&mut self, mode: ChatMode) {
+    pub(crate) fn set_mode(&mut self, mode: ChatMode) {
         self.mode = mode;
     }
 
-    pub fn set_model(&mut self, model: impl Into<String>) {
+    pub(crate) fn set_model(&mut self, model: impl Into<String>) {
         self.model = model.into();
     }
 
-    pub fn set_status(&mut self, status: impl Into<String>) {
+    pub(crate) fn set_status(&mut self, status: impl Into<String>) {
         self.status = status.into();
     }
 
-    pub fn set_workspace_files(&mut self, files: Vec<String>) {
+    pub(crate) fn set_workspace_files(&mut self, files: Vec<String>) {
         self.workspace_files = files;
     }
 
-    pub fn set_kiln_notes(&mut self, notes: Vec<String>) {
+    pub(crate) fn set_kiln_notes(&mut self, notes: Vec<String>) {
         self.kiln_notes = notes;
     }
 
-    pub fn set_slash_commands(&mut self, commands: Vec<(String, String)>) {
+    pub(crate) fn set_slash_commands(&mut self, commands: Vec<(String, String)>) {
         self.slash_commands = commands;
     }
 
-    pub fn set_session_dir(&mut self, path: PathBuf) {
+    pub(crate) fn set_session_dir(&mut self, path: PathBuf) {
         self.session_dir = Some(path);
     }
 
-    pub fn session_dir(&self) -> Option<&std::path::Path> {
+    pub(crate) fn session_dir(&self) -> Option<&std::path::Path> {
         self.session_dir.as_deref()
     }
 
-    pub fn set_mcp_servers(&mut self, servers: Vec<McpServerDisplay>) {
+    pub(crate) fn set_mcp_servers(&mut self, servers: Vec<McpServerDisplay>) {
         self.mcp_servers = servers;
     }
 
-    pub fn set_plugin_status(&mut self, entries: Vec<PluginStatusEntry>) {
+    pub(crate) fn set_plugin_status(&mut self, entries: Vec<PluginStatusEntry>) {
         self.plugin_status = entries;
     }
 
-    pub fn set_available_models(&mut self, models: Vec<String>) {
+    pub(crate) fn set_available_models(&mut self, models: Vec<String>) {
         self.available_models = models.clone();
         if !models.is_empty() {
             self.model_list_state = ModelListState::Loaded;
         }
     }
 
-    pub fn model_list_state(&self) -> &ModelListState {
+    pub(crate) fn model_list_state(&self) -> &ModelListState {
         &self.model_list_state
     }
 
-    pub fn available_models(&self) -> &[String] {
+    pub(crate) fn available_models(&self) -> &[String] {
         &self.available_models
     }
 
-    pub fn set_show_thinking(&mut self, show: bool) {
+    pub(crate) fn set_show_thinking(&mut self, show: bool) {
         self.show_thinking = show;
     }
 
-    pub fn set_precognition(&mut self, val: bool) {
+    pub(crate) fn set_precognition(&mut self, val: bool) {
         self.precognition.precognition = val;
     }
 
-    pub fn precognition(&self) -> bool {
+    pub(crate) fn precognition(&self) -> bool {
         self.precognition.precognition
     }
 
-    pub fn precognition_results(&self) -> usize {
+    fn precognition_results(&self) -> usize {
         self.precognition.precognition_results
     }
 
-    pub fn perm_show_diff(&self) -> bool {
+    fn perm_show_diff(&self) -> bool {
         self.permission.perm_show_diff
     }
 
-    pub fn perm_autoconfirm_session(&self) -> bool {
+    fn perm_autoconfirm_session(&self) -> bool {
         self.permission.perm_autoconfirm_session
     }
 
     /// Get access to the container list for testing/inspection.
     #[cfg(test)]
-    pub fn container_list(&self) -> &ContainerList {
+    pub(crate) fn container_list(&self) -> &ContainerList {
         &self.container_list
     }
 
-    pub fn add_notification(&mut self, notification: crucible_core::types::Notification) {
+    pub(crate) fn add_notification(&mut self, notification: crucible_core::types::Notification) {
         self.notification_area.add(notification);
     }
 
-    pub fn toggle_messages(&mut self) {
+    pub(crate) fn toggle_messages(&mut self) {
         self.notification_area.toggle();
     }
 
-    pub fn show_messages(&mut self) {
+    pub(crate) fn show_messages(&mut self) {
         self.notification_area.show();
     }
 
-    pub fn hide_messages(&mut self) {
+    pub(crate) fn hide_messages(&mut self) {
         self.notification_area.hide();
     }
 
-    pub fn clear_notifications(&mut self) {
+    pub(crate) fn clear_notifications(&mut self) {
         self.notification_area.clear();
     }
 
@@ -1006,16 +1006,16 @@ impl OilChatApp {
         comp.view(ctx)
     }
 
-    pub fn clear_messages(&mut self) {
+    pub(crate) fn clear_messages(&mut self) {
         self.notification_area.clear();
     }
 
-    pub fn mark_graduated(&mut self, ids: impl IntoIterator<Item = String>) {
+    pub(crate) fn mark_graduated(&mut self, ids: impl IntoIterator<Item = String>) {
         let ids: Vec<String> = ids.into_iter().collect();
         self.container_list.graduate(&ids);
     }
 
-    pub fn load_previous_messages(&mut self, items: Vec<ChatItem>) {
+    pub(crate) fn load_previous_messages(&mut self, items: Vec<ChatItem>) {
         self.container_list.clear();
         for item in &items {
             match item {
@@ -1076,34 +1076,34 @@ impl OilChatApp {
         self.shell_history.shell_history.push_back(cmd);
     }
 
-    pub fn is_streaming(&self) -> bool {
+    pub(crate) fn is_streaming(&self) -> bool {
         self.container_list.is_streaming()
     }
 
-    pub fn input_content(&self) -> &str {
+    pub(crate) fn input_content(&self) -> &str {
         self.input.content()
     }
 
     #[cfg(test)]
-    pub fn is_popup_visible(&self) -> bool {
+    pub(crate) fn is_popup_visible(&self) -> bool {
         self.popup.show
     }
 
     #[cfg(test)]
-    pub fn current_popup_filter(&self) -> &str {
+    pub(crate) fn current_popup_filter(&self) -> &str {
         &self.popup.filter
     }
 
     #[cfg(test)]
-    pub fn current_model(&self) -> &str {
+    pub(crate) fn current_model(&self) -> &str {
         &self.model
     }
 
-    pub fn has_shell_modal(&self) -> bool {
+    pub(crate) fn has_shell_modal(&self) -> bool {
         self.shell_modal.is_some()
     }
 
-    pub fn open_interaction(
+    pub(crate) fn open_interaction(
         &mut self,
         request_id: String,
         request: InteractionRequest,
@@ -1137,16 +1137,16 @@ impl OilChatApp {
         Action::Continue
     }
 
-    pub fn close_interaction(&mut self) {
+    fn close_interaction(&mut self) {
         self.interaction_modal = None;
     }
 
-    pub fn interaction_visible(&self) -> bool {
+    pub(crate) fn interaction_visible(&self) -> bool {
         self.interaction_modal.is_some()
     }
 
     #[cfg(test)]
-    pub fn shell_output_lines(&self) -> Vec<String> {
+    pub(crate) fn shell_output_lines(&self) -> Vec<String> {
         self.shell_modal
             .as_ref()
             .map(|m| m.output_lines().to_vec())
@@ -1154,7 +1154,7 @@ impl OilChatApp {
     }
 
     #[cfg(test)]
-    pub fn shell_visible_lines(&self, max_lines: usize) -> Vec<String> {
+    pub(crate) fn shell_visible_lines(&self, max_lines: usize) -> Vec<String> {
         self.shell_modal
             .as_ref()
             .map(|m| m.visible_lines(max_lines).to_vec())
@@ -1162,7 +1162,7 @@ impl OilChatApp {
     }
 
     #[cfg(test)]
-    pub fn shell_scroll_offset(&self) -> usize {
+    pub(crate) fn shell_scroll_offset(&self) -> usize {
         self.shell_modal
             .as_ref()
             .map(|m| m.scroll_offset())
@@ -1170,7 +1170,7 @@ impl OilChatApp {
     }
 
     #[cfg(test)]
-    pub fn set_input_content(&mut self, content: &str) {
+    pub(crate) fn set_input_content(&mut self, content: &str) {
         self.input.handle(InputAction::Clear);
         for ch in content.chars() {
             self.input.handle(InputAction::Insert(ch));
@@ -1178,11 +1178,11 @@ impl OilChatApp {
     }
 
     #[cfg(test)]
-    pub fn handle_input_action(&mut self, action: InputAction) {
+    pub(crate) fn handle_input_action(&mut self, action: InputAction) {
         self.input.handle(action);
     }
 
-    pub fn take_needs_full_redraw(&mut self) -> bool {
+    pub(crate) fn take_needs_full_redraw(&mut self) -> bool {
         std::mem::take(&mut self.needs_full_redraw)
     }
 
