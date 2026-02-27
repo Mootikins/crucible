@@ -329,6 +329,22 @@ impl Default for ShellHistoryState {
         }
     }
 }
+/// Precognition state — auto-RAG settings
+pub(crate) struct PrecognitionState {
+    /// Whether to auto-enrich user messages with knowledge base context (precognition / auto-RAG)
+    pub precognition: bool,
+    /// Number of context results to inject per precognition query (1-20)
+    pub precognition_results: usize,
+}
+
+impl Default for PrecognitionState {
+    fn default() -> Self {
+        Self {
+            precognition: true,
+            precognition_results: 5,
+        }
+    }
+}
 
 pub struct OilChatApp {
     // ─── Viewport Projection (daemon-derived state) ───────────────────
@@ -374,11 +390,10 @@ pub struct OilChatApp {
     /// Force a full terminal redraw on next tick
     needs_full_redraw: bool,
     /// Whether to render LLM thinking/reasoning blocks
+    /// Whether to render LLM thinking/reasoning blocks
     show_thinking: bool,
-    /// Whether to auto-enrich user messages with knowledge base context (precognition / auto-RAG)
-    precognition: bool,
-    /// Number of context results to inject per precognition query (1-20)
-    precognition_results: usize,
+    /// Precognition state (auto-RAG settings)
+    precognition: PrecognitionState,
     /// Current terminal size (width, height) — updated in view()
     terminal_size: Cell<(u16, u16)>,
 
@@ -441,8 +456,7 @@ impl Default for OilChatApp {
             spinner_frame: 0,
             needs_full_redraw: false,
             show_thinking: true,
-            precognition: true,
-            precognition_results: 5,
+            precognition: PrecognitionState::default(),
             terminal_size: Cell::new((80, 24)),
             permission: PermissionState::default(),
             deferred_messages: VecDeque::new(),
@@ -839,15 +853,15 @@ impl OilChatApp {
     }
 
     pub fn set_precognition(&mut self, val: bool) {
-        self.precognition = val;
+        self.precognition.precognition = val;
     }
 
     pub fn precognition(&self) -> bool {
-        self.precognition
+        self.precognition.precognition
     }
 
     pub fn precognition_results(&self) -> usize {
-        self.precognition_results
+        self.precognition.precognition_results
     }
 
     pub fn perm_show_diff(&self) -> bool {
@@ -1833,7 +1847,7 @@ impl OilChatApp {
                                 Ok(n) if (1..=20).contains(&n) => {
                                     self.runtime_config
                                         .set_str(&key, &value, ModSource::Command);
-                                    self.precognition_results = n;
+                                    self.precognition.precognition_results = n;
                                     self.add_system_message(format!(
                                         "  precognition.results={}",
                                         n
@@ -1896,10 +1910,10 @@ impl OilChatApp {
             .unwrap_or(ConfigValue::String("normal".to_string()));
         output.push_str(&format!("  mode: {}\n", mode));
 
-        output.push_str(&format!("  precognition: {}\n", self.precognition));
+        output.push_str(&format!("  precognition: {}\n", self.precognition.precognition));
         output.push_str(&format!(
             "  precognition.results: {}\n",
-            self.precognition_results
+            self.precognition.precognition_results
         ));
 
         self.add_system_message(output);
@@ -1972,13 +1986,13 @@ impl OilChatApp {
             }
             "precognition" => {
                 if let Some(val) = self.runtime_config.get("precognition") {
-                    self.precognition = val.as_bool().unwrap_or(true);
+                    self.precognition.precognition = val.as_bool().unwrap_or(true);
                 }
             }
             "precognition.results" => {
                 if let Some(val) = self.runtime_config.get("precognition.results") {
                     if let Some(n) = val.as_int() {
-                        self.precognition_results = (n as usize).clamp(1, 20);
+                        self.precognition.precognition_results = (n as usize).clamp(1, 20);
                     }
                 }
             }
