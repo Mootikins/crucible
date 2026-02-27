@@ -40,7 +40,6 @@ pub const INPUT_MAX_CONTENT_LINES: usize = 3;
 const MAX_DISPLAY_ITEMS: usize = 512;
 const MAX_SHELL_HISTORY: usize = 100;
 
-
 #[derive(Debug, Clone)]
 pub enum ChatAppMsg {
     UserMessage(String),
@@ -314,6 +313,23 @@ impl Default for PermissionState {
     }
 }
 
+/// Shell command history state — recent commands and recall index
+pub(crate) struct ShellHistoryState {
+    /// Recent shell commands (for !-history recall)
+    pub shell_history: VecDeque<String>,
+    /// Current index into shell_history during recall
+    pub shell_history_index: Option<usize>,
+}
+
+impl Default for ShellHistoryState {
+    fn default() -> Self {
+        Self {
+            shell_history: VecDeque::with_capacity(MAX_SHELL_HISTORY),
+            shell_history_index: None,
+        }
+    }
+}
+
 pub struct OilChatApp {
     // ─── Viewport Projection (daemon-derived state) ───────────────────
     // These fields mirror information received from the daemon and
@@ -385,9 +401,9 @@ pub struct OilChatApp {
     /// Filesystem path for saving session transcripts
     session_dir: Option<PathBuf>,
     /// Recent shell commands (for !-history recall)
-    shell_history: VecDeque<String>,
+    /// Shell command history state
+    shell_history: ShellHistoryState,
     /// Current index into shell_history during recall
-    shell_history_index: Option<usize>,
     /// Runtime configuration (`:set` overrides)
     runtime_config: RuntimeConfig,
     /// Workspace file paths (for @-file autocomplete)
@@ -437,8 +453,7 @@ impl Default for OilChatApp {
             // I/O / Lifecycle
             on_submit: None,
             session_dir: None,
-            shell_history: VecDeque::with_capacity(MAX_SHELL_HISTORY),
-            shell_history_index: None,
+            shell_history: ShellHistoryState::default(),
             runtime_config: RuntimeConfig::empty(),
             workspace_files: Vec::new(),
             kiln_notes: Vec::new(),
@@ -964,10 +979,10 @@ impl OilChatApp {
     }
 
     fn push_shell_history(&mut self, cmd: String) {
-        if self.shell_history.len() >= MAX_SHELL_HISTORY {
-            self.shell_history.pop_front();
+        if self.shell_history.shell_history.len() >= MAX_SHELL_HISTORY {
+            self.shell_history.shell_history.pop_front();
         }
-        self.shell_history.push_back(cmd);
+        self.shell_history.shell_history.push_back(cmd);
     }
 
     pub fn is_streaming(&self) -> bool {
@@ -1014,7 +1029,9 @@ impl OilChatApp {
 
         if let InteractionRequest::Permission(perm) = &request {
             if self.interaction_modal.is_some() {
-                self.permission.permission_queue.push_back((request_id, perm.clone()));
+                self.permission
+                    .permission_queue
+                    .push_back((request_id, perm.clone()));
                 return Action::Continue;
             }
         }
@@ -2052,12 +2069,13 @@ impl OilChatApp {
 
         if !self
             .shell_history
+            .shell_history
             .back()
             .is_some_and(|last| last == &shell_cmd)
         {
             self.push_shell_history(shell_cmd.clone());
         }
-        self.shell_history_index = None;
+        self.shell_history.shell_history_index = None;
 
         let working_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
@@ -3198,10 +3216,10 @@ mod tests {
             app.push_shell_history(format!("cmd {}", i));
         }
 
-        assert_eq!(app.shell_history.len(), MAX_SHELL_HISTORY);
-        assert_eq!(app.shell_history.front().unwrap(), "cmd 5");
+        assert_eq!(app.shell_history.shell_history.len(), MAX_SHELL_HISTORY);
+        assert_eq!(app.shell_history.shell_history.front().unwrap(), "cmd 5");
         assert_eq!(
-            app.shell_history.back().unwrap(),
+            app.shell_history.shell_history.back().unwrap(),
             &format!("cmd {}", MAX_SHELL_HISTORY + 4)
         );
     }
