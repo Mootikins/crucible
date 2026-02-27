@@ -177,6 +177,17 @@ impl Server {
             None
         };
 
+        let plugin_loader = Arc::new(Mutex::new(match DaemonPluginLoader::new(plugin_config) {
+            Ok(loader) => {
+                info!("Daemon plugin loader initialized");
+                Some(loader)
+            }
+            Err(e) => {
+                warn!("Failed to initialize daemon plugin loader: {}", e);
+                None
+            }
+        }));
+
         let kiln_manager = Arc::new(KilnManager::with_event_tx(event_tx.clone()));
         let session_manager = Arc::new(SessionManager::new());
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
@@ -188,6 +199,7 @@ impl Server {
             llm_config.clone(),
             acp_config,
             permission_config,
+            Some(plugin_loader.clone()),
         ));
         let subscription_manager = Arc::new(SubscriptionManager::new());
         let project_manager = Arc::new(ProjectManager::new(
@@ -203,17 +215,6 @@ impl Server {
             shutdown_tx.clone(),
         );
         let dispatcher = Arc::new(RpcDispatcher::new(ctx));
-
-        let plugin_loader = Arc::new(Mutex::new(match DaemonPluginLoader::new(plugin_config) {
-            Ok(loader) => {
-                info!("Daemon plugin loader initialized");
-                Some(loader)
-            }
-            Err(e) => {
-                warn!("Failed to initialize daemon plugin loader: {}", e);
-                None
-            }
-        }));
 
         info!("Daemon listening on {:?}", path);
         Ok(Self {
