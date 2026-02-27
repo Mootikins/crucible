@@ -1443,8 +1443,15 @@ fn model_popup_repl_command_keeps_open_when_typing_filter() {
     }
     app.update(Event::Key(key(KeyCode::Enter)));
 
-    assert!(app.is_popup_visible(), "Popup should be open after ':model' + Enter");
-    assert_eq!(app.input_content(), ":model ", "Input should be ':model ' after REPL command opens popup");
+    assert!(
+        app.is_popup_visible(),
+        "Popup should be open after ':model' + Enter"
+    );
+    assert_eq!(
+        app.input_content(),
+        ":model ",
+        "Input should be ':model ' after REPL command opens popup"
+    );
 
     // Type a filter character — this is the regression: popup must NOT close
     app.update(Event::Key(key(KeyCode::Char('o'))));
@@ -1471,7 +1478,10 @@ fn model_popup_repl_command_not_loaded_keeps_open_after_models_arrive() {
     }
     app.update(Event::Key(key(KeyCode::Enter)));
 
-    assert!(app.is_popup_visible(), "Popup should open immediately (showing 'Fetching...' state)");
+    assert!(
+        app.is_popup_visible(),
+        "Popup should open immediately (showing 'Fetching...' state)"
+    );
 
     // Simulate models arriving
     app.on_message(ChatAppMsg::ModelsLoaded(vec![
@@ -1515,7 +1525,10 @@ fn model_popup_repl_command_multi_char_filter_narrows_results() {
         app.update(Event::Key(key(KeyCode::Char(c))));
     }
 
-    assert!(app.is_popup_visible(), "Popup must stay open with multi-char filter");
+    assert!(
+        app.is_popup_visible(),
+        "Popup must stay open with multi-char filter"
+    );
     assert_eq!(
         app.current_popup_filter(),
         "lla",
@@ -1807,11 +1820,7 @@ fn set_available_models_sets_loaded_state_when_non_empty() {
         &ModelListState::Loaded,
         "State should be Loaded after setting non-empty models"
     );
-    assert_eq!(
-        app.available_models().len(),
-        2,
-        "Models should be stored"
-    );
+    assert_eq!(app.available_models().len(), 2, "Models should be stored");
 }
 
 #[test]
@@ -1825,8 +1834,5 @@ fn set_available_models_does_not_set_loaded_state_when_empty() {
         &ModelListState::NotLoaded,
         "State should remain NotLoaded when setting empty models"
     );
-    assert!(
-        app.available_models().is_empty(),
-        "Models should be empty"
-    );
+    assert!(app.available_models().is_empty(), "Models should be empty");
 }

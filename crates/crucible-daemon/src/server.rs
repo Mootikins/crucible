@@ -602,14 +602,7 @@ async fn handle_client(
         }
 
         let response = match serde_json::from_str::<Request>(&line) {
-            Ok(req) => {
-                handle_request(
-                    req,
-                    client_id,
-                    &ctx,
-                )
-                .await
-            }
+            Ok(req) => handle_request(req, client_id, &ctx).await,
             Err(e) => {
                 warn!("Parse error: {}", e);
                 Response::error(None, PARSE_ERROR, e.to_string())
@@ -699,11 +692,7 @@ async fn persist_event(
     Ok(())
 }
 
-async fn handle_request(
-    req: Request,
-    client_id: ClientId,
-    ctx: &ServerContext,
-) -> Response {
+async fn handle_request(req: Request, client_id: ClientId, ctx: &ServerContext) -> Response {
     let req_clone = req.clone();
     let resp = ctx.dispatcher.dispatch(client_id, req).await;
 
@@ -1439,8 +1428,8 @@ async fn handle_session_create(
         })
         .unwrap_or_default();
 
-    let recording_mode =
-        optional_param!(req, "recording_mode", as_str).and_then(|s| s.parse::<RecordingMode>().ok());
+    let recording_mode = optional_param!(req, "recording_mode", as_str)
+        .and_then(|s| s.parse::<RecordingMode>().ok());
     let custom_recording_path = optional_param!(req, "recording_path", as_str).map(PathBuf::from);
 
     let project_path = workspace.as_ref().unwrap_or(&kiln);
@@ -4286,7 +4275,10 @@ mod tests {
             }
         })
         .await;
-        assert!(removed.is_ok(), "deleted note should be removed after event");
+        assert!(
+            removed.is_ok(),
+            "deleted note should be removed after event"
+        );
 
         event_tx
             .send(SessionEventMessage::new(

@@ -1,7 +1,7 @@
+use crate::tui::oil::utils::wrap_words;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
-use crate::tui::oil::utils::wrap_words;
 
 use super::chat_app::Role;
 
@@ -295,4 +295,3 @@ impl CachedChatItem {
         }
     }
 }
-

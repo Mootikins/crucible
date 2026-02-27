@@ -1,8 +1,8 @@
 use crate::trust_resolution::resolve_kiln_classification;
 use anyhow::Result;
 use crucible_config::{DataClassification, TrustLevel};
-use crucible_core::{DocumentId, SearchResult};
 use crucible_core::traits::KnowledgeRepository;
+use crucible_core::{DocumentId, SearchResult};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

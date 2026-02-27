@@ -32,7 +32,10 @@ fn create_consistency_kiln() -> Result<TempDir> {
 
     // Subdirectory markdown (should be discovered)
     std::fs::create_dir(root.join("subdir"))?;
-    std::fs::write(root.join("subdir").join("nested.md"), "# Nested\n\nIn subdir.")?;
+    std::fs::write(
+        root.join("subdir").join("nested.md"),
+        "# Nested\n\nIn subdir.",
+    )?;
 
     // --- Files that should NOT be discovered ---
     // Excluded directories
@@ -66,7 +69,6 @@ async fn process_and_stats_agree_on_markdown_file_count() -> Result<()> {
     let (discovered, processed, skipped, errors) = km.open_and_process(kiln_path, false).await?;
 
     // The total files the pipeline saw = discovered count
-
 
     // Assert: discovered == actual .md file count (excludes .crucible/.git)
     assert_eq!(
@@ -132,14 +134,15 @@ async fn second_process_run_skips_unchanged_files() -> Result<()> {
     let km = KilnManager::new();
 
     // First run: all files get processed
-    let (discovered1, processed1, skipped1, errors1) = km.open_and_process(kiln_path, false).await?;
+    let (discovered1, processed1, skipped1, errors1) =
+        km.open_and_process(kiln_path, false).await?;
     assert_eq!(discovered1, EXPECTED_MD);
     assert_eq!(discovered1, EXPECTED_MD);
     assert!(errors1.is_empty());
 
     // Second run: all files should be skipped (no changes)
-    let (discovered2, processed2, skipped2, errors2) = km.open_and_process(kiln_path, false).await?;
-
+    let (discovered2, processed2, skipped2, errors2) =
+        km.open_and_process(kiln_path, false).await?;
 
     // Discovered count must be identical across runs
     assert_eq!(
@@ -169,7 +172,6 @@ async fn force_reprocess_agrees_with_stats() -> Result<()> {
     let temp = create_consistency_kiln()?;
     let kiln_path = temp.path();
 
-
     let km = KilnManager::new();
 
     // First run
@@ -177,7 +179,6 @@ async fn force_reprocess_agrees_with_stats() -> Result<()> {
 
     // Force reprocess
     let (discovered, processed, skipped, errors) = km.open_and_process(kiln_path, true).await?;
-
 
     // Discovered count must match stats even after force
     let stats = FileSystemKilnStatsService.collect(kiln_path)?;

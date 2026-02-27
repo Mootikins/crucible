@@ -446,7 +446,10 @@ mod tests {
         assert!(result, "Callback should return true on successful send");
 
         let received = rx.try_recv();
-        assert!(received.is_ok(), "Should receive thinking chunk from channel");
+        assert!(
+            received.is_ok(),
+            "Should receive thinking chunk from channel"
+        );
         assert_eq!(received.unwrap(), chunk);
     }
 
@@ -465,7 +468,10 @@ mod tests {
         assert!(result, "Callback should return true on successful send");
 
         let received = rx.try_recv();
-        assert!(received.is_ok(), "Should receive tool start chunk from channel");
+        assert!(
+            received.is_ok(),
+            "Should receive tool start chunk from channel"
+        );
         assert_eq!(received.unwrap(), chunk);
     }
 
@@ -484,7 +490,10 @@ mod tests {
         assert!(result, "Callback should return true on successful send");
 
         let received = rx.try_recv();
-        assert!(received.is_ok(), "Should receive tool end chunk from channel");
+        assert!(
+            received.is_ok(),
+            "Should receive tool end chunk from channel"
+        );
         assert_eq!(received.unwrap(), chunk);
     }
 
@@ -503,7 +512,10 @@ mod tests {
         assert!(result, "Callback should return true on successful send");
 
         let received = rx.try_recv();
-        assert!(received.is_ok(), "Should receive tool error chunk from channel");
+        assert!(
+            received.is_ok(),
+            "Should receive tool error chunk from channel"
+        );
         assert_eq!(received.unwrap(), chunk);
     }
 
@@ -547,5 +559,4 @@ mod tests {
             assert_eq!(received.unwrap(), expected_chunk);
         }
     }
-
 }

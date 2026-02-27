@@ -40,10 +40,7 @@ pub async fn list_models(endpoint: &str, api_key: &str) -> ModelListingResult<Ve
     if !response.status().is_success() {
         let status = response.status().as_u16();
         let text = response.text().await.unwrap_or_default();
-        return Err(ModelListingError::Api(format!(
-            "HTTP {}: {}",
-            status, text
-        )));
+        return Err(ModelListingError::Api(format!("HTTP {}: {}", status, text)));
     }
 
     let body = response.text().await?;
@@ -197,4 +194,3 @@ mod tests {
         assert!(result.is_err());
     }
 }
-

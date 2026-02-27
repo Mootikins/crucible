@@ -16,6 +16,7 @@
 //! This module serves as a central re-export point for types that cross module boundaries.
 
 pub mod acp;
+pub mod database;
 pub mod grammar;
 pub mod hashing;
 pub mod mode;
@@ -23,7 +24,6 @@ pub mod notification;
 pub mod popup;
 pub mod tool_ref;
 pub mod undo_tree;
-pub mod database;
 // Re-export parser domain types
 pub use crate::parser::types::{
     CodeBlock, Frontmatter, FrontmatterFormat, Heading, ListBlock, ListItem, ListType, NoteContent,
@@ -32,8 +32,7 @@ pub use crate::parser::types::{
 
 // Re-export database domain types (canonical definitions in types::database)
 pub use self::database::{
-    DbError, DbResult, DocumentId, QueryResult, Record, RecordId, SearchResult,
-    UnifiedSearchResult,
+    DbError, DbResult, DocumentId, QueryResult, Record, RecordId, SearchResult, UnifiedSearchResult,
 };
 
 // Re-export note types

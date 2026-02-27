@@ -572,11 +572,8 @@ impl OilChatRunner {
         }
 
         let terminal_size = self.terminal.size();
-        let ctx = ViewContext::with_terminal_size(
-            &self.focus,
-            ThemeTokens::default_ref(),
-            terminal_size,
-        );
+        let ctx =
+            ViewContext::with_terminal_size(&self.focus, ThemeTokens::default_ref(), terminal_size);
         let tree = app.view(&ctx);
 
         let graduated_keys = if app.has_shell_modal() {
@@ -671,7 +668,9 @@ impl OilChatRunner {
                     "Received chunk"
                 );
 
-                if !chunk.delta.is_empty() && msg_tx.send(ChatAppMsg::TextDelta(chunk.delta)).is_err() {
+                if !chunk.delta.is_empty()
+                    && msg_tx.send(ChatAppMsg::TextDelta(chunk.delta)).is_err()
+                {
                     tracing::warn!("UI channel closed, TextDelta dropped");
                 }
 
@@ -812,7 +811,9 @@ impl OilChatRunner {
         match event_opt {
             Some(Ok(ct_event)) => {
                 tracing::trace!(?ct_event, "received crossterm event");
-                Ok(EventLoopSelectOutcome::Event(Some(self.convert_event(ct_event)?)))
+                Ok(EventLoopSelectOutcome::Event(Some(
+                    self.convert_event(ct_event)?,
+                )))
             }
             Some(Err(e)) => Err(e.into()),
             None => {
@@ -859,7 +860,9 @@ impl OilChatRunner {
     }
 
     async fn next_interaction_event(
-        interaction_rx: &mut Option<mpsc::UnboundedReceiver<crucible_core::interaction::InteractionEvent>>,
+        interaction_rx: &mut Option<
+            mpsc::UnboundedReceiver<crucible_core::interaction::InteractionEvent>,
+        >,
     ) -> Option<crucible_core::interaction::InteractionEvent> {
         match interaction_rx {
             Some(rx) => rx.recv().await,
@@ -1607,7 +1610,10 @@ mod tests {
 
     #[async_trait]
     impl AgentHandle for EmptyAgent {
-        fn send_message_stream(&mut self, _message: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
+        fn send_message_stream(
+            &mut self,
+            _message: String,
+        ) -> BoxStream<'static, ChatResult<ChatChunk>> {
             Box::pin(stream::empty())
         }
 

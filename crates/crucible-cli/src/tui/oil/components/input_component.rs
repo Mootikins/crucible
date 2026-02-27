@@ -2,8 +2,8 @@ use crate::tui::oil::component::Component;
 use crate::tui::oil::components::InputMode;
 use crate::tui::oil::node::*;
 use crate::tui::oil::style::Style;
-use crate::tui::oil::ViewContext;
 use crate::tui::oil::utils::wrap_chars;
+use crate::tui::oil::ViewContext;
 
 use super::INPUT_MAX_CONTENT_LINES;
 
@@ -71,7 +71,6 @@ impl<'a> InputComponent<'a> {
         (visible, adjusted_cursor)
     }
 }
-
 
 impl Component for InputComponent<'_> {
     fn view(&self, _ctx: &ViewContext<'_>) -> Node {
