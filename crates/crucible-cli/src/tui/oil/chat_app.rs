@@ -314,6 +314,26 @@ pub struct PopupState {
     pub trigger_pos: usize,
 }
 
+/// Permission request state — queue, display settings, and auto-confirm flag
+pub(crate) struct PermissionState {
+    /// Queue of pending permission requests (request_id, request) when multiple arrive rapidly
+    pub permission_queue: VecDeque<(String, PermRequest)>,
+    /// Whether to show diff by default in permission prompts (session-scoped)
+    pub perm_show_diff: bool,
+    /// Whether to auto-allow all permission prompts for this session
+    pub perm_autoconfirm_session: bool,
+}
+
+impl Default for PermissionState {
+    fn default() -> Self {
+        Self {
+            permission_queue: VecDeque::new(),
+            perm_show_diff: true,
+            perm_autoconfirm_session: false,
+        }
+    }
+}
+
 pub struct OilChatApp {
     // ─── Viewport Projection (daemon-derived state) ───────────────────
     // These fields mirror information received from the daemon and
@@ -366,12 +386,8 @@ pub struct OilChatApp {
     /// Current terminal size (width, height) — updated in view()
     terminal_size: Cell<(u16, u16)>,
 
-    /// Queue of pending permission requests (request_id, request) when multiple arrive rapidly
-    permission_queue: VecDeque<(String, PermRequest)>,
-    /// Whether to show diff by default in permission prompts (session-scoped)
-    perm_show_diff: bool,
-    /// Whether to auto-allow all permission prompts for this session
-    perm_autoconfirm_session: bool,
+    /// Permission request state
+    permission: PermissionState,
     /// Messages deferred until the current stream completes
     deferred_messages: VecDeque<String>,
     /// Monotonic counter for assigning message IDs
@@ -432,9 +448,7 @@ impl Default for OilChatApp {
             precognition: true,
             precognition_results: 5,
             terminal_size: Cell::new((80, 24)),
-            permission_queue: VecDeque::new(),
-            perm_show_diff: true,
-            perm_autoconfirm_session: false,
+            permission: PermissionState::default(),
             deferred_messages: VecDeque::new(),
             message_counter: 0,
             last_ctrl_c: None,
@@ -472,7 +486,7 @@ impl App for OilChatApp {
 
         let bottom = if let Some(modal) = &self.interaction_modal {
             let term_width = ctx.terminal_size.0 as usize;
-            modal.view(term_width, self.permission_queue.len())
+            modal.view(term_width, self.permission.permission_queue.len())
         } else if self.notification_area.is_visible() {
             self.render_messages_drawer(ctx)
         } else {
@@ -842,11 +856,11 @@ impl OilChatApp {
     }
 
     pub fn perm_show_diff(&self) -> bool {
-        self.perm_show_diff
+        self.permission.perm_show_diff
     }
 
     pub fn perm_autoconfirm_session(&self) -> bool {
-        self.perm_autoconfirm_session
+        self.permission.perm_autoconfirm_session
     }
 
     /// Get access to the container list for testing/inspection.
@@ -1008,7 +1022,7 @@ impl OilChatApp {
         request_id: String,
         request: InteractionRequest,
     ) -> Action<ChatAppMsg> {
-        if self.perm_autoconfirm_session {
+        if self.permission.perm_autoconfirm_session {
             if let InteractionRequest::Permission(_) = &request {
                 tracing::info!(request_id = %request_id, "Auto-confirming permission");
                 return Action::Send(ChatAppMsg::CloseInteraction {
@@ -1020,7 +1034,7 @@ impl OilChatApp {
 
         if let InteractionRequest::Permission(perm) = &request {
             if self.interaction_modal.is_some() {
-                self.permission_queue.push_back((request_id, perm.clone()));
+                self.permission.permission_queue.push_back((request_id, perm.clone()));
                 return Action::Continue;
             }
         }
@@ -1030,7 +1044,7 @@ impl OilChatApp {
         self.interaction_modal = Some(InteractionModal::new(
             request_id,
             request,
-            self.perm_show_diff,
+            self.permission.perm_show_diff,
         ));
         Action::Continue
     }
@@ -1951,12 +1965,12 @@ impl OilChatApp {
             }
             "perm.show_diff" => {
                 if let Some(val) = self.runtime_config.get("perm.show_diff") {
-                    self.perm_show_diff = val.as_bool().unwrap_or(true);
+                    self.permission.perm_show_diff = val.as_bool().unwrap_or(true);
                 }
             }
             "perm.autoconfirm_session" => {
                 if let Some(val) = self.runtime_config.get("perm.autoconfirm_session") {
-                    self.perm_autoconfirm_session = val.as_bool().unwrap_or(false);
+                    self.permission.perm_autoconfirm_session = val.as_bool().unwrap_or(false);
                 }
             }
             "precognition" => {
@@ -2205,11 +2219,11 @@ impl OilChatApp {
 
     fn close_interaction_and_show_next(&mut self) {
         self.interaction_modal = None;
-        if let Some((next_id, next_perm)) = self.permission_queue.pop_front() {
+        if let Some((next_id, next_perm)) = self.permission.permission_queue.pop_front() {
             self.interaction_modal = Some(InteractionModal::new(
                 next_id,
                 InteractionRequest::Permission(next_perm),
-                self.perm_show_diff,
+                self.permission.perm_show_diff,
             ));
         }
     }
@@ -3478,14 +3492,14 @@ mod tests {
         let request1 = InteractionRequest::Permission(PermRequest::bash(["ls"]));
         app.open_interaction("perm-1".to_string(), request1);
         assert!(app.interaction_visible());
-        assert_eq!(app.permission_queue.len(), 0);
+        assert_eq!(app.permission.permission_queue.len(), 0);
 
         let request2 = InteractionRequest::Permission(PermRequest::bash(["cat", "file.txt"]));
         app.open_interaction("perm-2".to_string(), request2);
 
         assert!(app.interaction_visible());
         assert_eq!(app.interaction_modal.as_ref().unwrap().request_id, "perm-1");
-        assert_eq!(app.permission_queue.len(), 1);
+        assert_eq!(app.permission.permission_queue.len(), 1);
     }
 
     #[test]
@@ -3504,27 +3518,27 @@ mod tests {
         let request3 = InteractionRequest::Permission(PermRequest::bash(["rm"]));
         app.open_interaction("perm-3".to_string(), request3);
 
-        assert_eq!(app.permission_queue.len(), 2);
+        assert_eq!(app.permission.permission_queue.len(), 2);
 
         let key = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE);
         app.handle_key(key);
 
         assert!(app.interaction_visible());
         assert_eq!(app.interaction_modal.as_ref().unwrap().request_id, "perm-2");
-        assert_eq!(app.permission_queue.len(), 1);
+        assert_eq!(app.permission.permission_queue.len(), 1);
 
         let key = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE);
         app.handle_key(key);
 
         assert!(app.interaction_visible());
         assert_eq!(app.interaction_modal.as_ref().unwrap().request_id, "perm-3");
-        assert_eq!(app.permission_queue.len(), 0);
+        assert_eq!(app.permission.permission_queue.len(), 0);
 
         let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
         app.handle_key(key);
 
         assert!(!app.interaction_visible());
-        assert_eq!(app.permission_queue.len(), 0);
+        assert_eq!(app.permission.permission_queue.len(), 0);
     }
 
     #[test]
