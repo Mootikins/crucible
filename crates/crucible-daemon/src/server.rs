@@ -436,6 +436,43 @@ impl Server {
                                     }
                                 }
                             }
+                            Ok(event)
+                                if event.session_id == "system"
+                                    && event.event == "file_deleted" =>
+                            {
+                                let Some(path_str) =
+                                    event.data.get("path").and_then(|v| v.as_str())
+                                else {
+                                    continue;
+                                };
+
+                                let file_path = PathBuf::from(path_str);
+                                let Some(kiln_path) =
+                                    km_reprocess.find_kiln_for_path(&file_path).await
+                                else {
+                                    debug!(path = %path_str, "File deleted but no matching open kiln");
+                                    continue;
+                                };
+
+                                match km_reprocess
+                                    .handle_file_deleted(&kiln_path, &file_path)
+                                    .await
+                                {
+                                    Ok(true) => {
+                                        info!(path = %path_str, "Removed deleted file from note store");
+                                    }
+                                    Ok(false) => {
+                                        debug!(path = %path_str, "Deleted file ignored or not found in note store");
+                                    }
+                                    Err(e) => {
+                                        warn!(
+                                            path = %path_str,
+                                            error = %e,
+                                            "Failed to handle deleted file"
+                                        );
+                                    }
+                                }
+                            }
                             Ok(_) => {}
                             Err(broadcast::error::RecvError::Lagged(n)) => {
                                 warn!("Reprocess task lagged, dropped {} events", n);
@@ -4202,6 +4239,87 @@ mod tests {
             .get("error_msg")
             .and_then(|v| v.as_str())
             .is_some());
+    }
+
+    #[tokio::test]
+    async fn test_file_deleted_event_removes_note_from_store() {
+        use crucible_core::parser::BlockHash;
+        use crucible_core::storage::{NoteRecord, NoteStore};
+        use std::time::Duration;
+
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+        let kiln_path = tmp.path().join("kiln");
+        std::fs::create_dir_all(kiln_path.join("notes")).unwrap();
+
+        let server = Server::bind(&sock_path, None).await.unwrap();
+        let km = server.kiln_manager.clone();
+        let event_tx = server.event_sender();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(server.run());
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let handle = km.get_or_open(&kiln_path).await.unwrap();
+        let note_store = handle.as_note_store();
+
+        let deleted_note_path = "notes/deleted.md";
+        let keep_note_path = "notes/keep.md";
+
+        note_store
+            .upsert(
+                NoteRecord::new(deleted_note_path, BlockHash::zero())
+                    .with_title("Deleted")
+                    .with_links(vec!["notes/target.md".to_string()]),
+            )
+            .await
+            .unwrap();
+        note_store
+            .upsert(NoteRecord::new(keep_note_path, BlockHash::zero()).with_title("Keep"))
+            .await
+            .unwrap();
+
+        assert!(note_store.get(deleted_note_path).await.unwrap().is_some());
+        assert!(note_store.get(keep_note_path).await.unwrap().is_some());
+
+        event_tx
+            .send(SessionEventMessage::new(
+                "system",
+                "file_deleted",
+                json!({ "path": kiln_path.join(deleted_note_path).to_string_lossy() }),
+            ))
+            .unwrap();
+
+        let removed = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if note_store.get(deleted_note_path).await.unwrap().is_none() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await;
+        assert!(removed.is_ok(), "deleted note should be removed after event");
+
+        event_tx
+            .send(SessionEventMessage::new(
+                "system",
+                "file_deleted",
+                json!({ "path": kiln_path.join("notes/ignore.txt").to_string_lossy() }),
+            ))
+            .unwrap();
+        event_tx
+            .send(SessionEventMessage::new(
+                "system",
+                "file_deleted",
+                json!({ "path": kiln_path.join("notes/missing.md").to_string_lossy() }),
+            ))
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(note_store.get(keep_note_path).await.unwrap().is_some());
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
     }
 
     #[tokio::test]
