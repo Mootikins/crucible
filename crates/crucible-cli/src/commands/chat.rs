@@ -5,7 +5,7 @@
 //! Supports toggleable plan (read-only) and act (write-enabled) modes.
 
 use anyhow::Result;
-use crucible_rpc::{DaemonClient, LuaInitSessionRequest, LuaShutdownSessionRequest};
+use crucible_rpc::{DaemonClient, LuaDiscoverPluginsRequest, LuaInitSessionRequest, LuaShutdownSessionRequest};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
@@ -500,7 +500,7 @@ async fn run_interactive_chat(
 
     runner = runner.with_slash_commands(known_slash_commands());
 
-    let plugin_entries = discover_plugin_status(Some(&kiln_root));
+    let plugin_entries = discover_plugin_status(lua_client.as_ref(), &kiln_root).await;
     if !plugin_entries.is_empty() {
         runner = runner.with_plugin_status(plugin_entries);
     }
@@ -855,26 +855,35 @@ pub fn known_slash_commands() -> Vec<(String, String)> {
     ]
 }
 
-fn discover_plugin_status(kiln_path: Option<&std::path::Path>) -> Vec<PluginStatusEntry> {
-    use crucible_lua::PluginManager;
-
-    let manager = match PluginManager::initialize(kiln_path) {
-        Ok(m) => m,
-        Err(e) => {
-            warn!("Plugin discovery failed: {}", e);
-            return Vec::new();
-        }
+async fn discover_plugin_status(
+    client: Option<&DaemonClient>,
+    kiln_path: &std::path::Path,
+) -> Vec<PluginStatusEntry> {
+    let client = match client {
+        Some(c) => c,
+        None => return Vec::new(),
     };
 
-    manager
-        .list()
-        .map(|p| PluginStatusEntry {
-            name: p.name().to_string(),
-            version: p.version().to_string(),
-            state: p.state.to_string(),
-            error: p.last_error.clone(),
-        })
-        .collect()
+    let request = LuaDiscoverPluginsRequest {
+        kiln_path: kiln_path.to_string_lossy().to_string(),
+    };
+
+    match client.lua_discover_plugins(request).await {
+        Ok(response) => response
+            .plugins
+            .iter()
+            .map(|p| PluginStatusEntry {
+                name: p.get("name").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
+                version: p.get("version").and_then(|v| v.as_str()).unwrap_or("0.0.0").to_string(),
+                state: p.get("state").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
+                error: p.get("error").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            })
+            .collect(),
+        Err(e) => {
+            warn!("Plugin discovery failed: {}", e);
+            Vec::new()
+        }
+    }
 }
 
 #[cfg(test)]

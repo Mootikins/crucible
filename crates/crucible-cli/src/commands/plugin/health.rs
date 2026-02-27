@@ -1,40 +1,9 @@
 use anyhow::Result;
-use crucible_lua::LuaExecutor;
+use crucible_rpc::{DaemonClient, LuaPluginHealthRequest};
 use serde_json::json;
-use std::path::PathBuf;
 
 use super::HealthArgs;
 use crate::config::CliConfig;
-
-struct CheckResult {
-    level: String,
-    msg: String,
-    advice: Vec<String>,
-}
-
-fn extract_checks(checks: &mlua::Table) -> Result<Vec<CheckResult>> {
-    let len = checks.len()? as usize;
-    let mut out = Vec::with_capacity(len);
-    for i in 1..=len {
-        let check: mlua::Table = checks.get(i)?;
-        let level: String = check.get("level")?;
-        let msg: String = check.get("msg")?;
-        let advice_table: Option<mlua::Table> = check.get("advice").ok();
-        let advice = match advice_table {
-            Some(tbl) => {
-                let alen = tbl.len()? as usize;
-                let mut items = Vec::with_capacity(alen);
-                for j in 1..=alen {
-                    items.push(tbl.get::<String>(j)?);
-                }
-                items
-            }
-            None => Vec::new(),
-        };
-        out.push(CheckResult { level, msg, advice });
-    }
-    Ok(out)
-}
 
 pub async fn execute(_config: CliConfig, args: HealthArgs) -> Result<()> {
     // Validate path exists
@@ -43,64 +12,24 @@ pub async fn execute(_config: CliConfig, args: HealthArgs) -> Result<()> {
         std::process::exit(2);
     }
 
-    // Find health.lua in the plugin directory
-    let health_path = find_health_lua(&args.path)?;
+    // Connect to daemon
+    let client = DaemonClient::connect_or_start().await?;
 
-    // If no health.lua found, exit gracefully
-    let health_path = match health_path {
-        Some(path) => path,
-        None => {
-            println!("No health.lua found in {}", args.path.display());
-            return Ok(());
-        }
-    };
+    // Run health check via daemon RPC
+    let response = client
+        .lua_plugin_health(LuaPluginHealthRequest {
+            plugin_path: args.path.to_string_lossy().to_string(),
+        })
+        .await?;
 
-    // Create Lua runtime
-    let executor = LuaExecutor::new()?;
-    let lua = executor.lua();
-
-    // Setup test mocks (in case health checks use cru.* APIs)
-    lua.load("test_mocks = test_mocks or {}; test_mocks.setup = function() end")
-        .exec()?;
-
-    // Load and read health.lua
-    let health_lua = std::fs::read_to_string(&health_path)?;
-
-    // Load the health module - it should return {check = function() ... end}
-    let health_module: mlua::Table = lua.load(&health_lua).eval()?;
-
-    // Get the check function
-    let check_fn: mlua::Function = health_module.get("check")?;
-
-    // Call the check function
-    check_fn.call::<()>(())?;
-
-    // Get results from cru.health
-    let get_results: mlua::Function = lua.load("return cru.health.get_results").eval()?;
-    let results: mlua::Table = get_results.call(())?;
-
-    // Extract results
-    let name: String = results.get("name")?;
-    let healthy: bool = results.get("healthy")?;
-    let checks_table: mlua::Table = results.get("checks")?;
-    let checks = extract_checks(&checks_table)?;
+    let name = &response.name;
+    let healthy = response.healthy;
 
     if args.json {
-        let checks_vec: Vec<_> = checks
-            .iter()
-            .map(|c| {
-                let mut obj = json!({ "level": c.level, "msg": c.msg });
-                if !c.advice.is_empty() {
-                    obj["advice"] = json!(c.advice);
-                }
-                obj
-            })
-            .collect();
-
         let output = json!({
             "name": name,
             "healthy": healthy,
-            "checks": checks_vec,
+            "checks": response.checks,
         });
 
         println!("{}", serde_json::to_string_pretty(&output)?);
@@ -114,23 +43,35 @@ pub async fn execute(_config: CliConfig, args: HealthArgs) -> Result<()> {
         println!("== Health: {} ==", plugin_name);
         println!();
 
-        for c in &checks {
-            match c.level.as_str() {
-                "ok" => println!("✅ {}", c.msg),
+        for check in &response.checks {
+            let level = check.get("level").and_then(|v| v.as_str()).unwrap_or("?");
+            let msg = check.get("msg").and_then(|v| v.as_str()).unwrap_or("");
+            let advice: Vec<&str> = check
+                .get("advice")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|item| item.as_str())
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            match level {
+                "ok" => println!("✅ {}", msg),
                 "warn" => {
-                    println!("⚠️  {}", c.msg);
-                    for item in &c.advice {
+                    println!("⚠️  {}", msg);
+                    for item in &advice {
                         println!("   → {}", item);
                     }
                 }
                 "error" => {
-                    println!("❌ {}", c.msg);
-                    for item in &c.advice {
+                    println!("❌ {}", msg);
+                    for item in &advice {
                         println!("   → {}", item);
                     }
                 }
-                "info" => println!("ℹ️  {}", c.msg),
-                _ => println!("? {}", c.msg),
+                "info" => println!("ℹ️  {}", msg),
+                _ => println!("? {}", msg),
             }
         }
 
@@ -144,20 +85,4 @@ pub async fn execute(_config: CliConfig, args: HealthArgs) -> Result<()> {
     } else {
         std::process::exit(1);
     }
-}
-
-/// Find health.lua in the plugin directory
-fn find_health_lua(plugin_path: &std::path::Path) -> Result<Option<PathBuf>> {
-    // Check if plugin_path itself is health.lua
-    if plugin_path.file_name().and_then(|n| n.to_str()) == Some("health.lua") {
-        return Ok(Some(plugin_path.to_path_buf()));
-    }
-
-    // Check if plugin_path/health.lua exists
-    let health_path = plugin_path.join("health.lua");
-    if health_path.exists() {
-        return Ok(Some(health_path));
-    }
-
-    Ok(None)
 }
