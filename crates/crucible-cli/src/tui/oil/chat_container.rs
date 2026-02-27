@@ -274,7 +274,6 @@ struct RenderBlocksParams<'a> {
 /// to enable incremental graduation. The in-progress block stays in the viewport.
 ///
 /// If `is_continuation` is true, no bullet is shown (it's a continuation after a tool call).
-#[allow(clippy::too_many_arguments)]
 fn render_assistant_blocks_with_graduation(
     params: &RenderBlocksParams,
     render_state: &RenderState,
