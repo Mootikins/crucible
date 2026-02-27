@@ -2,6 +2,7 @@
 
 use crate::agent_factory::{create_agent_from_session_config, AgentFactoryError};
 use crate::background_manager::{BackgroundJobManager, SubagentContext};
+use crate::daemon_plugins::DaemonPluginLoader;
 use crate::event_emitter::emit_event;
 use crate::kiln_manager::KilnManager;
 use crate::multi_kiln_search::{search_across_kilns, KilnSearchSource};
@@ -20,7 +21,7 @@ use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, 
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
 use crucible_core::traits::PermissionGate;
-use crucible_rig::model_listing as rig_model_listing;
+use crate::provider::model_listing;
 use crucible_lua::{
     execute_permission_hooks, register_crucible_on_api, register_permission_hook_api,
     LuaScriptHandlerRegistry, PermissionHook, PermissionHookResult, PermissionRequest,
@@ -286,6 +287,7 @@ pub struct AgentManager {
     llm_config: Option<crucible_config::LlmConfig>,
     acp_config: Option<AcpConfig>,
     permission_config: Option<PermissionConfig>,
+    plugin_loader: Option<Arc<Mutex<Option<DaemonPluginLoader>>>>,
 }
 
 impl AgentManager {
@@ -299,6 +301,7 @@ impl AgentManager {
         llm_config: Option<crucible_config::LlmConfig>,
         acp_config: Option<AcpConfig>,
         permission_config: Option<PermissionConfig>,
+        plugin_loader: Option<Arc<Mutex<Option<DaemonPluginLoader>>>>,
     ) -> Self {
         Self {
             request_state: Arc::new(DashMap::new()),
@@ -313,6 +316,7 @@ impl AgentManager {
             llm_config,
             acp_config,
             permission_config,
+            plugin_loader,
         }
     }
 
@@ -908,20 +912,41 @@ impl AgentManager {
             }
         }
 
-        let agent = create_agent_from_session_config(
-            &resolved_config,
-            workspace,
-            kiln_path,
-            Some(session_id),
-            Some(self.background_manager.clone()),
-            event_tx,
-            self.mcp_gateway.clone(),
-            acp_permission_handler,
-            self.acp_config.as_ref(),
-            knowledge_repo,
-            embedding_provider,
-        )
-        .await?;
+        let agent = if let Some(plugin_loader) = &self.plugin_loader {
+            let guard = plugin_loader.lock().await;
+            let lua = guard.as_ref().map(|loader| loader.executor().lua());
+            create_agent_from_session_config(
+                &resolved_config,
+                lua,
+                workspace,
+                kiln_path,
+                Some(session_id),
+                Some(self.background_manager.clone()),
+                event_tx,
+                self.mcp_gateway.clone(),
+                acp_permission_handler,
+                self.acp_config.as_ref(),
+                knowledge_repo,
+                embedding_provider,
+            )
+            .await?
+        } else {
+            create_agent_from_session_config(
+                &resolved_config,
+                None,
+                workspace,
+                kiln_path,
+                Some(session_id),
+                Some(self.background_manager.clone()),
+                event_tx,
+                self.mcp_gateway.clone(),
+                acp_permission_handler,
+                self.acp_config.as_ref(),
+                knowledge_repo,
+                embedding_provider,
+            )
+            .await?
+        };
 
         if resolved_config.delegation_config.is_some() {
             if let Some(session) = session_for_factory {
@@ -2023,7 +2048,7 @@ impl AgentManager {
 
             match agent_config.provider.as_str() {
                 "ollama" => {
-                    match rig_model_listing::list_models(BackendType::Ollama, &endpoint, None).await {
+                    match model_listing::list_models(BackendType::Ollama, &endpoint, None).await {
                         Ok(models) => return Ok(models),
                         Err(e) => {
                             warn!(error = %e, "Failed to list Ollama models (fallback)");
@@ -2063,7 +2088,7 @@ impl AgentManager {
         let endpoint = provider_config.endpoint();
         let api_key = provider_config.api_key();
 
-        match rig_model_listing::list_models(
+        match model_listing::list_models(
             provider_config.provider_type,
             &endpoint,
             api_key.as_deref(),
@@ -2729,6 +2754,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
     }
 
@@ -2744,6 +2770,7 @@ mod tests {
             background_manager,
             None,
             Some(llm_config),
+            None,
             None,
             None,
         )
@@ -5324,6 +5351,7 @@ mod tests {
             Some(llm_config),
             None,
             None,
+            None,
         );
 
         agent_manager
@@ -5961,6 +5989,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
 
         agent_manager
@@ -6019,6 +6048,7 @@ mod tests {
             Some(llm_config),
             None,
             None,
+            None,
         );
 
         agent_manager
@@ -6046,7 +6076,7 @@ mod tests {
         });
 
         let models =
-            crucible_rig::model_listing::openai_compat::parse_models_response(&payload.to_string())
+            crate::provider::model_listing::openai_compat::parse_models_response(&payload.to_string())
                 .unwrap();
 
         assert_eq!(
@@ -6069,7 +6099,7 @@ mod tests {
         });
 
         let models =
-            crucible_rig::model_listing::openai_compat::parse_models_response(&payload.to_string())
+            crate::provider::model_listing::openai_compat::parse_models_response(&payload.to_string())
                 .unwrap();
 
         assert_eq!(
@@ -6086,7 +6116,7 @@ mod tests {
         });
 
         let result =
-            crucible_rig::model_listing::openai_compat::parse_models_response(&payload.to_string());
+            crate::provider::model_listing::openai_compat::parse_models_response(&payload.to_string());
 
         assert!(result.is_err());
     }
@@ -6106,7 +6136,7 @@ mod tests {
         .await;
 
         let models =
-            crucible_rig::model_listing::openai_compat::list_models(&(endpoint + "/"), "test-key")
+            crate::provider::model_listing::openai_compat::list_models(&(endpoint + "/"), "test-key")
                 .await
                 .unwrap();
         server.await.unwrap();
@@ -6127,7 +6157,7 @@ mod tests {
         .await;
 
         let result =
-            crucible_rig::model_listing::openai_compat::list_models(&endpoint, "").await;
+            crate::provider::model_listing::openai_compat::list_models(&endpoint, "").await;
         server.await.unwrap();
 
         assert!(result.is_err());
@@ -6141,7 +6171,7 @@ mod tests {
 
         let endpoint = format!("http://{}", addr);
         let result =
-            crucible_rig::model_listing::openai_compat::list_models(&endpoint, "").await;
+            crate::provider::model_listing::openai_compat::list_models(&endpoint, "").await;
 
         assert!(result.is_err());
     }
@@ -6158,6 +6188,7 @@ mod tests {
             background_manager,
             None,
             Some(llm_config),
+            None,
             None,
             None,
         )
@@ -6256,6 +6287,7 @@ mod tests {
             background_manager,
             None,
             Some(llm_config),
+            None,
             None,
             None,
         )

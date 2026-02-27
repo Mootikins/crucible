@@ -516,6 +516,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         ));
 
         // Construct bridge
@@ -540,6 +541,7 @@ mod tests {
             kiln_manager,
             session_manager.clone(),
             background_manager,
+            None,
             None,
             None,
             None,
