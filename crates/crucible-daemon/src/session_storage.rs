@@ -102,7 +102,7 @@ impl FileSessionStorage {
     ///
     /// For crucible home: `~/.crucible/sessions/`
     /// For other kilns: `{kiln}/.crucible/sessions/`
-    fn sessions_base(kiln: &Path) -> std::path::PathBuf {
+    pub fn sessions_base(kiln: &Path) -> std::path::PathBuf {
         if is_crucible_home(kiln) {
             kiln.join("sessions")
         } else {

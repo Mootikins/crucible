@@ -801,6 +801,12 @@ async fn handle_legacy_request(
         "storage.backup" => handle_storage_backup(req).await,
         "storage.restore" => handle_storage_restore(req).await,
         "session.search" => handle_session_search(req, session_manager).await,
+        "session.load_events" => handle_session_load_events(req).await,
+        "session.list_persisted" => handle_session_list_persisted(req).await,
+        "session.render_markdown" => handle_session_render_markdown(req).await,
+        "session.export_to_file" => handle_session_export_to_file(req).await,
+        "session.cleanup" => handle_session_cleanup(req).await,
+        "session.reindex" => handle_session_reindex(req, kiln_manager).await,
         _ => {
             tracing::warn!("Unknown RPC method: {:?}", req.method);
             Response::error(
@@ -2675,6 +2681,353 @@ fn find_owning_plugin(
         }
     }
     None
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Session observe RPC handlers (load_events, list_persisted, render_markdown,
+//                                export_to_file, cleanup, reindex)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Load events from a persisted session's JSONL log.
+///
+/// Params:
+///   - `session_dir` (string, required): Path to the session directory
+/// Returns: Array of LogEvent objects
+async fn handle_session_load_events(req: Request) -> Response {
+    let session_dir = require_param!(req, "session_dir", as_str);
+
+    match crucible_observe::load_events(session_dir).await {
+        Ok(events) => match serde_json::to_value(&events) {
+            Ok(v) => Response::success(req.id, v),
+            Err(e) => internal_error(req.id, e),
+        },
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
+/// List persisted sessions from a kiln's session directory.
+///
+/// Params:
+///   - `kiln` (string, required): Path to the kiln
+///   - `session_type` (string, optional): Filter by type ("chat", "agent", etc.)
+///   - `limit` (u64, optional): Max sessions to return (default 50, newest first)
+/// Returns: { sessions: [...], total: N }
+async fn handle_session_list_persisted(req: Request) -> Response {
+    let kiln = require_param!(req, "kiln", as_str);
+    let session_type_filter = optional_param!(req, "session_type", as_str);
+    let limit = optional_param!(req, "limit", as_u64).unwrap_or(50) as usize;
+
+    let sessions_path = FileSessionStorage::sessions_base(Path::new(kiln));
+
+    if !sessions_path.exists() {
+        return Response::success(
+            req.id,
+            serde_json::json!({ "sessions": [], "total": 0 }),
+        );
+    }
+
+    let mut ids = match crucible_observe::list_sessions(&sessions_path).await {
+        Ok(ids) => ids,
+        Err(e) => return internal_error(req.id, e),
+    };
+
+    // Filter by session type if specified
+    if let Some(type_filter) = session_type_filter {
+        if let Ok(filter_type) = type_filter.parse::<crucible_observe::SessionType>() {
+            ids.retain(|id| id.session_type() == filter_type);
+        }
+    }
+
+    // Newest first, then limit
+    ids.reverse();
+    ids.truncate(limit);
+
+    let mut session_entries = Vec::new();
+    for id in &ids {
+        let session_dir = sessions_path.join(id.as_str());
+        let events = crucible_observe::load_events(&session_dir)
+            .await
+            .unwrap_or_default();
+        let msg_count = events
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    crucible_observe::LogEvent::User { .. }
+                        | crucible_observe::LogEvent::Assistant { .. }
+                )
+            })
+            .count();
+
+        let title = events
+            .iter()
+            .find_map(|e| match e {
+                crucible_observe::LogEvent::User { content, .. } => {
+                    let preview: String = content.chars().take(50).collect();
+                    if content.len() > 50 {
+                        Some(format!("{}...", preview))
+                    } else {
+                        Some(preview)
+                    }
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| "(empty)".to_string());
+
+        session_entries.push(serde_json::json!({
+            "id": id.as_str(),
+            "session_type": format!("{}", id.session_type()),
+            "message_count": msg_count,
+            "title": title,
+        }));
+    }
+
+    let total = session_entries.len();
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "sessions": session_entries,
+            "total": total,
+        }),
+    )
+}
+
+/// Render a persisted session's events to markdown.
+///
+/// Params:
+///   - `session_dir` (string, required): Path to the session directory
+///   - `include_timestamps` (bool, optional): Include timestamps (default false)
+///   - `include_tokens` (bool, optional): Include token stats (default true)
+///   - `include_tools` (bool, optional): Include tool details (default true)
+///   - `max_content_length` (u64, optional): Truncation limit (default 0 = no limit)
+/// Returns: { markdown: "..." }
+async fn handle_session_render_markdown(req: Request) -> Response {
+    let session_dir = require_param!(req, "session_dir", as_str);
+    let include_timestamps =
+        optional_param!(req, "include_timestamps", as_bool).unwrap_or(false);
+    let include_tokens = optional_param!(req, "include_tokens", as_bool).unwrap_or(true);
+    let include_tools = optional_param!(req, "include_tools", as_bool).unwrap_or(true);
+    let max_content_length =
+        optional_param!(req, "max_content_length", as_u64).unwrap_or(0) as usize;
+
+    let events = match crucible_observe::load_events(session_dir).await {
+        Ok(e) => e,
+        Err(e) => return internal_error(req.id, e),
+    };
+
+    let options = crucible_observe::RenderOptions {
+        include_timestamps,
+        include_tokens,
+        include_tools,
+        max_content_length,
+    };
+
+    let md = crucible_observe::render_to_markdown(&events, &options);
+
+    Response::success(req.id, serde_json::json!({ "markdown": md }))
+}
+
+/// Export a session to a markdown file.
+///
+/// Params:
+///   - `session_dir` (string, required): Path to the session directory
+///   - `output_path` (string, optional): Output file path (default: session_dir/session.md)
+///   - `include_timestamps` (bool, optional): Include timestamps (default false)
+/// Returns: { status: "ok", output_path: "..." }
+async fn handle_session_export_to_file(req: Request) -> Response {
+    let session_dir_str = require_param!(req, "session_dir", as_str);
+    let output_path = optional_param!(req, "output_path", as_str);
+    let timestamps = optional_param!(req, "include_timestamps", as_bool).unwrap_or(false);
+
+    let session_dir = Path::new(session_dir_str);
+
+    let events = match crucible_observe::load_events(session_dir).await {
+        Ok(e) => e,
+        Err(e) => return internal_error(req.id, e),
+    };
+
+    let options = crucible_observe::RenderOptions {
+        include_timestamps: timestamps,
+        ..Default::default()
+    };
+
+    let md = crucible_observe::render_to_markdown(&events, &options);
+
+    let out_path = match output_path {
+        Some(p) => PathBuf::from(p),
+        None => session_dir.join("session.md"),
+    };
+
+    if let Err(e) = tokio::fs::write(&out_path, &md).await {
+        return internal_error(req.id, e);
+    }
+
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "status": "ok",
+            "output_path": out_path.to_string_lossy(),
+        }),
+    )
+}
+
+/// Clean up old persisted sessions.
+///
+/// Params:
+///   - `kiln` (string, required): Path to the kiln
+///   - `older_than_days` (u64, required): Delete sessions older than N days
+///   - `dry_run` (bool, optional): If true, just report what would be deleted (default false)
+/// Returns: { deleted: [...], total: N, dry_run: bool }
+async fn handle_session_cleanup(req: Request) -> Response {
+    let kiln = require_param!(req, "kiln", as_str);
+    let older_than_days = require_param!(req, "older_than_days", as_u64);
+    let dry_run = optional_param!(req, "dry_run", as_bool).unwrap_or(false);
+
+    let sessions_path = FileSessionStorage::sessions_base(Path::new(kiln));
+
+    if !sessions_path.exists() {
+        return Response::success(
+            req.id,
+            serde_json::json!({ "deleted": [], "total": 0, "dry_run": dry_run }),
+        );
+    }
+
+    let ids = match crucible_observe::list_sessions(&sessions_path).await {
+        Ok(ids) => ids,
+        Err(e) => return internal_error(req.id, e),
+    };
+
+    let cutoff = chrono::Utc::now()
+        - chrono::Duration::days(older_than_days as i64);
+
+    let mut to_delete = Vec::new();
+
+    for id in ids {
+        let session_dir = sessions_path.join(id.as_str());
+        let events = crucible_observe::load_events(&session_dir)
+            .await
+            .unwrap_or_default();
+
+        let latest = events.iter().map(|e| e.timestamp()).max();
+        if let Some(ts) = latest {
+            if ts < cutoff {
+                to_delete.push((id, session_dir));
+            }
+        }
+    }
+
+    let mut deleted_ids = Vec::new();
+    if !dry_run {
+        for (id, dir) in &to_delete {
+            if let Err(e) = tokio::fs::remove_dir_all(dir).await {
+                warn!(
+                    session_id = %id,
+                    error = %e,
+                    "Failed to delete session directory"
+                );
+            } else {
+                deleted_ids.push(id.as_str().to_string());
+            }
+        }
+    } else {
+        deleted_ids = to_delete.iter().map(|(id, _)| id.as_str().to_string()).collect();
+    }
+
+    let total = deleted_ids.len();
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "deleted": deleted_ids,
+            "total": total,
+            "dry_run": dry_run,
+        }),
+    )
+}
+
+/// Reindex persisted sessions into the kiln's NoteStore.
+///
+/// Params:
+///   - `kiln` (string, required): Path to the kiln
+///   - `force` (bool, optional): Re-index even if already present (default false)
+/// Returns: { indexed: N, skipped: N, errors: N }
+async fn handle_session_reindex(req: Request, km: &Arc<KilnManager>) -> Response {
+    let kiln_str = require_param!(req, "kiln", as_str);
+    let force = optional_param!(req, "force", as_bool).unwrap_or(false);
+
+    let kiln_path = Path::new(kiln_str);
+    let sessions_path = FileSessionStorage::sessions_base(kiln_path);
+
+    if !sessions_path.exists() {
+        return Response::success(
+            req.id,
+            serde_json::json!({ "indexed": 0, "skipped": 0, "errors": 0 }),
+        );
+    }
+
+    let ids = match crucible_observe::list_sessions(&sessions_path).await {
+        Ok(ids) => ids,
+        Err(e) => return internal_error(req.id, e),
+    };
+
+    let handle = match km.get_or_open(kiln_path).await {
+        Ok(h) => h,
+        Err(e) => return internal_error(req.id, e),
+    };
+
+    let note_store = handle.as_note_store();
+
+    let mut indexed = 0u32;
+    let mut skipped = 0u32;
+    let mut errors = 0u32;
+
+    for id in &ids {
+        let session_dir = sessions_path.join(id.as_str());
+        let path = format!("sessions/{}", id.as_str());
+
+        if !force {
+            match note_store.get(&path).await {
+                Ok(Some(_)) => {
+                    skipped += 1;
+                    continue;
+                }
+                Ok(None) => {}
+                Err(_) => {}
+            }
+        }
+
+        let events = match crucible_observe::load_events(&session_dir).await {
+            Ok(e) => e,
+            Err(_) => {
+                errors += 1;
+                continue;
+            }
+        };
+
+        let content = match crucible_observe::extract_session_content(id.as_str(), &events) {
+            Some(c) => c,
+            None => {
+                skipped += 1;
+                continue;
+            }
+        };
+
+        let record = content.to_note_record(None);
+        if let Err(_) = note_store.upsert(record).await {
+            errors += 1;
+            continue;
+        }
+
+        indexed += 1;
+    }
+
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "indexed": indexed,
+            "skipped": skipped,
+            "errors": errors,
+        }),
+    )
 }
 
 #[cfg(test)]
@@ -5153,4 +5506,224 @@ mod tests {
         let result = truncate_utf8_safe("", 100);
         assert_eq!(result, "", "empty string should be returned verbatim");
     }
+
+    // ── Session Observe Handler Tests ──────────────────────────────────
+
+    /// Create a test session directory with a JSONL file containing sample events.
+    fn create_test_session_dir(tmp: &TempDir) -> PathBuf {
+        let session_dir = tmp.path().join("chat-20260101-1200-abcd");
+        std::fs::create_dir_all(&session_dir).unwrap();
+        let jsonl = session_dir.join("session.jsonl");
+        let events = vec![
+            "{\"type\":\"init\",\"ts\":\"2026-01-01T12:00:00Z\",\"session_id\":\"chat-20260101-1200-abcd\"}",
+            "{\"type\":\"user\",\"ts\":\"2026-01-01T12:00:01Z\",\"content\":\"Hello world\"}",
+            "{\"type\":\"assistant\",\"ts\":\"2026-01-01T12:00:02Z\",\"content\":\"Hi there!\"}",
+        ];
+        std::fs::write(&jsonl, events.join("\n") + "\n").unwrap();
+        session_dir
+    }
+
+    fn make_request(method: &str, params: Value) -> Request {
+        serde_json::from_value(json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": method,
+            "params": params
+        }))
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn session_load_events_returns_events_from_jsonl() {
+        let tmp = TempDir::new().unwrap();
+        let session_dir = create_test_session_dir(&tmp);
+
+        let req = make_request(
+            "session.load_events",
+            json!({ "session_dir": session_dir.to_string_lossy().to_string() }),
+        );
+        let resp = handle_session_load_events(req).await;
+
+        assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
+        let result = resp.result.unwrap();
+        let events = result.as_array().unwrap();
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0]["type"], "init");
+        assert_eq!(events[1]["type"], "user");
+        assert_eq!(events[2]["type"], "assistant");
+    }
+
+    #[tokio::test]
+    async fn session_load_events_missing_dir_returns_empty() {
+        let tmp = TempDir::new().unwrap();
+        let missing = tmp.path().join("nonexistent");
+
+        let req = make_request(
+            "session.load_events",
+            json!({ "session_dir": missing.to_string_lossy().to_string() }),
+        );
+        let resp = handle_session_load_events(req).await;
+
+        assert!(resp.error.is_none());
+        let result = resp.result.unwrap();
+        let events = result.as_array().unwrap();
+        assert!(events.is_empty());
+    }
+
+    #[tokio::test]
+    async fn session_render_markdown_produces_output() {
+        let tmp = TempDir::new().unwrap();
+        let session_dir = create_test_session_dir(&tmp);
+
+        let req = make_request(
+            "session.render_markdown",
+            json!({ "session_dir": session_dir.to_string_lossy().to_string() }),
+        );
+        let resp = handle_session_render_markdown(req).await;
+
+        assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
+        let result = resp.result.unwrap();
+        let md = result["markdown"].as_str().unwrap();
+        assert!(md.contains("Hello world"), "should contain user message");
+        assert!(md.contains("Hi there!"), "should contain assistant message");
+    }
+
+    #[tokio::test]
+    async fn session_export_to_file_writes_markdown() {
+        let tmp = TempDir::new().unwrap();
+        let session_dir = create_test_session_dir(&tmp);
+        let output = tmp.path().join("exported.md");
+
+        let req = make_request(
+            "session.export_to_file",
+            json!({
+                "session_dir": session_dir.to_string_lossy().to_string(),
+                "output_path": output.to_string_lossy().to_string(),
+            }),
+        );
+        let resp = handle_session_export_to_file(req).await;
+
+        assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
+        let result = resp.result.unwrap();
+        assert_eq!(result["status"], "ok");
+        assert!(output.exists(), "exported file should exist");
+        let content = std::fs::read_to_string(&output).unwrap();
+        assert!(content.contains("Hello world"));
+    }
+
+    #[tokio::test]
+    async fn session_list_persisted_returns_sessions() {
+        let tmp = TempDir::new().unwrap();
+        let kiln = tmp.path().join("kiln");
+        let sessions_dir = kiln.join(".crucible").join("sessions");
+        std::fs::create_dir_all(&sessions_dir).unwrap();
+
+        let sid = "chat-20260101-1200-abcd";
+        let session_dir = sessions_dir.join(sid);
+        std::fs::create_dir_all(&session_dir).unwrap();
+        std::fs::write(
+            session_dir.join("session.jsonl"),
+            "{\"type\":\"user\",\"ts\":\"2026-01-01T12:00:01Z\",\"content\":\"Test message\"}",
+        )
+        .unwrap();
+
+        let req = make_request(
+            "session.list_persisted",
+            json!({ "kiln": kiln.to_string_lossy().to_string() }),
+        );
+        let resp = handle_session_list_persisted(req).await;
+
+        assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
+        let result = resp.result.unwrap();
+        assert_eq!(result["total"], 1);
+        let sessions = result["sessions"].as_array().unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0]["id"], sid);
+        assert_eq!(sessions[0]["message_count"], 1);
+    }
+
+    #[tokio::test]
+    async fn session_list_persisted_empty_kiln_returns_empty() {
+        let tmp = TempDir::new().unwrap();
+        let kiln = tmp.path().join("empty-kiln");
+        std::fs::create_dir_all(&kiln).unwrap();
+
+        let req = make_request(
+            "session.list_persisted",
+            json!({ "kiln": kiln.to_string_lossy().to_string() }),
+        );
+        let resp = handle_session_list_persisted(req).await;
+
+        assert!(resp.error.is_none());
+        let result = resp.result.unwrap();
+        assert_eq!(result["total"], 0);
+        assert_eq!(result["sessions"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn session_cleanup_dry_run_does_not_delete() {
+        let tmp = TempDir::new().unwrap();
+        let kiln = tmp.path().join("kiln");
+        let sessions_dir = kiln.join(".crucible").join("sessions");
+        std::fs::create_dir_all(&sessions_dir).unwrap();
+
+        let sid = "chat-20200101-1200-a0b1";
+        let session_dir = sessions_dir.join(sid);
+        std::fs::create_dir_all(&session_dir).unwrap();
+        std::fs::write(
+            session_dir.join("session.jsonl"),
+            "{\"type\":\"user\",\"ts\":\"2020-01-01T12:00:00Z\",\"content\":\"Old message\"}",
+        )
+        .unwrap();
+
+        let req = make_request(
+            "session.cleanup",
+            json!({
+                "kiln": kiln.to_string_lossy().to_string(),
+                "older_than_days": 1,
+                "dry_run": true,
+            }),
+        );
+        let resp = handle_session_cleanup(req).await;
+
+        assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
+        let result = resp.result.unwrap();
+        assert_eq!(result["dry_run"], true);
+        assert_eq!(result["total"], 1);
+        assert!(session_dir.exists(), "dry run should not delete");
+    }
+
+    #[tokio::test]
+    async fn session_cleanup_deletes_old_sessions() {
+        let tmp = TempDir::new().unwrap();
+        let kiln = tmp.path().join("kiln");
+        let sessions_dir = kiln.join(".crucible").join("sessions");
+        std::fs::create_dir_all(&sessions_dir).unwrap();
+
+        let sid = "chat-20200101-1200-a0b2";
+        let session_dir = sessions_dir.join(sid);
+        std::fs::create_dir_all(&session_dir).unwrap();
+        std::fs::write(
+            session_dir.join("session.jsonl"),
+            "{\"type\":\"user\",\"ts\":\"2020-01-01T12:00:00Z\",\"content\":\"Old message\"}",
+        )
+        .unwrap();
+
+        let req = make_request(
+            "session.cleanup",
+            json!({
+                "kiln": kiln.to_string_lossy().to_string(),
+                "older_than_days": 1,
+                "dry_run": false,
+            }),
+        );
+        let resp = handle_session_cleanup(req).await;
+
+        assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
+        let result = resp.result.unwrap();
+        assert_eq!(result["dry_run"], false);
+        assert_eq!(result["total"], 1);
+        assert!(!session_dir.exists(), "old session should be deleted");
+    }
+
 }

@@ -1341,6 +1341,127 @@ impl DaemonClient {
             Ok(Some(serde_json::from_value(result)?))
         }
     }
+
+    // =========================================================================
+    // Session Observe RPC Methods
+    // =========================================================================
+
+    /// Load events from a persisted session's JSONL log.
+    pub async fn session_load_events(
+        &self,
+        session_dir: &Path,
+    ) -> Result<serde_json::Value> {
+        self.call(
+            "session.load_events",
+            serde_json::json!({ "session_dir": session_dir.to_string_lossy() }),
+        )
+        .await
+    }
+
+    /// List persisted sessions from a kiln's session directory.
+    pub async fn session_list_persisted(
+        &self,
+        kiln: &Path,
+        session_type: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<serde_json::Value> {
+        let mut params = serde_json::json!({ "kiln": kiln.to_string_lossy() });
+        if let Some(t) = session_type {
+            params["session_type"] = serde_json::json!(t);
+        }
+        if let Some(l) = limit {
+            params["limit"] = serde_json::json!(l);
+        }
+        self.call("session.list_persisted", params).await
+    }
+
+    /// Render a persisted session's events to markdown.
+    pub async fn session_render_markdown(
+        &self,
+        session_dir: &Path,
+        include_timestamps: Option<bool>,
+        include_tokens: Option<bool>,
+        include_tools: Option<bool>,
+        max_content_length: Option<usize>,
+    ) -> Result<String> {
+        let mut params = serde_json::json!({
+            "session_dir": session_dir.to_string_lossy()
+        });
+        if let Some(v) = include_timestamps {
+            params["include_timestamps"] = serde_json::json!(v);
+        }
+        if let Some(v) = include_tokens {
+            params["include_tokens"] = serde_json::json!(v);
+        }
+        if let Some(v) = include_tools {
+            params["include_tools"] = serde_json::json!(v);
+        }
+        if let Some(v) = max_content_length {
+            params["max_content_length"] = serde_json::json!(v);
+        }
+        let result = self.call("session.render_markdown", params).await?;
+        Ok(result["markdown"]
+            .as_str()
+            .unwrap_or("")
+            .to_string())
+    }
+
+    /// Export a session to a markdown file.
+    pub async fn session_export_to_file(
+        &self,
+        session_dir: &Path,
+        output_path: Option<&Path>,
+        include_timestamps: Option<bool>,
+    ) -> Result<String> {
+        let mut params = serde_json::json!({
+            "session_dir": session_dir.to_string_lossy()
+        });
+        if let Some(p) = output_path {
+            params["output_path"] = serde_json::json!(p.to_string_lossy());
+        }
+        if let Some(v) = include_timestamps {
+            params["include_timestamps"] = serde_json::json!(v);
+        }
+        let result = self.call("session.export_to_file", params).await?;
+        Ok(result["output_path"]
+            .as_str()
+            .unwrap_or("")
+            .to_string())
+    }
+
+    /// Clean up old persisted sessions.
+    pub async fn session_cleanup(
+        &self,
+        kiln: &Path,
+        older_than_days: u64,
+        dry_run: bool,
+    ) -> Result<serde_json::Value> {
+        self.call(
+            "session.cleanup",
+            serde_json::json!({
+                "kiln": kiln.to_string_lossy(),
+                "older_than_days": older_than_days,
+                "dry_run": dry_run,
+            }),
+        )
+        .await
+    }
+
+    /// Reindex persisted sessions into the kiln's NoteStore.
+    pub async fn session_reindex(
+        &self,
+        kiln: &Path,
+        force: bool,
+    ) -> Result<serde_json::Value> {
+        self.call(
+            "session.reindex",
+            serde_json::json!({
+                "kiln": kiln.to_string_lossy(),
+                "force": force,
+            }),
+        )
+        .await
+    }
 }
 
 #[cfg(test)]
