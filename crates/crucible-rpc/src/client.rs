@@ -99,6 +99,72 @@ pub struct LuaShutdownSessionResponse {
     pub shutdown: bool,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LuaDiscoverPluginsRequest {
+    pub kiln_path: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LuaDiscoverPluginsResponse {
+    #[serde(default)]
+    pub plugins: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LuaPluginHealthRequest {
+    pub plugin_path: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LuaPluginHealthResponse {
+    pub name: String,
+    pub healthy: bool,
+    #[serde(default)]
+    pub checks: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LuaGenerateStubsRequest {
+    pub output_dir: String,
+    #[serde(default)]
+    pub verify: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LuaGenerateStubsResponse {
+    pub status: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LuaRunPluginTestsRequest {
+    pub test_path: String,
+    #[serde(default)]
+    pub filter: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LuaRunPluginTestsResponse {
+    pub passed: usize,
+    pub failed: usize,
+    pub load_failures: usize,
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LuaRegisterCommandsRequest {
+    pub session_id: String,
+    pub commands: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LuaRegisterCommandsResponse {
+    pub registered: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VersionCheck {
     Match,
@@ -975,6 +1041,65 @@ impl DaemonClient {
     ) -> Result<LuaShutdownSessionResponse> {
         let result = self
             .call("lua.shutdown_session", serde_json::to_value(params)?)
+            .await?;
+        Ok(serde_json::from_value(result)?)
+    }
+
+    // =========================================================================
+    // Lua Plugin Management RPC Methods
+    // =========================================================================
+
+    /// Discover plugins from a kiln path.
+    pub async fn lua_discover_plugins(
+        &self,
+        params: LuaDiscoverPluginsRequest,
+    ) -> Result<LuaDiscoverPluginsResponse> {
+        let result = self
+            .call("lua.discover_plugins", serde_json::to_value(params)?)
+            .await?;
+        Ok(serde_json::from_value(result)?)
+    }
+
+    /// Run health checks for a plugin.
+    pub async fn lua_plugin_health(
+        &self,
+        params: LuaPluginHealthRequest,
+    ) -> Result<LuaPluginHealthResponse> {
+        let result = self
+            .call("lua.plugin_health", serde_json::to_value(params)?)
+            .await?;
+        Ok(serde_json::from_value(result)?)
+    }
+
+    /// Generate or verify Lua type stubs.
+    pub async fn lua_generate_stubs(
+        &self,
+        params: LuaGenerateStubsRequest,
+    ) -> Result<LuaGenerateStubsResponse> {
+        let result = self
+            .call("lua.generate_stubs", serde_json::to_value(params)?)
+            .await?;
+        Ok(serde_json::from_value(result)?)
+    }
+
+    /// Run plugin test files.
+    pub async fn lua_run_plugin_tests(
+        &self,
+        params: LuaRunPluginTestsRequest,
+    ) -> Result<LuaRunPluginTestsResponse> {
+        let result = self
+            .call("lua.run_plugin_tests", serde_json::to_value(params)?)
+            .await?;
+        Ok(serde_json::from_value(result)?)
+    }
+
+    /// Register Lua commands in a session.
+    pub async fn lua_register_commands(
+        &self,
+        params: LuaRegisterCommandsRequest,
+    ) -> Result<LuaRegisterCommandsResponse> {
+        let result = self
+            .call("lua.register_commands", serde_json::to_value(params)?)
             .await?;
         Ok(serde_json::from_value(result)?)
     }
