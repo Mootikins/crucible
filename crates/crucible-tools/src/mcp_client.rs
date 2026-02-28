@@ -192,11 +192,6 @@ fn convert_server_info(init: &InitializeResult) -> Option<McpServerInfo> {
     })
 }
 
-#[allow(dead_code)]
-fn convert_server_info_opt(init: Option<&InitializeResult>) -> Option<McpServerInfo> {
-    init.and_then(convert_server_info)
-}
-
 fn convert_tools_list(result: ListToolsResult) -> Vec<McpToolInfo> {
     result
         .tools
