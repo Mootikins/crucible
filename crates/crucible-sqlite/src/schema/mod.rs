@@ -1,5 +1,6 @@
 //! Schema management and migrations
 
+use crate::error_ext::SqliteResultExt;
 use crucible_core::storage::{StorageError, StorageResult};
 use rusqlite::Connection;
 use tracing::{debug, info};
@@ -16,7 +17,7 @@ pub fn apply_migrations(conn: &Connection) -> StorageResult<()> {
             applied_at TEXT NOT NULL DEFAULT (datetime('now'))
         );",
     )
-    .map_err(|e| StorageError::Backend(e.to_string()))?;
+    .sql()?;
 
     let current_version = get_current_version(conn)?;
     debug!(
@@ -54,7 +55,7 @@ fn record_migration(conn: &Connection, version: i32) -> StorageResult<()> {
         "INSERT INTO schema_migrations (version) VALUES (?)",
         [version],
     )
-    .map_err(|e| StorageError::Backend(e.to_string()))?;
+    .sql()?;
     Ok(())
 }
 

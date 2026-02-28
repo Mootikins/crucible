@@ -15,7 +15,6 @@ use tracing::{info, warn};
 use crate::config::CliConfig;
 use crate::{factories, output};
 use crucible_core::EXCLUDED_DIRS;
-use crucible_rpc::DaemonClient;
 
 /// Execute the process command
 ///
@@ -164,7 +163,7 @@ async fn run_watch_mode(
     println!("\nWatching for changes (Press Ctrl+C to stop)...");
     info!("Starting watch mode");
 
-    let daemon_client = Arc::new(DaemonClient::connect_or_start().await?);
+    let daemon_client = Arc::new(crate::common::daemon_client().await?);
     let kiln_path = config.kiln_path.clone();
     let target = target.to_path_buf();
 

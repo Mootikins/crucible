@@ -549,6 +549,18 @@ impl DaemonClient {
             .any(|pattern| msg.contains(pattern))
     }
 
+    /// Send a typed JSON-RPC request and deserialize the response.
+    ///
+    /// Wraps `call()` with automatic serialization/deserialization.
+    pub async fn typed_call<Req, Resp>(&self, method: &str, params: Req) -> Result<Resp>
+    where
+        Req: serde::Serialize,
+        Resp: serde::de::DeserializeOwned,
+    {
+        let result = self.call(method, serde_json::to_value(params)?).await?;
+        Ok(serde_json::from_value(result)?)
+    }
+
     /// Send a JSON-RPC request and get the response
     pub async fn call(&self, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
@@ -1009,40 +1021,28 @@ impl DaemonClient {
         &self,
         params: LuaInitSessionRequest,
     ) -> Result<LuaInitSessionResponse> {
-        let result = self
-            .call("lua.init_session", serde_json::to_value(params)?)
-            .await?;
-        Ok(serde_json::from_value(result)?)
+        self.typed_call("lua.init_session", params).await
     }
 
     pub async fn lua_register_hooks(
         &self,
         params: LuaRegisterHooksRequest,
     ) -> Result<LuaRegisterHooksResponse> {
-        let result = self
-            .call("lua.register_hooks", serde_json::to_value(params)?)
-            .await?;
-        Ok(serde_json::from_value(result)?)
+        self.typed_call("lua.register_hooks", params).await
     }
 
     pub async fn lua_execute_hook(
         &self,
         params: LuaExecuteHookRequest,
     ) -> Result<LuaExecuteHookResponse> {
-        let result = self
-            .call("lua.execute_hook", serde_json::to_value(params)?)
-            .await?;
-        Ok(serde_json::from_value(result)?)
+        self.typed_call("lua.execute_hook", params).await
     }
 
     pub async fn lua_shutdown_session(
         &self,
         params: LuaShutdownSessionRequest,
     ) -> Result<LuaShutdownSessionResponse> {
-        let result = self
-            .call("lua.shutdown_session", serde_json::to_value(params)?)
-            .await?;
-        Ok(serde_json::from_value(result)?)
+        self.typed_call("lua.shutdown_session", params).await
     }
 
     // =========================================================================
@@ -1054,10 +1054,7 @@ impl DaemonClient {
         &self,
         params: LuaDiscoverPluginsRequest,
     ) -> Result<LuaDiscoverPluginsResponse> {
-        let result = self
-            .call("lua.discover_plugins", serde_json::to_value(params)?)
-            .await?;
-        Ok(serde_json::from_value(result)?)
+        self.typed_call("lua.discover_plugins", params).await
     }
 
     /// Run health checks for a plugin.
@@ -1065,10 +1062,7 @@ impl DaemonClient {
         &self,
         params: LuaPluginHealthRequest,
     ) -> Result<LuaPluginHealthResponse> {
-        let result = self
-            .call("lua.plugin_health", serde_json::to_value(params)?)
-            .await?;
-        Ok(serde_json::from_value(result)?)
+        self.typed_call("lua.plugin_health", params).await
     }
 
     /// Generate or verify Lua type stubs.
@@ -1076,10 +1070,7 @@ impl DaemonClient {
         &self,
         params: LuaGenerateStubsRequest,
     ) -> Result<LuaGenerateStubsResponse> {
-        let result = self
-            .call("lua.generate_stubs", serde_json::to_value(params)?)
-            .await?;
-        Ok(serde_json::from_value(result)?)
+        self.typed_call("lua.generate_stubs", params).await
     }
 
     /// Run plugin test files.
@@ -1087,10 +1078,7 @@ impl DaemonClient {
         &self,
         params: LuaRunPluginTestsRequest,
     ) -> Result<LuaRunPluginTestsResponse> {
-        let result = self
-            .call("lua.run_plugin_tests", serde_json::to_value(params)?)
-            .await?;
-        Ok(serde_json::from_value(result)?)
+        self.typed_call("lua.run_plugin_tests", params).await
     }
 
     /// Register Lua commands in a session.
@@ -1098,10 +1086,7 @@ impl DaemonClient {
         &self,
         params: LuaRegisterCommandsRequest,
     ) -> Result<LuaRegisterCommandsResponse> {
-        let result = self
-            .call("lua.register_commands", serde_json::to_value(params)?)
-            .await?;
-        Ok(serde_json::from_value(result)?)
+        self.typed_call("lua.register_commands", params).await
     }
 
     // =========================================================================

@@ -754,7 +754,7 @@ async fn fetch_resume_history(
     session_id: &str,
     kiln_path: &std::path::Path,
 ) -> Result<Vec<ChatItem>> {
-    let client = DaemonClient::connect_or_start().await?;
+    let client = crate::common::daemon_client().await?;
     let result = client
         .session_resume_from_storage(session_id, kiln_path, None, None)
         .await?;

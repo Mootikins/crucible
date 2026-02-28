@@ -1,5 +1,5 @@
 use anyhow::Result;
-use crucible_rpc::{DaemonClient, LuaPluginHealthRequest};
+use crucible_rpc::LuaPluginHealthRequest;
 use serde_json::json;
 
 use super::HealthArgs;
@@ -13,7 +13,7 @@ pub async fn execute(_config: CliConfig, args: HealthArgs) -> Result<()> {
     }
 
     // Connect to daemon
-    let client = DaemonClient::connect_or_start().await?;
+    let client = crate::common::daemon_client().await?;
 
     // Run health check via daemon RPC
     let response = client

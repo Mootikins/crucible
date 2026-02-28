@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use crate::serde_helpers::default_true;
+
 /// Configuration for discovery paths
 ///
 /// Supports both flat format:
@@ -53,10 +55,6 @@ pub struct TypeDiscoveryConfig {
     /// Whether to include default paths (default: true)
     #[serde(default = "default_true")]
     pub use_defaults: bool,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 impl Default for TypeDiscoveryConfig {

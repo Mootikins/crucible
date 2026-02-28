@@ -16,6 +16,8 @@
 
 #![allow(clippy::doc_markdown, clippy::manual_let_else, missing_docs)]
 
+use crate::helpers::json_success;
+use crucible_core::serde_helpers::default_true;
 use crucible_core::storage::NoteStore;
 use crucible_core::{enrichment::EmbeddingProvider, traits::KnowledgeRepository};
 use grep::regex::RegexMatcher;
@@ -31,11 +33,6 @@ use walkdir::WalkDir;
 /// Default value for limit parameter
 fn default_limit() -> usize {
     10
-}
-
-/// Default value for `case_insensitive`
-fn default_true() -> bool {
-    true
 }
 
 /// Custom schema for JSON object (used for required `serde_json::Value` fields).
@@ -164,13 +161,11 @@ impl SearchTools {
         // Take only the top results
         all_results.truncate(limit);
 
-        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
-            serde_json::json!({
-                "results": all_results,
-                "query": query,
-                "limit": limit
-            }),
-        )?]))
+        json_success(serde_json::json!({
+            "results": all_results,
+            "query": query,
+            "limit": limit
+        }))
     }
 
     #[tool(description = "Fast full-text search across notes")]
@@ -265,14 +260,12 @@ impl SearchTools {
         let count = matches.len();
         matches.truncate(limit);
 
-        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
-            serde_json::json!({
-                "query": query,
-                "matches": matches,
-                "count": count,
-                "truncated": stopped_early
-            }),
-        )?]))
+        json_success(serde_json::json!({
+            "query": query,
+            "matches": matches,
+            "count": count,
+            "truncated": stopped_early
+        }))
     }
 
     #[tool(description = "Search notes by frontmatter properties (includes tags)")]
@@ -355,13 +348,11 @@ impl SearchTools {
 
         let count = matches.len();
 
-        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
-            serde_json::json!({
-                "properties": original_properties,
-                "matches": matches,
-                "count": count,
-            }),
-        )?]))
+        json_success(serde_json::json!({
+            "properties": original_properties,
+            "matches": matches,
+            "count": count,
+        }))
     }
 
     /// Property search using filesystem scanning (fallback)
@@ -428,13 +419,11 @@ impl SearchTools {
 
         let count = matches.len();
 
-        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
-            serde_json::json!({
-                "properties": original_properties,
-                "matches": matches,
-                "count": count,
-            }),
-        )?]))
+        json_success(serde_json::json!({
+            "properties": original_properties,
+            "matches": matches,
+            "count": count,
+        }))
     }
 }
 

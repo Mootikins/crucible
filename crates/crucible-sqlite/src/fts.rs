@@ -19,6 +19,7 @@
 //! ```
 
 use crate::connection::SqlitePool;
+use crate::error_ext::SqliteResultExt;
 use crucible_core::storage::{StorageError, StorageResult};
 use tracing::debug;
 
@@ -63,7 +64,7 @@ impl FtsIndex {
                     );
                     "#,
                 )
-                .map_err(|e| StorageError::Backend(e.to_string()))?;
+                .sql()?;
 
                 debug!("FTS5 index created");
                 Ok(())
@@ -87,14 +88,14 @@ impl FtsIndex {
             pool.with_connection(|conn| {
                 // Delete existing entry if present
                 conn.execute("DELETE FROM notes_fts WHERE path = ?1", [&path])
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    .sql()?;
 
                 // Insert new entry
                 conn.execute(
                     "INSERT INTO notes_fts(path, title, content) VALUES (?1, ?2, ?3)",
                     rusqlite::params![path, title, content],
                 )
-                .map_err(|e| StorageError::Backend(e.to_string()))?;
+                .sql()?;
 
                 Ok(())
             })
@@ -111,7 +112,7 @@ impl FtsIndex {
         tokio::task::spawn_blocking(move || {
             pool.with_connection(|conn| {
                 conn.execute("DELETE FROM notes_fts WHERE path = ?1", [&path])
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    .sql()?;
                 Ok(())
             })
         })
@@ -148,7 +149,7 @@ impl FtsIndex {
                     LIMIT ?2
                     "#,
                     )
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    .sql()?;
 
                 let results = stmt
                     .query_map(rusqlite::params![query, limit as i64], |row| {
@@ -159,9 +160,9 @@ impl FtsIndex {
                             rank: row.get(3)?,
                         })
                     })
-                    .map_err(|e| StorageError::Backend(e.to_string()))?
+                    .sql()?
                     .collect::<Result<Vec<_>, _>>()
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    .sql()?;
 
                 Ok(results)
             })
@@ -201,7 +202,7 @@ impl FtsIndex {
                     LIMIT ?4
                     "#,
                     )
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    .sql()?;
 
                 let results = stmt
                     .query_map(
@@ -215,9 +216,9 @@ impl FtsIndex {
                             })
                         },
                     )
-                    .map_err(|e| StorageError::Backend(e.to_string()))?
+                    .sql()?
                     .collect::<Result<Vec<_>, _>>()
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    .sql()?;
 
                 Ok(results)
             })

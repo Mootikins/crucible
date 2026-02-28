@@ -34,7 +34,7 @@ pub async fn handle(cmd: WebCommand) -> Result<()> {
         static_dir: cmd.static_dir.or(web_config.static_dir),
     };
 
-    crucible_rpc::DaemonClient::connect_or_start().await?;
+    crate::common::daemon_client().await?;
 
     println!(
         "Starting web server on http://{}:{}",

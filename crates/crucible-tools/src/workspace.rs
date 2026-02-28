@@ -18,7 +18,8 @@
 #![allow(clippy::doc_markdown)] // Parameter names in docs don't need backticks
 #![allow(clippy::needless_pass_by_value)] // Tools take owned strings for JSON compat
 
-use rmcp::model::{CallToolResult, Content, RawContent, Tool};
+use crate::helpers::{text_success, McpResultExt};
+use rmcp::model::{CallToolResult, RawContent, Tool};
 use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -312,7 +313,7 @@ impl WorkspaceTools {
 
         let content = tokio::fs::read_to_string(&resolved)
             .await
-            .map_err(|e| rmcp::ErrorData::internal_error(format!("Read error: {e}"), None))?;
+            .mcp_err_ctx("Read error")?;
 
         let lines: Vec<&str> = content.lines().collect();
         let total_lines = lines.len();
@@ -335,7 +336,7 @@ impl WorkspaceTools {
             total_lines
         );
 
-        Ok(CallToolResult::success(vec![Content::text(result)]))
+        Ok(text_success(result))
     }
 
     /// Edit file by replacing text (old_string must match exactly)
@@ -350,12 +351,10 @@ impl WorkspaceTools {
 
         let content = tokio::fs::read_to_string(&resolved)
             .await
-            .map_err(|e| rmcp::ErrorData::internal_error(format!("Read error: {e}"), None))?;
+            .mcp_err_ctx("Read error")?;
 
         if !content.contains(&old_string) {
-            return Ok(CallToolResult::success(vec![Content::text(
-                "Error: old_string not found in file",
-            )]));
+            return Ok(text_success("Error: old_string not found in file"));
         }
 
         let (new_content, count) = if replace_all.unwrap_or(false) {
@@ -367,11 +366,9 @@ impl WorkspaceTools {
 
         tokio::fs::write(&resolved, &new_content)
             .await
-            .map_err(|e| rmcp::ErrorData::internal_error(format!("Write error: {e}"), None))?;
+            .mcp_err_ctx("Write error")?;
 
-        Ok(CallToolResult::success(vec![Content::text(format!(
-            "Replaced {count} occurrence(s)"
-        ))]))
+        Ok(text_success(format!("Replaced {count} occurrence(s)")))
     }
 
     /// Write content to file (creates parent directories if needed)
@@ -386,18 +383,18 @@ impl WorkspaceTools {
         if let Some(parent) = resolved.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
-                .map_err(|e| rmcp::ErrorData::internal_error(format!("Mkdir error: {e}"), None))?;
+                .mcp_err_ctx("Mkdir error")?;
         }
 
         tokio::fs::write(&resolved, &content)
             .await
-            .map_err(|e| rmcp::ErrorData::internal_error(format!("Write error: {e}"), None))?;
+            .mcp_err_ctx("Write error")?;
 
-        Ok(CallToolResult::success(vec![Content::text(format!(
+        Ok(text_success(format!(
             "Written {} bytes to {}",
             content.len(),
             path
-        ))]))
+        )))
     }
 
     /// Execute bash command (use for git, npm, cargo, etc.)
@@ -421,7 +418,7 @@ impl WorkspaceTools {
                     None,
                 )
             })?
-            .map_err(|e| rmcp::ErrorData::internal_error(format!("Exec error: {e}"), None))?;
+            .mcp_err_ctx("Exec error")?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -433,7 +430,7 @@ impl WorkspaceTools {
             format!("Exit code: {exit_code}\nStdout:\n{stdout}\nStderr:\n{stderr}")
         };
 
-        Ok(CallToolResult::success(vec![Content::text(result)]))
+        Ok(text_success(result))
     }
 
     /// Find files matching glob pattern (e.g., '**/*.rs')
@@ -451,7 +448,7 @@ impl WorkspaceTools {
         let max_results = limit.unwrap_or(100);
 
         let paths: Vec<String> = glob::glob(&pattern_str)
-            .map_err(|e| rmcp::ErrorData::internal_error(format!("Glob error: {e}"), None))?
+            .mcp_err_ctx("Glob error")?
             .filter_map(std::result::Result::ok)
             .take(max_results + 1)
             .map(|p| {
@@ -476,7 +473,7 @@ impl WorkspaceTools {
             format!("{}\n\n[{} files]", files.join("\n"), files.len())
         };
 
-        Ok(CallToolResult::success(vec![Content::text(result)]))
+        Ok(text_success(result))
     }
 
     /// Search file contents with regex (uses ripgrep)
@@ -507,7 +504,7 @@ impl WorkspaceTools {
         let output = cmd
             .output()
             .await
-            .map_err(|e| rmcp::ErrorData::internal_error(format!("Grep error: {e}"), None))?;
+            .mcp_err_ctx("Grep error")?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let lines: Vec<&str> = stdout.lines().take(max_matches + 1).collect();
@@ -530,7 +527,7 @@ impl WorkspaceTools {
             )
         };
 
-        Ok(CallToolResult::success(vec![Content::text(result)]))
+        Ok(text_success(result))
     }
 }
 

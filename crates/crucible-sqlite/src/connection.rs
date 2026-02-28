@@ -4,6 +4,7 @@
 //! version conflicts with other workspace crates.
 
 use crate::config::SqliteConfig;
+use crate::error_ext::SqliteResultExt;
 use crate::schema;
 use crucible_core::storage::{StorageError, StorageResult};
 use parking_lot::Mutex;
@@ -27,7 +28,7 @@ impl SqlitePool {
         info!(path = ?config.path, "Creating SQLite connection");
 
         let conn = if config.path.to_str() == Some(":memory:") {
-            Connection::open_in_memory().map_err(|e| StorageError::Backend(e.to_string()))?
+            Connection::open_in_memory().sql()?
         } else {
             // Ensure parent directory exists
             if let Some(parent) = config.path.parent() {
@@ -35,7 +36,7 @@ impl SqlitePool {
                     StorageError::Backend(format!("Failed to create directory: {}", e))
                 })?;
             }
-            Connection::open(&config.path).map_err(|e| StorageError::Backend(e.to_string()))?
+            Connection::open(&config.path).sql()?
         };
 
         let sqlite_pool = Self {
@@ -82,12 +83,12 @@ impl SqlitePool {
     {
         let conn = self.conn.lock();
         conn.execute("BEGIN TRANSACTION", [])
-            .map_err(|e| StorageError::Backend(e.to_string()))?;
+            .sql()?;
 
         match f(&conn) {
             Ok(result) => {
                 conn.execute("COMMIT", [])
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    .sql()?;
                 Ok(result)
             }
             Err(e) => {
@@ -118,15 +119,15 @@ impl SqlitePool {
         // WAL mode for better concurrency
         if self.config.wal_mode {
             conn.execute_batch("PRAGMA journal_mode = WAL;")
-                .map_err(|e| StorageError::Backend(e.to_string()))?;
+                .sql()?;
             conn.execute_batch("PRAGMA synchronous = NORMAL;")
-                .map_err(|e| StorageError::Backend(e.to_string()))?;
+                .sql()?;
         }
 
         // Foreign key enforcement
         if self.config.foreign_keys {
             conn.execute_batch("PRAGMA foreign_keys = ON;")
-                .map_err(|e| StorageError::Backend(e.to_string()))?;
+                .sql()?;
         }
 
         // Busy timeout
@@ -134,21 +135,21 @@ impl SqlitePool {
             "PRAGMA busy_timeout = {};",
             self.config.busy_timeout_ms
         ))
-        .map_err(|e| StorageError::Backend(e.to_string()))?;
+        .sql()?;
 
         // Cache size
         conn.execute_batch(&format!("PRAGMA cache_size = {};", self.config.cache_size))
-            .map_err(|e| StorageError::Backend(e.to_string()))?;
+            .sql()?;
 
         // MMAP for faster reads (if configured)
         if self.config.mmap_size > 0 {
             conn.execute_batch(&format!("PRAGMA mmap_size = {};", self.config.mmap_size))
-                .map_err(|e| StorageError::Backend(e.to_string()))?;
+                .sql()?;
         }
 
         // Use memory for temp tables
         conn.execute_batch("PRAGMA temp_store = MEMORY;")
-            .map_err(|e| StorageError::Backend(e.to_string()))?;
+            .sql()?;
 
         Ok(())
     }
@@ -158,15 +159,15 @@ impl SqlitePool {
         self.with_connection(|conn| {
             let page_count: i64 = conn
                 .query_row("PRAGMA page_count;", [], |row| row.get(0))
-                .map_err(|e| StorageError::Backend(e.to_string()))?;
+                .sql()?;
 
             let page_size: i64 = conn
                 .query_row("PRAGMA page_size;", [], |row| row.get(0))
-                .map_err(|e| StorageError::Backend(e.to_string()))?;
+                .sql()?;
 
             let freelist_count: i64 = conn
                 .query_row("PRAGMA freelist_count;", [], |row| row.get(0))
-                .map_err(|e| StorageError::Backend(e.to_string()))?;
+                .sql()?;
 
             Ok(DbStats {
                 page_count: page_count as u64,
@@ -199,7 +200,7 @@ mod tests {
         pool.with_connection(|conn| {
             let result: i64 = conn
                 .query_row("SELECT 1 + 1", [], |row| row.get(0))
-                .map_err(|e| StorageError::Backend(e.to_string()))?;
+                .sql()?;
             assert_eq!(result, 2);
             Ok(())
         })
@@ -218,7 +219,7 @@ mod tests {
         pool.with_connection(|conn| {
             let mode: String = conn
                 .query_row("PRAGMA journal_mode;", [], |row| row.get(0))
-                .map_err(|e| StorageError::Backend(e.to_string()))?;
+                .sql()?;
             assert_eq!(mode.to_lowercase(), "wal");
             Ok(())
         })
@@ -242,10 +243,10 @@ mod tests {
             let tables: Vec<String> = {
                 let mut stmt = conn
                     .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    .sql()?;
                 let rows = stmt
                     .query_map([], |row| row.get(0))
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    .sql()?;
                 rows.filter_map(Result::ok).collect()
             };
 

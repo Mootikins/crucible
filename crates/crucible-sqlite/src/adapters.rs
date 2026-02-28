@@ -3,11 +3,11 @@
 //! Storage adapters for daemon compatibility.
 
 use crate::connection::SqlitePool;
+use crate::error_ext::SqliteResultExt;
 use crate::note_store::SqliteNoteStore;
 use crate::SqliteConfig;
 use anyhow::Result;
 use crucible_core::storage::NoteStore;
-use crucible_core::storage::StorageError;
 use crucible_core::{QueryResult, Record, RecordId};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -60,7 +60,7 @@ impl SqliteClientHandle {
             pool.with_connection(|conn| {
                 let mut stmt = conn
                     .prepare(&sql_owned)
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    .sql()?;
                 let column_count = stmt.column_count();
                 let column_names: Vec<String> = (0..column_count)
                     .map(|i| stmt.column_name(i).unwrap_or("").to_string())
@@ -69,11 +69,11 @@ impl SqliteClientHandle {
                 let mut records = Vec::new();
                 let mut rows = stmt
                     .query(params_from_iter(std::iter::empty::<&str>()))
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    .sql()?;
 
                 while let Some(row) = rows
                     .next()
-                    .map_err(|e| StorageError::Backend(e.to_string()))?
+                    .sql()?
                 {
                     let mut data = HashMap::new();
                     let mut record_id = None;
