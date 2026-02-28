@@ -213,5 +213,9 @@ ci: fmt-check clippy test-ci
     @echo "CI checks passed!"
 
 # Run tests with CI profile (matches GitHub Actions)
-test-ci:
+test-ci: build-test-fixtures
     cargo nextest run --profile ci --workspace
+
+# Build test fixtures required by integration tests
+build-test-fixtures:
+    cargo build -p crucible-acp --features test-utils --bin mock-acp-agent
