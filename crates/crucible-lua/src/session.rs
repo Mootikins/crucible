@@ -3,7 +3,7 @@
 //! Provides a lightweight session wrapper that combines:
 //! - `EventRing<SessionEvent>` for in-memory event storage
 //! - `LuaScriptHandlerRegistry` for handler dispatch
-//! - Markdown persistence via `EventToMarkdown`
+//! - Markdown persistence via `SessionEvent` inherent methods
 //!
 //! This is the Lua equivalent of other session implementations, but simpler
 //! because it delegates more to core infrastructure.
@@ -11,7 +11,6 @@
 use crate::error::LuaError;
 use crate::handlers::{run_handler_chain, LuaScriptHandlerRegistry};
 use crucible_core::discovery::DiscoveryPaths;
-use crucible_core::events::markdown::EventToMarkdown;
 use crucible_core::events::{EventRing, SessionEvent, SessionEventConfig};
 use mlua::Lua;
 use serde::{Deserialize, Serialize};
@@ -512,7 +511,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_persists_events() {
-        use crucible_core::events::markdown::EventToMarkdown;
 
         let temp = TempDir::new().unwrap();
         let folder = temp.path().join("session");

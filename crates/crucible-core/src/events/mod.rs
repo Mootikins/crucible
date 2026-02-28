@@ -153,4 +153,4 @@ pub use session_event::{
 pub use ring::{EventRing, OverflowCallback};
 
 // Event markdown serialization
-pub use markdown::{EventToMarkdown, MarkdownParseError, MarkdownParseResult, MarkdownToEvent};
+pub use markdown::{MarkdownParseError, MarkdownParseResult};

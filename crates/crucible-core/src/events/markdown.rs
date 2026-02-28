@@ -26,7 +26,6 @@
 //! ## Usage
 //!
 //! ```rust,ignore
-//! use crucible_core::events::markdown::EventToMarkdown;
 //! use crucible_core::events::SessionEvent;
 //!
 //! let event = SessionEvent::MessageReceived {
@@ -41,22 +40,8 @@ use std::path::{Path, PathBuf};
 
 use crate::events::{SessionEvent, SessionEventConfig, ToolCall};
 
-/// Trait for converting events to markdown blocks.
-pub trait EventToMarkdown {
-    /// Convert the event to a markdown block string.
-    ///
-    /// # Arguments
-    ///
-    /// * `timestamp_ms` - Optional timestamp in milliseconds since UNIX epoch.
-    ///   If None, uses current time.
-    fn to_markdown_block(&self, timestamp_ms: Option<u64>) -> String;
-
-    /// Get the event type name for the markdown header.
-    fn event_type_name(&self) -> &'static str;
-}
-
-impl EventToMarkdown for SessionEvent {
-    fn event_type_name(&self) -> &'static str {
+impl SessionEvent {
+    pub fn event_type_name(&self) -> &'static str {
         match self {
             SessionEvent::MessageReceived { .. } => "MessageReceived",
             SessionEvent::AgentResponded { .. } => "AgentResponded",
@@ -120,7 +105,7 @@ impl EventToMarkdown for SessionEvent {
         }
     }
 
-    fn to_markdown_block(&self, timestamp_ms: Option<u64>) -> String {
+    pub fn to_markdown_block(&self, timestamp_ms: Option<u64>) -> String {
         let timestamp = format_timestamp(timestamp_ms);
         let event_type = self.event_type_name();
         let header = format!("## {} - {}\n\n", timestamp, event_type);
@@ -824,19 +809,6 @@ pub enum MarkdownParseError {
 /// Result type for markdown parsing operations.
 pub type MarkdownParseResult<T> = Result<T, MarkdownParseError>;
 
-/// Trait for parsing markdown blocks into events.
-pub trait MarkdownToEvent: Sized {
-    /// Parse a markdown block into an event.
-    ///
-    /// # Arguments
-    ///
-    /// * `markdown` - The markdown block to parse (including header and separator).
-    ///
-    /// # Returns
-    ///
-    /// A tuple of (event, timestamp_ms) where timestamp is extracted from the header.
-    fn from_markdown_block(markdown: &str) -> MarkdownParseResult<(Self, u64)>;
-}
 
 /// Parsed markdown block header.
 #[derive(Debug, Clone)]
@@ -984,8 +956,8 @@ fn ymd_to_days(year: i64, month: u32, day: u32) -> i64 {
     days
 }
 
-impl MarkdownToEvent for SessionEvent {
-    fn from_markdown_block(markdown: &str) -> MarkdownParseResult<(Self, u64)> {
+impl SessionEvent {
+    pub fn from_markdown_block(markdown: &str) -> MarkdownParseResult<(Self, u64)> {
         let lines: Vec<&str> = markdown.lines().collect();
 
         if lines.is_empty() {
