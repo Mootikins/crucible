@@ -59,7 +59,10 @@ pub mod traits;
 pub mod types;
 mod utils;
 
-pub use backends::*;
+pub use backends::{
+    BackendRegistry, EditorConfig, EditorFactory, EditorWatcher, NotifyFactory, NotifyWatcher,
+    PollingFactory, PollingWatcher, WatcherFactory,
+};
 pub use change_detector::{
     CacheStatistics, ChangeDetector, ChangeDetectorConfig, ChangeDetectorStatistics,
 };
@@ -70,17 +73,22 @@ pub use config::{
     ValidationError, WatchLoggingConfig, WatchManagerConfig, WatchModeConfig, WatchPath,
     WatchPerformanceConfig, WatchProfile,
 };
-pub use error::*;
-pub use events::*;
+pub use error::{Error, Result};
+pub use events::{EventFilter, EventMetadata, FileEvent, FileEventKind};
 pub use file_scanner::{
     FileScanner, NoOpProgressReporter, ScanProgressReporter, ScanStatistics, WatchConfig,
     WatchResult,
 };
-pub use handlers::*;
-pub use manager::*;
+pub use handlers::{
+    CompositeHandler, HandlerRegistry, IndexingHandler, ObsidianSyncHandler, ParserHandler,
+};
+pub use manager::WatchManager;
 
-pub use traits::{BackendCapabilities, EventHandler, FileWatcher, WatchHandle, WatchMode};
-pub use types::*;
+pub use traits::{
+    BackendCapabilities, DebounceConfig as TraitDebounceConfig, EventHandler, FileWatcher,
+    WatchConfig as TraitWatchConfig, WatchHandle, WatchMode,
+};
+pub use types::{FileInfo, FilePermissions, FileType};
 
 /// Available file watching backends.
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
