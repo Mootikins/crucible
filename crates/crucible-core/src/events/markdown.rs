@@ -116,6 +116,7 @@ impl EventToMarkdown for SessionEvent {
             SessionEvent::PrecognitionComplete { .. } => "PrecognitionComplete",
             SessionEvent::ClassificationRequired { .. } => "ClassificationRequired",
             SessionEvent::PostLlmCall { .. } => "PostLlmCall",
+            SessionEvent::EmbeddingModelMismatch { .. } => "EmbeddingModelMismatch",
         }
     }
 
@@ -480,6 +481,18 @@ impl EventToMarkdown for SessionEvent {
                 format!(
                     "**Model:** {}\n**Duration:** {}ms{}**Response:** {}\n",
                     model, duration_ms, token_info, response_summary
+                )
+            }
+
+            SessionEvent::EmbeddingModelMismatch {
+                kiln_path,
+                stored_model,
+                current_model,
+                note_count,
+            } => {
+                format!(
+                    "**Kiln:** `{}`\n**Stored Model:** {}\n**Current Model:** {}\n**Notes with Embeddings:** {}\n",
+                    kiln_path, stored_model, current_model, note_count
                 )
             }
         };
