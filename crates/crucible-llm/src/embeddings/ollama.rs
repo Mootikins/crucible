@@ -48,37 +48,6 @@ struct OllamaTagsResponse {
 #[derive(Debug, Deserialize)]
 struct OllamaModelInfo {
     name: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    model: Option<String>,
-    #[allow(dead_code)]
-    modified_at: Option<String>,
-    #[allow(dead_code)]
-    size: Option<u64>,
-    #[allow(dead_code)]
-    digest: Option<String>,
-    #[serde(default)]
-    #[allow(dead_code)]
-    details: Option<OllamaModelDetails>,
-}
-
-/// Detailed model information from Ollama
-#[derive(Debug, Deserialize)]
-struct OllamaModelDetails {
-    #[serde(default)]
-    #[allow(dead_code)]
-    parent_model: Option<String>,
-    #[allow(dead_code)]
-    format: Option<String>,
-    #[allow(dead_code)]
-    family: Option<String>,
-    #[serde(default)]
-    #[allow(dead_code)]
-    families: Option<Vec<String>>,
-    #[allow(dead_code)]
-    parameter_size: Option<String>,
-    #[allow(dead_code)]
-    quantization_level: Option<String>,
 }
 
 /// Ollama embedding provider

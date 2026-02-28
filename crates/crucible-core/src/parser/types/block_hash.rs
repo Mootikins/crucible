@@ -61,12 +61,6 @@ impl From<[u8; 32]> for BlockHash {
     }
 }
 
-impl From<&[u8; 32]> for BlockHash {
-    fn from(bytes: &[u8; 32]) -> Self {
-        Self::new(*bytes)
-    }
-}
-
 impl std::fmt::Display for BlockHash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_hex())

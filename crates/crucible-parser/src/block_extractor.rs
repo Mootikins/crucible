@@ -34,12 +34,6 @@ struct HeadingTree {
 
 #[derive(Debug, Clone)]
 struct HeadingNode {
-    #[allow(dead_code)]
-    level: u8,
-    #[allow(dead_code)]
-    block_index: usize,
-    #[allow(dead_code)]
-    parent_index: Option<usize>,
     children: Vec<usize>,
 }
 
@@ -62,11 +56,7 @@ impl HeadingTree {
         let parent_idx = self.find_parent_for_level(level);
         let depth = self.calculate_depth_for_level(level);
 
-        // Create the node
         let node = HeadingNode {
-            level,
-            block_index,
-            parent_index: parent_idx,
             children: Vec::new(),
         };
 
