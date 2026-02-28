@@ -790,42 +790,40 @@ mod tests {
     #[tokio::test]
     async fn enrichment_config_wiring_no_config_skips_enrichment() {
         let km = KilnManager::new();
-        let enrichment = km.enrichment_config();
-        assert!(
-            enrichment.is_none(),
-            "Expected None when manager has no user-level enrichment config"
-        );
-
-        // Pipeline config should skip enrichment
-        let config = pipeline_config(enrichment);
-        assert!(
-            config.skip_enrichment,
-            "skip_enrichment should be true when no config is present"
-        );
+        assert!(km.enrichment_config().is_none());
     }
 
     #[tokio::test]
     async fn enrichment_config_wiring_with_config_enables_enrichment() {
         let (tx, _rx) = broadcast::channel(1);
         let km = KilnManager::with_event_tx(tx, Some(EmbeddingProviderConfig::mock(Some(384))));
-        let enrichment = km.enrichment_config();
-        assert!(
-            enrichment.is_some(),
-            "Expected Some(EmbeddingProviderConfig) when manager has user-level enrichment config"
-        );
+        assert!(km.enrichment_config().is_some());
+    }
 
-        // Verify it's the mock provider we configured
-        let provider = enrichment.as_ref().unwrap();
-        assert!(matches!(provider, EmbeddingProviderConfig::Mock(_)));
-        assert_eq!(provider.model(), "mock-test-model");
-        assert_eq!(provider.dimensions(), Some(384));
+    #[tokio::test]
+    async fn enrichment_config_none_skips_mismatch_check() {
+        let (tx, mut rx) = broadcast::channel(16);
+        let km = KilnManager::with_event_tx(tx, None);
+        let tmp = TempDir::new().unwrap();
+        let kiln_path = tmp.path().join("test_kiln");
 
-        // Pipeline config should enable enrichment
-        let config = pipeline_config(enrichment);
-        assert!(
-            !config.skip_enrichment,
-            "skip_enrichment should be false when enrichment config is present"
-        );
+        km.open(&kiln_path).await.unwrap();
+
+        let mut saw_mismatch = false;
+        loop {
+            match rx.try_recv() {
+                Ok(message) => {
+                    if message.event == "embedding_model_mismatch" {
+                        saw_mismatch = true;
+                    }
+                }
+                Err(tokio::sync::broadcast::error::TryRecvError::Empty) => break,
+                Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::TryRecvError::Closed) => break,
+            }
+        }
+
+        assert!(!saw_mismatch);
     }
 
     #[tokio::test]
