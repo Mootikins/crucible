@@ -36,6 +36,8 @@ impl SessionContent {
             path,
             content_hash,
             embedding,
+            embedding_model: None,
+            embedding_dimensions: None,
             title: self.title.clone(),
             tags: vec![SESSION_TAG.to_string(), CHAT_TAG.to_string()],
             links_to: Vec::new(),
