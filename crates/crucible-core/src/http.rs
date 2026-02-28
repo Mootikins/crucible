@@ -149,30 +149,21 @@ impl HttpResponse {
 }
 
 /// HTTP error types.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum HttpError {
     /// Request failed to send
+    #[error("HTTP request failed: {0}")]
     Request(String),
     /// Failed to read response body
+    #[error("Failed to read body: {0}")]
     Body(String),
     /// Request timed out
+    #[error("Request timed out")]
     Timeout,
     /// Invalid URL
+    #[error("Invalid URL: {0}")]
     InvalidUrl(String),
 }
-
-impl std::fmt::Display for HttpError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Request(e) => write!(f, "HTTP request failed: {}", e),
-            Self::Body(e) => write!(f, "Failed to read body: {}", e),
-            Self::Timeout => write!(f, "Request timed out"),
-            Self::InvalidUrl(e) => write!(f, "Invalid URL: {}", e),
-        }
-    }
-}
-
-impl std::error::Error for HttpError {}
 
 /// HTTP executor using reqwest.
 #[derive(Clone)]

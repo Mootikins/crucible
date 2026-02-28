@@ -273,27 +273,31 @@ impl SubscriptionInfo {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Errors that can occur during subscription operations.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum SubscriptionError {
     /// Subscription with this name already exists.
+    #[error("Subscription with name '{name}' already exists")]
     DuplicateName {
         /// The duplicate name
         name: String,
     },
 
     /// Subscription ID not found.
+    #[error("Subscription {id} not found")]
     NotFound {
         /// The ID that was not found
         id: SubscriptionId,
     },
 
     /// Invalid filter pattern.
+    #[error("Invalid event filter: {message}")]
     InvalidFilter {
         /// Error message
         message: String,
     },
 
     /// Subscriber is not available (e.g., disconnected).
+    #[error("Subscriber unavailable: {reason}")]
     Unavailable {
         /// Reason for unavailability
         reason: String,
@@ -325,27 +329,6 @@ impl SubscriptionError {
         }
     }
 }
-
-impl fmt::Display for SubscriptionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::DuplicateName { name } => {
-                write!(f, "Subscription with name '{}' already exists", name)
-            }
-            Self::NotFound { id } => {
-                write!(f, "Subscription {} not found", id)
-            }
-            Self::InvalidFilter { message } => {
-                write!(f, "Invalid event filter: {}", message)
-            }
-            Self::Unavailable { reason } => {
-                write!(f, "Subscriber unavailable: {}", reason)
-            }
-        }
-    }
-}
-
-impl std::error::Error for SubscriptionError {}
 
 /// Result type for subscription operations.
 pub type SubscriptionResult<T> = Result<T, SubscriptionError>;

@@ -594,18 +594,22 @@ fn merge_toml_values(target: &mut toml::Value, source: &toml::Value) {
 }
 
 /// Errors that can occur during include processing
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum IncludeError {
     /// Include file not found
+    #[error("Include file not found: {}", .0.display())]
     FileNotFound(PathBuf),
 
     /// Include directory not found
+    #[error("Include directory not found: {}", .0.display())]
     DirNotFound(PathBuf),
 
     /// Path is not a directory
+    #[error("Path is not a directory: {}", .0.display())]
     NotADirectory(PathBuf),
 
     /// IO error reading include file
+    #[error("IO error reading {}: {}", path.display(), error)]
     Io {
         /// Path to the file
         path: PathBuf,
@@ -614,6 +618,7 @@ pub enum IncludeError {
     },
 
     /// Parse error in include file
+    #[error("Parse error in {}: {}", path.display(), error)]
     Parse {
         /// Path to the file
         path: PathBuf,
@@ -622,42 +627,12 @@ pub enum IncludeError {
     },
 
     /// Environment variable not found
+    #[error("Environment variable not found: {var_name} (referenced as {{env:{var_name}}})")]
     EnvVarNotFound {
         /// Name of the environment variable
         var_name: String,
     },
 }
-
-impl std::fmt::Display for IncludeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            IncludeError::FileNotFound(path) => {
-                write!(f, "Include file not found: {}", path.display())
-            }
-            IncludeError::DirNotFound(path) => {
-                write!(f, "Include directory not found: {}", path.display())
-            }
-            IncludeError::NotADirectory(path) => {
-                write!(f, "Path is not a directory: {}", path.display())
-            }
-            IncludeError::Io { path, error } => {
-                write!(f, "IO error reading {}: {}", path.display(), error)
-            }
-            IncludeError::Parse { path, error } => {
-                write!(f, "Parse error in {}: {}", path.display(), error)
-            }
-            IncludeError::EnvVarNotFound { var_name } => {
-                write!(
-                    f,
-                    "Environment variable not found: {} (referenced as {{env:{}}})",
-                    var_name, var_name
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for IncludeError {}
 
 #[cfg(all(test, feature = "toml"))]
 mod tests {

@@ -262,39 +262,30 @@ impl<T> McpClient for T where T: McpToolDiscovery + McpToolExecutor + McpConnect
 // =============================================================================
 
 /// Errors that can occur in MCP operations
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum McpError {
     /// Failed to connect to server
+    #[error("Connection error: {0}")]
     Connection(String),
     /// Transport error during communication
+    #[error("Transport error: {0}")]
     Transport(String),
     /// Tool not found
+    #[error("Tool not found: {0}")]
     ToolNotFound(String),
     /// Tool execution failed
+    #[error("Execution error: {0}")]
     Execution(String),
     /// Server returned an error
+    #[error("Server error: {0}")]
     ServerError(String),
     /// Invalid configuration
+    #[error("Config error: {0}")]
     Config(String),
     /// Not connected
+    #[error("Not connected to MCP server")]
     NotConnected,
 }
-
-impl std::fmt::Display for McpError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            McpError::Connection(msg) => write!(f, "Connection error: {}", msg),
-            McpError::Transport(msg) => write!(f, "Transport error: {}", msg),
-            McpError::ToolNotFound(name) => write!(f, "Tool not found: {}", name),
-            McpError::Execution(msg) => write!(f, "Execution error: {}", msg),
-            McpError::ServerError(msg) => write!(f, "Server error: {}", msg),
-            McpError::Config(msg) => write!(f, "Config error: {}", msg),
-            McpError::NotConnected => write!(f, "Not connected to MCP server"),
-        }
-    }
-}
-
-impl std::error::Error for McpError {}
 
 // =============================================================================
 // Tests

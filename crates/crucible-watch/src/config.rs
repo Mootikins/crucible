@@ -553,38 +553,21 @@ impl ConfigValidator {
 }
 
 /// Configuration validation errors.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum ValidationError {
     /// Default profile not found
+    #[error("Default profile '{0}' not found")]
     DefaultProfileNotFound(String),
     /// Invalid configuration value
+    #[error("Invalid value for {0}: {1}")]
     InvalidValue(String, String),
     /// Empty path list
+    #[error("Profile '{0}' has empty path list")]
     EmptyPathList(String),
     /// Invalid path
+    #[error("Invalid path: {0}")]
     InvalidPath(String),
     /// Invalid backend configuration
+    #[error("Invalid backend configuration: {0}")]
     InvalidBackendConfig(String),
 }
-
-impl std::fmt::Display for ValidationError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ValidationError::DefaultProfileNotFound(name) => {
-                write!(f, "Default profile '{}' not found", name)
-            }
-            ValidationError::InvalidValue(field, reason) => {
-                write!(f, "Invalid value for {}: {}", field, reason)
-            }
-            ValidationError::EmptyPathList(profile) => {
-                write!(f, "Profile '{}' has empty path list", profile)
-            }
-            ValidationError::InvalidPath(path) => write!(f, "Invalid path: {}", path),
-            ValidationError::InvalidBackendConfig(reason) => {
-                write!(f, "Invalid backend configuration: {}", reason)
-            }
-        }
-    }
-}
-
-impl std::error::Error for ValidationError {}
