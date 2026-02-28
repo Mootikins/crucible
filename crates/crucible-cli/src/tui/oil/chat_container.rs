@@ -21,7 +21,6 @@ use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, Cach
 /// Parameters for rendering a container view.
 ///
 /// Bundles layout context and derived state that containers need for rendering.
-/// Bundles layout context and derived state that containers need for rendering.
 #[derive(Debug, Clone, Copy)]
 pub struct ViewParams {
     pub render_state: RenderState,
@@ -30,7 +29,6 @@ pub struct ViewParams {
     /// Whether this response is complete (derived from turn state + position).
     pub is_complete: bool,
 }
-
 
 /// A block of thinking content with token count.
 #[derive(Debug, Clone)]
@@ -130,7 +128,7 @@ impl ChatContainer {
 
     /// Render this container to a Node tree using individual parameters.
     ///
-    /// Prefer using `view_with_params()` or the `ContainerView` trait for new code.
+    /// Prefer using `view_with_params()` for new code.
     pub fn view(
         &self,
         width: usize,

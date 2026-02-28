@@ -45,7 +45,6 @@ use crate::types::hashing::{
 /// // TODO: Add example once API stabilizes
 #[async_trait]
 pub trait ContentHasher: Send + Sync {
-    /// Get the hash algorithm used by this hasher
     fn algorithm(&self) -> HashAlgorithm;
 
     /// Hash a single file using streaming I/O
@@ -237,7 +236,6 @@ pub struct StoredHash {
 }
 
 impl StoredHash {
-    /// Create a new StoredHash
     pub fn new(
         record_id: String,
         relative_path: String,
@@ -265,7 +263,6 @@ impl StoredHash {
         )
     }
 
-    /// Get the hash as a hex string for display
     pub fn hash_hex(&self) -> String {
         self.content_hash.to_hex()
     }
@@ -288,7 +285,6 @@ pub struct HashLookupResult {
 }
 
 impl HashLookupResult {
-    /// Create a new empty result
     pub fn new() -> Self {
         Self {
             found_files: HashMap::new(),
@@ -317,7 +313,6 @@ impl HashLookupResult {
         }
     }
 
-    /// Get summary statistics
     pub fn summary(&self) -> HashLookupSummary {
         HashLookupSummary {
             total_queried: self.total_queried,
@@ -400,12 +395,10 @@ pub struct HashLookupCache {
 }
 
 impl HashLookupCache {
-    /// Create a new cache
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Get a value from the cache
     pub fn get(&self, key: &str) -> CacheEntry {
         match self.cache.get(key) {
             None => CacheEntry::NotCached,
@@ -414,7 +407,6 @@ impl HashLookupCache {
         }
     }
 
-    /// Set a value in the cache
     pub fn set(&mut self, key: String, value: Option<StoredHash>) {
         self.cache.insert(key, value);
     }
@@ -451,7 +443,6 @@ impl HashLookupCache {
         }
     }
 
-    /// Get cache statistics
     pub fn stats(&self) -> CacheStats {
         CacheStats {
             entries: self.cache.len(),
@@ -684,7 +675,6 @@ pub struct ChangeSet {
 }
 
 impl ChangeSet {
-    /// Create a new empty ChangeSet
     pub fn new() -> Self {
         Self {
             unchanged: Vec::new(),
@@ -699,12 +689,10 @@ impl ChangeSet {
         !self.changed.is_empty() || !self.new.is_empty() || !self.deleted.is_empty()
     }
 
-    /// Get total number of files processed
     pub fn total_files(&self) -> usize {
         self.unchanged.len() + self.changed.len() + self.new.len() + self.deleted.len()
     }
 
-    /// Get number of files that need processing
     pub fn files_to_process(&self) -> usize {
         self.changed.len() + self.new.len() + self.deleted.len()
     }
@@ -729,7 +717,6 @@ impl ChangeSet {
         self.deleted.push(path);
     }
 
-    /// Get summary statistics
     pub fn summary(&self) -> ChangeSummary {
         ChangeSummary {
             total_files: self.total_files(),
@@ -793,7 +780,6 @@ pub struct ChangeDetectionMetrics {
 }
 
 impl ChangeDetectionMetrics {
-    /// Create new metrics
     pub fn new() -> Self {
         Self::default()
     }
@@ -865,7 +851,6 @@ pub struct ChangeDetectionResult {
 }
 
 impl ChangeDetectionResult {
-    /// Create a new change detection result
     pub fn new(changes: ChangeSet, metrics: ChangeDetectionMetrics) -> Self {
         Self { changes, metrics }
     }
@@ -875,12 +860,10 @@ impl ChangeDetectionResult {
         self.changes.has_changes()
     }
 
-    /// Get the number of files that need processing
     pub fn files_to_process(&self) -> usize {
         self.changes.files_to_process()
     }
 
-    /// Get performance summary
     pub fn performance_summary(&self) -> String {
         self.metrics.performance_summary()
     }
