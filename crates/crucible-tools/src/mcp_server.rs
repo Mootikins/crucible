@@ -157,9 +157,9 @@ impl CrucibleMcpServer {
                 kiln_path.clone(),
                 knowledge_repo,
                 embedding_provider,
-                note_store,
+                note_store.clone(),
             ),
-            kiln_tools: KilnTools::new(kiln_path),
+            kiln_tools: KilnTools::with_note_store(kiln_path, note_store),
             delegation_context: None,
             tool_router: Self::tool_router(),
         }

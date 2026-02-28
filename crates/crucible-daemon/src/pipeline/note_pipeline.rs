@@ -376,6 +376,8 @@ impl NotePipeline {
             path: relative_path.to_string(),
             content_hash,
             embedding,
+            embedding_model: None,
+            embedding_dimensions: None,
             title: parsed.title(),
             tags,
             links_to,

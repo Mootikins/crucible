@@ -4,19 +4,39 @@
 
 #![allow(missing_docs)]
 
+use std::collections::HashSet;
+use std::sync::Arc;
+
+use crucible_core::storage::NoteStore;
 use rmcp::{model::CallToolResult, tool, tool_router};
 
 #[derive(Clone)]
 #[allow(missing_docs)]
 pub struct KilnTools {
     kiln_path: String,
+    note_store: Option<Arc<dyn NoteStore>>,
 }
 
 impl KilnTools {
     #[allow(missing_docs)]
     #[must_use]
     pub fn new(kiln_path: String) -> Self {
-        Self { kiln_path }
+        Self {
+            kiln_path,
+            note_store: None,
+        }
+    }
+
+    /// Create `KilnTools` with a `NoteStore` for accurate indexed statistics
+    ///
+    /// When a `NoteStore` is provided, `get_kiln_info` returns statistics from
+    /// the indexed database instead of walking the filesystem.
+    #[must_use]
+    pub fn with_note_store(kiln_path: String, note_store: Arc<dyn NoteStore>) -> Self {
+        Self {
+            kiln_path,
+            note_store: Some(note_store),
+        }
     }
 }
 
@@ -32,7 +52,37 @@ impl KilnTools {
                 |n| n.to_string_lossy().into_owned(),
             );
 
-        // Calculate statistics
+        // Use indexed data from NoteStore when available
+        if let Some(store) = &self.note_store {
+            let notes = store.list().await.map_err(|e| rmcp::ErrorData {
+                code: rmcp::model::ErrorCode(-32603), // INTERNAL_ERROR
+                message: format!("Failed to list notes: {e}").into(),
+                data: None,
+            })?;
+
+            let indexed_notes = notes.len();
+            let embedded_notes = notes.iter().filter(|n| n.has_embedding()).count();
+            let mut tags = HashSet::new();
+            let mut total_links = 0;
+            for note in &notes {
+                for tag in &note.tags {
+                    tags.insert(tag.clone());
+                }
+                total_links += note.links_to.len();
+            }
+
+            return Ok(CallToolResult::success(vec![rmcp::model::Content::json(
+                serde_json::json!({
+                    "name": name,
+                    "indexed_notes": indexed_notes,
+                    "embedded_notes": embedded_notes,
+                    "unique_tags": tags.len(),
+                    "total_links": total_links,
+                }),
+            )?]));
+        }
+
+        // Fallback: walk filesystem when no NoteStore available
         let mut total_files = 0;
         let mut total_size = 0;
         let mut md_files = 0;
@@ -156,6 +206,85 @@ mod tests {
 
         // This should compile and not panic - the tool_router macro generates the router
         let _router = KilnTools::tool_router();
+    }
+
+    #[tokio::test]
+    async fn test_get_kiln_info_uses_note_store() {
+        use async_trait::async_trait;
+        use crucible_core::events::SessionEvent;
+        use crucible_core::parser::BlockHash;
+        use crucible_core::storage::{Filter, NoteRecord, NoteStore, StorageResult};
+        use std::sync::{Arc, Mutex};
+
+        struct MockNoteStore {
+            notes: Mutex<Vec<NoteRecord>>,
+        }
+
+        impl MockNoteStore {
+            fn new(notes: Vec<NoteRecord>) -> Self {
+                Self {
+                    notes: Mutex::new(notes),
+                }
+            }
+        }
+
+        #[async_trait]
+        impl NoteStore for MockNoteStore {
+            async fn upsert(&self, _note: NoteRecord) -> StorageResult<Vec<SessionEvent>> {
+                Ok(vec![])
+            }
+            async fn get(&self, _path: &str) -> StorageResult<Option<NoteRecord>> {
+                Ok(None)
+            }
+            async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
+                Ok(SessionEvent::NoteDeleted {
+                    path: path.into(),
+                    existed: false,
+                })
+            }
+            async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
+                Ok(self.notes.lock().unwrap().clone())
+            }
+            async fn get_by_hash(&self, _hash: &BlockHash) -> StorageResult<Option<NoteRecord>> {
+                Ok(None)
+            }
+            async fn search(
+                &self,
+                _embedding: &[f32],
+                _k: usize,
+                _filter: Option<Filter>,
+            ) -> StorageResult<Vec<crucible_core::storage::note_store::SearchResult>> {
+                Ok(vec![])
+            }
+        }
+
+        let notes = vec![
+            NoteRecord::new("notes/alpha.md", BlockHash::zero())
+                .with_title("Alpha")
+                .with_tags(vec!["rust".into(), "dev".into()])
+                .with_links(vec!["notes/beta.md".into()]),
+            NoteRecord::new("notes/beta.md", BlockHash::zero())
+                .with_title("Beta")
+                .with_tags(vec!["rust".into()])
+                .with_embedding(vec![0.1; 768]),
+            NoteRecord::new("archive/old.md", BlockHash::zero())
+                .with_title("Old Note")
+                .with_tags(vec!["archive".into()]),
+        ];
+
+        let store = Arc::new(MockNoteStore::new(notes));
+        let kiln_tools = KilnTools::with_note_store("/tmp/test-kiln".into(), store);
+
+        let result = kiln_tools.get_kiln_info().await.unwrap();
+        let content = result.content.first().unwrap();
+        let raw_text = content.as_text().unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
+
+        assert_eq!(parsed["name"], "test-kiln");
+        assert_eq!(parsed["indexed_notes"], 3);
+        assert_eq!(parsed["embedded_notes"], 1);
+        assert_eq!(parsed["unique_tags"], 3); // rust, dev, archive
+        assert_eq!(parsed["total_links"], 1);
     }
 
     #[tokio::test]

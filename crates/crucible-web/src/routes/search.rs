@@ -185,6 +185,8 @@ async fn put_note(
         path: note_filename.clone(),
         content_hash: BlockHash::default(), // TODO: compute actual hash
         embedding: None,
+        embedding_model: None,
+        embedding_dimensions: None,
         title: title.clone(),
         tags: vec![],
         links_to: vec![],
