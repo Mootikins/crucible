@@ -61,7 +61,7 @@ pub use embeddings::{
 
 #[cfg(feature = "fastembed")]
 pub use reranking::FastEmbedReranker;
-pub use reranking::{RerankResult, Reranker, RerankerModelInfo};
+pub use reranking::{RerankResult, RerankerModelInfo};
 
 // Re-export core enrichment config types for convenience
 pub use crucible_core::enrichment::{
