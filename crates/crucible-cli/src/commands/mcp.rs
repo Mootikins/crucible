@@ -82,7 +82,11 @@ pub async fn execute(config: CliConfig, args: McpArgs) -> Result<()> {
     let kiln_path_str = kiln_path.to_string_lossy().to_string();
 
     // Determine transport
-    let transport = if args.stdio { Some("stdio") } else { Some("sse") };
+    let transport = if args.stdio {
+        Some("stdio")
+    } else {
+        Some("sse")
+    };
 
     // Determine Just directory
     let just_dir = args

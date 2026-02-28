@@ -20,12 +20,11 @@ pub async fn execute(config: CliConfig, command: SkillsCommands) -> Result<()> {
 /// List discovered skills
 async fn list(config: &CliConfig, scope_filter: Option<String>) -> Result<()> {
     let client = DaemonClient::connect_or_start().await?;
-    let response = client.skills_list(&config.kiln_path, scope_filter.as_deref()).await?;
+    let response = client
+        .skills_list(&config.kiln_path, scope_filter.as_deref())
+        .await?;
 
-    let skills = response["skills"]
-        .as_array()
-        .unwrap_or(&vec![])
-        .to_vec();
+    let skills = response["skills"].as_array().unwrap_or(&vec![]).to_vec();
 
     if skills.is_empty() {
         println!("No skills discovered.");
@@ -76,8 +75,14 @@ async fn show(config: &CliConfig, name: String) -> Result<()> {
 
     println!("Name: {}", response["name"].as_str().unwrap_or("unknown"));
     println!("Scope: {}", response["scope"].as_str().unwrap_or("unknown"));
-    println!("Description: {}", response["description"].as_str().unwrap_or(""));
-    println!("Source: {}", response["source_path"].as_str().unwrap_or("unknown"));
+    println!(
+        "Description: {}",
+        response["description"].as_str().unwrap_or("")
+    );
+    println!(
+        "Source: {}",
+        response["source_path"].as_str().unwrap_or("unknown")
+    );
     if let Some(agent) = response["agent"].as_str() {
         println!("Agent: {}", agent);
     }
@@ -95,12 +100,11 @@ async fn search(config: &CliConfig, query: String, limit: usize) -> Result<()> {
     println!("Searching for: '{}' (limit: {})", query, limit);
 
     let client = DaemonClient::connect_or_start().await?;
-    let response = client.skills_search(&query, &config.kiln_path, Some(limit)).await?;
+    let response = client
+        .skills_search(&query, &config.kiln_path, Some(limit))
+        .await?;
 
-    let matches = response["skills"]
-        .as_array()
-        .unwrap_or(&vec![])
-        .to_vec();
+    let matches = response["skills"].as_array().unwrap_or(&vec![]).to_vec();
 
     if matches.is_empty() {
         println!("\nNo skills matched '{}'", query);

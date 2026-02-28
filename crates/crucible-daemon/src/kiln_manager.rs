@@ -32,10 +32,6 @@ use crucible_sqlite::{adapters as sqlite_adapters, SqliteClientHandle, SqliteCon
 // Constants
 // ===========================================================================
 
-/// Directories to exclude from file discovery and watching
-/// (Re-exported from crucible-core)
-/// (Re-exported from crucible-core)
-
 // ===========================================================================
 // Backend Abstraction
 // ===========================================================================
