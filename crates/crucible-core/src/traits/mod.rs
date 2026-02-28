@@ -48,7 +48,7 @@ pub mod tools;
 
 // Re-export key traits
 pub use acp::{FilesystemHandler, SessionManager, StreamHandler, ToolBridge};
-pub use change_detection::{ChangeDetector, ContentHasher, HashLookupStorage};
+pub use change_detection::{CacheEntry, ChangeDetector, ContentHasher, HashLookupStorage};
 pub use graph_query::{GraphQueryError, GraphQueryExecutor, GraphQueryResult};
 
 pub use chat::{

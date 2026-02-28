@@ -376,6 +376,18 @@ impl Default for BatchLookupConfig {
     }
 }
 
+/// Represents the three possible states of a cache lookup.
+///
+/// - `NotCached`: The key has never been inserted into the cache.
+/// - `Found(StoredHash)`: The key was cached and the file exists with this hash.
+/// - `NotFound`: The key was explicitly cached as "file does not exist".
+#[derive(Debug, Clone, PartialEq)]
+pub enum CacheEntry {
+    NotCached,
+    Found(StoredHash),
+    NotFound,
+}
+
 /// Session cache for hash lookups during scanning
 ///
 /// This type provides an in-memory cache for hash lookup results during
@@ -394,8 +406,12 @@ impl HashLookupCache {
     }
 
     /// Get a value from the cache
-    pub fn get(&self, key: &str) -> Option<Option<StoredHash>> {
-        self.cache.get(key).cloned()
+    pub fn get(&self, key: &str) -> CacheEntry {
+        match self.cache.get(key) {
+            None => CacheEntry::NotCached,
+            Some(None) => CacheEntry::NotFound,
+            Some(Some(hash)) => CacheEntry::Found(hash.clone()),
+        }
     }
 
     /// Set a value in the cache
@@ -413,11 +429,14 @@ impl HashLookupCache {
 
         for key in keys {
             match self.get(key) {
-                Some(value) => {
-                    cached.insert(key.clone(), value);
-                }
-                None => {
+                CacheEntry::NotCached => {
                     uncached.push(key.clone());
+                }
+                CacheEntry::Found(hash) => {
+                    cached.insert(key.clone(), Some(hash));
+                }
+                CacheEntry::NotFound => {
+                    cached.insert(key.clone(), None);
                 }
             }
         }
@@ -1209,7 +1228,7 @@ mod tests {
         let mut cache = HashLookupCache::new();
 
         // Test empty cache
-        assert_eq!(cache.get("test.md"), None);
+        assert_eq!(cache.get("test.md"), CacheEntry::NotCached);
         assert_eq!(cache.stats().entries, 0);
 
         // Test setting and getting
@@ -1223,7 +1242,7 @@ mod tests {
         );
 
         cache.set("test.md".to_string(), Some(stored.clone()));
-        assert_eq!(cache.get("test.md"), Some(Some(stored)));
+        assert_eq!(cache.get("test.md"), CacheEntry::Found(stored));
 
         // Test batch operations
         let keys = vec!["test.md".to_string(), "missing.md".to_string()];
@@ -1241,7 +1260,7 @@ mod tests {
 
         // Clear cache
         cache.clear();
-        assert_eq!(cache.get("test.md"), None);
+        assert_eq!(cache.get("test.md"), CacheEntry::NotCached);
         assert_eq!(cache.stats().entries, 0);
     }
 
