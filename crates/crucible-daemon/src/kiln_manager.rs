@@ -162,7 +162,6 @@ pub struct KilnConnection {
     pub pipeline: NotePipeline,
     pub last_access: Instant,
     watch_manager: Option<WatchManager>,
-    pub enrichment_config: Option<EmbeddingProviderConfig>,
 }
 
 /// Manages connections to multiple kilns
@@ -222,10 +221,7 @@ impl KilnManager {
             db_path
         );
 
-        // Try to load enrichment config from kiln's crucible.toml
-        let enrichment_config = load_enrichment_config(&canonical).await;
-
-        let pipeline = create_pipeline(&handle, enrichment_config.as_ref()).await?;
+        let pipeline = create_pipeline(&handle, self.enrichment_config.as_ref()).await?;
         info!("Pipeline created for kiln at {:?}", canonical);
 
         let watch_manager = self.start_watch_manager(&canonical).await;
@@ -238,7 +234,6 @@ impl KilnManager {
                 pipeline,
                 last_access: Instant::now(),
                 watch_manager,
-                enrichment_config,
             },
         );
         // Drop the write lock before checking classification
@@ -457,19 +452,6 @@ impl KilnManager {
         Ok((processed, skipped, errors))
     }
 
-    /// Get handle for a kiln, opening if needed
-    /// Get enrichment configuration for a kiln if it's already open
-    pub async fn get_enrichment_config(&self, kiln_path: &Path) -> Option<EmbeddingProviderConfig> {
-        let canonical = kiln_path
-            .canonicalize()
-            .unwrap_or_else(|_| kiln_path.to_path_buf());
-
-        let conns = self.connections.read().await;
-        conns
-            .get(&canonical)
-            .and_then(|conn| conn.enrichment_config.clone())
-    }
-
     pub async fn get_or_open(&self, kiln_path: &Path) -> Result<StorageHandle> {
         let canonical = kiln_path
             .canonicalize()
@@ -568,40 +550,6 @@ impl Default for KilnManager {
 // ===========================================================================
 // Backend Factory
 // ===========================================================================
-
-// ===========================================================================
-// Enrichment Configuration Loading
-// ===========================================================================
-
-/// Load enrichment configuration from a kiln's crucible.toml
-///
-/// Attempts to read `{kiln_path}/crucible.toml` and extract the enrichment
-/// provider configuration. Returns None if the file doesn't exist or has no
-/// enrichment section.
-async fn load_enrichment_config(kiln_path: &Path) -> Option<EmbeddingProviderConfig> {
-    let config_path = kiln_path.join("crucible.toml");
-
-    // Try to read the config file
-    let config_content = match tokio::fs::read_to_string(&config_path).await {
-        Ok(content) => content,
-        Err(_) => {
-            // File doesn't exist or can't be read - this is fine, enrichment is optional
-            return None;
-        }
-    };
-
-    // Parse as TOML
-    let config: crucible_config::Config = match toml::from_str(&config_content) {
-        Ok(cfg) => cfg,
-        Err(e) => {
-            warn!("Failed to parse crucible.toml at {:?}: {}", config_path, e);
-            return None;
-        }
-    };
-
-    // Extract enrichment provider config
-    config.enrichment.map(|enrichment| enrichment.provider)
-}
 
 /// Create a NotePipeline for daemon-side file processing
 ///
@@ -735,19 +683,15 @@ mod tests {
 
     #[tokio::test]
     async fn enrichment_config_wiring_no_config_skips_enrichment() {
-        // Scenario 1: No crucible.toml → enrichment is skipped gracefully
-        let tmp = TempDir::new().unwrap();
-        let kiln_path = tmp.path();
-
-        // No crucible.toml exists in the temp dir
-        let enrichment = load_enrichment_config(kiln_path).await;
+        let km = KilnManager::new();
+        let enrichment = km.enrichment_config();
         assert!(
             enrichment.is_none(),
-            "Expected None when no crucible.toml exists"
+            "Expected None when manager has no user-level enrichment config"
         );
 
         // Pipeline config should skip enrichment
-        let config = pipeline_config(enrichment.as_ref());
+        let config = pipeline_config(enrichment);
         assert!(
             config.skip_enrichment,
             "skip_enrichment should be true when no config is present"
@@ -756,82 +700,26 @@ mod tests {
 
     #[tokio::test]
     async fn enrichment_config_wiring_with_config_enables_enrichment() {
-        // Scenario 2: crucible.toml with [enrichment.provider] → enrichment enabled
-        let tmp = TempDir::new().unwrap();
-        let kiln_path = tmp.path();
-
-        // Write a minimal crucible.toml with a mock enrichment provider
-        let config_content = r#"
-[enrichment.provider]
-type = "mock"
-model = "test-model"
-dimensions = 384
-
-[enrichment.pipeline]
-batch_size = 16
-"#;
-        std::fs::write(kiln_path.join("crucible.toml"), config_content).unwrap();
-
-        // load_enrichment_config should find and parse the provider
-        let enrichment = load_enrichment_config(kiln_path).await;
+        let (tx, _rx) = broadcast::channel(1);
+        let km = KilnManager::with_event_tx(tx, Some(EmbeddingProviderConfig::mock(Some(384))));
+        let enrichment = km.enrichment_config();
         assert!(
             enrichment.is_some(),
-            "Expected Some(EmbeddingProviderConfig) when crucible.toml has enrichment section"
+            "Expected Some(EmbeddingProviderConfig) when manager has user-level enrichment config"
         );
 
         // Verify it's the mock provider we configured
         let provider = enrichment.as_ref().unwrap();
         assert!(matches!(provider, EmbeddingProviderConfig::Mock(_)));
-        assert_eq!(provider.model(), "test-model");
+        assert_eq!(provider.model(), "mock-test-model");
         assert_eq!(provider.dimensions(), Some(384));
 
         // Pipeline config should enable enrichment
-        let config = pipeline_config(enrichment.as_ref());
+        let config = pipeline_config(enrichment);
         assert!(
             !config.skip_enrichment,
             "skip_enrichment should be false when enrichment config is present"
         );
-    }
-
-    #[tokio::test]
-    async fn enrichment_config_wiring_malformed_toml_skips_gracefully() {
-        // Edge case: malformed crucible.toml should not crash, just skip enrichment
-        let tmp = TempDir::new().unwrap();
-        let kiln_path = tmp.path();
-
-        std::fs::write(kiln_path.join("crucible.toml"), "not valid { toml ]").unwrap();
-
-        let enrichment = load_enrichment_config(kiln_path).await;
-        assert!(
-            enrichment.is_none(),
-            "Malformed TOML should return None, not panic"
-        );
-
-        let config = pipeline_config(enrichment.as_ref());
-        assert!(config.skip_enrichment);
-    }
-
-    #[tokio::test]
-    async fn enrichment_config_wiring_toml_without_enrichment_section_skips() {
-        // Edge case: valid crucible.toml but no enrichment section
-        let tmp = TempDir::new().unwrap();
-        let kiln_path = tmp.path();
-
-        // Valid TOML but no enrichment section
-        std::fs::write(
-            kiln_path.join("crucible.toml"),
-            "[storage]\npath = \"/tmp\"",
-        )
-        .unwrap();
-
-        let enrichment = load_enrichment_config(kiln_path).await;
-        assert!(
-            enrichment.is_none(),
-            "Config without enrichment section should return None"
-        );
-
-        let config = pipeline_config(enrichment.as_ref());
-        assert!(config.skip_enrichment);
     }
 
     #[tokio::test]

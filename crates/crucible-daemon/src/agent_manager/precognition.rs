@@ -33,8 +33,8 @@ impl AgentManager {
 
             let Some(connected_config) = self
                 .kiln_manager
-                .get_enrichment_config(connected_kiln)
-                .await
+                .enrichment_config()
+                .cloned()
             else {
                 debug!(
                     session_id = %session_id,
@@ -45,6 +45,7 @@ impl AgentManager {
             };
 
             if connected_config.model_name() != primary_config.model_name() {
+                // TODO: this comparison is now trivially true since all kilns share one enrichment config; future work should compare stored model metadata
                 warn!(
                     session_id = %session_id,
                     kiln = %connected_kiln.display(),
@@ -176,7 +177,7 @@ impl AgentManager {
             }
         };
 
-        let primary_config = match self.kiln_manager.get_enrichment_config(kiln_path).await {
+        let primary_config = match self.kiln_manager.enrichment_config().cloned() {
             Some(c) => c,
             None => return original_content.to_string(),
         };
