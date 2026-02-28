@@ -17,10 +17,10 @@
 
 use anyhow::Result;
 use clap::Parser;
-use crucible_rpc::DaemonClient;
 use std::path::PathBuf;
 use tracing::info;
 
+use crate::common::daemon_client;
 use crate::config::CliConfig;
 
 /// MCP server command arguments
@@ -103,9 +103,7 @@ pub async fn execute(config: CliConfig, args: McpArgs) -> Result<()> {
     info!("Transport: {}", if args.stdio { "stdio" } else { "SSE" });
 
     // Connect to daemon
-    let client = DaemonClient::connect_or_start()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to connect to daemon: {}", e))?;
+    let client = daemon_client().await?;
 
     // Start MCP server via daemon RPC
     client

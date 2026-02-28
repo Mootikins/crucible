@@ -7,6 +7,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use crate::helpers::json_success;
 use crucible_core::storage::NoteStore;
 use rmcp::{model::CallToolResult, tool, tool_router};
 
@@ -71,15 +72,13 @@ impl KilnTools {
                 total_links += note.links_to.len();
             }
 
-            return Ok(CallToolResult::success(vec![rmcp::model::Content::json(
-                serde_json::json!({
-                    "name": name,
-                    "indexed_notes": indexed_notes,
-                    "embedded_notes": embedded_notes,
-                    "unique_tags": tags.len(),
-                    "total_links": total_links,
-                }),
-            )?]));
+            return json_success(serde_json::json!({
+                "name": name,
+                "indexed_notes": indexed_notes,
+                "embedded_notes": embedded_notes,
+                "unique_tags": tags.len(),
+                "total_links": total_links,
+            }));
         }
 
         // Fallback: walk filesystem when no NoteStore available
@@ -109,14 +108,12 @@ impl KilnTools {
             }
         }
 
-        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
-            serde_json::json!({
-                "name": name,
-                "total_files": total_files,
-                "markdown_files": md_files,
-                "total_size_bytes": total_size
-            }),
-        )?]))
+        json_success(serde_json::json!({
+            "name": name,
+            "total_files": total_files,
+            "markdown_files": md_files,
+            "total_size_bytes": total_size
+        }))
     }
 }
 

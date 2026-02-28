@@ -23,6 +23,7 @@
 //! Lua plugins use `@tool` doc comments to register tools.
 //! Lua handlers use `@handler` doc comments to register event handlers.
 
+use crate::helpers::{text_success, McpResultExt};
 use crate::mcp_gateway::McpGatewayManager;
 use crate::toon_response::toon_success_smart;
 use crate::CrucibleMcpServer;
@@ -445,15 +446,9 @@ impl ExtendedMcpServer {
 
                     match &final_content {
                         Value::Object(_) | Value::Array(_) => Ok(toon_success_smart(final_content)),
-                        Value::String(s) => {
-                            Ok(CallToolResult::success(vec![Content::text(s.clone())]))
-                        }
-                        Value::Number(n) => {
-                            Ok(CallToolResult::success(vec![Content::text(n.to_string())]))
-                        }
-                        Value::Bool(b) => {
-                            Ok(CallToolResult::success(vec![Content::text(b.to_string())]))
-                        }
+                        Value::String(s) => Ok(text_success(s.clone())),
+                        Value::Number(n) => Ok(text_success(n.to_string())),
+                        Value::Bool(b) => Ok(text_success(b.to_string())),
                         Value::Null => Ok(CallToolResult::success(vec![])),
                     }
                 } else {
@@ -727,8 +722,8 @@ fn handle_discovery_tool(
             discovery.discover_tools(&params)
         }
         "get_tool_schema" => {
-            let params: GetToolSchemaParams = serde_json::from_value(arguments)
-                .map_err(|e| rmcp::ErrorData::invalid_params(e.to_string(), None))?;
+            let params: GetToolSchemaParams =
+                serde_json::from_value(arguments).mcp_invalid("Invalid params")?;
             discovery.get_tool_schema(&params)
         }
         _ => Err(rmcp::ErrorData::new(

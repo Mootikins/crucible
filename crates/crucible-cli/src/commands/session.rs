@@ -3,6 +3,7 @@
 //! Commands for listing, viewing, resuming, and managing chat sessions.
 
 use crate::cli::SessionCommands;
+use crate::common::daemon_client;
 use crate::config::CliConfig;
 use anyhow::{anyhow, Result};
 use crucible_config::BackendType;
@@ -41,9 +42,7 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             agent,
             recording_mode,
         } => {
-            let client = DaemonClient::connect_or_start()
-                .await
-                .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
+            let client = daemon_client().await?;
             daemon_create(
                 &client,
                 &config,
@@ -54,21 +53,15 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             .await
         }
         SessionCommands::Pause { session_id } => {
-            let client = DaemonClient::connect_or_start()
-                .await
-                .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
+            let client = daemon_client().await?;
             daemon_pause(&client, &session_id).await
         }
         SessionCommands::Unpause { session_id } => {
-            let client = DaemonClient::connect_or_start()
-                .await
-                .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
+            let client = daemon_client().await?;
             unpause(&client, &session_id).await
         }
         SessionCommands::End { session_id } => {
-            let client = DaemonClient::connect_or_start()
-                .await
-                .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
+            let client = daemon_client().await?;
             daemon_end(&client, &session_id).await
         }
         SessionCommands::Send {
@@ -84,9 +77,7 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
         } => {
             let provider_type = BackendType::from_str(&provider)
                 .map_err(|e| anyhow!("Invalid provider '{}': {}", provider, e))?;
-            let client = DaemonClient::connect_or_start()
-                .await
-                .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
+            let client = daemon_client().await?;
             daemon_configure(
                 &client,
                 &config,
@@ -99,9 +90,7 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
         }
         SessionCommands::Subscribe { session_ids } => daemon_subscribe(&session_ids).await,
         SessionCommands::Load { session_id } => {
-            let client = DaemonClient::connect_or_start()
-                .await
-                .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
+            let client = daemon_client().await?;
             daemon_load(&client, &config, &session_id).await
         }
         SessionCommands::Replay {
@@ -292,9 +281,7 @@ async fn list(
     state: Option<String>,
     all: bool,
 ) -> Result<()> {
-    let client = DaemonClient::connect_or_start()
-        .await
-        .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
+    let client = daemon_client().await?;
 
     daemon_list(&client, &config, session_type.as_deref(), state.as_deref()).await?;
 
@@ -799,9 +786,7 @@ async fn reindex(config: CliConfig, force: bool) -> Result<()> {
         return Ok(());
     }
 
-    let client = DaemonClient::connect_or_start()
-        .await
-        .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
+    let client = daemon_client().await?;
 
     let result = client.session_reindex(&config.kiln_path, force).await?;
 
@@ -826,9 +811,7 @@ async fn cleanup(config: CliConfig, older_than: u32, dry_run: bool) -> Result<()
         return Ok(());
     }
 
-    let client = DaemonClient::connect_or_start()
-        .await
-        .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
+    let client = daemon_client().await?;
 
     let result = client
         .session_cleanup(&config.kiln_path, older_than as u64, dry_run)

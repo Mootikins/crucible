@@ -7,6 +7,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use crate::serde_helpers::default_true;
+
 /// Agent configuration bound to a session.
 ///
 /// This captures everything needed to reconstruct an agent when resuming
@@ -1216,7 +1218,3 @@ mod tests {
     }
 }
 
-/// Default function for serde: returns true
-fn default_true() -> bool {
-    true
-}

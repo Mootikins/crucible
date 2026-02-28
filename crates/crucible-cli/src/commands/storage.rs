@@ -5,6 +5,7 @@ use std::future::Future;
 use std::time::Instant;
 
 use crate::cli::StorageCommands;
+use crate::common::daemon_client;
 use crate::config::CliConfig;
 use crate::output;
 use crucible_rpc::DaemonClient;
@@ -71,7 +72,7 @@ where
     Fut: Future<Output = Result<serde_json::Value>>,
 {
     output::info(label);
-    let client = DaemonClient::connect_or_start().await?;
+    let client = daemon_client().await?;
     match call(client).await {
         Ok(result) => {
             let msg = result

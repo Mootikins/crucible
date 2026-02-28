@@ -1,5 +1,6 @@
 //! SQLite configuration types
 
+use crucible_core::serde_helpers::default_true;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -36,10 +37,6 @@ pub struct SqliteConfig {
 
 fn default_pool_size() -> u32 {
     10
-}
-
-fn default_true() -> bool {
-    true
 }
 
 fn default_busy_timeout() -> u64 {

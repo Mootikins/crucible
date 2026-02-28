@@ -5,6 +5,7 @@ use crate::components::{
     GatewayConfig, HandlersConfig, LlmConfig, McpConfig, PermissionConfig, StorageConfig,
 };
 use crate::includes::IncludeConfig;
+use crate::serde_helpers::default_true;
 use crate::{EnrichmentConfig, ProfileConfig};
 
 #[cfg(feature = "toml")]
@@ -1673,10 +1674,6 @@ fn default_level() -> String {
 
 fn default_format() -> String {
     "text".to_string()
-}
-
-fn default_true() -> bool {
-    true
 }
 
 impl Default for LoggingConfig {

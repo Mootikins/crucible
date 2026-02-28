@@ -33,6 +33,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+use crate::serde_helpers::default_true;
+
 /// Unified path discovery configuration for Crucible plugins
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscoveryPaths {
@@ -251,10 +253,6 @@ pub struct DiscoveryConfig {
     /// Whether to include default paths (default: true)
     #[serde(default = "default_true")]
     pub use_defaults: bool,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 impl DiscoveryPaths {
