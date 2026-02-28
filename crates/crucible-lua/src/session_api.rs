@@ -33,27 +33,14 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, oneshot};
 
 
-/// Extension trait to convert channel errors to String messages.
-trait ChannelResultExt<T> {
-    fn channel_closed(self) -> Result<T, String>;
-    fn reply_closed(self) -> Result<T, String>;
+/// Extension trait to convert channel send errors to String.
+trait SendExt<T> {
+    fn or_closed(self) -> Result<T, String>;
 }
 
-impl<T, E> ChannelResultExt<T> for Result<T, tokio::sync::mpsc::error::SendError<E>> {
-    fn channel_closed(self) -> Result<T, String> {
+impl<T, E> SendExt<T> for Result<T, tokio::sync::mpsc::error::SendError<E>> {
+    fn or_closed(self) -> Result<T, String> {
         self.map_err(|_| "Channel closed".to_string())
-    }
-    fn reply_closed(self) -> Result<T, String> {
-        self.map_err(|_| "Reply channel closed".to_string())
-    }
-}
-
-impl<T> ChannelResultExt<T> for Result<T, tokio::sync::oneshot::error::RecvError> {
-    fn channel_closed(self) -> Result<T, String> {
-        self.map_err(|_| "Channel closed".to_string())
-    }
-    fn reply_closed(self) -> Result<T, String> {
-        self.map_err(|_| "Reply channel closed".to_string())
     }
 }
 
@@ -112,121 +99,79 @@ impl ChannelSessionRpc {
     pub fn new(tx: mpsc::UnboundedSender<SessionCommand>) -> Self {
         Self { tx }
     }
+
+    /// Send a query command and return the response, or None on channel failure.
+    fn query<T>(&self, cmd: impl FnOnce(oneshot::Sender<Option<T>>) -> SessionCommand) -> Option<T> {
+        let (tx, rx) = oneshot::channel();
+        self.tx.send(cmd(tx)).ok()?;
+        rx.blocking_recv().ok().flatten()
+    }
+
+    /// Send a command that returns Result, propagating channel errors.
+    fn command(
+        &self,
+        cmd: impl FnOnce(oneshot::Sender<Result<(), String>>) -> SessionCommand,
+    ) -> Result<(), String> {
+        let (tx, rx) = oneshot::channel();
+        self.tx.send(cmd(tx)).or_closed()?;
+        rx.blocking_recv().map_err(|_| "Reply channel closed".to_string())?
+    }
 }
 
 
 
 impl SessionConfigRpc for ChannelSessionRpc {
     fn get_temperature(&self) -> Option<f64> {
-        let (reply_tx, reply_rx) = oneshot::channel();
-        if self
-            .tx
-            .send(SessionCommand::GetTemperature(reply_tx))
-            .is_err()
-        {
-            return None;
-        }
-        reply_rx.blocking_recv().ok().flatten()
+        self.query(SessionCommand::GetTemperature)
     }
 
     fn set_temperature(&self, temp: f64) -> Result<(), String> {
-        let (reply_tx, reply_rx) = oneshot::channel();
-        self.tx
-            .send(SessionCommand::SetTemperature(temp, reply_tx))
-            .channel_closed()?;
-        reply_rx
-            .blocking_recv()
-            .reply_closed()?
+        self.command(|tx| SessionCommand::SetTemperature(temp, tx))
     }
 
     fn get_max_tokens(&self) -> Option<u32> {
-        let (reply_tx, reply_rx) = oneshot::channel();
-        if self
-            .tx
-            .send(SessionCommand::GetMaxTokens(reply_tx))
-            .is_err()
-        {
-            return None;
-        }
-        reply_rx.blocking_recv().ok().flatten()
+        self.query(SessionCommand::GetMaxTokens)
     }
 
     fn set_max_tokens(&self, tokens: Option<u32>) -> Result<(), String> {
-        let (reply_tx, reply_rx) = oneshot::channel();
-        self.tx
-            .send(SessionCommand::SetMaxTokens(tokens, reply_tx))
-            .channel_closed()?;
-        reply_rx
-            .blocking_recv()
-            .reply_closed()?
+        self.command(|tx| SessionCommand::SetMaxTokens(tokens, tx))
     }
 
     fn get_thinking_budget(&self) -> Option<i64> {
-        let (reply_tx, reply_rx) = oneshot::channel();
-        if self
-            .tx
-            .send(SessionCommand::GetThinkingBudget(reply_tx))
-            .is_err()
-        {
-            return None;
-        }
-        reply_rx.blocking_recv().ok().flatten()
+        self.query(SessionCommand::GetThinkingBudget)
     }
 
     fn set_thinking_budget(&self, budget: i64) -> Result<(), String> {
-        let (reply_tx, reply_rx) = oneshot::channel();
-        self.tx
-            .send(SessionCommand::SetThinkingBudget(budget, reply_tx))
-            .channel_closed()?;
-        reply_rx
-            .blocking_recv()
-            .reply_closed()?
+        self.command(|tx| SessionCommand::SetThinkingBudget(budget, tx))
     }
 
     fn get_model(&self) -> Option<String> {
-        let (reply_tx, reply_rx) = oneshot::channel();
-        if self.tx.send(SessionCommand::GetModel(reply_tx)).is_err() {
-            return None;
-        }
-        reply_rx.blocking_recv().ok().flatten()
+        self.query(SessionCommand::GetModel)
     }
 
     fn switch_model(&self, model: &str) -> Result<(), String> {
-        let (reply_tx, reply_rx) = oneshot::channel();
-        self.tx
-            .send(SessionCommand::SwitchModel(model.to_string(), reply_tx))
-            .channel_closed()?;
-        reply_rx
-            .blocking_recv()
-            .reply_closed()?
+        self.command(|tx| SessionCommand::SwitchModel(model.to_string(), tx))
     }
 
     fn list_models(&self) -> Vec<String> {
-        let (reply_tx, reply_rx) = oneshot::channel();
-        if self.tx.send(SessionCommand::ListModels(reply_tx)).is_err() {
+        let (tx, rx) = oneshot::channel();
+        if self.tx.send(SessionCommand::ListModels(tx)).is_err() {
             return Vec::new();
         }
-        reply_rx.blocking_recv().unwrap_or_default()
+        rx.blocking_recv().unwrap_or_default()
     }
 
     fn get_mode(&self) -> String {
-        let (reply_tx, reply_rx) = oneshot::channel();
-        if self.tx.send(SessionCommand::GetMode(reply_tx)).is_err() {
+        let (tx, rx) = oneshot::channel();
+        if self.tx.send(SessionCommand::GetMode(tx)).is_err() {
             return "unknown".to_string();
         }
-        reply_rx
-            .blocking_recv()
+        rx.blocking_recv()
             .unwrap_or_else(|_| "unknown".to_string())
     }
 
     fn set_mode(&self, mode: &str) -> Result<(), String> {
-        let (reply_tx, reply_rx) = oneshot::channel();
-        self.tx
-            .send(SessionCommand::SetMode(mode.to_string(), reply_tx))
-            .channel_closed()?;
-        reply_rx
-            .blocking_recv()
-            .reply_closed()?
+        self.command(|tx| SessionCommand::SetMode(mode.to_string(), tx))
     }
 
     fn notify(&self, notification: crucible_core::types::Notification) {
