@@ -429,8 +429,9 @@ impl VersionCheck {
 
 type PendingRequests = Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>;
 
-fn parse_models_response(result: &serde_json::Value) -> Vec<String> {
-    result["models"]
+/// Extract a string array from a JSON value at the given key.
+fn extract_string_array(value: &serde_json::Value, key: &str) -> Vec<String> {
+    value[key]
         .as_array()
         .map(|arr| {
             arr.iter()
@@ -473,47 +474,17 @@ impl DaemonClient {
         Self::connect_to(&path).await
     }
 
-    /// Connect to daemon or start it if not running (simple mode)
+    /// Connect to daemon or start it if not running (simple mode).
     ///
     /// Checks daemon version after connecting. If version mismatches (stale daemon),
     /// shuts down the old daemon and starts a fresh one.
     pub async fn connect_or_start() -> Result<Self> {
         if let Ok(client) = Self::connect().await {
-            match client.check_version().await {
-                Ok(VersionCheck::Match) => return Ok(client),
-                Ok(VersionCheck::Mismatch {
-                    client: c,
-                    daemon: d,
-                }) => {
-                    warn!(client_sha = %c, daemon_sha = %d, "Daemon version mismatch, restarting");
-                    let _ = client.shutdown().await;
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                }
-                Err(e) => {
-                    debug!("Version check failed, assuming ok: {}", e);
-                    return Ok(client);
-                }
-            }
-        }
-
-        Self::start_daemon().await?;
-
-        let mut delay = Duration::from_millis(50);
-        for attempt in 0..10 {
-            tokio::time::sleep(delay).await;
-            if let Ok(client) = Self::connect().await {
+            if client.verify_or_restart().await {
                 return Ok(client);
             }
-            delay *= 2;
-            if attempt > 5 {
-                warn!("Daemon not ready after {} attempts", attempt + 1);
-            }
         }
-
-        anyhow::bail!(
-            "Failed to connect to daemon after 10 attempts. \
-             Try: cru daemon stop && cru daemon start"
-        )
+        Self::start_and_retry(Self::connect).await
     }
 
     /// Connect to daemon or start it if not running (event mode).
@@ -524,29 +495,45 @@ impl DaemonClient {
     pub async fn connect_or_start_with_events(
     ) -> Result<(Self, mpsc::UnboundedReceiver<SessionEvent>)> {
         if let Ok((client, rx)) = Self::connect_with_events().await {
-            match client.check_version().await {
-                Ok(VersionCheck::Match) => return Ok((client, rx)),
-                Ok(VersionCheck::Mismatch {
-                    client: c,
-                    daemon: d,
-                }) => {
-                    warn!(client_sha = %c, daemon_sha = %d, "Daemon version mismatch, restarting");
-                    let _ = client.shutdown().await;
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                }
-                Err(e) => {
-                    debug!("Version check failed, assuming ok: {}", e);
-                    return Ok((client, rx));
-                }
+            if client.verify_or_restart().await {
+                return Ok((client, rx));
             }
         }
+        Self::start_and_retry(Self::connect_with_events).await
+    }
 
+    /// Check daemon version. Returns true if usable, false if restarted/needs restart.
+    async fn verify_or_restart(&self) -> bool {
+        match self.check_version().await {
+            Ok(VersionCheck::Match) => true,
+            Ok(VersionCheck::Mismatch {
+                client: c,
+                daemon: d,
+            }) => {
+                warn!(client_sha = %c, daemon_sha = %d, "Daemon version mismatch, restarting");
+                let _ = self.shutdown().await;
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                false
+            }
+            Err(e) => {
+                debug!("Version check failed, assuming ok: {}", e);
+                true
+            }
+        }
+    }
+
+    /// Start daemon and retry connecting with exponential backoff.
+    async fn start_and_retry<T, F, Fut>(connect: F) -> Result<T>
+    where
+        F: Fn() -> Fut,
+        Fut: std::future::Future<Output = Result<T>>,
+    {
         Self::start_daemon().await?;
 
         let mut delay = Duration::from_millis(50);
         for attempt in 0..10 {
             tokio::time::sleep(delay).await;
-            if let Ok(result) = Self::connect_with_events().await {
+            if let Ok(result) = connect().await {
                 return Ok(result);
             }
             delay *= 2;
@@ -809,6 +796,33 @@ impl DaemonClient {
     {
         let result = self.call(method, serde_json::to_value(params)?).await?;
         Ok(serde_json::from_value(result)?)
+    }
+
+    /// Shorthand for RPC methods that only take a session_id parameter.
+    async fn session_id_call(&self, method: &str, session_id: &str) -> Result<serde_json::Value> {
+        self.typed_call(method, SessionIdRequest { session_id: session_id.to_string() })
+            .await
+    }
+
+    /// Fetch a nullable field from a session-scoped RPC method.
+    async fn get_session_option<T>(
+        &self,
+        method: &str,
+        session_id: &str,
+        field: &str,
+        extract: impl FnOnce(&serde_json::Value) -> Option<T>,
+    ) -> Result<Option<T>> {
+        let result = self
+            .call_with_retry(
+                method,
+                serde_json::to_value(SessionIdRequest {
+                    session_id: session_id.to_string(),
+                })?,
+            )
+            .await?;
+        Ok(result
+            .get(field)
+            .and_then(|v| if v.is_null() { None } else { extract(v) }))
     }
 
     /// Send a JSON-RPC request and get the response
@@ -1441,35 +1455,19 @@ impl DaemonClient {
     }
 
     pub async fn session_get(&self, session_id: &str) -> Result<serde_json::Value> {
-        self.typed_call(
-            "session.get",
-            SessionIdRequest { session_id: session_id.to_string() },
-        )
-        .await
+        self.session_id_call("session.get", session_id).await
     }
 
     pub async fn session_pause(&self, session_id: &str) -> Result<serde_json::Value> {
-        self.typed_call(
-            "session.pause",
-            SessionIdRequest { session_id: session_id.to_string() },
-        )
-        .await
+        self.session_id_call("session.pause", session_id).await
     }
 
     pub async fn session_resume(&self, session_id: &str) -> Result<serde_json::Value> {
-        self.typed_call(
-            "session.resume",
-            SessionIdRequest { session_id: session_id.to_string() },
-        )
-        .await
+        self.session_id_call("session.resume", session_id).await
     }
 
     pub async fn session_end(&self, session_id: &str) -> Result<serde_json::Value> {
-        self.typed_call(
-            "session.end",
-            SessionIdRequest { session_id: session_id.to_string() },
-        )
-        .await
+        self.session_id_call("session.end", session_id).await
     }
 
     pub async fn session_replay(
@@ -1630,7 +1628,7 @@ impl DaemonClient {
             )
             .await?;
 
-        Ok(parse_models_response(&result))
+        Ok(extract_string_array(&result, "models"))
     }
 
     /// List all available models without requiring an active session.
@@ -1647,7 +1645,7 @@ impl DaemonClient {
             )
             .await?;
 
-        Ok(parse_models_response(&result))
+        Ok(extract_string_array(&result, "models"))
     }
 
     /// Set the thinking budget for a session's agent.
@@ -1680,21 +1678,10 @@ impl DaemonClient {
     ///
     /// Returns the configured thinking budget, or `None` if not set (using defaults).
     pub async fn session_get_thinking_budget(&self, session_id: &str) -> Result<Option<i64>> {
-        let result = self
-            .call_with_retry(
-                "session.get_thinking_budget",
-                serde_json::to_value(SessionIdRequest {
-                    session_id: session_id.to_string(),
-                })?,
-            )
-            .await?;
-
-        let budget =
-            result
-                .get("thinking_budget")
-                .and_then(|v| if v.is_null() { None } else { v.as_i64() });
-
-        Ok(budget)
+        self.get_session_option("session.get_thinking_budget", session_id, "thinking_budget", |v| {
+            v.as_i64()
+        })
+        .await
     }
 
     /// Set whether Precognition (auto-RAG) is enabled for a session.
@@ -1742,21 +1729,8 @@ impl DaemonClient {
     }
 
     pub async fn session_get_temperature(&self, session_id: &str) -> Result<Option<f64>> {
-        let result = self
-            .call_with_retry(
-                "session.get_temperature",
-                serde_json::to_value(SessionIdRequest {
-                    session_id: session_id.to_string(),
-                })?,
-            )
-            .await?;
-
-        let temperature =
-            result
-                .get("temperature")
-                .and_then(|v| if v.is_null() { None } else { v.as_f64() });
-
-        Ok(temperature)
+        self.get_session_option("session.get_temperature", session_id, "temperature", |v| v.as_f64())
+            .await
     }
 
     pub async fn plugin_reload(&self, name: &str) -> Result<serde_json::Value> {
@@ -1766,14 +1740,7 @@ impl DaemonClient {
 
     pub async fn plugin_list(&self) -> Result<Vec<String>> {
         let result = self.call("plugin.list", serde_json::json!({})).await?;
-        Ok(result["plugins"]
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            })
-            .unwrap_or_default())
+        Ok(extract_string_array(&result, "plugins"))
     }
 
     pub async fn session_set_max_tokens(
@@ -1793,21 +1760,10 @@ impl DaemonClient {
     }
 
     pub async fn session_get_max_tokens(&self, session_id: &str) -> Result<Option<u32>> {
-        let result = self
-            .call_with_retry(
-                "session.get_max_tokens",
-                serde_json::to_value(SessionIdRequest {
-                    session_id: session_id.to_string(),
-                })?,
-            )
-            .await?;
-
-        let max_tokens = result
-            .get("max_tokens")
-            .and_then(|v| if v.is_null() { None } else { v.as_u64() })
-            .map(|v| v as u32);
-
-        Ok(max_tokens)
+        self.get_session_option("session.get_max_tokens", session_id, "max_tokens", |v| {
+            v.as_u64().map(|n| n as u32)
+        })
+        .await
     }
 
     pub async fn project_register(&self, path: &Path) -> Result<crucible_core::Project> {
