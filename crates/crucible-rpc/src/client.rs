@@ -373,6 +373,21 @@ pub struct SessionReindexRequest {
     pub force: bool,
 }
 
+/// Request for `search_vectors`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SearchVectorsRequest {
+    pub kiln: String,
+    pub vector: Vec<f32>,
+    pub limit: usize,
+}
+
+/// Request for `list_notes`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ListNotesRequest {
+    pub kiln: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path_filter: Option<String>,
+}
 // --- Session RPC Response Types ---
 
 /// Response from `session.send_message`.
@@ -1004,11 +1019,11 @@ impl DaemonClient {
         let result = self
             .call(
                 "search_vectors",
-                serde_json::json!({
-                    "kiln": kiln_path.to_string_lossy(),
-                    "vector": vector,
-                    "limit": limit
-                }),
+                serde_json::to_value(SearchVectorsRequest {
+                    kiln: kiln_path.to_string_lossy().to_string(),
+                    vector: vector.to_vec(),
+                    limit,
+                })?,
             )
             .await?;
 
@@ -1031,12 +1046,15 @@ impl DaemonClient {
         kiln_path: &Path,
         path_filter: Option<&str>,
     ) -> Result<Vec<(String, String, Option<String>, Vec<String>, Option<String>)>> {
-        let mut params = serde_json::json!({ "kiln": kiln_path.to_string_lossy() });
-        if let Some(filter) = path_filter {
-            params["path_filter"] = serde_json::json!(filter);
-        }
-
-        let result = self.call("list_notes", params).await?;
+        let result = self
+            .call(
+                "list_notes",
+                serde_json::to_value(ListNotesRequest {
+                    kiln: kiln_path.to_string_lossy().to_string(),
+                    path_filter: path_filter.map(|f| f.to_string()),
+                })?,
+            )
+            .await?;
 
         let notes: Vec<_> = result
             .as_array()
@@ -1271,14 +1289,15 @@ impl DaemonClient {
         kiln_path: Option<&Path>,
         limit: Option<usize>,
     ) -> Result<serde_json::Value> {
-        let mut params = serde_json::json!({ "query": query });
-        if let Some(kiln) = kiln_path {
-            params["kiln"] = serde_json::Value::String(kiln.to_string_lossy().to_string());
-        }
-        if let Some(lim) = limit {
-            params["limit"] = serde_json::Value::Number(serde_json::Number::from(lim));
-        }
-        self.call("session.search", params).await
+        self.call(
+            "session.search",
+            serde_json::to_value(SessionSearchRequest {
+                query: query.to_string(),
+                kiln: kiln_path.map(|p| p.to_string_lossy().to_string()),
+                limit,
+            })?,
+        )
+        .await
     }
 
     pub async fn lua_init_session(
@@ -1408,31 +1427,27 @@ impl DaemonClient {
         recording_mode: Option<&str>,
         recording_path: Option<&Path>,
     ) -> Result<serde_json::Value> {
-        let mut params = serde_json::json!({
-            "type": session_type,
-            "kiln": kiln.to_string_lossy(),
-        });
-
-        if let Some(ws) = workspace {
-            params["workspace"] = serde_json::json!(ws.to_string_lossy());
-        }
-
-        if !connect_kilns.is_empty() {
-            params["connect_kilns"] = serde_json::json!(connect_kilns
-                .iter()
-                .map(|p| p.to_string_lossy())
-                .collect::<Vec<_>>());
-        }
-
-        if let Some(mode) = recording_mode {
-            params["recording_mode"] = serde_json::json!(mode);
-        }
-
-        if let Some(path) = recording_path {
-            params["recording_path"] = serde_json::json!(path.to_string_lossy());
-        }
-
-        self.call("session.create", params).await
+        self.call(
+            "session.create",
+            serde_json::to_value(SessionCreateRequest {
+                session_type: session_type.to_string(),
+                kiln: kiln.to_string_lossy().to_string(),
+                workspace: workspace.map(|ws| ws.to_string_lossy().to_string()),
+                connect_kilns: if connect_kilns.is_empty() {
+                    None
+                } else {
+                    Some(
+                        connect_kilns
+                            .iter()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .collect(),
+                    )
+                },
+                recording_mode: recording_mode.map(|m| m.to_string()),
+                recording_path: recording_path.map(|p| p.to_string_lossy().to_string()),
+            })?,
+        )
+        .await
     }
 
     pub async fn session_list(
@@ -1442,22 +1457,16 @@ impl DaemonClient {
         session_type: Option<&str>,
         state: Option<&str>,
     ) -> Result<serde_json::Value> {
-        let mut params = serde_json::json!({});
-
-        if let Some(k) = kiln {
-            params["kiln"] = serde_json::json!(k.to_string_lossy());
-        }
-        if let Some(ws) = workspace {
-            params["workspace"] = serde_json::json!(ws.to_string_lossy());
-        }
-        if let Some(t) = session_type {
-            params["type"] = serde_json::json!(t);
-        }
-        if let Some(s) = state {
-            params["state"] = serde_json::json!(s);
-        }
-
-        self.call("session.list", params).await
+        self.call(
+            "session.list",
+            serde_json::to_value(SessionListRequest {
+                session_type: session_type.map(|t| t.to_string()),
+                kiln: kiln.map(|k| k.to_string_lossy().to_string()),
+                workspace: workspace.map(|ws| ws.to_string_lossy().to_string()),
+                state: state.map(|s| s.to_string()),
+            })?,
+        )
+        .await
     }
 
     pub async fn session_get(&self, session_id: &str) -> Result<serde_json::Value> {
@@ -1514,19 +1523,16 @@ impl DaemonClient {
         limit: Option<usize>,
         offset: Option<usize>,
     ) -> Result<serde_json::Value> {
-        let mut params = serde_json::json!({
-            "session_id": session_id,
-            "kiln": kiln.to_string_lossy()
-        });
-
-        if let Some(l) = limit {
-            params["limit"] = serde_json::json!(l);
-        }
-        if let Some(o) = offset {
-            params["offset"] = serde_json::json!(o);
-        }
-
-        self.call("session.resume_from_storage", params).await
+        self.call(
+            "session.resume_from_storage",
+            serde_json::to_value(SessionResumeFromStorageRequest {
+                session_id: session_id.to_string(),
+                kiln: kiln.to_string_lossy().to_string(),
+                limit,
+                offset,
+            })?,
+        )
+        .await
     }
 
     pub async fn session_subscribe(&self, session_ids: &[&str]) -> Result<serde_json::Value> {
@@ -1574,17 +1580,17 @@ impl DaemonClient {
     }
 
     pub async fn session_send_message(&self, session_id: &str, content: &str) -> Result<String> {
-        let result = self
-            .call(
+        let resp: SessionSendMessageResponse = self
+            .typed_call(
                 "session.send_message",
-                serde_json::json!({
-                    "session_id": session_id,
-                    "content": content
-                }),
+                SessionSendMessageRequest {
+                    session_id: session_id.to_string(),
+                    content: content.to_string(),
+                },
             )
             .await?;
 
-        Ok(result["message_id"].as_str().unwrap_or("").to_string())
+        Ok(resp.message_id)
     }
 
     pub async fn session_interaction_respond(
@@ -1607,14 +1613,16 @@ impl DaemonClient {
     }
 
     pub async fn session_cancel(&self, session_id: &str) -> Result<bool> {
-        let result = self
-            .call(
+        let resp: SessionCancelResponse = self
+            .typed_call(
                 "session.cancel",
-                serde_json::json!({ "session_id": session_id }),
+                SessionIdRequest {
+                    session_id: session_id.to_string(),
+                },
             )
             .await?;
 
-        Ok(result["cancelled"].as_bool().unwrap_or(false))
+        Ok(resp.cancelled)
     }
 
     pub async fn session_switch_model(&self, session_id: &str, model_id: &str) -> Result<()> {
@@ -1645,7 +1653,9 @@ impl DaemonClient {
         let result = self
             .call_with_retry(
                 "session.list_models",
-                serde_json::json!({ "session_id": session_id }),
+                serde_json::to_value(SessionIdRequest {
+                    session_id: session_id.to_string(),
+                })?,
             )
             .await?;
 
@@ -1657,13 +1667,14 @@ impl DaemonClient {
     /// If `kiln_path` is provided, the daemon resolves the kiln's data classification
     /// and filters providers whose trust level doesn't satisfy it.
     pub async fn list_all_models(&self, kiln_path: Option<&Path>) -> Result<Vec<String>> {
-        let params = if let Some(p) = kiln_path {
-            serde_json::json!({ "kiln_path": p.to_string_lossy() })
-        } else {
-            serde_json::json!({})
-        };
-
-        let result = self.call_with_retry("models.list", params).await?;
+        let result = self
+            .call_with_retry(
+                "models.list",
+                serde_json::to_value(ListAllModelsRequest {
+                    kiln_path: kiln_path.map(|p| p.to_string_lossy().to_string()),
+                })?,
+            )
+            .await?;
 
         Ok(parse_models_response(&result))
     }
@@ -1701,7 +1712,9 @@ impl DaemonClient {
         let result = self
             .call_with_retry(
                 "session.get_thinking_budget",
-                serde_json::json!({ "session_id": session_id }),
+                serde_json::to_value(SessionIdRequest {
+                    session_id: session_id.to_string(),
+                })?,
             )
             .await?;
 
@@ -1717,10 +1730,10 @@ impl DaemonClient {
     pub async fn session_set_precognition(&self, session_id: &str, enabled: bool) -> Result<()> {
         self.call_with_retry(
             "session.set_precognition",
-            serde_json::json!({
-                "session_id": session_id,
-                "precognition_enabled": enabled,
-            }),
+            serde_json::to_value(SessionSetPrecognitionRequest {
+                session_id: session_id.to_string(),
+                precognition_enabled: enabled,
+            })?,
         )
         .await?;
         Ok(())
@@ -1731,7 +1744,9 @@ impl DaemonClient {
         let result = self
             .call_with_retry(
                 "session.get_precognition",
-                serde_json::json!({ "session_id": session_id }),
+                serde_json::to_value(SessionIdRequest {
+                    session_id: session_id.to_string(),
+                })?,
             )
             .await?;
 
@@ -1759,7 +1774,9 @@ impl DaemonClient {
         let result = self
             .call_with_retry(
                 "session.get_temperature",
-                serde_json::json!({ "session_id": session_id }),
+                serde_json::to_value(SessionIdRequest {
+                    session_id: session_id.to_string(),
+                })?,
             )
             .await?;
 
@@ -1808,7 +1825,9 @@ impl DaemonClient {
         let result = self
             .call_with_retry(
                 "session.get_max_tokens",
-                serde_json::json!({ "session_id": session_id }),
+                serde_json::to_value(SessionIdRequest {
+                    session_id: session_id.to_string(),
+                })?,
             )
             .await?;
 
@@ -1869,7 +1888,9 @@ impl DaemonClient {
     pub async fn session_load_events(&self, session_dir: &Path) -> Result<serde_json::Value> {
         self.call(
             "session.load_events",
-            serde_json::json!({ "session_dir": session_dir.to_string_lossy() }),
+            serde_json::to_value(SessionLoadEventsRequest {
+                session_dir: session_dir.to_string_lossy().to_string(),
+            })?,
         )
         .await
     }
@@ -1881,14 +1902,15 @@ impl DaemonClient {
         session_type: Option<&str>,
         limit: Option<usize>,
     ) -> Result<serde_json::Value> {
-        let mut params = serde_json::json!({ "kiln": kiln.to_string_lossy() });
-        if let Some(t) = session_type {
-            params["session_type"] = serde_json::json!(t);
-        }
-        if let Some(l) = limit {
-            params["limit"] = serde_json::json!(l);
-        }
-        self.call("session.list_persisted", params).await
+        self.call(
+            "session.list_persisted",
+            serde_json::to_value(SessionListPersistedRequest {
+                kiln: kiln.to_string_lossy().to_string(),
+                session_type: session_type.map(|t| t.to_string()),
+                limit,
+            })?,
+        )
+        .await
     }
 
     /// Render a persisted session's events to markdown.
@@ -1900,23 +1922,19 @@ impl DaemonClient {
         include_tools: Option<bool>,
         max_content_length: Option<usize>,
     ) -> Result<String> {
-        let mut params = serde_json::json!({
-            "session_dir": session_dir.to_string_lossy()
-        });
-        if let Some(v) = include_timestamps {
-            params["include_timestamps"] = serde_json::json!(v);
-        }
-        if let Some(v) = include_tokens {
-            params["include_tokens"] = serde_json::json!(v);
-        }
-        if let Some(v) = include_tools {
-            params["include_tools"] = serde_json::json!(v);
-        }
-        if let Some(v) = max_content_length {
-            params["max_content_length"] = serde_json::json!(v);
-        }
-        let result = self.call("session.render_markdown", params).await?;
-        Ok(result["markdown"].as_str().unwrap_or("").to_string())
+        let resp: SessionRenderMarkdownResponse = self
+            .typed_call(
+                "session.render_markdown",
+                SessionRenderMarkdownRequest {
+                    session_dir: session_dir.to_string_lossy().to_string(),
+                    include_timestamps,
+                    include_tokens,
+                    include_tools,
+                    max_content_length,
+                },
+            )
+            .await?;
+        Ok(resp.markdown)
     }
 
     /// Export a session to a markdown file.
@@ -1926,17 +1944,17 @@ impl DaemonClient {
         output_path: Option<&Path>,
         include_timestamps: Option<bool>,
     ) -> Result<String> {
-        let mut params = serde_json::json!({
-            "session_dir": session_dir.to_string_lossy()
-        });
-        if let Some(p) = output_path {
-            params["output_path"] = serde_json::json!(p.to_string_lossy());
-        }
-        if let Some(v) = include_timestamps {
-            params["include_timestamps"] = serde_json::json!(v);
-        }
-        let result = self.call("session.export_to_file", params).await?;
-        Ok(result["output_path"].as_str().unwrap_or("").to_string())
+        let resp: SessionExportToFileResponse = self
+            .typed_call(
+                "session.export_to_file",
+                SessionExportToFileRequest {
+                    session_dir: session_dir.to_string_lossy().to_string(),
+                    output_path: output_path.map(|p| p.to_string_lossy().to_string()),
+                    include_timestamps,
+                },
+            )
+            .await?;
+        Ok(resp.output_path)
     }
 
     /// Clean up old persisted sessions.
@@ -1948,11 +1966,11 @@ impl DaemonClient {
     ) -> Result<serde_json::Value> {
         self.call(
             "session.cleanup",
-            serde_json::json!({
-                "kiln": kiln.to_string_lossy(),
-                "older_than_days": older_than_days,
-                "dry_run": dry_run,
-            }),
+            serde_json::to_value(SessionCleanupRequest {
+                kiln: kiln.to_string_lossy().to_string(),
+                older_than_days,
+                dry_run,
+            })?,
         )
         .await
     }
@@ -1961,10 +1979,10 @@ impl DaemonClient {
     pub async fn session_reindex(&self, kiln: &Path, force: bool) -> Result<serde_json::Value> {
         self.call(
             "session.reindex",
-            serde_json::json!({
-                "kiln": kiln.to_string_lossy(),
-                "force": force,
-            }),
+            serde_json::to_value(SessionReindexRequest {
+                kiln: kiln.to_string_lossy().to_string(),
+                force,
+            })?,
         )
         .await
     }
