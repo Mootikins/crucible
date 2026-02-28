@@ -638,6 +638,21 @@ pub enum SessionEvent {
         duration_ms: u64,
     },
 
+    /// Emitted when the stored embedding model differs from the currently configured model.
+    ///
+    /// Non-blocking — kiln opens normally. This is an informational event that allows
+    /// clients to notify users about potential stale embeddings and offer re-embedding.
+    EmbeddingModelMismatch {
+        /// Path to the kiln with the mismatch.
+        kiln_path: String,
+        /// The embedding model stored in the kiln.
+        stored_model: String,
+        /// The currently configured embedding model.
+        current_model: String,
+        /// Number of notes with embeddings in the kiln.
+        note_count: usize,
+    },
+
     // ─────────────────────────────────────────────────────────────────────
     // MCP/Tool discovery events
     // ─────────────────────────────────────────────────────────────────────
@@ -729,6 +744,7 @@ impl SessionEvent {
             Self::EmbeddingStored { .. } => "embedding_stored",
             Self::EmbeddingFailed { .. } => "embedding_failed",
             Self::EmbeddingBatchComplete { .. } => "embedding_batch_complete",
+            Self::EmbeddingModelMismatch { .. } => "embedding_model_mismatch",
             Self::McpAttached { .. } => "mcp_attached",
             Self::ToolDiscovered { .. } => "tool_discovered",
             Self::Custom { .. } => "custom",
@@ -851,6 +867,7 @@ impl SessionEvent {
                 | Self::EmbeddingStored { .. }
                 | Self::EmbeddingFailed { .. }
                 | Self::EmbeddingBatchComplete { .. }
+                | Self::EmbeddingModelMismatch { .. }
         )
     }
 
@@ -988,6 +1005,7 @@ impl SessionEvent {
             Self::EmbeddingStored { .. } => "EmbeddingStored",
             Self::EmbeddingFailed { .. } => "EmbeddingFailed",
             Self::EmbeddingBatchComplete { .. } => "EmbeddingBatchComplete",
+            Self::EmbeddingModelMismatch { .. } => "EmbeddingModelMismatch",
             Self::PreToolCall { .. } => "PreToolCall",
             Self::PreParse { .. } => "PreParse",
             Self::PreLlmCall { .. } => "PreLlmCall",
@@ -1373,6 +1391,9 @@ impl SessionEvent {
             Self::ClassificationRequired { kiln_path } => {
                 format!("kiln_path={}", kiln_path.display())
             }
+            Self::EmbeddingModelMismatch { kiln_path, stored_model, current_model, note_count } => {
+                format!("kiln={}, stored={}, current={}, notes={}", kiln_path, stored_model, current_model, note_count)
+            }
         }
     }
 
@@ -1545,6 +1566,7 @@ fn identifier_for_event(event: &SessionEvent) -> String {
             }
         }
         SessionEvent::EmbeddingBatchComplete { entity_id, .. } => entity_id.clone(),
+        SessionEvent::EmbeddingModelMismatch { kiln_path, .. } => format!("embedding:mismatch:{}", kiln_path),
         SessionEvent::McpAttached { server, .. } => server.clone(),
         SessionEvent::ToolDiscovered { name, .. } => name.clone(),
         SessionEvent::Custom { name, .. } => name.clone(),
@@ -1679,6 +1701,7 @@ fn payload_for_event(event: &SessionEvent) -> Option<String> {
             ..
         } => Some(format!("notes={}, query={}", notes_count, query_summary)),
         SessionEvent::ClassificationRequired { kiln_path } => Some(kiln_path.display().to_string()),
+        SessionEvent::EmbeddingModelMismatch { kiln_path, stored_model, current_model, note_count } => Some(format!("kiln={}, stored={}, current={}, notes={}", kiln_path, stored_model, current_model, note_count)),
     }
 }
 
@@ -1762,6 +1785,7 @@ fn estimate_content_len(event: &SessionEvent) -> usize {
             ..
         } => notes_count.to_string().len() + query_summary.len() + 50,
         SessionEvent::ClassificationRequired { .. } => 50,
+        SessionEvent::EmbeddingModelMismatch { kiln_path, stored_model, current_model, .. } => kiln_path.len() + stored_model.len() + current_model.len() + 50,
     }
 }
 
