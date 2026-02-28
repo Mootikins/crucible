@@ -16,7 +16,7 @@
 
 #![allow(clippy::doc_markdown, clippy::manual_let_else, missing_docs)]
 
-use crate::helpers::json_success;
+use crate::helpers::{json_success, McpResultExt};
 use crucible_core::serde_helpers::default_true;
 use crucible_core::storage::NoteStore;
 use crucible_core::{enrichment::EmbeddingProvider, traits::KnowledgeRepository};
@@ -123,18 +123,18 @@ impl SearchTools {
         let query = params.query;
         let limit = params.limit;
 
-        let embedding = self.embedding_provider.embed(&query).await.map_err(|e| {
-            rmcp::ErrorData::internal_error(format!("Failed to generate embedding: {e}"), None)
-        })?;
+        let embedding = self
+            .embedding_provider
+            .embed(&query)
+            .await
+            .mcp_err_ctx("Failed to generate embedding")?;
 
         // Search notes
         let note_results = self
             .knowledge_repo
             .search_vectors(embedding.clone())
             .await
-            .map_err(|e| {
-                rmcp::ErrorData::internal_error(format!("Note search failed: {e}"), None)
-            })?;
+            .mcp_err_ctx("Note search failed")?;
 
         let mut all_results: Vec<serde_json::Value> = note_results
             .into_iter()
@@ -195,9 +195,7 @@ impl SearchTools {
         } else {
             RegexMatcher::new_line_matcher(&regex::escape(&query))
         }
-        .map_err(|e| {
-            rmcp::ErrorData::internal_error(format!("Failed to create matcher: {e}"), None)
-        })?;
+        .mcp_err_ctx("Failed to create matcher")?;
 
         let mut matches = Vec::new();
         let mut searcher = Searcher::new();
@@ -301,9 +299,10 @@ impl SearchTools {
         original_properties: &serde_json::Value,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         // Get all notes from the store
-        let all_notes = note_store.list().await.map_err(|e| {
-            rmcp::ErrorData::internal_error(format!("Failed to list notes from store: {e}"), None)
-        })?;
+        let all_notes = note_store
+            .list()
+            .await
+            .mcp_err_ctx("Failed to list notes from store")?;
 
         let mut matches = Vec::new();
 
