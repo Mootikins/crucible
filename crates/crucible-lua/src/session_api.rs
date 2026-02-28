@@ -32,6 +32,32 @@ use mlua::{Lua, MetaMethod, UserData, UserDataMethods, Value};
 use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, oneshot};
 
+
+/// Extension trait to convert channel errors to String messages.
+trait ChannelResultExt<T> {
+    fn channel_closed(self) -> Result<T, String>;
+    fn reply_closed(self) -> Result<T, String>;
+}
+
+impl<T, E> ChannelResultExt<T> for Result<T, tokio::sync::mpsc::error::SendError<E>> {
+    fn channel_closed(self) -> Result<T, String> {
+        self.map_err(|_| "Channel closed".to_string())
+    }
+    fn reply_closed(self) -> Result<T, String> {
+        self.map_err(|_| "Reply channel closed".to_string())
+    }
+}
+
+impl<T> ChannelResultExt<T> for Result<T, tokio::sync::oneshot::error::RecvError> {
+    fn channel_closed(self) -> Result<T, String> {
+        self.map_err(|_| "Channel closed".to_string())
+    }
+    fn reply_closed(self) -> Result<T, String> {
+        self.map_err(|_| "Reply channel closed".to_string())
+    }
+}
+
+
 /// Thin RPC interface for session configuration.
 /// Does NOT expose message sending or other sensitive operations.
 ///
@@ -88,6 +114,8 @@ impl ChannelSessionRpc {
     }
 }
 
+
+
 impl SessionConfigRpc for ChannelSessionRpc {
     fn get_temperature(&self) -> Option<f64> {
         let (reply_tx, reply_rx) = oneshot::channel();
@@ -105,10 +133,10 @@ impl SessionConfigRpc for ChannelSessionRpc {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.tx
             .send(SessionCommand::SetTemperature(temp, reply_tx))
-            .map_err(|_| "Channel closed".to_string())?;
+            .channel_closed()?;
         reply_rx
             .blocking_recv()
-            .map_err(|_| "Reply channel closed".to_string())?
+            .reply_closed()?
     }
 
     fn get_max_tokens(&self) -> Option<u32> {
@@ -127,10 +155,10 @@ impl SessionConfigRpc for ChannelSessionRpc {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.tx
             .send(SessionCommand::SetMaxTokens(tokens, reply_tx))
-            .map_err(|_| "Channel closed".to_string())?;
+            .channel_closed()?;
         reply_rx
             .blocking_recv()
-            .map_err(|_| "Reply channel closed".to_string())?
+            .reply_closed()?
     }
 
     fn get_thinking_budget(&self) -> Option<i64> {
@@ -149,10 +177,10 @@ impl SessionConfigRpc for ChannelSessionRpc {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.tx
             .send(SessionCommand::SetThinkingBudget(budget, reply_tx))
-            .map_err(|_| "Channel closed".to_string())?;
+            .channel_closed()?;
         reply_rx
             .blocking_recv()
-            .map_err(|_| "Reply channel closed".to_string())?
+            .reply_closed()?
     }
 
     fn get_model(&self) -> Option<String> {
@@ -167,10 +195,10 @@ impl SessionConfigRpc for ChannelSessionRpc {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.tx
             .send(SessionCommand::SwitchModel(model.to_string(), reply_tx))
-            .map_err(|_| "Channel closed".to_string())?;
+            .channel_closed()?;
         reply_rx
             .blocking_recv()
-            .map_err(|_| "Reply channel closed".to_string())?
+            .reply_closed()?
     }
 
     fn list_models(&self) -> Vec<String> {
@@ -195,10 +223,10 @@ impl SessionConfigRpc for ChannelSessionRpc {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.tx
             .send(SessionCommand::SetMode(mode.to_string(), reply_tx))
-            .map_err(|_| "Channel closed".to_string())?;
+            .channel_closed()?;
         reply_rx
             .blocking_recv()
-            .map_err(|_| "Reply channel closed".to_string())?
+            .reply_closed()?
     }
 
     fn notify(&self, notification: crucible_core::types::Notification) {
