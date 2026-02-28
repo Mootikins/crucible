@@ -2582,7 +2582,7 @@ impl OilChatApp {
         // next TextDelta or StreamComplete).
         if self.container_list.needs_turn_spinner() {
             nodes.push(
-                row([text(" "), spinner(None, self.spinner_frame)]).with_margin(Padding {
+                row([text(" "), spinner(None, self.spinner_frame).with_style(ThemeTokens::default_ref().spinner_style())]).with_margin(Padding {
                     top: 1,
                     ..Default::default()
                 }),

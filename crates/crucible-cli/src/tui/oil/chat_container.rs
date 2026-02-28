@@ -16,6 +16,7 @@ use crate::tui::oil::node::{col, row, scrollback, spinner, text, Node};
 use crate::tui::oil::render_state::RenderState;
 use crate::tui::oil::style::Padding;
 use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
+use crate::tui::oil::theme::ThemeTokens;
 
 /// Parameters for rendering a container view.
 ///
@@ -309,10 +310,10 @@ fn render_assistant_blocks_with_graduation(
     if !params.complete && params.blocks.is_empty() {
         let spinner_node = if params.thinking.is_some() && render_state.show_thinking {
             // Thinking is visible, show plain spinner below it
-            row([text(" "), spinner(None, render_state.spinner_frame)])
+            row([text(" "), spinner(None, render_state.spinner_frame).with_style(ThemeTokens::default_ref().spinner_style())])
         } else {
             // No content at all yet — show spinner as the only indicator
-            row([text(" "), spinner(None, render_state.spinner_frame)])
+            row([text(" "), spinner(None, render_state.spinner_frame).with_style(ThemeTokens::default_ref().spinner_style())])
         };
         nodes.push(spinner_node.with_margin(Padding {
             top: 1,
@@ -362,7 +363,7 @@ fn render_assistant_blocks_with_graduation(
 
     // Show spinner after text blocks while still streaming
     if !params.complete && !params.blocks.is_empty() {
-        nodes.push(row([text(" "), spinner(None, render_state.spinner_frame)]));
+        nodes.push(row([text(" "), spinner(None, render_state.spinner_frame).with_style(ThemeTokens::default_ref().spinner_style())]))
     }
 
     col(nodes)
