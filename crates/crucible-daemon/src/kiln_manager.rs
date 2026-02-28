@@ -169,6 +169,7 @@ pub struct KilnConnection {
 pub struct KilnManager {
     connections: RwLock<HashMap<PathBuf, KilnConnection>>,
     event_tx: Option<broadcast::Sender<SessionEventMessage>>,
+    enrichment_config: Option<EmbeddingProviderConfig>,
 }
 
 impl KilnManager {
@@ -176,14 +177,23 @@ impl KilnManager {
         Self {
             connections: RwLock::new(HashMap::new()),
             event_tx: None,
+            enrichment_config: None,
         }
     }
 
-    pub fn with_event_tx(event_tx: broadcast::Sender<SessionEventMessage>) -> Self {
+    pub fn with_event_tx(
+        event_tx: broadcast::Sender<SessionEventMessage>,
+        enrichment_config: Option<EmbeddingProviderConfig>,
+    ) -> Self {
         Self {
             connections: RwLock::new(HashMap::new()),
             event_tx: Some(event_tx),
+            enrichment_config,
         }
+    }
+
+    pub fn enrichment_config(&self) -> Option<&EmbeddingProviderConfig> {
+        self.enrichment_config.as_ref()
     }
 
     /// Open a connection to a kiln (or return existing)

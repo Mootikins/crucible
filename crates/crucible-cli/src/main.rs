@@ -74,6 +74,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             std::collections::HashMap::new(),
             false,
             Some(config.llm.clone()),
+            config.enrichment.as_ref().map(|e| e.provider.clone()),
             Some(config.acp.clone()),
             None,
             None,

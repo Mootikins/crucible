@@ -59,6 +59,7 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
             std::collections::HashMap::new(),
             false,
             Some(config.llm.clone()),
+            config.enrichment.as_ref().map(|e| e.provider.clone()),
             Some(config.acp.clone()),
             None,
             None,
