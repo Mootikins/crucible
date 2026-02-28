@@ -1,13 +1,12 @@
 use crate::config::CliConfig;
 use anyhow::{Context, Result};
-use crucible_rpc::DaemonClient;
+
+use crate::common::daemon_client;
 
 pub async fn execute(config: CliConfig) -> Result<()> {
     eprintln!("Fetching models from daemon...");
 
-    let client = DaemonClient::connect_or_start()
-        .await
-        .context("Failed to connect to daemon. Is it running? Try: cru daemon start")?;
+    let client = daemon_client().await?;
 
     let kiln_path = &config.kiln_path;
     let models = client

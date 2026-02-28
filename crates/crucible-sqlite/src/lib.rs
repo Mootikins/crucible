@@ -40,6 +40,7 @@
 //! let note = store.get("notes/example.md").await?;
 //! ```
 
+mod error_ext;
 pub mod adapters;
 pub mod config;
 pub mod connection;

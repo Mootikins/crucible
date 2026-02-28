@@ -12,6 +12,7 @@ use serde_json::Value;
 use tracing::debug;
 
 use crate::connection::SqlitePool;
+use crate::error_ext::SqliteResultExt;
 use crucible_core::events::SessionEvent;
 use crucible_core::parser::BlockHash;
 use crucible_core::storage::{
@@ -346,12 +347,12 @@ impl SqliteNoteStore {
         tokio::task::spawn_blocking(move || {
             pool.with_connection(|conn| {
                 conn.execute_batch(NOTES_SCHEMA)
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    .sql()?;
                 debug!("Notes schema applied successfully");
 
                 // Apply idempotent migration for embedding metadata columns
                 ensure_embedding_metadata_columns(conn)
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    .sql()?;
                 debug!("Embedding metadata columns ensured");
 
                 Ok(())
@@ -416,14 +417,14 @@ impl NoteStore for SqliteNoteStore {
                         updated_at_str,
                     ],
                 )
-                .map_err(|e| StorageError::Backend(e.to_string()))?;
+                .sql()?;
 
                 // Update note_links junction table for fast inlinks queries
                 conn.execute(
                     "DELETE FROM note_links WHERE source_path = ?1",
                     params![note.path],
                 )
-                .map_err(|e| StorageError::Backend(e.to_string()))?;
+                .sql()?;
 
                 // Insert new links
                 if !note.links_to.is_empty() {
@@ -431,10 +432,10 @@ impl NoteStore for SqliteNoteStore {
                         .prepare(
                         "INSERT OR IGNORE INTO note_links (source_path, target_path) VALUES (?1, ?2)",
                     )
-                        .map_err(|e| StorageError::Backend(e.to_string()))?;
+                        .sql()?;
                     for target in &note.links_to {
                         stmt.execute(params![note.path, target])
-                            .map_err(|e| StorageError::Backend(e.to_string()))?;
+                            .sql()?;
                     }
                 }
 
@@ -472,12 +473,12 @@ impl NoteStore for SqliteNoteStore {
                     WHERE path = ?1
                     "#,
                 )
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    .sql()?;
 
                 let note = stmt
                     .query_row([&path], row_to_note)
                     .optional()
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    .sql()?;
                 Ok(note)
             })
         })
@@ -500,7 +501,7 @@ impl NoteStore for SqliteNoteStore {
                     .is_ok_and(|opt| opt.is_some());
 
                 conn.execute("DELETE FROM notes WHERE path = ?1", [&path_str])
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    .sql()?;
                 Ok(existed)
             })
         })
@@ -527,13 +528,13 @@ impl NoteStore for SqliteNoteStore {
                     ORDER BY updated_at DESC
                     "#,
                 )
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    .sql()?;
 
                 let notes = stmt
                     .query_map([], row_to_note)
-                    .map_err(|e| StorageError::Backend(e.to_string()))?
+                    .sql()?
                     .collect::<Result<Vec<_>, _>>()
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    .sql()?;
 
                 Ok(notes)
             })
@@ -556,12 +557,12 @@ impl NoteStore for SqliteNoteStore {
                     LIMIT 1
                     "#,
                 )
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    .sql()?;
 
                 let note = stmt
                     .query_row([&hash_bytes], row_to_note)
                     .optional()
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    .sql()?;
                 Ok(note)
             })
         })
@@ -605,7 +606,7 @@ impl NoteStore for SqliteNoteStore {
                 // Execute query
                 let mut stmt = conn
                     .prepare(&sql)
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    .sql()?;
 
                 // Collect notes with their embeddings
                 let mut results: Vec<(NoteRecord, f32)> = Vec::new();
@@ -618,10 +619,10 @@ impl NoteStore for SqliteNoteStore {
                     let note = row_to_note(row)?;
                     Ok(note)
                 })
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    .sql()?;
 
                 for row_result in rows {
-                    let note = row_result.map_err(|e| StorageError::Backend(e.to_string()))?;
+                    let note = row_result.sql()?;
                     if let Some(ref note_embedding) = note.embedding {
                         let score = cosine_similarity(&query_embedding, note_embedding);
                         results.push((note, score));
