@@ -118,6 +118,8 @@ mod tests {
             path: path.to_string(),
             content_hash: BlockHash::zero(),
             embedding: None,
+            embedding_model: None,
+            embedding_dimensions: None,
             title: path.to_string(),
             tags: vec![],
             links_to: links_to.into_iter().map(String::from).collect(),
