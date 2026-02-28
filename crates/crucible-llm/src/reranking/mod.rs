@@ -2,10 +2,7 @@
 //!
 //! This module provides reranking capabilities that can be applied after initial
 //! vector search to improve result relevance. Rerankers use cross-attention models
-//! that better understand query-note relationships compared to vector similarity.
-
-use anyhow::Result;
-use async_trait::async_trait;
+//! that better understand query-document relationships compared to vector similarity.
 
 #[cfg(feature = "fastembed")]
 pub mod fastembed;
@@ -35,39 +32,6 @@ pub struct RerankerModelInfo {
     pub provider: String,
     /// Maximum input text length supported
     pub max_input_length: usize,
-}
-
-/// Trait for reranking search results based on query relevance.
-///
-/// Rerankers take an initial set of search results and reorder them based on
-/// more sophisticated relevance scoring than simple vector similarity.
-#[async_trait]
-pub trait Reranker: Send + Sync {
-    /// Rerank documents based on their relevance to the query.
-    ///
-    /// # Arguments
-    /// * `query` - The search query text
-    /// * `documents` - Vec of (document_id, text, original_score) tuples
-    /// * `top_n` - Optional limit on number of results to return
-    ///
-    /// # Returns
-    /// Reranked results sorted by relevance score (highest first)
-    async fn rerank(
-        &self,
-        query: &str,
-        documents: Vec<(String, String, f64)>,
-        top_n: Option<usize>,
-    ) -> Result<Vec<RerankResult>>;
-
-    /// Get information about the reranker model.
-    fn model_info(&self) -> RerankerModelInfo;
-
-    /// Check if the reranker is healthy and ready to use.
-    ///
-    /// Default implementation returns true. Override for custom health checks.
-    async fn health_check(&self) -> Result<bool> {
-        Ok(true)
-    }
 }
 
 #[cfg(test)]
