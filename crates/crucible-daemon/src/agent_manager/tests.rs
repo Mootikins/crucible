@@ -14,7 +14,6 @@ use crucible_core::types::SearchResult;
 use futures::stream::BoxStream;
 use futures::StreamExt;
 use std::collections::HashMap;
-use std::fs;
 use tempfile::TempDir;
 use tokio::time::{timeout, Duration};
 
@@ -385,6 +384,27 @@ fn create_test_agent_manager_with_providers(
         background_manager,
         None,
         Some(llm_config),
+        None,
+        None,
+        None,
+    )
+}
+
+fn create_test_agent_manager_with_enrichment(
+    session_manager: Arc<SessionManager>,
+    enrichment_config: crucible_config::EmbeddingProviderConfig,
+) -> AgentManager {
+    let (event_tx, _) = broadcast::channel(16);
+    let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
+    AgentManager::new(
+        Arc::new(KilnManager::with_event_tx(
+            event_tx,
+            Some(enrichment_config),
+        )),
+        session_manager,
+        background_manager,
+        None,
+        None,
         None,
         None,
         None,
@@ -1276,11 +1296,6 @@ async fn test_precognition_complete_event_emitted_when_enrichment_runs() {
     crate::embedding::clear_embedding_provider_cache();
 
     let tmp = TempDir::new().unwrap();
-    fs::write(
-        tmp.path().join("crucible.toml"),
-        "[enrichment]\n[enrichment.provider]\ntype = \"ollama\"\nmodel = \"nomic-embed-text\"\nbase_url = \"http://127.0.0.1:9\"\n\n[enrichment.pipeline]\n",
-    )
-    .unwrap();
 
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));
@@ -1295,7 +1310,10 @@ async fn test_precognition_complete_event_emitted_when_enrichment_runs() {
         .await
         .unwrap();
 
-    let agent_manager = create_test_agent_manager(session_manager.clone());
+    let agent_manager = create_test_agent_manager_with_enrichment(
+        session_manager.clone(),
+        crucible_config::EmbeddingProviderConfig::mock(Some(384)),
+    );
     let mut agent = test_agent();
     agent.precognition_enabled = true;
     agent_manager
