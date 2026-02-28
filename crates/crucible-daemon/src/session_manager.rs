@@ -443,6 +443,18 @@ pub enum SessionError {
     IoError(String),
 }
 
+impl From<std::io::Error> for SessionError {
+    fn from(err: std::io::Error) -> Self {
+        Self::IoError(err.to_string())
+    }
+}
+
+impl From<serde_json::Error> for SessionError {
+    fn from(err: serde_json::Error) -> Self {
+        Self::IoError(err.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
