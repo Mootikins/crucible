@@ -1461,33 +1461,33 @@ impl DaemonClient {
     }
 
     pub async fn session_get(&self, session_id: &str) -> Result<serde_json::Value> {
-        self.call(
+        self.typed_call(
             "session.get",
-            serde_json::json!({ "session_id": session_id }),
+            SessionIdRequest { session_id: session_id.to_string() },
         )
         .await
     }
 
     pub async fn session_pause(&self, session_id: &str) -> Result<serde_json::Value> {
-        self.call(
+        self.typed_call(
             "session.pause",
-            serde_json::json!({ "session_id": session_id }),
+            SessionIdRequest { session_id: session_id.to_string() },
         )
         .await
     }
 
     pub async fn session_resume(&self, session_id: &str) -> Result<serde_json::Value> {
-        self.call(
+        self.typed_call(
             "session.resume",
-            serde_json::json!({ "session_id": session_id }),
+            SessionIdRequest { session_id: session_id.to_string() },
         )
         .await
     }
 
     pub async fn session_end(&self, session_id: &str) -> Result<serde_json::Value> {
-        self.call(
+        self.typed_call(
             "session.end",
-            serde_json::json!({ "session_id": session_id }),
+            SessionIdRequest { session_id: session_id.to_string() },
         )
         .await
     }
@@ -1497,11 +1497,14 @@ impl DaemonClient {
         recording_path: &Path,
         speed: f64,
     ) -> Result<serde_json::Value> {
-        let params = serde_json::json!({
-            "recording_path": recording_path.to_string_lossy(),
-            "speed": speed,
-        });
-        self.call("session.replay", params).await
+        self.typed_call(
+            "session.replay",
+            SessionReplayRequest {
+                recording_path: recording_path.to_string_lossy().to_string(),
+                speed,
+            },
+        )
+        .await
     }
 
     pub async fn session_resume_from_storage(
@@ -1527,17 +1530,21 @@ impl DaemonClient {
     }
 
     pub async fn session_subscribe(&self, session_ids: &[&str]) -> Result<serde_json::Value> {
-        self.call(
+        self.typed_call(
             "session.subscribe",
-            serde_json::json!({ "session_ids": session_ids }),
+            SessionSubscribeRequest {
+                session_ids: session_ids.iter().map(|s| s.to_string()).collect(),
+            },
         )
         .await
     }
 
     pub async fn session_unsubscribe(&self, session_ids: &[&str]) -> Result<serde_json::Value> {
-        self.call(
+        self.typed_call(
             "session.unsubscribe",
-            serde_json::json!({ "session_ids": session_ids }),
+            SessionSubscribeRequest {
+                session_ids: session_ids.iter().map(|s| s.to_string()).collect(),
+            },
         )
         .await
     }
@@ -1557,10 +1564,10 @@ impl DaemonClient {
     ) -> Result<()> {
         self.call(
             "session.configure_agent",
-            serde_json::json!({
-                "session_id": session_id,
-                "agent": agent
-            }),
+            serde_json::to_value(SessionConfigureAgentRequest {
+                session_id: session_id.to_string(),
+                agent: serde_json::to_value(agent)?,
+            })?,
         )
         .await?;
         Ok(())
@@ -1588,11 +1595,11 @@ impl DaemonClient {
     ) -> Result<()> {
         self.call(
             "session.interaction_respond",
-            serde_json::json!({
-                "session_id": session_id,
-                "request_id": request_id,
-                "response": response
-            }),
+            serde_json::to_value(SessionInteractionRespondRequest {
+                session_id: session_id.to_string(),
+                request_id: request_id.to_string(),
+                response: serde_json::to_value(response)?,
+            })?,
         )
         .await?;
 
@@ -1613,10 +1620,10 @@ impl DaemonClient {
     pub async fn session_switch_model(&self, session_id: &str, model_id: &str) -> Result<()> {
         self.call_with_retry(
             "session.switch_model",
-            serde_json::json!({
-                "session_id": session_id,
-                "model_id": model_id
-            }),
+            serde_json::to_value(SessionSwitchModelRequest {
+                session_id: session_id.to_string(),
+                model_id: model_id.to_string(),
+            })?,
         )
         .await?;
         Ok(())
@@ -1625,10 +1632,10 @@ impl DaemonClient {
     pub async fn session_set_title(&self, session_id: &str, title: &str) -> Result<()> {
         self.call_with_retry(
             "session.set_title",
-            serde_json::json!({
-                "session_id": session_id,
-                "title": title
-            }),
+            serde_json::to_value(SessionSetTitleRequest {
+                session_id: session_id.to_string(),
+                title: title.to_string(),
+            })?,
         )
         .await?;
         Ok(())
@@ -1676,13 +1683,14 @@ impl DaemonClient {
         session_id: &str,
         budget: Option<i64>,
     ) -> Result<()> {
-        let mut params = serde_json::json!({ "session_id": session_id });
-        if let Some(b) = budget {
-            params["thinking_budget"] = serde_json::json!(b);
-        }
-
-        self.call_with_retry("session.set_thinking_budget", params)
-            .await?;
+        self.call_with_retry(
+            "session.set_thinking_budget",
+            serde_json::to_value(SessionSetThinkingBudgetRequest {
+                session_id: session_id.to_string(),
+                thinking_budget: budget,
+            })?,
+        )
+        .await?;
         Ok(())
     }
 
@@ -1738,10 +1746,10 @@ impl DaemonClient {
     pub async fn session_set_temperature(&self, session_id: &str, temperature: f64) -> Result<()> {
         self.call_with_retry(
             "session.set_temperature",
-            serde_json::json!({
-                "session_id": session_id,
-                "temperature": temperature,
-            }),
+            serde_json::to_value(SessionSetTemperatureRequest {
+                session_id: session_id.to_string(),
+                temperature,
+            })?,
         )
         .await?;
         Ok(())
@@ -1785,13 +1793,14 @@ impl DaemonClient {
         session_id: &str,
         max_tokens: Option<u32>,
     ) -> Result<()> {
-        let mut params = serde_json::json!({ "session_id": session_id });
-        if let Some(mt) = max_tokens {
-            params["max_tokens"] = serde_json::json!(mt);
-        }
-
-        self.call_with_retry("session.set_max_tokens", params)
-            .await?;
+        self.call_with_retry(
+            "session.set_max_tokens",
+            serde_json::to_value(SessionSetMaxTokensRequest {
+                session_id: session_id.to_string(),
+                max_tokens,
+            })?,
+        )
+        .await?;
         Ok(())
     }
 
