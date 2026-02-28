@@ -277,38 +277,18 @@ pub struct TaskGraph {
 }
 
 /// Error building task graph
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum GraphError {
     /// Task depends on a non-existent task ID
+    #[error("Task '{task_id}' depends on non-existent task '{missing_dep}'")]
     MissingDependency {
         task_id: String,
         missing_dep: String,
     },
     /// Dependency graph contains a cycle
+    #[error("Dependency cycle detected: {}", cycle.join(" -> "))]
     CycleDetected { cycle: Vec<String> },
 }
-
-impl std::fmt::Display for GraphError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            GraphError::MissingDependency {
-                task_id,
-                missing_dep,
-            } => {
-                write!(
-                    f,
-                    "Task '{}' depends on non-existent task '{}'",
-                    task_id, missing_dep
-                )
-            }
-            GraphError::CycleDetected { cycle } => {
-                write!(f, "Dependency cycle detected: {}", cycle.join(" -> "))
-            }
-        }
-    }
-}
-
-impl std::error::Error for GraphError {}
 
 impl TaskGraph {
     /// Build a task graph from a list of tasks
