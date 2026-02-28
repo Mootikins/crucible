@@ -20,12 +20,9 @@ glob = { workspace = true }
 walkdir = "2"
 dirs = "6"
 sha2 = "0.10"
-crucible-llm = { path = "../crucible-llm", optional = true, default-features = false }
 
 [features]
 default = []
-embeddings = ["crucible-llm"]
-fastembed = ["crucible-llm?/fastembed"]
 test-utils = []
 
 [dev-dependencies]
