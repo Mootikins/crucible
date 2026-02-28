@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS notes (
     path TEXT PRIMARY KEY,
     content_hash BLOB NOT NULL,
     embedding BLOB,
+    embedding_model TEXT,
+    embedding_dimensions INTEGER,
     title TEXT NOT NULL,
     tags TEXT NOT NULL,
     links_to TEXT NOT NULL,
@@ -69,6 +71,48 @@ fn deserialize_embedding(bytes: &[u8]) -> Vec<f32> {
             f32::from_le_bytes(arr)
         })
         .collect()
+}
+
+// ============================================================================
+// Schema Migration
+// ============================================================================
+
+/// Ensure embedding metadata columns exist in the notes table
+///
+/// This is an idempotent migration that checks if columns exist before adding them.
+/// Uses PRAGMA table_info to avoid ALTER TABLE errors on existing columns.
+fn ensure_embedding_metadata_columns(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+    // Check if embedding_model column exists
+    let has_embedding_model = conn.query_row(
+        "SELECT 1 FROM pragma_table_info('notes') WHERE name = 'embedding_model'",
+        [],
+        |_| Ok(()),
+    ).is_ok();
+
+    // Check if embedding_dimensions column exists
+    let has_embedding_dimensions = conn.query_row(
+        "SELECT 1 FROM pragma_table_info('notes') WHERE name = 'embedding_dimensions'",
+        [],
+        |_| Ok(()),
+    ).is_ok();
+
+    // Add embedding_model column if it doesn't exist
+    if !has_embedding_model {
+        conn.execute(
+            "ALTER TABLE notes ADD COLUMN embedding_model TEXT",
+            [],
+        )?;
+    }
+
+    // Add embedding_dimensions column if it doesn't exist
+    if !has_embedding_dimensions {
+        conn.execute(
+            "ALTER TABLE notes ADD COLUMN embedding_dimensions INTEGER",
+            [],
+        )?;
+    }
+
+    Ok(())
 }
 
 // ============================================================================
@@ -210,11 +254,13 @@ fn row_to_note(row: &rusqlite::Row<'_>) -> Result<NoteRecord, rusqlite::Error> {
     let path: String = row.get(0)?;
     let content_hash_bytes: Vec<u8> = row.get(1)?;
     let embedding_bytes: Option<Vec<u8>> = row.get(2)?;
-    let title: String = row.get(3)?;
-    let tags_json: String = row.get(4)?;
-    let links_json: String = row.get(5)?;
-    let properties_json: String = row.get(6)?;
-    let updated_at_str: String = row.get(7)?;
+    let embedding_model: Option<String> = row.get(3)?;
+    let embedding_dimensions: Option<i32> = row.get(4)?;
+    let title: String = row.get(5)?;
+    let tags_json: String = row.get(6)?;
+    let links_json: String = row.get(7)?;
+    let properties_json: String = row.get(8)?;
+    let updated_at_str: String = row.get(9)?;
 
     // Parse content hash
     let content_hash = if content_hash_bytes.len() == 32 {
@@ -247,6 +293,8 @@ fn row_to_note(row: &rusqlite::Row<'_>) -> Result<NoteRecord, rusqlite::Error> {
         path,
         content_hash,
         embedding,
+        embedding_model,
+        embedding_dimensions: embedding_dimensions.map(|d| d as u32),
         title,
         tags,
         links_to,
@@ -299,13 +347,20 @@ impl SqliteNoteStore {
                 conn.execute_batch(NOTES_SCHEMA)
                     .map_err(|e| StorageError::Backend(e.to_string()))?;
                 debug!("Notes schema applied successfully");
+
+                // Apply idempotent migration for embedding metadata columns
+                ensure_embedding_metadata_columns(conn)
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                debug!("Embedding metadata columns ensured");
+
                 Ok(())
             })
         })
         .await??;
 
         Ok(())
-    }
+}
+
 }
 
 #[async_trait]
@@ -318,6 +373,8 @@ impl NoteStore for SqliteNoteStore {
                 // Serialize fields
                 let content_hash_bytes = note.content_hash.as_bytes().to_vec();
                 let embedding_bytes = note.embedding.as_ref().map(|e| serialize_embedding(e));
+                let embedding_model = note.embedding_model.clone();
+                let embedding_dimensions = note.embedding_dimensions;
                 let tags_json = serde_json::to_string(&note.tags)?;
                 let links_json = serde_json::to_string(&note.links_to)?;
                 let properties_json = serde_json::to_string(&note.properties)?;
@@ -333,11 +390,13 @@ impl NoteStore for SqliteNoteStore {
                 // Upsert the note
                 conn.execute(
                     r#"
-                    INSERT INTO notes (path, content_hash, embedding, title, tags, links_to, properties, updated_at)
-                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                    INSERT INTO notes (path, content_hash, embedding, embedding_model, embedding_dimensions, title, tags, links_to, properties, updated_at)
+                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                     ON CONFLICT(path) DO UPDATE SET
                         content_hash = excluded.content_hash,
                         embedding = excluded.embedding,
+                        embedding_model = excluded.embedding_model,
+                        embedding_dimensions = excluded.embedding_dimensions,
                         title = excluded.title,
                         tags = excluded.tags,
                         links_to = excluded.links_to,
@@ -348,6 +407,8 @@ impl NoteStore for SqliteNoteStore {
                         note.path,
                         content_hash_bytes,
                         embedding_bytes,
+                        embedding_model,
+                        embedding_dimensions,
                         note.title,
                         tags_json,
                         links_json,
@@ -406,7 +467,7 @@ impl NoteStore for SqliteNoteStore {
                 let mut stmt = conn
                     .prepare(
                     r#"
-                    SELECT path, content_hash, embedding, title, tags, links_to, properties, updated_at
+                    SELECT path, content_hash, embedding, embedding_model, embedding_dimensions, title, tags, links_to, properties, updated_at
                     FROM notes
                     WHERE path = ?1
                     "#,
@@ -461,7 +522,7 @@ impl NoteStore for SqliteNoteStore {
                 let mut stmt = conn
                     .prepare(
                     r#"
-                    SELECT path, content_hash, embedding, title, tags, links_to, properties, updated_at
+                    SELECT path, content_hash, embedding, embedding_model, embedding_dimensions, title, tags, links_to, properties, updated_at
                     FROM notes
                     ORDER BY updated_at DESC
                     "#,
