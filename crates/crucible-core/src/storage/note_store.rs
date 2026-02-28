@@ -442,53 +442,8 @@ pub trait Precognition: Send + Sync {
 }
 
 // ============================================================================
-// Blanket Implementations
+// Tests
 // ============================================================================
-
-/// Blanket implementation of NoteStore for Arc<T>
-#[async_trait]
-impl<T: NoteStore + ?Sized> NoteStore for std::sync::Arc<T> {
-    async fn upsert(&self, note: NoteRecord) -> StorageResult<Vec<SessionEvent>> {
-        (**self).upsert(note).await
-    }
-
-    async fn get(&self, path: &str) -> StorageResult<Option<NoteRecord>> {
-        (**self).get(path).await
-    }
-
-    async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
-        (**self).delete(path).await
-    }
-
-    async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
-        (**self).list().await
-    }
-
-    async fn get_by_hash(&self, hash: &BlockHash) -> StorageResult<Option<NoteRecord>> {
-        (**self).get_by_hash(hash).await
-    }
-
-    async fn search(
-        &self,
-        embedding: &[f32],
-        k: usize,
-        filter: Option<Filter>,
-    ) -> StorageResult<Vec<SearchResult>> {
-        (**self).search(embedding, k, filter).await
-    }
-}
-
-/// Blanket implementation of Precognition for Arc<T>
-#[async_trait]
-impl<T: Precognition + ?Sized> Precognition for std::sync::Arc<T> {
-    fn hash(&self, content: &[u8]) -> BlockHash {
-        (**self).hash(content)
-    }
-
-    async fn embed(&self, content: &str) -> StorageResult<Vec<f32>> {
-        (**self).embed(content).await
-    }
-}
 
 // ============================================================================
 // Tests

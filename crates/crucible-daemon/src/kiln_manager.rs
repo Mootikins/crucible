@@ -72,7 +72,6 @@ impl StorageHandle {
         match self {
             #[cfg(feature = "storage-sqlite")]
             StorageHandle::Sqlite(client) => {
-                use crucible_core::storage::NoteStore;
                 let store = client.as_note_store();
                 let results = store.search(&vector, limit, None).await?;
                 Ok(results
@@ -99,7 +98,6 @@ impl StorageHandle {
         match self {
             #[cfg(feature = "storage-sqlite")]
             StorageHandle::Sqlite(client) => {
-                use crucible_core::storage::NoteStore;
                 let store = client.as_note_store();
                 let records = store.list().await?;
                 Ok(records
@@ -133,8 +131,6 @@ impl StorageHandle {
     /// 10k+ notes, consider adding backend-specific indexed queries (e.g., SQL
     /// LIKE with index).
     pub async fn get_note_by_name(&self, name: &str) -> Result<Option<NoteRecord>> {
-        use crucible_core::storage::NoteStore;
-
         let records: Vec<NoteRecord> = match self {
             #[cfg(feature = "storage-sqlite")]
             StorageHandle::Sqlite(client) => client.as_note_store().list().await?,
@@ -361,7 +357,6 @@ impl KilnManager {
 
     pub async fn handle_file_deleted(&self, kiln_path: &Path, file_path: &Path) -> Result<bool> {
         use crucible_core::events::SessionEvent;
-        use crucible_core::storage::NoteStore;
 
         if !is_markdown_file(file_path) {
             return Ok(false);

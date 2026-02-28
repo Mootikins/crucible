@@ -1208,7 +1208,7 @@ async fn handle_get_note_by_name(req: Request, km: &Arc<KilnManager>) -> Respons
 // =============================================================================
 
 async fn handle_note_upsert(req: Request, km: &Arc<KilnManager>) -> Response {
-    use crucible_core::storage::{NoteRecord, NoteStore};
+    use crucible_core::storage::NoteRecord;
 
     let kiln_path = require_param!(req, "kiln", as_str);
 
@@ -1247,8 +1247,6 @@ async fn handle_note_upsert(req: Request, km: &Arc<KilnManager>) -> Response {
 }
 
 async fn handle_note_get(req: Request, km: &Arc<KilnManager>) -> Response {
-    use crucible_core::storage::NoteStore;
-
     let kiln_path = require_param!(req, "kiln", as_str);
     let path = require_param!(req, "path", as_str);
 
@@ -1269,8 +1267,6 @@ async fn handle_note_get(req: Request, km: &Arc<KilnManager>) -> Response {
 }
 
 async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> Response {
-    use crucible_core::storage::NoteStore;
-
     let kiln_path = require_param!(req, "kiln", as_str);
     let path = require_param!(req, "path", as_str);
 
@@ -1287,8 +1283,6 @@ async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> Response {
 }
 
 async fn handle_note_list(req: Request, km: &Arc<KilnManager>) -> Response {
-    use crucible_core::storage::NoteStore;
-
     let kiln_path = require_param!(req, "kiln", as_str);
 
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
