@@ -165,6 +165,270 @@ pub struct LuaRegisterCommandsResponse {
     pub registered: usize,
 }
 
+// =========================================================================
+// Session RPC Request/Response Types (Phase 1)
+// =========================================================================
+
+/// Request for `session.create`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionCreateRequest {
+    #[serde(rename = "type")]
+    pub session_type: String,
+    pub kiln: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connect_kilns: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recording_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recording_path: Option<String>,
+}
+
+/// Request for `session.list`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionListRequest {
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub session_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kiln: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
+}
+
+/// Shared request for methods that only require a `session_id`.
+///
+/// Used by: `session.get`, `session.pause`, `session.resume`, `session.end`,
+/// `session.cancel`, `session.list_models`, `session.get_thinking_budget`,
+/// `session.get_precognition`, `session.get_temperature`, `session.get_max_tokens`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionIdRequest {
+    pub session_id: String,
+}
+
+/// Request for `session.replay`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionReplayRequest {
+    pub recording_path: String,
+    pub speed: f64,
+}
+
+/// Request for `session.resume_from_storage`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionResumeFromStorageRequest {
+    pub session_id: String,
+    pub kiln: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<usize>,
+}
+
+/// Shared request for `session.subscribe` and `session.unsubscribe`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSubscribeRequest {
+    pub session_ids: Vec<String>,
+}
+
+/// Request for `session.configure_agent`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionConfigureAgentRequest {
+    pub session_id: String,
+    pub agent: serde_json::Value,
+}
+
+/// Request for `session.send_message`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSendMessageRequest {
+    pub session_id: String,
+    pub content: String,
+}
+
+/// Request for `session.interaction_respond`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionInteractionRespondRequest {
+    pub session_id: String,
+    pub request_id: String,
+    pub response: serde_json::Value,
+}
+
+/// Request for `session.switch_model`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSwitchModelRequest {
+    pub session_id: String,
+    pub model_id: String,
+}
+
+/// Request for `session.set_title`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSetTitleRequest {
+    pub session_id: String,
+    pub title: String,
+}
+
+/// Request for `session.set_thinking_budget`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSetThinkingBudgetRequest {
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking_budget: Option<i64>,
+}
+
+/// Request for `session.set_precognition`.
+///
+/// NOTE: The client sends `precognition_enabled` but the daemon handler reads `enabled`.
+/// This is a pre-existing field name mismatch.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSetPrecognitionRequest {
+    pub session_id: String,
+    pub precognition_enabled: bool,
+}
+
+/// Request for `session.set_temperature`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSetTemperatureRequest {
+    pub session_id: String,
+    pub temperature: f64,
+}
+
+/// Request for `session.set_max_tokens`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSetMaxTokensRequest {
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u32>,
+}
+
+/// Request for `session.search`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSearchRequest {
+    pub query: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kiln: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+}
+
+/// Request for `models.list` (no active session required).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ListAllModelsRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kiln_path: Option<String>,
+}
+
+/// Request for `session.load_events`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionLoadEventsRequest {
+    pub session_dir: String,
+}
+
+/// Request for `session.list_persisted`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionListPersistedRequest {
+    pub kiln: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+}
+
+/// Request for `session.render_markdown`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionRenderMarkdownRequest {
+    pub session_dir: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_timestamps: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_tokens: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_tools: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_content_length: Option<usize>,
+}
+
+/// Request for `session.export_to_file`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionExportToFileRequest {
+    pub session_dir: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_timestamps: Option<bool>,
+}
+
+/// Request for `session.cleanup`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionCleanupRequest {
+    pub kiln: String,
+    pub older_than_days: u64,
+    pub dry_run: bool,
+}
+
+/// Request for `session.reindex`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionReindexRequest {
+    pub kiln: String,
+    pub force: bool,
+}
+
+// --- Session RPC Response Types ---
+
+/// Response from `session.send_message`.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SessionSendMessageResponse {
+    pub message_id: String,
+}
+
+/// Response from `session.cancel`.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SessionCancelResponse {
+    pub cancelled: bool,
+}
+
+/// Shared response for `session.list_models` and `models.list`.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ModelsListResponse {
+    pub models: Vec<String>,
+}
+
+/// Response from `session.get_thinking_budget`.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SessionGetThinkingBudgetResponse {
+    pub thinking_budget: Option<i64>,
+}
+
+/// Response from `session.get_precognition`.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SessionGetPrecognitionResponse {
+    pub precognition_enabled: bool,
+}
+
+/// Response from `session.get_temperature`.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SessionGetTemperatureResponse {
+    pub temperature: Option<f64>,
+}
+
+/// Response from `session.get_max_tokens`.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SessionGetMaxTokensResponse {
+    pub max_tokens: Option<u32>,
+}
+
+/// Response from `session.render_markdown`.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SessionRenderMarkdownResponse {
+    pub markdown: String,
+}
+
+/// Response from `session.export_to_file`.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SessionExportToFileResponse {
+    pub output_path: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VersionCheck {
     Match,
