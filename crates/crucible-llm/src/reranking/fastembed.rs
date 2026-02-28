@@ -3,9 +3,8 @@
 //! Provides local reranking using ONNX models via the FastEmbed library.
 //! Supports multiple reranker models with different speed/quality trade-offs.
 
-use super::{RerankResult, Reranker, RerankerModelInfo};
+use super::{RerankResult, RerankerModelInfo};
 use anyhow::{anyhow, Result};
-use async_trait::async_trait;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -155,9 +154,9 @@ impl FastEmbedReranker {
     }
 }
 
-#[async_trait]
-impl Reranker for FastEmbedReranker {
-    async fn rerank(
+impl FastEmbedReranker {
+    /// Rerank documents based on their relevance to the query.
+    pub async fn rerank(
         &self,
         query: &str,
         documents: Vec<(String, String, f64)>,
@@ -221,11 +220,13 @@ impl Reranker for FastEmbedReranker {
         Ok(results)
     }
 
-    fn model_info(&self) -> RerankerModelInfo {
+    /// Get information about the reranker model.
+    pub fn model_info(&self) -> RerankerModelInfo {
         self.model_info.clone()
     }
 
-    async fn health_check(&self) -> Result<bool> {
+    /// Check if the reranker is healthy and ready to use.
+    pub async fn health_check(&self) -> Result<bool> {
         // Try to ensure model is loaded as a health check
         match self.ensure_model_loaded().await {
             Ok(_) => Ok(true),
