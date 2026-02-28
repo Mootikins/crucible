@@ -1,8 +1,7 @@
 //! Regex-based text search (always available fallback)
 
 use anyhow::Result;
-use async_trait::async_trait;
-use crucible_core::traits::{TextSearchMatch, TextSearcher};
+use crucible_core::traits::TextSearchMatch;
 use regex::Regex;
 use std::path::PathBuf;
 use tokio::fs;
@@ -13,17 +12,8 @@ impl RegexSearcher {
     pub fn new() -> Self {
         Self
     }
-}
 
-impl Default for RegexSearcher {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl TextSearcher for RegexSearcher {
-    async fn search(&self, pattern: &str, paths: &[PathBuf]) -> Result<Vec<TextSearchMatch>> {
+    pub async fn search(&self, pattern: &str, paths: &[PathBuf]) -> Result<Vec<TextSearchMatch>> {
         let re = Regex::new(pattern)?;
         let mut matches = Vec::new();
 
@@ -38,8 +28,14 @@ impl TextSearcher for RegexSearcher {
         Ok(matches)
     }
 
-    fn backend_name(&self) -> &'static str {
+    pub fn backend_name(&self) -> &'static str {
         "regex"
+    }
+}
+
+impl Default for RegexSearcher {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
