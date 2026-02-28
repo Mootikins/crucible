@@ -391,6 +391,7 @@ pub struct AgentManager {
 }
 
 impl AgentManager {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         kiln_manager: Arc<KilnManager>,
         session_manager: Arc<SessionManager>,
@@ -713,6 +714,7 @@ impl AgentManager {
     /// Execute a vector search across the given kiln sources.
     /// Returns the results and the number of kilns searched, or `None` on failure
     /// (after emitting a precognition event).
+    #[allow(clippy::too_many_arguments)]
     async fn execute_multi_kiln_search(
         &self,
         session_id: &str,
@@ -1723,6 +1725,7 @@ impl AgentManager {
         }
     }
 
+    #[allow(clippy::ptr_arg)]
     async fn run_reactor_handlers(
         stream_ctx: &StreamContext,
         chunk: &crucible_core::traits::chat::ChatChunk,

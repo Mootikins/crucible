@@ -42,9 +42,9 @@ pub use canvas::{CanvasEdge, CanvasNode};
 pub use content_category::{ContentCategory, ContentCategoryError};
 pub use crucible_core::CrucibleCore;
 pub use discovery::{DiscoveryConfig, DiscoveryPaths};
+pub use error_utils::strip_tool_error_prefix;
 pub use interaction_context::{EventPushCallback, InteractionContext};
 pub use kiln::EXCLUDED_DIRS;
-pub use error_utils::strip_tool_error_prefix;
 
 // Re-export enrichment traits and types (implementations in crucible-daemon::enrichment)
 pub use enrichment::{

@@ -1016,11 +1016,11 @@ mod daemon_event_to_tui_tests {
     #[tokio::test]
     async fn abort_background_tasks_drains_all_tasks() {
         let mut background_tasks = vec![
-            tokio::spawn(async { () }),
-            tokio::spawn(async { () }),
-            tokio::spawn(async { () }),
-            tokio::spawn(async { () }),
-            tokio::spawn(async { () }),
+            tokio::spawn(async {}),
+            tokio::spawn(async {}),
+            tokio::spawn(async {}),
+            tokio::spawn(async {}),
+            tokio::spawn(async {}),
         ];
 
         assert_eq!(background_tasks.len(), 5);

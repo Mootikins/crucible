@@ -49,11 +49,7 @@ pub async fn execute(_config: CliConfig, args: HealthArgs) -> Result<()> {
             let advice: Vec<&str> = check
                 .get("advice")
                 .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|item| item.as_str())
-                        .collect()
-                })
+                .map(|arr| arr.iter().filter_map(|item| item.as_str()).collect())
                 .unwrap_or_default();
 
             match level {

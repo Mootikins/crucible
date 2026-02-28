@@ -1608,10 +1608,7 @@ impl DaemonClient {
     // =========================================================================
 
     /// Load events from a persisted session's JSONL log.
-    pub async fn session_load_events(
-        &self,
-        session_dir: &Path,
-    ) -> Result<serde_json::Value> {
+    pub async fn session_load_events(&self, session_dir: &Path) -> Result<serde_json::Value> {
         self.call(
             "session.load_events",
             serde_json::json!({ "session_dir": session_dir.to_string_lossy() }),
@@ -1661,10 +1658,7 @@ impl DaemonClient {
             params["max_content_length"] = serde_json::json!(v);
         }
         let result = self.call("session.render_markdown", params).await?;
-        Ok(result["markdown"]
-            .as_str()
-            .unwrap_or("")
-            .to_string())
+        Ok(result["markdown"].as_str().unwrap_or("").to_string())
     }
 
     /// Export a session to a markdown file.
@@ -1684,10 +1678,7 @@ impl DaemonClient {
             params["include_timestamps"] = serde_json::json!(v);
         }
         let result = self.call("session.export_to_file", params).await?;
-        Ok(result["output_path"]
-            .as_str()
-            .unwrap_or("")
-            .to_string())
+        Ok(result["output_path"].as_str().unwrap_or("").to_string())
     }
 
     /// Clean up old persisted sessions.
@@ -1709,11 +1700,7 @@ impl DaemonClient {
     }
 
     /// Reindex persisted sessions into the kiln's NoteStore.
-    pub async fn session_reindex(
-        &self,
-        kiln: &Path,
-        force: bool,
-    ) -> Result<serde_json::Value> {
+    pub async fn session_reindex(&self, kiln: &Path, force: bool) -> Result<serde_json::Value> {
         self.call(
             "session.reindex",
             serde_json::json!({
@@ -1742,11 +1729,7 @@ impl DaemonClient {
     }
 
     /// Get a single skill by name with full body.
-    pub async fn skills_get(
-        &self,
-        name: &str,
-        kiln_path: &Path,
-    ) -> Result<serde_json::Value> {
+    pub async fn skills_get(&self, name: &str, kiln_path: &Path) -> Result<serde_json::Value> {
         self.call(
             "skills.get",
             serde_json::json!({
@@ -1776,13 +1759,17 @@ impl DaemonClient {
 
     /// List all available agent profiles (builtins + configured).
     pub async fn agents_list_profiles(&self) -> Result<serde_json::Value> {
-        self.call("agents.list_profiles", serde_json::json!({})).await
+        self.call("agents.list_profiles", serde_json::json!({}))
+            .await
     }
 
     /// Resolve a named agent profile.
     pub async fn agents_resolve_profile(&self, name: &str) -> Result<serde_json::Value> {
-        self.call("agents.resolve_profile", serde_json::json!({ "name": name }))
-            .await
+        self.call(
+            "agents.resolve_profile",
+            serde_json::json!({ "name": name }),
+        )
+        .await
     }
 }
 

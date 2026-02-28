@@ -31,7 +31,6 @@ pub mod auth;
 pub mod change_detection;
 pub mod chat;
 pub mod completion_backend;
-pub mod context;
 pub mod context_ops;
 pub mod graph_query;
 pub mod input;
@@ -40,7 +39,6 @@ pub mod llm;
 pub mod mcp;
 pub mod parser;
 pub mod permission_gate;
-pub mod prompt_builder;
 pub mod provider;
 pub mod registry;
 pub mod storage;
@@ -61,7 +59,6 @@ pub use completion_backend::{
     BackendCompletionChunk, BackendCompletionRequest, BackendCompletionResponse, BackendError,
     BackendResult, CompletionBackend,
 };
-pub use context::ContextManager;
 pub use context_ops::{
     ContextError, ContextMessage, ContextOps, MessageMetadata, MessagePredicate, Position, Range,
 };
@@ -74,7 +71,6 @@ pub use llm::{
     TextModelInfo, TokenUsage, ToolCall, ToolCallDelta, ToolChoice,
 };
 pub use parser::MarkdownParser;
-pub use prompt_builder::{priorities, PromptBuilder};
 pub use provider::EmbeddingResponse;
 pub use registry::{Registry, RegistryBuilder};
 pub use storage::Storage;

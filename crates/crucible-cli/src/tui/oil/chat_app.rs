@@ -347,6 +347,7 @@ impl Default for PrecognitionState {
 }
 
 /// Message queue state — deferred messages and message counter
+#[derive(Default)]
 pub(crate) struct MessageQueueState {
     /// Messages deferred until the current stream completes
     pub deferred_messages: VecDeque<String>,
@@ -354,16 +355,6 @@ pub(crate) struct MessageQueueState {
     pub message_counter: usize,
     /// Timestamp of the last Ctrl-C press (for double-tap quit)
     pub last_ctrl_c: Option<std::time::Instant>,
-}
-
-impl Default for MessageQueueState {
-    fn default() -> Self {
-        Self {
-            deferred_messages: VecDeque::new(),
-            message_counter: 0,
-            last_ctrl_c: None,
-        }
-    }
 }
 
 pub struct OilChatApp {
@@ -2582,7 +2573,12 @@ impl OilChatApp {
         // next TextDelta or StreamComplete).
         if self.container_list.needs_turn_spinner() {
             nodes.push(
-                row([text(" "), spinner(None, self.spinner_frame).with_style(ThemeTokens::default_ref().spinner_style())]).with_margin(Padding {
+                row([
+                    text(" "),
+                    spinner(None, self.spinner_frame)
+                        .with_style(ThemeTokens::default_ref().spinner_style()),
+                ])
+                .with_margin(Padding {
                     top: 1,
                     ..Default::default()
                 }),
