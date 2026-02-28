@@ -4,8 +4,8 @@
 //! version conflicts with other workspace crates.
 
 use crate::config::SqliteConfig;
-use crate::error::{SqliteError, SqliteResult};
 use crate::schema;
+use crucible_core::storage::{StorageError, StorageResult};
 use parking_lot::Mutex;
 use rusqlite::Connection;
 use std::sync::Arc;
@@ -23,19 +23,19 @@ pub struct SqlitePool {
 
 impl SqlitePool {
     /// Create a new connection pool with the given configuration
-    pub fn new(config: SqliteConfig) -> SqliteResult<Self> {
+    pub fn new(config: SqliteConfig) -> StorageResult<Self> {
         info!(path = ?config.path, "Creating SQLite connection");
 
         let conn = if config.path.to_str() == Some(":memory:") {
-            Connection::open_in_memory()?
+            Connection::open_in_memory().map_err(|e| StorageError::Backend(e.to_string()))?
         } else {
             // Ensure parent directory exists
             if let Some(parent) = config.path.parent() {
                 std::fs::create_dir_all(parent).map_err(|e| {
-                    SqliteError::Connection(format!("Failed to create directory: {}", e))
+                    StorageError::Backend(format!("Failed to create directory: {}", e))
                 })?;
             }
-            Connection::open(&config.path)?
+            Connection::open(&config.path).map_err(|e| StorageError::Backend(e.to_string()))?
         };
 
         let sqlite_pool = Self {
@@ -50,23 +50,23 @@ impl SqlitePool {
     }
 
     /// Create an in-memory pool for testing
-    pub fn memory() -> SqliteResult<Self> {
+    pub fn memory() -> StorageResult<Self> {
         Self::new(SqliteConfig::memory())
     }
 
     /// Execute a closure with the connection
-    pub fn with_connection<F, T>(&self, f: F) -> SqliteResult<T>
+    pub fn with_connection<F, T>(&self, f: F) -> StorageResult<T>
     where
-        F: FnOnce(&Connection) -> SqliteResult<T>,
+        F: FnOnce(&Connection) -> StorageResult<T>,
     {
         let conn = self.conn.lock();
         f(&conn)
     }
 
     /// Execute a closure with mutable access to the connection
-    pub fn with_connection_mut<F, T>(&self, f: F) -> SqliteResult<T>
+    pub fn with_connection_mut<F, T>(&self, f: F) -> StorageResult<T>
     where
-        F: FnOnce(&mut Connection) -> SqliteResult<T>,
+        F: FnOnce(&mut Connection) -> StorageResult<T>,
     {
         let mut conn = self.conn.lock();
         f(&mut conn)
@@ -76,16 +76,18 @@ impl SqlitePool {
     ///
     /// If the closure returns `Ok`, the transaction is committed.
     /// If the closure returns `Err`, the transaction is rolled back.
-    pub fn with_transaction<F, T>(&self, f: F) -> SqliteResult<T>
+    pub fn with_transaction<F, T>(&self, f: F) -> StorageResult<T>
     where
-        F: FnOnce(&Connection) -> SqliteResult<T>,
+        F: FnOnce(&Connection) -> StorageResult<T>,
     {
         let conn = self.conn.lock();
-        conn.execute("BEGIN TRANSACTION", [])?;
+        conn.execute("BEGIN TRANSACTION", [])
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
 
         match f(&conn) {
             Ok(result) => {
-                conn.execute("COMMIT", [])?;
+                conn.execute("COMMIT", [])
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
                 Ok(result)
             }
             Err(e) => {
@@ -96,7 +98,7 @@ impl SqlitePool {
     }
 
     /// Initialize the database (configure pragmas and apply schema)
-    fn initialize(&self) -> SqliteResult<()> {
+    fn initialize(&self) -> StorageResult<()> {
         self.with_connection(|conn| {
             // Apply PRAGMA settings
             self.configure_pragmas(conn)?;
@@ -110,49 +112,61 @@ impl SqlitePool {
     }
 
     /// Configure SQLite PRAGMA settings for optimal performance
-    fn configure_pragmas(&self, conn: &Connection) -> SqliteResult<()> {
+    fn configure_pragmas(&self, conn: &Connection) -> StorageResult<()> {
         debug!("Configuring SQLite pragmas");
 
         // WAL mode for better concurrency
         if self.config.wal_mode {
-            conn.execute_batch("PRAGMA journal_mode = WAL;")?;
-            conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
+            conn.execute_batch("PRAGMA journal_mode = WAL;")
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
+            conn.execute_batch("PRAGMA synchronous = NORMAL;")
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
         }
 
         // Foreign key enforcement
         if self.config.foreign_keys {
-            conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+            conn.execute_batch("PRAGMA foreign_keys = ON;")
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
         }
 
         // Busy timeout
         conn.execute_batch(&format!(
             "PRAGMA busy_timeout = {};",
             self.config.busy_timeout_ms
-        ))?;
+        ))
+        .map_err(|e| StorageError::Backend(e.to_string()))?;
 
         // Cache size
-        conn.execute_batch(&format!("PRAGMA cache_size = {};", self.config.cache_size))?;
+        conn.execute_batch(&format!("PRAGMA cache_size = {};", self.config.cache_size))
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
 
         // MMAP for faster reads (if configured)
         if self.config.mmap_size > 0 {
-            conn.execute_batch(&format!("PRAGMA mmap_size = {};", self.config.mmap_size))?;
+            conn.execute_batch(&format!("PRAGMA mmap_size = {};", self.config.mmap_size))
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
         }
 
         // Use memory for temp tables
-        conn.execute_batch("PRAGMA temp_store = MEMORY;")?;
+        conn.execute_batch("PRAGMA temp_store = MEMORY;")
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
 
         Ok(())
     }
 
     /// Get database statistics
-    pub fn stats(&self) -> SqliteResult<DbStats> {
+    pub fn stats(&self) -> StorageResult<DbStats> {
         self.with_connection(|conn| {
-            let page_count: i64 = conn.query_row("PRAGMA page_count;", [], |row| row.get(0))?;
+            let page_count: i64 = conn
+                .query_row("PRAGMA page_count;", [], |row| row.get(0))
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
 
-            let page_size: i64 = conn.query_row("PRAGMA page_size;", [], |row| row.get(0))?;
+            let page_size: i64 = conn
+                .query_row("PRAGMA page_size;", [], |row| row.get(0))
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
 
-            let freelist_count: i64 =
-                conn.query_row("PRAGMA freelist_count;", [], |row| row.get(0))?;
+            let freelist_count: i64 = conn
+                .query_row("PRAGMA freelist_count;", [], |row| row.get(0))
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
 
             Ok(DbStats {
                 page_count: page_count as u64,
@@ -183,7 +197,9 @@ mod tests {
         let pool = SqlitePool::memory().expect("Failed to create memory pool");
 
         pool.with_connection(|conn| {
-            let result: i64 = conn.query_row("SELECT 1 + 1", [], |row| row.get(0))?;
+            let result: i64 = conn
+                .query_row("SELECT 1 + 1", [], |row| row.get(0))
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
             assert_eq!(result, 2);
             Ok(())
         })
@@ -200,7 +216,9 @@ mod tests {
 
         // Verify WAL mode is enabled
         pool.with_connection(|conn| {
-            let mode: String = conn.query_row("PRAGMA journal_mode;", [], |row| row.get(0))?;
+            let mode: String = conn
+                .query_row("PRAGMA journal_mode;", [], |row| row.get(0))
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
             assert_eq!(mode.to_lowercase(), "wal");
             Ok(())
         })
@@ -223,8 +241,11 @@ mod tests {
         pool.with_connection(|conn| {
             let tables: Vec<String> = {
                 let mut stmt = conn
-                    .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")?;
-                let rows = stmt.query_map([], |row| row.get(0))?;
+                    .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                let rows = stmt
+                    .query_map([], |row| row.get(0))
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
                 rows.filter_map(Result::ok).collect()
             };
 

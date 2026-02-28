@@ -12,10 +12,11 @@ use serde_json::Value;
 use tracing::debug;
 
 use crate::connection::SqlitePool;
-use crate::error::{SqliteError, SqliteResult};
 use crucible_core::events::SessionEvent;
 use crucible_core::parser::BlockHash;
-use crucible_core::storage::{Filter, NoteRecord, NoteStore, Op, SearchResult, StorageResult};
+use crucible_core::storage::{
+    Filter, NoteRecord, NoteStore, Op, SearchResult, StorageError, StorageResult,
+};
 
 // ============================================================================
 // Schema
@@ -102,9 +103,9 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 ///
 /// Allows: alphanumeric, underscore, dot (for nested paths), hyphen.
 /// Rejects: empty strings, SQL metacharacters, quotes, parens, semicolons.
-fn validate_property_key(key: &str) -> SqliteResult<()> {
+fn validate_property_key(key: &str) -> StorageResult<()> {
     if key.is_empty() {
-        return Err(SqliteError::InvalidOperation(
+        return Err(StorageError::InvalidOperation(
             "Property key must not be empty".to_string(),
         ));
     }
@@ -112,7 +113,7 @@ fn validate_property_key(key: &str) -> SqliteResult<()> {
         .chars()
         .all(|c| c.is_alphanumeric() || c == '_' || c == '.' || c == '-')
     {
-        return Err(SqliteError::InvalidOperation(format!(
+        return Err(StorageError::InvalidOperation(format!(
             "Property key contains invalid characters: {:?}",
             key
         )));
@@ -120,7 +121,10 @@ fn validate_property_key(key: &str) -> SqliteResult<()> {
     Ok(())
 }
 
-fn filter_to_sql(filter: &Filter, params: &mut Vec<Box<dyn ToSql + Send>>) -> SqliteResult<String> {
+fn filter_to_sql(
+    filter: &Filter,
+    params: &mut Vec<Box<dyn ToSql + Send>>,
+) -> StorageResult<String> {
     match filter {
         Filter::Tag(tag) => {
             params.push(Box::new(tag.clone()));
@@ -181,7 +185,7 @@ fn filter_to_sql(filter: &Filter, params: &mut Vec<Box<dyn ToSql + Send>>) -> Sq
             let clauses: Vec<_> = filters
                 .iter()
                 .map(|f| filter_to_sql(f, params))
-                .collect::<SqliteResult<Vec<_>>>()?;
+                .collect::<StorageResult<Vec<_>>>()?;
             Ok(format!("({})", clauses.join(" AND ")))
         }
         Filter::Or(filters) => {
@@ -191,7 +195,7 @@ fn filter_to_sql(filter: &Filter, params: &mut Vec<Box<dyn ToSql + Send>>) -> Sq
             let clauses: Vec<_> = filters
                 .iter()
                 .map(|f| filter_to_sql(f, params))
-                .collect::<SqliteResult<Vec<_>>>()?;
+                .collect::<StorageResult<Vec<_>>>()?;
             Ok(format!("({})", clauses.join(" OR ")))
         }
     }
@@ -287,18 +291,19 @@ impl SqliteNoteStore {
     /// Apply the notes table schema
     ///
     /// This should be called once when initializing the store.
-    pub async fn apply_schema(&self) -> SqliteResult<()> {
+    pub async fn apply_schema(&self) -> StorageResult<()> {
         let pool = self.pool.clone();
 
         tokio::task::spawn_blocking(move || {
             pool.with_connection(|conn| {
-                conn.execute_batch(NOTES_SCHEMA)?;
+                conn.execute_batch(NOTES_SCHEMA)
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
                 debug!("Notes schema applied successfully");
                 Ok(())
             })
         })
         .await
-        .map_err(|e| SqliteError::Schema(e.to_string()))??;
+        .map_err(|e| StorageError::Backend(e.to_string()))??;
 
         Ok(())
     }
@@ -315,11 +320,11 @@ impl NoteStore for SqliteNoteStore {
                 let content_hash_bytes = note.content_hash.as_bytes().to_vec();
                 let embedding_bytes = note.embedding.as_ref().map(|e| serialize_embedding(e));
                 let tags_json =
-                    serde_json::to_string(&note.tags).map_err(|e| SqliteError::Serialization(e.to_string()))?;
+                    serde_json::to_string(&note.tags).map_err(|e| StorageError::Serialization(e.to_string()))?;
                 let links_json =
-                    serde_json::to_string(&note.links_to).map_err(|e| SqliteError::Serialization(e.to_string()))?;
+                    serde_json::to_string(&note.links_to).map_err(|e| StorageError::Serialization(e.to_string()))?;
                 let properties_json =
-                    serde_json::to_string(&note.properties).map_err(|e| SqliteError::Serialization(e.to_string()))?;
+                    serde_json::to_string(&note.properties).map_err(|e| StorageError::Serialization(e.to_string()))?;
                 let updated_at_str = note.updated_at.to_rfc3339();
 
                 // Check if the note existed before to determine appropriate event
@@ -353,21 +358,26 @@ impl NoteStore for SqliteNoteStore {
                         properties_json,
                         updated_at_str,
                     ],
-                )?;
+                )
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
 
                 // Update note_links junction table for fast inlinks queries
                 conn.execute(
                     "DELETE FROM note_links WHERE source_path = ?1",
                     params![note.path],
-                )?;
+                )
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
 
                 // Insert new links
                 if !note.links_to.is_empty() {
-                    let mut stmt = conn.prepare(
+                    let mut stmt = conn
+                        .prepare(
                         "INSERT OR IGNORE INTO note_links (source_path, target_path) VALUES (?1, ?2)",
-                    )?;
+                    )
+                        .map_err(|e| StorageError::Backend(e.to_string()))?;
                     for target in &note.links_to {
-                        stmt.execute(params![note.path, target])?;
+                        stmt.execute(params![note.path, target])
+                            .map_err(|e| StorageError::Backend(e.to_string()))?;
                     }
                 }
 
@@ -398,21 +408,25 @@ impl NoteStore for SqliteNoteStore {
 
         tokio::task::spawn_blocking(move || {
             pool.with_connection(|conn| {
-                let mut stmt = conn.prepare(
+                let mut stmt = conn
+                    .prepare(
                     r#"
                     SELECT path, content_hash, embedding, title, tags, links_to, properties, updated_at
                     FROM notes
                     WHERE path = ?1
                     "#,
-                )?;
+                )
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
 
-                let note = stmt.query_row([&path], row_to_note).optional()?;
+                let note = stmt
+                    .query_row([&path], row_to_note)
+                    .optional()
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
                 Ok(note)
             })
         })
         .await
-        .map_err(|e| crucible_core::storage::StorageError::Backend(e.to_string()))?
-        .map_err(Into::into)
+        .map_err(|e| StorageError::Backend(e.to_string()))?
     }
 
     async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
@@ -430,7 +444,8 @@ impl NoteStore for SqliteNoteStore {
                     .optional()
                     .is_ok_and(|opt| opt.is_some());
 
-                conn.execute("DELETE FROM notes WHERE path = ?1", [&path_str])?;
+                conn.execute("DELETE FROM notes WHERE path = ?1", [&path_str])
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
                 Ok(existed)
             })
         })
@@ -450,24 +465,27 @@ impl NoteStore for SqliteNoteStore {
 
         tokio::task::spawn_blocking(move || {
             pool.with_connection(|conn| {
-                let mut stmt = conn.prepare(
+                let mut stmt = conn
+                    .prepare(
                     r#"
                     SELECT path, content_hash, embedding, title, tags, links_to, properties, updated_at
                     FROM notes
                     ORDER BY updated_at DESC
                     "#,
-                )?;
+                )
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
 
                 let notes = stmt
-                    .query_map([], row_to_note)?
-                    .collect::<Result<Vec<_>, _>>()?;
+                    .query_map([], row_to_note)
+                    .map_err(|e| StorageError::Backend(e.to_string()))?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
 
                 Ok(notes)
             })
         })
         .await
-        .map_err(|e| crucible_core::storage::StorageError::Backend(e.to_string()))?
-        .map_err(Into::into)
+        .map_err(|e| StorageError::Backend(e.to_string()))?
     }
 
     async fn get_by_hash(&self, hash: &BlockHash) -> StorageResult<Option<NoteRecord>> {
@@ -476,22 +494,26 @@ impl NoteStore for SqliteNoteStore {
 
         tokio::task::spawn_blocking(move || {
             pool.with_connection(|conn| {
-                let mut stmt = conn.prepare(
+                let mut stmt = conn
+                    .prepare(
                     r#"
                     SELECT path, content_hash, embedding, title, tags, links_to, properties, updated_at
                     FROM notes
                     WHERE content_hash = ?1
                     LIMIT 1
                     "#,
-                )?;
+                )
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
 
-                let note = stmt.query_row([&hash_bytes], row_to_note).optional()?;
+                let note = stmt
+                    .query_row([&hash_bytes], row_to_note)
+                    .optional()
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
                 Ok(note)
             })
         })
         .await
-        .map_err(|e| crucible_core::storage::StorageError::Backend(e.to_string()))?
-        .map_err(Into::into)
+        .map_err(|e| StorageError::Backend(e.to_string()))?
     }
 
     async fn search(
@@ -529,7 +551,9 @@ impl NoteStore for SqliteNoteStore {
                 };
 
                 // Execute query
-                let mut stmt = conn.prepare(&sql)?;
+                let mut stmt = conn
+                    .prepare(&sql)
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
 
                 // Collect notes with their embeddings
                 let mut results: Vec<(NoteRecord, f32)> = Vec::new();
@@ -537,13 +561,15 @@ impl NoteStore for SqliteNoteStore {
                 // Build params slice for query
                 let param_refs: Vec<&dyn ToSql> = params.iter().map(|p| p.as_ref() as &dyn ToSql).collect();
 
-                let rows = stmt.query_map(params_from_iter(param_refs), |row| {
+                let rows = stmt
+                    .query_map(params_from_iter(param_refs), |row| {
                     let note = row_to_note(row)?;
                     Ok(note)
-                })?;
+                })
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
 
                 for row_result in rows {
-                    let note = row_result?;
+                    let note = row_result.map_err(|e| StorageError::Backend(e.to_string()))?;
                     if let Some(ref note_embedding) = note.embedding {
                         let score = cosine_similarity(&query_embedding, note_embedding);
                         results.push((note, score));
@@ -564,8 +590,7 @@ impl NoteStore for SqliteNoteStore {
             })
         })
         .await
-        .map_err(|e| crucible_core::storage::StorageError::Backend(e.to_string()))?
-        .map_err(Into::into)
+        .map_err(|e| StorageError::Backend(e.to_string()))?
     }
 }
 
