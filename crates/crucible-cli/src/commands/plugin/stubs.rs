@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use crucible_rpc::{DaemonClient, LuaGenerateStubsRequest};
+use crucible_rpc::LuaGenerateStubsRequest;
 
 use super::StubsArgs;
 use crate::config::CliConfig;
@@ -16,7 +16,7 @@ pub async fn execute(_config: CliConfig, args: StubsArgs) -> Result<()> {
     })?;
 
     // Connect to daemon
-    let client = DaemonClient::connect_or_start().await?;
+    let client = crate::common::daemon_client().await?;
 
     // Generate or verify stubs via daemon RPC
     let response = client

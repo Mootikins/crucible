@@ -1,5 +1,6 @@
 //! Types for Lua tool definitions and execution
 
+use crucible_core::serde_helpers::default_true;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -43,10 +44,6 @@ pub struct ToolParam {
     /// Default value if not provided
     #[serde(default)]
     pub default: Option<JsonValue>,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 /// Result of executing a Lua tool

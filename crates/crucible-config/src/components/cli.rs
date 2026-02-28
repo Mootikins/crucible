@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::serde_helpers::default_true;
+
 /// CLI configuration for terminal display and behavior.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CliConfig {
@@ -28,10 +30,6 @@ pub struct HighlightingConfig {
     /// Theme name for syntax highlighting (default: "base16-ocean.dark").
     #[serde(default = "default_theme")]
     pub theme: String,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 fn default_theme() -> String {

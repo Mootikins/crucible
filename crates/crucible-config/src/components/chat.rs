@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::serde_helpers::default_true;
+
 /// Agent type preference for chat
 ///
 /// Controls whether to prefer external ACP agents or Crucible's built-in agents.
@@ -50,10 +52,6 @@ pub struct ChatConfig {
     /// or understanding model reasoning.
     #[serde(default)]
     pub show_thinking: bool,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 impl Default for ChatConfig {

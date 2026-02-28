@@ -1,6 +1,6 @@
 use anyhow::Result;
 use colored::Colorize;
-use crucible_rpc::{DaemonClient, LuaRunPluginTestsRequest};
+use crucible_rpc::LuaRunPluginTestsRequest;
 
 use super::TestArgs;
 use crate::config::CliConfig;
@@ -12,7 +12,7 @@ pub async fn execute(_config: CliConfig, args: TestArgs) -> Result<()> {
     }
 
     // Connect to daemon
-    let client = DaemonClient::connect_or_start().await?;
+    let client = crate::common::daemon_client().await?;
 
     // Run plugin tests via daemon RPC
     let response = client
