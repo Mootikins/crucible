@@ -5470,7 +5470,7 @@ mod tests {
     #[tokio::test]
     async fn test_file_deleted_event_removes_note_from_store() {
         use crucible_core::parser::BlockHash;
-        use crucible_core::storage::{NoteRecord, NoteStore};
+        use crucible_core::storage::NoteRecord;
         use std::time::Duration;
 
         let tmp = TempDir::new().unwrap();
