@@ -402,35 +402,6 @@ pub struct SessionCancelResponse {
     pub cancelled: bool,
 }
 
-/// Shared response for `session.list_models` and `models.list`.
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct ModelsListResponse {
-    pub models: Vec<String>,
-}
-
-/// Response from `session.get_thinking_budget`.
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct SessionGetThinkingBudgetResponse {
-    pub thinking_budget: Option<i64>,
-}
-
-/// Response from `session.get_precognition`.
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct SessionGetPrecognitionResponse {
-    pub precognition_enabled: bool,
-}
-
-/// Response from `session.get_temperature`.
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct SessionGetTemperatureResponse {
-    pub temperature: Option<f64>,
-}
-
-/// Response from `session.get_max_tokens`.
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct SessionGetMaxTokensResponse {
-    pub max_tokens: Option<u32>,
-}
 
 /// Response from `session.render_markdown`.
 #[derive(Debug, Clone, serde::Deserialize)]
