@@ -29,10 +29,11 @@ use serde_json::Value;
 use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
-use crate::error::{LanceError, LanceResult};
 use crucible_core::events::{NoteChangeType, SessionEvent};
 use crucible_core::parser::BlockHash;
-use crucible_core::storage::{Filter, NoteRecord, NoteStore, Op, SearchResult, StorageResult};
+use crucible_core::storage::{
+    Filter, NoteRecord, NoteStore, Op, SearchResult, StorageError, StorageResult,
+};
 
 // ============================================================================
 // Constants
@@ -174,7 +175,7 @@ fn note_to_batch(
     note: &NoteRecord,
     schema: &Schema,
     embedding_dim: usize,
-) -> LanceResult<RecordBatch> {
+) -> StorageResult<RecordBatch> {
     // Path column
     let path = StringArray::from(vec![note.path.as_str()]);
 
@@ -186,7 +187,7 @@ fn note_to_batch(
     let embedding: Arc<dyn Array> = match &note.embedding {
         Some(emb) => {
             if emb.len() != embedding_dim {
-                return Err(LanceError::Schema(format!(
+                return Err(StorageError::Backend(format!(
                     "Embedding dimension mismatch: expected {}, got {}",
                     embedding_dim,
                     emb.len()
@@ -196,7 +197,7 @@ fn note_to_batch(
             let field = Arc::new(Field::new("item", DataType::Float32, true));
             Arc::new(
                 FixedSizeListArray::try_new(field, embedding_dim as i32, Arc::new(values), None)
-                    .map_err(|e| LanceError::Arrow(e.to_string()))?,
+                    .map_err(|e| StorageError::Backend(e.to_string()))?,
             )
         }
         None => {
@@ -209,7 +210,7 @@ fn note_to_batch(
                 Arc::new(values),
                 Some(vec![false].into()),
             )
-            .map_err(|e| LanceError::Arrow(e.to_string()))?;
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
             Arc::new(list)
         }
     };
@@ -218,15 +219,18 @@ fn note_to_batch(
     let title = StringArray::from(vec![note.title.as_str()]);
 
     // Tags column (JSON array)
-    let tags_json = serde_json::to_string(&note.tags)?;
+    let tags_json = serde_json::to_string(&note.tags)
+        .map_err(|e| StorageError::Serialization(e.to_string()))?;
     let tags = StringArray::from(vec![tags_json.as_str()]);
 
     // Links column (JSON array)
-    let links_json = serde_json::to_string(&note.links_to)?;
+    let links_json = serde_json::to_string(&note.links_to)
+        .map_err(|e| StorageError::Serialization(e.to_string()))?;
     let links_to = StringArray::from(vec![links_json.as_str()]);
 
     // Properties column (JSON object)
-    let props_json = serde_json::to_string(&note.properties)?;
+    let props_json = serde_json::to_string(&note.properties)
+        .map_err(|e| StorageError::Serialization(e.to_string()))?;
     let properties = StringArray::from(vec![props_json.as_str()]);
 
     // Updated at column (Unix timestamp in milliseconds)
@@ -245,11 +249,11 @@ fn note_to_batch(
             Arc::new(updated_at),
         ],
     )
-    .map_err(|e| LanceError::Arrow(e.to_string()))
+    .map_err(|e| StorageError::Backend(e.to_string()))
 }
 
 /// Convert an Arrow RecordBatch to NoteRecords
-fn batch_to_notes(batch: &RecordBatch) -> LanceResult<Vec<NoteRecord>> {
+fn batch_to_notes(batch: &RecordBatch) -> StorageResult<Vec<NoteRecord>> {
     let num_rows = batch.num_rows();
     let mut notes = Vec::with_capacity(num_rows);
 
@@ -257,13 +261,13 @@ fn batch_to_notes(batch: &RecordBatch) -> LanceResult<Vec<NoteRecord>> {
     let path_col = batch
         .column_by_name("path")
         .and_then(|c| c.as_any().downcast_ref::<StringArray>())
-        .ok_or_else(|| LanceError::Conversion("path column not found or wrong type".to_string()))?;
+        .ok_or_else(|| StorageError::Backend("path column not found or wrong type".to_string()))?;
 
     let hash_col = batch
         .column_by_name("content_hash")
         .and_then(|c| c.as_any().downcast_ref::<BinaryArray>())
         .ok_or_else(|| {
-            LanceError::Conversion("content_hash column not found or wrong type".to_string())
+            StorageError::Backend("content_hash column not found or wrong type".to_string())
         })?;
 
     let embedding_col = batch
@@ -273,34 +277,32 @@ fn batch_to_notes(batch: &RecordBatch) -> LanceResult<Vec<NoteRecord>> {
     let title_col = batch
         .column_by_name("title")
         .and_then(|c| c.as_any().downcast_ref::<StringArray>())
-        .ok_or_else(|| {
-            LanceError::Conversion("title column not found or wrong type".to_string())
-        })?;
+        .ok_or_else(|| StorageError::Backend("title column not found or wrong type".to_string()))?;
 
     let tags_col = batch
         .column_by_name("tags")
         .and_then(|c| c.as_any().downcast_ref::<StringArray>())
-        .ok_or_else(|| LanceError::Conversion("tags column not found or wrong type".to_string()))?;
+        .ok_or_else(|| StorageError::Backend("tags column not found or wrong type".to_string()))?;
 
     let links_col = batch
         .column_by_name("links_to")
         .and_then(|c| c.as_any().downcast_ref::<StringArray>())
         .ok_or_else(|| {
-            LanceError::Conversion("links_to column not found or wrong type".to_string())
+            StorageError::Backend("links_to column not found or wrong type".to_string())
         })?;
 
     let props_col = batch
         .column_by_name("properties")
         .and_then(|c| c.as_any().downcast_ref::<StringArray>())
         .ok_or_else(|| {
-            LanceError::Conversion("properties column not found or wrong type".to_string())
+            StorageError::Backend("properties column not found or wrong type".to_string())
         })?;
 
     let updated_col = batch
         .column_by_name("updated_at")
         .and_then(|c| c.as_any().downcast_ref::<Int64Array>())
         .ok_or_else(|| {
-            LanceError::Conversion("updated_at column not found or wrong type".to_string())
+            StorageError::Backend("updated_at column not found or wrong type".to_string())
         })?;
 
     for i in 0..num_rows {
@@ -424,12 +426,12 @@ impl LanceNoteStore {
     ///
     /// Opens or creates a LanceDB database at the specified path.
     /// If the notes table doesn't exist, it will be created on first write.
-    pub async fn new(db_path: &str) -> LanceResult<Self> {
+    pub async fn new(db_path: &str) -> StorageResult<Self> {
         Self::with_dimensions(db_path, DEFAULT_EMBEDDING_DIM).await
     }
 
     /// Create a new LanceNoteStore with custom embedding dimensions
-    pub async fn with_dimensions(db_path: &str, embedding_dim: usize) -> LanceResult<Self> {
+    pub async fn with_dimensions(db_path: &str, embedding_dim: usize) -> StorageResult<Self> {
         // Ensure parent directory exists
         if let Some(parent) = std::path::Path::new(db_path).parent() {
             tokio::fs::create_dir_all(parent).await?;
@@ -438,7 +440,7 @@ impl LanceNoteStore {
         let connection = lancedb::connect(db_path)
             .execute()
             .await
-            .map_err(|e| LanceError::Connection(e.to_string()))?;
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
 
         let schema = notes_schema(embedding_dim);
 
@@ -464,7 +466,7 @@ impl LanceNoteStore {
     }
 
     /// Get or create the notes table
-    async fn ensure_table(&self) -> LanceResult<Table> {
+    async fn ensure_table(&self) -> StorageResult<Table> {
         // First check if we already have the table
         {
             let table_guard = self.table.read().await;
@@ -498,7 +500,7 @@ impl LanceNoteStore {
                     .create_empty_table(TABLE_NAME, schema)
                     .execute()
                     .await
-                    .map_err(|e| LanceError::Table(e.to_string()))?;
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
 
                 *table_guard = Some(table.clone());
                 Ok(table)
@@ -523,11 +525,11 @@ impl LanceNoteStore {
     /// (typically 256+) to be effective.
     ///
     /// Without an index, vector search falls back to brute-force scan.
-    pub async fn create_index(&self) -> LanceResult<()> {
+    pub async fn create_index(&self) -> StorageResult<()> {
         let table_guard = self.table.read().await;
         let table = match &*table_guard {
             Some(t) => t,
-            None => return Err(LanceError::Table("Table not created yet".to_string())),
+            None => return Err(StorageError::Backend("Table not created yet".to_string())),
         };
 
         // Create IVF-PQ index on the embedding column
@@ -536,7 +538,7 @@ impl LanceNoteStore {
             .create_index(&["embedding"], Index::Auto)
             .execute()
             .await
-            .map_err(|e| LanceError::Table(format!("Failed to create index: {}", e)))?;
+            .map_err(|e| StorageError::Backend(format!("Failed to create index: {}", e)))?;
 
         debug!("Created vector index on embedding column");
         Ok(())
@@ -585,7 +587,7 @@ impl NoteStore for LanceNoteStore {
             .add(Box::new(batches))
             .execute()
             .await
-            .map_err(|e| LanceError::Table(e.to_string()))?;
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
 
         debug!("Upserted note: {}", note.path);
 
@@ -621,10 +623,10 @@ impl NoteStore for LanceNoteStore {
             .limit(1)
             .execute()
             .await
-            .map_err(|e| LanceError::Query(e.to_string()))?
+            .map_err(|e| StorageError::Backend(e.to_string()))?
             .try_collect::<Vec<_>>()
             .await
-            .map_err(|e| LanceError::Query(e.to_string()))?;
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
 
         if results.is_empty() {
             return Ok(None);
@@ -683,10 +685,10 @@ impl NoteStore for LanceNoteStore {
             .query()
             .execute()
             .await
-            .map_err(|e| LanceError::Query(e.to_string()))?
+            .map_err(|e| StorageError::Backend(e.to_string()))?
             .try_collect::<Vec<_>>()
             .await
-            .map_err(|e| LanceError::Query(e.to_string()))?;
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
 
         let mut notes = Vec::new();
         for batch in results {
@@ -711,10 +713,10 @@ impl NoteStore for LanceNoteStore {
             .query()
             .execute()
             .await
-            .map_err(|e| LanceError::Query(e.to_string()))?
+            .map_err(|e| StorageError::Backend(e.to_string()))?
             .try_collect::<Vec<_>>()
             .await
-            .map_err(|e| LanceError::Query(e.to_string()))?;
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
 
         for batch in results {
             let notes = batch_to_notes(&batch)?;
@@ -743,7 +745,7 @@ impl NoteStore for LanceNoteStore {
         // Build the vector search query
         let query = table
             .vector_search(embedding.to_vec())
-            .map_err(|e| LanceError::Query(e.to_string()))?;
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
 
         // Apply filter if provided
         let query = if let Some(ref f) = filter {
@@ -759,10 +761,10 @@ impl NoteStore for LanceNoteStore {
             .limit(k * 2)
             .execute()
             .await
-            .map_err(|e| LanceError::Query(e.to_string()))?
+            .map_err(|e| StorageError::Backend(e.to_string()))?
             .try_collect::<Vec<_>>()
             .await
-            .map_err(|e| LanceError::Query(e.to_string()))?;
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
 
         let mut search_results = Vec::new();
 
@@ -811,9 +813,7 @@ impl NoteStore for LanceNoteStore {
 ///
 /// This is a convenience function for creating a store with default settings.
 pub async fn create_note_store(db_path: &str) -> StorageResult<LanceNoteStore> {
-    LanceNoteStore::new(db_path)
-        .await
-        .map_err(|e| crucible_core::storage::StorageError::Backend(e.to_string()))
+    LanceNoteStore::new(db_path).await
 }
 
 /// Create a new LanceNoteStore with custom embedding dimensions
@@ -821,9 +821,7 @@ pub async fn create_note_store_with_dimensions(
     db_path: &str,
     dimensions: usize,
 ) -> StorageResult<LanceNoteStore> {
-    LanceNoteStore::with_dimensions(db_path, dimensions)
-        .await
-        .map_err(|e| crucible_core::storage::StorageError::Backend(e.to_string()))
+    LanceNoteStore::with_dimensions(db_path, dimensions).await
 }
 
 // ============================================================================

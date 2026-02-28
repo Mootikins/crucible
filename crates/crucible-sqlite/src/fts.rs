@@ -19,7 +19,7 @@
 //! ```
 
 use crate::connection::SqlitePool;
-use crate::error::{SqliteError, SqliteResult};
+use crucible_core::storage::{StorageError, StorageResult};
 use tracing::debug;
 
 /// A full-text search result
@@ -48,7 +48,7 @@ impl FtsIndex {
     }
 
     /// Set up the FTS5 virtual table
-    pub async fn setup(&self) -> SqliteResult<()> {
+    pub async fn setup(&self) -> StorageResult<()> {
         let pool = self.pool.clone();
         tokio::task::spawn_blocking(move || {
             pool.with_connection(|conn| {
@@ -62,21 +62,22 @@ impl FtsIndex {
                         tokenize='porter unicode61'
                     );
                     "#,
-                )?;
+                )
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
 
                 debug!("FTS5 index created");
                 Ok(())
             })
         })
         .await
-        .map_err(|e: tokio::task::JoinError| SqliteError::Connection(e.to_string()))?
+        .map_err(|e: tokio::task::JoinError| StorageError::Backend(e.to_string()))?
     }
 
     /// Index a note's content for full-text search
     ///
     /// This updates the FTS index with the note's content. Call this when
     /// processing notes to enable content search.
-    pub async fn index(&self, path: &str, title: &str, content: &str) -> SqliteResult<()> {
+    pub async fn index(&self, path: &str, title: &str, content: &str) -> StorageResult<()> {
         let pool = self.pool.clone();
         let path = path.to_string();
         let title = title.to_string();
@@ -85,34 +86,37 @@ impl FtsIndex {
         tokio::task::spawn_blocking(move || {
             pool.with_connection(|conn| {
                 // Delete existing entry if present
-                conn.execute("DELETE FROM notes_fts WHERE path = ?1", [&path])?;
+                conn.execute("DELETE FROM notes_fts WHERE path = ?1", [&path])
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
 
                 // Insert new entry
                 conn.execute(
                     "INSERT INTO notes_fts(path, title, content) VALUES (?1, ?2, ?3)",
                     rusqlite::params![path, title, content],
-                )?;
+                )
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
 
                 Ok(())
             })
         })
         .await
-        .map_err(|e: tokio::task::JoinError| SqliteError::Connection(e.to_string()))?
+        .map_err(|e: tokio::task::JoinError| StorageError::Backend(e.to_string()))?
     }
 
     /// Remove a note from the FTS index
-    pub async fn remove(&self, path: &str) -> SqliteResult<()> {
+    pub async fn remove(&self, path: &str) -> StorageResult<()> {
         let pool = self.pool.clone();
         let path = path.to_string();
 
         tokio::task::spawn_blocking(move || {
             pool.with_connection(|conn| {
-                conn.execute("DELETE FROM notes_fts WHERE path = ?1", [&path])?;
+                conn.execute("DELETE FROM notes_fts WHERE path = ?1", [&path])
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
                 Ok(())
             })
         })
         .await
-        .map_err(|e: tokio::task::JoinError| SqliteError::Connection(e.to_string()))?
+        .map_err(|e: tokio::task::JoinError| StorageError::Backend(e.to_string()))?
     }
 
     /// Search for notes matching a query
@@ -124,14 +128,15 @@ impl FtsIndex {
     /// - `word1 AND word2` - both words
     /// - `word1 OR word2` - either word
     /// - `word1 NOT word2` - word1 but not word2
-    pub async fn search(&self, query: &str, limit: usize) -> SqliteResult<Vec<FtsResult>> {
+    pub async fn search(&self, query: &str, limit: usize) -> StorageResult<Vec<FtsResult>> {
         let pool = self.pool.clone();
         let query = query.to_string();
 
         tokio::task::spawn_blocking(move || {
             pool.with_connection(|conn| {
-                let mut stmt = conn.prepare(
-                    r#"
+                let mut stmt = conn
+                    .prepare(
+                        r#"
                     SELECT
                         path,
                         title,
@@ -142,7 +147,8 @@ impl FtsIndex {
                     ORDER BY rank
                     LIMIT ?2
                     "#,
-                )?;
+                    )
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
 
                 let results = stmt
                     .query_map(rusqlite::params![query, limit as i64], |row| {
@@ -152,14 +158,16 @@ impl FtsIndex {
                             snippet: row.get(2)?,
                             rank: row.get(3)?,
                         })
-                    })?
-                    .collect::<Result<Vec<_>, _>>()?;
+                    })
+                    .map_err(|e| StorageError::Backend(e.to_string()))?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
 
                 Ok(results)
             })
         })
         .await
-        .map_err(|e: tokio::task::JoinError| SqliteError::Connection(e.to_string()))?
+        .map_err(|e: tokio::task::JoinError| StorageError::Backend(e.to_string()))?
     }
 
     /// Search with a custom column boost
@@ -171,7 +179,7 @@ impl FtsIndex {
         title_boost: f64,
         content_boost: f64,
         limit: usize,
-    ) -> SqliteResult<Vec<FtsResult>> {
+    ) -> StorageResult<Vec<FtsResult>> {
         let pool = self.pool.clone();
         let query = query.to_string();
 
@@ -179,8 +187,9 @@ impl FtsIndex {
             pool.with_connection(|conn| {
                 // FTS5 bm25 takes column weights as arguments
                 // Column order: path (0), title (1), content (2)
-                let mut stmt = conn.prepare(
-                    r#"
+                let mut stmt = conn
+                    .prepare(
+                        r#"
                     SELECT
                         path,
                         title,
@@ -191,7 +200,8 @@ impl FtsIndex {
                     ORDER BY rank
                     LIMIT ?4
                     "#,
-                )?;
+                    )
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
 
                 let results = stmt
                     .query_map(
@@ -204,14 +214,16 @@ impl FtsIndex {
                                 rank: row.get(3)?,
                             })
                         },
-                    )?
-                    .collect::<Result<Vec<_>, _>>()?;
+                    )
+                    .map_err(|e| StorageError::Backend(e.to_string()))?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
 
                 Ok(results)
             })
         })
         .await
-        .map_err(|e: tokio::task::JoinError| SqliteError::Connection(e.to_string()))?
+        .map_err(|e: tokio::task::JoinError| StorageError::Backend(e.to_string()))?
     }
 }
 
@@ -220,7 +232,7 @@ mod tests {
     use super::*;
     use crate::config::SqliteConfig;
 
-    async fn setup_test_fts() -> SqliteResult<FtsIndex> {
+    async fn setup_test_fts() -> StorageResult<FtsIndex> {
         let config = SqliteConfig::memory();
         let pool = SqlitePool::new(config)?;
 
