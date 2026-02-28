@@ -1839,16 +1839,40 @@ fn set_available_models_does_not_set_loaded_state_when_empty() {
 
 #[test]
 fn spinner_style_is_not_default() {
-    use crate::tui::oil::theme::ThemeTokens;
     use crate::tui::oil::style::Style;
-    
+    use crate::tui::oil::theme::ThemeTokens;
+
     // Verify that the spinner style from theme tokens is not the default style
     let theme = ThemeTokens::default_ref();
     let spinner_style = theme.spinner_style();
-    
+
     assert_ne!(
         spinner_style,
         Style::default(),
         "Spinner style should not be default (should have color applied)"
+    );
+}
+
+#[test]
+fn needs_turn_spinner_returns_true_after_user_message() {
+    use crate::tui::oil::ContainerList;
+
+    // Create a new container list (initial state: turn_active = false)
+    let mut containers = ContainerList::new();
+
+    // Verify initial state: turn_active is false, so needs_turn_spinner returns false
+    assert!(
+        !containers.needs_turn_spinner(),
+        "needs_turn_spinner should return false when turn_active is false"
+    );
+
+    // Mark the turn as active (simulates user submitting a message)
+    containers.mark_turn_active();
+
+    // After marking turn active, needs_turn_spinner should return true
+    // (spinner should show immediately, before any LLM response arrives)
+    assert!(
+        containers.needs_turn_spinner(),
+        "needs_turn_spinner should return true immediately after mark_turn_active"
     );
 }
