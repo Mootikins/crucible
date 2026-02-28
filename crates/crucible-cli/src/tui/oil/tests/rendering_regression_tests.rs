@@ -378,3 +378,73 @@ fn blank_line_between_graduated_prompt_and_streaming_response() {
         lines.iter().enumerate().map(|(i, l)| format!("{:02}: {:?}", i, l)).collect::<Vec<_>>().join("\n")
     );
 }
+
+/// Issue: Spinner not visible after user message graduates
+///
+/// When a user message graduates to stdout, the viewport should still render
+/// the spinner (streaming indicator) even if the viewport containers are empty.
+/// Without the fix in render_containers(), the viewport would be completely empty
+/// after graduation, hiding the spinner.
+///
+/// Expected: Spinner should be visible in frame 2 (after graduation) while streaming.
+#[test]
+fn spinner_visible_after_user_message_graduates() {
+    let mut app = OilChatApp::default();
+    let mut planner = FramePlanner::new(80, 24);
+    let focus = FocusContext::new();
+
+    // Submit user message and start streaming
+    app.on_message(ChatAppMsg::UserMessage("test message".to_string()));
+    assert!(app.is_streaming(), "app should be streaming after user message");
+
+    // Frame 1: planner graduates the user prompt
+    let ctx = ViewContext::new(&focus);
+    let tree1 = app.view(&ctx);
+    let snapshot1 = planner.plan(&tree1);
+
+    // Feed graduation back to the app
+    let graduated_keys: Vec<String> = snapshot1.plan.trace.graduated_keys.clone();
+    assert!(
+        !graduated_keys.is_empty(),
+        "User prompt should graduate on frame 1"
+    );
+    app.mark_graduated(graduated_keys);
+
+    // Frame 2: viewport should still show spinner even though containers are empty
+    let ctx2 = ViewContext::new(&focus);
+    let tree2 = app.view(&ctx2);
+    let snapshot2 = planner.plan(&tree2);
+
+    let viewport = snapshot2.viewport_content();
+    let viewport_clean = strip_ansi(viewport);
+
+    // Viewport should not be empty - spinner should be visible
+    assert!(
+        !viewport_clean.is_empty(),
+        "viewport should not be empty — spinner should be visible after graduation"
+    );
+
+    // Check for spinner character (◐ is the actual spinner used)
+    let has_spinner = viewport_clean.contains('◐');
+    assert!(
+        has_spinner,
+        "viewport should contain spinner character after graduation. viewport: {:?}",
+        viewport_clean
+    );
+
+    // Frame 3: After stream completes, spinner should NOT be present
+    app.on_message(ChatAppMsg::StreamComplete);
+    let ctx3 = ViewContext::new(&focus);
+    let tree3 = app.view(&ctx3);
+    let snapshot3 = planner.plan(&tree3);
+
+    let viewport_after_complete = snapshot3.viewport_content();
+    let viewport_after_clean = strip_ansi(viewport_after_complete);
+
+    // After completion, spinner should not be present
+    let has_spinner_after = viewport_after_clean.contains('◐');
+    assert!(
+        !has_spinner_after,
+        "spinner should not be present after stream completes"
+    );
+}
