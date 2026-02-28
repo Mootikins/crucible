@@ -395,7 +395,10 @@ fn spinner_visible_after_user_message_graduates() {
 
     // Submit user message and start streaming
     app.on_message(ChatAppMsg::UserMessage("test message".to_string()));
-    assert!(app.is_streaming(), "app should be streaming after user message");
+    assert!(
+        app.is_streaming(),
+        "app should be streaming after user message"
+    );
 
     // Frame 1: planner graduates the user prompt
     let ctx = ViewContext::new(&focus);
@@ -431,6 +434,9 @@ fn spinner_visible_after_user_message_graduates() {
         "viewport should contain spinner character after graduation. viewport: {:?}",
         viewport_clean
     );
+
+    // Snapshot the viewport so layout/spacing regressions are caught too
+    assert_snapshot!("spinner_after_graduation_viewport", viewport_clean);
 
     // Frame 3: After stream completes, spinner should NOT be present
     app.on_message(ChatAppMsg::StreamComplete);
