@@ -20,9 +20,7 @@ pub use parser::SkillParser;
 pub use types::{ResolvedSkill, Skill, SkillScope, SkillSource};
 
 #[cfg(feature = "embeddings")]
-pub use embedding::{
-    embed_skill, search_skills_semantic, SkillEmbeddingStore, SkillSearchResult, SkillSearchStore,
-};
+pub use embedding::SkillSearchResult;
 
 #[cfg(feature = "test-utils")]
 pub mod test_utils;

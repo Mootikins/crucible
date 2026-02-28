@@ -23,7 +23,6 @@ pub struct Frontmatter {
 }
 
 impl Frontmatter {
-    /// Create new frontmatter from raw string
     pub fn new(raw: String, format: FrontmatterFormat) -> Self {
         Self {
             raw,
@@ -32,7 +31,6 @@ impl Frontmatter {
         }
     }
 
-    /// Get parsed properties (lazy initialization)
     pub fn properties(&self) -> &HashMap<String, serde_json::Value> {
         self.properties.get_or_init(|| self.parse_properties())
     }
@@ -51,12 +49,10 @@ impl Frontmatter {
         }
     }
 
-    /// Get a string property
     pub fn get_string(&self, key: &str) -> Option<String> {
         self.properties().get(key)?.as_str().map(|s| s.to_string())
     }
 
-    /// Get an array property
     pub fn get_array(&self, key: &str) -> Option<Vec<String>> {
         self.properties()
             .get(key)?
@@ -67,17 +63,14 @@ impl Frontmatter {
             .into()
     }
 
-    /// Get a boolean property
     pub fn get_bool(&self, key: &str) -> Option<bool> {
         self.properties().get(key)?.as_bool()
     }
 
-    /// Get a number property
     pub fn get_number(&self, key: &str) -> Option<f64> {
         self.properties().get(key)?.as_f64()
     }
 
-    /// Get a date property
     ///
     /// Supports multiple date formats:
     /// - ISO 8601: "2024-11-08"
@@ -109,7 +102,6 @@ impl Frontmatter {
         None
     }
 
-    /// Get an object (nested hash map) property
     ///
     /// Returns the object as a serde_json::Map for further processing.
     /// Note: Flat frontmatter structure is preferred (following Obsidian conventions),
