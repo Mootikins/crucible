@@ -28,7 +28,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
-use async_trait::async_trait;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, trace, warn};
 
@@ -40,71 +39,6 @@ use crate::types::{
 // Import the ContentHasher trait from crucible-core
 use crucible_core::traits::change_detection::ContentHasher;
 use crucible_core::types::hashing::{FileHash, HashAlgorithm};
-
-/// Progress reporter for file scanning operations
-///
-/// This trait allows callers to receive progress updates during
-/// long-running scan operations.
-#[async_trait]
-pub trait ScanProgressReporter: Send + Sync {
-    /// Report progress for the current scan operation
-    ///
-    /// # Arguments
-    ///
-    /// * `current` - Current number of files processed
-    /// * `total` - Total number of files to process (None if unknown)
-    /// * `current_file` - Path to the file currently being processed
-    async fn report_progress(
-        &self,
-        current: usize,
-        total: Option<usize>,
-        current_file: Option<&Path>,
-    );
-
-    /// Report that scanning has started
-    async fn scan_started(&self);
-
-    /// Report that scanning has completed
-    ///
-    /// # Arguments
-    ///
-    /// * `result` - The final scan result
-    async fn scan_completed(&self, result: &ScanResult);
-
-    /// Report an error that occurred during scanning
-    ///
-    /// # Arguments
-    ///
-    /// * `error` - The error that occurred
-    async fn scan_error(&self, error: &Error);
-}
-
-/// Default no-op progress reporter
-pub struct NoOpProgressReporter;
-
-#[async_trait]
-impl ScanProgressReporter for NoOpProgressReporter {
-    async fn report_progress(
-        &self,
-        _current: usize,
-        _total: Option<usize>,
-        _current_file: Option<&Path>,
-    ) {
-        // No-op implementation
-    }
-
-    async fn scan_started(&self) {
-        // No-op implementation
-    }
-
-    async fn scan_completed(&self, _result: &ScanResult) {
-        // No-op implementation
-    }
-
-    async fn scan_error(&self, _error: &Error) {
-        // No-op implementation
-    }
-}
 
 /// Configuration for file watching operations
 ///
@@ -197,8 +131,6 @@ pub struct FileScanner {
     config: ScanConfig,
     /// Content hasher implementation
     hasher: Arc<dyn ContentHasher>,
-    /// Progress reporter
-    progress_reporter: Arc<dyn ScanProgressReporter>,
     /// Internal state cache
     state: Arc<RwLock<FileScannerState>>,
 }
@@ -226,7 +158,6 @@ impl FileScanner {
     /// * `root_path` - Root directory to scan
     /// * `config` - Scan configuration
     /// * `hasher` - Content hasher implementation
-    /// * `progress_reporter` - Progress reporter for scan operations
     ///
     /// # Returns
     ///
@@ -239,7 +170,6 @@ impl FileScanner {
         root_path: &Path,
         config: ScanConfig,
         hasher: Arc<dyn ContentHasher>,
-        progress_reporter: Arc<dyn ScanProgressReporter>,
     ) -> Result<Self, Error> {
         // Validate root path
         if !root_path.exists() {
@@ -269,7 +199,6 @@ impl FileScanner {
             root_path: root_path.to_path_buf(),
             config,
             hasher,
-            progress_reporter,
             state: Arc::new(RwLock::new(FileScannerState::default())),
         })
     }
@@ -280,7 +209,6 @@ impl FileScanner {
     ///
     /// * `root_path` - Root directory to scan
     /// * `hasher` - Content hasher implementation
-    /// * `progress_reporter` - Progress reporter for scan operations
     ///
     /// # Returns
     ///
@@ -292,9 +220,8 @@ impl FileScanner {
     pub fn with_defaults(
         root_path: &Path,
         hasher: Arc<dyn ContentHasher>,
-        progress_reporter: Arc<dyn ScanProgressReporter>,
     ) -> Result<Self, Error> {
-        Self::new(root_path, ScanConfig::default(), hasher, progress_reporter)
+        Self::new(root_path, ScanConfig::default(), hasher)
     }
 
     /// Validate the scan configuration
@@ -353,7 +280,6 @@ impl FileScanner {
     /// // TODO: Add example once API stabilizes
     pub async fn scan_directory(&self) -> Result<ScanResult, Error> {
         let start_time = Instant::now();
-        self.progress_reporter.scan_started().await;
 
         info!("Starting directory scan of: {:?}", self.root_path);
         debug!("Scan configuration: {:?}", self.config);
@@ -372,7 +298,6 @@ impl FileScanner {
             .await
         {
             error!("Directory scan failed: {}", e);
-            self.progress_reporter.scan_error(&e).await;
             return Err(e);
         }
 
@@ -402,7 +327,6 @@ impl FileScanner {
             result.scan_errors.len()
         );
 
-        self.progress_reporter.scan_completed(&result).await;
 
         Ok(result)
     }
@@ -426,19 +350,13 @@ impl FileScanner {
     /// // TODO: Add example once API stabilizes
     pub async fn scan_files(&self, files: Vec<PathBuf>) -> Result<ScanResult, Error> {
         let start_time = Instant::now();
-        self.progress_reporter.scan_started().await;
 
         info!("Starting scan of {} specific files", files.len());
 
         let mut result = ScanResult::new();
         result.total_considered = files.len();
 
-        for (index, file_path) in files.iter().enumerate() {
-            // Report progress
-            self.progress_reporter
-                .report_progress(index, Some(files.len()), Some(file_path))
-                .await;
-
+        for file_path in files.iter() {
             trace!("Processing file: {:?}", file_path);
 
             // Check if file should be included
@@ -465,11 +383,6 @@ impl FileScanner {
             }
         }
 
-        // Final progress report
-        self.progress_reporter
-            .report_progress(files.len(), Some(files.len()), None)
-            .await;
-
         result.scan_duration = start_time.elapsed();
         result.total_size = result
             .discovered_files
@@ -484,7 +397,6 @@ impl FileScanner {
             result.scan_errors.len()
         );
 
-        self.progress_reporter.scan_completed(&result).await;
 
         Ok(result)
     }
@@ -578,7 +490,6 @@ impl FileScanner {
 
         info!("Scanning for changed files since last scan");
         let start_time = Instant::now();
-        self.progress_reporter.scan_started().await;
 
         let mut result = ScanResult::new();
         let mut files_to_check = Vec::new();
@@ -592,11 +503,7 @@ impl FileScanner {
         drop(state); // Release the lock
 
         // Check each file for changes
-        for (index, file_path) in files_to_check.iter().enumerate() {
-            self.progress_reporter
-                .report_progress(index, Some(files_to_check.len()), Some(file_path))
-                .await;
-
+        for file_path in files_to_check.iter() {
             match self.check_file_changed(file_path).await {
                 Ok(Some(file_info)) => {
                     // File has changed
@@ -630,7 +537,6 @@ impl FileScanner {
             result.scan_duration, result.successful_files
         );
 
-        self.progress_reporter.scan_completed(&result).await;
 
         Ok(result)
     }
@@ -682,12 +588,6 @@ impl FileScanner {
                 let path = entry.path();
                 result.total_considered += 1;
 
-                // Report progress periodically
-                if result.total_considered.is_multiple_of(100) {
-                    self.progress_reporter
-                        .report_progress(result.total_considered, None, Some(&path))
-                        .await;
-                }
 
                 // Handle directories
                 if path.is_dir() {
@@ -1040,7 +940,6 @@ impl std::fmt::Debug for FileScanner {
             .field("root_path", &self.root_path)
             .field("config", &self.config)
             .field("hasher", &"<ContentHasher>")
-            .field("progress_reporter", &"<ScanProgressReporter>")
             .finish()
     }
 }
