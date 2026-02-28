@@ -566,7 +566,6 @@ fn is_leap_year(year: i64) -> bool {
     (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 
-/// Format MessageReceived event body.
 fn format_message_received(participant_id: &str, content: &str) -> String {
     let quoted_content = quote_content(content);
     format!(
@@ -575,7 +574,6 @@ fn format_message_received(participant_id: &str, content: &str) -> String {
     )
 }
 
-/// Format AgentResponded event body.
 fn format_agent_responded(content: &str, tool_calls: &[ToolCall]) -> String {
     let mut body = String::new();
 
@@ -604,12 +602,10 @@ fn format_agent_responded(content: &str, tool_calls: &[ToolCall]) -> String {
     body
 }
 
-/// Format AgentThinking event body.
 fn format_agent_thinking(thought: &str) -> String {
     format!("*{}*\n", thought)
 }
 
-/// Format ToolCalled event body.
 fn format_tool_called(name: &str, args: &serde_json::Value) -> String {
     let args_pretty = serde_json::to_string_pretty(args).unwrap_or_default();
     format!(
@@ -618,7 +614,6 @@ fn format_tool_called(name: &str, args: &serde_json::Value) -> String {
     )
 }
 
-/// Format ToolCompleted event body.
 fn format_tool_completed(name: &str, result: &str, error: Option<&str>) -> String {
     let mut body = format!("**Tool:** `{}`\n\n", name);
 
@@ -640,7 +635,6 @@ fn format_tool_completed(name: &str, result: &str, error: Option<&str>) -> Strin
     body
 }
 
-/// Format SessionStarted event body.
 fn format_session_started(session_id: &str, folder: &Path) -> String {
     format!(
         "**Session ID:** `{}`\n**Folder:** `{}`\n",
@@ -649,7 +643,6 @@ fn format_session_started(session_id: &str, folder: &Path) -> String {
     )
 }
 
-/// Format SessionCompacted event body.
 fn format_session_compacted(summary: &str, new_file: &Path) -> String {
     let mut body = format!("**New File:** `{}`\n\n", new_file.display());
 
@@ -662,12 +655,10 @@ fn format_session_compacted(summary: &str, new_file: &Path) -> String {
     body
 }
 
-/// Format SessionEnded event body.
 fn format_session_ended(reason: &str) -> String {
     format!("**Reason:** {}\n", reason)
 }
 
-/// Format SubagentSpawned event body.
 fn format_subagent_spawned(id: &str, prompt: &str) -> String {
     let quoted_prompt = quote_content(prompt);
     format!(
@@ -676,7 +667,6 @@ fn format_subagent_spawned(id: &str, prompt: &str) -> String {
     )
 }
 
-/// Format SubagentCompleted event body.
 fn format_subagent_completed(id: &str, result: &str) -> String {
     format!(
         "**Subagent ID:** `{}`\n\n**Result:**\n{}\n",
@@ -685,12 +675,10 @@ fn format_subagent_completed(id: &str, result: &str) -> String {
     )
 }
 
-/// Format SubagentFailed event body.
 fn format_subagent_failed(id: &str, error: &str) -> String {
     format!("**Subagent ID:** `{}`\n\n**Error:** {}\n", id, error)
 }
 
-/// Format DelegationSpawned event body.
 fn format_delegation_spawned(delegation_id: &str, prompt: &str, parent_session_id: &str) -> String {
     let quoted_prompt = quote_content(prompt);
     format!(
@@ -699,7 +687,6 @@ fn format_delegation_spawned(delegation_id: &str, prompt: &str, parent_session_i
     )
 }
 
-/// Format DelegationCompleted event body.
 fn format_delegation_completed(
     delegation_id: &str,
     result_summary: &str,
@@ -713,7 +700,6 @@ fn format_delegation_completed(
     )
 }
 
-/// Format DelegationFailed event body.
 fn format_delegation_failed(delegation_id: &str, error: &str, parent_session_id: &str) -> String {
     format!(
         "**Delegation ID:** `{}`\n**Parent Session:** `{}`\n\n**Error:** {}\n",
@@ -752,7 +738,6 @@ fn format_background_task_completed(id: &str, kind: &str, summary: &str) -> Stri
     )
 }
 
-/// Format Custom event body.
 fn format_custom_event(name: &str, payload: &serde_json::Value) -> String {
     let payload_pretty = serde_json::to_string_pretty(payload).unwrap_or_default();
     format!(
