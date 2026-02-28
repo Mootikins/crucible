@@ -37,18 +37,25 @@ impl KilnTools {
         let mut total_size = 0;
         let mut md_files = 0;
 
-        if let Ok(entries) = std::fs::read_dir(&self.kiln_path) {
-            for entry in entries.flatten() {
-                if let Ok(metadata) = entry.metadata() {
-                    if metadata.is_file() {
-                        total_files += 1;
-                        total_size += metadata.len();
-
-                        if entry.path().extension().is_some_and(|ext| ext == "md") {
-                            md_files += 1;
-                        }
-                    }
+        for entry in walkdir::WalkDir::new(&self.kiln_path)
+            .follow_links(false)
+            .into_iter()
+            .filter_entry(|e| {
+                if e.file_type().is_dir() {
+                    !e.file_name().to_string_lossy().starts_with('.') || e.depth() == 0
+                } else {
+                    true
                 }
+            })
+            .filter_map(std::result::Result::ok)
+            .filter(|e| e.file_type().is_file())
+        {
+            total_files += 1;
+            if let Ok(metadata) = entry.metadata() {
+                total_size += metadata.len();
+            }
+            if entry.path().extension().is_some_and(|ext| ext == "md") {
+                md_files += 1;
             }
         }
 
@@ -149,5 +156,34 @@ mod tests {
 
         // This should compile and not panic - the tool_router macro generates the router
         let _router = KilnTools::tool_router();
+    }
+
+    #[tokio::test]
+    async fn test_get_kiln_info_recursive() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+
+        // Create nested structure
+        std::fs::create_dir_all(temp_dir.path().join("sub/deep")).unwrap();
+        std::fs::create_dir_all(temp_dir.path().join(".hidden")).unwrap();
+
+        std::fs::write(temp_dir.path().join("root.md"), "# Root").unwrap();
+        std::fs::write(temp_dir.path().join("sub/nested.md"), "# Nested").unwrap();
+        std::fs::write(temp_dir.path().join("sub/deep/inner.md"), "# Inner").unwrap();
+        std::fs::write(temp_dir.path().join("other.txt"), "text file").unwrap();
+        std::fs::write(temp_dir.path().join(".hidden/secret.md"), "# Secret").unwrap(); // must be excluded
+
+        let kiln_tools = KilnTools::new(kiln_path);
+        let result = kiln_tools.get_kiln_info().await;
+        assert!(result.is_ok());
+
+        let call_result = result.unwrap();
+        if let Some(content) = call_result.content.first() {
+            let raw_text = content.as_text().unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
+
+            assert_eq!(parsed["total_files"], 4, "should count root.md + sub/nested.md + sub/deep/inner.md + other.txt, excluding .hidden/");
+            assert_eq!(parsed["markdown_files"], 3, "should count root.md + sub/nested.md + sub/deep/inner.md, excluding .hidden/secret.md");
+        }
     }
 }
