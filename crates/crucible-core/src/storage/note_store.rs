@@ -73,6 +73,17 @@ pub struct NoteRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embedding: Option<Vec<f32>>,
 
+    /// Model used to generate the embedding (e.g., "all-MiniLM-L6-v2")
+    ///
+    /// `None` if the note hasn't been embedded yet or if embedding failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding_model: Option<String>,
+
+    /// Dimensions of the embedding vector
+    ///
+    /// `None` if the note hasn't been embedded yet or if embedding failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding_dimensions: Option<u32>,
     /// Note title (from frontmatter or first heading)
     pub title: String,
 
@@ -102,6 +113,8 @@ impl NoteRecord {
             path: path.into(),
             content_hash,
             embedding: None,
+            embedding_model: None,
+            embedding_dimensions: None,
             title: String::new(),
             tags: Vec::new(),
             links_to: Vec::new(),
@@ -138,6 +151,14 @@ impl NoteRecord {
         self
     }
 
+    /// Builder-style: set embedding metadata (model and dimensions)
+    #[must_use]
+    pub fn with_embedding_metadata(mut self, model: String, dimensions: u32) -> Self {
+        self.embedding_model = Some(model);
+        self.embedding_dimensions = Some(dimensions);
+        self
+    }
+
     /// Builder-style: set properties
     #[must_use]
     pub fn with_properties(mut self, properties: HashMap<String, Value>) -> Self {
@@ -162,6 +183,8 @@ impl Default for NoteRecord {
             path: String::new(),
             content_hash: BlockHash::zero(),
             embedding: None,
+            embedding_model: None,
+            embedding_dimensions: None,
             title: String::new(),
             tags: Vec::new(),
             links_to: Vec::new(),
