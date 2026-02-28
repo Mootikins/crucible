@@ -2544,9 +2544,6 @@ impl OilChatApp {
         let term_width = self.terminal_size.get().0 as usize;
         let containers = self.container_list.viewport_containers();
 
-        if containers.is_empty() {
-            return Node::Empty;
-        }
 
         let mut nodes: Vec<Node> = containers
             .iter()
@@ -2583,6 +2580,11 @@ impl OilChatApp {
                     ..Default::default()
                 }),
             );
+        }
+
+        // Only return empty if both viewport AND spinner produced nothing
+        if nodes.is_empty() {
+            return Node::Empty;
         }
 
         // When graduated content exists above in stdout, insert a spacer line
