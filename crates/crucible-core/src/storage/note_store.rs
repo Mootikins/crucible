@@ -564,7 +564,8 @@ mod tests {
             "updated_at": Utc::now().to_rfc3339(),
         });
 
-        let deserialized: NoteRecord = serde_json::from_value(json).expect("deserialize legacy note");
+        let deserialized: NoteRecord =
+            serde_json::from_value(json).expect("deserialize legacy note");
 
         assert_eq!(deserialized.embedding_model, None);
         assert_eq!(deserialized.embedding_dimensions, None);

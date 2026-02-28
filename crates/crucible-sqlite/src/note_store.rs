@@ -83,25 +83,26 @@ fn deserialize_embedding(bytes: &[u8]) -> Vec<f32> {
 /// Uses PRAGMA table_info to avoid ALTER TABLE errors on existing columns.
 fn ensure_embedding_metadata_columns(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     // Check if embedding_model column exists
-    let has_embedding_model = conn.query_row(
-        "SELECT 1 FROM pragma_table_info('notes') WHERE name = 'embedding_model'",
-        [],
-        |_| Ok(()),
-    ).is_ok();
+    let has_embedding_model = conn
+        .query_row(
+            "SELECT 1 FROM pragma_table_info('notes') WHERE name = 'embedding_model'",
+            [],
+            |_| Ok(()),
+        )
+        .is_ok();
 
     // Check if embedding_dimensions column exists
-    let has_embedding_dimensions = conn.query_row(
-        "SELECT 1 FROM pragma_table_info('notes') WHERE name = 'embedding_dimensions'",
-        [],
-        |_| Ok(()),
-    ).is_ok();
+    let has_embedding_dimensions = conn
+        .query_row(
+            "SELECT 1 FROM pragma_table_info('notes') WHERE name = 'embedding_dimensions'",
+            [],
+            |_| Ok(()),
+        )
+        .is_ok();
 
     // Add embedding_model column if it doesn't exist
     if !has_embedding_model {
-        conn.execute(
-            "ALTER TABLE notes ADD COLUMN embedding_model TEXT",
-            [],
-        )?;
+        conn.execute("ALTER TABLE notes ADD COLUMN embedding_model TEXT", [])?;
     }
 
     // Add embedding_dimensions column if it doesn't exist
@@ -359,8 +360,7 @@ impl SqliteNoteStore {
         .await??;
 
         Ok(())
-}
-
+    }
 }
 
 #[async_trait]

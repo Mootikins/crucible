@@ -31,11 +31,7 @@ impl AgentManager {
                 }
             };
 
-            let Some(connected_config) = self
-                .kiln_manager
-                .enrichment_config()
-                .cloned()
-            else {
+            let Some(connected_config) = self.kiln_manager.enrichment_config().cloned() else {
                 debug!(
                     session_id = %session_id,
                     kiln = %connected_kiln.display(),

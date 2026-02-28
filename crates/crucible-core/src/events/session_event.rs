@@ -1391,8 +1391,16 @@ impl SessionEvent {
             Self::ClassificationRequired { kiln_path } => {
                 format!("kiln_path={}", kiln_path.display())
             }
-            Self::EmbeddingModelMismatch { kiln_path, stored_model, current_model, note_count } => {
-                format!("kiln={}, stored={}, current={}, notes={}", kiln_path, stored_model, current_model, note_count)
+            Self::EmbeddingModelMismatch {
+                kiln_path,
+                stored_model,
+                current_model,
+                note_count,
+            } => {
+                format!(
+                    "kiln={}, stored={}, current={}, notes={}",
+                    kiln_path, stored_model, current_model, note_count
+                )
             }
         }
     }
@@ -1566,7 +1574,9 @@ fn identifier_for_event(event: &SessionEvent) -> String {
             }
         }
         SessionEvent::EmbeddingBatchComplete { entity_id, .. } => entity_id.clone(),
-        SessionEvent::EmbeddingModelMismatch { kiln_path, .. } => format!("embedding:mismatch:{}", kiln_path),
+        SessionEvent::EmbeddingModelMismatch { kiln_path, .. } => {
+            format!("embedding:mismatch:{}", kiln_path)
+        }
         SessionEvent::McpAttached { server, .. } => server.clone(),
         SessionEvent::ToolDiscovered { name, .. } => name.clone(),
         SessionEvent::Custom { name, .. } => name.clone(),
@@ -1701,7 +1711,15 @@ fn payload_for_event(event: &SessionEvent) -> Option<String> {
             ..
         } => Some(format!("notes={}, query={}", notes_count, query_summary)),
         SessionEvent::ClassificationRequired { kiln_path } => Some(kiln_path.display().to_string()),
-        SessionEvent::EmbeddingModelMismatch { kiln_path, stored_model, current_model, note_count } => Some(format!("kiln={}, stored={}, current={}, notes={}", kiln_path, stored_model, current_model, note_count)),
+        SessionEvent::EmbeddingModelMismatch {
+            kiln_path,
+            stored_model,
+            current_model,
+            note_count,
+        } => Some(format!(
+            "kiln={}, stored={}, current={}, notes={}",
+            kiln_path, stored_model, current_model, note_count
+        )),
     }
 }
 
@@ -1785,7 +1803,12 @@ fn estimate_content_len(event: &SessionEvent) -> usize {
             ..
         } => notes_count.to_string().len() + query_summary.len() + 50,
         SessionEvent::ClassificationRequired { .. } => 50,
-        SessionEvent::EmbeddingModelMismatch { kiln_path, stored_model, current_model, .. } => kiln_path.len() + stored_model.len() + current_model.len() + 50,
+        SessionEvent::EmbeddingModelMismatch {
+            kiln_path,
+            stored_model,
+            current_model,
+            ..
+        } => kiln_path.len() + stored_model.len() + current_model.len() + 50,
     }
 }
 
