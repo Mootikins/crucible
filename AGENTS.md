@@ -268,11 +268,44 @@ Conventions: use wikilinks (`[[Help/Wikilinks]]`), add frontmatter with tags, ke
 
 **Web frontend uses `bun`** (not npm/yarn). See `crates/crucible-web/web/AGENTS.md`.
 
+### Code Principles
+
+**Crate boundaries are for compilation, not organization.** If related types need `pub` wrappers
+to see each other across crates, question the boundary. Prefer fewer, larger crates.
+
+**Co-locate related state.** If understanding a concept requires reading 5 structs across 4 modules,
+consolidate. A session's agent, context, and config should be discoverable from one place.
+
+**anyhow by default, thiserror at boundaries.** Internal code uses `anyhow::Result` + `.context()`.
+Structured error enums only at API/RPC boundaries where callers match on variants. Every error
+variant needs a caller that handles it differently — otherwise use anyhow.
+
+**No type without a use site.** No speculative variants, fields, or abstractions. Every `Option<T>`
+needs a code path checking `None`. Every error variant needs a `match` arm. YAGNI.
+
+**Enums over traits** unless 2+ implementations exist in different crates. Single-impl traits are
+just indirection. Trait objects (`dyn`) only when you need runtime polymorphism — prefer enum dispatch.
+
+**Use the type system to compress.** `From`/`Into` over `.map_err()` chains. `?` over `match Result`.
+Iterator combinators over manual loops. `#[derive]` over manual impls. If a pattern repeats 5+ times,
+it's missing an impl or a helper.
+
+**Consistent patterns everywhere.** If there's a "right way" to do something (error conversion,
+RPC calls, tool results), do it the same way in every file. One helper, one pattern, used uniformly.
+
+**Comments explain why, not what.** No `/// Create a cancelled error` above `fn cancelled()`.
+Comment tradeoffs, workarounds, and non-obvious design decisions.
+
+**Daemon owns business logic, views are thin.** CLI/TUI/Web are rendering + input. Embedding
+generation, context enrichment, provider detection, agent lifecycle — all daemon-side. If a web
+frontend would need to duplicate it, it's in the wrong place.
+
+**Lua sees the same domain model.** Don't create parallel type hierarchies for Lua exposure.
+The Rust types are the source of truth; Lua bindings project them, not duplicate them.
+
 ### Code Style
 
 - `snake_case` for functions/variables, `PascalCase` for types
-- `Result<T, E>` with proper error context
-- Doc comments for public items
 - TDD — write tests for new functionality
 - Fix clippy warnings properly — no module-level `#![allow(...)]`
 
