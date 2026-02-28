@@ -1,12 +1,10 @@
-//! Inference backend abstraction for embedding generation
+//! Inference types for embedding model configuration
 //!
-//! This module provides a pluggable backend system for running embedding model inference.
-//! Different backends can be used depending on platform capabilities:
-//! - GGUF model support has been removed (use an OpenAI-compatible llama.cpp server instead)
-//! - `BurnBackend`: Uses Burn framework for SafeTensors models (wgpu/Vulkan)
-//! - `MockBackend`: For testing without actual model loading
+//! This module provides configuration types for embedding model inference
+//! and a mock backend for testing.
 
-use super::error::{EmbeddingError, EmbeddingResult};
+#[cfg(any(test, feature = "test-utils"))]
+use super::error::EmbeddingResult;
 use std::path::Path;
 
 /// Device type for inference acceleration
@@ -132,114 +130,6 @@ pub struct LoadedModelInfo {
     pub gpu_layers: i32,
 }
 
-/// Trait for inference backends that can generate embeddings
-///
-/// This trait abstracts over different inference engines (llama.cpp, Burn, etc.)
-/// to provide a unified interface for embedding generation.
-///
-/// # Implementors
-///
-/// - GGUF: No longer supported (use an OpenAI-compatible llama.cpp server instead)
-/// - `BurnBackend`: SafeTensors models via Burn framework
-/// - `MockBackend`: Testing without real models
-pub trait InferenceBackend: Send + Sync {
-    /// Load a model from file
-    ///
-    /// # Arguments
-    /// * `model_path` - Path to the model file (.gguf, .safetensors, etc.)
-    /// * `config` - Backend configuration
-    ///
-    /// # Returns
-    /// Information about the loaded model
-    fn load_model(
-        &mut self,
-        model_path: &Path,
-        config: &BackendConfig,
-    ) -> EmbeddingResult<LoadedModelInfo>;
-
-    /// Generate embeddings for a batch of token sequences
-    ///
-    /// # Arguments
-    /// * `token_batches` - Vector of token ID sequences
-    ///
-    /// # Returns
-    /// Vector of embedding vectors, one per input sequence
-    fn embed_tokens(&self, token_batches: &[Vec<u32>]) -> EmbeddingResult<Vec<Vec<f32>>>;
-
-    /// Generate embeddings for a batch of texts (tokenizes internally)
-    ///
-    /// # Arguments
-    /// * `texts` - Vector of text strings to embed
-    ///
-    /// # Returns
-    /// Vector of embedding vectors, one per input text
-    fn embed_texts(&self, texts: &[&str]) -> EmbeddingResult<Vec<Vec<f32>>>;
-
-    /// Get the embedding dimensions for this model
-    fn dimensions(&self) -> usize;
-
-    /// Get information about the loaded model
-    fn model_info(&self) -> Option<&LoadedModelInfo>;
-
-    /// Check if a model is currently loaded
-    fn is_loaded(&self) -> bool;
-
-    /// Unload the current model and free resources
-    fn unload(&mut self);
-
-    /// Get the backend name (for logging/debugging)
-    fn backend_name(&self) -> &'static str;
-
-    /// Check what device types this backend supports
-    fn supported_devices(&self) -> Vec<DeviceType>;
-}
-
-/// Factory for creating inference backends based on model format and available hardware
-pub struct BackendFactory;
-
-impl BackendFactory {
-    /// Detect the best backend for a given model file
-    pub fn detect_backend(
-        model_path: &Path,
-        _preferred_device: DeviceType,
-    ) -> EmbeddingResult<Box<dyn InferenceBackend>> {
-        let format = ModelFormat::from_path(model_path);
-
-        match format {
-            ModelFormat::Gguf => {
-                Err(EmbeddingError::ConfigError(
-                    "GGUF model support (llama.cpp backend) has been removed. Use an OpenAI-compatible llama.cpp server instead.".to_string()
-                ))
-            }
-            ModelFormat::SafeTensors => {
-                #[cfg(feature = "burn")]
-                {
-                    return Ok(Box::new(super::burn_backend::BurnBackend::new(
-                        preferred_device,
-                    )?));
-                }
-
-                #[cfg(not(feature = "burn"))]
-                {
-                    Err(EmbeddingError::ConfigError(
-                        "SafeTensors models require the 'burn' feature. Enable it with: --features burn-vulkan".to_string()
-                    ))
-                }
-            }
-            _ => Err(EmbeddingError::ConfigError(format!(
-                "Unsupported model format for: {}",
-                model_path.display()
-            ))),
-        }
-    }
-
-    /// Create a mock backend for testing
-    #[cfg(any(test, feature = "test-utils"))]
-    pub fn mock(dimensions: usize) -> Box<dyn InferenceBackend> {
-        Box::new(MockBackend::new(dimensions))
-    }
-}
-
 /// Mock backend for testing without actual model loading
 #[cfg(any(test, feature = "test-utils"))]
 pub struct MockBackend {
@@ -256,11 +146,9 @@ impl MockBackend {
             loaded: false,
         }
     }
-}
 
-#[cfg(any(test, feature = "test-utils"))]
-impl InferenceBackend for MockBackend {
-    fn load_model(
+    /// Load a model from file
+    pub fn load_model(
         &mut self,
         _model_path: &Path,
         _config: &BackendConfig,
@@ -278,7 +166,8 @@ impl InferenceBackend for MockBackend {
         })
     }
 
-    fn embed_tokens(&self, token_batches: &[Vec<u32>]) -> EmbeddingResult<Vec<Vec<f32>>> {
+    /// Generate embeddings for a batch of token sequences
+    pub fn embed_tokens(&self, token_batches: &[Vec<u32>]) -> EmbeddingResult<Vec<Vec<f32>>> {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
 
@@ -308,7 +197,8 @@ impl InferenceBackend for MockBackend {
             .collect())
     }
 
-    fn embed_texts(&self, texts: &[&str]) -> EmbeddingResult<Vec<Vec<f32>>> {
+    /// Generate embeddings for a batch of texts (tokenizes internally)
+    pub fn embed_texts(&self, texts: &[&str]) -> EmbeddingResult<Vec<Vec<f32>>> {
         // Simple mock tokenization: just use character codes
         let token_batches: Vec<Vec<u32>> = texts
             .iter()
@@ -318,27 +208,33 @@ impl InferenceBackend for MockBackend {
         self.embed_tokens(&token_batches)
     }
 
-    fn dimensions(&self) -> usize {
+    /// Get the embedding dimensions for this model
+    pub fn dimensions(&self) -> usize {
         self.dimensions
     }
 
-    fn model_info(&self) -> Option<&LoadedModelInfo> {
+    /// Get information about the loaded model
+    pub fn model_info(&self) -> Option<&LoadedModelInfo> {
         None
     }
 
-    fn is_loaded(&self) -> bool {
+    /// Check if a model is currently loaded
+    pub fn is_loaded(&self) -> bool {
         self.loaded
     }
 
-    fn unload(&mut self) {
+    /// Unload the current model and free resources
+    pub fn unload(&mut self) {
         self.loaded = false;
     }
 
-    fn backend_name(&self) -> &'static str {
+    /// Get the backend name (for logging/debugging)
+    pub fn backend_name(&self) -> &'static str {
         "mock"
     }
 
-    fn supported_devices(&self) -> Vec<DeviceType> {
+    /// Check what device types this backend supports
+    pub fn supported_devices(&self) -> Vec<DeviceType> {
         vec![DeviceType::Cpu]
     }
 }
