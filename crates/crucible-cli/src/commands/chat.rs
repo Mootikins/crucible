@@ -5,7 +5,9 @@
 //! Supports toggleable plan (read-only) and act (write-enabled) modes.
 
 use anyhow::Result;
-use crucible_rpc::{DaemonClient, LuaDiscoverPluginsRequest, LuaInitSessionRequest, LuaShutdownSessionRequest};
+use crucible_rpc::{
+    DaemonClient, LuaDiscoverPluginsRequest, LuaInitSessionRequest, LuaShutdownSessionRequest,
+};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
@@ -873,10 +875,25 @@ async fn discover_plugin_status(
             .plugins
             .iter()
             .map(|p| PluginStatusEntry {
-                name: p.get("name").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
-                version: p.get("version").and_then(|v| v.as_str()).unwrap_or("0.0.0").to_string(),
-                state: p.get("state").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
-                error: p.get("error").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                name: p
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
+                version: p
+                    .get("version")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("0.0.0")
+                    .to_string(),
+                state: p
+                    .get("state")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
+                error: p
+                    .get("error")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
             })
             .collect(),
         Err(e) => {

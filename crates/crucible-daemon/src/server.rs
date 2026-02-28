@@ -23,11 +23,11 @@ use anyhow::Result;
 use crucible_config::{DataClassification, LlmConfig, TrustLevel};
 use crucible_core::events::SessionEvent;
 use crucible_core::session::RecordingMode;
+use crucible_lua::stubs::StubGenerator;
 use crucible_lua::{
     register_crucible_on_api, LuaExecutor, LuaScriptHandlerRegistry, PluginManager,
     ScriptHandlerResult, Session as LuaSession, SessionConfigRpc,
 };
-use crucible_lua::stubs::StubGenerator;
 use crucible_skills::discovery::{default_discovery_paths, FolderDiscovery};
 use dashmap::DashMap;
 
@@ -1582,10 +1582,11 @@ async fn handle_lua_execute_hook(
             payload: context.clone(),
         };
 
-        let result = match state
-            .registry
-            .execute_runtime_handler(state.executor.lua(), &handler.name, &event)
-        {
+        let result = match state.registry.execute_runtime_handler(
+            state.executor.lua(),
+            &handler.name,
+            &event,
+        ) {
             Ok(ScriptHandlerResult::Transform(payload)) => {
                 serde_json::json!({"handler": handler.name, "type": "transform", "payload": payload})
             }
@@ -1601,7 +1602,9 @@ async fn handle_lua_execute_hook(
                 "content": content,
                 "position": position,
             }),
-            Err(e) => serde_json::json!({"handler": handler.name, "type": "error", "error": e.to_string()}),
+            Err(e) => {
+                serde_json::json!({"handler": handler.name, "type": "error", "error": e.to_string()})
+            }
         };
         results.push(result);
     }
@@ -1880,10 +1883,11 @@ end
 
     // Apply test filter if provided
     if let Some(ref filter_str) = filter {
-        if let Err(e) = executor.lua().globals().set(
-            "__cru_plugin_test_filter",
-            filter_str.clone(),
-        ) {
+        if let Err(e) = executor
+            .lua()
+            .globals()
+            .set("__cru_plugin_test_filter", filter_str.clone())
+        {
             return internal_error(req.id, e);
         }
         if let Err(e) = executor
@@ -3381,7 +3385,7 @@ fn find_owning_plugin(
 ///
 /// Params:
 ///   - `session_dir` (string, required): Path to the session directory
-/// Returns: Array of LogEvent objects
+///     Returns: Array of LogEvent objects
 async fn handle_session_load_events(req: Request) -> Response {
     let session_dir = require_param!(req, "session_dir", as_str);
 
@@ -3400,7 +3404,7 @@ async fn handle_session_load_events(req: Request) -> Response {
 ///   - `kiln` (string, required): Path to the kiln
 ///   - `session_type` (string, optional): Filter by type ("chat", "agent", etc.)
 ///   - `limit` (u64, optional): Max sessions to return (default 50, newest first)
-/// Returns: { sessions: [...], total: N }
+///     Returns: { sessions: [...], total: N }
 async fn handle_session_list_persisted(req: Request) -> Response {
     let kiln = require_param!(req, "kiln", as_str);
     let session_type_filter = optional_param!(req, "session_type", as_str);
@@ -3409,10 +3413,7 @@ async fn handle_session_list_persisted(req: Request) -> Response {
     let sessions_path = FileSessionStorage::sessions_base(Path::new(kiln));
 
     if !sessions_path.exists() {
-        return Response::success(
-            req.id,
-            serde_json::json!({ "sessions": [], "total": 0 }),
-        );
+        return Response::success(req.id, serde_json::json!({ "sessions": [], "total": 0 }));
     }
 
     let mut ids = match crucible_observe::list_sessions(&sessions_path).await {
@@ -3489,11 +3490,10 @@ async fn handle_session_list_persisted(req: Request) -> Response {
 ///   - `include_tokens` (bool, optional): Include token stats (default true)
 ///   - `include_tools` (bool, optional): Include tool details (default true)
 ///   - `max_content_length` (u64, optional): Truncation limit (default 0 = no limit)
-/// Returns: { markdown: "..." }
+///     Returns: { markdown: "..." }
 async fn handle_session_render_markdown(req: Request) -> Response {
     let session_dir = require_param!(req, "session_dir", as_str);
-    let include_timestamps =
-        optional_param!(req, "include_timestamps", as_bool).unwrap_or(false);
+    let include_timestamps = optional_param!(req, "include_timestamps", as_bool).unwrap_or(false);
     let include_tokens = optional_param!(req, "include_tokens", as_bool).unwrap_or(true);
     let include_tools = optional_param!(req, "include_tools", as_bool).unwrap_or(true);
     let max_content_length =
@@ -3522,7 +3522,7 @@ async fn handle_session_render_markdown(req: Request) -> Response {
 ///   - `session_dir` (string, required): Path to the session directory
 ///   - `output_path` (string, optional): Output file path (default: session_dir/session.md)
 ///   - `include_timestamps` (bool, optional): Include timestamps (default false)
-/// Returns: { status: "ok", output_path: "..." }
+///     Returns: { status: "ok", output_path: "..." }
 async fn handle_session_export_to_file(req: Request) -> Response {
     let session_dir_str = require_param!(req, "session_dir", as_str);
     let output_path = optional_param!(req, "output_path", as_str);
@@ -3566,7 +3566,7 @@ async fn handle_session_export_to_file(req: Request) -> Response {
 ///   - `kiln` (string, required): Path to the kiln
 ///   - `older_than_days` (u64, required): Delete sessions older than N days
 ///   - `dry_run` (bool, optional): If true, just report what would be deleted (default false)
-/// Returns: { deleted: [...], total: N, dry_run: bool }
+///     Returns: { deleted: [...], total: N, dry_run: bool }
 async fn handle_session_cleanup(req: Request) -> Response {
     let kiln = require_param!(req, "kiln", as_str);
     let older_than_days = require_param!(req, "older_than_days", as_u64);
@@ -3586,8 +3586,7 @@ async fn handle_session_cleanup(req: Request) -> Response {
         Err(e) => return internal_error(req.id, e),
     };
 
-    let cutoff = chrono::Utc::now()
-        - chrono::Duration::days(older_than_days as i64);
+    let cutoff = chrono::Utc::now() - chrono::Duration::days(older_than_days as i64);
 
     let mut to_delete = Vec::new();
 
@@ -3619,7 +3618,10 @@ async fn handle_session_cleanup(req: Request) -> Response {
             }
         }
     } else {
-        deleted_ids = to_delete.iter().map(|(id, _)| id.as_str().to_string()).collect();
+        deleted_ids = to_delete
+            .iter()
+            .map(|(id, _)| id.as_str().to_string())
+            .collect();
     }
 
     let total = deleted_ids.len();
@@ -3638,7 +3640,7 @@ async fn handle_session_cleanup(req: Request) -> Response {
 /// Params:
 ///   - `kiln` (string, required): Path to the kiln
 ///   - `force` (bool, optional): Re-index even if already present (default false)
-/// Returns: { indexed: N, skipped: N, errors: N }
+///     Returns: { indexed: N, skipped: N, errors: N }
 async fn handle_session_reindex(req: Request, km: &Arc<KilnManager>) -> Response {
     let kiln_str = require_param!(req, "kiln", as_str);
     let force = optional_param!(req, "force", as_bool).unwrap_or(false);
@@ -3701,7 +3703,7 @@ async fn handle_session_reindex(req: Request, km: &Arc<KilnManager>) -> Response
         };
 
         let record = content.to_note_record(None);
-        if let Err(_) = note_store.upsert(record).await {
+        if note_store.upsert(record).await.is_err() {
             errors += 1;
             continue;
         }
@@ -3734,7 +3736,10 @@ async fn handle_mcp_start(
     let no_just = optional_param!(req, "no_just", as_bool).unwrap_or(false);
     let just_dir = optional_param!(req, "just_dir", as_str);
 
-    match mcp_mgr.start(km, transport, port, kiln_path, no_just, just_dir).await {
+    match mcp_mgr
+        .start(km, transport, port, kiln_path, no_just, just_dir)
+        .await
+    {
         Ok(result) => Response::success(req.id, result),
         Err(e) => Response::error(req.id, INVALID_PARAMS, e),
     }
@@ -3786,7 +3791,10 @@ async fn handle_skills_list(req: Request) -> Response {
                 })
                 .collect();
             entries.sort_by(|a, b| {
-                a["name"].as_str().unwrap_or("").cmp(&b["name"].as_str().unwrap_or(""))
+                a["name"]
+                    .as_str()
+                    .unwrap_or("")
+                    .cmp(b["name"].as_str().unwrap_or(""))
             });
             Response::success(req.id, serde_json::json!({ "skills": entries }))
         }
@@ -3825,11 +3833,7 @@ async fn handle_skills_get(req: Request) -> Response {
                     }),
                 )
             }
-            None => Response::error(
-                req.id,
-                INVALID_PARAMS,
-                format!("Skill not found: {}", name),
-            ),
+            None => Response::error(req.id, INVALID_PARAMS, format!("Skill not found: {}", name)),
         },
         Ok(Err(e)) => internal_error(req.id, e),
         Err(e) => internal_error(req.id, e),
@@ -3927,7 +3931,6 @@ async fn handle_agents_resolve_profile(
         None => Response::success(req.id, serde_json::Value::Null),
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -6624,5 +6627,4 @@ mod tests {
         assert_eq!(result["total"], 1);
         assert!(!session_dir.exists(), "old session should be deleted");
     }
-
 }

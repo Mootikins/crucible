@@ -83,7 +83,10 @@ impl McpServerManager {
                 (kr, ep)
             }
             Err(e) => {
-                warn!("Failed to open kiln for MCP server, using empty providers: {}", e);
+                warn!(
+                    "Failed to open kiln for MCP server, using empty providers: {}",
+                    e
+                );
                 (
                     Arc::new(EmptyKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
                     Arc::new(EmptyEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
@@ -93,17 +96,11 @@ impl McpServerManager {
 
         // Create the ExtendedMcpServer
         let server = if no_just {
-            ExtendedMcpServer::kiln_only(
-                kiln_path.to_string(),
-                knowledge_repo,
-                embedding_provider,
-            )
+            ExtendedMcpServer::kiln_only(kiln_path.to_string(), knowledge_repo, embedding_provider)
         } else {
-            let just_path = just_dir
-                .map(|d| std::path::PathBuf::from(d))
-                .unwrap_or_else(|| {
-                    std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
-                });
+            let just_path = just_dir.map(std::path::PathBuf::from).unwrap_or_else(|| {
+                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+            });
             match ExtendedMcpServer::new(
                 kiln_path.to_string(),
                 knowledge_repo,
@@ -188,7 +185,12 @@ impl McpServerManager {
         let mut state = self.state.lock().await;
 
         match std::mem::replace(&mut *state, McpServerState::Stopped) {
-            McpServerState::Running { handle, transport, port, .. } => {
+            McpServerState::Running {
+                handle,
+                transport,
+                port,
+                ..
+            } => {
                 handle.abort();
                 info!("MCP server stopped (was {} on port {:?})", transport, port);
                 Ok(serde_json::json!({

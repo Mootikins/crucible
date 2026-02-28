@@ -3,10 +3,9 @@ use std::sync::Arc;
 
 use rmcp::model::{CallToolResult, Tool as McpTool};
 
-use crucible_core::error_utils::strip_tool_error_prefix;
 use crate::mcp_server::CrucibleMcpServer;
 use crate::tool_modes::PLAN_TOOL_NAMES;
-
+use crucible_core::error_utils::strip_tool_error_prefix;
 
 #[derive(Clone)]
 /// Adapter for running MCP tools in-process without stdio transport.
@@ -31,7 +30,6 @@ impl InProcessMcpAdapter {
             .map(|tool| tool.name.to_string())
             .collect()
     }
-
 }
 
 #[allow(dead_code)]
@@ -42,8 +40,6 @@ fn filter_plan_tools(all_tools: Vec<McpTool>) -> Vec<McpTool> {
         .filter(|tool| plan_names.contains(tool.name.as_ref()))
         .collect()
 }
-
-
 
 #[allow(dead_code)]
 fn normalize_tool_error_message(message: &str) -> String {
@@ -80,4 +76,3 @@ fn parse_params<T: serde::de::DeserializeOwned>(
     serde_json::from_value(serde_json::Value::Object(map))
         .map_err(|err| rmcp::ErrorData::invalid_params(err.to_string(), None))
 }
-

@@ -133,7 +133,7 @@ async fn create_internal_mcp_tool_defs(
             };
             drop(gw_read);
             let tools = all_tools
-                .into_iter()
+                .iter()
                 .filter(|tool| server_names.contains(&tool.upstream))
                 .map(|tool| {
                     LlmToolDefinition::new(

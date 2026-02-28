@@ -45,10 +45,10 @@ pub mod notes;
 pub mod output_filter;
 pub mod search;
 pub mod tool_discovery;
+pub mod tool_modes;
 pub mod toon_response;
 pub mod utils;
 pub mod workspace;
-pub mod tool_modes;
 
 // ===== PUBLIC API EXPORTS =====
 

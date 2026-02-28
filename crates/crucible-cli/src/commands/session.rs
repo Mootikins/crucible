@@ -9,7 +9,7 @@ use crucible_config::BackendType;
 use crucible_core::session::SessionAgent;
 use crucible_observe::{LogEvent, SessionId, SessionType};
 use crucible_rpc::DaemonClient;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use tokio::fs;
 
@@ -562,7 +562,7 @@ async fn search_with_ripgrep(
 
 /// Fallback in-memory search when ripgrep is not available
 async fn search_in_memory(
-    sessions_path: &PathBuf,
+    sessions_path: &Path,
     query: &str,
     limit: u32,
 ) -> Result<Vec<(String, usize, String)>> {
@@ -680,9 +680,7 @@ async fn show(config: CliConfig, id: String, format: String) -> Result<()> {
             }
             _ => {
                 if let Ok(events_json) = client.session_load_events(&session_dir).await {
-                    if let Ok(events) =
-                        serde_json::from_value::<Vec<LogEvent>>(events_json)
-                    {
+                    if let Ok(events) = serde_json::from_value::<Vec<LogEvent>>(events_json) {
                         display_events_text(&id, &events);
                         true
                     } else {
@@ -767,11 +765,7 @@ async fn export(
     // Try daemon RPC first
     if let Ok(client) = DaemonClient::connect_or_start().await {
         if let Ok(output_path_str) = client
-            .session_export_to_file(
-                &session_dir,
-                output.as_deref(),
-                Some(timestamps),
-            )
+            .session_export_to_file(&session_dir, output.as_deref(), Some(timestamps))
             .await
         {
             println!("Exported session to: {}", output_path_str);
@@ -809,9 +803,7 @@ async fn reindex(config: CliConfig, force: bool) -> Result<()> {
         .await
         .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
 
-    let result = client
-        .session_reindex(&config.kiln_path, force)
-        .await?;
+    let result = client.session_reindex(&config.kiln_path, force).await?;
 
     let indexed = result["indexed"].as_u64().unwrap_or(0);
     let skipped = result["skipped"].as_u64().unwrap_or(0);
@@ -842,10 +834,7 @@ async fn cleanup(config: CliConfig, older_than: u32, dry_run: bool) -> Result<()
         .session_cleanup(&config.kiln_path, older_than as u64, dry_run)
         .await?;
 
-    let deleted = result["deleted"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
+    let deleted = result["deleted"].as_array().cloned().unwrap_or_default();
     let total = result["total"].as_u64().unwrap_or(0);
     let is_dry_run = result["dry_run"].as_bool().unwrap_or(false);
 
@@ -854,10 +843,7 @@ async fn cleanup(config: CliConfig, older_than: u32, dry_run: bool) -> Result<()
         return Ok(());
     }
 
-    println!(
-        "Found {} sessions older than {} days:",
-        total, older_than
-    );
+    println!("Found {} sessions older than {} days:", total, older_than);
 
     for id in &deleted {
         if let Some(s) = id.as_str() {
@@ -958,7 +944,7 @@ async fn daemon_create(
     let session_id = result["session_id"].as_str().unwrap_or("unknown");
 
     if let Some(agent_name) = agent {
-        let profile = resolve_acp_profile(&client, agent_name)
+        let profile = resolve_acp_profile(client, agent_name)
             .await
             .map_err(|e| anyhow!("Failed to resolve ACP agent profile: {}", e))?;
         let session_agent = SessionAgent::from_profile(&profile, agent_name);

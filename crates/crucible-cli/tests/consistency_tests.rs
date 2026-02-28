@@ -134,14 +134,14 @@ async fn second_process_run_skips_unchanged_files() -> Result<()> {
     let km = KilnManager::new();
 
     // First run: all files get processed
-    let (discovered1, processed1, skipped1, errors1) =
+    let (discovered1, _processed1, _skipped1, errors1) =
         km.open_and_process(kiln_path, false).await?;
     assert_eq!(discovered1, EXPECTED_MD);
     assert_eq!(discovered1, EXPECTED_MD);
     assert!(errors1.is_empty());
 
     // Second run: all files should be skipped (no changes)
-    let (discovered2, processed2, skipped2, errors2) =
+    let (discovered2, processed2, skipped2, _errors2) =
         km.open_and_process(kiln_path, false).await?;
 
     // Discovered count must be identical across runs
@@ -178,7 +178,7 @@ async fn force_reprocess_agrees_with_stats() -> Result<()> {
     km.open_and_process(kiln_path, false).await?;
 
     // Force reprocess
-    let (discovered, processed, skipped, errors) = km.open_and_process(kiln_path, true).await?;
+    let (discovered, _processed, _skipped, _errors) = km.open_and_process(kiln_path, true).await?;
 
     // Discovered count must match stats even after force
     let stats = FileSystemKilnStatsService.collect(kiln_path)?;

@@ -588,6 +588,7 @@ impl OilChatRunner {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn handle_selected_event<A: AgentHandle>(
         &mut self,
         event: Option<Event>,
@@ -624,6 +625,7 @@ impl OilChatRunner {
         Ok(false)
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn handle_select_outcome<A: AgentHandle>(
         &mut self,
         select_outcome: EventLoopSelectOutcome,
@@ -706,7 +708,8 @@ impl OilChatRunner {
                 if let Some(ref tool_results) = chunk.tool_results {
                     for tr in tool_results {
                         if let Some(ref error) = tr.error {
-                            let cleaned = crucible_core::error_utils::strip_tool_error_prefix(error);
+                            let cleaned =
+                                crucible_core::error_utils::strip_tool_error_prefix(error);
                             let _ = msg_tx.send(ChatAppMsg::ToolResultError {
                                 name: tr.name.clone(),
                                 error: cleaned,
