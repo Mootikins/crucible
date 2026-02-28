@@ -1027,7 +1027,7 @@ batch_size = 16
     #[tokio::test]
     async fn test_file_deleted_removes_note_after_processing() {
         use crucible_core::parser::BlockHash;
-        use crucible_core::storage::{NoteRecord, NoteStore};
+        use crucible_core::storage::NoteRecord;
 
         let tmp = TempDir::new().unwrap();
         let kiln_path = tmp.path().join("test_kiln");

@@ -39,7 +39,24 @@ mod profile;
 mod security;
 mod value_source;
 mod workspace;
-pub use components::*;
+
+pub use components::defaults::{
+    ANTHROPIC_MODELS, DEFAULT_ANTHROPIC_ENDPOINT, DEFAULT_ANTHROPIC_MODEL, DEFAULT_BATCH_SIZE,
+    DEFAULT_CHAT_MAX_TOKENS, DEFAULT_CHAT_MODEL, DEFAULT_GITHUB_COPILOT_ENDPOINT,
+    DEFAULT_GITHUB_COPILOT_MODEL, DEFAULT_OLLAMA_ENDPOINT, DEFAULT_OPENAI_ENDPOINT,
+    DEFAULT_OPENAI_MODEL, DEFAULT_OPENROUTER_ENDPOINT, DEFAULT_OPENROUTER_MODEL,
+    DEFAULT_PROVIDER_MAX_TOKENS, DEFAULT_TEMPERATURE, DEFAULT_TIMEOUT_SECS, DEFAULT_ZAI_ENDPOINT,
+    DEFAULT_ZAI_MODEL, OPENAI_HARDCODED_MODELS, OPENAI_MODEL_PREFIXES, ZAI_MODELS,
+};
+pub use components::mcp;
+pub use components::{
+    AcpConfig, AgentPreference, AgentProfile, BackendType, ChatConfig, CliConfig,
+    CompiledPermissions, ContextConfig, DataClassification, DelegationConfig, DiscoveryPathsConfig,
+    GatewayConfig, GatewayUpstreamServerConfig, HandlersConfig, HighlightingConfig, LlmConfig,
+    LlmProviderConfig, McpConfig, PermissionConfig, PermissionDecision, PermissionEngine,
+    PermissionMode, StorageConfig, TransportType, TrustLevel, TypeDiscoveryConfig,
+    UpstreamServerConfig,
+};
 pub use config::{
     crucible_home, is_crucible_home, CliAppConfig, Config, ConfigError, ConfigValidationError,
     EffectiveLlmConfig, LoggingConfig, ProcessingConfig, ScmConfig, ServerConfig, WebConfig,
@@ -50,14 +67,18 @@ pub use credentials::{
     resolve_api_key, AutoStore, CredentialError, CredentialResult, CredentialSource,
     CredentialStore, ProviderSecrets, SecretsFile, SecretsFileContent,
 };
-pub use enrichment::*;
+pub use enrichment::{
+    BurnBackendConfig, BurnEmbedConfig, CohereConfig, CustomConfig, EmbeddingProviderConfig,
+    EnrichmentConfig, FastEmbedConfig, MockConfig, OllamaConfig, OpenAIConfig, PipelineConfig,
+    VertexAIConfig,
+};
 pub use global::GlobalConfig;
 pub use includes::{process_file_references, IncludeConfig, IncludeError};
-pub use loader::*;
+pub use loader::{ConfigFormat, ConfigLoader};
 pub use patterns::{
     BashPatterns, FilePatterns, PatternError, PatternResult, PatternStore, ToolPatterns,
 };
-pub use profile::*;
+pub use profile::{Environment, ProfileConfig};
 pub use security::ShellPolicy;
-pub use value_source::*;
+pub use value_source::{ValueInfo, ValueSource, ValueSourceMap};
 pub use workspace::{KilnAttachment, SecurityConfig, WorkspaceConfig, WorkspaceMeta};
