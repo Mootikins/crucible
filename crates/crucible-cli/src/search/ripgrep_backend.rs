@@ -1,8 +1,7 @@
 //! Ripgrep-based text search (preferred when available)
 
 use anyhow::{Context, Result};
-use async_trait::async_trait;
-use crucible_core::traits::{TextSearchMatch, TextSearcher};
+use crucible_core::traits::TextSearchMatch;
 use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::process::Command;
@@ -25,17 +24,8 @@ impl RipgrepSearcher {
     pub fn new() -> Self {
         Self
     }
-}
 
-impl Default for RipgrepSearcher {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl TextSearcher for RipgrepSearcher {
-    async fn search(&self, pattern: &str, paths: &[PathBuf]) -> Result<Vec<TextSearchMatch>> {
+    pub async fn search(&self, pattern: &str, paths: &[PathBuf]) -> Result<Vec<TextSearchMatch>> {
         let mut cmd = Command::new("rg");
         cmd.arg("--line-number")
             .arg("--column")
@@ -61,8 +51,14 @@ impl TextSearcher for RipgrepSearcher {
         parse_rg_output(&output.stdout)
     }
 
-    fn backend_name(&self) -> &'static str {
+    pub fn backend_name(&self) -> &'static str {
         "ripgrep"
+    }
+}
+
+impl Default for RipgrepSearcher {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

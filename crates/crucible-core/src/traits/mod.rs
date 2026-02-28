@@ -84,4 +84,4 @@ pub use mcp::{
     McpToolDiscovery, McpToolExecutor, McpToolInfo, McpTransportConfig, ToolCallResult,
 };
 pub use permission_gate::PermissionGate;
-pub use text_search::{TextSearchMatch, TextSearcher};
+pub use text_search::TextSearchMatch;
