@@ -1,7 +1,7 @@
 //! Wikilink search utilities
 
+use crate::search::TextSearchBackend;
 use anyhow::Result;
-use crucible_core::traits::TextSearcher;
 use std::path::PathBuf;
 
 /// Find files that link to a given note
@@ -14,7 +14,7 @@ use std::path::PathBuf;
 /// - `[[Note#^block-id]]` - block reference
 /// - `[[folder/Note]]` - path
 pub async fn find_backlinks(
-    searcher: &dyn TextSearcher,
+    searcher: &TextSearchBackend,
     target_note: &str,
     search_paths: &[PathBuf],
 ) -> Result<Vec<PathBuf>> {
@@ -36,7 +36,7 @@ pub async fn find_backlinks(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::search::RegexSearcher;
+    use crate::search::{RegexSearcher, TextSearchBackend};
     use std::fs::write;
     use tempfile::TempDir;
 
@@ -46,7 +46,7 @@ mod tests {
         write(tmp.path().join("a.md"), "Link to [[Target]]").unwrap();
         write(tmp.path().join("b.md"), "No links here").unwrap();
 
-        let searcher = RegexSearcher::new();
+        let searcher = TextSearchBackend::Regex(RegexSearcher::new());
         let results = find_backlinks(&searcher, "Target", &[tmp.path().to_path_buf()])
             .await
             .unwrap();
@@ -60,7 +60,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         write(tmp.path().join("a.md"), "Link to [[Target|display text]]").unwrap();
 
-        let searcher = RegexSearcher::new();
+        let searcher = TextSearchBackend::Regex(RegexSearcher::new());
         let results = find_backlinks(&searcher, "Target", &[tmp.path().to_path_buf()])
             .await
             .unwrap();
@@ -73,7 +73,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         write(tmp.path().join("a.md"), "Link to [[Target#Section]]").unwrap();
 
-        let searcher = RegexSearcher::new();
+        let searcher = TextSearchBackend::Regex(RegexSearcher::new());
         let results = find_backlinks(&searcher, "Target", &[tmp.path().to_path_buf()])
             .await
             .unwrap();
@@ -86,7 +86,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         write(tmp.path().join("a.md"), "Link to [[Target#^block-id]]").unwrap();
 
-        let searcher = RegexSearcher::new();
+        let searcher = TextSearchBackend::Regex(RegexSearcher::new());
         let results = find_backlinks(&searcher, "Target", &[tmp.path().to_path_buf()])
             .await
             .unwrap();
@@ -100,7 +100,7 @@ mod tests {
         // Multiple links in same file
         write(tmp.path().join("a.md"), "[[Target]] and [[Target|alias]]").unwrap();
 
-        let searcher = RegexSearcher::new();
+        let searcher = TextSearchBackend::Regex(RegexSearcher::new());
         let results = find_backlinks(&searcher, "Target", &[tmp.path().to_path_buf()])
             .await
             .unwrap();

@@ -1,8 +1,6 @@
 //! Factory for creating text search backends
 
-use crate::search::{RegexSearcher, RipgrepSearcher};
-use crucible_core::traits::TextSearcher;
-use std::sync::Arc;
+use crate::search::{RegexSearcher, RipgrepSearcher, TextSearchBackend};
 use tracing::info;
 
 /// Detected text search backend
@@ -24,10 +22,10 @@ pub async fn detect_backend() -> SearchBackend {
 }
 
 /// Create a text searcher based on available backends
-pub async fn create_text_searcher() -> Arc<dyn TextSearcher> {
+pub async fn create_text_searcher() -> TextSearchBackend {
     match detect_backend().await {
-        SearchBackend::Ripgrep => Arc::new(RipgrepSearcher::new()),
-        SearchBackend::Regex => Arc::new(RegexSearcher::new()),
+        SearchBackend::Ripgrep => TextSearchBackend::Ripgrep(RipgrepSearcher::new()),
+        SearchBackend::Regex => TextSearchBackend::Regex(RegexSearcher::new()),
     }
 }
 
