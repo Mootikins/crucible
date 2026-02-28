@@ -2,6 +2,7 @@
 //!
 //! Tests the graph query executor with the full schema setup and real SqlitePool.
 
+use crucible_core::storage::StorageError;
 use crucible_core::traits::graph_query::GraphQueryExecutor;
 use crucible_sqlite::{SqliteConfig, SqliteGraphQueryExecutor, SqlitePool};
 use rusqlite::Connection;
@@ -31,7 +32,8 @@ async fn setup_with_test_data() -> (TempDir, SqlitePool) {
                 ('rel:2', 'note:hub', 'note:spoke2', 'wikilink'),
                 ('rel:3', 'note:spoke1', 'note:hub', 'wikilink');
             "#,
-        )?;
+        )
+        .map_err(|e| StorageError::Backend(e.to_string()))?;
         Ok(())
     })
     .unwrap();
@@ -81,14 +83,16 @@ fn create_executor_from_pool(pool: &SqlitePool) -> SqliteGraphQueryExecutor {
             conn.execute(
                 "INSERT INTO entities (id, type, data) VALUES (?1, ?2, ?3)",
                 [&id, &entity_type, &data],
-            )?;
+            )
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
         }
 
         for (id, from_id, to_id, rel_type) in relations {
             conn.execute(
                 "INSERT INTO relations (id, from_entity_id, to_entity_id, relation_type) VALUES (?1, ?2, ?3, ?4)",
                 [&id, &from_id, &to_id, &rel_type],
-            )?;
+            )
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
         }
 
         Ok(())
@@ -238,7 +242,8 @@ async fn test_graph_query_with_file_database() {
             INSERT INTO relations (id, from_entity_id, to_entity_id, relation_type) VALUES
                 ('rel:ab', 'note:alpha', 'note:beta', 'wikilink');
             "#,
-        )?;
+        )
+        .map_err(|e| StorageError::Backend(e.to_string()))?;
         Ok(())
     })
     .unwrap();

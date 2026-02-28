@@ -24,13 +24,12 @@
 //! ```
 
 pub mod embedding_cache;
-pub mod error;
 pub mod note_store;
 pub mod store;
 pub mod vector_search;
 
 // Re-export main types for convenience
-pub use error::{LanceError, LanceResult};
+pub use crucible_core::storage::StorageResult as LanceResult;
 pub use note_store::{create_note_store, create_note_store_with_dimensions, LanceNoteStore};
 pub use store::LanceStore;
 pub use vector_search::VectorSearchResult;

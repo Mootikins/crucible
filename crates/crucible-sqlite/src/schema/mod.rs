@@ -1,6 +1,6 @@
 //! Schema management and migrations
 
-use crate::error::{SqliteError, SqliteResult};
+use crucible_core::storage::{StorageError, StorageResult};
 use rusqlite::Connection;
 use tracing::{debug, info};
 
@@ -8,14 +8,15 @@ use tracing::{debug, info};
 const SCHEMA_VERSION: i32 = 1;
 
 /// Apply all pending migrations
-pub fn apply_migrations(conn: &Connection) -> SqliteResult<()> {
+pub fn apply_migrations(conn: &Connection) -> StorageResult<()> {
     // Create migrations table if it doesn't exist
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_migrations (
             version INTEGER PRIMARY KEY,
             applied_at TEXT NOT NULL DEFAULT (datetime('now'))
         );",
-    )?;
+    )
+    .map_err(|e| StorageError::Backend(e.to_string()))?;
 
     let current_version = get_current_version(conn)?;
     debug!(
@@ -37,7 +38,7 @@ pub fn apply_migrations(conn: &Connection) -> SqliteResult<()> {
 }
 
 /// Get current schema version
-fn get_current_version(conn: &Connection) -> SqliteResult<i32> {
+fn get_current_version(conn: &Connection) -> StorageResult<i32> {
     let version: Option<i32> = conn
         .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
             row.get(0)
@@ -48,20 +49,21 @@ fn get_current_version(conn: &Connection) -> SqliteResult<i32> {
 }
 
 /// Record that a migration was applied
-fn record_migration(conn: &Connection, version: i32) -> SqliteResult<()> {
+fn record_migration(conn: &Connection, version: i32) -> StorageResult<()> {
     conn.execute(
         "INSERT INTO schema_migrations (version) VALUES (?)",
         [version],
-    )?;
+    )
+    .map_err(|e| StorageError::Backend(e.to_string()))?;
     Ok(())
 }
 
 /// Migration v1: Initial schema with EAV+Graph tables
-fn apply_migration_v1(conn: &Connection) -> SqliteResult<()> {
+fn apply_migration_v1(conn: &Connection) -> StorageResult<()> {
     debug!("Applying migration v1: Initial EAV+Graph schema");
 
     conn.execute_batch(SCHEMA_V1)
-        .map_err(|e| SqliteError::Schema(format!("Failed to apply v1 schema: {}", e)))?;
+        .map_err(|e| StorageError::Backend(format!("Failed to apply v1 schema: {}", e)))?;
 
     record_migration(conn, 1)?;
     info!("Migration v1 applied successfully");
