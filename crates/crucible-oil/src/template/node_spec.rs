@@ -113,30 +113,19 @@ impl<T: Into<NodeSpec>> From<Vec<T>> for NodeSpec {
 
 pub type NodeAttrs = HashMap<String, NodeSpec>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum NodeSpecError {
+    #[error("invalid tag: {0}")]
     InvalidTag(String),
+    #[error("missing tag in node spec")]
     MissingTag,
+    #[error("invalid attribute '{key}': {message}")]
     InvalidAttribute { key: String, message: String },
+    #[error("invalid child: {0}")]
     InvalidChild(String),
+    #[error("unknown element: {0}")]
     UnknownElement(String),
 }
-
-impl std::fmt::Display for NodeSpecError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            NodeSpecError::InvalidTag(msg) => write!(f, "invalid tag: {}", msg),
-            NodeSpecError::MissingTag => write!(f, "missing tag in node spec"),
-            NodeSpecError::InvalidAttribute { key, message } => {
-                write!(f, "invalid attribute '{}': {}", key, message)
-            }
-            NodeSpecError::InvalidChild(msg) => write!(f, "invalid child: {}", msg),
-            NodeSpecError::UnknownElement(tag) => write!(f, "unknown element: {}", tag),
-        }
-    }
-}
-
-impl std::error::Error for NodeSpecError {}
 
 pub type NodeSpecResult<T> = Result<T, NodeSpecError>;
 
