@@ -337,13 +337,19 @@ impl NotePipeline {
             BlockHash::from_hex(&parsed.content_hash).unwrap_or_else(|_| BlockHash::zero());
 
         // Get embedding: use first block embedding or average if multiple
-        let embedding = if enriched.embeddings.is_empty() {
-            None
+        let (embedding, embedding_model, embedding_dimensions) = if enriched.embeddings.is_empty() {
+            (None, None, None)
         } else if enriched.embeddings.len() == 1 {
-            Some(enriched.embeddings[0].vector.clone())
+            let emb = &enriched.embeddings[0];
+            (
+                Some(emb.vector.clone()),
+                Some(emb.model.clone()),
+                Some(emb.dimensions as u32),
+            )
         } else {
             // Average all embeddings for document-level vector
-            let dim = enriched.embeddings[0].vector.len();
+            let first = &enriched.embeddings[0];
+            let dim = first.vector.len();
             let mut avg = vec![0.0f32; dim];
             for emb in &enriched.embeddings {
                 for (i, v) in emb.vector.iter().enumerate() {
@@ -356,7 +362,11 @@ impl NotePipeline {
             for v in &mut avg {
                 *v /= count;
             }
-            Some(avg)
+            (
+                Some(avg),
+                Some(first.model.clone()),
+                Some(first.dimensions as u32),
+            )
         };
 
         // Extract links from wikilinks
@@ -376,8 +386,8 @@ impl NotePipeline {
             path: relative_path.to_string(),
             content_hash,
             embedding,
-            embedding_model: None,
-            embedding_dimensions: None,
+            embedding_model,
+            embedding_dimensions,
             title: parsed.title(),
             tags,
             links_to,

@@ -550,7 +550,7 @@ impl NoteStore for SqliteNoteStore {
                 let mut stmt = conn
                     .prepare(
                     r#"
-                    SELECT path, content_hash, embedding, title, tags, links_to, properties, updated_at
+                    SELECT path, content_hash, embedding, embedding_model, embedding_dimensions, title, tags, links_to, properties, updated_at
                     FROM notes
                     WHERE content_hash = ?1
                     LIMIT 1
@@ -585,7 +585,7 @@ impl NoteStore for SqliteNoteStore {
                     let where_clause = filter_to_sql(filter, &mut params)?;
                     let sql = format!(
                         r#"
-                        SELECT path, content_hash, embedding, title, tags, links_to, properties, updated_at
+                        SELECT path, content_hash, embedding, embedding_model, embedding_dimensions, title, tags, links_to, properties, updated_at
                         FROM notes
                         WHERE embedding IS NOT NULL AND {}
                         "#,
@@ -594,7 +594,7 @@ impl NoteStore for SqliteNoteStore {
                     (sql, params)
                 } else {
                     let sql = r#"
-                        SELECT path, content_hash, embedding, title, tags, links_to, properties, updated_at
+                        SELECT path, content_hash, embedding, embedding_model, embedding_dimensions, title, tags, links_to, properties, updated_at
                         FROM notes
                         WHERE embedding IS NOT NULL
                     "#
