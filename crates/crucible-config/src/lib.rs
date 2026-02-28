@@ -37,6 +37,7 @@ mod loader;
 mod patterns;
 mod profile;
 mod security;
+pub mod serde_helpers;
 mod value_source;
 mod workspace;
 

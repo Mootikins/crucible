@@ -1,5 +1,4 @@
-use crucible_rpc::DaemonClient;
-
+use crate::common::daemon_client;
 use crate::tui::oil::commands::{validate_set_for_cli, SetEffect, SetError, SetRpcAction};
 
 #[cfg(test)]
@@ -84,9 +83,7 @@ pub async fn execute(settings: Vec<String>, session_id: Option<String>) -> anyho
             std::process::exit(1);
         });
 
-    let client = DaemonClient::connect_or_start()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to connect to daemon: {}", e))?;
+    let client = daemon_client().await?;
 
     for (setting_str, action) in &rpc_actions {
         match action {

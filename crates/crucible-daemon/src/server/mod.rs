@@ -83,62 +83,7 @@ pub struct Server {
 }
 
 struct NoopSessionRpc;
-
-impl SessionConfigRpc for NoopSessionRpc {
-    fn get_temperature(&self) -> Option<f64> {
-        None
-    }
-
-    fn set_temperature(&self, _temp: f64) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn get_max_tokens(&self) -> Option<u32> {
-        None
-    }
-
-    fn set_max_tokens(&self, _tokens: Option<u32>) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn get_thinking_budget(&self) -> Option<i64> {
-        None
-    }
-
-    fn set_thinking_budget(&self, _budget: i64) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn get_model(&self) -> Option<String> {
-        None
-    }
-
-    fn switch_model(&self, _model: &str) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn list_models(&self) -> Vec<String> {
-        Vec::new()
-    }
-
-    fn get_mode(&self) -> String {
-        "chat".to_string()
-    }
-
-    fn set_mode(&self, _mode: &str) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn notify(&self, _notification: crucible_core::types::Notification) {}
-
-    fn toggle_messages(&self) {}
-
-    fn show_messages(&self) {}
-
-    fn hide_messages(&self) {}
-
-    fn clear_messages(&self) {}
-}
+impl SessionConfigRpc for NoopSessionRpc {}
 
 struct LuaSessionState {
     executor: LuaExecutor,
