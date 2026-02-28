@@ -11,3 +11,12 @@ pub async fn daemon_client() -> anyhow::Result<DaemonClient> {
         .await
         .context("Failed to connect to daemon. Is it running? Try: cru daemon start")
 }
+
+/// Connect to the Crucible daemon with event streaming, starting it if necessary.
+///
+/// Standardizes the error message across all CLI commands.
+pub async fn daemon_client_with_events() -> anyhow::Result<(DaemonClient, tokio::sync::mpsc::UnboundedReceiver<crucible_rpc::SessionEvent>)> {
+    DaemonClient::connect_or_start_with_events()
+        .await
+        .context("Failed to connect to daemon. Is it running? Try: cru daemon start")
+}

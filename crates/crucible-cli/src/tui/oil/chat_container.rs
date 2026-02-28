@@ -21,8 +21,7 @@ use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, Cach
 /// Parameters for rendering a container view.
 ///
 /// Bundles layout context and derived state that containers need for rendering.
-/// This prepares for plugin extensibility where external code can define
-/// `(data, view_fn)` pairs using the `ContainerView` trait.
+/// Bundles layout context and derived state that containers need for rendering.
 #[derive(Debug, Clone, Copy)]
 pub struct ViewParams {
     pub render_state: RenderState,
@@ -32,28 +31,6 @@ pub struct ViewParams {
     pub is_complete: bool,
 }
 
-/// Trait for rendering a container to a node tree.
-///
-/// Built-in containers implement this via `ChatContainer`. External plugins
-/// can provide their own implementations for custom container types.
-pub trait ContainerView {
-    /// Unique ID for this container (used for graduation).
-    fn id(&self) -> &str;
-    /// Render this container to a Node tree.
-    fn view(&self, params: &ViewParams) -> Node;
-}
-
-impl ContainerView for ChatContainer {
-    fn id(&self) -> &str {
-        // Delegate to the inherent method
-        ChatContainer::id(self)
-    }
-
-    fn view(&self, params: &ViewParams) -> Node {
-        // Delegate to the inherent method
-        ChatContainer::view_with_params(self, params)
-    }
-}
 
 /// A block of thinking content with token count.
 #[derive(Debug, Clone)]

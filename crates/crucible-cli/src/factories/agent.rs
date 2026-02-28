@@ -240,11 +240,11 @@ pub async fn create_daemon_agent(
     config: &CliAppConfig,
     params: &AgentInitParams,
 ) -> Result<Box<dyn AgentHandle + Send + Sync>> {
-    use crucible_rpc::{DaemonAgentHandle, DaemonClient};
+    use crucible_rpc::DaemonAgentHandle;
     use std::sync::Arc;
 
     info!("Connecting to daemon (auto-start if needed)");
-    let (client, event_rx) = DaemonClient::connect_or_start_with_events()
+    let (client, event_rx) = crate::common::daemon_client_with_events()
         .await
         .map_err(|e| anyhow::anyhow!("Failed to connect to daemon: {}", e))?;
 
@@ -384,11 +384,11 @@ pub async fn create_daemon_replay_agent(
     String,
     tokio::sync::mpsc::UnboundedReceiver<crucible_rpc::SessionEvent>,
 )> {
-    use crucible_rpc::{DaemonAgentHandle, DaemonClient};
+    use crucible_rpc::DaemonAgentHandle;
     use std::sync::Arc;
 
     info!("Connecting to daemon for replay session");
-    let (client, event_rx) = DaemonClient::connect_or_start_with_events()
+    let (client, event_rx) = crate::common::daemon_client_with_events()
         .await
         .map_err(|e| anyhow::anyhow!("Failed to connect to daemon: {}", e))?;
 

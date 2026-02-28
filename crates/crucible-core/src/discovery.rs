@@ -142,7 +142,6 @@ impl DiscoveryPaths {
         }
     }
 
-    /// Get the resource type name
     pub fn type_name(&self) -> &str {
         &self.type_name
     }
@@ -164,12 +163,10 @@ impl DiscoveryPaths {
         paths
     }
 
-    /// Get only the default paths
     pub fn default_paths(&self) -> &[PathBuf] {
         &self.defaults
     }
 
-    /// Get only the additional paths
     pub fn additional_paths(&self) -> &[PathBuf] {
         &self.additional
     }
@@ -224,7 +221,6 @@ impl DiscoveryPaths {
             .collect()
     }
 
-    /// Get existing subdirectory paths
     pub fn existing_subdir(&self, subdir_name: &str) -> Vec<PathBuf> {
         self.subdir(subdir_name)
             .into_iter()
