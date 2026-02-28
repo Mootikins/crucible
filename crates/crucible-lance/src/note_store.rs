@@ -356,6 +356,8 @@ fn batch_to_notes(batch: &RecordBatch) -> StorageResult<Vec<NoteRecord>> {
             path,
             content_hash,
             embedding,
+            embedding_model: None,
+            embedding_dimensions: None,
             title,
             tags,
             links_to,
