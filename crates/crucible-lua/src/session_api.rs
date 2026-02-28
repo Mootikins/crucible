@@ -34,23 +34,26 @@ use tokio::sync::{mpsc, oneshot};
 
 /// Thin RPC interface for session configuration.
 /// Does NOT expose message sending or other sensitive operations.
+///
+/// All methods have no-op defaults so that stub implementations (e.g. daemon-side
+/// NoopSessionRpc, test mocks) don't need 16 boilerplate methods.
 pub trait SessionConfigRpc: Send + Sync {
-    fn get_temperature(&self) -> Option<f64>;
-    fn set_temperature(&self, temp: f64) -> Result<(), String>;
-    fn get_max_tokens(&self) -> Option<u32>;
-    fn set_max_tokens(&self, tokens: Option<u32>) -> Result<(), String>;
-    fn get_thinking_budget(&self) -> Option<i64>;
-    fn set_thinking_budget(&self, budget: i64) -> Result<(), String>;
-    fn get_model(&self) -> Option<String>;
-    fn switch_model(&self, model: &str) -> Result<(), String>;
-    fn list_models(&self) -> Vec<String>;
-    fn get_mode(&self) -> String;
-    fn set_mode(&self, mode: &str) -> Result<(), String>;
-    fn notify(&self, notification: crucible_core::types::Notification);
-    fn toggle_messages(&self);
-    fn show_messages(&self);
-    fn hide_messages(&self);
-    fn clear_messages(&self);
+    fn get_temperature(&self) -> Option<f64> { None }
+    fn set_temperature(&self, _temp: f64) -> Result<(), String> { Ok(()) }
+    fn get_max_tokens(&self) -> Option<u32> { None }
+    fn set_max_tokens(&self, _tokens: Option<u32>) -> Result<(), String> { Ok(()) }
+    fn get_thinking_budget(&self) -> Option<i64> { None }
+    fn set_thinking_budget(&self, _budget: i64) -> Result<(), String> { Ok(()) }
+    fn get_model(&self) -> Option<String> { None }
+    fn switch_model(&self, _model: &str) -> Result<(), String> { Ok(()) }
+    fn list_models(&self) -> Vec<String> { Vec::new() }
+    fn get_mode(&self) -> String { "chat".to_string() }
+    fn set_mode(&self, _mode: &str) -> Result<(), String> { Ok(()) }
+    fn notify(&self, _notification: crucible_core::types::Notification) {}
+    fn toggle_messages(&self) {}
+    fn show_messages(&self) {}
+    fn hide_messages(&self) {}
+    fn clear_messages(&self) {}
 }
 
 /// Commands sent from Lua to the event loop for async execution.
@@ -413,18 +416,6 @@ pub mod tests {
             *self.temperature.write().unwrap() = Some(temp);
             Ok(())
         }
-        fn get_max_tokens(&self) -> Option<u32> {
-            None
-        }
-        fn set_max_tokens(&self, _: Option<u32>) -> Result<(), String> {
-            Ok(())
-        }
-        fn get_thinking_budget(&self) -> Option<i64> {
-            None
-        }
-        fn set_thinking_budget(&self, _: i64) -> Result<(), String> {
-            Ok(())
-        }
         fn get_model(&self) -> Option<String> {
             self.model.read().unwrap().clone()
         }
@@ -438,14 +429,6 @@ pub mod tests {
         fn get_mode(&self) -> String {
             "act".to_string()
         }
-        fn set_mode(&self, _: &str) -> Result<(), String> {
-            Ok(())
-        }
-        fn notify(&self, _: crucible_core::types::Notification) {}
-        fn toggle_messages(&self) {}
-        fn show_messages(&self) {}
-        fn hide_messages(&self) {}
-        fn clear_messages(&self) {}
     }
 
     fn setup_lua() -> (Lua, SessionManager) {

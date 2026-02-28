@@ -15,6 +15,8 @@
 
 #![allow(missing_docs)]
 
+use crate::helpers::{json_success, McpResultExt};
+use crucible_core::serde_helpers::default_true;
 use crucible_core::storage::NoteStore;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{model::CallToolResult, tool, tool_router};
@@ -105,10 +107,6 @@ pub struct ListNotesParams {
     recursive: bool,
 }
 
-fn default_true() -> bool {
-    true
-}
-
 impl NoteTools {
     #[allow(missing_docs)]
     #[must_use]
@@ -149,25 +147,20 @@ impl NoteTools {
 
         // Build final content with optional frontmatter
         let final_content = if let Some(fm) = frontmatter {
-            let fm_str = serialize_frontmatter_to_yaml(&fm)
-                .map_err(|e| rmcp::ErrorData::internal_error(e, None))?;
+            let fm_str = serialize_frontmatter_to_yaml(&fm).mcp_err()?;
             format!("{fm_str}{content}")
         } else {
             content
         };
 
-        std::fs::write(&full_path, &final_content).map_err(|e| {
-            rmcp::ErrorData::internal_error(format!("Failed to write file: {e}"), None)
-        })?;
+        std::fs::write(&full_path, &final_content).mcp_err_ctx("Failed to write file")?;
 
         // TODO: Notify parser for reprocessing
 
-        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
-            serde_json::json!({
-                "path": path,
-                "status": "created"
-            }),
-        )?]))
+        json_success(serde_json::json!({
+            "path": path,
+            "status": "created"
+        }))
     }
 
     #[tool(description = "Read note content with optional line range")]
@@ -188,9 +181,7 @@ impl NoteTools {
             ));
         }
 
-        let content = std::fs::read_to_string(&full_path).map_err(|e| {
-            rmcp::ErrorData::internal_error(format!("Failed to read file: {e}"), None)
-        })?;
+        let content = std::fs::read_to_string(&full_path).mcp_err_ctx("Failed to read file")?;
 
         let lines: Vec<&str> = content.lines().collect();
         let total_lines = lines.len();
@@ -216,14 +207,12 @@ impl NoteTools {
             (None, None) => (content, total_lines),
         };
 
-        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
-            serde_json::json!({
-                "path": path,
-                "content": content_slice,
-                "total_lines": total_lines,
-                "lines_returned": lines_returned
-            }),
-        )?]))
+        json_success(serde_json::json!({
+            "path": path,
+            "content": content_slice,
+            "total_lines": total_lines,
+            "lines_returned": lines_returned
+        }))
     }
 
     #[tool(description = "Read note metadata without loading full content")]
@@ -260,19 +249,17 @@ impl NoteTools {
                     .ok()
                     .map(|ts: u64| ts);
 
-                return Ok(CallToolResult::success(vec![rmcp::model::Content::json(
-                    serde_json::json!({
-                        "path": path,
-                        "frontmatter": frontmatter,
-                        "stats": {
-                            "links_count": note_record.links_to.len(),
-                            "tags_count": note_record.tags.len(),
-                            "has_embedding": note_record.has_embedding(),
-                        },
-                        "modified": modified,
-                        "source": "index"
-                    }),
-                )?]));
+                return json_success(serde_json::json!({
+                    "path": path,
+                    "frontmatter": frontmatter,
+                    "stats": {
+                        "links_count": note_record.links_to.len(),
+                        "tags_count": note_record.tags.len(),
+                        "has_embedding": note_record.has_embedding(),
+                    },
+                    "modified": modified,
+                    "source": "index"
+                }));
             }
             // Note not found in store, fall through to filesystem
         }
@@ -285,9 +272,7 @@ impl NoteTools {
             ));
         }
 
-        let content = std::fs::read_to_string(&full_path).map_err(|e| {
-            rmcp::ErrorData::internal_error(format!("Failed to read file: {e}"), None)
-        })?;
+        let content = std::fs::read_to_string(&full_path).mcp_err_ctx("Failed to read file")?;
 
         // Parse frontmatter
         let frontmatter = parse_yaml_frontmatter(&content).unwrap_or_else(|| serde_json::json!({}));
@@ -311,19 +296,17 @@ impl NoteTools {
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_secs());
 
-        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
-            serde_json::json!({
-                "path": path,
-                "frontmatter": frontmatter,
-                "stats": {
-                    "word_count": word_count,
-                    "char_count": char_count,
-                    "line_count": line_count,
-                    "heading_count": heading_count,
-                },
-                "modified": modified
-            }),
-        )?]))
+        json_success(serde_json::json!({
+            "path": path,
+            "frontmatter": frontmatter,
+            "stats": {
+                "word_count": word_count,
+                "char_count": char_count,
+                "line_count": line_count,
+                "heading_count": heading_count,
+            },
+            "modified": modified
+        }))
     }
 
     #[tool(description = "Update an existing note")]
@@ -347,9 +330,8 @@ impl NoteTools {
         }
 
         // Read existing file
-        let existing_content = std::fs::read_to_string(&full_path).map_err(|e| {
-            rmcp::ErrorData::internal_error(format!("Failed to read file: {e}"), None)
-        })?;
+        let existing_content =
+            std::fs::read_to_string(&full_path).mcp_err_ctx("Failed to read file")?;
 
         // Track what fields are being updated
         let mut updated_fields = Vec::new();
@@ -385,26 +367,21 @@ impl NoteTools {
 
         // Build final file content
         let final_file_content = if let Some(fm) = final_frontmatter {
-            let fm_str = serialize_frontmatter_to_yaml(&fm)
-                .map_err(|e| rmcp::ErrorData::internal_error(e, None))?;
+            let fm_str = serialize_frontmatter_to_yaml(&fm).mcp_err()?;
             format!("{fm_str}{final_content}")
         } else {
             final_content
         };
 
-        std::fs::write(&full_path, &final_file_content).map_err(|e| {
-            rmcp::ErrorData::internal_error(format!("Failed to update file: {e}"), None)
-        })?;
+        std::fs::write(&full_path, &final_file_content).mcp_err_ctx("Failed to update file")?;
 
         // TODO: Notify parser for reprocessing
 
-        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
-            serde_json::json!({
-                "path": path,
-                "status": "updated",
-                "updated_fields": updated_fields
-            }),
-        )?]))
+        json_success(serde_json::json!({
+            "path": path,
+            "status": "updated",
+            "updated_fields": updated_fields
+        }))
     }
 
     #[tool(description = "Delete a note from the kiln")]
@@ -425,18 +402,14 @@ impl NoteTools {
             ));
         }
 
-        std::fs::remove_file(&full_path).map_err(|e| {
-            rmcp::ErrorData::internal_error(format!("Failed to delete file: {e}"), None)
-        })?;
+        std::fs::remove_file(&full_path).mcp_err_ctx("Failed to delete file")?;
 
         // TODO: Notify parser for reprocessing
 
-        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
-            serde_json::json!({
-                "path": path,
-                "status": "deleted"
-            }),
-        )?]))
+        json_success(serde_json::json!({
+            "path": path,
+            "status": "deleted"
+        }))
     }
 
     #[tool(description = "List notes in a directory")]
@@ -489,9 +462,10 @@ impl NoteTools {
         include_frontmatter: bool,
         recursive: bool,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let all_notes = note_store.list().await.map_err(|e| {
-            rmcp::ErrorData::internal_error(format!("Failed to list notes from store: {e}"), None)
-        })?;
+        let all_notes = note_store
+            .list()
+            .await
+            .mcp_err_ctx("Failed to list notes from store")?;
 
         let folder_prefix = folder.unwrap_or("");
         let mut notes = Vec::new();
@@ -550,15 +524,13 @@ impl NoteTools {
             notes.push(note_json);
         }
 
-        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
-            serde_json::json!({
-                "notes": notes,
-                "folder": folder,
-                "count": notes.len(),
-                "recursive": recursive,
-                "source": "index"
-            }),
-        )?]))
+        json_success(serde_json::json!({
+            "notes": notes,
+            "folder": folder,
+            "count": notes.len(),
+            "recursive": recursive,
+            "source": "index"
+        }))
     }
 
     /// List notes using filesystem scanning (fallback)
@@ -614,12 +586,8 @@ impl NoteTools {
             }
         } else {
             // Non-recursive: just immediate children
-            for entry in std::fs::read_dir(search_path).map_err(|e| {
-                rmcp::ErrorData::internal_error(format!("Failed to read directory: {e}"), None)
-            })? {
-                let entry = entry.map_err(|e| {
-                    rmcp::ErrorData::internal_error(format!("Failed to read entry: {e}"), None)
-                })?;
+            for entry in std::fs::read_dir(search_path).mcp_err_ctx("Failed to read directory")? {
+                let entry = entry.mcp_err_ctx("Failed to read entry")?;
                 let path = entry.path();
 
                 if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
@@ -653,14 +621,12 @@ impl NoteTools {
             }
         }
 
-        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
-            serde_json::json!({
-                "notes": notes,
-                "folder": folder,
-                "count": notes.len(),
-                "recursive": recursive
-            }),
-        )?]))
+        json_success(serde_json::json!({
+            "notes": notes,
+            "folder": folder,
+            "count": notes.len(),
+            "recursive": recursive
+        }))
     }
 }
 

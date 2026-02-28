@@ -2,11 +2,12 @@
 //!
 //! Daemon-only: all storage access goes through the daemon via RPC.
 
+use crate::common::daemon_client;
 use crate::config::CliConfig;
 use anyhow::Result;
 use crucible_core::storage::NoteStore;
 use crucible_core::traits::StorageClient;
-use crucible_rpc::{DaemonClient, DaemonNoteStore, DaemonStorageClient};
+use crucible_rpc::{DaemonNoteStore, DaemonStorageClient};
 use std::sync::Arc;
 use tracing::info;
 
@@ -70,7 +71,7 @@ impl StorageHandle {
 /// and returns a `StorageHandle` for queries.
 pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
     info!("Using daemon storage mode");
-    let client = DaemonClient::connect_or_start().await?;
+    let client = daemon_client().await?;
     let kiln_path = config.kiln_path.clone();
 
     // Open the kiln in the daemon (required before any queries).

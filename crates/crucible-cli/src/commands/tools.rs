@@ -2,6 +2,7 @@ use anyhow::Result;
 use crucible_rpc::DaemonClient;
 
 use crate::cli::ToolsCommands;
+use crate::common::daemon_client;
 use crate::config::CliConfig;
 
 pub async fn execute(_config: CliConfig, command: ToolsCommands) -> Result<()> {
@@ -11,9 +12,7 @@ pub async fn execute(_config: CliConfig, command: ToolsCommands) -> Result<()> {
 }
 
 async fn list(permissions: bool) -> Result<()> {
-    let client = DaemonClient::connect_or_start()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to connect to daemon: {}", e))?;
+    let client = daemon_client().await?;
 
     if permissions {
         list_permissions(&client).await

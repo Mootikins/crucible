@@ -3,9 +3,9 @@
 //! Provides CLI commands for listing, showing, and searching skills.
 
 use anyhow::Result;
-use crucible_rpc::DaemonClient;
 
 use crate::cli::SkillsCommands;
+use crate::common::daemon_client;
 use crate::config::CliConfig;
 
 /// Execute skills subcommand
@@ -19,7 +19,7 @@ pub async fn execute(config: CliConfig, command: SkillsCommands) -> Result<()> {
 
 /// List discovered skills
 async fn list(config: &CliConfig, scope_filter: Option<String>) -> Result<()> {
-    let client = DaemonClient::connect_or_start().await?;
+    let client = daemon_client().await?;
     let response = client
         .skills_list(&config.kiln_path, scope_filter.as_deref())
         .await?;
@@ -56,7 +56,7 @@ async fn list(config: &CliConfig, scope_filter: Option<String>) -> Result<()> {
 
 /// Show skill details
 async fn show(config: &CliConfig, name: String) -> Result<()> {
-    let client = DaemonClient::connect_or_start().await?;
+    let client = daemon_client().await?;
     let response = client.skills_get(&name, &config.kiln_path).await?;
 
     if response.is_null() || response.get("name").is_none() {
@@ -99,7 +99,7 @@ async fn show(config: &CliConfig, name: String) -> Result<()> {
 async fn search(config: &CliConfig, query: String, limit: usize) -> Result<()> {
     println!("Searching for: '{}' (limit: {})", query, limit);
 
-    let client = DaemonClient::connect_or_start().await?;
+    let client = daemon_client().await?;
     let response = client
         .skills_search(&query, &config.kiln_path, Some(limit))
         .await?;

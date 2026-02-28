@@ -3,6 +3,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::serde_helpers::default_true;
+
 /// ACP configuration - practical settings for agent communication
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AcpConfig {
@@ -85,9 +87,6 @@ pub struct AgentProfile {
     pub delegation: Option<DelegationConfig>,
 }
 
-fn default_true() -> bool {
-    true
-}
 fn default_session_timeout() -> u64 {
     30
 }
