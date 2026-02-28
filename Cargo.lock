@@ -3289,7 +3289,6 @@ dependencies = [
  "anyhow",
  "chrono",
  "crucible-core",
- "crucible-llm",
  "crucible-skills",
  "dirs 6.0.0",
  "glob",

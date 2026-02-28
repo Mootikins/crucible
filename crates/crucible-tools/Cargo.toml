@@ -11,7 +11,7 @@ description = "System and Lua tools for Crucible knowledge management with plugi
 crucible-core = { workspace = true }
 crucible-config = { workspace = true }
 crucible-lua = { workspace = true, features = ["send"] }
-crucible-skills = { workspace = true, features = ["embeddings"] }
+crucible-skills = { workspace = true }
 oq = { workspace = true }
 
 # MCP support (server for hosting, client for calling upstream)
@@ -91,7 +91,6 @@ encoding_rs = "0.8"
 [features]
 default = ["embeddings"]
 embeddings = []
-fastembed = ["crucible-skills/fastembed"]
 database = []
 search = []
 kiln = []

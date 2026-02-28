@@ -30,7 +30,7 @@ web = ["dep:crucible-web"]
 
 
 # Local embedding support (includes ONNX Runtime download)
-fastembed = ["crucible-llm/fastembed", "crucible-tools/fastembed"]
+fastembed = ["crucible-llm/fastembed"]
 
 # Rendering pipeline selection
 taffy-render = []  # Use new Taffy-based layout pipeline (experimental)
