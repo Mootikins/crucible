@@ -14,6 +14,7 @@ use tracing::{info, warn};
 use crate::pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
 use crucible_core::processing::InMemoryChangeDetectionStore;
 use crucible_core::storage::note_store::NoteRecord;
+use crucible_core::storage::StorageError;
 use crucible_core::traits::{KnowledgeRepository, NoteInfo};
 use crucible_core::EXCLUDED_DIRS;
 use crucible_watch::{EventFilter, WatchManager, WatchManagerConfig};
@@ -253,6 +254,10 @@ impl KilnManager {
                 crate::event_emitter::emit_event(tx, event);
             }
         }
+
+        // Check for embedding model mismatch (non-blocking diagnostic)
+        self.check_embedding_model_mismatch(&canonical).await;
+
         Ok(())
     }
 
@@ -493,6 +498,107 @@ impl KilnManager {
             .filter(|kiln_path| canonical.starts_with(kiln_path))
             .max_by_key(|p| p.components().count())
             .cloned()
+    }
+
+    /// Check if the kiln has embeddings from a different model than currently configured.
+    ///
+    /// Non-blocking diagnostic: logs a warning and emits an event if mismatch detected.
+    /// Does not fail kiln open on error.
+    async fn check_embedding_model_mismatch(&self, canonical: &Path) {
+        let current_model = match self.enrichment_config.as_ref() {
+            Some(config) => config.model().to_string(),
+            None => return, // No enrichment configured, nothing to check
+        };
+
+        let event_tx = match self.event_tx.as_ref() {
+            Some(tx) => tx,
+            None => return, // No event channel, can't emit warnings
+        };
+
+        // Clone handle to avoid holding the read lock during SQL query
+        let handle = {
+            let conns = self.connections.read().await;
+            match conns.get(canonical) {
+                Some(conn) => conn.handle.clone(),
+                None => return,
+            }
+        };
+
+        let canonical_str = canonical.to_string_lossy().to_string();
+
+        match &handle {
+            #[cfg(feature = "storage-sqlite")]
+            StorageHandle::Sqlite(client) => {
+                let pool = client.pool().clone();
+                let current_model_owned = current_model.clone();
+
+                let result = tokio::task::spawn_blocking(move || {
+                    pool.with_connection(|conn| {
+                        let mut stmt = conn
+                            .prepare(
+                                "SELECT DISTINCT embedding_model FROM notes \
+                                 WHERE embedding IS NOT NULL AND embedding_model IS NOT NULL",
+                            )
+                            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+                        let models: Vec<String> = stmt
+                            .query_map([], |row| row.get(0))
+                            .map_err(|e| StorageError::Backend(e.to_string()))?
+                            .filter_map(|r| r.ok())
+                            .collect();
+
+                        let mut mismatches = Vec::new();
+                        for model in models {
+                            if model != current_model_owned {
+                                let count: usize = conn
+                                    .query_row(
+                                        "SELECT COUNT(*) FROM notes \
+                                         WHERE embedding_model = ?1 AND embedding IS NOT NULL",
+                                        [&model],
+                                        |row| row.get(0),
+                                    )
+                                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                                mismatches.push((model, count));
+                            }
+                        }
+
+                        Ok(mismatches)
+                    })
+                })
+                .await;
+
+                match result {
+                    Ok(Ok(mismatches)) => {
+                        for (stored_model, note_count) in mismatches {
+                            warn!(
+                                kiln_path = %canonical_str,
+                                stored_model = %stored_model,
+                                current_model = %current_model,
+                                note_count,
+                                "Embedding model mismatch detected"
+                            );
+                            let event = SessionEventMessage::new(
+                                "system",
+                                "embedding_model_mismatch",
+                                serde_json::json!({
+                                    "kiln_path": canonical_str,
+                                    "stored_model": stored_model,
+                                    "current_model": current_model,
+                                    "note_count": note_count,
+                                }),
+                            );
+                            crate::event_emitter::emit_event(event_tx, event);
+                        }
+                    }
+                    Ok(Err(e)) => {
+                        warn!("Failed to check embedding model mismatch: {}", e);
+                    }
+                    Err(e) => {
+                        warn!("Failed to check embedding model mismatch: {}", e);
+                    }
+                }
+            }
+        }
     }
 
     async fn start_watch_manager(&self, kiln_path: &Path) -> Option<WatchManager> {
