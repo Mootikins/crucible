@@ -105,33 +105,11 @@ impl WatchResult {
     }
 }
 
-/// Main file scanner for the crucible-watch system
-///
-/// The FileScanner provides comprehensive file discovery and scanning capabilities
-/// with dependency injection for hashing operations. It supports recursive directory
-/// scanning, file filtering, progress reporting, and integrates with the existing
-/// crucible-watch infrastructure.
-///
-/// # Design Principles
-///
-/// - **Dependency Injection**: Uses the ContentHasher trait for flexible hashing
-/// - **Async First**: All operations are async for non-blocking behavior
-/// - **Error Resilient**: Continues processing even when individual files fail
-/// - **Progress Tracking**: Provides detailed progress information for large operations
-/// - **Configurable**: Extensive configuration options for different use cases
-/// - **Thread Safe**: Safe to use across multiple threads with proper synchronization
-///
-/// # Examples
-///
-/// // TODO: Add example once API stabilizes
+/// File scanner with content hashing and configurable filters.
 pub struct FileScanner {
-    /// Root directory to scan
     root_path: PathBuf,
-    /// Scan configuration
     config: ScanConfig,
-    /// Content hasher implementation
     hasher: Arc<dyn ContentHasher>,
-    /// Internal state cache
     state: Arc<RwLock<FileScannerState>>,
 }
 
@@ -151,21 +129,7 @@ struct FileScannerState {
 }
 
 impl FileScanner {
-    /// Create a new FileScanner with the given parameters
-    ///
-    /// # Arguments
-    ///
-    /// * `root_path` - Root directory to scan
-    /// * `config` - Scan configuration
-    /// * `hasher` - Content hasher implementation
-    ///
-    /// # Returns
-    ///
-    /// A new FileScanner instance
-    ///
-    /// # Errors
-    ///
-    /// Returns Error if the root path doesn't exist or isn't accessible
+    /// Create a new FileScanner. Fails if root_path doesn't exist or isn't a directory.
     pub fn new(
         root_path: &Path,
         config: ScanConfig,
@@ -203,20 +167,7 @@ impl FileScanner {
         })
     }
 
-    /// Create a FileScanner with default configuration
-    ///
-    /// # Arguments
-    ///
-    /// * `root_path` - Root directory to scan
-    /// * `hasher` - Content hasher implementation
-    ///
-    /// # Returns
-    ///
-    /// A new FileScanner with default configuration
-    ///
-    /// # Errors
-    ///
-    /// Returns Error if the root path doesn't exist or isn't accessible
+    /// Create a FileScanner with default configuration.
     pub fn with_defaults(
         root_path: &Path,
         hasher: Arc<dyn ContentHasher>,
@@ -224,15 +175,6 @@ impl FileScanner {
         Self::new(root_path, ScanConfig::default(), hasher)
     }
 
-    /// Validate the scan configuration
-    ///
-    /// # Arguments
-    ///
-    /// * `config` - Configuration to validate
-    ///
-    /// # Returns
-    ///
-    /// Ok(()) if valid, Err(Error) if invalid
     fn validate_config(config: &ScanConfig) -> Result<(), Error> {
         if config.max_file_size == 0 {
             return Err(Error::ValidationError {
@@ -265,19 +207,7 @@ impl FileScanner {
         Ok(())
     }
 
-    /// Scan the root directory and all subdirectories
-    ///
-    /// This is the main entry point for directory scanning. It will recursively
-    /// scan the root directory according to the configuration, applying all
-    /// filters and processing eligible files.
-    ///
-    /// # Returns
-    ///
-    /// Comprehensive scan result with discovered files, errors, and statistics
-    ///
-    /// # Examples
-    ///
-    /// // TODO: Add example once API stabilizes
+    /// Scan the root directory and all subdirectories.
     pub async fn scan_directory(&self) -> Result<ScanResult, Error> {
         let start_time = Instant::now();
 
@@ -331,23 +261,7 @@ impl FileScanner {
         Ok(result)
     }
 
-    /// Scan specific files or a list of files
-    ///
-    /// This method scans only the specified files rather than doing a full
-    /// directory scan. It's useful for processing specific files that have
-    /// been identified as needing updates.
-    ///
-    /// # Arguments
-    ///
-    /// * `files` - List of file paths to scan
-    ///
-    /// # Returns
-    ///
-    /// Scan result for the specified files
-    ///
-    /// # Examples
-    ///
-    /// // TODO: Add example once API stabilizes
+    /// Scan specific files rather than doing a full directory scan.
     pub async fn scan_files(&self, files: Vec<PathBuf>) -> Result<ScanResult, Error> {
         let start_time = Instant::now();
 
@@ -401,53 +315,12 @@ impl FileScanner {
         Ok(result)
     }
 
-    /// Set up file watching for the root directory
-    ///
-    /// This method sets up file watching for the root directory using the
-    /// specified configuration. Note that this is a placeholder implementation
-    /// that would need to be integrated with a specific file watching backend.
-    ///
-    /// # Arguments
-    ///
-    /// * `watch_config` - Configuration for file watching
-    ///
-    /// # Returns
-    ///
-    /// Watch result indicating success and any warnings
-    ///
-    /// # Examples
-    ///
-    /// // TODO: Add example once API stabilizes
-    pub async fn watch_directory(&self, watch_config: WatchConfig) -> Result<WatchResult, Error> {
-        info!("Setting up file watching for: {:?}", self.root_path);
-        debug!("Watch configuration: {:?}", watch_config);
-
-        // This is a placeholder implementation
-        // In a real implementation, this would integrate with the file watching backend
-        let _warnings = if cfg!(target_os = "windows") {
-            vec![
-                "File watching may have limited functionality on Windows".to_string(),
-                "Consider using the Notify backend for better Windows support".to_string(),
-            ]
-        } else {
-            Vec::new()
-        };
-
-        let result = WatchResult::success(0); // Placeholder count
-
-        info!("File watching setup completed. Success: {}", result.success);
-        for warning in &result.warnings {
-            warn!("File watching warning: {}", warning);
-        }
-
-        Ok(result)
+    /// Placeholder — real watching is handled by notify/polling backends.
+    pub async fn watch_directory(&self, _watch_config: WatchConfig) -> Result<WatchResult, Error> {
+        Ok(WatchResult::success(0))
     }
 
-    /// Get statistics about previous scans
-    ///
-    /// # Returns
-    ///
-    /// Statistics about scan history and performance
+    /// Get statistics about previous scans.
     pub async fn get_scan_statistics(&self) -> ScanStatistics {
         let state = self.state.read().await;
         ScanStatistics {
@@ -461,22 +334,13 @@ impl FileScanner {
         }
     }
 
-    /// Get the currently discovered files
-    ///
-    /// # Returns
-    ///
-    /// Vector of files discovered in the last scan
+    /// Get the currently discovered files.
     pub async fn get_discovered_files(&self) -> Vec<FileInfo> {
         let state = self.state.read().await;
         state.discovered_files.clone()
     }
 
-    /// Rescan only files that have changed since the last scan
-    ///
-    /// This method uses the file metadata from the last scan to determine
-    /// which files need to be rescanned based on modification times and sizes.
-    ///
-    /// # Returns
+    /// Rescan only files that have changed since the last scan.
     ///
     /// Scan result for changed files only
     pub async fn scan_changed_files(&self) -> Result<ScanResult, Error> {
