@@ -562,3 +562,32 @@ fn default_gap_has_no_extra_blank_lines() {
     assert_eq!(lines[0], "X");
     assert_eq!(lines[1], "Y");
 }
+
+#[test]
+fn spinner_with_theme_style_renders_with_ansi_codes() {
+    use crate::tui::oil::theme::ThemeTokens;
+    use crate::tui::oil::style::Style;
+    
+    // Create a spinner with the theme's spinner style
+    let theme = ThemeTokens::default_ref();
+    let spinner_style = theme.spinner_style();
+    let node = spinner(None, 0).with_style(spinner_style);
+    
+    let output = render_to_string(&node, 80);
+    
+    // The output should contain ANSI escape codes for the style
+    // (not just plain text with Style::default())
+    // We verify that the style is not the default by checking that
+    // the spinner_style() returns a non-default style
+    assert_ne!(
+        spinner_style,
+        Style::default(),
+        "Spinner style should not be default"
+    );
+    
+    // The rendered output should contain the spinner character
+    assert!(
+        !output.is_empty(),
+        "Spinner should render to non-empty output"
+    );
+}

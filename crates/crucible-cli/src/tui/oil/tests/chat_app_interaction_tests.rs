@@ -1836,3 +1836,19 @@ fn set_available_models_does_not_set_loaded_state_when_empty() {
     );
     assert!(app.available_models().is_empty(), "Models should be empty");
 }
+
+#[test]
+fn spinner_style_is_not_default() {
+    use crate::tui::oil::theme::ThemeTokens;
+    use crate::tui::oil::style::Style;
+    
+    // Verify that the spinner style from theme tokens is not the default style
+    let theme = ThemeTokens::default_ref();
+    let spinner_style = theme.spinner_style();
+    
+    assert_ne!(
+        spinner_style,
+        Style::default(),
+        "Spinner style should not be default (should have color applied)"
+    );
+}
