@@ -845,6 +845,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn schema_idempotency_apply_twice_no_error() {
+        let pool = SqlitePool::memory().expect("Failed to create pool");
+        let store = SqliteNoteStore::new(pool);
+
+        store
+            .apply_schema()
+            .await
+            .expect("First apply_schema should succeed");
+        store
+            .apply_schema()
+            .await
+            .expect("Second apply_schema should also succeed");
+    }
+
+    #[tokio::test]
+    async fn embedding_metadata_round_trip() {
+        let pool = SqlitePool::memory().expect("Failed to create pool");
+        let store = create_note_store(pool)
+            .await
+            .expect("Failed to create store");
+
+        let note = NoteRecord::new("metadata.md", BlockHash::zero())
+            .with_title("Metadata")
+            .with_embedding(vec![0.1, 0.2, 0.3])
+            .with_embedding_metadata("test-model".to_string(), 384);
+
+        store.upsert(note).await.expect("Failed to upsert note");
+
+        let retrieved = store
+            .get("metadata.md")
+            .await
+            .expect("Failed to retrieve note")
+            .expect("Expected note to exist");
+
+        assert_eq!(retrieved.embedding_model.as_deref(), Some("test-model"));
+        assert_eq!(retrieved.embedding_dimensions, Some(384));
+    }
+
+    #[tokio::test]
     async fn test_note_store_crud() {
         let pool = SqlitePool::memory().expect("Failed to create pool");
         let store = create_note_store(pool)

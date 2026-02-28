@@ -20,7 +20,7 @@ use crate::rpc_helpers::{optional_param, require_param};
 use crate::session_manager::SessionManager;
 use crate::session_storage::{FileSessionStorage, SessionStorage};
 use anyhow::Result;
-use crucible_config::{DataClassification, EmbeddingProviderConfig, LlmConfig, TrustLevel};
+use crucible_config::{DataClassification, LlmConfig, TrustLevel};
 use crucible_core::events::SessionEvent;
 use crucible_core::session::RecordingMode;
 use crucible_lua::stubs::StubGenerator;
@@ -77,7 +77,6 @@ pub struct Server {
     plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
     plugin_watch: bool,
     llm_config: Option<LlmConfig>,
-    enrichment_config: Option<EmbeddingProviderConfig>,
     #[cfg(feature = "web")]
     web_config: Option<crucible_config::WebConfig>,
     mcp_server_manager: Arc<McpServerManager>,
@@ -275,7 +274,6 @@ impl Server {
             plugin_loader,
             plugin_watch,
             llm_config,
-            enrichment_config,
             mcp_server_manager,
             #[cfg(feature = "web")]
             web_config,

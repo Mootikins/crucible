@@ -553,6 +553,24 @@ mod tests {
     }
 
     #[test]
+    fn note_record_backward_compat_missing_fields() {
+        let json = serde_json::json!({
+            "path": "legacy.md",
+            "content_hash": BlockHash::zero(),
+            "title": "Legacy",
+            "tags": [],
+            "links_to": [],
+            "properties": {},
+            "updated_at": Utc::now().to_rfc3339(),
+        });
+
+        let deserialized: NoteRecord = serde_json::from_value(json).expect("deserialize legacy note");
+
+        assert_eq!(deserialized.embedding_model, None);
+        assert_eq!(deserialized.embedding_dimensions, None);
+    }
+
+    #[test]
     fn test_filter_serialization() {
         let filter = Filter::And(vec![
             Filter::Tag("rust".to_string()),
