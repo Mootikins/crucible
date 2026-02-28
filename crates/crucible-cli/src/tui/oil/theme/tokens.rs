@@ -171,7 +171,7 @@ impl ThemeTokens {
             mode_auto: Yellow,
 
             // UI elements
-            spinner: Cyan,
+            spinner: White,
             selected: Cyan,
             border: Rgb(40, 44, 52), // same as INPUT_BG
             prompt: Cyan,
@@ -541,7 +541,7 @@ mod tests {
         assert_eq!(t.mode_auto, Color::Yellow);
 
         // UI elements
-        assert_eq!(t.spinner, Color::Cyan);
+        assert_eq!(t.spinner, Color::White);
         assert_eq!(t.selected, Color::Cyan);
         assert_eq!(t.border, Color::Rgb(40, 44, 52)); // same as input_bg
         assert_eq!(t.prompt, Color::Cyan);
@@ -619,7 +619,7 @@ mod tests {
 
         // UI elements
         assert_eq!(t.prompt_style(), Style::new().fg(Color::Cyan));
-        assert_eq!(t.spinner_style(), Style::new().fg(Color::Cyan));
+        assert_eq!(t.spinner_style(), Style::new().fg(Color::White));
         assert_eq!(t.model_name_style(), Style::new().fg(Color::Cyan));
         assert_eq!(t.notification_style(), Style::new().fg(Color::Yellow));
         assert_eq!(
