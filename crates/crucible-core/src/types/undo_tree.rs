@@ -171,11 +171,8 @@ impl<T: Clone> UndoTree<T> {
     }
 }
 
-pub trait TreeNodeLabel {
-    fn tree_label(&self) -> String;
-}
 
-impl<T: Clone + TreeNodeLabel> UndoTree<T> {
+impl<T: Clone + std::fmt::Display> UndoTree<T> {
     pub fn render_ascii(&self, max_lines: usize) -> String {
         if self.nodes.is_empty() {
             return String::from("(empty)");
@@ -223,7 +220,7 @@ impl<T: Clone + TreeNodeLabel> UndoTree<T> {
             "○"
         };
 
-        let label = node.item.tree_label();
+        let label = node.item.to_string();
 
         let connector = if is_last { "└─" } else { "├─" };
         let line = if prefix.is_empty() {
@@ -275,9 +272,9 @@ mod tests {
     #[derive(Clone, Debug)]
     struct TestItem(String);
 
-    impl TreeNodeLabel for TestItem {
-        fn tree_label(&self) -> String {
-            self.0.clone()
+    impl std::fmt::Display for TestItem {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.0)
         }
     }
 

@@ -47,7 +47,7 @@ impl EventBroker {
 }
 
 pub async fn init_daemon(config: CliAppConfig) -> Result<AppState> {
-    let (daemon, event_rx) = DaemonClient::connect_or_start_with_events()
+    let (daemon, event_rx) = crucible_rpc::DaemonClient::connect_or_start_with_events()
         .await
         .map_err(|e| WebError::Daemon(format!("Failed to connect to daemon: {e}")))?;
 

@@ -175,7 +175,6 @@ cargo-dist-version = "0.27.0"
 
 [workspace.metadata.test-tiers]
 # test-fixtures: Tests using docs/ kiln or examples/test-kiln
-# test-infrastructure: Tests requiring Ollama, ACP agents (opencode/claude)
 # test-slow: Performance benchmarks and timing-sensitive tests
 
 # The profile that 'cargo dist' will build with

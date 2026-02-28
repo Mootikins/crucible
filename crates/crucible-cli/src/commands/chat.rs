@@ -428,7 +428,7 @@ async fn run_interactive_chat(
     let lua_session_id = resume_session_id
         .clone()
         .unwrap_or_else(|| format!("chat-{}", chrono::Utc::now().format("%Y%m%d-%H%M%S")));
-    let lua_client = match DaemonClient::connect_or_start().await {
+    let lua_client = match crate::common::daemon_client().await {
         Ok(client) => Some(client),
         Err(e) => {
             warn!("Failed to connect to daemon for Lua init: {}", e);

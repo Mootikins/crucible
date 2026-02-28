@@ -309,7 +309,7 @@ async fn list_persisted(
     }
 
     // Try daemon RPC first
-    if let Ok(client) = DaemonClient::connect_or_start().await {
+    if let Ok(client) = daemon_client().await {
         if let Ok(result) = client
             .session_list_persisted(
                 &config.kiln_path,
@@ -412,10 +412,10 @@ async fn list_persisted(
 
 /// Search sessions by title/content via daemon RPC (with local fallback)
 async fn search(config: CliConfig, query: String, limit: u32) -> Result<()> {
-    use crucible_rpc::DaemonClient;
+
 
     // Try daemon RPC first
-    if let Ok(client) = DaemonClient::connect_or_start().await {
+    if let Ok(client) = daemon_client().await {
         if let Ok(result) = client
             .session_search(&query, Some(&config.kiln_path), Some(limit as usize))
             .await
@@ -605,7 +605,7 @@ fn extract_session_id_from_path(path: &str) -> String {
 
 /// Show session details
 async fn show(config: CliConfig, id: String, format: String) -> Result<()> {
-    let client = DaemonClient::connect_or_start().await.ok();
+    let client = daemon_client().await.ok();
 
     // Check for live daemon session first
     if let Some(client) = &client {
@@ -750,7 +750,7 @@ async fn export(
     }
 
     // Try daemon RPC first
-    if let Ok(client) = DaemonClient::connect_or_start().await {
+    if let Ok(client) = daemon_client().await {
         if let Ok(output_path_str) = client
             .session_export_to_file(&session_dir, output.as_deref(), Some(timestamps))
             .await

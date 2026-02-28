@@ -80,7 +80,7 @@ pub use crate::types::popup::PopupEntry;
 
 // Re-export undo tree types
 pub use crate::types::undo_tree::{
-    NodeId as UndoNodeId, TreeNode, TreeNodeLabel, TreeSummary, UndoTree,
+    NodeId as UndoNodeId, TreeNode, TreeSummary, UndoTree,
 };
 
 // Re-export notification types
