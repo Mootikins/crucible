@@ -26,6 +26,7 @@
 
 #![allow(missing_docs)]
 
+use crate::helpers::McpResultExt;
 use crate::{KilnTools, NoteTools, SearchTools};
 use crucible_config::{DataClassification, TrustLevel};
 use crucible_core::background::{BackgroundSpawner, JobStatus, SubagentBlockingConfig};
@@ -422,9 +423,9 @@ impl CrucibleMcpServer {
         let jobs = delegation
             .background_spawner
             .list_jobs(&delegation.session_id);
-        let content = rmcp::model::Content::json(serde_json::to_value(&jobs).map_err(|e| {
-            rmcp::ErrorData::internal_error(format!("Failed to serialize jobs: {e}"), None)
-        })?)?;
+        let content = rmcp::model::Content::json(
+            serde_json::to_value(&jobs).mcp_err_ctx("Failed to serialize jobs")?,
+        )?;
         Ok(CallToolResult::success(vec![content]))
     }
 
