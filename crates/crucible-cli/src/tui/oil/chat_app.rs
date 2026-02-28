@@ -2544,7 +2544,6 @@ impl OilChatApp {
         let term_width = self.terminal_size.get().0 as usize;
         let containers = self.container_list.viewport_containers();
 
-
         let mut nodes: Vec<Node> = containers
             .iter()
             .enumerate()
