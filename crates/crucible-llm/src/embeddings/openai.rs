@@ -36,12 +36,6 @@ enum EmbeddingInput {
 struct OpenAIEmbeddingResponse {
     /// Embedding data array
     data: Vec<OpenAIEmbeddingData>,
-    /// Model used
-    #[allow(dead_code)]
-    model: String,
-    /// Usage statistics
-    #[allow(dead_code)]
-    usage: OpenAIUsage,
 }
 
 /// Individual embedding in OpenAI response
@@ -51,17 +45,6 @@ struct OpenAIEmbeddingData {
     embedding: Vec<f32>,
     /// Index in the batch
     index: usize,
-}
-
-/// Token usage information
-#[derive(Debug, Deserialize)]
-struct OpenAIUsage {
-    /// Number of prompt tokens
-    #[allow(dead_code)]
-    prompt_tokens: usize,
-    /// Total tokens used
-    #[allow(dead_code)]
-    total_tokens: usize,
 }
 
 /// OpenAI error response
@@ -74,12 +57,6 @@ struct OpenAIErrorResponse {
 #[derive(Debug, Deserialize)]
 struct OpenAIErrorDetail {
     message: String,
-    #[serde(rename = "type")]
-    #[allow(dead_code)]
-    error_type: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    code: Option<String>,
 }
 
 /// OpenAI embedding provider
@@ -391,8 +368,6 @@ mod tests {
         assert_eq!(response.data[0].embedding.len(), 3);
         assert_eq!(response.data[0].embedding[0], 0.1);
         assert_eq!(response.data[0].index, 0);
-        assert_eq!(response.model, "text-embedding-3-small");
-        assert_eq!(response.usage.prompt_tokens, 5);
     }
 
     #[test]
@@ -428,7 +403,5 @@ mod tests {
 
         let response: OpenAIErrorResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.error.message, "Invalid API key");
-        assert_eq!(response.error.error_type, "invalid_request_error");
-        assert_eq!(response.error.code, Some("invalid_api_key".to_string()));
     }
 }

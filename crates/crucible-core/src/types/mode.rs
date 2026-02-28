@@ -81,13 +81,7 @@ impl ModeDescriptor {
 
 impl From<SessionMode> for ModeDescriptor {
     fn from(mode: SessionMode) -> Self {
-        Self {
-            id: mode.id.to_string(),
-            name: mode.name,
-            description: mode.description,
-            icon: None,
-            color: None,
-        }
+        Self::from(&mode)
     }
 }
 
