@@ -54,6 +54,13 @@ pub enum SessionError {
     AlreadyExists(SessionId),
 }
 
+#[cfg(feature = "sqlite")]
+impl From<rusqlite::Error> for SessionError {
+    fn from(err: rusqlite::Error) -> Self {
+        Self::Io(std::io::Error::other(err))
+    }
+}
+
 /// A session writer for appending events to a session log
 pub struct SessionWriter {
     id: SessionId,

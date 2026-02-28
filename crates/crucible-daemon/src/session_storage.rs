@@ -115,17 +115,12 @@ impl FileSessionStorage {
 impl SessionStorage for FileSessionStorage {
     async fn save(&self, session: &Session) -> Result<(), SessionError> {
         let dir = Self::session_dir_for(session);
-        fs::create_dir_all(&dir)
-            .await
-            .map_err(|e| SessionError::IoError(e.to_string()))?;
+        fs::create_dir_all(&dir).await?;
 
         // Save session metadata as JSON
         let meta_path = dir.join("meta.json");
-        let json = serde_json::to_string_pretty(session)
-            .map_err(|e| SessionError::IoError(e.to_string()))?;
-        fs::write(&meta_path, json)
-            .await
-            .map_err(|e| SessionError::IoError(e.to_string()))?;
+        let json = serde_json::to_string_pretty(session)?;
+        fs::write(&meta_path, json).await?;
 
         Ok(())
     }
@@ -171,15 +166,9 @@ impl SessionStorage for FileSessionStorage {
         }
 
         let mut summaries = vec![];
-        let mut entries = fs::read_dir(&sessions_dir)
-            .await
-            .map_err(|e| SessionError::IoError(e.to_string()))?;
+        let mut entries = fs::read_dir(&sessions_dir).await?;
 
-        while let Some(entry) = entries
-            .next_entry()
-            .await
-            .map_err(|e| SessionError::IoError(e.to_string()))?
-        {
+        while let Some(entry) = entries.next_entry().await? {
             if entry.file_type().await.map(|t| t.is_dir()).unwrap_or(false) {
                 let session_id = entry.file_name().to_string_lossy().to_string();
                 if let Ok(session) = self.load(&session_id, kiln).await {
@@ -195,9 +184,7 @@ impl SessionStorage for FileSessionStorage {
         let dir = Self::session_dir_for(session);
 
         // Ensure directory exists
-        fs::create_dir_all(&dir)
-            .await
-            .map_err(|e| SessionError::IoError(e.to_string()))?;
+        fs::create_dir_all(&dir).await?;
 
         let jsonl_path = dir.join("session.jsonl");
 
@@ -205,15 +192,10 @@ impl SessionStorage for FileSessionStorage {
             .create(true)
             .append(true)
             .open(&jsonl_path)
-            .await
-            .map_err(|e| SessionError::IoError(e.to_string()))?;
+            .await?;
 
-        file.write_all(event.as_bytes())
-            .await
-            .map_err(|e| SessionError::IoError(e.to_string()))?;
-        file.write_all(b"\n")
-            .await
-            .map_err(|e| SessionError::IoError(e.to_string()))?;
+        file.write_all(event.as_bytes()).await?;
+        file.write_all(b"\n").await?;
 
         Ok(())
     }
@@ -227,9 +209,7 @@ impl SessionStorage for FileSessionStorage {
         let dir = Self::session_dir_for(session);
 
         // Ensure directory exists
-        fs::create_dir_all(&dir)
-            .await
-            .map_err(|e| SessionError::IoError(e.to_string()))?;
+        fs::create_dir_all(&dir).await?;
 
         let md_path = dir.join("session.md");
 
@@ -250,23 +230,15 @@ impl SessionStorage for FileSessionStorage {
                 session.started_at.to_rfc3339(),
                 session_type_name,
             );
-            fs::write(&md_path, frontmatter)
-                .await
-                .map_err(|e| SessionError::IoError(e.to_string()))?;
+            fs::write(&md_path, frontmatter).await?;
         }
 
         let timestamp = Utc::now().format("%Y-%m-%dT%H:%M:%SZ");
         let entry = format!("\n## {} - {}\n\n{}\n", role, timestamp, content);
 
-        let mut file = fs::OpenOptions::new()
-            .append(true)
-            .open(&md_path)
-            .await
-            .map_err(|e| SessionError::IoError(e.to_string()))?;
+        let mut file = fs::OpenOptions::new().append(true).open(&md_path).await?;
 
-        file.write_all(entry.as_bytes())
-            .await
-            .map_err(|e| SessionError::IoError(e.to_string()))?;
+        file.write_all(entry.as_bytes()).await?;
 
         Ok(())
     }
@@ -285,9 +257,7 @@ impl SessionStorage for FileSessionStorage {
             return Ok(vec![]);
         }
 
-        let content = fs::read_to_string(&jsonl_path)
-            .await
-            .map_err(|e| SessionError::IoError(e.to_string()))?;
+        let content = fs::read_to_string(&jsonl_path).await?;
 
         let offset = offset.unwrap_or(0);
         let limit = limit.unwrap_or(usize::MAX);
@@ -321,9 +291,7 @@ impl SessionStorage for FileSessionStorage {
             return Ok(0);
         }
 
-        let content = fs::read_to_string(&jsonl_path)
-            .await
-            .map_err(|e| SessionError::IoError(e.to_string()))?;
+        let content = fs::read_to_string(&jsonl_path).await?;
 
         let count = content
             .lines()

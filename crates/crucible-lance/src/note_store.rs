@@ -219,18 +219,15 @@ fn note_to_batch(
     let title = StringArray::from(vec![note.title.as_str()]);
 
     // Tags column (JSON array)
-    let tags_json = serde_json::to_string(&note.tags)
-        .map_err(|e| StorageError::Serialization(e.to_string()))?;
+    let tags_json = serde_json::to_string(&note.tags)?;
     let tags = StringArray::from(vec![tags_json.as_str()]);
 
     // Links column (JSON array)
-    let links_json = serde_json::to_string(&note.links_to)
-        .map_err(|e| StorageError::Serialization(e.to_string()))?;
+    let links_json = serde_json::to_string(&note.links_to)?;
     let links_to = StringArray::from(vec![links_json.as_str()]);
 
     // Properties column (JSON object)
-    let props_json = serde_json::to_string(&note.properties)
-        .map_err(|e| StorageError::Serialization(e.to_string()))?;
+    let props_json = serde_json::to_string(&note.properties)?;
     let properties = StringArray::from(vec![props_json.as_str()]);
 
     // Updated at column (Unix timestamp in milliseconds)

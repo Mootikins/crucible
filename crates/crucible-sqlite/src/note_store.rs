@@ -302,8 +302,7 @@ impl SqliteNoteStore {
                 Ok(())
             })
         })
-        .await
-        .map_err(|e| StorageError::Backend(e.to_string()))??;
+        .await??;
 
         Ok(())
     }
@@ -319,12 +318,9 @@ impl NoteStore for SqliteNoteStore {
                 // Serialize fields
                 let content_hash_bytes = note.content_hash.as_bytes().to_vec();
                 let embedding_bytes = note.embedding.as_ref().map(|e| serialize_embedding(e));
-                let tags_json =
-                    serde_json::to_string(&note.tags).map_err(|e| StorageError::Serialization(e.to_string()))?;
-                let links_json =
-                    serde_json::to_string(&note.links_to).map_err(|e| StorageError::Serialization(e.to_string()))?;
-                let properties_json =
-                    serde_json::to_string(&note.properties).map_err(|e| StorageError::Serialization(e.to_string()))?;
+                let tags_json = serde_json::to_string(&note.tags)?;
+                let links_json = serde_json::to_string(&note.links_to)?;
+                let properties_json = serde_json::to_string(&note.properties)?;
                 let updated_at_str = note.updated_at.to_rfc3339();
 
                 // Check if the note existed before to determine appropriate event
@@ -396,8 +392,7 @@ impl NoteStore for SqliteNoteStore {
                 Ok(vec![event])
             })
         })
-        .await
-        .map_err(|e| crucible_core::storage::StorageError::Backend(e.to_string()))??;
+        .await??;
 
         Ok(result)
     }
@@ -425,8 +420,7 @@ impl NoteStore for SqliteNoteStore {
                 Ok(note)
             })
         })
-        .await
-        .map_err(|e| StorageError::Backend(e.to_string()))?
+        .await?
     }
 
     async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
@@ -449,8 +443,7 @@ impl NoteStore for SqliteNoteStore {
                 Ok(existed)
             })
         })
-        .await
-        .map_err(|e| crucible_core::storage::StorageError::Backend(e.to_string()))??;
+        .await??;
 
         // Return NoteDeleted event
         let event = SessionEvent::NoteDeleted {
@@ -484,8 +477,7 @@ impl NoteStore for SqliteNoteStore {
                 Ok(notes)
             })
         })
-        .await
-        .map_err(|e| StorageError::Backend(e.to_string()))?
+        .await?
     }
 
     async fn get_by_hash(&self, hash: &BlockHash) -> StorageResult<Option<NoteRecord>> {
@@ -512,8 +504,7 @@ impl NoteStore for SqliteNoteStore {
                 Ok(note)
             })
         })
-        .await
-        .map_err(|e| StorageError::Backend(e.to_string()))?
+        .await?
     }
 
     async fn search(
@@ -589,8 +580,7 @@ impl NoteStore for SqliteNoteStore {
                 Ok(top_k)
             })
         })
-        .await
-        .map_err(|e| StorageError::Backend(e.to_string()))?
+        .await?
     }
 }
 
