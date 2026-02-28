@@ -46,7 +46,6 @@ pub struct PopupRequest {
 }
 
 impl PopupRequest {
-    /// Create a new popup request with a title.
     pub fn new(title: impl Into<String>) -> Self {
         Self {
             title: title.into(),
@@ -55,7 +54,6 @@ impl PopupRequest {
         }
     }
 
-    /// Set the popup entries.
     pub fn entries<I>(mut self, entries: I) -> Self
     where
         I: IntoIterator<Item = PopupEntry>,
@@ -92,7 +90,6 @@ pub struct PopupResponse {
 }
 
 impl PopupResponse {
-    /// Create a response with a selection.
     pub fn selected(index: usize, entry: PopupEntry) -> Self {
         Self {
             selected_index: Some(index),
@@ -101,7 +98,6 @@ impl PopupResponse {
         }
     }
 
-    /// Create a response with a selection index only.
     pub fn selected_index(index: usize) -> Self {
         Self {
             selected_index: Some(index),
@@ -110,7 +106,6 @@ impl PopupResponse {
         }
     }
 
-    /// Create a response with free-text input.
     pub fn other(text: impl Into<String>) -> Self {
         Self {
             selected_index: None,
@@ -119,7 +114,6 @@ impl PopupResponse {
         }
     }
 
-    /// Create an empty response (popup dismissed without selection).
     pub fn none() -> Self {
         Self {
             selected_index: None,
@@ -150,7 +144,6 @@ pub struct PanelItem {
 }
 
 impl PanelItem {
-    /// Create a new panel item with just a label.
     pub fn new(label: impl Into<String>) -> Self {
         Self {
             label: label.into(),
@@ -193,7 +186,6 @@ pub struct PanelHints {
 }
 
 impl PanelHints {
-    /// Create default hints.
     pub fn new() -> Self {
         Self::default()
     }
@@ -216,7 +208,6 @@ impl PanelHints {
         self
     }
 
-    /// Set initial selection.
     pub fn initial_selection<I: IntoIterator<Item = usize>>(mut self, indices: I) -> Self {
         self.initial_selection = indices.into_iter().collect();
         self
@@ -255,7 +246,6 @@ pub struct InteractivePanel {
 }
 
 impl InteractivePanel {
-    /// Create a new interactive panel with a header.
     pub fn new(header: impl Into<String>) -> Self {
         Self {
             header: header.into(),
@@ -270,13 +260,11 @@ impl InteractivePanel {
         self
     }
 
-    /// Set all items at once.
     pub fn items<I: IntoIterator<Item = PanelItem>>(mut self, items: I) -> Self {
         self.items = items.into_iter().collect();
         self
     }
 
-    /// Set render/behavior hints.
     pub fn hints(mut self, hints: PanelHints) -> Self {
         self.hints = hints;
         self
@@ -300,7 +288,6 @@ pub struct PanelState {
 }
 
 impl PanelState {
-    /// Create initial state for a panel.
     pub fn initial(panel: &InteractivePanel) -> Self {
         Self {
             cursor: 0,
@@ -331,7 +318,6 @@ pub enum PanelAction {
     ToggleSelect { index: usize },
     /// Move cursor by delta (positive = down, negative = up).
     MoveCursor { delta: i32 },
-    /// Set filter text.
     SetFilter { text: String },
 }
 
@@ -350,7 +336,6 @@ pub struct PanelResult {
 }
 
 impl PanelResult {
-    /// Create a result with selected indices.
     pub fn selected<I: IntoIterator<Item = usize>>(indices: I) -> Self {
         Self {
             cancelled: false,
@@ -359,7 +344,6 @@ impl PanelResult {
         }
     }
 
-    /// Create a result with free-text input.
     pub fn other(text: impl Into<String>) -> Self {
         Self {
             cancelled: false,
@@ -368,7 +352,6 @@ impl PanelResult {
         }
     }
 
-    /// Create a cancelled result.
     pub fn cancelled() -> Self {
         Self {
             cancelled: true,

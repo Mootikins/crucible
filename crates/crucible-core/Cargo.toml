@@ -54,7 +54,6 @@ rmcp = { workspace = true }
 
 # Enhanced change detection dependencies
 parking_lot = "0.12"
-rayon = { version = "1.11", optional = true }
 futures = "0.3"
 glob-match = "0.2.1"
 
@@ -71,7 +70,6 @@ nucleo-matcher = "0.3"
 [features]
 default = ["core"]
 core = []
-parallel-processing = ["rayon"]
 test-utils = []
 
 [dev-dependencies]
