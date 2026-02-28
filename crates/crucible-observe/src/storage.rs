@@ -53,8 +53,7 @@ mod sqlite_impl {
     impl SessionIndex {
         /// Open or create a session index at the given path
         pub fn open(db_path: impl AsRef<Path>) -> Result<Self, SessionError> {
-            let conn = Connection::open(db_path.as_ref())
-                .map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
+            let conn = Connection::open(db_path.as_ref())?;
 
             let index = Self { conn };
             index.init_schema()?;
@@ -64,8 +63,7 @@ mod sqlite_impl {
 
         /// Open an in-memory index (for testing)
         pub fn open_memory() -> Result<Self, SessionError> {
-            let conn = Connection::open_in_memory()
-                .map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
+            let conn = Connection::open_in_memory()?;
 
             let index = Self { conn };
             index.init_schema()?;
@@ -74,9 +72,8 @@ mod sqlite_impl {
         }
 
         fn init_schema(&self) -> Result<(), SessionError> {
-            self.conn
-                .execute_batch(
-                    r#"
+            self.conn.execute_batch(
+                r#"
                     CREATE TABLE IF NOT EXISTS sessions (
                         id TEXT PRIMARY KEY,
                         type TEXT NOT NULL,
@@ -90,8 +87,7 @@ mod sqlite_impl {
                     CREATE INDEX IF NOT EXISTS sessions_kiln_idx ON sessions(kiln_path);
                     CREATE INDEX IF NOT EXISTS sessions_type_idx ON sessions(type);
                 "#,
-                )
-                .map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
+            )?;
 
             Ok(())
         }
@@ -113,29 +109,26 @@ mod sqlite_impl {
                         meta.message_count,
                         meta.kiln_path.display().to_string(),
                     ],
-                )
-                .map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
+                )?;
 
             Ok(())
         }
 
         /// Update session metadata
         pub fn update(&self, meta: &SessionMetadata) -> Result<(), SessionError> {
-            self.conn
-                .execute(
-                    r#"
+            self.conn.execute(
+                r#"
                     UPDATE sessions
                     SET ended_at = ?1, title = ?2, message_count = ?3
                     WHERE id = ?4
                 "#,
-                    params![
-                        meta.ended_at.map(|t| t.to_rfc3339()),
-                        meta.title,
-                        meta.message_count,
-                        meta.id.as_str(),
-                    ],
-                )
-                .map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
+                params![
+                    meta.ended_at.map(|t| t.to_rfc3339()),
+                    meta.title,
+                    meta.message_count,
+                    meta.id.as_str(),
+                ],
+            )?;
 
             Ok(())
         }
@@ -159,8 +152,7 @@ mod sqlite_impl {
                         Ok((id_str, type_str, started_at_str, ended_at_str, title, message_count, kiln_path_str))
                     },
                 )
-                .optional()
-                .map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
+                .optional()?;
 
             if let Some((
                 id_str,
@@ -203,8 +195,7 @@ mod sqlite_impl {
         pub fn delete(&self, id: &SessionId) -> Result<bool, SessionError> {
             let rows = self
                 .conn
-                .execute("DELETE FROM sessions WHERE id = ?1", params![id.as_str()])
-                .map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
+                .execute("DELETE FROM sessions WHERE id = ?1", params![id.as_str()])?;
 
             Ok(rows > 0)
         }
@@ -224,10 +215,7 @@ mod sqlite_impl {
                 )
             };
 
-            let mut stmt = self
-                .conn
-                .prepare(sql)
-                .map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
+            let mut stmt = self.conn.prepare(sql)?;
 
             let row_mapper = |row: &rusqlite::Row| -> rusqlite::Result<_> {
                 Ok((
@@ -242,14 +230,12 @@ mod sqlite_impl {
             };
 
             let sessions: Vec<SessionMetadata> = if use_limit {
-                stmt.query_map(params![limit.unwrap()], row_mapper)
-                    .map_err(|e| SessionError::Io(std::io::Error::other(e)))?
+                stmt.query_map(params![limit.unwrap()], row_mapper)?
                     .filter_map(|r| r.ok())
                     .filter_map(parse_session_row)
                     .collect()
             } else {
-                stmt.query_map([], row_mapper)
-                    .map_err(|e| SessionError::Io(std::io::Error::other(e)))?
+                stmt.query_map([], row_mapper)?
                     .filter_map(|r| r.ok())
                     .filter_map(parse_session_row)
                     .collect()
@@ -277,10 +263,7 @@ mod sqlite_impl {
                 )
             };
 
-            let mut stmt = self
-                .conn
-                .prepare(sql)
-                .map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
+            let mut stmt = self.conn.prepare(sql)?;
 
             let row_mapper = |row: &rusqlite::Row| -> rusqlite::Result<_> {
                 Ok((
@@ -298,14 +281,12 @@ mod sqlite_impl {
                 stmt.query_map(
                     params![session_type.to_string(), limit.unwrap()],
                     row_mapper,
-                )
-                .map_err(|e| SessionError::Io(std::io::Error::other(e)))?
+                )?
                 .filter_map(|r| r.ok())
                 .filter_map(parse_session_row)
                 .collect()
             } else {
-                stmt.query_map(params![session_type.to_string()], row_mapper)
-                    .map_err(|e| SessionError::Io(std::io::Error::other(e)))?
+                stmt.query_map(params![session_type.to_string()], row_mapper)?
                     .filter_map(|r| r.ok())
                     .filter_map(parse_session_row)
                     .collect()
@@ -334,10 +315,7 @@ mod sqlite_impl {
                 )
             };
 
-            let mut stmt = self
-                .conn
-                .prepare(sql)
-                .map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
+            let mut stmt = self.conn.prepare(sql)?;
 
             let row_mapper = |row: &rusqlite::Row| -> rusqlite::Result<_> {
                 Ok((
@@ -352,14 +330,12 @@ mod sqlite_impl {
             };
 
             let sessions: Vec<SessionMetadata> = if use_limit {
-                stmt.query_map(params![pattern, limit.unwrap()], row_mapper)
-                    .map_err(|e| SessionError::Io(std::io::Error::other(e)))?
+                stmt.query_map(params![pattern, limit.unwrap()], row_mapper)?
                     .filter_map(|r| r.ok())
                     .filter_map(parse_session_row)
                     .collect()
             } else {
-                stmt.query_map(params![pattern], row_mapper)
-                    .map_err(|e| SessionError::Io(std::io::Error::other(e)))?
+                stmt.query_map(params![pattern], row_mapper)?
                     .filter_map(|r| r.ok())
                     .filter_map(parse_session_row)
                     .collect()
@@ -372,8 +348,7 @@ mod sqlite_impl {
         pub fn count(&self) -> Result<u32, SessionError> {
             let count: u32 = self
                 .conn
-                .query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))
-                .map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
+                .query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))?;
 
             Ok(count)
         }
