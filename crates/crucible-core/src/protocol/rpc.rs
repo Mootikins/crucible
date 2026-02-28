@@ -129,16 +129,6 @@ impl SessionEventMessage {
             }),
         )
     }
-
-    #[allow(dead_code)]
-    pub fn state_changed(session_id: impl Into<String>, state: impl Into<String>) -> Self {
-        Self::new(
-            session_id,
-            "state_changed",
-            serde_json::json!({ "state": state.into() }),
-        )
-    }
-
     pub fn thinking(session_id: impl Into<String>, content: impl Into<String>) -> Self {
         Self::new(
             session_id,
@@ -221,23 +211,6 @@ impl SessionEventMessage {
         }
         Self::new(session_id, "message_complete", data)
     }
-
-    #[allow(dead_code)]
-    pub fn terminal_output(
-        session_id: impl Into<String>,
-        stream: impl Into<String>,
-        content_base64: impl Into<String>,
-    ) -> Self {
-        Self::new(
-            session_id,
-            "terminal_output",
-            serde_json::json!({
-                "stream": stream.into(),
-                "content_base64": content_base64.into(),
-            }),
-        )
-    }
-
     pub fn interaction_requested(
         session_id: impl Into<String>,
         request_id: impl Into<String>,
@@ -540,7 +513,6 @@ mod tests {
             SessionEventMessage::model_switched("s1", "m", "p"),
             SessionEventMessage::message_complete("s1", "m", "r", None),
             SessionEventMessage::user_message("s1", "m", "c"),
-            SessionEventMessage::state_changed("s1", "active"),
         ];
         for (i, evt) in factories.iter().enumerate() {
             assert_eq!(
