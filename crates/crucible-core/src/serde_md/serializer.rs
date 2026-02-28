@@ -41,6 +41,18 @@ impl Default for Serializer {
     }
 }
 
+// Macro to generate primitive serialization methods
+macro_rules! impl_serialize_primitives {
+    ($($method:ident($ty:ty)),* $(,)?) => {
+        $(
+            fn $method(self, v: $ty) -> Result<()> {
+                write!(self.output, "{v}")?;
+                Ok(())
+            }
+        )*
+    }
+}
+
 impl<'a> ser::Serializer for &'a mut Serializer {
     type Ok = ();
     type Error = Error;
@@ -55,65 +67,20 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     type SerializeStructVariant = StructSerializer<'a>;
 
     // Primitives - just convert to string
-    fn serialize_bool(self, v: bool) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
-    }
-
-    fn serialize_i8(self, v: i8) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
-    }
-
-    fn serialize_i16(self, v: i16) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
-    }
-
-    fn serialize_i32(self, v: i32) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
-    }
-
-    fn serialize_i64(self, v: i64) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
-    }
-
-    fn serialize_u8(self, v: u8) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
-    }
-
-    fn serialize_u16(self, v: u16) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
-    }
-
-    fn serialize_u32(self, v: u32) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
-    }
-
-    fn serialize_u64(self, v: u64) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
-    }
-
-    fn serialize_f32(self, v: f32) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
-    }
-
-    fn serialize_f64(self, v: f64) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
-    }
-
-    fn serialize_char(self, v: char) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
-    }
+    impl_serialize_primitives!(
+        serialize_bool(bool),
+        serialize_i8(i8),
+        serialize_i16(i16),
+        serialize_i32(i32),
+        serialize_i64(i64),
+        serialize_u8(u8),
+        serialize_u16(u16),
+        serialize_u32(u32),
+        serialize_u64(u64),
+        serialize_f32(f32),
+        serialize_f64(f64),
+        serialize_char(char),
+    );
 
     fn serialize_str(self, v: &str) -> Result<()> {
         self.output.push_str(v);
