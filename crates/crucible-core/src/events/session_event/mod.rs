@@ -28,13 +28,12 @@
 //! assert_eq!(event.event_type(), "note_modified");
 //! ```
 
-
 // Submodules for logical organization
-pub mod types;
-pub mod tool_call;
-pub mod payloads;
 pub mod display;
 pub mod helpers;
+pub mod payloads;
+pub mod tool_call;
+pub mod types;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -84,7 +83,8 @@ impl std::fmt::Display for TerminalStream {
 /// - **MCP**: `McpAttached`
 /// - **Custom**: `Custom` for extensibility
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
 pub enum SessionEvent {
     // ─────────────────────────────────────────────────────────────────────
     // User/participant events
