@@ -13,7 +13,6 @@
 //!
 //! ## Usage Pattern
 //!
-//! // TODO: Add example once API stabilizes
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -42,7 +41,6 @@ use crate::types::hashing::{
 ///
 /// # Examples
 ///
-/// // TODO: Add example once API stabilizes
 #[async_trait]
 pub trait ContentHasher: Send + Sync {
     fn algorithm(&self) -> HashAlgorithm;
@@ -495,7 +493,6 @@ pub struct CacheStats {
 ///
 /// # Examples
 ///
-/// // TODO: Add example once API stabilizes
 #[async_trait]
 pub trait HashLookupStorage: Send + Sync {
     /// Lookup a single file hash by relative path
@@ -899,7 +896,6 @@ impl ChangeDetectionResult {
 ///
 /// # Examples
 ///
-/// // TODO: Add example once API stabilizes
 #[async_trait]
 pub trait ChangeDetector: Send + Sync {
     /// Detect changes by comparing current files with stored hashes
