@@ -49,25 +49,20 @@ pub fn backend_to_adapter(backend: &BackendType) -> Option<AdapterKind> {
     }
 }
 
-/// Normalizes an Ollama endpoint to include `/v1/` path if missing.
+/// Normalizes an Ollama endpoint to ensure it ends with `/v1/`.
 ///
-/// This function ensures that custom Ollama endpoints have the `/v1/` path
-/// required by genai's OpenAI adapter (which Ollama delegates to).
+/// genai's OpenAI adapter uses `Url::join("chat/completions")` which per RFC 3986
+/// replaces the last path segment if the base URL lacks a trailing slash.
+/// A base of `https://host/v1` joins to `https://host/chat/completions` (wrong),
+/// while `https://host/v1/` joins to `https://host/v1/chat/completions` (correct).
 ///
-/// # Arguments
-///
-/// * `endpoint` - The Ollama endpoint URL
-///
-/// # Returns
-///
-/// The normalized endpoint with `/v1/` appended if needed.
+/// This function guarantees the endpoint always ends with `/v1/`.
 fn normalize_ollama_endpoint(endpoint: &str) -> String {
-    // Guard: already ends with /v1/ or /v1
-    if endpoint.ends_with("/v1/") || endpoint.ends_with("/v1") {
-        return endpoint.to_string();
+    let endpoint = endpoint.trim_end_matches('/');
+    if endpoint.ends_with("/v1") {
+        return format!("{endpoint}/");
     }
-    // Append /v1/ to the endpoint
-    format!("{}/v1/", endpoint.trim_end_matches('/'))
+    format!("{endpoint}/v1/")
 }
 
 /// A configured genai client with explicit adapter selection and authentication.
@@ -700,6 +695,13 @@ mod tests {
         let endpoint = "https://example.com/";
         let fixed = normalize_ollama_endpoint(endpoint);
         assert_eq!(fixed, "https://example.com/v1/");
+    }
+
+    #[test]
+    fn endpoint_auto_fix_v1_without_trailing_slash() {
+        let endpoint = "https://llama.krohnos.io/v1";
+        let fixed = normalize_ollama_endpoint(endpoint);
+        assert_eq!(fixed, "https://llama.krohnos.io/v1/");
     }
 
     #[test]

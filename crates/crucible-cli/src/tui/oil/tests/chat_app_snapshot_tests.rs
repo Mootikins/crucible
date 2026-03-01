@@ -22,32 +22,6 @@ fn render_app(app: &OilChatApp) -> String {
     strip_ansi(&snapshot.screen_with_overlays(80))
 }
 
-fn redact_drawer_timestamps(rendered: String) -> String {
-    rendered
-        .lines()
-        .map(|line| {
-            let bytes = line.as_bytes();
-            if bytes.len() >= 10
-                && bytes[0] == b' '
-                && bytes[1].is_ascii_digit()
-                && bytes[2].is_ascii_digit()
-                && bytes[3] == b':'
-                && bytes[4].is_ascii_digit()
-                && bytes[5].is_ascii_digit()
-                && bytes[6] == b':'
-                && bytes[7].is_ascii_digit()
-                && bytes[8].is_ascii_digit()
-                && bytes[9] == b':'
-            {
-                format!(" [TIME]{}", &line[9..])
-            } else {
-                line.to_string()
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 fn render_app_raw(app: &OilChatApp) -> String {
     let focus = FocusContext::new();
     let ctx = ViewContext::new(&focus);
@@ -728,7 +702,7 @@ fn snapshot_error_displayed_as_notification() {
     let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::UserMessage("Do something".to_string()));
     app.on_message(ChatAppMsg::Error("Connection failed: timeout".to_string()));
-    assert_snapshot!(redact_drawer_timestamps(render_app(&app)));
+    assert_snapshot!(render_app(&app));
 }
 
 #[test]
@@ -2054,7 +2028,7 @@ fn snapshot_error_interrupts_streaming() {
     app.on_message(ChatAppMsg::Error(
         "Connection lost: daemon unreachable".to_string(),
     ));
-    assert_snapshot!(redact_drawer_timestamps(render_app(&app)));
+    assert_snapshot!(render_app(&app));
 }
 
 #[test]
