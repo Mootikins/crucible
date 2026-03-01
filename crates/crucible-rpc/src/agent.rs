@@ -373,7 +373,18 @@ impl AgentHandle for DaemonAgentHandle {
                                 if let Some(reason) = event.data.get("reason").and_then(|value| value.as_str()) {
                                     if let Some(stripped_reason) = reason.strip_prefix("error: ") {
                                         tracing::warn!(reason = %reason, "LLM stream ended with error");
-                                        yield Err(ChatError::Communication(stripped_reason.to_string()));
+                                        // Strip any ChatError variant Display prefix so TUI shows a single "Communication error: ..." prefix
+                                        const CHAT_ERROR_PREFIXES: &[&str] = &[
+                                            "Connection error: ", "Communication error: ", "Mode change error: ",
+                                            "Unknown command: ", "Command execution failed: ", "Invalid input: ",
+                                            "Agent not available: ", "Internal error: ", "Invalid mode: ",
+                                            "Invalid command: ", "Operation not supported: ",
+                                        ];
+                                        let inner = CHAT_ERROR_PREFIXES
+                                            .iter()
+                                            .find_map(|prefix| stripped_reason.strip_prefix(prefix))
+                                            .unwrap_or(stripped_reason);
+                                        yield Err(ChatError::Communication(inner.to_string()));
                                         break;
                                     }
                                 }
@@ -729,6 +740,59 @@ mod tests {
 
         let chunk = session_event_to_chat_chunk(&event).expect("ended should convert to chunk");
         assert!(chunk.done);
+    }
+    #[test]
+    fn test_error_with_communication_prefix_stripped() {
+        let event = SessionEvent {
+            session_id: "test".to_string(),
+            event_type: "ended".to_string(),
+            data: json!({ "reason": "error: Communication error: LLM timeout" }),
+        };
+
+        let chunk = session_event_to_chat_chunk(&event).expect("ended should convert to chunk");
+        assert!(chunk.done);
+        let reason = event
+            .data
+            .get("reason")
+            .and_then(|value| value.as_str())
+            .expect("reason should be present");
+        assert!(reason.starts_with("error: "));
+    }
+
+    #[test]
+    fn test_error_with_connection_prefix_stripped() {
+        let event = SessionEvent {
+            session_id: "test".to_string(),
+            event_type: "ended".to_string(),
+            data: json!({ "reason": "error: Connection error: refused" }),
+        };
+
+        let chunk = session_event_to_chat_chunk(&event).expect("ended should convert to chunk");
+        assert!(chunk.done);
+        let reason = event
+            .data
+            .get("reason")
+            .and_then(|value| value.as_str())
+            .expect("reason should be present");
+        assert!(reason.starts_with("error: "));
+    }
+
+    #[test]
+    fn test_error_with_internal_prefix_stripped() {
+        let event = SessionEvent {
+            session_id: "test".to_string(),
+            event_type: "ended".to_string(),
+            data: json!({ "reason": "error: Internal error: panic" }),
+        };
+
+        let chunk = session_event_to_chat_chunk(&event).expect("ended should convert to chunk");
+        assert!(chunk.done);
+        let reason = event
+            .data
+            .get("reason")
+            .and_then(|value| value.as_str())
+            .expect("reason should be present");
+        assert!(reason.starts_with("error: "));
     }
 
     #[test]
