@@ -60,7 +60,7 @@ pub use completion_backend::{
     BackendResult, CompletionBackend,
 };
 pub use context_ops::{
-    ContextError, ContextMessage, MessageMetadata, MessagePredicate, Position, Range,
+    ContextMessage, MessageMetadata, Position, Range,
 };
 pub use knowledge::{KnowledgeRepository, NoteInfo};
 pub use llm::{
