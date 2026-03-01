@@ -28,6 +28,14 @@
 //! assert_eq!(event.event_type(), "note_modified");
 //! ```
 
+
+// Submodules for logical organization
+pub mod types;
+pub mod tool_call;
+pub mod payloads;
+pub mod display;
+pub mod helpers;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::path::PathBuf;
