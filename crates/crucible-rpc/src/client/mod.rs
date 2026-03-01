@@ -22,7 +22,6 @@ pub mod lua;
 pub mod session;
 pub mod storage;
 pub mod subscription;
-pub mod types;
 
 /// Session event received from daemon
 #[derive(Debug, Clone)]
