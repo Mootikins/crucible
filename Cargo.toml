@@ -18,7 +18,6 @@ members = [
     "crates/crucible-daemon",
     "crates/crucible-rpc",
     "crates/crucible-skills",
-    "crates/crucible-query",
     "crates/crucible-lance",
     "crates/crucible-observe",
     "crates/crucible-oil",

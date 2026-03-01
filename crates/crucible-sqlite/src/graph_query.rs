@@ -1,6 +1,6 @@
 //! Graph query executor for SQLite backend
 //!
-//! Uses crucible-query pipeline for parsing queries into GraphIR, then generates
+//! Uses the internal query pipeline for parsing queries into GraphIR, then generates
 //! SQL specifically for Crucible's EAV schema.
 //!
 //! ## Supported Syntaxes
@@ -17,7 +17,7 @@
 
 use async_trait::async_trait;
 use crucible_core::traits::graph_query::{GraphQueryError, GraphQueryExecutor, GraphQueryResult};
-use crucible_query::{
+use crate::query::{
     ir::{EdgeDirection, GraphIR, PatternElement, QuerySource},
     syntax::{
         JaqSyntax, PgqSyntax, QuerySyntaxRegistry, QuerySyntaxRegistryBuilder, SqlSugarSyntax,
@@ -31,7 +31,7 @@ use tokio::sync::Mutex;
 
 /// Pipeline-based SQLite graph query executor
 ///
-/// Parses queries using crucible-query's syntax parsers, then generates
+/// Parses queries using the internal query syntax parsers, then generates
 /// SQL optimized for Crucible's EAV schema.
 pub struct SqliteGraphQueryExecutor {
     conn: Arc<Mutex<Connection>>,

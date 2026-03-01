@@ -1,0 +1,10 @@
+---
+source: crates/crucible-sqlite/src/query/render/sqlite.rs
+assertion_line: 1476
+expression: result.sql
+---
+SELECT n0.*
+FROM notes n0
+JOIN edges e0 ON e0.source = n0.path
+WHERE e0.type = :edge_type_0
+  AND n0.title = :source_title
