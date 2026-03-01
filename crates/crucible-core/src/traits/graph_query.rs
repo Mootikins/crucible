@@ -90,9 +90,7 @@ impl fmt::Display for GraphQueryError {
         }
     }
 }
-
 impl std::error::Error for GraphQueryError {}
-
 /// Result type for graph query operations
 pub type GraphQueryResult<T> = Result<T, GraphQueryError>;
 
