@@ -171,7 +171,6 @@ impl<T: Clone> UndoTree<T> {
     }
 }
 
-
 impl<T: Clone + std::fmt::Display> UndoTree<T> {
     pub fn render_ascii(&self, max_lines: usize) -> String {
         if self.nodes.is_empty() {

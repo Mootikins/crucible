@@ -346,13 +346,11 @@ impl SqliteNoteStore {
 
         tokio::task::spawn_blocking(move || {
             pool.with_connection(|conn| {
-                conn.execute_batch(NOTES_SCHEMA)
-                    .sql()?;
+                conn.execute_batch(NOTES_SCHEMA).sql()?;
                 debug!("Notes schema applied successfully");
 
                 // Apply idempotent migration for embedding metadata columns
-                ensure_embedding_metadata_columns(conn)
-                    .sql()?;
+                ensure_embedding_metadata_columns(conn).sql()?;
                 debug!("Embedding metadata columns ensured");
 
                 Ok(())

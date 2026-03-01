@@ -481,16 +481,6 @@ pub trait EventSubscriber: Send + Sync {
     fn clear(&mut self);
 }
 
-/// A combined emitter and subscriber for bidirectional event handling.
-///
-/// This trait combines `EventEmitter` and `EventSubscriber` for components
-/// that both emit and receive events.
-#[async_trait]
-pub trait EventBus: super::EventEmitter + EventSubscriber {
-    /// Get the number of registered handlers.
-    fn handler_count(&self) -> usize;
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

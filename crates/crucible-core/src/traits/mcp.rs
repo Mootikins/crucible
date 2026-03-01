@@ -17,7 +17,6 @@
 //! │ rmcp │   │ mock/test│  ← Implementations
 //! └──────┘   └──────────┘
 //! ```
-
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -205,18 +204,6 @@ fn default_auto_reconnect() -> bool {
 // MCP Traits - Interface Segregation
 // =============================================================================
 
-/// Trait for discovering tools from an MCP server
-///
-/// This trait is dyn-compatible for use with trait objects.
-#[async_trait]
-pub trait McpToolDiscovery: Send + Sync {
-    /// List all available tools
-    async fn list_tools(&self) -> Result<Vec<McpToolInfo>, McpError>;
-
-    /// Get a specific tool by name
-    async fn get_tool(&self, name: &str) -> Result<Option<McpToolInfo>, McpError>;
-}
-
 /// Trait for executing tools on an MCP server
 ///
 /// This trait is dyn-compatible for use with trait objects.
@@ -247,15 +234,6 @@ pub trait McpConnection: Send + Sync {
     /// Get server info (if connected)
     fn server_info(&self) -> Option<&McpServerInfo>;
 }
-
-/// Combined trait for a full MCP client
-///
-/// This is a convenience trait that combines all MCP client capabilities.
-/// Prefer using the individual traits when only specific functionality is needed.
-pub trait McpClient: McpToolDiscovery + McpToolExecutor + McpConnection {}
-
-// Blanket implementation
-impl<T> McpClient for T where T: McpToolDiscovery + McpToolExecutor + McpConnection {}
 
 // =============================================================================
 // MCP Errors

@@ -315,10 +315,16 @@ pub enum PanelAction {
     /// Cancel and close panel.
     Cancel,
     /// Toggle selection at specified index.
-    ToggleSelect { index: usize },
+    ToggleSelect {
+        index: usize,
+    },
     /// Move cursor by delta (positive = down, negative = up).
-    MoveCursor { delta: i32 },
-    SetFilter { text: String },
+    MoveCursor {
+        delta: i32,
+    },
+    SetFilter {
+        text: String,
+    },
 }
 
 /// Result when an interactive panel closes.
