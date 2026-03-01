@@ -98,7 +98,8 @@ impl GenaiAgentHandle {
         let config = LlmProviderConfig::builder(backend).model(model).build();
         let chat_client = ChatClient::new(&config);
         let client = chat_client.inner().clone();
-            let model_iden = chat_client.model_iden(model)
+        let model_iden = chat_client
+            .model_iden(model)
             .unwrap_or_else(|| ModelIden::new(genai::adapter::AdapterKind::OpenAI, model));
 
         let mode_state = default_internal_modes();
@@ -565,7 +566,8 @@ mod tests {
             .build();
         let chat_client = ChatClient::new(&config);
         let client = chat_client.inner().clone();
-            let model = chat_client.model_iden("gpt-4o-mini")
+        let model = chat_client
+            .model_iden("gpt-4o-mini")
             .unwrap_or_else(|| ModelIden::new(genai::adapter::AdapterKind::OpenAI, "gpt-4o-mini"));
 
         let negative_budget_handle = GenaiAgentHandle::new(

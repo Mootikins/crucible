@@ -130,12 +130,12 @@ impl ChatClient {
         }
 
         if !endpoint.is_empty() {
-            builder = builder.with_service_target_resolver(ServiceTargetResolver::from_resolver_fn(
-                move |mut st: genai::ServiceTarget| {
+            builder = builder.with_service_target_resolver(
+                ServiceTargetResolver::from_resolver_fn(move |mut st: genai::ServiceTarget| {
                     st.endpoint = Endpoint::from_owned(endpoint.clone());
                     Ok(st)
-                },
-            ));
+                }),
+            );
         }
 
         let client = builder.build();
@@ -183,10 +183,9 @@ pub fn build_genai_client(config: &crucible_config::LlmProviderConfig) -> genai:
 ///
 /// Use `ChatClient::model_iden()` instead.
 pub fn build_model_iden(backend: &BackendType, model: &str) -> Option<ModelIden> {
-let adapter = backend_to_adapter(backend)?;
+    let adapter = backend_to_adapter(backend)?;
     Some(ModelIden::new(adapter, model))
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -687,7 +686,7 @@ mod tests {
         let endpoint = "https://llama.krohnos.io";
         let fixed = normalize_ollama_endpoint(endpoint);
         assert_eq!(fixed, "https://llama.krohnos.io/v1/");
-}
+    }
 
     #[test]
     fn endpoint_auto_fix_idempotent() {
