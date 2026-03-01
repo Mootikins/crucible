@@ -15,7 +15,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::traits::{MarkdownParser, Storage, ToolExecutor};
+use crate::traits::Storage;
 
 /// Central coordinator for Crucible - Orchestrates operations through trait abstractions
 ///
@@ -33,15 +33,6 @@ pub struct CrucibleCore {
     /// Storage abstraction (database operations)
     storage: Arc<dyn Storage>,
 
-    /// Markdown parser abstraction (optional - for parse_and_store operations)
-    // TODO: Will be used once parser implementation is injected via builder
-    #[allow(dead_code)]
-    parser: Option<Arc<dyn MarkdownParser>>,
-
-    /// Tool executor abstraction (optional - for agent/tool operations)
-    // TODO: Will be used once tool executor implementation is injected via builder
-    #[allow(dead_code)]
-    tools: Option<Arc<dyn ToolExecutor>>,
 }
 
 impl CrucibleCore {
@@ -132,8 +123,6 @@ impl CrucibleCore {
 /// Use this to inject trait implementations into CrucibleCore.
 pub struct CrucibleCoreBuilder {
     storage: Option<Arc<dyn Storage>>,
-    parser: Option<Arc<dyn MarkdownParser>>,
-    tools: Option<Arc<dyn ToolExecutor>>,
 }
 
 impl CrucibleCoreBuilder {
@@ -141,8 +130,6 @@ impl CrucibleCoreBuilder {
     pub fn new() -> Self {
         Self {
             storage: None,
-            parser: None,
-            tools: None,
         }
     }
 
@@ -152,17 +139,6 @@ impl CrucibleCoreBuilder {
         self
     }
 
-    /// Set the markdown parser implementation (optional)
-    pub fn with_parser<P: MarkdownParser + 'static>(mut self, parser: P) -> Self {
-        self.parser = Some(Arc::new(parser));
-        self
-    }
-
-    /// Set the tool executor implementation (optional)
-    pub fn with_tools<T: ToolExecutor + 'static>(mut self, tools: T) -> Self {
-        self.tools = Some(Arc::new(tools));
-        self
-    }
 
     /// Build the CrucibleCore instance
     ///
@@ -175,8 +151,6 @@ impl CrucibleCoreBuilder {
 
         Ok(CrucibleCore {
             storage,
-            parser: self.parser,
-            tools: self.tools,
         })
     }
 }
@@ -236,8 +210,6 @@ mod tests {
 
         // Verify storage was set correctly (use Arc::strong_count to verify it's not null)
         assert!(std::sync::Arc::strong_count(&core.storage) > 0);
-        assert!(core.parser.is_none());
-        assert!(core.tools.is_none());
     }
 
     #[test]
