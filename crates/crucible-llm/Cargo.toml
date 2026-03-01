@@ -5,7 +5,7 @@ authors.workspace = true
 license.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Embedding providers for Crucible - local (FastEmbed, Burn) and cloud (Ollama, OpenAI)"
+description = "Embedding providers for Crucible - local (FastEmbed) and cloud (Ollama, OpenAI)"
 
 [lib]
 name = "crucible_llm"
@@ -32,34 +32,12 @@ test-slow = []           # Performance benchmarks and timing tests
 # FastEmbed local embedding provider (CPU, easy setup, no API keys needed)
 fastembed = ["dep:fastembed", "dep:ort"]
 
-# Burn embedding provider with different backend options
-burn = ["dep:burn", "dep:burn-tensor", "dep:burn-import"]
-burn-cpu = ["burn", "dep:burn-ndarray"]
-burn-vulkan = ["burn", "dep:burn-wgpu"]
-burn-rocm = ["burn", "dep:burn-hip"]
-# Default burn feature enables CPU fallback
-burn-gpu = ["burn-vulkan"]  # Alias for most common GPU backend
-
-
 [dependencies]
 # Core types and traits
 crucible-core = { path = "../crucible-core" }
 
 # Config
 crucible-config = { path = "../crucible-config", features = ["toml"] }
-
-# Burn ML framework dependency for GPU-accelerated embeddings
-# Main burn crate with optional features (pinned to 0.19.1 for consistency)
-burn = { version = "0.19.1", optional = true }
-burn-tensor = { version = "0.19.1", optional = true }
-burn-ndarray = { version = "0.19.1", optional = true }  # For CPU fallback
-
-# GPU backends (each optional, selected via features)
-burn-wgpu = { version = "0.19.1", optional = true }   # Vulkan/Metal/WebGPU via wgpu
-burn-hip = { version = "0.16", optional = true }    # AMD ROCm/HIP backend (0.16 is latest stable)
-
-# Import safetensors directly into Burn models
-burn-import = { version = "0.19.1", optional = true }
 
 # HuggingFace tokenizers for text tokenization
 # Note: We disable default features to exclude esaxx_fast, which has a hardcoded
@@ -131,4 +109,3 @@ serial_test = "3.3"
 wiremock = { workspace = true }
 futures-util = { workspace = true }
 proptest = "1.8"
-

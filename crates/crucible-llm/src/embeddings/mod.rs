@@ -20,13 +20,6 @@ pub mod openai;
 #[cfg(feature = "fastembed")]
 pub mod fastembed;
 
-/// Burn ML framework provider implementation.
-pub mod burn;
-
-/// Burn model loading and inference helpers.
-#[cfg(feature = "burn")]
-pub mod burn_model;
-
 /// GGUF model loading for embedding models.
 pub mod gguf_model;
 
@@ -39,7 +32,6 @@ pub mod provider;
 /// Mock provider for testing
 pub mod mock;
 
-pub use burn::BurnProvider;
 pub use config::{BackendType, EmbeddingConfig, ProviderType};
 pub use crucible_core::enrichment::EmbeddingProvider;
 pub use error::{EmbeddingError, EmbeddingResult};
@@ -78,16 +70,9 @@ pub async fn create_provider(
         BackendType::FastEmbed => Err(EmbeddingError::ConfigError(
             "FastEmbed provider requires the 'fastembed' feature to be enabled".to_string(),
         )),
-        BackendType::Burn => {
-            if let crucible_config::EmbeddingProviderConfig::Burn(burn_config) = config {
-                let provider = burn::BurnProvider::new(&burn_config)?;
-                Ok(Arc::new(provider))
-            } else {
-                Err(EmbeddingError::ConfigError(
-                    "Burn provider type requires Burn configuration".to_string(),
-                ))
-            }
-        }
+        BackendType::Burn => Err(EmbeddingError::ConfigError(
+            "Burn provider is no longer included in crucible-llm".to_string(),
+        )),
         BackendType::Mock => {
             let dimensions = config.dimensions().unwrap_or(768) as usize;
             let provider = mock::MockEmbeddingProvider::with_dimensions(dimensions);
