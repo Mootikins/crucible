@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use crucible_config::{BackendType, LlmProviderConfig};
-use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall};
+use crucible_core::traits::chat::{
+    AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall, ChatToolResult,
+};
 use crucible_core::traits::llm::LlmToolDefinition;
 use crucible_core::traits::TokenUsage;
 use crucible_core::types::acp::schema::{SessionModeId, SessionModeState};
@@ -9,6 +11,7 @@ use futures::stream::BoxStream;
 use futures::StreamExt;
 use genai::chat::{
     ChatMessage, ChatOptions, ChatRequest, ChatStreamEvent, ContentPart, ReasoningEffort, Tool,
+    ToolCall, ToolResponse,
 };
 use genai::ModelIden;
 
@@ -406,6 +409,159 @@ impl AgentHandle for GenaiAgentHandle {
         let options = if let Some(budget) = self.thinking_budget {
             options.with_reasoning_effort(ReasoningEffort::Budget(
                 budget.clamp(0, u32::MAX as i64) as u32
+            ))
+        } else {
+            options
+        };
+
+        let client = self.client.clone();
+        let model_name = self.explicit_model_name();
+        let max_tool_depth = self.max_tool_depth;
+
+        Box::pin(async_stream::stream! {
+            let stream_res = client.exec_chat_stream(&model_name, request, Some(&options)).await;
+            let mut stream = match stream_res {
+                Ok(res) => res.stream,
+                Err(err) => {
+                    yield Err(ChatError::Communication(format!("genai stream start failed: {err}")));
+                    return;
+                }
+            };
+
+            let mut emitted_calls = 0usize;
+
+            while let Some(next) = stream.next().await {
+                let event = match next {
+                    Ok(event) => event,
+                    Err(err) => {
+                        yield Err(ChatError::Communication(format!("genai stream error: {err}")));
+                        return;
+                    }
+                };
+
+                match event {
+                    ChatStreamEvent::Start => {}
+                    ChatStreamEvent::Chunk(chunk) => {
+                        yield Ok(ChatChunk {
+                            delta: chunk.content,
+                            done: false,
+                            tool_calls: None,
+                            tool_results: None,
+                            reasoning: None,
+                            usage: None,
+                            subagent_events: None,
+                            precognition_notes_count: None,
+                            precognition_notes: None,
+                        });
+                    }
+                    ChatStreamEvent::ReasoningChunk(chunk) => {
+                        yield Ok(ChatChunk {
+                            delta: String::new(),
+                            done: false,
+                            tool_calls: None,
+                            tool_results: None,
+                            reasoning: Some(chunk.content),
+                            usage: None,
+                            subagent_events: None,
+                            precognition_notes_count: None,
+                            precognition_notes: None,
+                        });
+                    }
+                    ChatStreamEvent::ThoughtSignatureChunk(_) => {}
+                    ChatStreamEvent::ToolCallChunk(_) => {}
+                    ChatStreamEvent::End(end) => {
+                        let mut tool_calls = Vec::new();
+                        if let Some(content) = end.captured_content {
+                            for part in content.into_parts() {
+                                if let ContentPart::ToolCall(tc) = part {
+                                    if emitted_calls >= max_tool_depth {
+                                        break;
+                                    }
+                                    emitted_calls += 1;
+                                    tool_calls.push(ChatToolCall {
+                                        name: tc.fn_name,
+                                        arguments: Some(tc.fn_arguments),
+                                        id: Some(tc.call_id),
+                                    });
+                                }
+                            }
+                        }
+
+                        let usage = end.captured_usage.as_ref().map(usage_to_token_usage);
+
+                        yield Ok(ChatChunk {
+                            delta: String::new(),
+                            done: true,
+                            tool_calls: if tool_calls.is_empty() {
+                                None
+                            } else {
+                                Some(tool_calls)
+                            },
+                            tool_results: None,
+                            reasoning: end.captured_reasoning_content,
+                            usage,
+                            subagent_events: None,
+                            precognition_notes_count: None,
+                            precognition_notes: None,
+                        });
+                        break;
+                    }
+                }
+            }
+        })
+    }
+
+    fn continue_with_tool_results(
+        &mut self,
+        tool_calls: Vec<ChatToolCall>,
+        tool_results: Vec<ChatToolResult>,
+    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
+        let genai_tool_calls: Vec<ToolCall> = tool_calls
+            .iter()
+            .enumerate()
+            .map(|(idx, call)| ToolCall {
+                call_id: call
+                    .id
+                    .clone()
+                    .unwrap_or_else(|| format!("tool_call_{idx}")),
+                fn_name: call.name.clone(),
+                fn_arguments: call.arguments.clone().unwrap_or(serde_json::Value::Null),
+                thought_signatures: None,
+            })
+            .collect();
+
+        if !genai_tool_calls.is_empty() {
+            self.history.push(ChatMessage::from(genai_tool_calls));
+        }
+
+        for (idx, result) in tool_results.into_iter().enumerate() {
+            let call_id = result.call_id.unwrap_or_else(|| {
+                tool_calls
+                    .get(idx)
+                    .and_then(|call| call.id.clone())
+                    .unwrap_or_else(|| format!("tool_call_{idx}"))
+            });
+            self.history
+                .push(ChatMessage::from(ToolResponse::new(call_id, result.result)));
+        }
+
+        let req_tools: Vec<Tool> = self
+            .visible_tools()
+            .iter()
+            .map(super::tool_bridge::llm_tool_to_genai)
+            .collect();
+        let request = ChatRequest::new(self.history.clone())
+            .with_system(self.system_prompt.clone())
+            .with_tools(req_tools);
+
+        let options = ChatOptions::default()
+            .with_capture_tool_calls(true)
+            .with_capture_content(true)
+            .with_capture_usage(true)
+            .with_capture_reasoning_content(true);
+        let options = if let Some(budget) = self.thinking_budget {
+            options.with_reasoning_effort(ReasoningEffort::Budget(
+                budget.clamp(0, u32::MAX as i64) as u32,
             ))
         } else {
             options
