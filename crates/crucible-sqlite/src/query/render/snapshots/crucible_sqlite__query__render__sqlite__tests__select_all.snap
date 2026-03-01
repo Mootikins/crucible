@@ -1,0 +1,6 @@
+---
+source: crates/crucible-sqlite/src/query/render/sqlite.rs
+assertion_line: 1177
+expression: result.sql
+---
+SELECT * FROM notes

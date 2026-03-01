@@ -1,0 +1,7 @@
+---
+source: crates/crucible-sqlite/src/query/render/sqlite.rs
+assertion_line: 1199
+expression: result.sql
+---
+SELECT * FROM notes
+WHERE path = :path

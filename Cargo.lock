@@ -3248,20 +3248,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crucible-query"
-version = "0.1.0"
-dependencies = [
- "chumsky",
- "insta",
- "once_cell",
- "regex",
- "serde",
- "serde_json",
- "test-case",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "crucible-rpc"
 version = "0.1.0"
 dependencies = [
@@ -3310,9 +3296,11 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
+ "chumsky",
  "crucible-core",
- "crucible-query",
  "hex",
+ "insta",
+ "once_cell",
  "parking_lot",
  "regex",
  "rusqlite",

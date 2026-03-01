@@ -1,0 +1,7 @@
+---
+source: crates/crucible-sqlite/src/query/render/sqlite.rs
+assertion_line: 1423
+expression: result.sql
+---
+SELECT * FROM notes
+WHERE path LIKE :filter_0 ESCAPE '\\'
