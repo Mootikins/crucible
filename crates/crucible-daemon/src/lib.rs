@@ -67,7 +67,7 @@ pub use permission_bridge::DaemonPermissionGate;
 pub use project_manager::{ProjectError, ProjectManager};
 pub use protocol::{Request, Response, RpcError, SessionEventMessage};
 pub use recording::{RecordedEvent, RecordingFooter, RecordingHeader};
-pub use server::Server;
+pub use server::{BindWithPluginConfigParams, Server};
 pub use session_bridge::DaemonSessionBridge;
 pub use session_manager::{SessionError, SessionManager};
 pub use session_storage::{FileSessionStorage, SessionStorage};
