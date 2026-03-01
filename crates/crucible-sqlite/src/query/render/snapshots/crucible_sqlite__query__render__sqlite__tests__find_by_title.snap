@@ -1,0 +1,7 @@
+---
+source: crates/crucible-sqlite/src/query/render/sqlite.rs
+assertion_line: 1188
+expression: result.sql
+---
+SELECT * FROM notes
+WHERE title = :title
