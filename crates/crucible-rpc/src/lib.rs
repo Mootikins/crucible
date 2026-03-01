@@ -25,5 +25,6 @@ pub use client::{
     LuaShutdownSessionRequest, LuaShutdownSessionResponse, SessionEvent, VersionCheck,
 };
 pub use storage::{DaemonNoteStore, DaemonStorageClient};
+pub use error_ext::ChatResultExt;
 
 pub use crucible_core::protocol::socket_path;

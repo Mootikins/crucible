@@ -30,6 +30,9 @@ pub enum LuaError {
     InvalidTool(String),
 }
 
+/// Result type for Lua operations
+pub type LuaResult<T> = Result<T, LuaError>;
+
 impl From<mlua::Error> for LuaError {
     fn from(e: mlua::Error) -> Self {
         LuaError::Runtime(e.to_string())

@@ -90,16 +90,16 @@ fn append_file(path: &str, content: &str) -> Result<(), LuaError> {
         .create(true)
         .append(true)
         .open(path)
-        .map_err(|e| LuaError::Runtime(format!("Failed to open '{}' for append: {}", path, e)))?;
+        .lua_runtime()?;
 
     file.write_all(content.as_bytes())
-        .map_err(|e| LuaError::Runtime(format!("Failed to append to '{}': {}", path, e)))
+        .lua_runtime()
 }
 
 /// Create directory and all parent directories
 fn mkdir(path: &str) -> Result<(), LuaError> {
     fs::create_dir_all(path)
-        .map_err(|e| LuaError::Runtime(format!("Failed to create directory '{}': {}", path, e)))
+        .lua_runtime()
 }
 
 /// Remove a file or directory
@@ -107,22 +107,22 @@ fn remove(path: &str) -> Result<(), LuaError> {
     let p = Path::new(path);
     if p.is_dir() {
         fs::remove_dir_all(path)
-            .map_err(|e| LuaError::Runtime(format!("Failed to remove directory '{}': {}", path, e)))
+            .lua_runtime()
     } else {
         fs::remove_file(path)
-            .map_err(|e| LuaError::Runtime(format!("Failed to remove file '{}': {}", path, e)))
+            .lua_runtime()
     }
 }
 
 /// List directory contents
 fn list_dir(path: &str) -> Result<Vec<String>, LuaError> {
     let entries = fs::read_dir(path)
-        .map_err(|e| LuaError::Runtime(format!("Failed to read directory '{}': {}", path, e)))?;
+        .lua_runtime()?;
 
     let mut result = Vec::new();
     for entry in entries {
         let entry = entry
-            .map_err(|e| LuaError::Runtime(format!("Failed to read entry in '{}': {}", path, e)))?;
+            .lua_runtime()?;
         if let Some(name) = entry.file_name().to_str() {
             result.push(name.to_string());
         }
@@ -145,7 +145,7 @@ fn copy_file(src: &str, dest: &str) -> Result<(), LuaError> {
     }
 
     fs::copy(src, dest)
-        .map_err(|e| LuaError::Runtime(format!("Failed to copy '{}' to '{}': {}", src, dest, e)))?;
+        .lua_runtime()?;
     Ok(())
 }
 
@@ -164,7 +164,7 @@ fn rename_file(src: &str, dest: &str) -> Result<(), LuaError> {
     }
 
     fs::rename(src, dest)
-        .map_err(|e| LuaError::Runtime(format!("Failed to rename '{}' to '{}': {}", src, dest, e)))
+        .lua_runtime()
 }
 
 /// Register the fs module with a Lua state

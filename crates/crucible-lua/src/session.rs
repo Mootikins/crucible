@@ -9,6 +9,7 @@
 //! because it delegates more to core infrastructure.
 
 use crate::error::LuaError;
+use crate::error_ext::LuaResultExt;
 use crate::handlers::{run_handler_chain, LuaScriptHandlerRegistry};
 use crucible_core::discovery::DiscoveryPaths;
 use crucible_core::events::{EventRing, SessionEvent, SessionEventConfig};
@@ -145,7 +146,7 @@ impl LuaSession {
         self.event_tx
             .send(event)
             .await
-            .map_err(|e| LuaError::Runtime(format!("Failed to send event: {}", e)))?;
+            .lua_runtime()?;
 
         *state = SessionState::Active;
         debug!("Session {} started", self.config.session_id);
@@ -364,7 +365,7 @@ impl LuaSessionHandle {
         self.event_tx
             .send(event)
             .await
-            .map_err(|e| LuaError::Runtime(format!("Failed to send event: {}", e)))
+            .lua_runtime()
     }
 
     /// Get the session ID

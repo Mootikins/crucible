@@ -18,6 +18,7 @@ use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
 use crate::{DaemonClient, SessionEvent};
+use crate::ChatResultExt;
 
 /// Agent handle that routes messages through the daemon
 ///
@@ -458,7 +459,7 @@ impl AgentHandle for DaemonAgentHandle {
         self.client
             .session_switch_model(&self.session_id, model_id)
             .await
-            .map_err(|e| ChatError::Communication(format!("Failed to switch model: {}", e)))?;
+            .chat_comm()?;
         self.cached_model = Some(model_id.to_string());
         Ok(())
     }
@@ -482,7 +483,7 @@ impl AgentHandle for DaemonAgentHandle {
         self.client
             .session_cancel(&self.session_id)
             .await
-            .map_err(|e| ChatError::Communication(format!("Failed to cancel agent: {}", e)))?;
+            .chat_comm()?;
         Ok(())
     }
 
@@ -507,7 +508,7 @@ impl AgentHandle for DaemonAgentHandle {
         self.client
             .session_set_temperature(&self.session_id, temperature)
             .await
-            .map_err(|e| ChatError::Communication(format!("Failed to set temperature: {}", e)))?;
+            .chat_comm()?;
         self.cached_temperature = Some(temperature);
         Ok(())
     }
@@ -521,7 +522,7 @@ impl AgentHandle for DaemonAgentHandle {
         self.client
             .session_set_max_tokens(&self.session_id, max_tokens)
             .await
-            .map_err(|e| ChatError::Communication(format!("Failed to set max_tokens: {}", e)))?;
+            .chat_comm()?;
         self.cached_max_tokens = max_tokens;
         Ok(())
     }
