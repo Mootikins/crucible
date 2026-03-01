@@ -1,5 +1,5 @@
 use crate::services::daemon::AppState;
-use crate::WebError;
+use crate::{error::WebResultExt, WebError};
 use axum::{
     extract::{Path, State},
     routing::{get, post, put},
@@ -27,7 +27,7 @@ async fn list_kilns(State(state): State<AppState>) -> Result<Json<serde_json::Va
         .daemon
         .kiln_list()
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     Ok(Json(serde_json::json!({ "kilns": kilns })))
 }
@@ -46,7 +46,7 @@ async fn list_notes(
         .daemon
         .list_notes(&query.kiln, query.path_filter.as_deref())
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     let notes_json: Vec<serde_json::Value> = notes
         .into_iter()
@@ -81,7 +81,7 @@ async fn get_note(
         .daemon
         .get_note_by_name(&query.kiln, &name)
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     match note {
         Some(n) => Ok(Json(n)),
@@ -130,7 +130,7 @@ async fn put_note(
         .daemon
         .kiln_list()
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     let canonical_kiln = req
         .kiln
@@ -198,7 +198,7 @@ async fn put_note(
         .daemon
         .note_upsert(&req.kiln, &note)
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     Ok(Json(serde_json::json!({
         "success": true,
@@ -243,7 +243,7 @@ async fn search_vectors(
         .daemon
         .search_vectors(&req.kiln, &req.vector, req.limit)
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     let results_json: Vec<serde_json::Value> = results
         .into_iter()

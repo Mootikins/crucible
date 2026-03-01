@@ -7,6 +7,7 @@ use crucible_core::events::SessionEvent;
 use crucible_core::parser::{BlockHash, ParsedNote};
 use crucible_core::storage::{
     NoteRecord, NoteStore, SearchResult as StorageSearchResult, StorageError, StorageResult,
+    StorageResultExt,
 };
 use crucible_core::traits::{KnowledgeRepository, NoteInfo, StorageClient};
 use crucible_core::types::SearchResult as KnowledgeSearchResult;
@@ -213,7 +214,7 @@ impl NoteStore for DaemonNoteStore {
             .client
             .note_upsert(self.client.kiln_path(), &note)
             .await
-            .map_err(|e| StorageError::Backend(e.to_string()))?;
+            .storage_backend()?
 
         // Return a single event indicating the note was created/updated
         Ok(vec![SessionEvent::NoteCreated {
@@ -227,7 +228,7 @@ impl NoteStore for DaemonNoteStore {
             .client
             .note_get(self.client.kiln_path(), path)
             .await
-            .map_err(|e| StorageError::Backend(e.to_string()))
+            .storage_backend()
     }
 
     async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
@@ -238,7 +239,7 @@ impl NoteStore for DaemonNoteStore {
             .client
             .note_delete(self.client.kiln_path(), path)
             .await
-            .map_err(|e| StorageError::Backend(e.to_string()))?;
+            .storage_backend()?
 
         Ok(SessionEvent::NoteDeleted {
             path: PathBuf::from(path),
@@ -251,7 +252,7 @@ impl NoteStore for DaemonNoteStore {
             .client
             .note_list(self.client.kiln_path())
             .await
-            .map_err(|e| StorageError::Backend(e.to_string()))
+            .storage_backend()
     }
 
     async fn get_by_hash(&self, hash: &BlockHash) -> StorageResult<Option<NoteRecord>> {
@@ -273,7 +274,7 @@ impl NoteStore for DaemonNoteStore {
             .client
             .search_vectors(self.client.kiln_path(), query_embedding, limit)
             .await
-            .map_err(|e| StorageError::Backend(e.to_string()))?;
+            .storage_backend()?
 
         // Convert to StorageSearchResult - we need to fetch the full NoteRecord for each hit
         let mut hits = Vec::with_capacity(results.len());

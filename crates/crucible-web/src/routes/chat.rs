@@ -1,6 +1,6 @@
 use crate::events::ChatEvent;
 use crate::services::daemon::AppState;
-use crate::WebError;
+use crate::{error::WebResultExt, WebError};
 use axum::{
     extract::{Path, State},
     response::sse::{Event, Sse},
@@ -37,7 +37,7 @@ async fn send_message(
         .daemon
         .session_send_message(&req.session_id, &req.content)
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     Ok(Json(serde_json::json!({ "message_id": message_id })))
 }
@@ -50,7 +50,7 @@ async fn event_stream(
         .daemon
         .session_subscribe(&[session_id.as_str()])
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     let rx = state.events.subscribe(&session_id).await;
 
@@ -85,7 +85,7 @@ async fn interaction_respond(
         .daemon
         .session_interaction_respond(&req.session_id, &req.request_id, response)
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     Ok(Json(serde_json::json!({ "ok": true })))
 }

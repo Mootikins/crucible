@@ -10,6 +10,7 @@
 //! - Socket doesn't exist -> daemon not running
 
 mod agent;
+mod error_ext;
 mod client;
 pub mod lifecycle;
 mod storage;
