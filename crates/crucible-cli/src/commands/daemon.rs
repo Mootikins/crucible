@@ -54,15 +54,17 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
         info!("Starting daemon in foreground");
         let config = CliConfig::load(config_path.clone(), None, None)?;
         let server = Server::bind_with_plugin_config(
-            &sock,
-            None,
-            std::collections::HashMap::new(),
-            false,
-            Some(config.llm.clone()),
-            config.enrichment.as_ref().map(|e| e.provider.clone()),
-            Some(config.acp.clone()),
-            None,
-            None,
+            BindWithPluginConfigParams {
+                path: sock,
+                mcp_config: None,
+                plugin_config: std::collections::HashMap::new(),
+                plugin_watch: false,
+                llm_config: Some(config.llm.clone()),
+                enrichment_config: config.enrichment.as_ref().map(|e| e.provider.clone()),
+                acp_config: Some(config.acp.clone()),
+                permission_config: None,
+                web_config: None,
+            },
         )
         .await?;
 
