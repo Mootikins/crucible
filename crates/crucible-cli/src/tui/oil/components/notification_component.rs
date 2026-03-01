@@ -18,7 +18,11 @@ pub struct NotificationEntry {
 }
 
 impl NotificationEntry {
-    pub fn new(message: impl Into<String>, kind: NotificationToastKind, timestamp: impl Into<String>) -> Self {
+    pub fn new(
+        message: impl Into<String>,
+        kind: NotificationToastKind,
+        timestamp: impl Into<String>,
+    ) -> Self {
         Self {
             message: message.into(),
             kind,
@@ -223,16 +227,15 @@ mod tests {
         // The splitting happens in render_messages_drawer(), so the component
         // receives only the first line. This test verifies that the component
         // renders what it's given (the first line only).
-        let entry = NotificationEntry::new(
-            "Error: something",
-            NotificationToastKind::Error,
-            "14:30:12",
-        );
-        let comp = NotificationComponent::new(vec![entry]).visible(true).width(80);
+        let entry =
+            NotificationEntry::new("Error: something", NotificationToastKind::Error, "14:30:12");
+        let comp = NotificationComponent::new(vec![entry])
+            .visible(true)
+            .width(80);
         let harness = ComponentHarness::new(80, 24);
         let node = comp.view(&ViewContext::new(harness.focus()));
         let plain = render_to_plain_text(&node, 80);
-        
+
         assert!(plain.contains("Error: something"));
         assert!(plain.contains("14:30:12"));
     }
