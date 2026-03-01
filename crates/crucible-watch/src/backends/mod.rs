@@ -5,10 +5,10 @@ mod factory;
 mod notify_backend;
 mod polling_backend;
 
-pub use editor_backend::*;
-pub use factory::*;
-pub use notify_backend::*;
-pub use polling_backend::*;
+pub use editor_backend::{EditorConfig, EditorWatcher, EditorFactory};
+pub use factory::{ExtendedBackendRegistry, WatcherRequirements, WatcherUseCase, ResourcePriority};
+pub use notify_backend::{NotifyWatcher, NotifyFactory};
+pub use polling_backend::{PollingWatcher, PollingFactory};
 
 use crate::error::{Error, Result};
 use crate::traits::{BackendCapabilities, FileWatcher};
