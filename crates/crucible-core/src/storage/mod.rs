@@ -19,7 +19,6 @@
 pub mod error;
 pub mod error_ext;
 pub mod graph;
-pub mod graph;
 pub mod note_store;
 pub mod traits;
 

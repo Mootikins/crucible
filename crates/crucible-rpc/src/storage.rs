@@ -214,7 +214,7 @@ impl NoteStore for DaemonNoteStore {
             .client
             .note_upsert(self.client.kiln_path(), &note)
             .await
-            .storage_backend()?
+            .storage_backend()?;
 
         // Return a single event indicating the note was created/updated
         Ok(vec![SessionEvent::NoteCreated {
@@ -239,7 +239,7 @@ impl NoteStore for DaemonNoteStore {
             .client
             .note_delete(self.client.kiln_path(), path)
             .await
-            .storage_backend()?
+            .storage_backend()?;
 
         Ok(SessionEvent::NoteDeleted {
             path: PathBuf::from(path),
@@ -274,7 +274,7 @@ impl NoteStore for DaemonNoteStore {
             .client
             .search_vectors(self.client.kiln_path(), query_embedding, limit)
             .await
-            .storage_backend()?
+            .storage_backend()?;
 
         // Convert to StorageSearchResult - we need to fetch the full NoteRecord for each hit
         let mut hits = Vec::with_capacity(results.len());

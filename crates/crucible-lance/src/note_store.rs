@@ -35,8 +35,6 @@ use crucible_core::storage::{
     Filter, NoteRecord, NoteStore, Op, SearchResult, StorageError, StorageResult,
     StorageResultExt,
 };
-    Filter, NoteRecord, NoteStore, Op, SearchResult, StorageError, StorageResult,
-};
 
 // ============================================================================
 // Constants
@@ -213,7 +211,7 @@ fn note_to_batch(
                 Arc::new(values),
                 Some(vec![false].into()),
             )
-            .storage_backend()?
+            .storage_backend()?;
             Arc::new(list)
         }
     };
@@ -442,7 +440,7 @@ impl LanceNoteStore {
         let connection = lancedb::connect(db_path)
             .execute()
             .await
-            .storage_backend()?
+            .storage_backend()?;
 
         let schema = notes_schema(embedding_dim);
 
@@ -503,7 +501,7 @@ impl LanceNoteStore {
                     .execute()
                     .await
                     .storage_backend()?
-
+;
                 *table_guard = Some(table.clone());
                 Ok(table)
             }
@@ -589,7 +587,7 @@ impl NoteStore for LanceNoteStore {
             .add(Box::new(batches))
             .execute()
             .await
-            .map_err(|e| StorageError::Backend(e.to_string()))?;
+            .storage_backend()?;
 
         debug!("Upserted note: {}", note.path);
 
@@ -625,10 +623,10 @@ impl NoteStore for LanceNoteStore {
             .limit(1)
             .execute()
             .await
-            .map_err(|e| StorageError::Backend(e.to_string()))?
+            .storage_backend()?
             .try_collect::<Vec<_>>()
             .await
-            .map_err(|e| StorageError::Backend(e.to_string()))?;
+            .storage_backend()?;
 
         if results.is_empty() {
             return Ok(None);
@@ -687,10 +685,10 @@ impl NoteStore for LanceNoteStore {
             .query()
             .execute()
             .await
-            .map_err(|e| StorageError::Backend(e.to_string()))?
+            .storage_backend()?
             .try_collect::<Vec<_>>()
             .await
-            .map_err(|e| StorageError::Backend(e.to_string()))?;
+            .storage_backend()?;
 
         let mut notes = Vec::new();
         for batch in results {
@@ -715,10 +713,10 @@ impl NoteStore for LanceNoteStore {
             .query()
             .execute()
             .await
-            .map_err(|e| StorageError::Backend(e.to_string()))?
+            .storage_backend()?
             .try_collect::<Vec<_>>()
             .await
-            .map_err(|e| StorageError::Backend(e.to_string()))?;
+            .storage_backend()?;
 
         for batch in results {
             let notes = batch_to_notes(&batch)?;
@@ -747,7 +745,7 @@ impl NoteStore for LanceNoteStore {
         // Build the vector search query
         let query = table
             .vector_search(embedding.to_vec())
-            .map_err(|e| StorageError::Backend(e.to_string()))?;
+            .storage_backend()?;
 
         // Apply filter if provided
         let query = if let Some(ref f) = filter {
@@ -763,10 +761,10 @@ impl NoteStore for LanceNoteStore {
             .limit(k * 2)
             .execute()
             .await
-            .map_err(|e| StorageError::Backend(e.to_string()))?
+            .storage_backend()?
             .try_collect::<Vec<_>>()
             .await
-            .map_err(|e| StorageError::Backend(e.to_string()))?;
+            .storage_backend()?;
 
         let mut search_results = Vec::new();
 
