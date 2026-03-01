@@ -3,7 +3,7 @@ mod replay_harness;
 
 use common::TestDaemon;
 use crucible_core::protocol::SessionEventMessage;
-use crucible_rpc::{DaemonClient, SessionEvent};
+use crucible_daemon::{DaemonClient, SessionEvent};
 use replay_harness::{
     create_test_recording, message_complete, text_delta, tool_call, tool_result, user_message,
 };

@@ -18,7 +18,7 @@ use crucible_config::{
 };
 use crucible_core::test_support::fixtures::{create_kiln, KilnFixture};
 use crucible_daemon::Server;
-use crucible_rpc::lifecycle;
+use crucible_daemon::rpc_client::lifecycle;
 use serial_test::serial;
 use std::path::PathBuf;
 use std::sync::Arc;

@@ -293,7 +293,7 @@ impl NoteStore for DaemonNoteStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_daemon::Server;
+    use crate::Server;
     use tempfile::TempDir;
 
     async fn setup_test_daemon() -> (TempDir, std::path::PathBuf, Arc<DaemonClient>) {

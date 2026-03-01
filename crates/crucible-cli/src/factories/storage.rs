@@ -7,7 +7,7 @@ use crate::config::CliConfig;
 use anyhow::Result;
 use crucible_core::storage::NoteStore;
 use crucible_core::traits::StorageClient;
-use crucible_rpc::{DaemonNoteStore, DaemonStorageClient};
+use crucible_daemon::{DaemonNoteStore, DaemonStorageClient};
 use std::sync::Arc;
 use tracing::info;
 

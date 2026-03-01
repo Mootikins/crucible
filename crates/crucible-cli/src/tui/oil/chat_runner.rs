@@ -1202,7 +1202,7 @@ impl OilChatRunner {
                         let name = name.clone();
                         let tx = params.msg_tx.clone();
                         params.background_tasks.push(tokio::spawn(async move {
-                            match crucible_rpc::DaemonClient::connect().await {
+                            match crucible_daemon::DaemonClient::connect().await {
                                 Ok(client) => {
                                     if name.is_empty() {
                                         match client.plugin_list().await {
@@ -1526,7 +1526,7 @@ fn extract_user_messages_from_recording(path: &std::path::Path) -> Result<Vec<St
 
 async fn replay_event_consumer(
     replay_session_id: String,
-    mut event_rx: tokio::sync::mpsc::UnboundedReceiver<crucible_rpc::SessionEvent>,
+    mut event_rx: tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>,
     msg_tx: tokio::sync::mpsc::UnboundedSender<ChatAppMsg>,
 ) {
     while let Some(event) = event_rx.recv().await {

@@ -9,7 +9,7 @@ use anyhow::{anyhow, Result};
 use crucible_config::BackendType;
 use crucible_core::session::SessionAgent;
 use crucible_daemon::{LogEvent, SessionId, SessionType};
-use crucible_rpc::DaemonClient;
+use crucible_daemon::DaemonClient;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use tokio::fs;
@@ -986,7 +986,7 @@ async fn daemon_end(client: &DaemonClient, session_id: &str) -> Result<()> {
 }
 
 async fn daemon_send(config: &CliConfig, session_id: &str, message: &str, raw: bool) -> Result<()> {
-    use crucible_rpc::DaemonClient;
+    use crucible_daemon::DaemonClient;
     use std::io::Write;
 
     let (client, mut event_rx) = DaemonClient::connect_or_start_with_events().await?;
@@ -1135,7 +1135,7 @@ async fn daemon_configure(
 }
 
 async fn daemon_subscribe(session_ids: &[String]) -> Result<()> {
-    use crucible_rpc::DaemonClient;
+    use crucible_daemon::DaemonClient;
 
     let (client, mut event_rx) = DaemonClient::connect_or_start_with_events().await?;
 
@@ -1173,7 +1173,7 @@ async fn daemon_replay(
     speed: f64,
     raw: bool,
 ) -> Result<()> {
-    use crucible_rpc::DaemonClient;
+    use crucible_daemon::DaemonClient;
     use std::io::Write;
     use std::path::Path;
 
