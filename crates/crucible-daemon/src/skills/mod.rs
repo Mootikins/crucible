@@ -16,5 +16,4 @@ pub use error::{SkillError, SkillResult};
 pub use parser::SkillParser;
 pub use types::{ResolvedSkill, Skill, SkillScope, SkillSource};
 
-#[cfg(feature = "test-utils")]
 pub mod test_utils;

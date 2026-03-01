@@ -1,4 +1,4 @@
-use crucible_skills::{SkillParser, SkillScope, SkillSource};
+use crucible_daemon::{SkillParser, SkillScope, SkillSource};
 use std::path::PathBuf;
 
 #[test]
