@@ -1559,7 +1559,11 @@ mod overlay_snapshots {
 
         app.show_messages();
 
-        assert_snapshot!(render_app(&app));
+        let mut settings = insta::Settings::clone_current();
+        settings.add_filter(r"\d{2}:\d{2}:\d{2}", "[TIME]");
+        settings.bind(|| {
+            assert_snapshot!(render_app(&app));
+        });
     }
 
     /// :messages command opens drawer during streaming
@@ -1573,7 +1577,11 @@ mod overlay_snapshots {
         app.add_notification(Notification::warning("Context at 85%"));
 
         app.show_messages();
-        assert_snapshot!(render_app(&app));
+        let mut settings = insta::Settings::clone_current();
+        settings.add_filter(r"\d{2}:\d{2}:\d{2}", "[TIME]");
+        settings.bind(|| {
+            assert_snapshot!(render_app(&app));
+        });
     }
 
     /// Scenario 7: Recent warnings show as toast; counts show after expiry
@@ -1624,7 +1632,11 @@ mod overlay_snapshots {
         app.add_notification(Notification::warning("Context at 85%"));
 
         app.show_messages();
-        assert_snapshot!(render_app(&app));
+        let mut settings = insta::Settings::clone_current();
+        settings.add_filter(r"\d{2}:\d{2}:\d{2}", "[TIME]");
+        settings.bind(|| {
+            assert_snapshot!(render_app(&app));
+        });
     }
 
     /// Empty drawer (no notifications)
@@ -1632,7 +1644,11 @@ mod overlay_snapshots {
     fn snapshot_messages_drawer_empty() {
         let mut app = OilChatApp::default();
         app.show_messages();
-        assert_snapshot!(render_app(&app));
+        let mut settings = insta::Settings::clone_current();
+        settings.add_filter(r"\d{2}:\d{2}:\d{2}", "[TIME]");
+        settings.bind(|| {
+            assert_snapshot!(render_app(&app));
+        });
     }
 
     #[test]
@@ -1643,7 +1659,11 @@ mod overlay_snapshots {
         app.add_notification(Notification::progress(45, 100, "Indexing files"));
         app.add_notification(Notification::warning("Context at 85%"));
         app.show_messages();
-        assert_snapshot!(render_app_raw(&app));
+        let mut settings = insta::Settings::clone_current();
+        settings.add_filter(r"\d{2}:\d{2}:\d{2}", "[TIME]");
+        settings.bind(|| {
+            assert_snapshot!(render_app_raw(&app));
+        });
     }
 
     #[test]

@@ -18,6 +18,7 @@ use crate::tui::oil::style::{Color, Gap, Padding, Style};
 use crate::tui::oil::theme::ThemeTokens;
 use crate::tui::oil::utils::wrap_chars;
 use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
+use chrono::Local;
 use crossterm::event::KeyCode;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
@@ -646,7 +647,19 @@ impl OilChatApp {
                         NotificationToastKind::Warning
                     }
                 };
-                NotificationEntry::new(&notif.message, kind, instant.elapsed().as_secs())
+                
+                // Compute wall-clock timestamp
+                let elapsed = instant.elapsed();
+                let created = Local::now() - chrono::Duration::from_std(elapsed).unwrap_or_default();
+                let timestamp = created.format("%H:%M:%S").to_string();
+                
+                // Extract first line only (CRLF-safe)
+                let first_line = notif.message
+                    .split_once('\n')
+                    .map(|(first, _)| first.trim_end())
+                    .unwrap_or(notif.message.as_str());
+                
+                NotificationEntry::new(first_line, kind, timestamp)
             })
             .collect();
 

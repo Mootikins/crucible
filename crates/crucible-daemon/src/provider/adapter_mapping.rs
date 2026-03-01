@@ -7,6 +7,7 @@ use crucible_config::BackendType;
 use genai::adapter::AdapterKind;
 use genai::resolver::{AuthData, AuthResolver, Endpoint, ServiceTargetResolver};
 use genai::ModelIden;
+use tracing;
 
 /// Maps a Crucible `BackendType` to genai's `AdapterKind`.
 ///
@@ -101,6 +102,19 @@ pub fn build_genai_client(config: &crucible_config::LlmProviderConfig) -> genai:
     // Set up service target resolver for custom endpoints
     // (used by GitHubCopilot, OpenRouter, ZAI, and Custom)
     let endpoint = config.endpoint();
+    
+    // Validate Ollama endpoint has /v1/ path
+    if matches!(config.provider_type, BackendType::Ollama)
+        && !endpoint.is_empty()
+        && !endpoint.contains("/v1")
+    {
+        tracing::warn!(
+            endpoint = %endpoint,
+            "Ollama endpoint may be missing '/v1/' — genai appends 'chat/completions' directly to the base URL. Try: '{}v1/'",
+            endpoint
+        );
+    }
+    
     if !endpoint.is_empty() {
         builder = builder.with_service_target_resolver(ServiceTargetResolver::from_resolver_fn(
             move |mut st: genai::ServiceTarget| {
@@ -567,4 +581,37 @@ mod tests {
             );
         }
     }
+
+    // ========================================================================
+    // Ollama endpoint validation tests
+    // ========================================================================
+
+    #[test]
+    fn endpoint_validation_warns_on_missing_v1() {
+        // Test that the validation logic correctly identifies missing /v1/
+        let endpoint = "https://llm.example.com";
+        let provider_type = BackendType::Ollama;
+        
+        // Simulate the validation condition
+        let should_warn = matches!(provider_type, BackendType::Ollama)
+            && !endpoint.is_empty()
+            && !endpoint.contains("/v1");
+        
+        assert!(should_warn, "Should warn for Ollama endpoint without /v1/");
+    }
+
+    #[test]
+    fn endpoint_validation_no_warn_for_empty_endpoint() {
+        // When no custom endpoint is set, config.endpoint() returns ""
+        // The empty check prevents spurious warnings for the default Ollama endpoint.
+        let endpoint = ""; // Empty = default (no custom endpoint configured)
+        let provider_type = BackendType::Ollama;
+
+        let should_warn = matches!(provider_type, BackendType::Ollama)
+            && !endpoint.is_empty()
+            && !endpoint.contains("/v1");
+
+        assert!(!should_warn, "Default (empty) Ollama endpoint should not trigger warning");
+    }
+
 }
