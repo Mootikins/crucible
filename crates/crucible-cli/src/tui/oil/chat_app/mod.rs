@@ -2349,6 +2349,8 @@ impl OilChatApp {
                     (":mcp", "List MCP servers", "mcp"),
                     (":plugins", "Show plugin status", "core"),
                     (":export", "Export session to file", "core"),
+                    (":messages", "Toggle notification drawer", "core"),
+                    (":reload", "Reload plugin(s)", "core"),
                     (":set", "View/modify runtime options", "core"),
                 ],
                 &filter,
@@ -2747,6 +2749,24 @@ mod tests {
         let mut app = OilChatApp::init();
         let action = app.handle_repl_command(":quit");
         assert!(action.is_quit());
+    }
+
+    #[test]
+    fn test_autocomplete_messages_command() {
+        let mut app = OilChatApp::init();
+        app.popup.kind = AutocompleteKind::ReplCommand;
+        app.popup.filter = "mes".to_string();
+        let items = app.get_popup_items();
+        assert!(items.iter().any(|item| item.label == ":messages"));
+    }
+
+    #[test]
+    fn test_autocomplete_reload_command() {
+        let mut app = OilChatApp::init();
+        app.popup.kind = AutocompleteKind::ReplCommand;
+        app.popup.filter = "rel".to_string();
+        let items = app.get_popup_items();
+        assert!(items.iter().any(|item| item.label == ":reload"));
     }
 
     #[test]
