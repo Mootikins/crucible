@@ -751,7 +751,8 @@ impl LuaAskContext {
 }
 
 /// Error type for ask_user function.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("{message}")]
 pub struct LuaAskError {
     /// Error message
     pub message: String,
@@ -763,14 +764,6 @@ impl LuaAskError {
         Self { message }
     }
 }
-
-impl std::fmt::Display for LuaAskError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.message)
-    }
-}
-
-impl std::error::Error for LuaAskError {}
 
 /// Register the ask module with context for ask_user function.
 ///

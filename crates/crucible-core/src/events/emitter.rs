@@ -141,7 +141,6 @@ impl fmt::Display for EventError {
         }
     }
 }
-
 impl std::error::Error for EventError {}
 
 /// Outcome of emitting an event.
