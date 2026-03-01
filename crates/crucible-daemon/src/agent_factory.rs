@@ -64,7 +64,6 @@ fn build_internal_delegation_context(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn create_internal_mcp_tool_defs(
     workspace: &Path,
     kiln_path: Option<&Path>,
@@ -218,7 +217,6 @@ pub enum AgentFactoryError {
 /// # Returns
 ///
 /// A boxed `AgentHandle` ready for streaming messages.
-#[allow(clippy::too_many_arguments)]
 pub async fn create_agent_from_session_config(
     agent_config: &SessionAgent,
     lua: Option<&Lua>,
