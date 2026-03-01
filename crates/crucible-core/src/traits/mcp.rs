@@ -17,7 +17,6 @@
 //! │ rmcp │   │ mock/test│  ← Implementations
 //! └──────┘   └──────────┘
 //! ```
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -204,23 +203,6 @@ fn default_auto_reconnect() -> bool {
 // MCP Traits - Interface Segregation
 // =============================================================================
 
-/// Trait for managing MCP connection state
-///
-/// This trait is dyn-compatible for use with trait objects.
-#[async_trait]
-pub trait McpConnection: Send + Sync {
-    /// Connect to the MCP server
-    async fn connect(&mut self) -> Result<(), McpError>;
-
-    /// Disconnect from the MCP server
-    async fn disconnect(&mut self) -> Result<(), McpError>;
-
-    /// Check if connected
-    fn is_connected(&self) -> bool;
-
-    /// Get server info (if connected)
-    fn server_info(&self) -> Option<&McpServerInfo>;
-}
 
 // =============================================================================
 // MCP Errors
