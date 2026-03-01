@@ -1,3 +1,10 @@
+
+// Submodules for logical organization
+pub mod messages;
+pub mod state;
+pub mod ui;
+pub mod handlers;
+
 use crate::tui::oil::app::{Action, App, ViewContext};
 use crate::tui::oil::chat_container::ContainerList;
 use crate::tui::oil::commands::{CliValue, SetCommand};
