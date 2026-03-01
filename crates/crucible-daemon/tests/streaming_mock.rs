@@ -14,6 +14,7 @@ use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::{
     AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager,
 };
+use crucible_tools::workspace::WorkspaceTools;
 use futures::stream::{self, BoxStream};
 use futures::StreamExt;
 use std::sync::Arc;
@@ -239,6 +240,7 @@ impl TestHarness {
             acp_config: None,
             permission_config: None,
             plugin_loader: None,
+            workspace_tools: Arc::new(WorkspaceTools::new(&std::path::PathBuf::from("/tmp"))),
         });
 
         let session = session_manager

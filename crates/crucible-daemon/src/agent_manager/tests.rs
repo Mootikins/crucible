@@ -11,6 +11,7 @@ use crucible_core::traits::chat::{
 use crucible_core::traits::knowledge::NoteInfo;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_core::types::SearchResult;
+use crucible_tools::workspace::WorkspaceTools;
 use futures::stream::BoxStream;
 use futures::StreamExt;
 use std::collections::HashMap;
@@ -370,6 +371,7 @@ fn create_test_agent_manager(session_manager: Arc<SessionManager>) -> AgentManag
         acp_config: None,
         permission_config: None,
         plugin_loader: None,
+        workspace_tools: Arc::new(WorkspaceTools::new(&std::path::PathBuf::from("/tmp"))),
     })
 }
 
@@ -388,6 +390,7 @@ fn create_test_agent_manager_with_providers(
         acp_config: None,
         permission_config: None,
         plugin_loader: None,
+        workspace_tools: Arc::new(WorkspaceTools::new(&std::path::PathBuf::from("/tmp"))),
     })
 }
 
@@ -409,6 +412,7 @@ fn create_test_agent_manager_with_enrichment(
         acp_config: None,
         permission_config: None,
         plugin_loader: None,
+        workspace_tools: Arc::new(WorkspaceTools::new(&std::path::PathBuf::from("/tmp"))),
     })
 }
 
@@ -2993,6 +2997,7 @@ async fn test_list_models_returns_all_providers() {
         acp_config: None,
         permission_config: None,
         plugin_loader: None,
+        workspace_tools: Arc::new(WorkspaceTools::new(&std::path::PathBuf::from("/tmp"))),
     });
 
     agent_manager
@@ -3631,6 +3636,7 @@ async fn test_list_models_no_llm_config() {
         acp_config: None,
         permission_config: None,
         plugin_loader: None,
+        workspace_tools: Arc::new(WorkspaceTools::new(&std::path::PathBuf::from("/tmp"))),
     });
 
     agent_manager
@@ -3693,6 +3699,7 @@ async fn test_list_models_prefixes_with_provider_key() {
         acp_config: None,
         permission_config: None,
         plugin_loader: None,
+        workspace_tools: Arc::new(WorkspaceTools::new(&std::path::PathBuf::from("/tmp"))),
     });
 
     agent_manager
@@ -3833,6 +3840,7 @@ fn create_test_agent_manager_with_llm_config(
         acp_config: None,
         permission_config: None,
         plugin_loader: None,
+        workspace_tools: Arc::new(WorkspaceTools::new(&std::path::PathBuf::from("/tmp"))),
     })
 }
 
@@ -3932,6 +3940,7 @@ fn create_test_agent_manager_with_both(
         acp_config: None,
         permission_config: None,
         plugin_loader: None,
+        workspace_tools: Arc::new(WorkspaceTools::new(&std::path::PathBuf::from("/tmp"))),
     })
 }
 
