@@ -3,10 +3,6 @@
 //! Defines the abstraction for note processing pipelines following the Dependency
 //! Inversion Principle. This allows frontends to depend on the trait rather than
 //! concrete implementations, enabling testability and flexibility.
-
-use anyhow::Result;
-use std::path::Path;
-
 /// Result of processing a note through the pipeline
 #[derive(Debug, Clone)]
 pub enum ProcessingResult {
@@ -129,67 +125,6 @@ impl PipelineMetrics {
             ("Phase 4 (Enrichment)", self.phase4_duration_ms),
             ("Phase 5 (Storage)", self.phase5_duration_ms),
         ]
-    }
-}
-
-/// Pipeline orchestrator trait for note processing
-///
-/// This trait defines the contract for coordinating all five phases of note processing:
-/// 1. Quick Filter (file hash check)
-/// 2. Parse (markdown to AST)
-/// 3. Merkle Diff (identify changed blocks)
-/// 4. Enrich (embeddings + metadata)
-/// 5. Store (persist to database)
-///
-/// # Dependency Inversion
-///
-/// By defining this trait in the core domain layer, we ensure that:
-/// - Frontends (CLI, Desktop, MCP) depend on this abstraction, not concrete implementations
-/// - Infrastructure layer provides concrete implementations
-/// - Easy to swap implementations or add new pipeline strategies
-/// - Testable with mock implementations
-///
-#[async_trait::async_trait]
-pub trait NotePipelineOrchestrator: Send + Sync {
-    /// Process a note through all five phases
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to the markdown file to process
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(ProcessingResult)` on success or skip
-    /// - `Err(...)` only for unrecoverable errors
-    ///
-    /// # Phases
-    ///
-    /// 1. **Quick Filter**: Check if file hash changed
-    /// 2. **Parse**: Convert markdown to AST
-    /// 3. **Merkle Diff**: Identify changed blocks
-    /// 4. **Enrich**: Generate embeddings for changed blocks
-    /// 5. **Store**: Persist changes to database
-    async fn process(&self, path: &Path) -> Result<ProcessingResult>;
-
-    /// Process a note and return metrics
-    ///
-    /// This variant provides detailed timing information for each phase,
-    /// useful for performance monitoring and optimization.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to the markdown file to process
-    ///
-    /// # Returns
-    ///
-    /// A tuple of (ProcessingResult, PipelineMetrics)
-    async fn process_with_metrics(
-        &self,
-        path: &Path,
-    ) -> Result<(ProcessingResult, PipelineMetrics)> {
-        // Default implementation just calls process and returns empty metrics
-        let result = self.process(path).await?;
-        Ok((result, PipelineMetrics::default()))
     }
 }
 

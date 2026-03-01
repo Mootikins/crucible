@@ -95,6 +95,16 @@ impl ParserCapabilities {
             extensions: vec!["md"],
         }
     }
+
+    /// Check if all required features are supported
+    pub fn supports_all(&self, requirements: &ParserRequirements) -> bool {
+        (!requirements.yaml_frontmatter || self.yaml_frontmatter)
+            && (!requirements.toml_frontmatter || self.toml_frontmatter)
+            && (!requirements.wikilinks || self.wikilinks)
+            && (!requirements.tags || self.tags)
+            && (!requirements.headings || self.headings)
+            && (!requirements.code_blocks || self.code_blocks)
+    }
 }
 
 impl Default for ParserCapabilities {
@@ -156,23 +166,6 @@ impl ParserRequirements {
             code_blocks: false,
             max_file_size: None,
         }
-    }
-}
-
-/// Extension trait for ParserCapabilities
-pub trait ParserCapabilitiesExt {
-    fn supports_all(&self, requirements: &ParserRequirements) -> bool;
-}
-
-impl ParserCapabilitiesExt for ParserCapabilities {
-    /// Check if all required features are supported
-    fn supports_all(&self, requirements: &ParserRequirements) -> bool {
-        (!requirements.yaml_frontmatter || self.yaml_frontmatter)
-            && (!requirements.toml_frontmatter || self.toml_frontmatter)
-            && (!requirements.wikilinks || self.wikilinks)
-            && (!requirements.tags || self.tags)
-            && (!requirements.headings || self.headings)
-            && (!requirements.code_blocks || self.code_blocks)
     }
 }
 

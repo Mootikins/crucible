@@ -52,63 +52,6 @@ pub use provider::EmbeddingResponse;
 
 use std::sync::Arc;
 
-/// Extension trait that adds embedding provider creation to `BackendType`.
-///
-/// This keeps the dispatch logic near `BackendType` without creating a
-/// circular dependency (crucible-config cannot depend on crucible-llm).
-trait BackendTypeEmbedding {
-    fn create_embedding_provider(
-        self,
-        config: EmbeddingConfig,
-    ) -> EmbeddingResult<Arc<dyn EmbeddingProvider>>;
-}
-
-impl BackendTypeEmbedding for BackendType {
-    fn create_embedding_provider(
-        self,
-        config: EmbeddingConfig,
-    ) -> EmbeddingResult<Arc<dyn EmbeddingProvider>> {
-        match self {
-            BackendType::Ollama => {
-                let provider = ollama::OllamaProvider::new(config)?;
-                Ok(Arc::new(provider))
-            }
-            BackendType::OpenAI => {
-                let provider = openai::OpenAIProvider::new(config)?;
-                Ok(Arc::new(provider))
-            }
-            #[cfg(feature = "fastembed")]
-            BackendType::FastEmbed => {
-                let provider = fastembed::FastEmbedProvider::new(config)?;
-                Ok(Arc::new(provider))
-            }
-            #[cfg(not(feature = "fastembed"))]
-            BackendType::FastEmbed => Err(EmbeddingError::ConfigError(
-                "FastEmbed provider requires the 'fastembed' feature to be enabled".to_string(),
-            )),
-            BackendType::Burn => {
-                if let crucible_config::EmbeddingProviderConfig::Burn(burn_config) = config {
-                    let provider = burn::BurnProvider::new(&burn_config)?;
-                    Ok(Arc::new(provider))
-                } else {
-                    Err(EmbeddingError::ConfigError(
-                        "Burn provider type requires Burn configuration".to_string(),
-                    ))
-                }
-            }
-            BackendType::Mock => {
-                let dimensions = config.dimensions().unwrap_or(768) as usize;
-                let provider = mock::MockEmbeddingProvider::with_dimensions(dimensions);
-                Ok(Arc::new(provider))
-            }
-            _ => Err(EmbeddingError::ConfigError(format!(
-                "Unsupported provider type: {:?}",
-                self
-            ))),
-        }
-    }
-}
-
 /// Create an embedding provider from configuration
 pub async fn create_provider(
     config: EmbeddingConfig,
@@ -116,7 +59,45 @@ pub async fn create_provider(
     // Validate configuration before creating provider (From impl handles error conversion)
     config.validate()?;
 
-    config.provider_type().create_embedding_provider(config)
+    let provider_type = config.provider_type();
+    match provider_type {
+        BackendType::Ollama => {
+            let provider = ollama::OllamaProvider::new(config)?;
+            Ok(Arc::new(provider))
+        }
+        BackendType::OpenAI => {
+            let provider = openai::OpenAIProvider::new(config)?;
+            Ok(Arc::new(provider))
+        }
+        #[cfg(feature = "fastembed")]
+        BackendType::FastEmbed => {
+            let provider = fastembed::FastEmbedProvider::new(config)?;
+            Ok(Arc::new(provider))
+        }
+        #[cfg(not(feature = "fastembed"))]
+        BackendType::FastEmbed => Err(EmbeddingError::ConfigError(
+            "FastEmbed provider requires the 'fastembed' feature to be enabled".to_string(),
+        )),
+        BackendType::Burn => {
+            if let crucible_config::EmbeddingProviderConfig::Burn(burn_config) = config {
+                let provider = burn::BurnProvider::new(&burn_config)?;
+                Ok(Arc::new(provider))
+            } else {
+                Err(EmbeddingError::ConfigError(
+                    "Burn provider type requires Burn configuration".to_string(),
+                ))
+            }
+        }
+        BackendType::Mock => {
+            let dimensions = config.dimensions().unwrap_or(768) as usize;
+            let provider = mock::MockEmbeddingProvider::with_dimensions(dimensions);
+            Ok(Arc::new(provider))
+        }
+        _ => Err(EmbeddingError::ConfigError(format!(
+            "Unsupported provider type: {:?}",
+            provider_type
+        ))),
+    }
 }
 
 /// Create a mock embedding provider for testing

@@ -22,7 +22,7 @@ pub use error::{ErrorSeverity, ParseError, ParseErrorType, ParserError, ParserRe
 pub use extensions::{
     ExtensionRegistry, ExtensionRegistryBuilder, ExtensionRegistryStats, SyntaxExtension,
 };
-pub use traits::{MarkdownParser, ParserCapabilities, ParserCapabilitiesExt, ParserRequirements};
+pub use traits::{MarkdownParser, ParserCapabilities, ParserRequirements};
 
 // Re-export parser types from canonical source (this module)
 pub use types::{

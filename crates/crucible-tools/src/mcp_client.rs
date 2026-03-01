@@ -21,9 +21,8 @@
     clippy::unnecessary_wraps
 )]
 
-use async_trait::async_trait;
 use crucible_core::traits::mcp::{
-    ContentBlock, McpError, McpServerInfo, McpToolExecutor, McpToolInfo, ToolCallResult,
+    ContentBlock, McpError, McpServerInfo, McpToolInfo, ToolCallResult,
 };
 use rmcp::model::{
     CallToolRequestParam, Content, InitializeResult, ListToolsResult, RawContent, Tool as RmcpTool,
@@ -112,9 +111,9 @@ impl RmcpExecutor {
     }
 }
 
-#[async_trait]
-impl McpToolExecutor for RmcpExecutor {
-    async fn call_tool(
+impl RmcpExecutor {
+    /// Call a tool with JSON arguments
+    pub async fn call_tool(
         &self,
         tool_name: &str,
         arguments: JsonValue,

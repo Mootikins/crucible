@@ -77,7 +77,7 @@ pub use crucible_core::parser::{
     ParsedNoteBuilder,
     ParsedNoteMetadata,
     ParserCapabilities,
-    ParserCapabilitiesExt,
+
     ParserError,
     ParserRequirements,
     ParserResult,
