@@ -49,8 +49,8 @@ pub use kiln::EXCLUDED_DIRS;
 
 // Re-export enrichment traits and types (implementations in crucible-daemon::enrichment)
 pub use enrichment::{
-    BlockEmbedding, CachedEmbedding, EmbeddingCache, EmbeddingProvider, EnrichedNote,
-    EnrichmentMetadata, EnrichmentService, InferredRelation, RelationType,
+    BlockEmbedding, CachedEmbedding, EmbeddingProvider, EnrichedNote, EnrichmentMetadata,
+    EnrichmentService, InferredRelation, RelationType,
 };
 
 // Re-export merkle tree abstractions
@@ -59,15 +59,15 @@ pub use merkle::MerkleTreeBuilder;
 // Re-export processing handoff types, change detection, and pipeline trait
 pub use processing::{
     ChangeDetectionError, ChangeDetectionResult, ChangeDetectionStore, FileState,
-    InMemoryChangeDetectionStore, JobConfiguration, JobStats, NotePipelineOrchestrator,
-    NoteProcessingJob, NoteProcessingResult, PipelineMetrics, ProcessedNote, ProcessingContext,
-    ProcessingMetadata, ProcessingPriority, ProcessingResult, ProcessingSource,
+    InMemoryChangeDetectionStore, JobConfiguration, JobStats, NoteProcessingJob,
+    NoteProcessingResult, PipelineMetrics, ProcessedNote, ProcessingContext, ProcessingMetadata,
+    ProcessingPriority, ProcessingResult, ProcessingSource,
 };
 
 // Re-export core traits (abstractions for Dependency Inversion)
 pub use traits::{
     ChangeDetector, ContentHasher, ContextMessage, FilesystemHandler, HashLookupStorage,
-    MarkdownParser, Registry, RegistryBuilder, SessionManager, Storage, StreamHandler, ToolBridge,
+    MarkdownParser, Registry, RegistryBuilder, SessionManager, Storage, StreamHandler,
     ToolExecutor,
 };
 
@@ -121,7 +121,7 @@ pub use parser::{
     ParsedNoteMetadata,
     // Parser traits and capabilities
     ParserCapabilities,
-    ParserCapabilitiesExt,
+
     // Error types (canonical definitions in crucible-core::parser::error)
     ParserError,
     ParserRequirements,

@@ -18,9 +18,7 @@
 //! - **Single Responsibility**: Pipeline coordinates; infrastructure crates provide capabilities
 
 use anyhow::{Context, Result};
-use crucible_core::processing::{
-    ChangeDetectionStore, FileState, NotePipelineOrchestrator, PipelineMetrics, ProcessingResult,
-};
+use crucible_core::processing::{ChangeDetectionStore, FileState, ProcessingResult};
 use crucible_core::storage::{NoteRecord, NoteStore};
 use crucible_core::EnrichmentService;
 use crucible_parser::{traits::MarkdownParser, CrucibleParser};
@@ -394,25 +392,6 @@ impl NotePipeline {
             properties,
             updated_at: chrono::Utc::now(),
         })
-    }
-}
-
-// Implement the NotePipelineOrchestrator trait
-#[async_trait::async_trait]
-impl NotePipelineOrchestrator for NotePipeline {
-    async fn process(&self, path: &Path) -> Result<ProcessingResult> {
-        // Delegate to the existing process implementation
-        NotePipeline::process(self, path).await
-    }
-
-    async fn process_with_metrics(
-        &self,
-        path: &Path,
-    ) -> Result<(ProcessingResult, PipelineMetrics)> {
-        // TODO: Collect detailed metrics during processing
-        // For now, just call process and return empty metrics
-        let result = self.process(path).await?;
-        Ok((result, PipelineMetrics::default()))
     }
 }
 

@@ -1,18 +1,34 @@
 use crate::node::{col, row, styled, Node};
 use crate::style::{Color, Style};
 
-/// Trait for drawer kind customization
-///
-/// Implement this trait to define drawer-specific styling and naming.
-pub trait DrawerKind {
+/// Drawer kind variants with styling
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DrawerKind {
+    /// Messages drawer
+    Messages,
+}
+
+impl DrawerKind {
     /// Display name for the drawer (e.g., "MESSAGES")
-    fn name(&self) -> &'static str;
+    pub fn name(&self) -> &'static str {
+        match self {
+            DrawerKind::Messages => "MESSAGES",
+        }
+    }
 
     /// Background color for the badge
-    fn badge_bg(&self) -> Color;
+    pub fn badge_bg(&self) -> Color {
+        match self {
+            DrawerKind::Messages => Color::Cyan,
+        }
+    }
 
     /// Foreground color for hints
-    fn hint_fg(&self) -> Color;
+    pub fn hint_fg(&self) -> Color {
+        match self {
+            DrawerKind::Messages => Color::Cyan,
+        }
+    }
 }
 
 /// A drawer component for displaying items with borders and footer
@@ -20,8 +36,8 @@ pub trait DrawerKind {
 /// The drawer renders a list of items with top/bottom borders and a footer badge.
 /// It supports both pre-rendered content rows and simple label/content pairs.
 #[derive(Debug, Clone)]
-pub struct Drawer<K: DrawerKind> {
-    pub kind: K,
+pub struct Drawer {
+    pub kind: DrawerKind,
     pub items: Vec<(String, String)>,
     pub content_rows: Vec<Node>,
     pub max_items: usize,
@@ -31,9 +47,9 @@ pub struct Drawer<K: DrawerKind> {
     pub dim_color: Color,
 }
 
-impl<K: DrawerKind> Drawer<K> {
+impl Drawer {
     /// Create a new drawer with the given kind
-    pub fn new(kind: K) -> Self {
+    pub fn new(kind: DrawerKind) -> Self {
         Self {
             kind,
             items: Vec::new(),
@@ -167,26 +183,9 @@ mod tests {
     use super::*;
     use crate::render::render_to_plain_text;
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    struct TestDrawerKind;
-
-    impl DrawerKind for TestDrawerKind {
-        fn name(&self) -> &'static str {
-            "TEST"
-        }
-
-        fn badge_bg(&self) -> Color {
-            Color::Cyan
-        }
-
-        fn hint_fg(&self) -> Color {
-            Color::Cyan
-        }
-    }
-
     #[test]
     fn drawer_renders_items() {
-        let drawer = Drawer::new(TestDrawerKind).width(60).items(vec![
+        let drawer = Drawer::new(DrawerKind::Messages).width(60).items(vec![
             ("14:30:12".to_string(), "INFO Session saved".to_string()),
             ("14:31:00".to_string(), "WARN Low memory".to_string()),
         ]);
@@ -199,7 +198,7 @@ mod tests {
 
     #[test]
     fn drawer_has_borders() {
-        let drawer = Drawer::new(TestDrawerKind).width(40);
+        let drawer = Drawer::new(DrawerKind::Messages).width(40);
         let plain = render_to_plain_text(&drawer.view(), 40);
         assert!(plain.contains('▄'));
         assert!(plain.contains('▀'));
@@ -207,9 +206,9 @@ mod tests {
 
     #[test]
     fn drawer_has_footer_badge() {
-        let drawer = Drawer::new(TestDrawerKind).width(60);
+        let drawer = Drawer::new(DrawerKind::Messages).width(60);
         let plain = render_to_plain_text(&drawer.view(), 60);
-        assert!(plain.contains("TEST"));
+        assert!(plain.contains("MESSAGES"));
         assert!(plain.contains("ESC/q"));
         assert!(plain.contains("close"));
     }
@@ -219,7 +218,7 @@ mod tests {
         let items: Vec<(String, String)> = (0..20)
             .map(|i| (format!("label{}", i), format!("content{}", i)))
             .collect();
-        let drawer = Drawer::new(TestDrawerKind)
+        let drawer = Drawer::new(DrawerKind::Messages)
             .width(60)
             .max_items(3)
             .items(items);
@@ -231,10 +230,10 @@ mod tests {
 
     #[test]
     fn drawer_empty_items() {
-        let drawer = Drawer::new(TestDrawerKind).width(40);
+        let drawer = Drawer::new(DrawerKind::Messages).width(40);
         let plain = render_to_plain_text(&drawer.view(), 40);
         assert!(plain.contains('▄'));
         assert!(plain.contains('▀'));
-        assert!(plain.contains("TEST"));
+        assert!(plain.contains("MESSAGES"));
     }
 }

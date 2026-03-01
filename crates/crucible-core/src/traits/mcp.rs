@@ -204,19 +204,6 @@ fn default_auto_reconnect() -> bool {
 // MCP Traits - Interface Segregation
 // =============================================================================
 
-/// Trait for executing tools on an MCP server
-///
-/// This trait is dyn-compatible for use with trait objects.
-#[async_trait]
-pub trait McpToolExecutor: Send + Sync {
-    /// Call a tool with JSON arguments
-    async fn call_tool(
-        &self,
-        tool_name: &str,
-        arguments: JsonValue,
-    ) -> Result<ToolCallResult, McpError>;
-}
-
 /// Trait for managing MCP connection state
 ///
 /// This trait is dyn-compatible for use with trait objects.

@@ -47,7 +47,7 @@ pub mod text_search;
 pub mod tools;
 
 // Re-export key traits
-pub use acp::{FilesystemHandler, SessionManager, StreamHandler, ToolBridge};
+pub use acp::{FilesystemHandler, SessionManager, StreamHandler};
 pub use change_detection::{CacheEntry, ChangeDetector, ContentHasher, HashLookupStorage};
 pub use graph_query::{GraphQueryError, GraphQueryExecutor, GraphQueryResult};
 
@@ -80,8 +80,8 @@ pub use tools::{ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolR
 pub use input::{ChatEvent, InputMode, KeyAction, KeyCode, KeyPattern, Modifiers, SessionAction};
 // MCP abstractions
 pub use mcp::{
-    ContentBlock, McpClientConfig, McpConnection, McpError, McpServerInfo, McpToolExecutor,
-    McpToolInfo, McpTransportConfig, ToolCallResult,
+    ContentBlock, McpClientConfig, McpConnection, McpError, McpServerInfo, McpToolInfo,
+    McpTransportConfig, ToolCallResult,
 };
 pub use permission_gate::PermissionGate;
 pub use text_search::TextSearchMatch;

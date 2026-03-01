@@ -26,7 +26,7 @@ pub use change_detection::{
     InMemoryChangeDetectionStore,
 };
 
-pub use pipeline::{NotePipelineOrchestrator, PipelineMetrics, ProcessingResult};
+pub use pipeline::{PipelineMetrics, ProcessingResult};
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;

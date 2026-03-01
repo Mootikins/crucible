@@ -23,7 +23,6 @@
 //! let results = store.search(&query_embedding, 10, None).await?;
 //! ```
 
-pub mod embedding_cache;
 pub mod note_store;
 pub mod store;
 pub mod vector_search;

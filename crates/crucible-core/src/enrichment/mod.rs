@@ -16,7 +16,7 @@ pub mod service;
 pub mod types;
 
 // Re-export the embedding provider trait and cache types
-pub use embedding::{CachedEmbedding, EmbeddingCache, EmbeddingProvider};
+pub use embedding::{CachedEmbedding, EmbeddingProvider};
 
 // Re-export the enrichment service trait
 pub use service::EnrichmentService;

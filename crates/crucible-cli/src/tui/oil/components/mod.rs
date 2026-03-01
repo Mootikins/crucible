@@ -15,8 +15,9 @@ pub(crate) mod status_component;
 mod subagent_render;
 pub(crate) mod tool_render;
 
+pub use crucible_oil::components::DrawerKind;
 pub(crate) use diff_preview::render_diff_preview;
-pub use drawer::{Drawer, DrawerKind};
+pub use drawer::Drawer;
 pub use input_area::{InputArea, InputMode, INPUT_MAX_CONTENT_LINES};
 pub use input_component::InputComponent;
 pub use interaction_modal::{

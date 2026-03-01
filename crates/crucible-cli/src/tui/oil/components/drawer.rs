@@ -1,37 +1,10 @@
 use crate::tui::oil::component::Component;
 use crate::tui::oil::node::Node;
-use crate::tui::oil::style::Color;
 use crate::tui::oil::ViewContext;
-use crucible_oil::components::{Drawer as OilDrawer, DrawerKind as OilDrawerKind};
+use crucible_oil::components::{Drawer as OilDrawer, DrawerKind};
 
-/// CLI-specific drawer kind
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DrawerKind {
-    Messages,
-}
-
-impl OilDrawerKind for DrawerKind {
-    fn name(&self) -> &'static str {
-        match self {
-            DrawerKind::Messages => "MESSAGES",
-        }
-    }
-
-    fn badge_bg(&self) -> Color {
-        match self {
-            DrawerKind::Messages => Color::Cyan,
-        }
-    }
-
-    fn hint_fg(&self) -> Color {
-        match self {
-            DrawerKind::Messages => Color::Cyan,
-        }
-    }
-}
-
-/// Type alias for Oil's Drawer with CLI-specific DrawerKind
-pub type Drawer = OilDrawer<DrawerKind>;
+/// Type alias for Oil's Drawer
+pub type Drawer = OilDrawer;
 
 impl Component for Drawer {
     fn view(&self, _ctx: &ViewContext<'_>) -> Node {
