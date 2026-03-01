@@ -10,4 +10,4 @@ pub mod genai_handle;
 pub mod model_listing;
 pub mod tool_bridge;
 
-pub use adapter_mapping::{backend_to_adapter, build_genai_client, build_model_iden};
+pub use adapter_mapping::{backend_to_adapter, build_genai_client, build_model_iden, ChatClient};
