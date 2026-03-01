@@ -23,6 +23,12 @@ pub enum DaemonCommands {
     },
     /// Stop the daemon
     Stop,
+    /// Restart the daemon (stop if running, then start)
+    Restart {
+        /// Wait for daemon to be ready
+        #[arg(long)]
+        wait: bool,
+    },
     /// Check daemon status
     Status,
     /// Internal: run as foreground daemon (used by auto-spawn)
@@ -36,6 +42,7 @@ pub async fn handle(cmd: DaemonCommands, config_path: Option<PathBuf>) -> Result
             start_daemon(foreground, wait, config_path).await
         }
         DaemonCommands::Stop => stop_daemon().await,
+        DaemonCommands::Restart { wait } => restart_daemon(wait, config_path).await,
         DaemonCommands::Serve => start_daemon(true, false, config_path).await,
         DaemonCommands::Status => show_status().await,
     }
@@ -133,6 +140,34 @@ async fn stop_daemon() -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+async fn restart_daemon(wait: bool, config_path: Option<PathBuf>) -> Result<()> {
+    let sock = socket_path();
+    if is_daemon_running(&sock) {
+        // Stop the existing daemon
+        match DaemonClient::connect().await {
+            Ok(client) => {
+                let _ = client.shutdown().await;
+                println!("Stopping daemon...");
+                // Wait for daemon to release socket
+                for _ in 0..50 {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    if !is_daemon_running(&sock) {
+                        break;
+                    }
+                }
+            }
+            Err(e) => {
+                println!("Warning: couldn't connect to stop daemon: {e}");
+            }
+        }
+    }
+
+    // Start fresh daemon
+    start_daemon(false, wait || true, config_path).await?;
+    println!("Daemon restarted");
     Ok(())
 }
 
