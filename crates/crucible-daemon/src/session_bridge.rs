@@ -3,7 +3,7 @@
 //! Bridges `cru.sessions.*` Lua calls to the daemon's `SessionManager`,
 //! `AgentManager`, and event broadcast infrastructure.
 
-use crate::agent_manager::{AgentManager, AgentManagerParams};
+use crate::agent_manager::AgentManager;
 use crate::protocol::SessionEventMessage;
 use crate::session_manager::SessionManager;
 use crucible_core::session::SessionType;

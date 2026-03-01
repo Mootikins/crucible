@@ -1,6 +1,8 @@
 //! Agent lifecycle management for the daemon.
 
-use crate::agent_factory::{create_agent_from_session_config, AgentFactoryError};
+use crate::agent_factory::{
+    create_agent_from_session_config, AgentFactoryError, CreateAgentFromSessionConfigParams,
+};
 use crate::background_manager::{BackgroundJobManager, SubagentContext};
 use crate::daemon_plugins::DaemonPluginLoader;
 use crate::event_emitter::emit_event;
