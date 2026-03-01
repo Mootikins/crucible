@@ -49,6 +49,7 @@ pub mod session_bridge;
 pub mod session_manager;
 pub mod session_storage;
 pub mod subscription;
+pub mod tool_dispatch;
 pub mod tools_bridge;
 pub mod trust_resolution;
 
