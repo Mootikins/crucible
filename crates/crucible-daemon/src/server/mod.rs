@@ -28,7 +28,7 @@ use crucible_lua::{
     register_crucible_on_api, LuaExecutor, LuaScriptHandlerRegistry, PluginManager,
     ScriptHandlerResult, Session as LuaSession, SessionConfigRpc,
 };
-use crucible_skills::discovery::{default_discovery_paths, FolderDiscovery};
+use crate::skills::discovery::{default_discovery_paths, FolderDiscovery};
 use crucible_tools::workspace::WorkspaceTools;
 use dashmap::DashMap;
 

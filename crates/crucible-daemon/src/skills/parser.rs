@@ -1,7 +1,7 @@
 //! SKILL.md parser following agentskills.io specification
 
-use crate::error::{SkillError, SkillResult};
-use crate::types::{Skill, SkillFrontmatter, SkillSource};
+use crate::skills::error::{SkillError, SkillResult};
+use crate::skills::types::{Skill, SkillFrontmatter, SkillSource};
 use chrono::Utc;
 
 /// Parser for SKILL.md files
@@ -80,7 +80,7 @@ impl Default for SkillParser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{SkillScope, SkillSource};
+    use crate::skills::types::{SkillScope, SkillSource};
     use std::path::PathBuf;
 
     fn test_source() -> SkillSource {

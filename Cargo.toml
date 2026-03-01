@@ -17,7 +17,6 @@ members = [
     "crates/crucible-web",
     "crates/crucible-daemon",
     "crates/crucible-rpc",
-    "crates/crucible-skills",
     "crates/crucible-lance",
     "crates/crucible-observe",
     "crates/crucible-oil",
@@ -140,7 +139,6 @@ crucible-config = { path = "crates/crucible-config" }
 crucible-acp = { path = "crates/crucible-acp" }
 crucible-tools = { path = "crates/crucible-tools" }
 crucible-llm = { path = "crates/crucible-llm", default-features = false }
-crucible-skills = { path = "crates/crucible-skills" }
 
 crucible-lua = { path = "crates/crucible-lua" }
 crucible-web = { path = "crates/crucible-web" }

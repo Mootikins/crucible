@@ -48,6 +48,7 @@ pub mod server;
 pub mod session_bridge;
 pub mod session_manager;
 pub mod session_storage;
+pub mod skills;
 pub mod subscription;
 pub mod tool_dispatch;
 pub mod tools_bridge;
@@ -72,5 +73,9 @@ pub use server::{BindWithPluginConfigParams, Server};
 pub use session_bridge::DaemonSessionBridge;
 pub use session_manager::{SessionError, SessionManager};
 pub use session_storage::{FileSessionStorage, SessionStorage};
+pub use skills::{
+    format_skills_for_context, FolderDiscovery, ResolvedSkill, SearchPath, Skill, SkillError,
+    SkillParser, SkillResult, SkillScope, SkillSource,
+};
 pub use subscription::{ClientId, SubscriptionManager};
 pub use tools_bridge::DaemonToolsBridge;
