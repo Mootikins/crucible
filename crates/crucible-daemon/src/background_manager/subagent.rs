@@ -5,10 +5,6 @@ impl BackgroundJobManager {
         self.subagent_contexts
             .insert(session_id.to_string(), config);
     }
-    #[allow(dead_code)]
-    pub fn unregister_subagent_context(&self, session_id: &str) {
-        self.subagent_contexts.remove(session_id);
-    }
 
     pub async fn spawn_subagent(
         &self,
