@@ -42,7 +42,7 @@ pub async fn handle(cmd: DaemonCommands, config_path: Option<PathBuf>) -> Result
             start_daemon(foreground, wait, config_path).await
         }
         DaemonCommands::Stop => stop_daemon().await,
-        DaemonCommands::Restart { wait } => restart_daemon(wait, config_path).await,
+        DaemonCommands::Restart { wait: _ } => restart_daemon(config_path).await,
         DaemonCommands::Serve => start_daemon(true, false, config_path).await,
         DaemonCommands::Status => show_status().await,
     }
@@ -143,7 +143,7 @@ async fn stop_daemon() -> Result<()> {
     Ok(())
 }
 
-async fn restart_daemon(wait: bool, config_path: Option<PathBuf>) -> Result<()> {
+async fn restart_daemon(config_path: Option<PathBuf>) -> Result<()> {
     let sock = socket_path();
     if is_daemon_running(&sock) {
         // Stop the existing daemon
@@ -166,7 +166,7 @@ async fn restart_daemon(wait: bool, config_path: Option<PathBuf>) -> Result<()> 
     }
 
     // Start fresh daemon
-    start_daemon(false, wait || true, config_path).await?;
+    start_daemon(false, true, config_path).await?;
     println!("Daemon restarted");
     Ok(())
 }
