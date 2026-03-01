@@ -567,7 +567,7 @@ impl ToolExecutor {
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use crucible_core::traits::acp::{AcpError, ToolBridge};
+    use crucible_core::traits::acp::AcpError;
     use crucible_core::traits::tools::{
         ExecutionContext, ToolDefinition, ToolError, ToolExecutor as CoreToolExecutor,
     };
@@ -655,16 +655,12 @@ mod tests {
         }
     }
 
-    #[async_trait]
-    impl ToolBridge for PermissionedToolBridge {
-        type ToolCall = ToolInvocation;
-        type ToolResult = ToolOutput;
-        type ToolDescriptor = ToolDescriptor;
-
-        async fn execute_tool(
+    impl PermissionedToolBridge {
+        /// Execute a tool with the given invocation
+        pub async fn execute_tool(
             &self,
-            call: Self::ToolCall,
-        ) -> std::result::Result<Self::ToolResult, AcpError> {
+            call: ToolInvocation,
+        ) -> std::result::Result<ToolOutput, AcpError> {
             if !self.registry.contains(&call.tool_name) {
                 return Err(AcpError::NotFound(call.tool_name));
             }
@@ -685,7 +681,8 @@ mod tests {
             })))
         }
 
-        async fn list_tools(&self) -> std::result::Result<Vec<Self::ToolDescriptor>, AcpError> {
+        /// List all available tools
+        pub async fn list_tools(&self) -> std::result::Result<Vec<ToolDescriptor>, AcpError> {
             Ok(self
                 .registry
                 .list()
@@ -694,7 +691,8 @@ mod tests {
                 .collect::<Vec<_>>())
         }
 
-        async fn get_tool_schema(
+        /// Get the schema for a specific tool
+        pub async fn get_tool_schema(
             &self,
             tool_name: &str,
         ) -> std::result::Result<serde_json::Value, AcpError> {

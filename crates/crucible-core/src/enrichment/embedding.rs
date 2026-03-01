@@ -149,38 +149,3 @@ pub struct CachedEmbedding {
     /// Model version (e.g., "q8_0" for quantized models)
     pub model_version: Option<String>,
 }
-
-/// Abstract interface for embedding cache
-///
-/// This trait allows looking up previously generated embeddings by content hash,
-/// enabling incremental embedding. If the same content (by BLAKE3 hash) has already
-/// been embedded by the same model+version, we can reuse the cached embedding
-/// instead of calling the embedding provider again.
-///
-/// # Dependency Inversion
-///
-/// The trait is defined in crucible-core (domain layer), while implementations
-/// live in the storage layer (crucible-sqlite, crucible-lance). This allows the enrichment
-/// service to use caching without depending on storage implementation details.
-#[async_trait::async_trait]
-pub trait EmbeddingCache: Send + Sync {
-    /// Look up a cached embedding by content hash and model
-    ///
-    /// # Arguments
-    ///
-    /// * `content_hash` - BLAKE3 hash of the content
-    /// * `model` - Model name (e.g., "nomic-embed-text-v1.5")
-    /// * `model_version` - Model version (e.g., "q8_0"), or None for unversioned models
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(Some(CachedEmbedding))` if a matching embedding exists
-    /// * `Ok(None)` if no matching embedding is found
-    /// * `Err(...)` if the lookup fails
-    async fn get_embedding(
-        &self,
-        content_hash: &str,
-        model: &str,
-        model_version: Option<&str>,
-    ) -> Result<Option<CachedEmbedding>>;
-}
