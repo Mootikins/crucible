@@ -1,5 +1,7 @@
 use super::*;
 
+const DEFAULT_MAX_TOOL_DEPTH: usize = 10;
+
 impl AgentManager {
     pub async fn send_message(
         &self,
@@ -110,6 +112,7 @@ impl AgentManager {
                     stream_config,
                     &mut accumulated_response,
                     false,
+                    DEFAULT_MAX_TOOL_DEPTH,
                 ) => {}
             }
 
@@ -862,9 +865,11 @@ impl AgentManager {
             }
         }
 
-        if let Some(tool_calls) = &chunk.tool_calls {
-            for tool_call in tool_calls {
-                let _ = Self::handle_tool_call_in_stream(stream_ctx, tool_call).await;
+        if !chunk.done {
+            if let Some(tool_calls) = &chunk.tool_calls {
+                for tool_call in tool_calls {
+                    let _ = Self::handle_tool_call_in_stream(stream_ctx, tool_call).await;
+                }
             }
         }
 
@@ -970,6 +975,7 @@ impl AgentManager {
         stream_config: AgentStreamConfig,
         accumulated_response: &mut String,
         is_continuation: bool,
+        max_tool_depth: usize,
     ) {
         let Some(content) =
             Self::apply_pre_llm_call_handlers(content, &stream_ctx, &stream_config).await
@@ -980,6 +986,7 @@ impl AgentManager {
         let stream_start = Instant::now();
         let mut agent_guard = agent.lock().await;
         let mut stream = agent_guard.send_message_stream(content);
+        let mut tool_depth = 0usize;
 
         while let Some(result) = stream.next().await {
             match result {
@@ -987,6 +994,46 @@ impl AgentManager {
                     Self::emit_stream_events(&stream_ctx, &chunk, accumulated_response).await;
 
                     if chunk.done {
+                        if let Some(tool_calls) = chunk.tool_calls.clone() {
+                            if tool_depth < max_tool_depth {
+                                tool_depth += 1;
+                                let mut tool_results = Vec::new();
+                                for tool_call in &tool_calls {
+                                    if let Some(result) =
+                                        Self::handle_tool_call_in_stream(&stream_ctx, tool_call).await
+                                    {
+                                        tool_results.push(result);
+                                    }
+                                }
+
+                                drop(stream);
+                                drop(agent_guard);
+                                agent_guard = agent.lock().await;
+                                stream =
+                                    agent_guard.continue_with_tool_results(tool_calls, tool_results);
+                                continue;
+                            }
+
+                            warn!(
+                                session_id = %stream_ctx.session_id,
+                                max_tool_depth = max_tool_depth,
+                                "max_tool_depth exceeded"
+                            );
+                            if !emit_event(
+                                &stream_ctx.event_tx,
+                                SessionEventMessage::ended(
+                                    &stream_ctx.session_id,
+                                    "error: max_tool_depth exceeded",
+                                ),
+                            ) {
+                                warn!(
+                                    session_id = %stream_ctx.session_id,
+                                    "No subscribers for max_tool_depth ended event"
+                                );
+                            }
+                            break;
+                        }
+
                         let injection = Self::run_reactor_handlers(
                             &stream_ctx,
                             &chunk,
@@ -1018,6 +1065,7 @@ impl AgentManager {
                                 stream_config.clone(),
                                 accumulated_response,
                                 true,
+                                max_tool_depth,
                             ))
                             .await;
                         }
