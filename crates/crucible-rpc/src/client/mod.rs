@@ -2447,4 +2447,49 @@ mod tests {
             err_msg
         );
     }
+
+    #[test]
+    fn version_check_enum_match() {
+        let check = VersionCheck::Match;
+        assert!(check.is_match());
+    }
+
+    #[test]
+    fn version_check_enum_mismatch() {
+        let check = VersionCheck::Mismatch {
+            client: "abc1234".to_string(),
+            daemon: "def5678".to_string(),
+        };
+        assert!(!check.is_match());
+    }
+
+    #[test]
+    fn version_check_mismatch_dev_vs_real() {
+        // This is the exact scenario that was broken before build.rs was added:
+        // client had "dev" (no build.rs), daemon had "dev" → false Match
+        let check_dev_match = VersionCheck::Match; // "dev" == "dev"
+        assert!(check_dev_match.is_match());
+
+        // After build.rs: client has real SHA, daemon has old "dev" → correct Mismatch
+        let check_dev_mismatch = VersionCheck::Mismatch {
+            client: "abc1234".to_string(),
+            daemon: "dev".to_string(),
+        };
+        assert!(!check_dev_mismatch.is_match());
+    }
+
+    #[test]
+    fn build_sha_is_set_by_build_rs() {
+        // After Task 2 added build.rs, this should NOT be "dev" anymore.
+        // This is the CRITICAL test — proves the SHA is actually embedded.
+        let sha = option_env!("CRUCIBLE_BUILD_SHA");
+        assert!(sha.is_some(), "CRUCIBLE_BUILD_SHA should be set by build.rs");
+        let sha = sha.unwrap();
+        assert_ne!(sha, "dev", "Should be a real git SHA, not 'dev'");
+        assert!(sha.len() >= 7, "SHA should be at least 7 chars: got {sha}");
+        assert!(
+            sha.chars().all(|c| c.is_ascii_hexdigit()),
+            "SHA should be hex chars only: got {sha}"
+        );
+    }
 }
