@@ -795,8 +795,8 @@ impl AgentManager {
             Err(e) => (String::new(), Some(e)),
         };
 
-        if error_str.is_none() {
-            if !emit_event(
+        if error_str.is_none()
+            && !emit_event(
                 &stream_ctx.event_tx,
                 SessionEventMessage::tool_result(
                     &stream_ctx.session_id,
@@ -804,13 +804,13 @@ impl AgentManager {
                     &tool_call.name,
                     serde_json::json!({ "result": result_str }),
                 ),
-            ) {
-                warn!(
-                    session_id = %stream_ctx.session_id,
-                    tool = %tool_call.name,
-                    "No subscribers for tool_result event"
-                );
-            }
+            )
+        {
+            warn!(
+                session_id = %stream_ctx.session_id,
+                tool = %tool_call.name,
+                "No subscribers for tool_result event"
+            );
         }
 
         Some(crucible_core::traits::chat::ChatToolResult {
