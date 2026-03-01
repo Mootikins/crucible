@@ -35,6 +35,7 @@ pub mod kiln_manager;
 pub mod lifecycle;
 pub mod mcp_server;
 pub mod multi_kiln_search;
+pub mod observe;
 pub mod permission_bridge;
 pub mod pipeline;
 pub mod project_manager;
@@ -65,6 +66,15 @@ pub use file_watch_bridge::{create_event_bridge, DaemonEventBridge};
 pub use kiln_manager::KilnManager;
 pub use lifecycle::{remove_socket, socket_path, wait_for_shutdown};
 pub use mcp_server::McpServerManager;
+pub use observe::{events, id, indexer, markdown, serde_md, session, storage, truncate};
+pub use observe::{
+    extract_session_content, list_sessions, load_events, render_to_markdown, truncate_for_log,
+    LogEvent, PermissionDecision, RenderOptions, SessionContent, SessionId, SessionIdError,
+    SessionMetadata, SessionType, SessionWriter, TokenUsage, TruncateResult,
+    DEFAULT_TRUNCATE_THRESHOLD,
+};
+#[cfg(feature = "storage-sqlite")]
+pub use observe::SessionIndex;
 pub use permission_bridge::DaemonPermissionGate;
 pub use project_manager::{ProjectError, ProjectManager};
 pub use protocol::{Request, Response, RpcError, SessionEventMessage};
