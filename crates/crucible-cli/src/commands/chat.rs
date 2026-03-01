@@ -25,6 +25,58 @@ use crate::tui::oil::{McpServerDisplay, PluginStatusEntry};
 use crate::tui::AgentSelection;
 use crucible_core::traits::chat::{is_read_only, mode_display_name};
 
+/// Parameters for the execute function
+pub struct ExecuteParams {
+    pub config: CliConfig,
+    pub agent_name: Option<String>,
+    pub query: Option<String>,
+    pub read_only: bool,
+    pub no_context: bool,
+    pub context_size: Option<usize>,
+    pub provider_key: Option<String>,
+    pub max_context_tokens: usize,
+    pub env_overrides: Vec<String>,
+    pub resume_session_id: Option<String>,
+    pub set_overrides: Vec<String>,
+    pub record: Option<PathBuf>,
+    pub replay: Option<PathBuf>,
+    pub replay_speed: f64,
+    pub replay_auto_exit: Option<u64>,
+}
+
+/// Parameters for the run_interactive_chat function
+pub struct RunInteractiveChatParams {
+    pub config: CliConfig,
+    pub initial_mode: String,
+    pub agent_name: Option<String>,
+    pub provider_key: Option<String>,
+    pub max_context_tokens: usize,
+    pub parsed_env: std::collections::HashMap<String, String>,
+    pub working_dir: Option<std::path::PathBuf>,
+    pub resume_session_id: Option<String>,
+    pub set_overrides: Vec<String>,
+    pub record: Option<PathBuf>,
+    pub replay: Option<PathBuf>,
+    pub replay_speed: f64,
+    pub replay_auto_exit: Option<u64>,
+}
+
+/// Parameters for the run_oneshot_chat function
+pub struct RunOneshotChatParams {
+    pub config: CliConfig,
+    pub initial_mode: String,
+    pub agent_name: Option<String>,
+    pub provider_key: Option<String>,
+    pub max_context_tokens: usize,
+    pub parsed_env: std::collections::HashMap<String, String>,
+    pub working_dir: Option<std::path::PathBuf>,
+    pub resume_session_id: Option<String>,
+    pub no_context: bool,
+    pub context_size: Option<usize>,
+    pub query_text: String,
+    pub set_overrides: Vec<String>,
+}
+
 /// Determine which kiln to save sessions to.
 ///
 /// - Single kiln: use it automatically
@@ -65,24 +117,24 @@ fn select_session_kiln(config: &CliConfig) -> Option<PathBuf> {
     Some(kiln_path.clone())
 }
 
-#[allow(clippy::too_many_arguments)]
-pub async fn execute(
-    config: CliConfig,
-    agent_name: Option<String>,
-    query: Option<String>,
-    read_only: bool,
-    no_context: bool,
-    context_size: Option<usize>,
-    provider_key: Option<String>,
-    max_context_tokens: usize,
-    env_overrides: Vec<String>,
-    resume_session_id: Option<String>,
-    set_overrides: Vec<String>,
-    record: Option<PathBuf>,
-    replay: Option<PathBuf>,
-    replay_speed: f64,
-    replay_auto_exit: Option<u64>,
-) -> Result<()> {
+pub async fn execute(params: ExecuteParams) -> Result<()> {
+    let ExecuteParams {
+        config,
+        agent_name,
+        query,
+        read_only,
+        no_context,
+        context_size,
+        provider_key,
+        max_context_tokens,
+        env_overrides,
+        resume_session_id,
+        set_overrides,
+        record,
+        replay,
+        replay_speed,
+        replay_auto_exit,
+    } = params;
     let initial_mode = if read_only { "plan" } else { "normal" };
 
     info!("Starting chat command");
@@ -99,9 +151,9 @@ pub async fn execute(
 
     match query {
         None => {
-            run_interactive_chat(
+            run_interactive_chat(RunInteractiveChatParams {
                 config,
-                initial_mode,
+                initial_mode: initial_mode.to_string(),
                 agent_name,
                 provider_key,
                 max_context_tokens,
@@ -113,13 +165,13 @@ pub async fn execute(
                 replay,
                 replay_speed,
                 replay_auto_exit,
-            )
+            })
             .await
         }
         Some(query_text) => {
-            run_oneshot_chat(
+            run_oneshot_chat(RunOneshotChatParams {
                 config,
-                initial_mode,
+                initial_mode: initial_mode.to_string(),
                 agent_name,
                 provider_key,
                 max_context_tokens,
@@ -130,7 +182,7 @@ pub async fn execute(
                 context_size,
                 query_text,
                 set_overrides,
-            )
+            })
             .await
         }
     }
@@ -298,22 +350,22 @@ async fn run_preflight_checks(config: &mut CliConfig) -> Result<()> {
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn run_interactive_chat(
-    config: CliConfig,
-    initial_mode: &str,
-    agent_name: Option<String>,
-    provider_key: Option<String>,
-    max_context_tokens: usize,
-    parsed_env: std::collections::HashMap<String, String>,
-    working_dir: Option<std::path::PathBuf>,
-    resume_session_id: Option<String>,
-    set_overrides: Vec<String>,
-    record: Option<PathBuf>,
-    replay: Option<PathBuf>,
-    replay_speed: f64,
-    replay_auto_exit: Option<u64>,
-) -> Result<()> {
+async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
+    let RunInteractiveChatParams {
+        config,
+        initial_mode,
+        agent_name,
+        provider_key,
+        max_context_tokens,
+        parsed_env,
+        working_dir,
+        resume_session_id,
+        set_overrides,
+        record,
+        replay,
+        replay_speed,
+        replay_auto_exit,
+    } = params;
     use crate::chat::bridge::AgentEventBridge;
     use crate::chat::session::{index_kiln_notes, index_workspace_files};
     use crate::tui::oil::{ChatMode, OilChatRunner};
@@ -348,7 +400,7 @@ async fn run_interactive_chat(
     let ring = std::sync::Arc::new(EventRing::new(4096));
     let bridge = AgentEventBridge::new(ring);
 
-    let mode = ChatMode::parse(initial_mode);
+    let mode = ChatMode::parse(&initial_mode);
     let effective_llm = config.effective_llm_provider().ok();
     let model_name = effective_llm
         .as_ref()
@@ -582,28 +634,28 @@ async fn run_interactive_chat(
     run_result
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn run_oneshot_chat(
-    config: CliConfig,
-    initial_mode: &str,
-    agent_name: Option<String>,
-    provider_key: Option<String>,
-    max_context_tokens: usize,
-    parsed_env: std::collections::HashMap<String, String>,
-    working_dir: Option<std::path::PathBuf>,
-    resume_session_id: Option<String>,
-    no_context: bool,
-    context_size: Option<usize>,
-    query_text: String,
-    set_overrides: Vec<String>,
-) -> Result<()> {
+async fn run_oneshot_chat(params: RunOneshotChatParams) -> Result<()> {
+    let RunOneshotChatParams {
+        config,
+        initial_mode,
+        agent_name,
+        provider_key,
+        max_context_tokens,
+        parsed_env,
+        working_dir,
+        resume_session_id,
+        no_context,
+        context_size,
+        query_text,
+        set_overrides,
+    } = params;
     let mut status = StatusLine::new();
     let default_agent = config.acp.default_agent.clone();
 
     let mut agent_params = factories::AgentInitParams::new()
         .with_agent_name_opt(agent_name.clone().or(default_agent.clone()))
         .with_provider_opt(provider_key)
-        .with_read_only(is_read_only(initial_mode))
+        .with_read_only(is_read_only(&initial_mode))
         .with_max_context_tokens(max_context_tokens)
         .with_env_overrides(parsed_env)
         .with_resume_session_id(resume_session_id);

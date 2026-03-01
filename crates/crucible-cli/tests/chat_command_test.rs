@@ -57,23 +57,23 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
 
     // This should NOT panic with "lock hold by current process" error
     // Currently FAILS with database lock error
-    let result = chat::execute(
+    let result = chat::execute(chat::ExecuteParams {
         config,
-        Some("opencode".to_string()),     // agent_name
-        Some("What is 2+2?".to_string()), // query
-        true,                             // read_only (plan mode)
-        true,                             // no_context (skip semantic search)
-        Some(3),                          // context_size
-        None,                             // provider_key
-        8192,                             // max_context_tokens
-        vec![],                           // env_overrides
-        None,                             // resume (session ID)
-        vec![],                           // set_overrides
-        None,                             // record
-        None,                             // replay
-        1.0,                              // replay_speed
-        None,                             // replay_auto_exit
-    )
+        agent_name: Some("opencode".to_string()),
+        query: Some("What is 2+2?".to_string()),
+        read_only: true,
+        no_context: true,
+        context_size: Some(3),
+        provider_key: None,
+        max_context_tokens: 8192,
+        env_overrides: vec![],
+        resume_session_id: None,
+        set_overrides: vec![],
+        record: None,
+        replay: None,
+        replay_speed: 1.0,
+        replay_auto_exit: None,
+    })
     .await;
 
     // The bug manifests as a database connection error
@@ -155,23 +155,23 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
 
     // Try to execute with a query - should fail at agent discovery,
     // not at database opening
-    let result = chat::execute(
+    let result = chat::execute(chat::ExecuteParams {
         config,
-        None, // No agent name - will try to discover
-        Some("test query".to_string()),
-        true,   // read_only
-        true,   // no_context
-        None,   // context_size
-        None,   // provider_key
-        8192,   // max_context_tokens
-        vec![], // env_overrides
-        None,   // resume (session ID)
-        vec![], // set_overrides
-        None,   // record
-        None,   // replay
-        1.0,    // replay_speed
-        None,   // replay_auto_exit
-    )
+        agent_name: None,
+        query: Some("test query".to_string()),
+        read_only: true,
+        no_context: true,
+        context_size: None,
+        provider_key: None,
+        max_context_tokens: 8192,
+        env_overrides: vec![],
+        resume_session_id: None,
+        set_overrides: vec![],
+        record: None,
+        replay: None,
+        replay_speed: 1.0,
+        replay_auto_exit: None,
+    })
     .await;
 
     match result {
