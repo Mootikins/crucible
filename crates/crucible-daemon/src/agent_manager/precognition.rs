@@ -1,3 +1,15 @@
+/// Parameters for executing a multi-kiln search.
+struct ExecuteMultiKilnSearchParams<'a> {
+    session_id: &'a str,
+    sources: &'a [KilnSearchSource],
+    query_embedding: Vec<f32>,
+    agent_config: &'a SessionAgent,
+    session: &'a crucible_core::session::Session,
+    event_tx: &'a broadcast::Sender<SessionEventMessage>,
+    original_content: &'a str,
+}
+
+
 use super::*;
 
 impl AgentManager {
@@ -65,36 +77,29 @@ impl AgentManager {
     /// Execute a vector search across the given kiln sources.
     /// Returns the results and the number of kilns searched, or `None` on failure
     /// (after emitting a precognition event).
-    #[allow(clippy::too_many_arguments)]
     async fn execute_multi_kiln_search(
         &self,
-        session_id: &str,
-        sources: &[KilnSearchSource],
-        query_embedding: Vec<f32>,
-        agent_config: &SessionAgent,
-        session: &crucible_core::session::Session,
-        event_tx: &broadcast::Sender<SessionEventMessage>,
-        original_content: &str,
+        params: ExecuteMultiKilnSearchParams<'_>,
     ) -> Option<Vec<crucible_core::SearchResult>> {
-        let provider_trust = resolve_provider_trust(agent_config, self.llm_config.as_ref());
-        let kilns_searched = sources.len();
+        let provider_trust = resolve_provider_trust(params.agent_config, self.llm_config.as_ref());
+        let kilns_searched = params.sources.len();
 
         match search_across_kilns(
-            sources,
-            query_embedding,
+            params.sources,
+            params.query_embedding,
             5,
             Some(provider_trust),
-            &session.workspace,
+            &params.session.workspace,
         )
         .await
         {
             Ok(r) => Some(r),
             Err(error) => {
-                warn!(session_id = %session_id, error = %error, "Precognition search across kilns failed");
+                warn!(session_id = %params.session_id, error = %error, "Precognition search across kilns failed");
                 emit_precognition_event(
-                    event_tx,
-                    session_id,
-                    original_content,
+                    params.event_tx,
+                    params.session_id,
+                    params.original_content,
                     0,
                     kilns_searched,
                     1,
@@ -206,13 +211,15 @@ impl AgentManager {
 
         let results = match self
             .execute_multi_kiln_search(
-                session_id,
-                &sources,
-                query_embedding,
-                agent_config,
-                session,
-                event_tx,
-                original_content,
+                ExecuteMultiKilnSearchParams {
+                    session_id,
+                    sources: &sources,
+                    query_embedding,
+                    agent_config,
+                    session,
+                    event_tx,
+                    original_content,
+                },
             )
             .await
         {

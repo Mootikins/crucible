@@ -3,7 +3,7 @@
 //! Bridges `cru.sessions.*` Lua calls to the daemon's `SessionManager`,
 //! `AgentManager`, and event broadcast infrastructure.
 
-use crate::agent_manager::AgentManager;
+use crate::agent_manager::{AgentManager, AgentManagerParams};
 use crate::protocol::SessionEventMessage;
 use crate::session_manager::SessionManager;
 use crucible_core::session::SessionType;
@@ -496,7 +496,7 @@ fn truncate_json_preview(val: Option<&serde_json::Value>, max_len: usize) -> Str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent_manager::AgentManager;
+    use crate::agent_manager::{AgentManager, AgentManagerParams};
     use crate::background_manager::BackgroundJobManager;
     use crate::kiln_manager::KilnManager;
     use crate::session_manager::SessionManager;
@@ -509,14 +509,16 @@ mod tests {
         let session_manager = Arc::new(SessionManager::new());
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
         let agent_manager = Arc::new(AgentManager::new(
-            kiln_manager,
-            session_manager.clone(),
-            background_manager,
-            None,
-            None,
-            None,
-            None,
-            None,
+            AgentManagerParams {
+                kiln_manager,
+                session_manager: session_manager.clone(),
+                background_manager,
+                mcp_gateway: None,
+                llm_config: None,
+                acp_config: None,
+                permission_config: None,
+                plugin_loader: None,
+            },
         ));
 
         // Construct bridge
@@ -538,14 +540,16 @@ mod tests {
         let session_manager = Arc::new(SessionManager::new());
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
         let agent_manager = Arc::new(AgentManager::new(
-            kiln_manager,
-            session_manager.clone(),
-            background_manager,
-            None,
-            None,
-            None,
-            None,
-            None,
+            AgentManagerParams {
+                kiln_manager,
+                session_manager: session_manager.clone(),
+                background_manager,
+                mcp_gateway: None,
+                llm_config: None,
+                acp_config: None,
+                permission_config: None,
+                plugin_loader: None,
+            },
         ));
 
         let sm_strong_count = Arc::strong_count(&session_manager);

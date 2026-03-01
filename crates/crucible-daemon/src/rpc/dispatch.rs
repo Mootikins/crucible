@@ -235,7 +235,7 @@ mod tests {
     }
 
     fn test_context() -> RpcContext {
-        use crate::agent_manager::AgentManager;
+        use crate::agent_manager::{AgentManager, AgentManagerParams};
         use crate::background_manager::BackgroundJobManager;
         use crate::kiln_manager::KilnManager;
         use crate::session_manager::SessionManager;
@@ -248,14 +248,16 @@ mod tests {
         let session_manager = Arc::new(SessionManager::new());
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
         let agent_manager = Arc::new(AgentManager::new(
-            kiln_manager.clone(),
-            session_manager.clone(),
-            background_manager,
-            None,
-            None,
-            None,
-            None,
-            None,
+            AgentManagerParams {
+                kiln_manager: kiln_manager.clone(),
+                session_manager: session_manager.clone(),
+                background_manager,
+                mcp_gateway: None,
+                llm_config: None,
+                acp_config: None,
+                permission_config: None,
+                plugin_loader: None,
+            },
         ));
 
         RpcContext::new(
