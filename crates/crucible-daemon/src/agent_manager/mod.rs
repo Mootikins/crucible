@@ -256,7 +256,6 @@ fn emit_precognition_event(
 }
 
 struct PendingPermission {
-    #[allow(dead_code)]
     request: PermRequest,
     response_tx: oneshot::Sender<PermResponse>,
 }
@@ -273,7 +272,6 @@ struct StreamContext {
 }
 
 #[derive(Clone)]
-#[allow(dead_code)] // Fields extracted for future LLM config pass-through
 struct AgentStreamConfig {
     model: String,
     temperature: Option<f64>,
