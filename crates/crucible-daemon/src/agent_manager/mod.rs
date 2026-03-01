@@ -249,11 +249,7 @@ fn emit_precognition_event(
     }
     if !emit_event(
         event_tx,
-        SessionEventMessage::new(
-            session_id,
-            event.event_type(),
-            data,
-        ),
+        SessionEventMessage::new(session_id, event.event_type(), data),
     ) {
         warn!(
             session_id = %session_id,

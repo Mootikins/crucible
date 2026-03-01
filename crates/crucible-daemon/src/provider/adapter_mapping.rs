@@ -102,7 +102,7 @@ pub fn build_genai_client(config: &crucible_config::LlmProviderConfig) -> genai:
     // Set up service target resolver for custom endpoints
     // (used by GitHubCopilot, OpenRouter, ZAI, and Custom)
     let endpoint = config.endpoint();
-    
+
     // Validate Ollama endpoint has /v1/ path
     if matches!(config.provider_type, BackendType::Ollama)
         && !endpoint.is_empty()
@@ -114,7 +114,7 @@ pub fn build_genai_client(config: &crucible_config::LlmProviderConfig) -> genai:
             endpoint
         );
     }
-    
+
     if !endpoint.is_empty() {
         builder = builder.with_service_target_resolver(ServiceTargetResolver::from_resolver_fn(
             move |mut st: genai::ServiceTarget| {
@@ -591,12 +591,12 @@ mod tests {
         // Test that the validation logic correctly identifies missing /v1/
         let endpoint = "https://llm.example.com";
         let provider_type = BackendType::Ollama;
-        
+
         // Simulate the validation condition
         let should_warn = matches!(provider_type, BackendType::Ollama)
             && !endpoint.is_empty()
             && !endpoint.contains("/v1");
-        
+
         assert!(should_warn, "Should warn for Ollama endpoint without /v1/");
     }
 
@@ -611,7 +611,9 @@ mod tests {
             && !endpoint.is_empty()
             && !endpoint.contains("/v1");
 
-        assert!(!should_warn, "Default (empty) Ollama endpoint should not trigger warning");
+        assert!(
+            !should_warn,
+            "Default (empty) Ollama endpoint should not trigger warning"
+        );
     }
-
 }
