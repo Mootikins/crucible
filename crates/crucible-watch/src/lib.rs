@@ -33,7 +33,6 @@
 //!
 //! ## Quick Start
 //!
-//! // TODO: Add example once API stabilizes
 
 #![warn(clippy::all)]
 #![deny(unsafe_code)]

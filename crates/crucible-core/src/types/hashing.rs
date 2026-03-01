@@ -21,7 +21,6 @@ pub use crate::parser::types::BlockHash;
 ///
 /// # Examples
 ///
-/// // TODO: Add example once API stabilizes
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FileHash([u8; 32]);
 

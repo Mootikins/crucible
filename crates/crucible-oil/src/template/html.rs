@@ -4,22 +4,13 @@ use crate::style::*;
 use html_parser::{Dom, Element, Node as HtmlNode};
 use std::fmt;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum HtmlError {
+    #[error("HTML parse error: {0}")]
     ParseError(String),
+    #[error("unsupported element: {0}")]
     UnsupportedElement(String),
 }
-
-impl fmt::Display for HtmlError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            HtmlError::ParseError(msg) => write!(f, "HTML parse error: {}", msg),
-            HtmlError::UnsupportedElement(tag) => write!(f, "unsupported element: {}", tag),
-        }
-    }
-}
-
-impl std::error::Error for HtmlError {}
 
 pub type HtmlResult<T> = Result<T, HtmlError>;
 

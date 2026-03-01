@@ -4,22 +4,13 @@ use std::fmt;
 
 use crate::tui::oil::config::ThinkingPreset;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ParseError {
+    #[error("Empty command")]
     Empty,
+    #[error("Invalid syntax: {0}")]
     InvalidSyntax(String),
 }
-
-impl fmt::Display for ParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ParseError::Empty => write!(f, "Empty command"),
-            ParseError::InvalidSyntax(msg) => write!(f, "Invalid syntax: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for ParseError {}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SetCommand {
@@ -57,23 +48,16 @@ pub enum SetEffect {
     DaemonRpc(SetRpcAction),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum SetError {
-    Parse(ParseError),
+    #[error(transparent)]
+    Parse(#[from] ParseError),
+    #[error("not supported as CLI flag")]
     NotSupportedAsCli,
+    #[error("{key}: {message}")]
     InvalidValue { key: String, message: String },
+    #[error("unknown key '{0}'")]
     UnknownKey(String),
-}
-
-impl fmt::Display for SetError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SetError::Parse(e) => write!(f, "{}", e),
-            SetError::NotSupportedAsCli => write!(f, "not supported as CLI flag"),
-            SetError::InvalidValue { key, message } => write!(f, "{}: {}", key, message),
-            SetError::UnknownKey(key) => write!(f, "unknown key '{}'", key),
-        }
-    }
 }
 
 pub fn validate_set_for_cli(input: &str) -> Result<SetEffect, SetError> {

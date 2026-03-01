@@ -14,7 +14,6 @@
 //!
 //! # Examples
 //!
-//! // TODO: Add example once API stabilizes
 
 use std::path::{Path, PathBuf};
 
