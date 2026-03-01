@@ -18,6 +18,7 @@
 //! ```
 
 use crate::error::LuaError;
+use crate::error_ext::LuaResultExt;
 use mlua::{Lua, Table, Value};
 use std::collections::HashMap;
 use std::path::PathBuf;
