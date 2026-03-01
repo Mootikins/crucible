@@ -1738,8 +1738,6 @@ fn error_notification_appears_and_app_stays_responsive() {
         output
     );
 
-    app.update(Event::Key(key(KeyCode::Char('q'))));
-
     for c in "still typing".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
     }
