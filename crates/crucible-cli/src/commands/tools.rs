@@ -1,5 +1,5 @@
 use anyhow::Result;
-use crucible_rpc::DaemonClient;
+use crucible_daemon::DaemonClient;
 
 use crate::cli::ToolsCommands;
 use crate::common::daemon_client;

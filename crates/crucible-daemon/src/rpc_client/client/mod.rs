@@ -2154,7 +2154,7 @@ impl DaemonClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_daemon::Server;
+    use crate::Server;
     use tempfile::TempDir;
 
     async fn setup_test_server() -> (TempDir, std::path::PathBuf, tokio::task::JoinHandle<()>) {

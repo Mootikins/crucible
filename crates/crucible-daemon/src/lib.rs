@@ -44,6 +44,7 @@ pub mod provider;
 pub mod recording;
 pub mod replay;
 pub mod rpc;
+pub mod rpc_client;
 pub mod rpc_helpers;
 pub mod server;
 pub mod session_bridge;
@@ -80,6 +81,16 @@ pub use permission_bridge::DaemonPermissionGate;
 pub use project_manager::{ProjectError, ProjectManager};
 pub use protocol::{Request, Response, RpcError, SessionEventMessage};
 pub use recording::{RecordedEvent, RecordingFooter, RecordingHeader};
+pub use rpc_client::DaemonAgentHandle;
+pub use rpc_client::{
+    DaemonCapabilities, DaemonClient, LuaDiscoverPluginsRequest, LuaDiscoverPluginsResponse,
+    LuaExecuteHookRequest, LuaExecuteHookResponse, LuaGenerateStubsRequest,
+    LuaGenerateStubsResponse, LuaInitSessionRequest, LuaInitSessionResponse,
+    LuaPluginHealthRequest, LuaPluginHealthResponse, LuaRegisterHooksRequest,
+    LuaRegisterHooksResponse, LuaRunPluginTestsRequest, LuaRunPluginTestsResponse,
+    LuaShutdownSessionRequest, LuaShutdownSessionResponse, SessionEvent, VersionCheck,
+};
+pub use rpc_client::{ChatResultExt, DaemonNoteStore, DaemonStorageClient};
 pub use server::{BindWithPluginConfigParams, Server};
 pub use session_bridge::DaemonSessionBridge;
 pub use session_manager::{SessionError, SessionManager};

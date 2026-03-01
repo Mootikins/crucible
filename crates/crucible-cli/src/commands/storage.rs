@@ -8,7 +8,7 @@ use crate::cli::StorageCommands;
 use crate::common::daemon_client;
 use crate::config::CliConfig;
 use crate::output;
-use crucible_rpc::DaemonClient;
+use crucible_daemon::DaemonClient;
 
 /// Execute storage commands
 pub async fn execute(config: CliConfig, command: StorageCommands) -> Result<()> {

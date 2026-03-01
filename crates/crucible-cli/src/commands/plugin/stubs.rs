@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use crucible_rpc::LuaGenerateStubsRequest;
+use crucible_daemon::LuaGenerateStubsRequest;
 
 use super::StubsArgs;
 use crate::config::CliConfig;

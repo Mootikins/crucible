@@ -2062,7 +2062,6 @@ dependencies = [
  "crucible-llm",
  "crucible-lua",
  "crucible-oil",
- "crucible-rpc",
  "crucible-tools",
  "crucible-web",
  "dialoguer",
@@ -2186,10 +2185,8 @@ dependencies = [
  "crucible-llm",
  "crucible-lua",
  "crucible-parser",
- "crucible-rpc",
  "crucible-sqlite",
  "crucible-tools",
- "crucible-web",
  "dashmap",
  "dirs",
  "flume",
@@ -2198,6 +2195,7 @@ dependencies = [
  "gix",
  "glob",
  "globset",
+ "libc",
  "mlua",
  "mockito",
  "notify",
@@ -2353,27 +2351,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crucible-rpc"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-stream",
- "async-trait",
- "chrono",
- "crucible-config",
- "crucible-core",
- "crucible-daemon",
- "crucible-sqlite",
- "futures",
- "libc",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "crucible-sqlite"
 version = "0.1.0"
 dependencies = [
@@ -2449,7 +2426,7 @@ dependencies = [
  "chrono",
  "crucible-config",
  "crucible-core",
- "crucible-rpc",
+ "crucible-daemon",
  "futures",
  "futures-util",
  "mime_guess",

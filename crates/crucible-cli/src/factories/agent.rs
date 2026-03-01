@@ -240,7 +240,7 @@ pub async fn create_daemon_agent(
     config: &CliAppConfig,
     params: &AgentInitParams,
 ) -> Result<Box<dyn AgentHandle + Send + Sync>> {
-    use crucible_rpc::DaemonAgentHandle;
+    use crucible_daemon::DaemonAgentHandle;
     use std::sync::Arc;
 
     info!("Connecting to daemon (auto-start if needed)");
@@ -348,7 +348,7 @@ pub async fn create_daemon_agent(
 }
 
 async fn create_new_daemon_session(
-    client: &crucible_rpc::DaemonClient,
+    client: &crucible_daemon::DaemonClient,
     config: &CliAppConfig,
     workspace: &std::path::Path,
     recording_mode: Option<&str>,
@@ -382,9 +382,9 @@ pub async fn create_daemon_replay_agent(
 ) -> Result<(
     Box<dyn AgentHandle + Send + Sync>,
     String,
-    tokio::sync::mpsc::UnboundedReceiver<crucible_rpc::SessionEvent>,
+    tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>,
 )> {
-    use crucible_rpc::DaemonAgentHandle;
+    use crucible_daemon::DaemonAgentHandle;
     use std::sync::Arc;
 
     info!("Connecting to daemon for replay session");

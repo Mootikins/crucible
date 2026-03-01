@@ -38,7 +38,6 @@ crucible-parser = { path = "../crucible-parser" }
 crucible-lua = { path = "../crucible-lua" }
 crucible-tools = { path = "../crucible-tools" }
 crucible-acp = { path = "../crucible-acp" }
-crucible-web = { path = "../crucible-web", optional = true }
 crucible-llm = { path = "../crucible-llm", default-features = false }
 genai = "0.5"
 async-stream = "0.3"
@@ -64,7 +63,7 @@ rand = { workspace = true }
 [features]
 default = ["storage-sqlite"]
 
-web = ["dep:crucible-web"]
+web = []
 
 # Storage backend selection (mutually exclusive in practice)
 
@@ -79,5 +78,7 @@ obsidian = []
 [dev-dependencies]
 tempfile = { workspace = true }
 futures = { workspace = true }
-crucible-rpc = { path = "../crucible-rpc" }
 mockito = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

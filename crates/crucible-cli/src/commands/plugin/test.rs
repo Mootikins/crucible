@@ -1,6 +1,6 @@
 use anyhow::Result;
 use colored::Colorize;
-use crucible_rpc::LuaRunPluginTestsRequest;
+use crucible_daemon::LuaRunPluginTestsRequest;
 
 use super::TestArgs;
 use crate::config::CliConfig;

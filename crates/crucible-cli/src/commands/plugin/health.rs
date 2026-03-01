@@ -1,5 +1,5 @@
 use anyhow::Result;
-use crucible_rpc::LuaPluginHealthRequest;
+use crucible_daemon::LuaPluginHealthRequest;
 use serde_json::json;
 
 use super::HealthArgs;

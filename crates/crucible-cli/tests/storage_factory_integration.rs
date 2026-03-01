@@ -10,7 +10,7 @@ use crucible_cli::config::CliConfig;
 use crucible_cli::factories::get_storage;
 use crucible_config::StorageConfig;
 use crucible_daemon::Server;
-use crucible_rpc::lifecycle;
+use crucible_daemon::rpc_client::lifecycle;
 use serial_test::serial;
 use std::path::PathBuf;
 use std::time::Duration;
