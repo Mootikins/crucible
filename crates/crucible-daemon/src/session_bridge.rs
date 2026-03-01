@@ -500,6 +500,7 @@ mod tests {
     use crate::background_manager::BackgroundJobManager;
     use crate::kiln_manager::KilnManager;
     use crate::session_manager::SessionManager;
+    use crucible_tools::workspace::WorkspaceTools;
 
     #[test]
     fn test_daemon_session_bridge_construction() {
@@ -517,6 +518,7 @@ mod tests {
             acp_config: None,
             permission_config: None,
             plugin_loader: None,
+            workspace_tools: Arc::new(WorkspaceTools::new(&PathBuf::from("/tmp"))),
         }));
 
         // Construct bridge
@@ -546,6 +548,7 @@ mod tests {
             acp_config: None,
             permission_config: None,
             plugin_loader: None,
+            workspace_tools: Arc::new(WorkspaceTools::new(&PathBuf::from("/tmp"))),
         }));
 
         let sm_strong_count = Arc::strong_count(&session_manager);

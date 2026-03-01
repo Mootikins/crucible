@@ -424,7 +424,10 @@ mod tests {
     use super::*;
 
     use std::collections::HashMap;
+    use std::sync::Mutex;
     use tokio::sync::RwLock;
+
+    static OPENAI_API_KEY_LOCK: Mutex<()> = Mutex::new(());
 
     async fn build_internal_tool_names_for_tests(
         workspace: &Path,
@@ -798,6 +801,9 @@ mod tests {
 
     #[test]
     fn lua_auth_headers_override_config_when_authorization_present() {
+        let _env_lock = OPENAI_API_KEY_LOCK
+            .lock()
+            .expect("OPENAI_API_KEY_LOCK should not be poisoned");
         std::env::set_var("OPENAI_API_KEY", "config-key");
 
         let lua = Lua::new();
@@ -836,6 +842,9 @@ mod tests {
 
     #[test]
     fn lua_auth_none_keeps_config_fallback() {
+        let _env_lock = OPENAI_API_KEY_LOCK
+            .lock()
+            .expect("OPENAI_API_KEY_LOCK should not be poisoned");
         std::env::set_var("OPENAI_API_KEY", "config-key");
 
         let lua = Lua::new();

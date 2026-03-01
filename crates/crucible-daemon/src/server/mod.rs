@@ -29,6 +29,7 @@ use crucible_lua::{
     ScriptHandlerResult, Session as LuaSession, SessionConfigRpc,
 };
 use crucible_skills::discovery::{default_discovery_paths, FolderDiscovery};
+use crucible_tools::workspace::WorkspaceTools;
 use dashmap::DashMap;
 
 use crate::protocol::RequestId;
@@ -66,6 +67,7 @@ pub struct Server {
     shutdown_tx: broadcast::Sender<()>,
     kiln_manager: Arc<KilnManager>,
     session_manager: Arc<SessionManager>,
+    workspace_tools: Arc<WorkspaceTools>,
     agent_manager: Arc<AgentManager>,
     #[allow(dead_code)] // Stored for Arc lifetime; accessed via AgentManager
     background_manager: Arc<BackgroundJobManager>,
@@ -180,6 +182,8 @@ impl Server {
         ));
         let session_manager = Arc::new(SessionManager::new());
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
+        let workspace_root = crucible_config::crucible_home();
+        let workspace_tools = Arc::new(WorkspaceTools::new(&workspace_root));
         let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
             kiln_manager: kiln_manager.clone(),
             session_manager: session_manager.clone(),
@@ -189,6 +193,7 @@ impl Server {
             acp_config: params.acp_config.clone(),
             permission_config: params.permission_config.clone(),
             plugin_loader: Some(plugin_loader.clone()),
+            workspace_tools: Arc::clone(&workspace_tools),
         }));
         let subscription_manager = Arc::new(SubscriptionManager::new());
         let project_manager = Arc::new(ProjectManager::new(
@@ -213,6 +218,7 @@ impl Server {
             shutdown_tx,
             kiln_manager,
             session_manager,
+            workspace_tools,
             agent_manager,
             background_manager,
             subscription_manager,
@@ -261,12 +267,10 @@ impl Server {
                     warn!("Failed to upgrade Lua sessions module: {}", e);
                 }
 
-                let workspace_root = crucible_config::crucible_home();
-                let workspace_tools = Arc::new(crucible_tools::workspace::WorkspaceTools::new(
-                    &workspace_root,
-                ));
                 let tools_api: Arc<dyn crucible_lua::DaemonToolsApi> =
-                    Arc::new(crate::tools_bridge::DaemonToolsBridge::new(workspace_tools));
+                    Arc::new(crate::tools_bridge::DaemonToolsBridge::new(Arc::clone(
+                        &self.workspace_tools,
+                    )));
                 if let Err(e) = loader.upgrade_with_tools(tools_api) {
                     warn!("Failed to upgrade Lua tools module: {}", e);
                 }

@@ -10,6 +10,7 @@ use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::{
     AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager,
 };
+use crucible_tools::workspace::WorkspaceTools;
 use futures::stream::{self, BoxStream};
 use futures::StreamExt;
 use std::collections::HashMap;
@@ -436,6 +437,7 @@ async fn test_root_session_delegation_succeeds() {
         acp_config: None,
         permission_config: None,
         plugin_loader: None,
+        workspace_tools: Arc::new(WorkspaceTools::new(&std::path::PathBuf::from("/tmp"))),
     });
 
     let session = session_manager
@@ -513,6 +515,7 @@ async fn test_delegation_to_acp_agent_creates_acp_session() {
         acp_config: Some(acp_config),
         permission_config: None,
         plugin_loader: None,
+        workspace_tools: Arc::new(WorkspaceTools::new(&std::path::PathBuf::from("/tmp"))),
     });
 
     let session = session_manager

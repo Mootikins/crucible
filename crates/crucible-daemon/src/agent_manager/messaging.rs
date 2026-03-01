@@ -86,6 +86,7 @@ impl AgentManager {
             pending_permissions: self.pending_permissions.clone(),
             workspace_path: session.workspace.clone(),
             agent_stream_config: AgentStreamConfig::from_session_agent(&agent_config),
+            tool_dispatcher: self.tool_dispatcher.clone(),
         };
 
         let task = tokio::spawn(async move {
@@ -955,6 +956,7 @@ impl AgentManager {
                                 pending_permissions: stream_ctx.pending_permissions.clone(),
                                 workspace_path: stream_ctx.workspace_path.clone(),
                                 agent_stream_config: stream_ctx.agent_stream_config.clone(),
+                                tool_dispatcher: stream_ctx.tool_dispatcher.clone(),
                             };
 
                             Box::pin(Self::execute_agent_stream(
