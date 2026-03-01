@@ -314,6 +314,7 @@ impl AgentHandle for AcpAgentHandle {
                                     usage: None,
                                     subagent_events: None,
                                     precognition_notes_count: None,
+                                    precognition_notes: None,
                                 }
                             }
                             StreamingChunk::Thinking(text) => {
@@ -331,6 +332,7 @@ impl AgentHandle for AcpAgentHandle {
                                     usage: None,
                                     subagent_events: None,
                                     precognition_notes_count: None,
+                                    precognition_notes: None,
                                 }
                             }
                             StreamingChunk::ToolStart {
@@ -358,6 +360,7 @@ impl AgentHandle for AcpAgentHandle {
                                     usage: None,
                                     subagent_events: None,
                                     precognition_notes_count: None,
+                                    precognition_notes: None,
                                 }
                             }
                             StreamingChunk::ToolEnd { id, result, error } => {
@@ -379,6 +382,7 @@ impl AgentHandle for AcpAgentHandle {
                                     usage: None,
                                     subagent_events: None,
                                     precognition_notes_count: None,
+                                    precognition_notes: None,
                                 }
                             }
                         };
@@ -415,6 +419,7 @@ impl AgentHandle for AcpAgentHandle {
                                     usage: None,
                                     subagent_events: None,
                                     precognition_notes_count: None,
+                                    precognition_notes: None,
                                 }),
                                 None,
                             ))

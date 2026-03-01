@@ -3,6 +3,7 @@
 use crate::tui::oil::ansi::strip_ansi;
 use crate::tui::oil::app::{App, ViewContext};
 use crate::tui::oil::chat_app::{ChatAppMsg, ChatMode, OilChatApp};
+use crucible_core::traits::chat::PrecognitionNoteInfo;
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::planning::FramePlanner;
 use crate::tui::oil::render::render_to_string;
@@ -1905,7 +1906,31 @@ fn snapshot_delegation_completed() {
 #[test]
 fn snapshot_precognition_with_results() {
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::PrecognitionResult { notes_count: 5 });
+    app.on_message(ChatAppMsg::PrecognitionResult {
+        notes_count: 5,
+        notes: vec![
+            PrecognitionNoteInfo {
+                title: "Authentication Guide".to_string(),
+                kiln_label: None,
+            },
+            PrecognitionNoteInfo {
+                title: "OAuth2 Patterns".to_string(),
+                kiln_label: None,
+            },
+            PrecognitionNoteInfo {
+                title: "Security Best Practices".to_string(),
+                kiln_label: Some("docs".to_string()),
+            },
+            PrecognitionNoteInfo {
+                title: "Token Management".to_string(),
+                kiln_label: None,
+            },
+            PrecognitionNoteInfo {
+                title: "API Keys Reference".to_string(),
+                kiln_label: Some("reference".to_string()),
+            },
+        ],
+    });
     app.on_message(ChatAppMsg::UserMessage("Tell me about auth".to_string()));
     app.on_message(ChatAppMsg::TextDelta(
         "Based on your notes about authentication...".to_string(),

@@ -52,6 +52,7 @@ impl MockAgent {
             usage: None,
             subagent_events: None,
             precognition_notes_count: None,
+            precognition_notes: None,
         }])
     }
 
@@ -67,6 +68,7 @@ impl MockAgent {
                 usage: None,
                 subagent_events: None,
                 precognition_notes_count: None,
+                precognition_notes: None,
             })
             .collect();
 
@@ -469,6 +471,7 @@ mod daemon_event_to_tui_tests {
             usage: None,
             subagent_events: None,
             precognition_notes_count: None,
+            precognition_notes: None,
         };
 
         for msg in chunk_to_app_msgs(chunk) {
@@ -506,6 +509,7 @@ mod daemon_event_to_tui_tests {
             usage: None,
             subagent_events: None,
             precognition_notes_count: None,
+            precognition_notes: None,
         };
 
         for msg in chunk_to_app_msgs(chunk) {
@@ -548,6 +552,7 @@ mod daemon_event_to_tui_tests {
             usage: None,
             subagent_events: None,
             precognition_notes_count: None,
+            precognition_notes: None,
         };
 
         for msg in chunk_to_app_msgs(chunk) {
@@ -582,6 +587,7 @@ mod daemon_event_to_tui_tests {
             usage: None,
             subagent_events: None,
             precognition_notes_count: None,
+            precognition_notes: None,
         };
 
         for msg in chunk_to_app_msgs(chunk) {
@@ -606,6 +612,7 @@ mod daemon_event_to_tui_tests {
                 usage: None,
                 subagent_events: None,
                 precognition_notes_count: None,
+                precognition_notes: None,
             },
             ChatChunk {
                 delta: "am ".to_string(),
@@ -616,6 +623,7 @@ mod daemon_event_to_tui_tests {
                 usage: None,
                 subagent_events: None,
                 precognition_notes_count: None,
+                precognition_notes: None,
             },
             ChatChunk {
                 delta: "Claude!".to_string(),
@@ -626,6 +634,7 @@ mod daemon_event_to_tui_tests {
                 usage: None,
                 subagent_events: None,
                 precognition_notes_count: None,
+                precognition_notes: None,
             },
         ];
 
@@ -667,6 +676,7 @@ mod daemon_event_to_tui_tests {
             }),
             subagent_events: None,
             precognition_notes_count: None,
+            precognition_notes: None,
         };
 
         for msg in chunk_to_app_msgs_with_limit(chunk, 1000) {
@@ -703,6 +713,7 @@ mod daemon_event_to_tui_tests {
             }),
             subagent_events: None,
             precognition_notes_count: None,
+            precognition_notes: None,
         };
 
         for msg in chunk_to_app_msgs_with_limit(chunk, 0) {

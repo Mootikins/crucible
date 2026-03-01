@@ -10,6 +10,7 @@ use crucible_core::interaction::InteractionEvent;
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::{
     AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall, ChatToolResult,
+    PrecognitionNoteInfo,
 };
 use futures::stream::BoxStream;
 use std::path::PathBuf;
@@ -305,6 +306,7 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
             usage: None,
             subagent_events: None,
             precognition_notes_count: None,
+            precognition_notes: None,
         }),
         "precognition_complete" => {
             let notes_count = event
@@ -312,8 +314,13 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
                 .get("notes_count")
                 .and_then(|v| v.as_u64())
                 .map(|n| n as usize);
+            let precognition_notes = event
+                .data
+                .get("notes")
+                .and_then(|v| serde_json::from_value::<Vec<PrecognitionNoteInfo>>(v.clone()).ok());
             Some(ChatChunk {
                 precognition_notes_count: notes_count,
+                precognition_notes,
                 ..Default::default()
             })
         }
@@ -1059,6 +1066,51 @@ mod tests {
         assert_eq!(
             usage.completion_tokens, 0,
             "Missing completion_tokens should default to 0"
+        );
+    }
+
+    #[test]
+    fn test_precognition_complete_with_notes() {
+        let event = SessionEvent {
+            session_id: "test".to_string(),
+            event_type: "precognition_complete".to_string(),
+            data: json!({
+                "notes_count": 2,
+                "query_summary": "how to use async",
+                "notes": [
+                    { "title": "Async Patterns", "kiln_label": null },
+                    { "title": "Tokio Guide", "kiln_label": "docs" }
+                ]
+            }),
+        };
+
+        let chunk = session_event_to_chat_chunk(&event).unwrap();
+        assert_eq!(chunk.precognition_notes_count, Some(2));
+        let notes = chunk.precognition_notes.expect("notes should be populated");
+        assert_eq!(notes.len(), 2);
+        assert_eq!(notes[0].title, "Async Patterns");
+        assert!(notes[0].kiln_label.is_none());
+        assert_eq!(notes[1].title, "Tokio Guide");
+        assert_eq!(notes[1].kiln_label.as_deref(), Some("docs"));
+    }
+
+    #[test]
+    fn test_precognition_complete_without_notes_backward_compat() {
+        // Old daemon events without "notes" field should still work
+        let event = SessionEvent {
+            session_id: "test".to_string(),
+            event_type: "precognition_complete".to_string(),
+            data: json!({
+                "notes_count": 3,
+                "query_summary": "search query"
+            }),
+        };
+
+        let chunk = session_event_to_chat_chunk(&event).unwrap();
+        assert_eq!(chunk.precognition_notes_count, Some(3));
+        assert!(
+            chunk.precognition_notes.is_none(),
+            "Missing notes field should result in None for backward compatibility"
         );
     }
 }

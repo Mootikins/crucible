@@ -71,6 +71,14 @@ pub enum ChatError {
     NotSupported(String),
 }
 
+/// Metadata about a note found during Precognition enrichment.
+/// Carried through RPC so TUI/web can display which notes informed the response.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PrecognitionNoteInfo {
+    pub title: String,
+    pub kiln_label: Option<String>,
+}
+
 /// Chunk from streaming response
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ChatChunk {
@@ -94,6 +102,9 @@ pub struct ChatChunk {
     /// Notes count from daemon-side Precognition enrichment
     #[serde(default)]
     pub precognition_notes_count: Option<usize>,
+    /// Detailed note metadata from daemon-side Precognition enrichment
+    #[serde(default)]
+    pub precognition_notes: Option<Vec<PrecognitionNoteInfo>>,
 }
 
 /// Result from a completed tool execution
@@ -633,6 +644,7 @@ mod tests {
                         usage: None,
                         subagent_events: None,
                         precognition_notes_count: None,
+                        precognition_notes: None,
                     })
                 },
             )))

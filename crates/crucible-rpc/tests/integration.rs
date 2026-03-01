@@ -1267,6 +1267,7 @@ mod event_flow_tests {
                     usage: None,
                     subagent_events: None,
                     precognition_notes_count: None,
+                    precognition_notes: None,
                 })
             }
             "thinking" => {
@@ -1280,6 +1281,7 @@ mod event_flow_tests {
                     usage: None,
                     subagent_events: None,
                     precognition_notes_count: None,
+                    precognition_notes: None,
                 })
             }
             "tool_call" => {
@@ -1299,6 +1301,7 @@ mod event_flow_tests {
                     usage: None,
                     subagent_events: None,
                     precognition_notes_count: None,
+                    precognition_notes: None,
                 })
             }
             "tool_result" => {
@@ -1323,6 +1326,7 @@ mod event_flow_tests {
                     usage: None,
                     subagent_events: None,
                     precognition_notes_count: None,
+                    precognition_notes: None,
                 })
             }
             "message_complete" | "ended" => Some(crucible_core::traits::chat::ChatChunk {
@@ -1334,6 +1338,7 @@ mod event_flow_tests {
                 usage: None,
                 subagent_events: None,
                 precognition_notes_count: None,
+                precognition_notes: None,
             }),
             _ => None,
         }

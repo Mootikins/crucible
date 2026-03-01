@@ -102,6 +102,7 @@ impl AgentManager {
                     0,
                     kilns_searched,
                     1,
+                    None,
                 );
                 None
             }
@@ -191,7 +192,7 @@ impl AgentManager {
             Ok(e) => e,
             Err(error) => {
                 warn!(session_id = %session_id, error = %error, "Precognition embedding failed");
-                emit_precognition_event(event_tx, session_id, original_content, 0, 1, 1);
+                emit_precognition_event(event_tx, session_id, original_content, 0, 1, 1, None);
                 return original_content.to_string();
             }
         };
@@ -217,6 +218,7 @@ impl AgentManager {
             None => return original_content.to_string(),
         };
 
+        let note_info = extract_note_info(&results, &session.kiln);
         let enriched_prompt =
             Self::format_precognition_context(original_content, &results, &session.kiln);
 
@@ -227,9 +229,40 @@ impl AgentManager {
             results.len(),
             kilns_searched,
             0,
+            Some(note_info),
         );
         enriched_prompt
     }
+}
+
+/// Extract `PrecognitionNoteInfo` metadata from search results.
+/// Titles are derived from the document ID filename (without `.md`).
+/// `kiln_label` is set only for results from non-primary kilns.
+pub(super) fn extract_note_info(
+    results: &[crucible_core::SearchResult],
+    primary_kiln: &std::path::Path,
+) -> Vec<crucible_core::traits::chat::PrecognitionNoteInfo> {
+    results
+        .iter()
+        .map(|r| {
+            let title = r
+                .document_id
+                .0
+                .split('/')
+                .next_back()
+                .unwrap_or(&r.document_id.0)
+                .trim_end_matches(".md")
+                .to_string();
+            let kiln_label = r
+                .kiln_path
+                .as_ref()
+                .filter(|path| path.as_path() != primary_kiln)
+                .and_then(|path| path.file_name())
+                .and_then(|name| name.to_str())
+                .map(|name| name.to_string());
+            crucible_core::traits::chat::PrecognitionNoteInfo { title, kiln_label }
+        })
+        .collect()
 }
 
 #[cfg(test)]
