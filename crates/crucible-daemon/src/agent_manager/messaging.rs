@@ -685,7 +685,7 @@ impl AgentManager {
     async fn handle_tool_call_in_stream(
         stream_ctx: &StreamContext,
         tool_call: &crucible_core::traits::chat::ChatToolCall,
-    ) {
+    ) -> Option<crucible_core::traits::chat::ChatToolResult> {
         let call_id = tool_call
             .id
             .clone()
@@ -725,7 +725,12 @@ impl AgentManager {
                             "No subscribers for handler denied tool_result event"
                         );
                     }
-                    return;
+                    return Some(crucible_core::traits::chat::ChatToolResult {
+                        name: tool_call.name.clone(),
+                        result: String::new(),
+                        error: Some(error_msg),
+                        call_id: Some(call_id.clone()),
+                    });
                 }
                 Ok(EmitResult::Failed { handler, error, .. }) => {
                     warn!(
@@ -751,12 +756,25 @@ impl AgentManager {
         if !is_safe(&tool_call.name)
             && !Self::handle_permission_request(stream_ctx, tool_call, &call_id, &args).await
         {
-            return;
+            return Some(crucible_core::traits::chat::ChatToolResult {
+                name: tool_call.name.clone(),
+                result: String::new(),
+                error: Some(format!(
+                    "Tool call denied by permission gate: {}",
+                    tool_call.name
+                )),
+                call_id: Some(call_id.clone()),
+            });
         }
 
         if !emit_event(
             &stream_ctx.event_tx,
-            SessionEventMessage::tool_call(&stream_ctx.session_id, &call_id, &tool_call.name, args),
+            SessionEventMessage::tool_call(
+                &stream_ctx.session_id,
+                &call_id,
+                &tool_call.name,
+                args.clone(),
+            ),
         ) {
             warn!(
                 session_id = %stream_ctx.session_id,
@@ -764,6 +782,40 @@ impl AgentManager {
                 "No subscribers for tool_call event"
             );
         }
+
+        let tool_result = stream_ctx
+            .tool_dispatcher
+            .dispatch_tool(&tool_call.name, args.clone())
+            .await;
+        let (result_str, error_str) = match tool_result {
+            Ok(val) => (val.to_string(), None),
+            Err(e) => (String::new(), Some(e)),
+        };
+
+        if error_str.is_none() {
+            if !emit_event(
+                &stream_ctx.event_tx,
+                SessionEventMessage::tool_result(
+                    &stream_ctx.session_id,
+                    &call_id,
+                    &tool_call.name,
+                    serde_json::json!({ "result": result_str }),
+                ),
+            ) {
+                warn!(
+                    session_id = %stream_ctx.session_id,
+                    tool = %tool_call.name,
+                    "No subscribers for tool_result event"
+                );
+            }
+        }
+
+        Some(crucible_core::traits::chat::ChatToolResult {
+            name: tool_call.name.clone(),
+            result: result_str,
+            error: error_str,
+            call_id: Some(call_id),
+        })
     }
 
     async fn emit_stream_events(
@@ -812,7 +864,7 @@ impl AgentManager {
 
         if let Some(tool_calls) = &chunk.tool_calls {
             for tool_call in tool_calls {
-                Self::handle_tool_call_in_stream(stream_ctx, tool_call).await;
+                let _ = Self::handle_tool_call_in_stream(stream_ctx, tool_call).await;
             }
         }
 
