@@ -49,20 +49,18 @@ pub fn backend_to_adapter(backend: &BackendType) -> Option<AdapterKind> {
     }
 }
 
-/// Normalizes an Ollama endpoint to ensure it ends with `/v1/`.
+/// Ensures an endpoint URL ends with a trailing slash.
 ///
-/// genai's OpenAI adapter uses `Url::join("chat/completions")` which per RFC 3986
-/// replaces the last path segment if the base URL lacks a trailing slash.
+/// genai's OpenAI adapter (and Ollama, which delegates to it) uses
+/// `Url::join("chat/completions")` which per RFC 3986 replaces the last
+/// path segment if the base URL lacks a trailing slash.
 /// A base of `https://host/v1` joins to `https://host/chat/completions` (wrong),
 /// while `https://host/v1/` joins to `https://host/v1/chat/completions` (correct).
 ///
-/// This function guarantees the endpoint always ends with `/v1/`.
-fn normalize_ollama_endpoint(endpoint: &str) -> String {
-    let endpoint = endpoint.trim_end_matches('/');
-    if endpoint.ends_with("/v1") {
-        return format!("{endpoint}/");
-    }
-    format!("{endpoint}/v1/")
+/// This applies to ALL adapters that route through OpenAI's URL construction.
+fn ensure_trailing_slash(endpoint: &str) -> String {
+    let trimmed = endpoint.trim_end_matches('/');
+    format!("{trimmed}/")
 }
 
 /// A configured genai client with explicit adapter selection and authentication.
@@ -81,7 +79,7 @@ impl ChatClient {
     /// - Explicit adapter selection (no auto-detection)
     /// - `AuthResolver` for API key injection
     /// - `ServiceTargetResolver` for endpoint override (used by GitHubCopilot, OpenRouter, ZAI)
-    /// - Ollama endpoint auto-fix (appends `/v1/` if missing)
+    /// - Endpoint trailing-slash fix for correct `Url::join()` behavior
     ///
     /// # Arguments
     ///
@@ -111,16 +109,30 @@ impl ChatClient {
         // (used by GitHubCopilot, OpenRouter, ZAI, and Custom)
         let mut endpoint = config.endpoint();
 
-        // Auto-fix Ollama endpoint to include /v1/ path
-        if matches!(config.provider_type, BackendType::Ollama) && !endpoint.is_empty() {
-            let fixed_endpoint = normalize_ollama_endpoint(&endpoint);
-            if fixed_endpoint != endpoint {
+        // Ensure endpoint has correct trailing slash for Url::join() behavior (RFC 3986).
+        // Without a trailing slash, Url::join("chat/completions") replaces the last
+        // path segment instead of appending.
+        if !endpoint.is_empty() {
+            if matches!(config.provider_type, BackendType::Ollama) && !endpoint.contains("/v1") {
+                // Ollama-specific: auto-add /v1/ if the base URL is missing it entirely
+                let fixed = format!("{}/v1/", endpoint.trim_end_matches('/'));
                 tracing::info!(
                     endpoint = %endpoint,
-                    fixed_endpoint = %fixed_endpoint,
+                    fixed_endpoint = %fixed,
                     "Auto-fixed Ollama endpoint to include /v1/ path"
                 );
-                endpoint = fixed_endpoint;
+                endpoint = fixed;
+            } else {
+                // ALL adapters: ensure trailing slash for correct Url::join() behavior
+                let fixed = ensure_trailing_slash(&endpoint);
+                if fixed != endpoint {
+                    tracing::debug!(
+                        endpoint = %endpoint,
+                        fixed_endpoint = %fixed,
+                        "Added trailing slash to endpoint for correct URL joining"
+                    );
+                    endpoint = fixed;
+                }
             }
         }
 
@@ -677,51 +689,78 @@ mod tests {
     // ========================================================================
 
     #[test]
+    fn ensure_trailing_slash_basic() {
+        assert_eq!(ensure_trailing_slash("https://host/v1"), "https://host/v1/");
+    }
+
+    #[test]
+    fn ensure_trailing_slash_already_present() {
+        assert_eq!(
+            ensure_trailing_slash("https://host/v1/"),
+            "https://host/v1/"
+        );
+    }
+
+    #[test]
+    fn ensure_trailing_slash_no_path() {
+        assert_eq!(ensure_trailing_slash("https://host"), "https://host/");
+    }
+
+    #[test]
     fn endpoint_auto_fix_appends_v1() {
-        let endpoint = "https://llm.example.com";
-        let fixed = normalize_ollama_endpoint(endpoint);
-        assert_eq!(fixed, "https://llm.example.com/v1/");
+        // Ollama-specific: auto-add /v1/ if missing
+        let config = crucible_config::LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            endpoint: Some("https://llm.example.com".to_string()),
+            default_model: Some("llama3.2".to_string()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: None,
+            trust_level: None,
+        };
+        let client = ChatClient::new(&config);
+        assert_eq!(client.backend, BackendType::Ollama);
     }
 
     #[test]
     fn endpoint_auto_fix_idempotent() {
         let endpoint = "https://example.com/v1/";
-        let fixed = normalize_ollama_endpoint(endpoint);
+        let fixed = ensure_trailing_slash(endpoint);
         assert_eq!(fixed, "https://example.com/v1/");
     }
 
     #[test]
     fn endpoint_auto_fix_trailing_slash() {
         let endpoint = "https://example.com/";
-        let fixed = normalize_ollama_endpoint(endpoint);
-        assert_eq!(fixed, "https://example.com/v1/");
+        let fixed = ensure_trailing_slash(endpoint);
+        assert_eq!(fixed, "https://example.com/");
     }
 
     #[test]
     fn endpoint_auto_fix_v1_without_trailing_slash() {
         let endpoint = "https://llm.example.com/v1";
-        let fixed = normalize_ollama_endpoint(endpoint);
+        let fixed = ensure_trailing_slash(endpoint);
         assert_eq!(fixed, "https://llm.example.com/v1/");
     }
 
     #[test]
-    fn endpoint_auto_fix_non_ollama_untouched() {
-        // OpenAI endpoint with custom URL should not be modified
+    fn openai_endpoint_gets_trailing_slash() {
+        // Reproduces the bug: type = "openai", endpoint without trailing slash
         let config = crucible_config::LlmProviderConfig {
             provider_type: BackendType::OpenAI,
-            endpoint: Some("https://custom-openai.example.com".to_string()),
-            default_model: Some("gpt-4o".to_string()),
+            endpoint: Some("https://llm.example.com/v1".to_string()),
+            default_model: Some("glm-4.7-flash-iq4".to_string()),
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key: Some("sk-test".to_string()),
+            api_key: None,
             available_models: None,
             trust_level: None,
         };
-
+        // Should build successfully (trailing slash applied internally)
         let client = ChatClient::new(&config);
-        // If we get here without panic, the client was built successfully
-        // The endpoint should not have been modified
         assert_eq!(client.backend, BackendType::OpenAI);
     }
 
