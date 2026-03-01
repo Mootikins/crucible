@@ -24,6 +24,50 @@ use tokio::task::JoinHandle;
 
 use crate::tui::oil::commands::{SetEffect, SetRpcAction};
 
+/// Parameters for event_loop function.
+struct EventLoopParams<'a, A: AgentHandle> {
+    pub app: &'a mut OilChatApp,
+    pub agent: &'a mut A,
+    pub bridge: &'a AgentEventBridge,
+    pub msg_tx: mpsc::UnboundedSender<ChatAppMsg>,
+    pub msg_rx: mpsc::UnboundedReceiver<ChatAppMsg>,
+    pub interaction_rx: Option<mpsc::UnboundedReceiver<crucible_core::interaction::InteractionEvent>>,
+    pub background_tasks: &'a mut Vec<JoinHandle<()>>,
+}
+
+/// Parameters for handle_selected_event function.
+struct HandleSelectedEventParams<'a, A: AgentHandle> {
+    pub event: Option<Event>,
+    pub app: &'a mut OilChatApp,
+    pub agent: &'a mut A,
+    pub bridge: &'a AgentEventBridge,
+    pub active_stream: &'a mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
+    pub msg_tx: &'a mpsc::UnboundedSender<ChatAppMsg>,
+    pub background_tasks: &'a mut Vec<JoinHandle<()>>,
+}
+
+/// Parameters for handle_select_outcome function.
+struct HandleSelectOutcomeParams<'a, A: AgentHandle> {
+    pub select_outcome: EventLoopSelectOutcome,
+    pub app: &'a mut OilChatApp,
+    pub agent: &'a mut A,
+    pub bridge: &'a AgentEventBridge,
+    pub active_stream: &'a mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
+    pub msg_tx: &'a mpsc::UnboundedSender<ChatAppMsg>,
+    pub background_tasks: &'a mut Vec<JoinHandle<()>>,
+}
+
+/// Parameters for process_action function.
+struct ProcessActionParams<'a, A: AgentHandle> {
+    pub action: Action<ChatAppMsg>,
+    pub app: &'a mut OilChatApp,
+    pub agent: &'a mut A,
+    pub bridge: &'a AgentEventBridge,
+    pub active_stream: &'a mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
+    pub msg_tx: &'a mpsc::UnboundedSender<ChatAppMsg>,
+    pub background_tasks: &'a mut Vec<JoinHandle<()>>,
+}
+
 pub struct OilChatRunner {
     terminal: Terminal,
     tick_rate: Duration,
@@ -74,6 +118,8 @@ enum DrainPhaseOutcome {
 }
 
 impl OilChatRunner {
+
+
     pub fn new() -> io::Result<Self> {
         Ok(Self::with_terminal(Terminal::new()?))
     }
@@ -332,15 +378,15 @@ impl OilChatRunner {
             let interaction_rx = agent.take_interaction_receiver();
 
             let event_loop_result = self
-                .event_loop(
-                    &mut app,
-                    &mut agent,
+                .event_loop(EventLoopParams {
+                    app: &mut app,
+                    agent: &mut agent,
                     bridge,
                     msg_tx,
                     msg_rx,
                     interaction_rx,
-                    &mut background_tasks,
-                )
+                    background_tasks: &mut background_tasks,
+                })
                 .await;
             Self::abort_background_tasks(&mut background_tasks);
             event_loop_result?;
@@ -421,15 +467,15 @@ impl OilChatRunner {
         );
 
         let event_loop_result = self
-            .event_loop(
-                &mut app,
-                &mut agent,
+            .event_loop(EventLoopParams {
+                app: &mut app,
+                agent: &mut agent,
                 bridge,
                 msg_tx,
                 msg_rx,
                 interaction_rx,
-                &mut background_tasks,
-            )
+                background_tasks: &mut background_tasks,
+            })
             .await;
         Self::abort_background_tasks(&mut background_tasks);
         event_loop_result?;
@@ -438,18 +484,9 @@ impl OilChatRunner {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn event_loop<A: AgentHandle>(
         &mut self,
-        app: &mut OilChatApp,
-        agent: &mut A,
-        bridge: &AgentEventBridge,
-        msg_tx: mpsc::UnboundedSender<ChatAppMsg>,
-        mut msg_rx: mpsc::UnboundedReceiver<ChatAppMsg>,
-        mut interaction_rx: Option<
-            mpsc::UnboundedReceiver<crucible_core::interaction::InteractionEvent>,
-        >,
-        background_tasks: &mut Vec<JoinHandle<()>>,
+        mut params: EventLoopParams<'_, A>,
     ) -> Result<()> {
         let mut active_stream: Option<BoxStream<'static, ChatResult<ChatChunk>>> = None;
         let mut event_stream = EventStream::new();
@@ -465,14 +502,14 @@ impl OilChatRunner {
         };
 
         loop {
-            self.render_app_frame(app)?;
+            self.render_app_frame(params.app)?;
 
             match self.drain_phase_outcome(
-                app,
-                agent,
-                bridge,
+                params.app,
+                params.agent,
+                params.bridge,
                 &mut active_stream,
-                &mut msg_rx,
+                &mut params.msg_rx,
                 &mut replay_auto_exit_deadline,
             ) {
                 DrainPhaseOutcome::Quit => return Ok(()),
@@ -488,7 +525,7 @@ impl OilChatRunner {
                 }
 
                 Some(chunk_result) = Self::next_active_chunk(&mut active_stream) => {
-                    self.handle_stream_chunk(chunk_result, &mut active_stream, &msg_tx);
+                    self.handle_stream_chunk(chunk_result, &mut active_stream, &params.msg_tx);
                     EventLoopSelectOutcome::Continue
                 }
 
@@ -498,12 +535,12 @@ impl OilChatRunner {
                 }
 
                 Some(cmd) = Self::next_session_command(&mut session_cmd_rx) => {
-                    Self::handle_session_command(cmd, agent, app).await;
+                    Self::handle_session_command(cmd, params.agent, params.app).await;
                     EventLoopSelectOutcome::Continue
                 }
 
-                Some(interaction_event) = Self::next_interaction_event(&mut interaction_rx) => {
-                    Self::handle_interaction_event(app, interaction_event);
+                Some(interaction_event) = Self::next_interaction_event(&mut params.interaction_rx) => {
+                    Self::handle_interaction_event(params.app, interaction_event);
                     EventLoopSelectOutcome::Continue
                 }
 
@@ -520,15 +557,15 @@ impl OilChatRunner {
             };
 
             if self
-                .handle_select_outcome(
+                .handle_select_outcome(HandleSelectOutcomeParams {
                     select_outcome,
-                    app,
-                    agent,
-                    bridge,
-                    &mut active_stream,
-                    &msg_tx,
-                    background_tasks,
-                )
+                    app: params.app,
+                    agent: params.agent,
+                    bridge: params.bridge,
+                    active_stream: &mut active_stream,
+                    msg_tx: &params.msg_tx,
+                    background_tasks: params.background_tasks,
+                })
                 .await?
             {
                 break;
@@ -588,33 +625,28 @@ impl OilChatRunner {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn handle_selected_event<A: AgentHandle>(
         &mut self,
-        event: Option<Event>,
-        app: &mut OilChatApp,
-        agent: &mut A,
-        bridge: &AgentEventBridge,
-        active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
-        msg_tx: &mpsc::UnboundedSender<ChatAppMsg>,
-        background_tasks: &mut Vec<JoinHandle<()>>,
+        params: HandleSelectedEventParams<'_, A>,
     ) -> Result<bool> {
-        let Some(ev) = event else {
+        let Some(ev) = params.event else {
             return Ok(false);
         };
 
-        let action = app.update(ev.clone());
+        let action = params.app.update(ev.clone());
         tracing::trace!(?ev, ?action, "processed event");
 
         if self
             .process_action(
-                action,
-                app,
-                agent,
-                bridge,
-                active_stream,
-                msg_tx,
-                background_tasks,
+                ProcessActionParams {
+                    action,
+                    app: params.app,
+                    agent: params.agent,
+                    bridge: params.bridge,
+                    active_stream: params.active_stream,
+                    msg_tx: params.msg_tx,
+                    background_tasks: params.background_tasks,
+                },
             )
             .await?
         {
@@ -625,32 +657,25 @@ impl OilChatRunner {
         Ok(false)
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn handle_select_outcome<A: AgentHandle>(
         &mut self,
-        select_outcome: EventLoopSelectOutcome,
-        app: &mut OilChatApp,
-        agent: &mut A,
-        bridge: &AgentEventBridge,
-        active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
-        msg_tx: &mpsc::UnboundedSender<ChatAppMsg>,
-        background_tasks: &mut Vec<JoinHandle<()>>,
+        params: HandleSelectOutcomeParams<'_, A>,
     ) -> Result<bool> {
-        let event = match select_outcome {
+        let event = match params.select_outcome {
             EventLoopSelectOutcome::Event(event) => event,
             EventLoopSelectOutcome::Continue => None,
             EventLoopSelectOutcome::Quit => return Ok(true),
         };
 
-        self.handle_selected_event(
+        self.handle_selected_event(HandleSelectedEventParams {
             event,
-            app,
-            agent,
-            bridge,
-            active_stream,
-            msg_tx,
-            background_tasks,
-        )
+            app: params.app,
+            agent: params.agent,
+            bridge: params.bridge,
+            active_stream: params.active_stream,
+            msg_tx: params.msg_tx,
+            background_tasks: params.background_tasks,
+        })
         .await
     }
 
@@ -1002,59 +1027,52 @@ impl OilChatRunner {
         matches!(outcome, DrainMessagesOutcome::Idle)
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn process_action<A: AgentHandle>(
         &mut self,
-        action: Action<ChatAppMsg>,
-        app: &mut OilChatApp,
-        agent: &mut A,
-        bridge: &AgentEventBridge,
-        active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
-        msg_tx: &mpsc::UnboundedSender<ChatAppMsg>,
-        background_tasks: &mut Vec<JoinHandle<()>>,
+        params: ProcessActionParams<'_, A>,
     ) -> io::Result<bool> {
-        match action {
+        match params.action {
             Action::Quit => Ok(true),
             Action::Continue => Ok(false),
             Action::Send(msg) => {
                 match &msg {
                     ChatAppMsg::ClearHistory => {
                         if self.is_acp_session() {
-                            app.add_notification(crucible_core::types::Notification::warning(
+                            params.app.add_notification(crucible_core::types::Notification::warning(
                                 "History clearing not supported for ACP agents".to_string(),
                             ));
                             return Ok(false);
                         }
-                        if active_stream.is_some() {
-                            if let Err(e) = agent.cancel().await {
+                        if params.active_stream.is_some() {
+                            if let Err(e) = params.agent.cancel().await {
                                 tracing::warn!(error = %e, "Failed to cancel agent stream");
                             }
-                            *active_stream = None;
+                            *params.active_stream = None;
                         }
-                        agent.clear_history().await;
-                        app.reset_session();
+                        params.agent.clear_history().await;
+                        params.app.reset_session();
                         tracing::info!("New session started (history cleared)");
                     }
                     ChatAppMsg::StreamCancelled => {
-                        if active_stream.is_some() {
-                            if let Err(e) = agent.cancel().await {
+                        if params.active_stream.is_some() {
+                            if let Err(e) = params.agent.cancel().await {
                                 tracing::warn!(error = %e, "Failed to cancel agent stream on daemon");
                             }
                             tracing::info!(
                                 "Dropping active stream due to cancellation (from action)"
                             );
-                            *active_stream = None;
+                            *params.active_stream = None;
                         }
                     }
                     ChatAppMsg::SwitchModel(model_id) => {
                         if self.is_acp_session() {
-                            app.add_notification(crucible_core::types::Notification::warning(
+                            params.app.add_notification(crucible_core::types::Notification::warning(
                                 "Model switching not supported for ACP agents".to_string(),
                             ));
                             return Ok(false);
                         }
                         tracing::info!(model = %model_id, "Model switch requested");
-                        match agent.switch_model(model_id).await {
+                        match params.agent.switch_model(model_id).await {
                             Ok(()) => {
                                 tracing::info!(model = %model_id, "Model switched successfully");
                             }
@@ -1065,34 +1083,34 @@ impl OilChatRunner {
                     }
                     ChatAppMsg::FetchModels => {
                         if self.is_acp_session() {
-                            app.add_notification(crucible_core::types::Notification::warning(
+                            params.app.add_notification(crucible_core::types::Notification::warning(
                                 "Model listing not available for ACP agents".to_string(),
                             ));
                             return Ok(false);
                         }
                         tracing::info!("Fetching available models");
-                        let models = agent.fetch_available_models().await;
+                        let models = params.agent.fetch_available_models().await;
                         if models.is_empty() {
-                            let _ = app.on_message(ChatAppMsg::ModelsFetchFailed(
+                            let _ = params.app.on_message(ChatAppMsg::ModelsFetchFailed(
                                 "No models available".to_string(),
                             ));
                         } else {
                             tracing::info!(count = models.len(), "Models fetched successfully");
-                            let _ = app.on_message(ChatAppMsg::ModelsLoaded(models));
+                            let _ = params.app.on_message(ChatAppMsg::ModelsLoaded(models));
                         }
                     }
                     ChatAppMsg::McpStatusLoaded(_) | ChatAppMsg::PluginStatusLoaded(_) => {
-                        app.on_message(msg.clone());
+                        params.app.on_message(msg.clone());
                     }
                     ChatAppMsg::SetThinkingBudget(budget) => {
                         if self.is_acp_session() {
-                            app.add_notification(crucible_core::types::Notification::warning(
+                            params.app.add_notification(crucible_core::types::Notification::warning(
                                 "Thinking budget not supported for ACP agents".to_string(),
                             ));
                             return Ok(false);
                         }
                         tracing::info!(budget = budget, "Setting thinking budget");
-                        match agent.set_thinking_budget(*budget).await {
+                        match params.agent.set_thinking_budget(*budget).await {
                             Ok(()) => {
                                 tracing::info!(budget = budget, "Thinking budget set successfully");
                             }
@@ -1103,13 +1121,13 @@ impl OilChatRunner {
                     }
                     ChatAppMsg::SetTemperature(temp) => {
                         if self.is_acp_session() {
-                            app.add_notification(crucible_core::types::Notification::warning(
+                            params.app.add_notification(crucible_core::types::Notification::warning(
                                 "Temperature setting not supported for ACP agents".to_string(),
                             ));
                             return Ok(false);
                         }
                         tracing::info!(temperature = temp, "Setting temperature");
-                        match agent.set_temperature(*temp).await {
+                        match params.agent.set_temperature(*temp).await {
                             Ok(()) => {
                                 tracing::info!(temperature = temp, "Temperature set successfully");
                             }
@@ -1120,13 +1138,13 @@ impl OilChatRunner {
                     }
                     ChatAppMsg::SetMaxTokens(max_tokens) => {
                         if self.is_acp_session() {
-                            app.add_notification(crucible_core::types::Notification::warning(
+                            params.app.add_notification(crucible_core::types::Notification::warning(
                                 "Max tokens setting not supported for ACP agents".to_string(),
                             ));
                             return Ok(false);
                         }
                         tracing::info!(max_tokens = ?max_tokens, "Setting max_tokens");
-                        match agent.set_max_tokens(*max_tokens).await {
+                        match params.agent.set_max_tokens(*max_tokens).await {
                             Ok(()) => {
                                 tracing::info!(max_tokens = ?max_tokens, "Max tokens set successfully");
                             }
@@ -1140,7 +1158,7 @@ impl OilChatRunner {
                         response,
                     } => {
                         tracing::info!(request_id = %request_id, "Sending interaction response");
-                        match agent
+                        match params.agent
                             .interaction_respond(request_id.clone(), response.clone())
                             .await
                         {
@@ -1154,25 +1172,25 @@ impl OilChatRunner {
                     }
                     ChatAppMsg::ModeChanged(ref mode_id) => {
                         tracing::info!(mode = %mode_id, "Mode change requested");
-                        if let Err(e) = agent.set_mode_str(mode_id).await {
+                        if let Err(e) = params.agent.set_mode_str(mode_id).await {
                             tracing::warn!(mode = %mode_id, error = %e, "Failed to set mode on agent");
                         }
                     }
                     ChatAppMsg::UserMessage(ref content) => {
-                        if active_stream.is_none() {
-                            bridge.ring.push(SessionEvent::MessageReceived {
+                        if params.active_stream.is_none() {
+                            params.bridge.ring.push(SessionEvent::MessageReceived {
                                 content: content.clone(),
                                 participant_id: "user".to_string(),
                             });
-                            let stream = agent.send_message_stream(content.clone());
-                            *active_stream = Some(stream);
+                            let stream = params.agent.send_message_stream(content.clone());
+                            *params.active_stream = Some(stream);
                         }
                     }
                     ChatAppMsg::ReloadPlugin(ref name) if !self.is_replay => {
                         tracing::info!(plugin = %name, "Plugin reload requested");
                         let name = name.clone();
-                        let tx = msg_tx.clone();
-                        background_tasks.push(tokio::spawn(async move {
+                        let tx = params.msg_tx.clone();
+                        params.background_tasks.push(tokio::spawn(async move {
                             match crucible_rpc::DaemonClient::connect().await {
                                 Ok(client) => {
                                     if name.is_empty() {
@@ -1250,14 +1268,14 @@ impl OilChatRunner {
                     }
                     ChatAppMsg::ExecuteSlashCommand(ref cmd) if !self.is_replay => {
                         tracing::info!(command = %cmd, "Forwarding slash command as user message");
-                        let stream = agent.send_message_stream(cmd.clone());
-                        *active_stream = Some(stream);
+                        let stream = params.agent.send_message_stream(cmd.clone());
+                        *params.active_stream = Some(stream);
                     }
                     ChatAppMsg::ExportSession(ref export_path) if !self.is_replay => {
-                        let session_dir = match app.session_dir() {
+                        let session_dir = match params.app.session_dir() {
                             Some(dir) => dir.to_path_buf(),
                             None => {
-                                app.on_message(ChatAppMsg::Error(
+                                params.app.on_message(ChatAppMsg::Error(
                                     "Export failed: no active session".to_string(),
                                 ));
                                 return Ok(false);
@@ -1266,7 +1284,7 @@ impl OilChatRunner {
 
                         match crucible_observe::load_events(&session_dir).await {
                             Ok(events) if events.is_empty() => {
-                                app.on_message(ChatAppMsg::Error(
+                                params.app.on_message(ChatAppMsg::Error(
                                     "Nothing to export — session has no recorded events"
                                         .to_string(),
                                 ));
@@ -1276,13 +1294,13 @@ impl OilChatRunner {
                                 let md = crucible_observe::render_to_markdown(&events, &options);
                                 match tokio::fs::write(&export_path, &md).await {
                                     Ok(_) => {
-                                        app.add_system_message(format!(
+                                        params.app.add_system_message(format!(
                                             "Session exported to {}",
                                             export_path.display()
                                         ));
                                     }
                                     Err(e) => {
-                                        app.on_message(ChatAppMsg::Error(format!(
+                                        params.app.on_message(ChatAppMsg::Error(format!(
                                             "Export failed: {}",
                                             e
                                         )));
@@ -1290,7 +1308,7 @@ impl OilChatRunner {
                                 }
                             }
                             Err(e) => {
-                                app.on_message(ChatAppMsg::Error(format!(
+                                params.app.on_message(ChatAppMsg::Error(format!(
                                     "Failed to load session events: {}",
                                     e
                                 )));
@@ -1302,29 +1320,29 @@ impl OilChatRunner {
                     | ChatAppMsg::ExportSession(_) => {}
                     _ => {}
                 }
-                let action = app.on_message(msg);
-                Box::pin(self.process_action(
+                let action = params.app.on_message(msg);
+                Box::pin(self.process_action(ProcessActionParams {
                     action,
-                    app,
-                    agent,
-                    bridge,
-                    active_stream,
-                    msg_tx,
-                    background_tasks,
-                ))
+                    app: params.app,
+                    agent: params.agent,
+                    bridge: params.bridge,
+                    active_stream: params.active_stream,
+                    msg_tx: params.msg_tx,
+                    background_tasks: params.background_tasks,
+                }))
                 .await
             }
             Action::Batch(actions) => {
                 for action in actions {
-                    if Box::pin(self.process_action(
+                    if Box::pin(self.process_action(ProcessActionParams {
                         action,
-                        app,
-                        agent,
-                        bridge,
-                        active_stream,
-                        msg_tx,
-                        background_tasks,
-                    ))
+                        app: params.app,
+                        agent: params.agent,
+                        bridge: params.bridge,
+                        active_stream: params.active_stream,
+                        msg_tx: params.msg_tx,
+                        background_tasks: params.background_tasks,
+                    }))
                     .await?
                     {
                         return Ok(true);
