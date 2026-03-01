@@ -166,6 +166,133 @@ pub struct LuaRegisterCommandsResponse {
 }
 
 // =========================================================================
+// Generic RPC Request Types
+// =========================================================================
+
+/// Empty request for methods that take no parameters.
+#[derive(Debug, Clone, serde::Serialize)]
+struct EmptyParams {}
+
+/// Request for methods that take only a kiln path.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct KilnPathRequest {
+    pub kiln: String,
+}
+
+/// Request for methods that take only a filesystem path.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PathRequest {
+    pub path: String,
+}
+
+/// Request for methods that take only a name.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct NameRequest {
+    pub name: String,
+}
+
+/// Request for `kiln.open`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct KilnOpenRequest {
+    pub path: String,
+    pub process: bool,
+    pub force: bool,
+}
+
+/// Request for `kiln.set_classification`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct KilnSetClassificationRequest {
+    pub path: String,
+    pub classification: String,
+}
+
+/// Request for `get_note_by_name`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct GetNoteByNameRequest {
+    pub kiln: String,
+    pub name: String,
+}
+
+/// Request for `note.upsert`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct NoteUpsertRequest {
+    pub kiln: String,
+    pub note: serde_json::Value,
+}
+
+/// Request for `note.get` and `note.delete`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct NotePathRequest {
+    pub kiln: String,
+    pub path: String,
+}
+
+/// Request for `process_batch`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ProcessBatchRequest {
+    pub kiln: String,
+    pub paths: Vec<String>,
+}
+
+/// Request for `storage.backup`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StorageBackupRequest {
+    pub kiln: String,
+    pub dest: String,
+}
+
+/// Request for `storage.restore`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StorageRestoreRequest {
+    pub kiln: String,
+    pub source: String,
+}
+
+/// Request for `mcp.start`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct McpStartRequest {
+    pub kiln_path: String,
+    pub no_just: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transport: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub just_dir: Option<String>,
+}
+
+/// Request for `skills.list`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SkillsListRequest {
+    pub kiln_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope_filter: Option<String>,
+}
+
+/// Request for `skills.get`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SkillsGetRequest {
+    pub name: String,
+    pub kiln_path: String,
+}
+
+/// Request for `skills.search`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SkillsSearchRequest {
+    pub query: String,
+    pub kiln_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+}
+
+/// Return value for `subscribe_process_events`.
+#[derive(Debug, Clone, serde::Serialize)]
+struct ProcessEventsSubscription {
+    batch_id: String,
+    subscription: serde_json::Value,
+}
+
+// =========================================================================
 // Session RPC Request/Response Types (Phase 1)
 // =========================================================================
 
@@ -797,6 +924,24 @@ impl DaemonClient {
         Ok(serde_json::from_value(result)?)
     }
 
+    /// Send a typed JSON-RPC request with retry and deserialize the response.
+    ///
+    /// Wraps `call_with_retry()` with automatic serialization/deserialization.
+    pub async fn typed_call_with_retry<Req, Resp>(
+        &self,
+        method: &str,
+        params: Req,
+    ) -> Result<Resp>
+    where
+        Req: serde::Serialize,
+        Resp: serde::de::DeserializeOwned,
+    {
+        let result = self
+            .call_with_retry(method, serde_json::to_value(params)?)
+            .await?;
+        Ok(serde_json::from_value(result)?)
+    }
+
     /// Shorthand for RPC methods that only take a session_id parameter.
     async fn session_id_call(&self, method: &str, session_id: &str) -> Result<serde_json::Value> {
         self.typed_call(
@@ -816,12 +961,12 @@ impl DaemonClient {
         field: &str,
         extract: impl FnOnce(&serde_json::Value) -> Option<T>,
     ) -> Result<Option<T>> {
-        let result = self
-            .call_with_retry(
+        let result: serde_json::Value = self
+            .typed_call_with_retry(
                 method,
-                serde_json::to_value(SessionIdRequest {
+                SessionIdRequest {
                     session_id: session_id.to_string(),
-                })?,
+                },
             )
             .await?;
         Ok(result
@@ -918,21 +1063,17 @@ impl DaemonClient {
     // =========================================================================
 
     pub async fn ping(&self) -> Result<String> {
-        let result = self.call("ping", serde_json::json!({})).await?;
+        let result: serde_json::Value = self.typed_call("ping", EmptyParams {}).await?;
         Ok(result.as_str().unwrap_or("").to_string())
     }
 
     pub async fn shutdown(&self) -> Result<()> {
-        self.call("shutdown", serde_json::json!({})).await?;
+        let _: serde_json::Value = self.typed_call("shutdown", EmptyParams {}).await?;
         Ok(())
     }
 
     pub async fn capabilities(&self) -> Result<DaemonCapabilities> {
-        let result = self
-            .call("daemon.capabilities", serde_json::json!({}))
-            .await?;
-        let caps: DaemonCapabilities = serde_json::from_value(result)?;
-        Ok(caps)
+        self.typed_call("daemon.capabilities", EmptyParams {}).await
     }
 
     pub async fn check_version(&self) -> Result<VersionCheck> {
@@ -965,33 +1106,32 @@ impl DaemonClient {
         process: bool,
         force: bool,
     ) -> Result<serde_json::Value> {
-        let result = self
-            .call(
-                "kiln.open",
-                serde_json::json!({
-                    "path": path.to_string_lossy(),
-                    "process": process,
-                    "force": force
-                }),
-            )
-            .await?;
-        Ok(result)
+        self.typed_call(
+            "kiln.open",
+            KilnOpenRequest {
+                path: path.to_string_lossy().to_string(),
+                process,
+                force,
+            },
+        )
+        .await
     }
 
     pub async fn kiln_set_classification(&self, path: &Path, classification: &str) -> Result<()> {
-        self.call(
-            "kiln.set_classification",
-            serde_json::json!({
-                "path": path.to_string_lossy(),
-                "classification": classification
-            }),
-        )
-        .await?;
+        let _: serde_json::Value = self
+            .typed_call(
+                "kiln.set_classification",
+                KilnSetClassificationRequest {
+                    path: path.to_string_lossy().to_string(),
+                    classification: classification.to_string(),
+                },
+            )
+            .await?;
         Ok(())
     }
 
     pub async fn kiln_list(&self) -> Result<Vec<serde_json::Value>> {
-        let result = self.call("kiln.list", serde_json::json!({})).await?;
+        let result: serde_json::Value = self.typed_call("kiln.list", EmptyParams {}).await?;
         Ok(result.as_array().cloned().unwrap_or_default())
     }
 
@@ -1005,14 +1145,14 @@ impl DaemonClient {
         vector: &[f32],
         limit: usize,
     ) -> Result<Vec<(String, f64)>> {
-        let result = self
-            .call(
+        let result: serde_json::Value = self
+            .typed_call(
                 "search_vectors",
-                serde_json::to_value(SearchVectorsRequest {
+                SearchVectorsRequest {
                     kiln: kiln_path.to_string_lossy().to_string(),
                     vector: vector.to_vec(),
                     limit,
-                })?,
+                },
             )
             .await?;
 
@@ -1035,13 +1175,13 @@ impl DaemonClient {
         kiln_path: &Path,
         path_filter: Option<&str>,
     ) -> Result<Vec<(String, String, Option<String>, Vec<String>, Option<String>)>> {
-        let result = self
-            .call(
+        let result: serde_json::Value = self
+            .typed_call(
                 "list_notes",
-                serde_json::to_value(ListNotesRequest {
+                ListNotesRequest {
                     kiln: kiln_path.to_string_lossy().to_string(),
                     path_filter: path_filter.map(|f| f.to_string()),
-                })?,
+                },
             )
             .await?;
 
@@ -1092,13 +1232,13 @@ impl DaemonClient {
         kiln_path: &Path,
         name: &str,
     ) -> Result<Option<serde_json::Value>> {
-        let result = self
-            .call(
+        let result: serde_json::Value = self
+            .typed_call(
                 "get_note_by_name",
-                serde_json::json!({
-                    "kiln": kiln_path.to_string_lossy(),
-                    "name": name
-                }),
+                GetNoteByNameRequest {
+                    kiln: kiln_path.to_string_lossy().to_string(),
+                    name: name.to_string(),
+                },
             )
             .await?;
 
@@ -1118,14 +1258,15 @@ impl DaemonClient {
         kiln_path: &Path,
         note: &crucible_core::storage::NoteRecord,
     ) -> Result<()> {
-        self.call(
-            "note.upsert",
-            serde_json::json!({
-                "kiln": kiln_path.to_string_lossy(),
-                "note": note
-            }),
-        )
-        .await?;
+        let _: serde_json::Value = self
+            .typed_call(
+                "note.upsert",
+                NoteUpsertRequest {
+                    kiln: kiln_path.to_string_lossy().to_string(),
+                    note: serde_json::to_value(note)?,
+                },
+            )
+            .await?;
         Ok(())
     }
 
@@ -1134,13 +1275,13 @@ impl DaemonClient {
         kiln_path: &Path,
         path: &str,
     ) -> Result<Option<crucible_core::storage::NoteRecord>> {
-        let result = self
-            .call(
+        let result: serde_json::Value = self
+            .typed_call(
                 "note.get",
-                serde_json::json!({
-                    "kiln": kiln_path.to_string_lossy(),
-                    "path": path
-                }),
+                NotePathRequest {
+                    kiln: kiln_path.to_string_lossy().to_string(),
+                    path: path.to_string(),
+                },
             )
             .await?;
 
@@ -1153,14 +1294,15 @@ impl DaemonClient {
     }
 
     pub async fn note_delete(&self, kiln_path: &Path, path: &str) -> Result<()> {
-        self.call(
-            "note.delete",
-            serde_json::json!({
-                "kiln": kiln_path.to_string_lossy(),
-                "path": path
-            }),
-        )
-        .await?;
+        let _: serde_json::Value = self
+            .typed_call(
+                "note.delete",
+                NotePathRequest {
+                    kiln: kiln_path.to_string_lossy().to_string(),
+                    path: path.to_string(),
+                },
+            )
+            .await?;
         Ok(())
     }
 
@@ -1168,15 +1310,13 @@ impl DaemonClient {
         &self,
         kiln_path: &Path,
     ) -> Result<Vec<crucible_core::storage::NoteRecord>> {
-        let result = self
-            .call(
-                "note.list",
-                serde_json::json!({ "kiln": kiln_path.to_string_lossy() }),
-            )
-            .await?;
-
-        let notes: Vec<crucible_core::storage::NoteRecord> = serde_json::from_value(result)?;
-        Ok(notes)
+        self.typed_call(
+            "note.list",
+            KilnPathRequest {
+                kiln: kiln_path.to_string_lossy().to_string(),
+            },
+        )
+        .await
     }
 
     // =========================================================================
@@ -1193,13 +1333,13 @@ impl DaemonClient {
             .map(|p| p.to_string_lossy().to_string())
             .collect();
 
-        let result = self
-            .call(
+        let result: serde_json::Value = self
+            .typed_call(
                 "process_batch",
-                serde_json::json!({
-                    "kiln": kiln_path.to_string_lossy(),
-                    "paths": paths
-                }),
+                ProcessBatchRequest {
+                    kiln: kiln_path.to_string_lossy().to_string(),
+                    paths,
+                },
             )
             .await?;
 
@@ -1231,28 +1371,32 @@ impl DaemonClient {
     // =========================================================================
 
     pub async fn storage_verify(&self, kiln_path: &Path) -> Result<serde_json::Value> {
-        self.call(
+        self.typed_call(
             "storage.verify",
-            serde_json::json!({ "kiln": kiln_path.to_string_lossy() }),
+            KilnPathRequest {
+                kiln: kiln_path.to_string_lossy().to_string(),
+            },
         )
         .await
     }
 
     pub async fn storage_cleanup(&self, kiln_path: &Path) -> Result<serde_json::Value> {
-        self.call(
+        self.typed_call(
             "storage.cleanup",
-            serde_json::json!({ "kiln": kiln_path.to_string_lossy() }),
+            KilnPathRequest {
+                kiln: kiln_path.to_string_lossy().to_string(),
+            },
         )
         .await
     }
 
     pub async fn storage_backup(&self, kiln_path: &Path, dest: &Path) -> Result<serde_json::Value> {
-        self.call(
+        self.typed_call(
             "storage.backup",
-            serde_json::json!({
-                "kiln": kiln_path.to_string_lossy(),
-                "dest": dest.to_string_lossy()
-            }),
+            StorageBackupRequest {
+                kiln: kiln_path.to_string_lossy().to_string(),
+                dest: dest.to_string_lossy().to_string(),
+            },
         )
         .await
     }
@@ -1262,12 +1406,12 @@ impl DaemonClient {
         kiln_path: &Path,
         source: &Path,
     ) -> Result<serde_json::Value> {
-        self.call(
+        self.typed_call(
             "storage.restore",
-            serde_json::json!({
-                "kiln": kiln_path.to_string_lossy(),
-                "source": source.to_string_lossy()
-            }),
+            StorageRestoreRequest {
+                kiln: kiln_path.to_string_lossy().to_string(),
+                source: source.to_string_lossy().to_string(),
+            },
         )
         .await
     }
@@ -1278,13 +1422,13 @@ impl DaemonClient {
         kiln_path: Option<&Path>,
         limit: Option<usize>,
     ) -> Result<serde_json::Value> {
-        self.call(
+        self.typed_call(
             "session.search",
-            serde_json::to_value(SessionSearchRequest {
+            SessionSearchRequest {
                 query: query.to_string(),
                 kiln: kiln_path.map(|p| p.to_string_lossy().to_string()),
                 limit,
-            })?,
+            },
         )
         .await
     }
@@ -1377,30 +1521,27 @@ impl DaemonClient {
         no_just: bool,
         just_dir: Option<&str>,
     ) -> Result<serde_json::Value> {
-        let mut params = serde_json::json!({
-            "kiln_path": kiln_path,
-            "no_just": no_just,
-        });
-        if let Some(t) = transport {
-            params["transport"] = serde_json::json!(t);
-        }
-        if let Some(p) = port {
-            params["port"] = serde_json::json!(p);
-        }
-        if let Some(d) = just_dir {
-            params["just_dir"] = serde_json::json!(d);
-        }
-        self.call("mcp.start", params).await
+        self.typed_call(
+            "mcp.start",
+            McpStartRequest {
+                kiln_path: kiln_path.to_string(),
+                no_just,
+                transport: transport.map(|t| t.to_string()),
+                port,
+                just_dir: just_dir.map(|d| d.to_string()),
+            },
+        )
+        .await
     }
 
     /// Stop the daemon-managed MCP server.
     pub async fn mcp_stop(&self) -> Result<serde_json::Value> {
-        self.call("mcp.stop", serde_json::json!({})).await
+        self.typed_call("mcp.stop", EmptyParams {}).await
     }
 
     /// Get the status of the daemon-managed MCP server.
     pub async fn mcp_status(&self) -> Result<serde_json::Value> {
-        self.call("mcp.status", serde_json::json!({})).await
+        self.typed_call("mcp.status", EmptyParams {}).await
     }
 
     // =========================================================================
@@ -1416,9 +1557,9 @@ impl DaemonClient {
         recording_mode: Option<&str>,
         recording_path: Option<&Path>,
     ) -> Result<serde_json::Value> {
-        self.call(
+        self.typed_call(
             "session.create",
-            serde_json::to_value(SessionCreateRequest {
+            SessionCreateRequest {
                 session_type: session_type.to_string(),
                 kiln: kiln.to_string_lossy().to_string(),
                 workspace: workspace.map(|ws| ws.to_string_lossy().to_string()),
@@ -1434,7 +1575,7 @@ impl DaemonClient {
                 },
                 recording_mode: recording_mode.map(|m| m.to_string()),
                 recording_path: recording_path.map(|p| p.to_string_lossy().to_string()),
-            })?,
+            },
         )
         .await
     }
@@ -1446,14 +1587,14 @@ impl DaemonClient {
         session_type: Option<&str>,
         state: Option<&str>,
     ) -> Result<serde_json::Value> {
-        self.call(
+        self.typed_call(
             "session.list",
-            serde_json::to_value(SessionListRequest {
+            SessionListRequest {
                 session_type: session_type.map(|t| t.to_string()),
                 kiln: kiln.map(|k| k.to_string_lossy().to_string()),
                 workspace: workspace.map(|ws| ws.to_string_lossy().to_string()),
                 state: state.map(|s| s.to_string()),
-            })?,
+            },
         )
         .await
     }
@@ -1496,14 +1637,14 @@ impl DaemonClient {
         limit: Option<usize>,
         offset: Option<usize>,
     ) -> Result<serde_json::Value> {
-        self.call(
+        self.typed_call(
             "session.resume_from_storage",
-            serde_json::to_value(SessionResumeFromStorageRequest {
+            SessionResumeFromStorageRequest {
                 session_id: session_id.to_string(),
                 kiln: kiln.to_string_lossy().to_string(),
                 limit,
                 offset,
-            })?,
+            },
         )
         .await
     }
@@ -1530,10 +1671,10 @@ impl DaemonClient {
 
     pub async fn subscribe_process_events(&self, batch_id: &str) -> Result<serde_json::Value> {
         let result = self.session_subscribe(&["process"]).await?;
-        Ok(serde_json::json!({
-            "batch_id": batch_id,
-            "subscription": result
-        }))
+        Ok(serde_json::to_value(ProcessEventsSubscription {
+            batch_id: batch_id.to_string(),
+            subscription: result,
+        })?)
     }
 
     pub async fn session_configure_agent(
@@ -1541,14 +1682,15 @@ impl DaemonClient {
         session_id: &str,
         agent: &crucible_core::session::SessionAgent,
     ) -> Result<()> {
-        self.call(
-            "session.configure_agent",
-            serde_json::to_value(SessionConfigureAgentRequest {
-                session_id: session_id.to_string(),
-                agent: serde_json::to_value(agent)?,
-            })?,
-        )
-        .await?;
+        let _: serde_json::Value = self
+            .typed_call(
+                "session.configure_agent",
+                SessionConfigureAgentRequest {
+                    session_id: session_id.to_string(),
+                    agent: serde_json::to_value(agent)?,
+                },
+            )
+            .await?;
         Ok(())
     }
 
@@ -1572,15 +1714,16 @@ impl DaemonClient {
         request_id: &str,
         response: crucible_core::interaction::InteractionResponse,
     ) -> Result<()> {
-        self.call(
-            "session.interaction_respond",
-            serde_json::to_value(SessionInteractionRespondRequest {
-                session_id: session_id.to_string(),
-                request_id: request_id.to_string(),
-                response: serde_json::to_value(response)?,
-            })?,
-        )
-        .await?;
+        let _: serde_json::Value = self
+            .typed_call(
+                "session.interaction_respond",
+                SessionInteractionRespondRequest {
+                    session_id: session_id.to_string(),
+                    request_id: request_id.to_string(),
+                    response: serde_json::to_value(response)?,
+                },
+            )
+            .await?;
 
         Ok(())
     }
@@ -1599,36 +1742,38 @@ impl DaemonClient {
     }
 
     pub async fn session_switch_model(&self, session_id: &str, model_id: &str) -> Result<()> {
-        self.call_with_retry(
-            "session.switch_model",
-            serde_json::to_value(SessionSwitchModelRequest {
-                session_id: session_id.to_string(),
-                model_id: model_id.to_string(),
-            })?,
-        )
-        .await?;
+        let _: serde_json::Value = self
+            .typed_call_with_retry(
+                "session.switch_model",
+                SessionSwitchModelRequest {
+                    session_id: session_id.to_string(),
+                    model_id: model_id.to_string(),
+                },
+            )
+            .await?;
         Ok(())
     }
 
     pub async fn session_set_title(&self, session_id: &str, title: &str) -> Result<()> {
-        self.call_with_retry(
-            "session.set_title",
-            serde_json::to_value(SessionSetTitleRequest {
-                session_id: session_id.to_string(),
-                title: title.to_string(),
-            })?,
-        )
-        .await?;
+        let _: serde_json::Value = self
+            .typed_call_with_retry(
+                "session.set_title",
+                SessionSetTitleRequest {
+                    session_id: session_id.to_string(),
+                    title: title.to_string(),
+                },
+            )
+            .await?;
         Ok(())
     }
 
     pub async fn session_list_models(&self, session_id: &str) -> Result<Vec<String>> {
-        let result = self
-            .call_with_retry(
+        let result: serde_json::Value = self
+            .typed_call_with_retry(
                 "session.list_models",
-                serde_json::to_value(SessionIdRequest {
+                SessionIdRequest {
                     session_id: session_id.to_string(),
-                })?,
+                },
             )
             .await?;
 
@@ -1640,12 +1785,12 @@ impl DaemonClient {
     /// If `kiln_path` is provided, the daemon resolves the kiln's data classification
     /// and filters providers whose trust level doesn't satisfy it.
     pub async fn list_all_models(&self, kiln_path: Option<&Path>) -> Result<Vec<String>> {
-        let result = self
-            .call_with_retry(
+        let result: serde_json::Value = self
+            .typed_call_with_retry(
                 "models.list",
-                serde_json::to_value(ListAllModelsRequest {
+                ListAllModelsRequest {
                     kiln_path: kiln_path.map(|p| p.to_string_lossy().to_string()),
-                })?,
+                },
             )
             .await?;
 
@@ -1667,14 +1812,15 @@ impl DaemonClient {
         session_id: &str,
         budget: Option<i64>,
     ) -> Result<()> {
-        self.call_with_retry(
-            "session.set_thinking_budget",
-            serde_json::to_value(SessionSetThinkingBudgetRequest {
-                session_id: session_id.to_string(),
-                thinking_budget: budget,
-            })?,
-        )
-        .await?;
+        let _: serde_json::Value = self
+            .typed_call_with_retry(
+                "session.set_thinking_budget",
+                SessionSetThinkingBudgetRequest {
+                    session_id: session_id.to_string(),
+                    thinking_budget: budget,
+                },
+            )
+            .await?;
         Ok(())
     }
 
@@ -1693,25 +1839,26 @@ impl DaemonClient {
 
     /// Set whether Precognition (auto-RAG) is enabled for a session.
     pub async fn session_set_precognition(&self, session_id: &str, enabled: bool) -> Result<()> {
-        self.call_with_retry(
-            "session.set_precognition",
-            serde_json::to_value(SessionSetPrecognitionRequest {
-                session_id: session_id.to_string(),
-                precognition_enabled: enabled,
-            })?,
-        )
-        .await?;
+        let _: serde_json::Value = self
+            .typed_call_with_retry(
+                "session.set_precognition",
+                SessionSetPrecognitionRequest {
+                    session_id: session_id.to_string(),
+                    precognition_enabled: enabled,
+                },
+            )
+            .await?;
         Ok(())
     }
 
     /// Get whether Precognition is enabled for a session.
     pub async fn session_get_precognition(&self, session_id: &str) -> Result<bool> {
-        let result = self
-            .call_with_retry(
+        let result: serde_json::Value = self
+            .typed_call_with_retry(
                 "session.get_precognition",
-                serde_json::to_value(SessionIdRequest {
+                SessionIdRequest {
                     session_id: session_id.to_string(),
-                })?,
+                },
             )
             .await?;
 
@@ -1724,14 +1871,15 @@ impl DaemonClient {
     }
 
     pub async fn session_set_temperature(&self, session_id: &str, temperature: f64) -> Result<()> {
-        self.call_with_retry(
-            "session.set_temperature",
-            serde_json::to_value(SessionSetTemperatureRequest {
-                session_id: session_id.to_string(),
-                temperature,
-            })?,
-        )
-        .await?;
+        let _: serde_json::Value = self
+            .typed_call_with_retry(
+                "session.set_temperature",
+                SessionSetTemperatureRequest {
+                    session_id: session_id.to_string(),
+                    temperature,
+                },
+            )
+            .await?;
         Ok(())
     }
 
@@ -1743,12 +1891,17 @@ impl DaemonClient {
     }
 
     pub async fn plugin_reload(&self, name: &str) -> Result<serde_json::Value> {
-        self.call("plugin.reload", serde_json::json!({ "name": name }))
-            .await
+        self.typed_call(
+            "plugin.reload",
+            NameRequest {
+                name: name.to_string(),
+            },
+        )
+        .await
     }
 
     pub async fn plugin_list(&self) -> Result<Vec<String>> {
-        let result = self.call("plugin.list", serde_json::json!({})).await?;
+        let result: serde_json::Value = self.typed_call("plugin.list", EmptyParams {}).await?;
         Ok(extract_string_array(&result, "plugins"))
     }
 
@@ -1757,14 +1910,15 @@ impl DaemonClient {
         session_id: &str,
         max_tokens: Option<u32>,
     ) -> Result<()> {
-        self.call_with_retry(
-            "session.set_max_tokens",
-            serde_json::to_value(SessionSetMaxTokensRequest {
-                session_id: session_id.to_string(),
-                max_tokens,
-            })?,
-        )
-        .await?;
+        let _: serde_json::Value = self
+            .typed_call_with_retry(
+                "session.set_max_tokens",
+                SessionSetMaxTokensRequest {
+                    session_id: session_id.to_string(),
+                    max_tokens,
+                },
+            )
+            .await?;
         Ok(())
     }
 
@@ -1776,36 +1930,39 @@ impl DaemonClient {
     }
 
     pub async fn project_register(&self, path: &Path) -> Result<crucible_core::Project> {
-        let result = self
-            .call_with_retry(
-                "project.register",
-                serde_json::json!({ "path": path.to_string_lossy() }),
-            )
-            .await?;
-        Ok(serde_json::from_value(result)?)
+        self.typed_call_with_retry(
+            "project.register",
+            PathRequest {
+                path: path.to_string_lossy().to_string(),
+            },
+        )
+        .await
     }
 
     pub async fn project_unregister(&self, path: &Path) -> Result<()> {
-        self.call_with_retry(
-            "project.unregister",
-            serde_json::json!({ "path": path.to_string_lossy() }),
-        )
-        .await?;
+        let _: serde_json::Value = self
+            .typed_call_with_retry(
+                "project.unregister",
+                PathRequest {
+                    path: path.to_string_lossy().to_string(),
+                },
+            )
+            .await?;
         Ok(())
     }
 
     pub async fn project_list(&self) -> Result<Vec<crucible_core::Project>> {
-        let result = self
-            .call_with_retry("project.list", serde_json::json!({}))
-            .await?;
-        Ok(serde_json::from_value(result)?)
+        self.typed_call_with_retry("project.list", EmptyParams {})
+            .await
     }
 
     pub async fn project_get(&self, path: &Path) -> Result<Option<crucible_core::Project>> {
-        let result = self
-            .call_with_retry(
+        let result: serde_json::Value = self
+            .typed_call_with_retry(
                 "project.get",
-                serde_json::json!({ "path": path.to_string_lossy() }),
+                PathRequest {
+                    path: path.to_string_lossy().to_string(),
+                },
             )
             .await?;
 
@@ -1822,11 +1979,11 @@ impl DaemonClient {
 
     /// Load events from a persisted session's JSONL log.
     pub async fn session_load_events(&self, session_dir: &Path) -> Result<serde_json::Value> {
-        self.call(
+        self.typed_call(
             "session.load_events",
-            serde_json::to_value(SessionLoadEventsRequest {
+            SessionLoadEventsRequest {
                 session_dir: session_dir.to_string_lossy().to_string(),
-            })?,
+            },
         )
         .await
     }
@@ -1838,13 +1995,13 @@ impl DaemonClient {
         session_type: Option<&str>,
         limit: Option<usize>,
     ) -> Result<serde_json::Value> {
-        self.call(
+        self.typed_call(
             "session.list_persisted",
-            serde_json::to_value(SessionListPersistedRequest {
+            SessionListPersistedRequest {
                 kiln: kiln.to_string_lossy().to_string(),
                 session_type: session_type.map(|t| t.to_string()),
                 limit,
-            })?,
+            },
         )
         .await
     }
@@ -1900,25 +2057,25 @@ impl DaemonClient {
         older_than_days: u64,
         dry_run: bool,
     ) -> Result<serde_json::Value> {
-        self.call(
+        self.typed_call(
             "session.cleanup",
-            serde_json::to_value(SessionCleanupRequest {
+            SessionCleanupRequest {
                 kiln: kiln.to_string_lossy().to_string(),
                 older_than_days,
                 dry_run,
-            })?,
+            },
         )
         .await
     }
 
     /// Reindex persisted sessions into the kiln's NoteStore.
     pub async fn session_reindex(&self, kiln: &Path, force: bool) -> Result<serde_json::Value> {
-        self.call(
+        self.typed_call(
             "session.reindex",
-            serde_json::to_value(SessionReindexRequest {
+            SessionReindexRequest {
                 kiln: kiln.to_string_lossy().to_string(),
                 force,
-            })?,
+            },
         )
         .await
     }
@@ -1933,21 +2090,24 @@ impl DaemonClient {
         kiln_path: &Path,
         scope_filter: Option<&str>,
     ) -> Result<serde_json::Value> {
-        let mut params = serde_json::json!({ "kiln_path": kiln_path.to_string_lossy() });
-        if let Some(scope) = scope_filter {
-            params["scope_filter"] = serde_json::json!(scope);
-        }
-        self.call("skills.list", params).await
+        self.typed_call(
+            "skills.list",
+            SkillsListRequest {
+                kiln_path: kiln_path.to_string_lossy().to_string(),
+                scope_filter: scope_filter.map(|s| s.to_string()),
+            },
+        )
+        .await
     }
 
     /// Get a single skill by name with full body.
     pub async fn skills_get(&self, name: &str, kiln_path: &Path) -> Result<serde_json::Value> {
-        self.call(
+        self.typed_call(
             "skills.get",
-            serde_json::json!({
-                "name": name,
-                "kiln_path": kiln_path.to_string_lossy(),
-            }),
+            SkillsGetRequest {
+                name: name.to_string(),
+                kiln_path: kiln_path.to_string_lossy().to_string(),
+            },
         )
         .await
     }
@@ -1959,27 +2119,29 @@ impl DaemonClient {
         kiln_path: &Path,
         limit: Option<usize>,
     ) -> Result<serde_json::Value> {
-        let mut params = serde_json::json!({
-            "query": query,
-            "kiln_path": kiln_path.to_string_lossy(),
-        });
-        if let Some(l) = limit {
-            params["limit"] = serde_json::json!(l);
-        }
-        self.call("skills.search", params).await
+        self.typed_call(
+            "skills.search",
+            SkillsSearchRequest {
+                query: query.to_string(),
+                kiln_path: kiln_path.to_string_lossy().to_string(),
+                limit,
+            },
+        )
+        .await
     }
 
     /// List all available agent profiles (builtins + configured).
     pub async fn agents_list_profiles(&self) -> Result<serde_json::Value> {
-        self.call("agents.list_profiles", serde_json::json!({}))
-            .await
+        self.typed_call("agents.list_profiles", EmptyParams {}).await
     }
 
     /// Resolve a named agent profile.
     pub async fn agents_resolve_profile(&self, name: &str) -> Result<serde_json::Value> {
-        self.call(
+        self.typed_call(
             "agents.resolve_profile",
-            serde_json::json!({ "name": name }),
+            NameRequest {
+                name: name.to_string(),
+            },
         )
         .await
     }
