@@ -301,7 +301,10 @@ mod tests {
         assert!(plain.contains("notification message"));
         // Verify it's actually wrapped (contains newlines in the content)
         let lines: Vec<&str> = plain.lines().collect();
-        assert!(lines.len() > 2, "Long message should wrap to multiple lines");
+        assert!(
+            lines.len() > 2,
+            "Long message should wrap to multiple lines"
+        );
     }
 
     #[test]
@@ -322,7 +325,8 @@ mod tests {
     #[test]
     fn wrap_preserves_continuation_indent() {
         // Continuation lines should be indented to align with the message start
-        let long_msg = "This is a message that will wrap to show continuation line indentation behavior";
+        let long_msg =
+            "This is a message that will wrap to show continuation line indentation behavior";
         let entry = NotificationEntry::new(long_msg, NotificationToastKind::Warning, "14:30:00");
         let comp = NotificationComponent::new(vec![entry])
             .visible(true)

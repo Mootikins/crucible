@@ -656,7 +656,7 @@ impl OilChatApp {
 
                 // Pass full message (wrapping happens in NotificationComponent)
                 let message = notif.message.trim_end();
-                
+
                 NotificationEntry::new(message, kind, timestamp)
             })
             .collect();
