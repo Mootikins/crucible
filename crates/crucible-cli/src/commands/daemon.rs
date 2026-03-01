@@ -3,7 +3,7 @@
 use crate::config::CliConfig;
 use anyhow::Result;
 use clap::Subcommand;
-use crucible_daemon::{socket_path, Server};
+use crucible_daemon::{socket_path, BindWithPluginConfigParams, Server};
 use crucible_rpc::lifecycle::is_daemon_running;
 use crucible_rpc::DaemonClient;
 use std::path::PathBuf;
@@ -55,7 +55,7 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
         let config = CliConfig::load(config_path.clone(), None, None)?;
         let server = Server::bind_with_plugin_config(
             BindWithPluginConfigParams {
-                path: sock,
+                path: sock.clone(),
                 mcp_config: None,
                 plugin_config: std::collections::HashMap::new(),
                 plugin_watch: false,

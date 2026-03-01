@@ -69,15 +69,17 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
     // Standalone mode: start the in-process daemon on the pre-configured socket.
     let _standalone_guard = if let Some(sock) = standalone_sock {
         let server = crucible_daemon::Server::bind_with_plugin_config(
-            &sock,
-            None,
-            std::collections::HashMap::new(),
-            false,
-            Some(config.llm.clone()),
-            config.enrichment.as_ref().map(|e| e.provider.clone()),
-            Some(config.acp.clone()),
-            None,
-            None,
+            crucible_daemon::BindWithPluginConfigParams {
+                path: sock.clone(),
+                mcp_config: None,
+                plugin_config: std::collections::HashMap::new(),
+                plugin_watch: false,
+                llm_config: Some(config.llm.clone()),
+                enrichment_config: config.enrichment.as_ref().map(|e| e.provider.clone()),
+                acp_config: Some(config.acp.clone()),
+                permission_config: None,
+                web_config: None,
+            },
         )
         .await?;
         info!("Standalone daemon listening on {:?}", sock);
@@ -205,23 +207,23 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             replay_speed,
             replay_auto_exit,
         }) => {
-            commands::chat::execute(
+            commands::chat::execute(commands::chat::ExecuteParams {
                 config,
-                agent,
+                agent_name: agent,
                 query,
-                plan,
+                read_only: plan,
                 no_context,
-                Some(context_size),
-                provider,
-                max_context,
-                env,
-                resume,
+                context_size: Some(context_size),
+                provider_key: provider,
+                max_context_tokens: max_context,
+                env_overrides: env,
+                resume_session_id: resume,
                 set_overrides,
                 record,
                 replay,
                 replay_speed,
                 replay_auto_exit,
-            )
+            })
             .await?
         }
 
@@ -318,23 +320,23 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
         }
 
         None => {
-            commands::chat::execute(
+            commands::chat::execute(commands::chat::ExecuteParams {
                 config,
-                None,
-                None,
-                false,
-                false,
-                Some(5),
-                None,
-                16384,
-                vec![],
-                None,
-                vec![],
-                None,
-                None,
-                1.0,
-                None,
-            )
+                agent_name: None,
+                query: None,
+                read_only: false,
+                no_context: false,
+                context_size: Some(5),
+                provider_key: None,
+                max_context_tokens: 16384,
+                env_overrides: vec![],
+                resume_session_id: None,
+                set_overrides: vec![],
+                record: None,
+                replay: None,
+                replay_speed: 1.0,
+                replay_auto_exit: None,
+            })
             .await?
         }
     }
