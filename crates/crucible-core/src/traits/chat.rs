@@ -146,6 +146,16 @@ pub trait AgentHandle: Send + Sync {
     fn send_message_stream(&mut self, message: String)
         -> BoxStream<'static, ChatResult<ChatChunk>>;
 
+    fn continue_with_tool_results(
+        &mut self,
+        _tool_calls: Vec<ChatToolCall>,
+        _tool_results: Vec<ChatToolResult>,
+    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
+        Box::pin(futures::stream::once(async {
+            Err(ChatError::NotSupported("continue_with_tool_results".into()))
+        }))
+    }
+
     async fn send_message(&mut self, message: &str) -> ChatResult<ChatResponse> {
         use futures::StreamExt;
 
@@ -330,6 +340,14 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
         message: String,
     ) -> BoxStream<'static, ChatResult<ChatChunk>> {
         (**self).send_message_stream(message)
+    }
+
+    fn continue_with_tool_results(
+        &mut self,
+        tool_calls: Vec<ChatToolCall>,
+        tool_results: Vec<ChatToolResult>,
+    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
+        (**self).continue_with_tool_results(tool_calls, tool_results)
     }
 
     fn is_connected(&self) -> bool {
