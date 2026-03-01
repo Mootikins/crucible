@@ -794,7 +794,6 @@ pub enum MarkdownParseError {
 /// Result type for markdown parsing operations.
 pub type MarkdownParseResult<T> = Result<T, MarkdownParseError>;
 
-
 /// Parsed markdown block header.
 #[derive(Debug, Clone)]
 struct ParsedHeader {

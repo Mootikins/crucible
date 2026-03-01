@@ -10,13 +10,11 @@ mod error;
 pub mod parser;
 pub mod types;
 
-
 pub use context::format_skills_for_context;
 pub use discovery::{FolderDiscovery, SearchPath};
 pub use error::{SkillError, SkillResult};
 pub use parser::SkillParser;
 pub use types::{ResolvedSkill, Skill, SkillScope, SkillSource};
-
 
 #[cfg(feature = "test-utils")]
 pub mod test_utils;
