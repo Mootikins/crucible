@@ -1,6 +1,6 @@
 //! Unix socket server for JSON-RPC
 
-use crate::agent_manager::{AgentError, AgentManager};
+use crate::agent_manager::{AgentError, AgentManager, AgentManagerParams};
 use crate::background_manager::BackgroundJobManager;
 use crate::daemon_plugins::DaemonPluginLoader;
 use crate::event_emitter::emit_event;
@@ -90,6 +90,20 @@ struct LuaSessionState {
     registry: LuaScriptHandlerRegistry,
 }
 
+/// Parameters for binding the server to a Unix socket with plugin configuration.
+pub struct BindWithPluginConfigParams {
+    pub path: std::path::PathBuf,
+    pub mcp_config: Option<crucible_config::McpConfig>,
+    pub plugin_config: std::collections::HashMap<String, serde_json::Value>,
+    pub plugin_watch: bool,
+    pub llm_config: Option<crucible_config::LlmConfig>,
+    pub enrichment_config: Option<crucible_config::EmbeddingProviderConfig>,
+    pub acp_config: Option<crucible_config::components::acp::AcpConfig>,
+    pub permission_config: Option<crucible_config::components::permissions::PermissionConfig>,
+    pub web_config: Option<crucible_config::WebConfig>,
+}
+
+
 impl Server {
     /// Bind to a Unix socket path
     #[allow(dead_code)]
@@ -98,50 +112,43 @@ impl Server {
         mcp_config: Option<&crucible_config::McpConfig>,
     ) -> Result<Self> {
         Self::bind_with_plugin_config(
-            path,
-            mcp_config,
-            std::collections::HashMap::new(),
-            false,
-            None,
-            None,
-            None,
-            None,
-            None,
+            BindWithPluginConfigParams {
+                path: path.to_path_buf(),
+                mcp_config: mcp_config.cloned(),
+                plugin_config: std::collections::HashMap::new(),
+                plugin_watch: false,
+                llm_config: None,
+                enrichment_config: None,
+                acp_config: None,
+                permission_config: None,
+                web_config: None,
+            },
         )
         .await
     }
 
     /// Bind to a Unix socket path with plugin configuration
-    #[allow(clippy::too_many_arguments)]
     pub async fn bind_with_plugin_config(
-        path: &Path,
-        mcp_config: Option<&crucible_config::McpConfig>,
-        plugin_config: std::collections::HashMap<String, serde_json::Value>,
-        plugin_watch: bool,
-        llm_config: Option<crucible_config::LlmConfig>,
-        enrichment_config: Option<crucible_config::EmbeddingProviderConfig>,
-        acp_config: Option<crucible_config::components::acp::AcpConfig>,
-        permission_config: Option<crucible_config::components::permissions::PermissionConfig>,
-        #[allow(unused_variables)] web_config: Option<crucible_config::WebConfig>,
+        params: BindWithPluginConfigParams,
     ) -> Result<Self> {
         // Remove stale socket
-        if path.exists() {
-            std::fs::remove_file(path)?;
+        if params.path.exists() {
+            std::fs::remove_file(&params.path)?;
         }
 
         // Create parent directory
-        if let Some(parent) = path.parent() {
+        if let Some(parent) = params.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
 
-        let listener = UnixListener::bind(path)?;
+        let listener = UnixListener::bind(&params.path)?;
         let (shutdown_tx, _) = broadcast::channel(1);
         let (event_tx, _) = broadcast::channel(1024);
 
         use crucible_tools::mcp_gateway::McpGatewayManager;
         use tokio::sync::RwLock;
 
-        let mcp_gateway = if let Some(mcp_cfg) = mcp_config {
+        let mcp_gateway = if let Some(mcp_cfg) = params.mcp_config.as_ref() {
             match McpGatewayManager::from_config(mcp_cfg).await {
                 Ok(gw) => {
                     info!(
@@ -159,7 +166,7 @@ impl Server {
             None
         };
 
-        let plugin_loader = Arc::new(Mutex::new(match DaemonPluginLoader::new(plugin_config) {
+        let plugin_loader = Arc::new(Mutex::new(match DaemonPluginLoader::new(params.plugin_config.clone()) {
             Ok(loader) => {
                 info!("Daemon plugin loader initialized");
                 Some(loader)
@@ -172,19 +179,21 @@ impl Server {
 
         let kiln_manager = Arc::new(KilnManager::with_event_tx(
             event_tx.clone(),
-            enrichment_config.clone(),
+            params.enrichment_config.clone(),
         ));
         let session_manager = Arc::new(SessionManager::new());
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
         let agent_manager = Arc::new(AgentManager::new(
-            kiln_manager.clone(),
-            session_manager.clone(),
-            background_manager.clone(),
-            mcp_gateway,
-            llm_config.clone(),
-            acp_config,
-            permission_config,
-            Some(plugin_loader.clone()),
+            AgentManagerParams {
+                kiln_manager: kiln_manager.clone(),
+                session_manager: session_manager.clone(),
+                background_manager: background_manager.clone(),
+                mcp_gateway,
+                llm_config: params.llm_config.clone(),
+                acp_config: params.acp_config.clone(),
+                permission_config: params.permission_config.clone(),
+                plugin_loader: Some(plugin_loader.clone()),
+            },
         ));
         let subscription_manager = Arc::new(SubscriptionManager::new());
         let project_manager = Arc::new(ProjectManager::new(
@@ -203,7 +212,7 @@ impl Server {
         );
         let dispatcher = Arc::new(RpcDispatcher::new(ctx));
 
-        info!("Daemon listening on {:?}", path);
+        info!("Daemon listening on {:?}", params.path);
         Ok(Self {
             listener,
             shutdown_tx,
@@ -217,11 +226,11 @@ impl Server {
             event_tx,
             dispatcher,
             plugin_loader,
-            plugin_watch,
-            llm_config,
+            plugin_watch: params.plugin_watch,
+            llm_config: params.llm_config.clone(),
             mcp_server_manager,
             #[cfg(feature = "web")]
-            web_config,
+            web_config: params.web_config.clone(),
         })
     }
 

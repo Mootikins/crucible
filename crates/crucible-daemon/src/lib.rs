@@ -54,7 +54,7 @@ pub mod trust_resolution;
 
 pub use acp_handle::{AcpAgentHandle, AcpHandleError};
 pub use agent_factory::{create_agent_from_session_config, AgentFactoryError};
-pub use agent_manager::{AgentError, AgentManager};
+pub use agent_manager::{AgentError, AgentManager, AgentManagerParams};
 pub use background_manager::{
     BackgroundError, BackgroundJobManager, SubagentContext, SubagentFactory,
 };
