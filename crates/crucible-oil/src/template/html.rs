@@ -2,7 +2,6 @@ use super::parse_color;
 use crate::node::*;
 use crate::style::*;
 use html_parser::{Dom, Element, Node as HtmlNode};
-use std::fmt;
 
 #[derive(Debug, thiserror::Error)]
 pub enum HtmlError {
