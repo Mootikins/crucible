@@ -1,7 +1,7 @@
 //! Common utilities and shared components for Crucible CLI
 
 use anyhow::Context;
-use crucible_rpc::DaemonClient;
+use crucible_daemon::DaemonClient;
 
 /// Connect to the Crucible daemon, starting it if necessary.
 ///
@@ -17,7 +17,7 @@ pub async fn daemon_client() -> anyhow::Result<DaemonClient> {
 /// Standardizes the error message across all CLI commands.
 pub async fn daemon_client_with_events() -> anyhow::Result<(
     DaemonClient,
-    tokio::sync::mpsc::UnboundedReceiver<crucible_rpc::SessionEvent>,
+    tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>,
 )> {
     DaemonClient::connect_or_start_with_events()
         .await

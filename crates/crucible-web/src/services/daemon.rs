@@ -1,6 +1,6 @@
 use crate::{Result, WebError};
 use crucible_config::CliAppConfig;
-use crucible_rpc::{DaemonClient, SessionEvent};
+use crucible_daemon::{DaemonClient, SessionEvent};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
@@ -47,7 +47,7 @@ impl EventBroker {
 }
 
 pub async fn init_daemon(config: CliAppConfig) -> Result<AppState> {
-    let (daemon, event_rx) = crucible_rpc::DaemonClient::connect_or_start_with_events()
+    let (daemon, event_rx) = crucible_daemon::DaemonClient::connect_or_start_with_events()
         .await
         .map_err(|e| WebError::Daemon(format!("Failed to connect to daemon: {e}")))?;
 

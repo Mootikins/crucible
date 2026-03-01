@@ -1,4 +1,4 @@
-use crucible_rpc::SessionEvent;
+use crucible_daemon::SessionEvent;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
