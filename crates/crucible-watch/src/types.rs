@@ -39,7 +39,6 @@ use crucible_core::types::hashing::{FileHash, HashAlgorithm};
 ///
 /// ## Examples
 ///
-/// // TODO: Add example once API stabilizes
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileInfo {
     /// Absolute path to the file in the filesystem
@@ -91,7 +90,6 @@ impl FileInfo {
     ///
     /// # Examples
     ///
-    /// // TODO: Add example once API stabilizes
     pub fn new(
         path: PathBuf,
         relative_path: String,
@@ -124,7 +122,6 @@ impl FileInfo {
     ///
     /// # Examples
     ///
-    /// // TODO: Add example once API stabilizes
     pub fn builder() -> FileInfoBuilder {
         FileInfoBuilder::new()
     }
@@ -559,7 +556,6 @@ impl FileType {
     ///
     /// # Examples
     ///
-    /// // TODO: Add example once API stabilizes
     pub fn from_path(path: &Path) -> Self {
         let extension = path
             .extension()

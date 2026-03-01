@@ -93,7 +93,6 @@ impl Default for ChangeDetectorConfig {
 ///
 /// # Examples
 ///
-/// // TODO: Add example once API stabilizes
 pub struct ChangeDetector {
     /// Storage implementation for hash lookup operations
     storage: Arc<dyn HashLookupStorage>,

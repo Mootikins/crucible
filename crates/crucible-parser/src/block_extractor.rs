@@ -215,7 +215,6 @@ impl BlockExtractor {
     ///
     /// # Examples
     ///
-    /// // TODO: Add example once API stabilizes
     pub fn extract_blocks(&self, note: &ParsedNote) -> Result<Vec<ASTBlock>, ParseError> {
         let mut blocks = Vec::new();
         let mut last_end = 0;
