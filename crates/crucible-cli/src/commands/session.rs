@@ -8,7 +8,7 @@ use crate::config::CliConfig;
 use anyhow::{anyhow, Result};
 use crucible_config::BackendType;
 use crucible_core::session::SessionAgent;
-use crucible_observe::{LogEvent, SessionId, SessionType};
+use crucible_daemon::{LogEvent, SessionId, SessionType};
 use crucible_rpc::DaemonClient;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -1297,7 +1297,7 @@ async fn daemon_load(client: &DaemonClient, config: &CliConfig, session_id: &str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_observe::{SessionType, SessionWriter};
+    use crucible_daemon::{SessionType, SessionWriter};
     use tempfile::TempDir;
 
     async fn setup_test_session(sessions_dir: &std::path::Path) -> SessionId {
@@ -1466,7 +1466,7 @@ mod tests {
 
     #[test]
     fn test_extract_session_content_for_reindex() {
-        use crucible_observe::extract_session_content;
+        use crucible_daemon::extract_session_content;
 
         let events = vec![
             LogEvent::system("You are helpful"),
@@ -1488,7 +1488,7 @@ mod tests {
 
     #[test]
     fn test_extract_session_content_skips_empty() {
-        use crucible_observe::extract_session_content;
+        use crucible_daemon::extract_session_content;
 
         let events = vec![
             LogEvent::system("System prompt only"),

@@ -27,7 +27,7 @@
 //! # Example
 //!
 //! ```no_run
-//! use crucible_observe::{SessionWriter, LogEvent, SessionType};
+//! use crucible_daemon::{LogEvent, SessionType, SessionWriter};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! // Create a new session
@@ -61,5 +61,5 @@ pub use markdown::{render_to_markdown, RenderOptions};
 pub use session::{list_sessions, load_events, SessionError, SessionMetadata, SessionWriter};
 pub use truncate::{truncate_for_log, TruncateResult, DEFAULT_TRUNCATE_THRESHOLD};
 
-#[cfg(feature = "sqlite")]
+#[cfg(feature = "storage-sqlite")]
 pub use storage::SessionIndex;

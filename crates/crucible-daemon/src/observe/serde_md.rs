@@ -6,14 +6,14 @@
 //! # Example
 //!
 //! ```
-//! use crucible_observe::{LogEvent, serde_md};
+//! use crucible_daemon::{serde_md, LogEvent};
 //!
 //! let event = LogEvent::user("Hello!");
 //! let md = serde_md::to_string(&event).unwrap();
 //! assert!(md.contains("## User"));
 //! ```
 
-use crate::events::LogEvent;
+use crate::observe::events::LogEvent;
 use crucible_core::serde_md::{Error, Result};
 use serde::ser::{self, Serialize};
 use std::collections::BTreeMap;
@@ -569,7 +569,7 @@ fn render_summary(output: &mut String, fields: &BTreeMap<&str, String>) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events::TokenUsage;
+    use crate::observe::events::TokenUsage;
 
     #[test]
     fn test_user_event() {

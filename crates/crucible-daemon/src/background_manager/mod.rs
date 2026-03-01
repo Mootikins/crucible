@@ -37,8 +37,8 @@ use crucible_core::background::{
 };
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
-use crucible_observe::events::LogEvent;
-use crucible_observe::session::SessionWriter;
+use crate::observe::events::LogEvent;
+use crate::observe::session::SessionWriter;
 use dashmap::DashMap;
 use futures::StreamExt;
 use std::collections::HashMap;

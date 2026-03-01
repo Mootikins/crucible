@@ -1,4 +1,4 @@
-use crate::events::LogEvent;
+use crate::observe::events::LogEvent;
 use crucible_core::parser::BlockHash;
 use crucible_core::storage::note_store::NoteRecord;
 

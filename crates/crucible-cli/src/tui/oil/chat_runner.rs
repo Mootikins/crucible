@@ -1293,7 +1293,7 @@ impl OilChatRunner {
                             }
                         };
 
-                        match crucible_observe::load_events(&session_dir).await {
+                        match crucible_daemon::load_events(&session_dir).await {
                             Ok(events) if events.is_empty() => {
                                 params.app.on_message(ChatAppMsg::Error(
                                     "Nothing to export — session has no recorded events"
@@ -1301,8 +1301,8 @@ impl OilChatRunner {
                                 ));
                             }
                             Ok(events) => {
-                                let options = crucible_observe::RenderOptions::default();
-                                let md = crucible_observe::render_to_markdown(&events, &options);
+                                let options = crucible_daemon::RenderOptions::default();
+                                let md = crucible_daemon::render_to_markdown(&events, &options);
                                 match tokio::fs::write(&export_path, &md).await {
                                     Ok(_) => {
                                         params.app.add_system_message(format!(

@@ -3,7 +3,7 @@ use super::*;
 pub(super) async fn handle_session_load_events(req: Request) -> Response {
     let session_dir = require_param!(req, "session_dir", as_str);
 
-    match crucible_observe::load_events(session_dir).await {
+    match crate::observe::load_events(session_dir).await {
         Ok(events) => match serde_json::to_value(&events) {
             Ok(v) => Response::success(req.id, v),
             Err(e) => internal_error(req.id, e),
@@ -30,14 +30,14 @@ pub(super) async fn handle_session_list_persisted(req: Request) -> Response {
         return Response::success(req.id, serde_json::json!({ "sessions": [], "total": 0 }));
     }
 
-    let mut ids = match crucible_observe::list_sessions(&sessions_path).await {
+    let mut ids = match crate::observe::list_sessions(&sessions_path).await {
         Ok(ids) => ids,
         Err(e) => return internal_error(req.id, e),
     };
 
     // Filter by session type if specified
     if let Some(type_filter) = session_type_filter {
-        if let Ok(filter_type) = type_filter.parse::<crucible_observe::SessionType>() {
+        if let Ok(filter_type) = type_filter.parse::<crate::observe::SessionType>() {
             ids.retain(|id| id.session_type() == filter_type);
         }
     }
@@ -49,7 +49,7 @@ pub(super) async fn handle_session_list_persisted(req: Request) -> Response {
     let mut session_entries = Vec::new();
     for id in &ids {
         let session_dir = sessions_path.join(id.as_str());
-        let events = crucible_observe::load_events(&session_dir)
+        let events = crate::observe::load_events(&session_dir)
             .await
             .unwrap_or_default();
         let msg_count = events
@@ -57,8 +57,8 @@ pub(super) async fn handle_session_list_persisted(req: Request) -> Response {
             .filter(|e| {
                 matches!(
                     e,
-                    crucible_observe::LogEvent::User { .. }
-                        | crucible_observe::LogEvent::Assistant { .. }
+                    crate::observe::LogEvent::User { .. }
+                        | crate::observe::LogEvent::Assistant { .. }
                 )
             })
             .count();
@@ -66,7 +66,7 @@ pub(super) async fn handle_session_list_persisted(req: Request) -> Response {
         let title = events
             .iter()
             .find_map(|e| match e {
-                crucible_observe::LogEvent::User { content, .. } => {
+                crate::observe::LogEvent::User { content, .. } => {
                     let preview: String = content.chars().take(50).collect();
                     if content.len() > 50 {
                         Some(format!("{}...", preview))
@@ -113,19 +113,19 @@ pub(super) async fn handle_session_render_markdown(req: Request) -> Response {
     let max_content_length =
         optional_param!(req, "max_content_length", as_u64).unwrap_or(0) as usize;
 
-    let events = match crucible_observe::load_events(session_dir).await {
+    let events = match crate::observe::load_events(session_dir).await {
         Ok(e) => e,
         Err(e) => return internal_error(req.id, e),
     };
 
-    let options = crucible_observe::RenderOptions {
+    let options = crate::observe::RenderOptions {
         include_timestamps,
         include_tokens,
         include_tools,
         max_content_length,
     };
 
-    let md = crucible_observe::render_to_markdown(&events, &options);
+    let md = crate::observe::render_to_markdown(&events, &options);
 
     Response::success(req.id, serde_json::json!({ "markdown": md }))
 }
@@ -144,17 +144,17 @@ pub(super) async fn handle_session_export_to_file(req: Request) -> Response {
 
     let session_dir = Path::new(session_dir_str);
 
-    let events = match crucible_observe::load_events(session_dir).await {
+    let events = match crate::observe::load_events(session_dir).await {
         Ok(e) => e,
         Err(e) => return internal_error(req.id, e),
     };
 
-    let options = crucible_observe::RenderOptions {
+    let options = crate::observe::RenderOptions {
         include_timestamps: timestamps,
         ..Default::default()
     };
 
-    let md = crucible_observe::render_to_markdown(&events, &options);
+    let md = crate::observe::render_to_markdown(&events, &options);
 
     let out_path = match output_path {
         Some(p) => PathBuf::from(p),
@@ -195,7 +195,7 @@ pub(super) async fn handle_session_cleanup(req: Request) -> Response {
         );
     }
 
-    let ids = match crucible_observe::list_sessions(&sessions_path).await {
+    let ids = match crate::observe::list_sessions(&sessions_path).await {
         Ok(ids) => ids,
         Err(e) => return internal_error(req.id, e),
     };
@@ -206,7 +206,7 @@ pub(super) async fn handle_session_cleanup(req: Request) -> Response {
 
     for id in ids {
         let session_dir = sessions_path.join(id.as_str());
-        let events = crucible_observe::load_events(&session_dir)
+        let events = crate::observe::load_events(&session_dir)
             .await
             .unwrap_or_default();
 
@@ -269,7 +269,7 @@ pub(super) async fn handle_session_reindex(req: Request, km: &Arc<KilnManager>) 
         );
     }
 
-    let ids = match crucible_observe::list_sessions(&sessions_path).await {
+    let ids = match crate::observe::list_sessions(&sessions_path).await {
         Ok(ids) => ids,
         Err(e) => return internal_error(req.id, e),
     };
@@ -300,7 +300,7 @@ pub(super) async fn handle_session_reindex(req: Request, km: &Arc<KilnManager>) 
             }
         }
 
-        let events = match crucible_observe::load_events(&session_dir).await {
+        let events = match crate::observe::load_events(&session_dir).await {
             Ok(e) => e,
             Err(_) => {
                 errors += 1;
@@ -308,7 +308,7 @@ pub(super) async fn handle_session_reindex(req: Request, km: &Arc<KilnManager>) 
             }
         };
 
-        let content = match crucible_observe::extract_session_content(id.as_str(), &events) {
+        let content = match crate::observe::extract_session_content(id.as_str(), &events) {
             Some(c) => c,
             None => {
                 skipped += 1;
