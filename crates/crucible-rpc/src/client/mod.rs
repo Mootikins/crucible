@@ -2483,7 +2483,10 @@ mod tests {
         // After Task 2 added build.rs, this should NOT be "dev" anymore.
         // This is the CRITICAL test — proves the SHA is actually embedded.
         let sha = option_env!("CRUCIBLE_BUILD_SHA");
-        assert!(sha.is_some(), "CRUCIBLE_BUILD_SHA should be set by build.rs");
+        assert!(
+            sha.is_some(),
+            "CRUCIBLE_BUILD_SHA should be set by build.rs"
+        );
         let sha = sha.unwrap();
         assert_ne!(sha, "dev", "Should be a real git SHA, not 'dev'");
         assert!(sha.len() >= 7, "SHA should be at least 7 chars: got {sha}");
