@@ -223,36 +223,36 @@ impl AgentManager {
         let agent = if let Some(plugin_loader) = &self.plugin_loader {
             let guard = plugin_loader.lock().await;
             let lua = guard.as_ref().map(|loader| loader.executor().lua());
-            create_agent_from_session_config(
-                &resolved_config,
+            create_agent_from_session_config(CreateAgentFromSessionConfigParams {
+                agent_config: &resolved_config,
                 lua,
                 workspace,
                 kiln_path,
-                Some(session_id),
-                Some(self.background_manager.clone()),
+                parent_session_id: Some(session_id),
+                background_spawner: Some(self.background_manager.clone()),
                 event_tx,
-                self.mcp_gateway.clone(),
+                mcp_gateway: self.mcp_gateway.clone(),
                 acp_permission_handler,
-                self.acp_config.as_ref(),
+                acp_config: self.acp_config.as_ref(),
                 knowledge_repo,
                 embedding_provider,
-            )
+            })
             .await?
         } else {
-            create_agent_from_session_config(
-                &resolved_config,
-                None,
+            create_agent_from_session_config(CreateAgentFromSessionConfigParams {
+                agent_config: &resolved_config,
+                lua: None,
                 workspace,
                 kiln_path,
-                Some(session_id),
-                Some(self.background_manager.clone()),
+                parent_session_id: Some(session_id),
+                background_spawner: Some(self.background_manager.clone()),
                 event_tx,
-                self.mcp_gateway.clone(),
+                mcp_gateway: self.mcp_gateway.clone(),
                 acp_permission_handler,
-                self.acp_config.as_ref(),
+                acp_config: self.acp_config.as_ref(),
                 knowledge_repo,
                 embedding_provider,
-            )
+            })
             .await?
         };
 

@@ -75,6 +75,20 @@ pub struct AcpAgentHandle {
     cached_thinking_budget: Option<i64>,
 }
 
+/// Parameters for creating a new ACP agent handle.
+pub struct AcpAgentHandleParams<'a> {
+    pub agent_config: &'a SessionAgent,
+    pub workspace: &'a Path,
+    pub kiln_path: Option<&'a Path>,
+    pub knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
+    pub embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+    pub background_spawner: Option<Arc<dyn BackgroundSpawner>>,
+    pub parent_session_id: Option<&'a str>,
+    pub delegation_config: Option<&'a DelegationConfig>,
+    pub acp_config: Option<&'a AcpConfig>,
+    pub permission_handler: Option<PermissionRequestHandler>,
+}
+
 impl AcpAgentHandle {
     /// Create and connect a new ACP agent handle.
     ///
@@ -92,18 +106,20 @@ impl AcpAgentHandle {
     /// * `parent_session_id` - Parent daemon session id
     /// * `delegation_config` - Delegation limits and allowlist for this agent
     /// * `acp_config` - Optional ACP configuration (timeouts, etc.)
-    pub async fn new(
-        agent_config: &SessionAgent,
-        workspace: &Path,
-        kiln_path: Option<&Path>,
-        knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
-        embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
-        background_spawner: Option<Arc<dyn BackgroundSpawner>>,
-        parent_session_id: Option<&str>,
-        delegation_config: Option<&DelegationConfig>,
-        acp_config: Option<&AcpConfig>,
-        permission_handler: Option<PermissionRequestHandler>,
-    ) -> Result<Self, AcpHandleError> {
+    pub async fn new(params: AcpAgentHandleParams<'_>) -> Result<Self, AcpHandleError> {
+        let AcpAgentHandleParams {
+            agent_config,
+            workspace,
+            kiln_path,
+            knowledge_repo,
+            embedding_provider,
+            background_spawner,
+            parent_session_id,
+            delegation_config,
+            acp_config,
+            permission_handler,
+        } = params;
+
         let agent_name = agent_config
             .agent_name
             .clone()

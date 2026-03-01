@@ -4,7 +4,7 @@
 //! This is a simplified version of the CLI's agent factory since
 //! `SessionAgent` contains fully-resolved configuration.
 
-use crate::acp_handle::AcpAgentHandle;
+use crate::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
 use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
 use crate::protocol::SessionEventMessage;
 use crate::provider::adapter_mapping::{build_genai_client, build_model_iden};
@@ -29,6 +29,37 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::broadcast;
 use tracing::{debug, info, warn};
+
+/// Parameters for creating internal MCP tool definitions.
+pub struct CreateInternalMcpToolDefsParams<'a> {
+    pub workspace: &'a Path,
+    pub kiln_path: Option<&'a Path>,
+    pub mcp_gateway:
+        Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
+    pub server_names: &'a [String],
+    pub knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
+    pub embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+    pub delegation_context: Option<DelegationContext>,
+    pub mode: &'a str,
+    pub gateway_all_tools_override: Option<&'a [McpToolInfo]>,
+}
+
+/// Parameters for creating an agent from session configuration.
+pub struct CreateAgentFromSessionConfigParams<'a> {
+    pub agent_config: &'a SessionAgent,
+    pub lua: Option<&'a Lua>,
+    pub workspace: &'a Path,
+    pub kiln_path: Option<&'a Path>,
+    pub parent_session_id: Option<&'a str>,
+    pub background_spawner: Option<Arc<dyn BackgroundSpawner>>,
+    pub event_tx: &'a broadcast::Sender<SessionEventMessage>,
+    pub mcp_gateway:
+        Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
+    pub acp_permission_handler: Option<PermissionRequestHandler>,
+    pub acp_config: Option<&'a crucible_config::components::acp::AcpConfig>,
+    pub knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
+    pub embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+}
 
 /// Build a `DelegationContext` for the internal agent's MCP server.
 ///
@@ -65,16 +96,19 @@ fn build_internal_delegation_context(
 }
 
 async fn create_internal_mcp_tool_defs(
-    workspace: &Path,
-    kiln_path: Option<&Path>,
-    mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
-    server_names: &[String],
-    knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
-    embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
-    delegation_context: Option<DelegationContext>,
-    mode: &str,
-    gateway_all_tools_override: Option<&[McpToolInfo]>,
+    params: CreateInternalMcpToolDefsParams<'_>,
 ) -> Vec<LlmToolDefinition> {
+    let CreateInternalMcpToolDefsParams {
+        workspace,
+        kiln_path,
+        mcp_gateway,
+        server_names,
+        knowledge_repo,
+        embedding_provider,
+        delegation_context,
+        mode,
+        gateway_all_tools_override,
+    } = params;
     let mut tool_defs = Vec::new();
 
     if let Some(kiln_path) = kiln_path {
@@ -171,7 +205,7 @@ async fn create_internal_mcp_tool_names_for_tests(
     mode: &str,
     gateway_all_tools_override: Option<&[McpToolInfo]>,
 ) -> Vec<String> {
-    let tools = create_internal_mcp_tool_defs(
+    let tools = create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
         workspace,
         kiln_path,
         mcp_gateway,
@@ -181,7 +215,7 @@ async fn create_internal_mcp_tool_names_for_tests(
         delegation_context,
         mode,
         gateway_all_tools_override,
-    )
+    })
     .await;
     tools.into_iter().map(|t| t.function.name).collect()
 }
@@ -218,34 +252,37 @@ pub enum AgentFactoryError {
 ///
 /// A boxed `AgentHandle` ready for streaming messages.
 pub async fn create_agent_from_session_config(
-    agent_config: &SessionAgent,
-    lua: Option<&Lua>,
-    workspace: &Path,
-    kiln_path: Option<&Path>,
-    parent_session_id: Option<&str>,
-    background_spawner: Option<Arc<dyn BackgroundSpawner>>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
-    mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
-    acp_permission_handler: Option<PermissionRequestHandler>,
-    acp_config: Option<&crucible_config::components::acp::AcpConfig>,
-    knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
-    embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+    params: CreateAgentFromSessionConfigParams<'_>,
 ) -> Result<Box<dyn AgentHandle + Send + Sync>, AgentFactoryError> {
+    let CreateAgentFromSessionConfigParams {
+        agent_config,
+        lua,
+        workspace,
+        kiln_path,
+        parent_session_id,
+        background_spawner,
+        event_tx,
+        mcp_gateway,
+        acp_permission_handler,
+        acp_config,
+        knowledge_repo,
+        embedding_provider,
+    } = params;
     // TODO: Wire event_tx for real-time session event broadcasting (streaming progress, tool call notifications)
     let _ = event_tx;
     if agent_config.agent_type == "acp" {
-        let handle = AcpAgentHandle::new(
+        let handle = AcpAgentHandle::new(AcpAgentHandleParams {
             agent_config,
             workspace,
             kiln_path,
-            None,
-            None,
+            knowledge_repo: None,
+            embedding_provider: None,
             background_spawner,
             parent_session_id,
-            agent_config.delegation_config.as_ref(),
+            delegation_config: agent_config.delegation_config.as_ref(),
             acp_config,
-            acp_permission_handler,
-        )
+            permission_handler: acp_permission_handler,
+        })
         .await
         .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
         return Ok(Box::new(handle));
@@ -331,17 +368,17 @@ pub async fn create_agent_from_session_config(
         workspace,
         kiln_path,
     );
-    let tool_defs = create_internal_mcp_tool_defs(
+    let tool_defs = create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
         workspace,
         kiln_path,
-        mcp_gateway.clone(),
-        &agent_config.mcp_servers,
+        mcp_gateway: mcp_gateway.clone(),
+        server_names: &agent_config.mcp_servers,
         knowledge_repo,
         embedding_provider,
         delegation_context,
         mode,
-        None,
-    )
+        gateway_all_tools_override: None,
+    })
     .await;
 
     info!(
@@ -441,20 +478,20 @@ mod tests {
 
         let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
             let (event_tx, _) = broadcast::channel(16);
-            create_agent_from_session_config(
-                &config,
-                None,
-                Path::new("/tmp"),
-                None,
-                None,
-                None,
-                &event_tx,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
+            create_agent_from_session_config(CreateAgentFromSessionConfigParams {
+                agent_config: &config,
+                lua: None,
+                workspace: Path::new("/tmp"),
+                kiln_path: None,
+                parent_session_id: None,
+                background_spawner: None,
+                event_tx: &event_tx,
+                mcp_gateway: None,
+                acp_permission_handler: None,
+                acp_config: None,
+                knowledge_repo: None,
+                embedding_provider: None,
+            })
             .await
         });
 
@@ -528,20 +565,20 @@ mod tests {
     async fn test_create_ollama_agent() {
         let config = test_agent_config();
         let (event_tx, _) = broadcast::channel(16);
-        let result = create_agent_from_session_config(
-            &config,
-            None,
-            Path::new("/tmp"),
-            None,
-            None,
-            None,
-            &event_tx,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
+        let result = create_agent_from_session_config(CreateAgentFromSessionConfigParams {
+            agent_config: &config,
+            lua: None,
+            workspace: Path::new("/tmp"),
+            kiln_path: None,
+            parent_session_id: None,
+            background_spawner: None,
+            event_tx: &event_tx,
+            mcp_gateway: None,
+            acp_permission_handler: None,
+            acp_config: None,
+            knowledge_repo: None,
+            embedding_provider: None,
+        })
         .await;
         assert!(result.is_ok());
     }
@@ -694,20 +731,20 @@ mod tests {
         assert_eq!(config.agent_type, "internal");
 
         let (event_tx, _) = broadcast::channel(16);
-        let result = create_agent_from_session_config(
-            &config,
-            None,
-            Path::new("/tmp"),
-            None,
-            None,
-            None,
-            &event_tx,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
+        let result = create_agent_from_session_config(CreateAgentFromSessionConfigParams {
+            agent_config: &config,
+            lua: None,
+            workspace: Path::new("/tmp"),
+            kiln_path: None,
+            parent_session_id: None,
+            background_spawner: None,
+            event_tx: &event_tx,
+            mcp_gateway: None,
+            acp_permission_handler: None,
+            acp_config: None,
+            knowledge_repo: None,
+            embedding_provider: None,
+        })
         .await;
 
         // The internal branch should succeed in creating an agent handle.
@@ -723,20 +760,20 @@ mod tests {
         config.agent_type = "acp".to_string();
 
         let (event_tx, _) = broadcast::channel(16);
-        let result = create_agent_from_session_config(
-            &config,
-            None,
-            Path::new("/tmp"),
-            None,
-            None,
-            None,
-            &event_tx,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
+        let result = create_agent_from_session_config(CreateAgentFromSessionConfigParams {
+            agent_config: &config,
+            lua: None,
+            workspace: Path::new("/tmp"),
+            kiln_path: None,
+            parent_session_id: None,
+            background_spawner: None,
+            event_tx: &event_tx,
+            mcp_gateway: None,
+            acp_permission_handler: None,
+            acp_config: None,
+            knowledge_repo: None,
+            embedding_provider: None,
+        })
         .await;
 
         // The result will be an error because ACP agent creation requires
@@ -833,17 +870,17 @@ mod tests {
         let knowledge_repo: Arc<dyn KnowledgeRepository> = Arc::new(EmptyKnowledgeRepository);
         let embedding_provider: Arc<dyn EmbeddingProvider> = Arc::new(EmptyEmbeddingProvider);
 
-        let tools = create_internal_mcp_tool_defs(
-            Path::new("/tmp"),
-            Some(kiln_path),
-            None,
-            &[],
-            Some(knowledge_repo),
-            Some(embedding_provider),
-            None,
-            "auto",
-            None,
-        )
+        let tools = create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
+            workspace: Path::new("/tmp"),
+            kiln_path: Some(kiln_path),
+            mcp_gateway: None,
+            server_names: &[],
+            knowledge_repo: Some(knowledge_repo),
+            embedding_provider: Some(embedding_provider),
+            delegation_context: None,
+            mode: "auto",
+            gateway_all_tools_override: None,
+        })
         .await;
 
         let get_kiln_info_tool = tools

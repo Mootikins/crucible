@@ -225,7 +225,7 @@ pub(super) async fn handle_request(
 }
 
 /// Parameters for handling legacy RPC requests.
-struct LegacyRequestParams<'a> {
+pub struct LegacyRequestParams<'a> {
     req: Request,
     kiln_manager: &'a Arc<KilnManager>,
     session_manager: &'a Arc<SessionManager>,
