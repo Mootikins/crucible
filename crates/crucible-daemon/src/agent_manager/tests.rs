@@ -314,6 +314,7 @@ impl ReactorTestHarness {
             usage: None,
             subagent_events: None,
             precognition_notes_count: None,
+            precognition_notes: None,
         }]
     }
 
@@ -455,6 +456,7 @@ async fn reactor_pre_llm_cancel_aborts() {
         usage: None,
         subagent_events: None,
         precognition_notes_count: None,
+        precognition_notes: None,
     }]);
 
     h.send("hello").await;
@@ -552,6 +554,7 @@ async fn reactor_pre_tool_cancel_denies() {
             usage: None,
             subagent_events: None,
             precognition_notes_count: None,
+            precognition_notes: None,
         },
         ChatChunk {
             delta: "done".to_string(),
@@ -562,6 +565,7 @@ async fn reactor_pre_tool_cancel_denies() {
             usage: None,
             subagent_events: None,
             precognition_notes_count: None,
+            precognition_notes: None,
         },
     ]);
 
@@ -1103,6 +1107,7 @@ async fn send_message_emits_text_delta_events_in_order() {
                     usage: None,
                     subagent_events: None,
                     precognition_notes_count: None,
+                    precognition_notes: None,
                 },
                 ChatChunk {
                     delta: " world".to_string(),
@@ -1113,6 +1118,7 @@ async fn send_message_emits_text_delta_events_in_order() {
                     usage: None,
                     subagent_events: None,
                     precognition_notes_count: None,
+                    precognition_notes: None,
                 },
             ],
         }))),
@@ -1176,6 +1182,7 @@ async fn test_precognition_skipped_when_disabled() {
                 usage: None,
                 subagent_events: None,
                 precognition_notes_count: None,
+                precognition_notes: None,
             }],
         }))),
     );
@@ -1227,6 +1234,7 @@ async fn test_precognition_skipped_for_search_command() {
                 usage: None,
                 subagent_events: None,
                 precognition_notes_count: None,
+                precognition_notes: None,
             }],
         }))),
     );
@@ -1277,6 +1285,7 @@ async fn test_precognition_skipped_when_no_kiln() {
                 usage: None,
                 subagent_events: None,
                 precognition_notes_count: None,
+                precognition_notes: None,
             }],
         }))),
     );
@@ -1333,6 +1342,7 @@ async fn test_precognition_complete_event_emitted_when_enrichment_runs() {
                 usage: None,
                 subagent_events: None,
                 precognition_notes_count: None,
+                precognition_notes: None,
             }],
         }))),
     );
@@ -1388,6 +1398,7 @@ async fn send_message_emits_thinking_before_text_delta() {
                     usage: None,
                     subagent_events: None,
                     precognition_notes_count: None,
+                    precognition_notes: None,
                 },
                 ChatChunk {
                     delta: "response".to_string(),
@@ -1398,6 +1409,7 @@ async fn send_message_emits_thinking_before_text_delta() {
                     usage: None,
                     subagent_events: None,
                     precognition_notes_count: None,
+                    precognition_notes: None,
                 },
             ],
         }))),
@@ -1470,6 +1482,7 @@ async fn send_message_emits_tool_call_and_tool_result_events() {
                     usage: None,
                     subagent_events: None,
                     precognition_notes_count: None,
+                    precognition_notes: None,
                 },
                 ChatChunk {
                     delta: String::new(),
@@ -1485,6 +1498,7 @@ async fn send_message_emits_tool_call_and_tool_result_events() {
                     usage: None,
                     subagent_events: None,
                     precognition_notes_count: None,
+                    precognition_notes: None,
                 },
                 ChatChunk {
                     delta: "Done.".to_string(),
@@ -1495,6 +1509,7 @@ async fn send_message_emits_tool_call_and_tool_result_events() {
                     usage: None,
                     subagent_events: None,
                     precognition_notes_count: None,
+                    precognition_notes: None,
                 },
             ],
         }))),
@@ -1557,6 +1572,7 @@ async fn send_message_emits_message_complete_for_empty_done_chunk() {
                 usage: None,
                 subagent_events: None,
                 precognition_notes_count: None,
+                precognition_notes: None,
             }],
         }))),
     );
