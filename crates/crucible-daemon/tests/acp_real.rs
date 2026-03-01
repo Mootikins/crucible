@@ -11,7 +11,7 @@
 use crucible_config::{BackendType, DelegationConfig};
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
-use crucible_daemon::acp_handle::AcpAgentHandle;
+use crucible_daemon::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
 use crucible_daemon::background_manager::{BackgroundJobManager, SubagentContext, SubagentFactory};
 use crucible_daemon::protocol::SessionEventMessage;
 use futures::StreamExt;
@@ -117,18 +117,18 @@ fn make_acp_subagent_factory() -> SubagentFactory {
         let agent_config = agent_config.clone();
         let workspace = workspace.to_path_buf();
         Box::pin(async move {
-            AcpAgentHandle::new(
-                &agent_config,
-                &workspace,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
+            AcpAgentHandle::new(AcpAgentHandleParams {
+                agent_config: &agent_config,
+                workspace: &workspace,
+                kiln_path: None,
+                knowledge_repo: None,
+                embedding_provider: None,
+                background_spawner: None,
+                parent_session_id: None,
+                delegation_config: None,
+                acp_config: None,
+                permission_handler: None,
+            })
             .await
             .map(|handle| Box::new(handle) as Box<dyn AgentHandle + Send + Sync>)
             .map_err(|e| e.to_string())
@@ -156,18 +156,18 @@ async fn real_agent_handshake_succeeds() {
 
     let handle = timeout(
         Duration::from_secs(60),
-        AcpAgentHandle::new(
-            &agent_config,
-            workspace.path(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        ),
+        AcpAgentHandle::new(AcpAgentHandleParams {
+            agent_config: &agent_config,
+            workspace: workspace.path(),
+            kiln_path: None,
+            knowledge_repo: None,
+            embedding_provider: None,
+            background_spawner: None,
+            parent_session_id: None,
+            delegation_config: None,
+            acp_config: None,
+            permission_handler: None,
+        }),
     )
     .await
     .expect("ACP handshake timed out (60s)")
@@ -196,18 +196,18 @@ async fn real_agent_single_message() {
 
     let mut handle = timeout(
         Duration::from_secs(60),
-        AcpAgentHandle::new(
-            &agent_config,
-            workspace.path(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        ),
+        AcpAgentHandle::new(AcpAgentHandleParams {
+            agent_config: &agent_config,
+            workspace: workspace.path(),
+            kiln_path: None,
+            knowledge_repo: None,
+            embedding_provider: None,
+            background_spawner: None,
+            parent_session_id: None,
+            delegation_config: None,
+            acp_config: None,
+            permission_handler: None,
+        }),
     )
     .await
     .expect("ACP handshake timed out (60s)")

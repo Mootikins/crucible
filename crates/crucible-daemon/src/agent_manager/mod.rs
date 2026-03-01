@@ -273,6 +273,7 @@ struct StreamContext {
     agent_stream_config: AgentStreamConfig,
 }
 
+#[allow(dead_code)]
 #[derive(Clone)]
 struct AgentStreamConfig {
     model: String,
