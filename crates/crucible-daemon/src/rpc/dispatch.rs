@@ -247,18 +247,16 @@ mod tests {
         let kiln_manager = Arc::new(KilnManager::new());
         let session_manager = Arc::new(SessionManager::new());
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
-        let agent_manager = Arc::new(AgentManager::new(
-            AgentManagerParams {
-                kiln_manager: kiln_manager.clone(),
-                session_manager: session_manager.clone(),
-                background_manager,
-                mcp_gateway: None,
-                llm_config: None,
-                acp_config: None,
-                permission_config: None,
-                plugin_loader: None,
-            },
-        ));
+        let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
+            kiln_manager: kiln_manager.clone(),
+            session_manager: session_manager.clone(),
+            background_manager,
+            mcp_gateway: None,
+            llm_config: None,
+            acp_config: None,
+            permission_config: None,
+            plugin_loader: None,
+        }));
 
         RpcContext::new(
             kiln_manager,

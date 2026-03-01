@@ -10,8 +10,8 @@
 //! - Socket doesn't exist -> daemon not running
 
 mod agent;
-mod error_ext;
 mod client;
+mod error_ext;
 pub mod lifecycle;
 mod storage;
 
@@ -24,7 +24,7 @@ pub use client::{
     LuaRegisterHooksResponse, LuaRunPluginTestsRequest, LuaRunPluginTestsResponse,
     LuaShutdownSessionRequest, LuaShutdownSessionResponse, SessionEvent, VersionCheck,
 };
-pub use storage::{DaemonNoteStore, DaemonStorageClient};
 pub use error_ext::ChatResultExt;
+pub use storage::{DaemonNoteStore, DaemonStorageClient};
 
 pub use crucible_core::protocol::socket_path;

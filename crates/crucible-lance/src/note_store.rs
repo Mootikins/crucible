@@ -32,8 +32,7 @@ use tracing::{debug, warn};
 use crucible_core::events::{NoteChangeType, SessionEvent};
 use crucible_core::parser::BlockHash;
 use crucible_core::storage::{
-    Filter, NoteRecord, NoteStore, Op, SearchResult, StorageError, StorageResult,
-    StorageResultExt,
+    Filter, NoteRecord, NoteStore, Op, SearchResult, StorageError, StorageResult, StorageResultExt,
 };
 
 // ============================================================================
@@ -198,7 +197,7 @@ fn note_to_batch(
             let field = Arc::new(Field::new("item", DataType::Float32, true));
             Arc::new(
                 FixedSizeListArray::try_new(field, embedding_dim as i32, Arc::new(values), None)
-                    .storage_backend()?
+                    .storage_backend()?,
             )
         }
         None => {
@@ -500,8 +499,7 @@ impl LanceNoteStore {
                     .create_empty_table(TABLE_NAME, schema)
                     .execute()
                     .await
-                    .storage_backend()?
-;
+                    .storage_backend()?;
                 *table_guard = Some(table.clone());
                 Ok(table)
             }
@@ -743,9 +741,7 @@ impl NoteStore for LanceNoteStore {
         };
 
         // Build the vector search query
-        let query = table
-            .vector_search(embedding.to_vec())
-            .storage_backend()?;
+        let query = table.vector_search(embedding.to_vec()).storage_backend()?;
 
         // Apply filter if provided
         let query = if let Some(ref f) = filter {

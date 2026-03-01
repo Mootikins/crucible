@@ -11,7 +11,9 @@ use crucible_core::traits::chat::{
 use crucible_core::traits::ChatResult;
 use crucible_daemon::background_manager::BackgroundJobManager;
 use crucible_daemon::protocol::SessionEventMessage;
-use crucible_daemon::{AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager};
+use crucible_daemon::{
+    AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager,
+};
 use futures::stream::{self, BoxStream};
 use futures::StreamExt;
 use std::sync::Arc;
@@ -219,18 +221,16 @@ impl TestHarness {
         let (event_tx, event_rx) = broadcast::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
 
-        let agent_manager = AgentManager::new(
-            AgentManagerParams {
-                kiln_manager: Arc::new(KilnManager::new()),
-                session_manager: session_manager.clone(),
-                background_manager,
-                mcp_gateway: None,
-                llm_config: None,
-                acp_config: None,
-                permission_config: None,
-                plugin_loader: None,
-            },
-        );
+        let agent_manager = AgentManager::new(AgentManagerParams {
+            kiln_manager: Arc::new(KilnManager::new()),
+            session_manager: session_manager.clone(),
+            background_manager,
+            mcp_gateway: None,
+            llm_config: None,
+            acp_config: None,
+            permission_config: None,
+            plugin_loader: None,
+        });
 
         let session = session_manager
             .create_session(

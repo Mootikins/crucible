@@ -238,17 +238,24 @@ struct LegacyRequestParams<'a> {
     mcp_server_manager: &'a Arc<McpServerManager>,
 }
 
-
-pub(super) async fn handle_legacy_request(
-    params: LegacyRequestParams<'_>,
-) -> Response {
+pub(super) async fn handle_legacy_request(params: LegacyRequestParams<'_>) -> Response {
     tracing::debug!("Legacy handler for method={:?}", params.req.method);
 
     match params.req.method.as_str() {
-        "kiln.open" => handle_kiln_open(params.req, params.kiln_manager, params.plugin_loader, params.event_tx).await,
+        "kiln.open" => {
+            handle_kiln_open(
+                params.req,
+                params.kiln_manager,
+                params.plugin_loader,
+                params.event_tx,
+            )
+            .await
+        }
         "kiln.close" => handle_kiln_close(params.req, params.kiln_manager).await,
         "kiln.list" => handle_kiln_list(params.req, params.kiln_manager).await,
-        "kiln.set_classification" => handle_kiln_set_classification(params.req, params.kiln_manager).await,
+        "kiln.set_classification" => {
+            handle_kiln_set_classification(params.req, params.kiln_manager).await
+        }
         "search_vectors" => handle_search_vectors(params.req, params.kiln_manager).await,
         "list_notes" => handle_list_notes(params.req, params.kiln_manager).await,
         "get_note_by_name" => handle_get_note_by_name(params.req, params.kiln_manager).await,
@@ -258,9 +265,17 @@ pub(super) async fn handle_legacy_request(
         "note.list" => handle_note_list(params.req, params.kiln_manager).await,
         "models.list" => handle_models_list(params.req, params.agent_manager).await,
         "process_file" => handle_process_file(params.req, params.kiln_manager).await,
-        "process_batch" => handle_process_batch(params.req, params.kiln_manager, params.event_tx).await,
+        "process_batch" => {
+            handle_process_batch(params.req, params.kiln_manager, params.event_tx).await
+        }
         "session.create" => {
-            handle_session_create(params.req, params.session_manager, params.project_manager, params.llm_config).await
+            handle_session_create(
+                params.req,
+                params.session_manager,
+                params.project_manager,
+                params.llm_config,
+            )
+            .await
         }
         "session.list" => handle_session_list(params.req, params.session_manager).await,
         "session.get" => handle_session_get(params.req, params.session_manager).await,
@@ -269,18 +284,28 @@ pub(super) async fn handle_legacy_request(
         "session.resume_from_storage" => {
             handle_session_resume_from_storage(params.req, params.session_manager).await
         }
-        "session.end" => handle_session_end(params.req, params.session_manager, params.agent_manager).await,
+        "session.end" => {
+            handle_session_end(params.req, params.session_manager, params.agent_manager).await
+        }
         "session.compact" => handle_session_compact(params.req, params.session_manager).await,
-        "session.configure_agent" => handle_session_configure_agent(params.req, params.agent_manager).await,
-        "session.send_message" => handle_session_send_message(params.req, params.agent_manager, params.event_tx).await,
+        "session.configure_agent" => {
+            handle_session_configure_agent(params.req, params.agent_manager).await
+        }
+        "session.send_message" => {
+            handle_session_send_message(params.req, params.agent_manager, params.event_tx).await
+        }
         "session.cancel" => handle_session_cancel(params.req, params.agent_manager).await,
         "session.interaction_respond" => {
-            handle_session_interaction_respond(params.req, params.agent_manager, params.event_tx).await
+            handle_session_interaction_respond(params.req, params.agent_manager, params.event_tx)
+                .await
         }
-        "session.switch_model" => handle_session_switch_model(params.req, params.agent_manager, params.event_tx).await,
+        "session.switch_model" => {
+            handle_session_switch_model(params.req, params.agent_manager, params.event_tx).await
+        }
         "session.list_models" => handle_session_list_models(params.req, params.agent_manager).await,
         "session.set_thinking_budget" => {
-            handle_session_set_thinking_budget(params.req, params.agent_manager, params.event_tx).await
+            handle_session_set_thinking_budget(params.req, params.agent_manager, params.event_tx)
+                .await
         }
         "session.get_thinking_budget" => {
             handle_session_get_thinking_budget(params.req, params.agent_manager).await
@@ -288,24 +313,37 @@ pub(super) async fn handle_legacy_request(
         "session.set_precognition" => {
             handle_session_set_precognition(params.req, params.agent_manager, params.event_tx).await
         }
-        "session.get_precognition" => handle_session_get_precognition(params.req, params.agent_manager).await,
+        "session.get_precognition" => {
+            handle_session_get_precognition(params.req, params.agent_manager).await
+        }
         "session.add_notification" => {
             handle_session_add_notification(params.req, params.agent_manager, params.event_tx).await
         }
-        "session.list_notifications" => handle_session_list_notifications(params.req, params.agent_manager).await,
+        "session.list_notifications" => {
+            handle_session_list_notifications(params.req, params.agent_manager).await
+        }
         "session.dismiss_notification" => {
-            handle_session_dismiss_notification(params.req, params.agent_manager, params.event_tx).await
+            handle_session_dismiss_notification(params.req, params.agent_manager, params.event_tx)
+                .await
         }
         "session.set_temperature" => {
             handle_session_set_temperature(params.req, params.agent_manager, params.event_tx).await
         }
-        "session.get_temperature" => handle_session_get_temperature(params.req, params.agent_manager).await,
+        "session.get_temperature" => {
+            handle_session_get_temperature(params.req, params.agent_manager).await
+        }
         "session.set_max_tokens" => {
             handle_session_set_max_tokens(params.req, params.agent_manager, params.event_tx).await
         }
-        "session.get_max_tokens" => handle_session_get_max_tokens(params.req, params.agent_manager).await,
-        "session.test_interaction" => handle_session_test_interaction(params.req, params.event_tx).await,
-        "session.replay" => handle_session_replay(params.req, params.session_manager, params.event_tx).await,
+        "session.get_max_tokens" => {
+            handle_session_get_max_tokens(params.req, params.agent_manager).await
+        }
+        "session.test_interaction" => {
+            handle_session_test_interaction(params.req, params.event_tx).await
+        }
+        "session.replay" => {
+            handle_session_replay(params.req, params.session_manager, params.event_tx).await
+        }
         "plugin.reload" => handle_plugin_reload(params.req, params.plugin_loader).await,
         "plugin.list" => handle_plugin_list(params.req, params.plugin_loader).await,
         "project.register" => handle_project_register(params.req, params.project_manager).await,
@@ -326,20 +364,30 @@ pub(super) async fn handle_legacy_request(
         "lua.init_session" => handle_lua_init_session(params.req, params.lua_sessions).await,
         "lua.register_hooks" => handle_lua_register_hooks(params.req, params.lua_sessions).await,
         "lua.execute_hook" => handle_lua_execute_hook(params.req, params.lua_sessions).await,
-        "lua.shutdown_session" => handle_lua_shutdown_session(params.req, params.lua_sessions).await,
+        "lua.shutdown_session" => {
+            handle_lua_shutdown_session(params.req, params.lua_sessions).await
+        }
         "lua.discover_plugins" => handle_lua_discover_plugins(params.req).await,
         "lua.plugin_health" => handle_lua_plugin_health(params.req).await,
         "lua.generate_stubs" => handle_lua_generate_stubs(params.req).await,
         "lua.run_plugin_tests" => handle_lua_run_plugin_tests(params.req).await,
-        "lua.register_commands" => handle_lua_register_commands(params.req, params.lua_sessions).await,
-        "mcp.start" => handle_mcp_start(params.req, params.kiln_manager, params.mcp_server_manager).await,
+        "lua.register_commands" => {
+            handle_lua_register_commands(params.req, params.lua_sessions).await
+        }
+        "mcp.start" => {
+            handle_mcp_start(params.req, params.kiln_manager, params.mcp_server_manager).await
+        }
         "mcp.stop" => handle_mcp_stop(params.req, params.mcp_server_manager).await,
         "mcp.status" => handle_mcp_status(params.req, params.mcp_server_manager).await,
         "skills.list" => handle_skills_list(params.req).await,
         "skills.get" => handle_skills_get(params.req).await,
         "skills.search" => handle_skills_search(params.req).await,
-        "agents.list_profiles" => handle_agents_list_profiles(params.req, params.agent_manager).await,
-        "agents.resolve_profile" => handle_agents_resolve_profile(params.req, params.agent_manager).await,
+        "agents.list_profiles" => {
+            handle_agents_list_profiles(params.req, params.agent_manager).await
+        }
+        "agents.resolve_profile" => {
+            handle_agents_resolve_profile(params.req, params.agent_manager).await
+        }
         _ => {
             tracing::warn!("Unknown RPC method: {:?}", params.req.method);
             Response::error(

@@ -393,7 +393,8 @@ pub struct AgentManagerParams {
     pub kiln_manager: Arc<KilnManager>,
     pub session_manager: Arc<SessionManager>,
     pub background_manager: Arc<BackgroundJobManager>,
-    pub mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
+    pub mcp_gateway:
+        Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
     pub llm_config: Option<crucible_config::LlmConfig>,
     pub acp_config: Option<AcpConfig>,
     pub permission_config: Option<PermissionConfig>,

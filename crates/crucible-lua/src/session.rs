@@ -143,10 +143,7 @@ impl LuaSession {
         let event = SessionEvent::SessionStarted {
             config: SessionEventConfig::from(self.config.as_ref()),
         };
-        self.event_tx
-            .send(event)
-            .await
-            .lua_runtime()?;
+        self.event_tx.send(event).await.lua_runtime()?;
 
         *state = SessionState::Active;
         debug!("Session {} started", self.config.session_id);
@@ -362,10 +359,7 @@ impl LuaSessionHandle {
 
     /// Send any session event
     pub async fn send(&self, event: SessionEvent) -> Result<(), LuaError> {
-        self.event_tx
-            .send(event)
-            .await
-            .lua_runtime()
+        self.event_tx.send(event).await.lua_runtime()
     }
 
     /// Get the session ID

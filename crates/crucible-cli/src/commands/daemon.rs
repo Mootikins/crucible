@@ -53,19 +53,17 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
         // Run server directly in this process
         info!("Starting daemon in foreground");
         let config = CliConfig::load(config_path.clone(), None, None)?;
-        let server = Server::bind_with_plugin_config(
-            BindWithPluginConfigParams {
-                path: sock.clone(),
-                mcp_config: None,
-                plugin_config: std::collections::HashMap::new(),
-                plugin_watch: false,
-                llm_config: Some(config.llm.clone()),
-                enrichment_config: config.enrichment.as_ref().map(|e| e.provider.clone()),
-                acp_config: Some(config.acp.clone()),
-                permission_config: None,
-                web_config: None,
-            },
-        )
+        let server = Server::bind_with_plugin_config(BindWithPluginConfigParams {
+            path: sock.clone(),
+            mcp_config: None,
+            plugin_config: std::collections::HashMap::new(),
+            plugin_watch: false,
+            llm_config: Some(config.llm.clone()),
+            enrichment_config: config.enrichment.as_ref().map(|e| e.provider.clone()),
+            acp_config: Some(config.acp.clone()),
+            permission_config: None,
+            web_config: None,
+        })
         .await?;
 
         println!("Daemon listening on {:?}", sock);

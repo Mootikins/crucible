@@ -101,4 +101,3 @@ pub enum ChatAppMsg {
         enriched: String,
     },
 }
-

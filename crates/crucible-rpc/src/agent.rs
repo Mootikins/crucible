@@ -17,8 +17,8 @@ use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
-use crate::{DaemonClient, SessionEvent};
 use crate::ChatResultExt;
+use crate::{DaemonClient, SessionEvent};
 
 /// Agent handle that routes messages through the daemon
 ///

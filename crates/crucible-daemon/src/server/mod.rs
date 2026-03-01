@@ -103,7 +103,6 @@ pub struct BindWithPluginConfigParams {
     pub web_config: Option<crucible_config::WebConfig>,
 }
 
-
 impl Server {
     /// Bind to a Unix socket path
     #[allow(dead_code)]
@@ -111,26 +110,22 @@ impl Server {
         path: &Path,
         mcp_config: Option<&crucible_config::McpConfig>,
     ) -> Result<Self> {
-        Self::bind_with_plugin_config(
-            BindWithPluginConfigParams {
-                path: path.to_path_buf(),
-                mcp_config: mcp_config.cloned(),
-                plugin_config: std::collections::HashMap::new(),
-                plugin_watch: false,
-                llm_config: None,
-                enrichment_config: None,
-                acp_config: None,
-                permission_config: None,
-                web_config: None,
-            },
-        )
+        Self::bind_with_plugin_config(BindWithPluginConfigParams {
+            path: path.to_path_buf(),
+            mcp_config: mcp_config.cloned(),
+            plugin_config: std::collections::HashMap::new(),
+            plugin_watch: false,
+            llm_config: None,
+            enrichment_config: None,
+            acp_config: None,
+            permission_config: None,
+            web_config: None,
+        })
         .await
     }
 
     /// Bind to a Unix socket path with plugin configuration
-    pub async fn bind_with_plugin_config(
-        params: BindWithPluginConfigParams,
-    ) -> Result<Self> {
+    pub async fn bind_with_plugin_config(params: BindWithPluginConfigParams) -> Result<Self> {
         // Remove stale socket
         if params.path.exists() {
             std::fs::remove_file(&params.path)?;
@@ -166,16 +161,18 @@ impl Server {
             None
         };
 
-        let plugin_loader = Arc::new(Mutex::new(match DaemonPluginLoader::new(params.plugin_config.clone()) {
-            Ok(loader) => {
-                info!("Daemon plugin loader initialized");
-                Some(loader)
-            }
-            Err(e) => {
-                warn!("Failed to initialize daemon plugin loader: {}", e);
-                None
-            }
-        }));
+        let plugin_loader = Arc::new(Mutex::new(
+            match DaemonPluginLoader::new(params.plugin_config.clone()) {
+                Ok(loader) => {
+                    info!("Daemon plugin loader initialized");
+                    Some(loader)
+                }
+                Err(e) => {
+                    warn!("Failed to initialize daemon plugin loader: {}", e);
+                    None
+                }
+            },
+        ));
 
         let kiln_manager = Arc::new(KilnManager::with_event_tx(
             event_tx.clone(),
@@ -183,18 +180,16 @@ impl Server {
         ));
         let session_manager = Arc::new(SessionManager::new());
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
-        let agent_manager = Arc::new(AgentManager::new(
-            AgentManagerParams {
-                kiln_manager: kiln_manager.clone(),
-                session_manager: session_manager.clone(),
-                background_manager: background_manager.clone(),
-                mcp_gateway,
-                llm_config: params.llm_config.clone(),
-                acp_config: params.acp_config.clone(),
-                permission_config: params.permission_config.clone(),
-                plugin_loader: Some(plugin_loader.clone()),
-            },
-        ));
+        let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
+            kiln_manager: kiln_manager.clone(),
+            session_manager: session_manager.clone(),
+            background_manager: background_manager.clone(),
+            mcp_gateway,
+            llm_config: params.llm_config.clone(),
+            acp_config: params.acp_config.clone(),
+            permission_config: params.permission_config.clone(),
+            plugin_loader: Some(plugin_loader.clone()),
+        }));
         let subscription_manager = Arc::new(SubscriptionManager::new());
         let project_manager = Arc::new(ProjectManager::new(
             crucible_config::crucible_home().join("projects.json"),

@@ -71,7 +71,7 @@ mod viewport;
 mod viewport_cache;
 
 pub use agent_selection::AgentSelection;
-pub use app::{ViewContext, App, Action};
+pub use app::{Action, App, ViewContext};
 pub use chat_app::{
     ChatAppMsg, ChatItem, ChatMode, McpServerDisplay, OilChatApp, PluginStatusEntry, Role,
 };
@@ -90,13 +90,13 @@ pub use overlay::{composite_overlays, Overlay, OverlayAnchor};
 pub use planning::{FramePlan, FramePlanner, FrameSnapshot, FrameTrace};
 pub use render::*;
 pub use render_state::RenderState;
-pub use runner::{OilRunner, run_sync};
+pub use runner::{run_sync, OilRunner};
 pub use runtime::TestRuntime;
 pub use style::*;
 pub use terminal::Terminal;
 pub use test_harness::AppHarness;
 pub use theme::ThemeTokens;
-pub use viewport::{clamp_lines_top, clamp_lines_bottom, pad_lines_to, ensure_min_height};
+pub use viewport::{clamp_lines_bottom, clamp_lines_top, ensure_min_height, pad_lines_to};
 pub use viewport_cache::CachedMessage;
 
 #[cfg(test)]

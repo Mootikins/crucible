@@ -50,11 +50,7 @@ async fn unregister_project(
 async fn list_projects(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<crucible_core::Project>>, WebError> {
-    let projects = state
-        .daemon
-        .project_list()
-        .await
-        .daemon_err()?;
+    let projects = state.daemon.project_list().await.daemon_err()?;
 
     Ok(Json(projects))
 }

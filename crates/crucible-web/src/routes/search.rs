@@ -23,11 +23,7 @@ pub fn search_routes() -> Router<AppState> {
 }
 
 async fn list_kilns(State(state): State<AppState>) -> Result<Json<serde_json::Value>, WebError> {
-    let kilns = state
-        .daemon
-        .kiln_list()
-        .await
-        .daemon_err()?;
+    let kilns = state.daemon.kiln_list().await.daemon_err()?;
 
     Ok(Json(serde_json::json!({ "kilns": kilns })))
 }
@@ -126,11 +122,7 @@ async fn put_note(
     }
 
     // Security: Validate kiln is registered/open
-    let kilns = state
-        .daemon
-        .kiln_list()
-        .await
-        .daemon_err()?;
+    let kilns = state.daemon.kiln_list().await.daemon_err()?;
 
     let canonical_kiln = req
         .kiln

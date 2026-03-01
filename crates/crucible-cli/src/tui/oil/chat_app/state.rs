@@ -115,7 +115,6 @@ pub enum AutocompleteKind {
     },
 }
 
-
 /// Message queue state — deferred messages and message counter
 #[derive(Default)]
 pub(crate) struct MessageQueueState {
@@ -126,4 +125,3 @@ pub(crate) struct MessageQueueState {
     /// Timestamp of the last Ctrl-C press (for double-tap quit)
     pub last_ctrl_c: Option<std::time::Instant>,
 }
-
