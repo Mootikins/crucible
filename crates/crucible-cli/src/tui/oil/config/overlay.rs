@@ -14,46 +14,25 @@ use super::stack::{ConfigMod, ConfigStack, ModSource};
 use super::value::ConfigValue;
 
 /// Errors that can occur when setting config values.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum SetError {
     /// Option was not found in shortcuts or base config.
+    #[error("Unknown option: {0}")]
     NotFound(String),
     /// Attempted boolean operation on non-boolean value.
+    #[error("Option '{0}' is not a boolean")]
     NotBoolean(String),
     /// Value type doesn't match expected type.
+    #[error("Type mismatch for '{key}': expected {expected}, got {actual}")]
     TypeMismatch {
         key: String,
         expected: &'static str,
         actual: &'static str,
     },
     /// Invalid value for the option.
+    #[error("Invalid value for '{key}': {reason}")]
     InvalidValue { key: String, reason: String },
 }
-
-impl std::fmt::Display for SetError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SetError::NotFound(key) => write!(f, "Unknown option: {}", key),
-            SetError::NotBoolean(key) => write!(f, "Option '{}' is not a boolean", key),
-            SetError::TypeMismatch {
-                key,
-                expected,
-                actual,
-            } => {
-                write!(
-                    f,
-                    "Type mismatch for '{}': expected {}, got {}",
-                    key, expected, actual
-                )
-            }
-            SetError::InvalidValue { key, reason } => {
-                write!(f, "Invalid value for '{}': {}", key, reason)
-            }
-        }
-    }
-}
-
-impl std::error::Error for SetError {}
 
 /// Runtime configuration overlay.
 ///
