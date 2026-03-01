@@ -3,18 +3,13 @@
 //! Provides a client for communicating with the Crucible daemon over Unix sockets.
 //! Supports both request/response RPC calls and asynchronous event streaming.
 
-use anyhow::Result;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::unix::OwnedWriteHalf;
-use tokio::net::UnixStream;
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{oneshot, Mutex};
 use tokio::task::JoinHandle;
-use tracing::{debug, error, trace, warn};
 
 /// Session event received from daemon
 #[derive(Debug, Clone)]
