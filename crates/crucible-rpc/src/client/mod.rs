@@ -16,6 +16,14 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, trace, warn};
 
+// Submodules for logical organization of RPC methods
+pub mod types;
+pub mod session;
+pub mod storage;
+pub mod lua;
+pub mod agent;
+pub mod subscription;
+
 /// Session event received from daemon
 #[derive(Debug, Clone)]
 pub struct SessionEvent {
