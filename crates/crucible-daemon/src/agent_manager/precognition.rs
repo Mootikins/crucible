@@ -119,43 +119,36 @@ impl AgentManager {
             return original_content.to_string();
         }
 
-        let context = results
-            .iter()
-            .enumerate()
-            .map(|(i, result)| {
-                let title = result
-                    .document_id
-                    .0
-                    .split('/')
-                    .next_back()
-                    .unwrap_or(&result.document_id.0)
-                    .trim_end_matches(".md");
+        let mut context = format!("<system>\nFound {} relevant notes:\n", results.len());
 
-                let kiln_label = result
-                    .kiln_path
-                    .as_ref()
-                    .filter(|path| path != &primary_kiln)
-                    .and_then(|path| path.file_name())
-                    .and_then(|name| name.to_str())
-                    .map(|name| format!(" [from: {name}]"))
-                    .unwrap_or_default();
+        for result in results {
+            let title = result
+                .document_id
+                .0
+                .split('/')
+                .next_back()
+                .unwrap_or(&result.document_id.0)
+                .trim_end_matches(".md");
 
-                format!(
-                    "## Context #{}: {}{} (similarity: {:.2})\n\n{}\n",
-                    i + 1,
-                    title,
-                    kiln_label,
-                    result.score,
-                    result.snippet.clone().unwrap_or_default()
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
+            let kiln_label = result
+                .kiln_path
+                .as_ref()
+                .filter(|path| path != &primary_kiln)
+                .and_then(|path| path.file_name())
+                .and_then(|name| name.to_str())
+                .map(|name| format!(" [from: {name}]"))
+                .unwrap_or_default();
 
-        format!(
-            "# Context from Knowledge Base\n\n{}\n\n---\n\n# User Query\n\n{}",
-            context, original_content
-        )
+            context.push_str(&format!(
+                "\n## {}{} (similarity: {:.2})\n\n{}\n",
+                title,
+                kiln_label,
+                result.score,
+                result.snippet.clone().unwrap_or_default()
+            ));
+        }
+
+        format!("{}\n</system>\n\n{}", context, original_content)
     }
 
     /// Returns the original content unchanged on any failure.
@@ -236,5 +229,176 @@ impl AgentManager {
             0,
         );
         enriched_prompt
+    }
+}
+
+#[cfg(test)]
+mod format_precognition_context_tests {
+    use super::*;
+    use crucible_core::types::database::DocumentId;
+    use std::path::PathBuf;
+
+    fn make_result(
+        doc_id: &str,
+        score: f64,
+        snippet: Option<&str>,
+        kiln: Option<&str>,
+    ) -> crucible_core::SearchResult {
+        crucible_core::SearchResult {
+            document_id: DocumentId(doc_id.to_string()),
+            score,
+            highlights: None,
+            snippet: snippet.map(|s| s.to_string()),
+            kiln_path: kiln.map(PathBuf::from),
+        }
+    }
+
+    #[test]
+    fn format_precognition_context_empty_results_returns_original() {
+        let result = AgentManager::format_precognition_context(
+            "What is Rust?",
+            &[],
+            std::path::Path::new("/home/user/notes"),
+        );
+        assert_eq!(result, "What is Rust?");
+    }
+
+    #[test]
+    fn format_precognition_context_single_result_has_system_tags() {
+        let results = vec![make_result(
+            "notes/Rust.md",
+            0.85,
+            Some("Rust is a systems programming language."),
+            Some("/home/user/notes"),
+        )];
+
+        let output = AgentManager::format_precognition_context(
+            "What is Rust?",
+            &results,
+            std::path::Path::new("/home/user/notes"),
+        );
+
+        assert!(
+            output.starts_with("<system>\n"),
+            "Should start with <system> tag"
+        );
+        assert!(
+            output.contains("</system>"),
+            "Should contain closing </system> tag"
+        );
+        assert!(
+            output.contains("Found 1 relevant notes:"),
+            "Should state result count"
+        );
+        assert!(
+            output.contains("## Rust"),
+            "Should contain note title without .md"
+        );
+        assert!(
+            output.contains("(similarity: 0.85)"),
+            "Should contain similarity score"
+        );
+        assert!(
+            output.contains("Rust is a systems programming language."),
+            "Should contain snippet"
+        );
+        assert!(
+            output.ends_with("What is Rust?"),
+            "Original content should follow after </system>"
+        );
+    }
+
+    #[test]
+    fn format_precognition_context_multiple_results() {
+        let results = vec![
+            make_result(
+                "notes/Rust.md",
+                0.92,
+                Some("Rust is fast."),
+                Some("/home/user/notes"),
+            ),
+            make_result(
+                "notes/Go.md",
+                0.78,
+                Some("Go is simple."),
+                Some("/home/user/notes"),
+            ),
+        ];
+
+        let output = AgentManager::format_precognition_context(
+            "Compare languages",
+            &results,
+            std::path::Path::new("/home/user/notes"),
+        );
+
+        assert!(output.contains("Found 2 relevant notes:"));
+        assert!(output.contains("## Rust"));
+        assert!(output.contains("## Go"));
+        assert!(output.contains("Rust is fast."));
+        assert!(output.contains("Go is simple."));
+        assert!(output.ends_with("Compare languages"));
+    }
+
+    #[test]
+    fn format_precognition_context_kiln_label_for_non_primary() {
+        let results = vec![make_result(
+            "notes/External.md",
+            0.70,
+            Some("External content."),
+            Some("/other/kiln"),
+        )];
+
+        let output = AgentManager::format_precognition_context(
+            "query",
+            &results,
+            std::path::Path::new("/home/user/notes"),
+        );
+
+        assert!(
+            output.contains("[from: kiln]"),
+            "Non-primary kiln should have label"
+        );
+    }
+
+    #[test]
+    fn format_precognition_context_no_kiln_label_for_primary() {
+        let results = vec![make_result(
+            "notes/Local.md",
+            0.90,
+            Some("Local content."),
+            Some("/home/user/notes"),
+        )];
+
+        let output = AgentManager::format_precognition_context(
+            "query",
+            &results,
+            std::path::Path::new("/home/user/notes"),
+        );
+
+        assert!(
+            !output.contains("[from:"),
+            "Primary kiln should not have label"
+        );
+    }
+
+    #[test]
+    fn format_precognition_context_missing_snippet_handled() {
+        let results = vec![make_result(
+            "notes/NoSnippet.md",
+            0.60,
+            None,
+            Some("/home/user/notes"),
+        )];
+
+        let output = AgentManager::format_precognition_context(
+            "query",
+            &results,
+            std::path::Path::new("/home/user/notes"),
+        );
+
+        // Should not panic; empty string used for missing snippet
+        assert!(output.contains("<system>"));
+        assert!(output.contains("</system>"));
+        assert!(output.contains("## NoSnippet"));
     }
 }
