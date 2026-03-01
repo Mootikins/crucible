@@ -1,6 +1,6 @@
 //! Event queue for managing file events with backpressure handling.
 
-use crate::{error::Result, events::FileEvent};
+use crate::watch::{error::Result, events::FileEvent};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use tracing::debug;
@@ -60,7 +60,7 @@ impl EventQueue {
         } else {
             // Queue is empty but capacity is 0, drop new event
             self.dropped_events.fetch_add(1, Ordering::Relaxed);
-            Err(crate::error::Error::QueueFull(self.capacity))
+            Err(crate::watch::error::Error::QueueFull(self.capacity))
         }
     }
 

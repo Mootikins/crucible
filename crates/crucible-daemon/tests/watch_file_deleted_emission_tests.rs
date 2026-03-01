@@ -5,9 +5,9 @@
 
 use crucible_core::events::{Priority, SessionEvent};
 use crucible_core::test_support::mocks::MockEventEmitter;
-use crucible_watch::handlers::IndexingHandler;
-use crucible_watch::traits::EventHandler;
-use crucible_watch::{FileEvent, FileEventKind};
+use crucible_daemon::watch::handlers::IndexingHandler;
+use crucible_daemon::watch::traits::EventHandler;
+use crucible_daemon::watch::{FileEvent, FileEventKind};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;

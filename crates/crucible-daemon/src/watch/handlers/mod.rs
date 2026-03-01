@@ -11,7 +11,7 @@ pub use indexing::IndexingHandler;
 pub use obsidian_sync::{ObsidianKilnConfig, ObsidianSyncHandler, SyncConfig, SyncStats};
 pub use parser_handler::ParserHandler;
 
-use crate::{error::Result, events::FileEvent, traits::EventHandler};
+use crate::watch::{error::Result, events::FileEvent, traits::EventHandler};
 use std::sync::Arc;
 
 /// Registry for managing event handlers.

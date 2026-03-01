@@ -1,6 +1,6 @@
 //! Core traits for the file watching system.
 
-use crate::{error::Result, events::FileEvent};
+use crate::watch::{error::Result, events::FileEvent};
 use async_trait::async_trait;
 use std::path::PathBuf;
 use tokio::sync::mpsc;
@@ -61,7 +61,7 @@ pub struct WatchConfig {
     pub recursive: bool,
 
     /// Event filter to apply.
-    pub filter: Option<crate::events::EventFilter>,
+    pub filter: Option<crate::watch::events::EventFilter>,
 
     /// Debouncing configuration.
     pub debounce: DebounceConfig,
@@ -97,7 +97,7 @@ impl WatchConfig {
     }
 
     /// Set event filter.
-    pub fn with_filter(mut self, filter: crate::events::EventFilter) -> Self {
+    pub fn with_filter(mut self, filter: crate::watch::events::EventFilter) -> Self {
         self.filter = Some(filter);
         self
     }

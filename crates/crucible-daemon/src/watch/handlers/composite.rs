@@ -2,7 +2,7 @@
 
 #![allow(clippy::type_complexity)]
 
-use crate::{
+use crate::watch::{
     error::{Error, Result},
     events::FileEvent,
     traits::EventHandler,

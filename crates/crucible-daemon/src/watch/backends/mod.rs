@@ -10,9 +10,9 @@ pub use factory::{ExtendedBackendRegistry, ResourcePriority, WatcherRequirements
 pub use notify_backend::{NotifyFactory, NotifyWatcher};
 pub use polling_backend::{PollingFactory, PollingWatcher};
 
-use crate::error::{Error, Result};
-use crate::traits::{BackendCapabilities, FileWatcher};
-use crate::WatchBackend;
+use crate::watch::error::{Error, Result};
+use crate::watch::traits::{BackendCapabilities, FileWatcher};
+use crate::watch::WatchBackend;
 use async_trait::async_trait;
 
 /// Factory trait for creating file watcher backends.
