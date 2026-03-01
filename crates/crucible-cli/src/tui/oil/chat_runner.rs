@@ -31,7 +31,8 @@ struct EventLoopParams<'a, A: AgentHandle> {
     pub bridge: &'a AgentEventBridge,
     pub msg_tx: mpsc::UnboundedSender<ChatAppMsg>,
     pub msg_rx: mpsc::UnboundedReceiver<ChatAppMsg>,
-    pub interaction_rx: Option<mpsc::UnboundedReceiver<crucible_core::interaction::InteractionEvent>>,
+    pub interaction_rx:
+        Option<mpsc::UnboundedReceiver<crucible_core::interaction::InteractionEvent>>,
     pub background_tasks: &'a mut Vec<JoinHandle<()>>,
 }
 
@@ -118,8 +119,6 @@ enum DrainPhaseOutcome {
 }
 
 impl OilChatRunner {
-
-
     pub fn new() -> io::Result<Self> {
         Ok(Self::with_terminal(Terminal::new()?))
     }
@@ -637,17 +636,15 @@ impl OilChatRunner {
         tracing::trace!(?ev, ?action, "processed event");
 
         if self
-            .process_action(
-                ProcessActionParams {
-                    action,
-                    app: params.app,
-                    agent: params.agent,
-                    bridge: params.bridge,
-                    active_stream: params.active_stream,
-                    msg_tx: params.msg_tx,
-                    background_tasks: params.background_tasks,
-                },
-            )
+            .process_action(ProcessActionParams {
+                action,
+                app: params.app,
+                agent: params.agent,
+                bridge: params.bridge,
+                active_stream: params.active_stream,
+                msg_tx: params.msg_tx,
+                background_tasks: params.background_tasks,
+            })
             .await?
         {
             tracing::trace!("quit action received, breaking loop");
@@ -1038,9 +1035,11 @@ impl OilChatRunner {
                 match &msg {
                     ChatAppMsg::ClearHistory => {
                         if self.is_acp_session() {
-                            params.app.add_notification(crucible_core::types::Notification::warning(
-                                "History clearing not supported for ACP agents".to_string(),
-                            ));
+                            params.app.add_notification(
+                                crucible_core::types::Notification::warning(
+                                    "History clearing not supported for ACP agents".to_string(),
+                                ),
+                            );
                             return Ok(false);
                         }
                         if params.active_stream.is_some() {
@@ -1066,9 +1065,11 @@ impl OilChatRunner {
                     }
                     ChatAppMsg::SwitchModel(model_id) => {
                         if self.is_acp_session() {
-                            params.app.add_notification(crucible_core::types::Notification::warning(
-                                "Model switching not supported for ACP agents".to_string(),
-                            ));
+                            params.app.add_notification(
+                                crucible_core::types::Notification::warning(
+                                    "Model switching not supported for ACP agents".to_string(),
+                                ),
+                            );
                             return Ok(false);
                         }
                         tracing::info!(model = %model_id, "Model switch requested");
@@ -1083,9 +1084,11 @@ impl OilChatRunner {
                     }
                     ChatAppMsg::FetchModels => {
                         if self.is_acp_session() {
-                            params.app.add_notification(crucible_core::types::Notification::warning(
-                                "Model listing not available for ACP agents".to_string(),
-                            ));
+                            params.app.add_notification(
+                                crucible_core::types::Notification::warning(
+                                    "Model listing not available for ACP agents".to_string(),
+                                ),
+                            );
                             return Ok(false);
                         }
                         tracing::info!("Fetching available models");
@@ -1104,9 +1107,11 @@ impl OilChatRunner {
                     }
                     ChatAppMsg::SetThinkingBudget(budget) => {
                         if self.is_acp_session() {
-                            params.app.add_notification(crucible_core::types::Notification::warning(
-                                "Thinking budget not supported for ACP agents".to_string(),
-                            ));
+                            params.app.add_notification(
+                                crucible_core::types::Notification::warning(
+                                    "Thinking budget not supported for ACP agents".to_string(),
+                                ),
+                            );
                             return Ok(false);
                         }
                         tracing::info!(budget = budget, "Setting thinking budget");
@@ -1121,9 +1126,11 @@ impl OilChatRunner {
                     }
                     ChatAppMsg::SetTemperature(temp) => {
                         if self.is_acp_session() {
-                            params.app.add_notification(crucible_core::types::Notification::warning(
-                                "Temperature setting not supported for ACP agents".to_string(),
-                            ));
+                            params.app.add_notification(
+                                crucible_core::types::Notification::warning(
+                                    "Temperature setting not supported for ACP agents".to_string(),
+                                ),
+                            );
                             return Ok(false);
                         }
                         tracing::info!(temperature = temp, "Setting temperature");
@@ -1138,9 +1145,11 @@ impl OilChatRunner {
                     }
                     ChatAppMsg::SetMaxTokens(max_tokens) => {
                         if self.is_acp_session() {
-                            params.app.add_notification(crucible_core::types::Notification::warning(
-                                "Max tokens setting not supported for ACP agents".to_string(),
-                            ));
+                            params.app.add_notification(
+                                crucible_core::types::Notification::warning(
+                                    "Max tokens setting not supported for ACP agents".to_string(),
+                                ),
+                            );
                             return Ok(false);
                         }
                         tracing::info!(max_tokens = ?max_tokens, "Setting max_tokens");
@@ -1158,7 +1167,8 @@ impl OilChatRunner {
                         response,
                     } => {
                         tracing::info!(request_id = %request_id, "Sending interaction response");
-                        match params.agent
+                        match params
+                            .agent
                             .interaction_respond(request_id.clone(), response.clone())
                             .await
                         {

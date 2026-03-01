@@ -50,8 +50,7 @@ use std::path::Path;
 
 /// Read file contents to string
 fn read_file(path: &str) -> Result<String, LuaError> {
-    fs::read_to_string(path)
-        .lua_runtime()
+    fs::read_to_string(path).lua_runtime()
 }
 
 /// Write content to file (creates or overwrites)
@@ -68,8 +67,7 @@ fn write_file(path: &str, content: &str) -> Result<(), LuaError> {
         }
     }
 
-    fs::write(path, content)
-        .lua_runtime()
+    fs::write(path, content).lua_runtime()
 }
 
 /// Append content to file (creates if doesn't exist)
@@ -92,37 +90,31 @@ fn append_file(path: &str, content: &str) -> Result<(), LuaError> {
         .open(path)
         .lua_runtime()?;
 
-    file.write_all(content.as_bytes())
-        .lua_runtime()
+    file.write_all(content.as_bytes()).lua_runtime()
 }
 
 /// Create directory and all parent directories
 fn mkdir(path: &str) -> Result<(), LuaError> {
-    fs::create_dir_all(path)
-        .lua_runtime()
+    fs::create_dir_all(path).lua_runtime()
 }
 
 /// Remove a file or directory
 fn remove(path: &str) -> Result<(), LuaError> {
     let p = Path::new(path);
     if p.is_dir() {
-        fs::remove_dir_all(path)
-            .lua_runtime()
+        fs::remove_dir_all(path).lua_runtime()
     } else {
-        fs::remove_file(path)
-            .lua_runtime()
+        fs::remove_file(path).lua_runtime()
     }
 }
 
 /// List directory contents
 fn list_dir(path: &str) -> Result<Vec<String>, LuaError> {
-    let entries = fs::read_dir(path)
-        .lua_runtime()?;
+    let entries = fs::read_dir(path).lua_runtime()?;
 
     let mut result = Vec::new();
     for entry in entries {
-        let entry = entry
-            .lua_runtime()?;
+        let entry = entry.lua_runtime()?;
         if let Some(name) = entry.file_name().to_str() {
             result.push(name.to_string());
         }
@@ -144,8 +136,7 @@ fn copy_file(src: &str, dest: &str) -> Result<(), LuaError> {
         }
     }
 
-    fs::copy(src, dest)
-        .lua_runtime()?;
+    fs::copy(src, dest).lua_runtime()?;
     Ok(())
 }
 
@@ -163,8 +154,7 @@ fn rename_file(src: &str, dest: &str) -> Result<(), LuaError> {
         }
     }
 
-    fs::rename(src, dest)
-        .lua_runtime()
+    fs::rename(src, dest).lua_runtime()
 }
 
 /// Register the fs module with a Lua state

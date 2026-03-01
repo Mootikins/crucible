@@ -17,12 +17,12 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, trace, warn};
 
 // Submodules for logical organization of RPC methods
-pub mod types;
+pub mod agent;
+pub mod lua;
 pub mod session;
 pub mod storage;
-pub mod lua;
-pub mod agent;
 pub mod subscription;
+pub mod types;
 
 /// Session event received from daemon
 #[derive(Debug, Clone)]
@@ -935,11 +935,7 @@ impl DaemonClient {
     /// Send a typed JSON-RPC request with retry and deserialize the response.
     ///
     /// Wraps `call_with_retry()` with automatic serialization/deserialization.
-    pub async fn typed_call_with_retry<Req, Resp>(
-        &self,
-        method: &str,
-        params: Req,
-    ) -> Result<Resp>
+    pub async fn typed_call_with_retry<Req, Resp>(&self, method: &str, params: Req) -> Result<Resp>
     where
         Req: serde::Serialize,
         Resp: serde::de::DeserializeOwned,
@@ -2140,7 +2136,8 @@ impl DaemonClient {
 
     /// List all available agent profiles (builtins + configured).
     pub async fn agents_list_profiles(&self) -> Result<serde_json::Value> {
-        self.typed_call("agents.list_profiles", EmptyParams {}).await
+        self.typed_call("agents.list_profiles", EmptyParams {})
+            .await
     }
 
     /// Resolve a named agent profile.

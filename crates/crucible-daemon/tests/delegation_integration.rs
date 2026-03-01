@@ -7,7 +7,9 @@ use crucible_core::traits::chat::{AgentHandle, ChatChunk};
 use crucible_core::traits::ChatResult;
 use crucible_daemon::background_manager::{BackgroundJobManager, SubagentContext, SubagentFactory};
 use crucible_daemon::protocol::SessionEventMessage;
-use crucible_daemon::{AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager};
+use crucible_daemon::{
+    AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager,
+};
 use futures::stream::{self, BoxStream};
 use futures::StreamExt;
 use std::collections::HashMap;
@@ -423,18 +425,16 @@ async fn test_root_session_delegation_succeeds() {
             MockSubagentBehavior::ImmediateSuccess("root-delegation-result".to_string()),
         )),
     );
-    let agent_manager = AgentManager::new(
-        AgentManagerParams {
-            kiln_manager: Arc::new(KilnManager::new()),
-            session_manager: session_manager.clone(),
-            background_manager: background_manager.clone(),
-            mcp_gateway: None,
-            llm_config: None,
-            acp_config: None,
-            permission_config: None,
-            plugin_loader: None,
-        },
-    );
+    let agent_manager = AgentManager::new(AgentManagerParams {
+        kiln_manager: Arc::new(KilnManager::new()),
+        session_manager: session_manager.clone(),
+        background_manager: background_manager.clone(),
+        mcp_gateway: None,
+        llm_config: None,
+        acp_config: None,
+        permission_config: None,
+        plugin_loader: None,
+    });
 
     let session = session_manager
         .create_session(
@@ -502,18 +502,16 @@ async fn test_delegation_to_acp_agent_creates_acp_session() {
         },
     );
 
-    let agent_manager = AgentManager::new(
-        AgentManagerParams {
-            kiln_manager: Arc::new(KilnManager::new()),
-            session_manager: session_manager.clone(),
-            background_manager: background_manager.clone(),
-            mcp_gateway: None,
-            llm_config: None,
-            acp_config: Some(acp_config),
-            permission_config: None,
-            plugin_loader: None,
-        },
-    );
+    let agent_manager = AgentManager::new(AgentManagerParams {
+        kiln_manager: Arc::new(KilnManager::new()),
+        session_manager: session_manager.clone(),
+        background_manager: background_manager.clone(),
+        mcp_gateway: None,
+        llm_config: None,
+        acp_config: Some(acp_config),
+        permission_config: None,
+        plugin_loader: None,
+    });
 
     let session = session_manager
         .create_session(
