@@ -63,12 +63,14 @@ impl DefaultEnrichmentService {
     }
 
     /// Set the minimum word count for embedding generation (builder pattern)
+    #[allow(dead_code)]
     pub fn with_min_words(mut self, min_words: usize) -> Self {
         self.min_words_for_embedding = min_words;
         self
     }
 
     /// Set the maximum batch size for embedding generation (builder pattern)
+    #[allow(dead_code)]
     pub fn with_max_batch_size(mut self, max_batch_size: usize) -> Self {
         self.max_batch_size = max_batch_size;
         self
@@ -78,12 +80,14 @@ impl DefaultEnrichmentService {
     ///
     /// The emitter is used to emit `SessionEvent` variants (e.g., `EmbeddingBatchComplete`)
     /// when enrichment operations complete.
+    #[allow(dead_code)]
     pub fn with_emitter(mut self, emitter: SharedEventBus<SessionEvent>) -> Self {
         self.emitter = Some(emitter);
         self
     }
 
     /// Get a reference to the event emitter (if configured)
+    #[allow(dead_code)]
     pub fn emitter(&self) -> Option<&SharedEventBus<SessionEvent>> {
         self.emitter.as_ref()
     }

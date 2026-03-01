@@ -15,7 +15,7 @@ use crucible_core::background::{JobResult, JobStatus};
 use crucible_core::session::RecordingMode;
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
-use crucible_daemon::acp_handle::AcpAgentHandle;
+use crucible_daemon::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
 use crucible_daemon::background_manager::{BackgroundJobManager, SubagentContext, SubagentFactory};
 use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::recording::RecordingWriter;
@@ -92,18 +92,18 @@ fn make_acp_subagent_factory() -> SubagentFactory {
         let agent_config = agent_config.clone();
         let workspace = workspace.to_path_buf();
         Box::pin(async move {
-            AcpAgentHandle::new(
-                &agent_config,
-                &workspace,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
+            AcpAgentHandle::new(AcpAgentHandleParams {
+                agent_config: &agent_config,
+                workspace: &workspace,
+                kiln_path: None,
+                knowledge_repo: None,
+                embedding_provider: None,
+                background_spawner: None,
+                parent_session_id: None,
+                delegation_config: None,
+                acp_config: None,
+                permission_handler: None,
+            })
             .await
             .map(|handle| Box::new(handle) as Box<dyn AgentHandle + Send + Sync>)
             .map_err(|e| e.to_string())
@@ -195,18 +195,18 @@ async fn mock_acp_handshake_succeeds() {
 
     let handle = timeout(
         Duration::from_secs(30),
-        AcpAgentHandle::new(
-            &agent_config,
-            workspace.path(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        ),
+        AcpAgentHandle::new(AcpAgentHandleParams {
+            agent_config: &agent_config,
+            workspace: workspace.path(),
+            kiln_path: None,
+            knowledge_repo: None,
+            embedding_provider: None,
+            background_spawner: None,
+            parent_session_id: None,
+            delegation_config: None,
+            acp_config: None,
+            permission_handler: None,
+        }),
     )
     .await
     .expect("ACP handshake timed out")
@@ -224,18 +224,18 @@ async fn mock_acp_agent_returns_message_response() {
 
     let mut handle = timeout(
         Duration::from_secs(30),
-        AcpAgentHandle::new(
-            &agent_config,
-            workspace.path(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        ),
+        AcpAgentHandle::new(AcpAgentHandleParams {
+            agent_config: &agent_config,
+            workspace: workspace.path(),
+            kiln_path: None,
+            knowledge_repo: None,
+            embedding_provider: None,
+            background_spawner: None,
+            parent_session_id: None,
+            delegation_config: None,
+            acp_config: None,
+            permission_handler: None,
+        }),
     )
     .await
     .expect("ACP handshake timed out")
@@ -266,18 +266,18 @@ async fn missing_binary_returns_connection_error() {
 
     let result = timeout(
         Duration::from_secs(10),
-        AcpAgentHandle::new(
-            &agent_config,
-            workspace.path(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        ),
+        AcpAgentHandle::new(AcpAgentHandleParams {
+            agent_config: &agent_config,
+            workspace: workspace.path(),
+            kiln_path: None,
+            knowledge_repo: None,
+            embedding_provider: None,
+            background_spawner: None,
+            parent_session_id: None,
+            delegation_config: None,
+            acp_config: None,
+            permission_handler: None,
+        }),
     )
     .await
     .expect("missing binary should fail quickly");
@@ -301,18 +301,18 @@ async fn inject_errors_causes_handshake_failure() {
 
     let result = timeout(
         Duration::from_secs(30),
-        AcpAgentHandle::new(
-            &agent_config,
-            workspace.path(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(&acp_config),
-            None,
-        ),
+        AcpAgentHandle::new(AcpAgentHandleParams {
+            agent_config: &agent_config,
+            workspace: workspace.path(),
+            kiln_path: None,
+            knowledge_repo: None,
+            embedding_provider: None,
+            background_spawner: None,
+            parent_session_id: None,
+            delegation_config: None,
+            acp_config: Some(&acp_config),
+            permission_handler: None,
+        }),
     )
     .await
     .expect("ACP handshake with injected errors timed out unexpectedly");
