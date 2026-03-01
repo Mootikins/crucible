@@ -14,27 +14,20 @@ use crate::tui::oil::ViewContext;
 pub struct NotificationEntry {
     pub message: String,
     pub kind: NotificationToastKind,
-    pub elapsed_secs: u64,
+    pub timestamp: String,
 }
 
 impl NotificationEntry {
-    pub fn new(message: impl Into<String>, kind: NotificationToastKind, elapsed_secs: u64) -> Self {
+    pub fn new(message: impl Into<String>, kind: NotificationToastKind, timestamp: impl Into<String>) -> Self {
         Self {
             message: message.into(),
             kind,
-            elapsed_secs,
+            timestamp: timestamp.into(),
         }
     }
 
-    fn timestamp_label(&self) -> String {
-        let secs = self.elapsed_secs;
-        if secs < 60 {
-            format!("{:>2}s ago", secs)
-        } else if secs < 3600 {
-            format!("{:>2}m ago", secs / 60)
-        } else {
-            format!("{:>2}h ago", secs / 3600)
-        }
+    fn timestamp_label(&self) -> &str {
+        &self.timestamp
     }
 
     fn kind_label(&self) -> &'static str {
@@ -130,16 +123,16 @@ mod tests {
     use crate::tui::oil::component::ComponentHarness;
     use crate::tui::oil::render::render_to_plain_text;
 
-    fn info_entry(msg: &str, secs: u64) -> NotificationEntry {
-        NotificationEntry::new(msg, NotificationToastKind::Info, secs)
+    fn info_entry(msg: &str, ts: &str) -> NotificationEntry {
+        NotificationEntry::new(msg, NotificationToastKind::Info, ts)
     }
 
-    fn warning_entry(msg: &str, secs: u64) -> NotificationEntry {
-        NotificationEntry::new(msg, NotificationToastKind::Warning, secs)
+    fn warning_entry(msg: &str, ts: &str) -> NotificationEntry {
+        NotificationEntry::new(msg, NotificationToastKind::Warning, ts)
     }
 
-    fn error_entry(msg: &str, secs: u64) -> NotificationEntry {
-        NotificationEntry::new(msg, NotificationToastKind::Error, secs)
+    fn error_entry(msg: &str, ts: &str) -> NotificationEntry {
+        NotificationEntry::new(msg, NotificationToastKind::Error, ts)
     }
 
     #[test]
@@ -154,7 +147,7 @@ mod tests {
 
     #[test]
     fn hidden_renders_empty() {
-        let comp = NotificationComponent::new(vec![info_entry("hello", 5)])
+        let comp = NotificationComponent::new(vec![info_entry("hello", "00:00:05")])
             .visible(false)
             .width(80);
         let harness = ComponentHarness::new(80, 24);
@@ -165,7 +158,7 @@ mod tests {
 
     #[test]
     fn single_info_notification() {
-        let comp = NotificationComponent::new(vec![info_entry("Session saved", 10)])
+        let comp = NotificationComponent::new(vec![info_entry("Session saved", "14:30:12")])
             .visible(true)
             .width(80);
         let harness = ComponentHarness::new(80, 24);
@@ -173,15 +166,15 @@ mod tests {
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("INFO"));
         assert!(plain.contains("Session saved"));
-        assert!(plain.contains("10s ago"));
+        assert!(plain.contains("14:30:12"));
     }
 
     #[test]
     fn multiple_notifications_different_kinds() {
         let entries = vec![
-            info_entry("Session saved", 5),
-            warning_entry("Context at 85%", 120),
-            error_entry("Connection failed", 7200),
+            info_entry("Session saved", "14:30:12"),
+            warning_entry("Context at 85%", "14:32:00"),
+            error_entry("Connection failed", "16:30:12"),
         ];
         let comp = NotificationComponent::new(entries).visible(true).width(100);
         let harness = ComponentHarness::new(100, 24);
@@ -190,32 +183,32 @@ mod tests {
 
         assert!(plain.contains("INFO"));
         assert!(plain.contains("Session saved"));
-        assert!(plain.contains("5s ago"));
+        assert!(plain.contains("14:30:12"));
 
         assert!(plain.contains("WARN"));
         assert!(plain.contains("Context at 85%"));
-        assert!(plain.contains("2m ago"));
+        assert!(plain.contains("14:32:00"));
 
         assert!(plain.contains("ERROR"));
         assert!(plain.contains("Connection failed"));
-        assert!(plain.contains("2h ago"));
+        assert!(plain.contains("16:30:12"));
     }
 
     #[test]
     fn timestamp_formatting() {
-        let entry_secs = NotificationEntry::new("a", NotificationToastKind::Info, 30);
-        assert_eq!(entry_secs.timestamp_label(), "30s ago");
+        let entry_secs = NotificationEntry::new("a", NotificationToastKind::Info, "09:05:30");
+        assert_eq!(entry_secs.timestamp_label(), "09:05:30");
 
-        let entry_mins = NotificationEntry::new("b", NotificationToastKind::Info, 150);
-        assert_eq!(entry_mins.timestamp_label(), " 2m ago");
+        let entry_mins = NotificationEntry::new("b", NotificationToastKind::Info, "14:32:00");
+        assert_eq!(entry_mins.timestamp_label(), "14:32:00");
 
-        let entry_hours = NotificationEntry::new("c", NotificationToastKind::Info, 7200);
-        assert_eq!(entry_hours.timestamp_label(), " 2h ago");
+        let entry_hours = NotificationEntry::new("c", NotificationToastKind::Info, "16:30:12");
+        assert_eq!(entry_hours.timestamp_label(), "16:30:12");
     }
 
     #[test]
     fn drawer_has_borders() {
-        let comp = NotificationComponent::new(vec![info_entry("test", 1)])
+        let comp = NotificationComponent::new(vec![info_entry("test", "12:00:01")])
             .visible(true)
             .width(60);
         let harness = ComponentHarness::new(60, 24);
@@ -223,5 +216,24 @@ mod tests {
         let plain = render_to_plain_text(&node, 60);
         assert!(plain.contains('▄'));
         assert!(plain.contains('▀'));
+    }
+
+    #[test]
+    fn multiline_notification_renders_first_line() {
+        // The splitting happens in render_messages_drawer(), so the component
+        // receives only the first line. This test verifies that the component
+        // renders what it's given (the first line only).
+        let entry = NotificationEntry::new(
+            "Error: something",
+            NotificationToastKind::Error,
+            "14:30:12",
+        );
+        let comp = NotificationComponent::new(vec![entry]).visible(true).width(80);
+        let harness = ComponentHarness::new(80, 24);
+        let node = comp.view(&ViewContext::new(harness.focus()));
+        let plain = render_to_plain_text(&node, 80);
+        
+        assert!(plain.contains("Error: something"));
+        assert!(plain.contains("14:30:12"));
     }
 }
