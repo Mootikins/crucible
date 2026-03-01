@@ -4,6 +4,7 @@ use crate::tui::oil::components::{Drawer, DrawerKind};
 use crate::tui::oil::node::{row, styled, Node};
 use crate::tui::oil::style::Style;
 use crate::tui::oil::theme::ThemeTokens;
+use crate::tui::oil::utils::wrap::wrap_to_width;
 use crate::tui::oil::ViewContext;
 
 /// A pre-computed notification entry for view-only rendering.
@@ -87,30 +88,69 @@ impl Component for NotificationComponent {
         let content_rows: Vec<Node> = self
             .entries
             .iter()
-            .map(|entry| {
+            .flat_map(|entry| {
                 let bg = theme.input_bg;
                 let text_style = Style::new().bg(bg).fg(theme.overlay_text);
                 let badge_style = theme.notification_badge(entry.kind.color());
 
                 let timestamp_part = format!(" {}: ", entry.timestamp_label());
                 let badge_text = format!(" {} ", entry.kind_label());
-                let message_part = format!(" {}", entry.message);
 
-                let used = timestamp_part.chars().count()
-                    + badge_text.chars().count()
-                    + message_part.chars().count();
-                let padding = if self.width > used {
-                    " ".repeat(self.width - used)
+                // Calculate available width for message
+                let prefix_width = timestamp_part.chars().count() + badge_text.chars().count();
+                let msg_width = self.width.saturating_sub(prefix_width + 1); // +1 for space before message
+
+                // Wrap message to available width
+                let wrapped_lines = if msg_width == 0 {
+                    // Fallback: render unsplit if no space available
+                    vec![entry.message.clone()]
                 } else {
-                    String::new()
+                    wrap_to_width(&entry.message, msg_width)
+                        .lines()
+                        .map(|s| s.to_string())
+                        .collect()
                 };
 
-                row([
-                    styled(timestamp_part, text_style),
-                    styled(badge_text, badge_style),
-                    styled(message_part, text_style),
-                    styled(padding, Style::new().bg(bg)),
-                ])
+                // Build rows: first line with timestamp+badge, continuation lines with indent
+                let mut rows = Vec::new();
+                for (i, line) in wrapped_lines.iter().enumerate() {
+                    if i == 0 {
+                        // First line: timestamp + badge + message
+                        let message_part = format!(" {}", line);
+                        let used = timestamp_part.chars().count()
+                            + badge_text.chars().count()
+                            + message_part.chars().count();
+                        let padding = if self.width > used {
+                            " ".repeat(self.width - used)
+                        } else {
+                            String::new()
+                        };
+
+                        rows.push(row([
+                            styled(timestamp_part.clone(), text_style),
+                            styled(badge_text.clone(), badge_style),
+                            styled(message_part, text_style),
+                            styled(padding, Style::new().bg(bg)),
+                        ]));
+                    } else {
+                        // Continuation lines: indent + message
+                        let indent = " ".repeat(prefix_width + 1);
+                        let message_part = format!("{}{}", indent, line);
+                        let used = message_part.chars().count();
+                        let padding = if self.width > used {
+                            " ".repeat(self.width - used)
+                        } else {
+                            String::new()
+                        };
+
+                        rows.push(row([
+                            styled(message_part, text_style),
+                            styled(padding, Style::new().bg(bg)),
+                        ]));
+                    }
+                }
+
+                rows
             })
             .collect();
 
@@ -224,11 +264,13 @@ mod tests {
 
     #[test]
     fn multiline_notification_renders_first_line() {
-        // The splitting happens in render_messages_drawer(), so the component
-        // receives only the first line. This test verifies that the component
-        // renders what it's given (the first line only).
-        let entry =
-            NotificationEntry::new("Error: something", NotificationToastKind::Error, "14:30:12");
+        // Now that wrapping happens in the component, verify that a message
+        // with embedded newlines is wrapped and both lines appear in output.
+        let entry = NotificationEntry::new(
+            "Error: something\nDetails here",
+            NotificationToastKind::Error,
+            "14:30:12",
+        );
         let comp = NotificationComponent::new(vec![entry])
             .visible(true)
             .width(80);
@@ -236,7 +278,73 @@ mod tests {
         let node = comp.view(&ViewContext::new(harness.focus()));
         let plain = render_to_plain_text(&node, 80);
 
+        // Both lines should appear in the output
         assert!(plain.contains("Error: something"));
+        assert!(plain.contains("Details here"));
         assert!(plain.contains("14:30:12"));
+    }
+
+    #[test]
+    fn long_notification_wraps_to_width() {
+        // A 120-character message in an 80-column component should wrap
+        let long_msg = "This is a very long notification message that definitely exceeds the available width and should be wrapped to multiple lines for proper display";
+        let entry = NotificationEntry::new(long_msg, NotificationToastKind::Info, "12:00:00");
+        let comp = NotificationComponent::new(vec![entry])
+            .visible(true)
+            .width(80);
+        let harness = ComponentHarness::new(80, 24);
+        let node = comp.view(&ViewContext::new(harness.focus()));
+        let plain = render_to_plain_text(&node, 80);
+
+        // Message should be present and wrapped across multiple lines
+        assert!(plain.contains("This is a very long"));
+        assert!(plain.contains("notification message"));
+        // Verify it's actually wrapped (contains newlines in the content)
+        let lines: Vec<&str> = plain.lines().collect();
+        assert!(lines.len() > 2, "Long message should wrap to multiple lines");
+    }
+
+    #[test]
+    fn short_notification_no_wrap() {
+        // A short message should fit on one line
+        let entry = NotificationEntry::new("Short msg", NotificationToastKind::Info, "12:00:00");
+        let comp = NotificationComponent::new(vec![entry])
+            .visible(true)
+            .width(80);
+        let harness = ComponentHarness::new(80, 24);
+        let node = comp.view(&ViewContext::new(harness.focus()));
+        let plain = render_to_plain_text(&node, 80);
+
+        assert!(plain.contains("Short msg"));
+        assert!(plain.contains("12:00:00"));
+    }
+
+    #[test]
+    fn wrap_preserves_continuation_indent() {
+        // Continuation lines should be indented to align with the message start
+        let long_msg = "This is a message that will wrap to show continuation line indentation behavior";
+        let entry = NotificationEntry::new(long_msg, NotificationToastKind::Warning, "14:30:00");
+        let comp = NotificationComponent::new(vec![entry])
+            .visible(true)
+            .width(60);
+        let harness = ComponentHarness::new(60, 24);
+        let node = comp.view(&ViewContext::new(harness.focus()));
+        let plain = render_to_plain_text(&node, 60);
+
+        // Should have multiple lines
+        let lines: Vec<&str> = plain.lines().collect();
+        assert!(lines.len() > 1, "Message should wrap to multiple lines");
+
+        // Continuation lines should have leading spaces (indentation)
+        // The indent should be: " HH:MM:SS: " (11 chars) + " WARN " (6 chars) = 17 chars
+        if lines.len() > 1 {
+            let continuation = lines[1];
+            // Continuation should start with spaces (the indent)
+            assert!(
+                continuation.starts_with(" "),
+                "Continuation line should be indented: {:?}",
+                continuation
+            );
+        }
     }
 }

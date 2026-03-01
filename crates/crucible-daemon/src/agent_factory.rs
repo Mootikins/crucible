@@ -7,7 +7,7 @@
 use crate::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
 use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
 use crate::protocol::SessionEventMessage;
-use crate::provider::adapter_mapping::{build_genai_client, build_model_iden};
+use crate::provider::adapter_mapping::ChatClient;
 use crate::provider::genai_handle::GenaiAgentHandle;
 use crucible_acp::client::PermissionRequestHandler;
 use crucible_config::credentials::resolve_copilot_oauth_token;
@@ -394,13 +394,14 @@ pub async fn create_agent_from_session_config(
         }
     }
 
-    let model_iden = build_model_iden(&provider_type, &agent_config.model).ok_or_else(|| {
+    let chat_client = ChatClient::new(&llm_config);
+    let model_iden = chat_client.model_iden(&agent_config.model).ok_or_else(|| {
         AgentFactoryError::ClientCreation(format!(
             "Unsupported provider for chat: {:?}",
             provider_type
         ))
     })?;
-    let genai_client = build_genai_client(&llm_config);
+    let genai_client = chat_client.inner().clone();
     let handle = GenaiAgentHandle::new(
         genai_client,
         model_iden,

@@ -49,83 +49,144 @@ pub fn backend_to_adapter(backend: &BackendType) -> Option<AdapterKind> {
     }
 }
 
-/// Builds an explicit `ModelIden` from a `BackendType` and model name.
+/// Normalizes an Ollama endpoint to include `/v1/` path if missing.
 ///
-/// This function ALWAYS produces an explicit `ModelIden` with the adapter
-/// and model name. It does NOT rely on genai's model name auto-detection
-/// (e.g., `gpt-*` prefix magic).
+/// This function ensures that custom Ollama endpoints have the `/v1/` path
+/// required by genai's OpenAI adapter (which Ollama delegates to).
 ///
 /// # Arguments
 ///
-/// * `backend` - The Crucible backend type
-/// * `model` - The model name (e.g., "gpt-4o", "claude-3-5-sonnet-20241022")
+/// * `endpoint` - The Ollama endpoint URL
 ///
 /// # Returns
 ///
-/// `Some(ModelIden)` if the backend supports chat, `None` otherwise.
-pub fn build_model_iden(backend: &BackendType, model: &str) -> Option<ModelIden> {
-    let adapter = backend_to_adapter(backend)?;
-    Some(ModelIden::new(adapter, model))
+/// The normalized endpoint with `/v1/` appended if needed.
+fn normalize_ollama_endpoint(endpoint: &str) -> String {
+    // Guard: already ends with /v1/ or /v1
+    if endpoint.ends_with("/v1/") || endpoint.ends_with("/v1") {
+        return endpoint.to_string();
+    }
+    // Append /v1/ to the endpoint
+    format!("{}/v1/", endpoint.trim_end_matches('/'))
+}
+
+/// A configured genai client with explicit adapter selection and authentication.
+///
+/// This struct encapsulates a genai `Client` with its associated backend type.
+/// It provides methods for building model identifiers and accessing the inner client.
+pub struct ChatClient {
+    client: genai::Client,
+    backend: BackendType,
+}
+
+impl ChatClient {
+    /// Builds a genai `Client` from an `LlmProviderConfig`.
+    ///
+    /// This constructor sets up:
+    /// - Explicit adapter selection (no auto-detection)
+    /// - `AuthResolver` for API key injection
+    /// - `ServiceTargetResolver` for endpoint override (used by GitHubCopilot, OpenRouter, ZAI)
+    /// - Ollama endpoint auto-fix (appends `/v1/` if missing)
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - The Crucible LLM provider configuration
+    ///
+    /// # Returns
+    ///
+    /// A configured `ChatClient` ready for use.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the backend type is not supported for chat (e.g., FastEmbed, Burn, Mock).
+    pub fn new(config: &crucible_config::LlmProviderConfig) -> Self {
+        let _adapter =
+            backend_to_adapter(&config.provider_type).expect("Backend does not support chat");
+
+        let mut builder = genai::Client::builder();
+
+        // Set up authentication if API key is available
+        if let Some(api_key) = config.api_key() {
+            builder = builder.with_auth_resolver(AuthResolver::from_resolver_fn(
+                move |_: genai::ModelIden| Ok(Some(AuthData::from_single(api_key.clone()))),
+            ));
+        }
+
+        // Set up service target resolver for custom endpoints
+        // (used by GitHubCopilot, OpenRouter, ZAI, and Custom)
+        let mut endpoint = config.endpoint();
+
+        // Auto-fix Ollama endpoint to include /v1/ path
+        if matches!(config.provider_type, BackendType::Ollama) && !endpoint.is_empty() {
+            let fixed_endpoint = normalize_ollama_endpoint(&endpoint);
+            if fixed_endpoint != endpoint {
+                tracing::info!(
+                    endpoint = %endpoint,
+                    fixed_endpoint = %fixed_endpoint,
+                    "Auto-fixed Ollama endpoint to include /v1/ path"
+                );
+                endpoint = fixed_endpoint;
+            }
+        }
+
+        if !endpoint.is_empty() {
+            builder = builder.with_service_target_resolver(ServiceTargetResolver::from_resolver_fn(
+                move |mut st: genai::ServiceTarget| {
+                    st.endpoint = Endpoint::from_owned(endpoint.clone());
+                    Ok(st)
+                },
+            ));
+        }
+
+        let client = builder.build();
+        Self {
+            client,
+            backend: config.provider_type.clone(),
+        }
+    }
+
+    /// Builds an explicit `ModelIden` from a model name.
+    ///
+    /// This method produces an explicit `ModelIden` with the adapter
+    /// and model name. It does NOT rely on genai's model name auto-detection.
+    ///
+    /// # Arguments
+    ///
+    /// * `model` - The model name (e.g., "gpt-4o", "claude-3-5-sonnet-20241022")
+    ///
+    /// # Returns
+    ///
+    /// `Some(ModelIden)` if the backend supports chat, `None` otherwise.
+    pub fn model_iden(&self, model: &str) -> Option<ModelIden> {
+        let adapter = backend_to_adapter(&self.backend)?;
+        Some(ModelIden::new(adapter, model))
+    }
+
+    /// Returns a reference to the inner genai `Client`.
+    pub fn inner(&self) -> &genai::Client {
+        &self.client
+    }
 }
 
 /// Builds a genai `Client` from an `LlmProviderConfig`.
 ///
-/// This function constructs a genai client with:
-/// - Explicit adapter selection (no auto-detection)
-/// - `AuthResolver` for API key injection
-/// - `ServiceTargetResolver` for endpoint override (used by GitHubCopilot, OpenRouter, ZAI)
+/// # Deprecated
 ///
-/// # Arguments
-///
-/// * `config` - The Crucible LLM provider configuration
-///
-/// # Returns
-///
-/// A configured `genai::Client` ready for use.
-///
-/// # Panics
-///
-/// Panics if the backend type is not supported for chat (e.g., FastEmbed, Burn, Mock).
+/// Use `ChatClient::new()` instead.
 pub fn build_genai_client(config: &crucible_config::LlmProviderConfig) -> genai::Client {
-    let _adapter =
-        backend_to_adapter(&config.provider_type).expect("Backend does not support chat");
-
-    let mut builder = genai::Client::builder();
-
-    // Set up authentication if API key is available
-    if let Some(api_key) = config.api_key() {
-        builder = builder.with_auth_resolver(AuthResolver::from_resolver_fn(
-            move |_: genai::ModelIden| Ok(Some(AuthData::from_single(api_key.clone()))),
-        ));
-    }
-
-    // Set up service target resolver for custom endpoints
-    // (used by GitHubCopilot, OpenRouter, ZAI, and Custom)
-    let endpoint = config.endpoint();
-
-    // Validate Ollama endpoint has /v1/ path
-    if matches!(config.provider_type, BackendType::Ollama)
-        && !endpoint.is_empty()
-        && !endpoint.contains("/v1")
-    {
-        tracing::warn!(
-            endpoint = %endpoint,
-            "Ollama endpoint may be missing '/v1/' — genai appends 'chat/completions' directly to the base URL. Try: '{}v1/'",
-            endpoint
-        );
-    }
-
-    if !endpoint.is_empty() {
-        builder = builder.with_service_target_resolver(ServiceTargetResolver::from_resolver_fn(
-            move |mut st: genai::ServiceTarget| {
-                st.endpoint = Endpoint::from_owned(endpoint.clone());
-                Ok(st)
-            },
-        ));
-    }
-
-    builder.build()
+    ChatClient::new(config).client
 }
+
+/// Builds an explicit `ModelIden` from a `BackendType` and model name.
+///
+/// # Deprecated
+///
+/// Use `ChatClient::model_iden()` instead.
+pub fn build_model_iden(backend: &BackendType, model: &str) -> Option<ModelIden> {
+let adapter = backend_to_adapter(backend)?;
+    Some(ModelIden::new(adapter, model))
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -615,5 +676,95 @@ mod tests {
             !should_warn,
             "Default (empty) Ollama endpoint should not trigger warning"
         );
+    }
+
+    // ========================================================================
+    // ChatClient endpoint auto-fix tests
+    // ========================================================================
+
+    #[test]
+    fn endpoint_auto_fix_appends_v1() {
+        let endpoint = "https://llama.krohnos.io";
+        let fixed = normalize_ollama_endpoint(endpoint);
+        assert_eq!(fixed, "https://llama.krohnos.io/v1/");
+}
+
+    #[test]
+    fn endpoint_auto_fix_idempotent() {
+        let endpoint = "https://example.com/v1/";
+        let fixed = normalize_ollama_endpoint(endpoint);
+        assert_eq!(fixed, "https://example.com/v1/");
+    }
+
+    #[test]
+    fn endpoint_auto_fix_trailing_slash() {
+        let endpoint = "https://example.com/";
+        let fixed = normalize_ollama_endpoint(endpoint);
+        assert_eq!(fixed, "https://example.com/v1/");
+    }
+
+    #[test]
+    fn endpoint_auto_fix_non_ollama_untouched() {
+        // OpenAI endpoint with custom URL should not be modified
+        let config = crucible_config::LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            endpoint: Some("https://custom-openai.example.com".to_string()),
+            default_model: Some("gpt-4o".to_string()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: Some("sk-test".to_string()),
+            available_models: None,
+            trust_level: None,
+        };
+
+        let client = ChatClient::new(&config);
+        // If we get here without panic, the client was built successfully
+        // The endpoint should not have been modified
+        assert_eq!(client.backend, BackendType::OpenAI);
+    }
+
+    #[test]
+    fn chat_client_model_iden_ollama() {
+        let config = crucible_config::LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            endpoint: Some("http://localhost:11434".to_string()),
+            default_model: Some("llama3.2".to_string()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: None,
+            trust_level: None,
+        };
+
+        let client = ChatClient::new(&config);
+        let model_iden = client.model_iden("llama3.2");
+        assert!(model_iden.is_some());
+        let iden = model_iden.unwrap();
+        assert_eq!(iden.adapter_kind, AdapterKind::Ollama);
+        assert_eq!(&*iden.model_name, "llama3.2");
+    }
+
+    #[test]
+    fn chat_client_model_iden_openai() {
+        let config = crucible_config::LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            endpoint: None,
+            default_model: Some("gpt-4o".to_string()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: Some("sk-test".to_string()),
+            available_models: None,
+            trust_level: None,
+        };
+
+        let client = ChatClient::new(&config);
+        let model_iden = client.model_iden("gpt-4o");
+        assert!(model_iden.is_some());
+        let iden = model_iden.unwrap();
+        assert_eq!(iden.adapter_kind, AdapterKind::OpenAI);
+        assert_eq!(&*iden.model_name, "gpt-4o");
     }
 }

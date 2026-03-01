@@ -12,7 +12,7 @@ use genai::chat::{
 };
 use genai::ModelIden;
 
-use super::adapter_mapping::{build_genai_client, build_model_iden};
+use super::adapter_mapping::ChatClient;
 
 fn is_write_tool_name(tool_name: &str) -> bool {
     if tool_name == "write_file" || tool_name == "edit_file" {
@@ -96,8 +96,9 @@ impl GenaiAgentHandle {
             .unwrap_or(BackendType::OpenAI);
 
         let config = LlmProviderConfig::builder(backend).model(model).build();
-        let client = build_genai_client(&config);
-        let model_iden = build_model_iden(&backend, model)
+        let chat_client = ChatClient::new(&config);
+        let client = chat_client.inner().clone();
+            let model_iden = chat_client.model_iden(model)
             .unwrap_or_else(|| ModelIden::new(genai::adapter::AdapterKind::OpenAI, model));
 
         let mode_state = default_internal_modes();
@@ -562,8 +563,9 @@ mod tests {
         let config = LlmProviderConfig::builder(BackendType::OpenAI)
             .model("gpt-4o-mini")
             .build();
-        let client = build_genai_client(&config);
-        let model = build_model_iden(&BackendType::OpenAI, "gpt-4o-mini")
+        let chat_client = ChatClient::new(&config);
+        let client = chat_client.inner().clone();
+            let model = chat_client.model_iden("gpt-4o-mini")
             .unwrap_or_else(|| ModelIden::new(genai::adapter::AdapterKind::OpenAI, "gpt-4o-mini"));
 
         let negative_budget_handle = GenaiAgentHandle::new(

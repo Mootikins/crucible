@@ -654,14 +654,10 @@ impl OilChatApp {
                     Local::now() - chrono::Duration::from_std(elapsed).unwrap_or_default();
                 let timestamp = created.format("%H:%M:%S").to_string();
 
-                // Extract first line only (CRLF-safe)
-                let first_line = notif
-                    .message
-                    .split_once('\n')
-                    .map(|(first, _)| first.trim_end())
-                    .unwrap_or(notif.message.as_str());
-
-                NotificationEntry::new(first_line, kind, timestamp)
+                // Pass full message (wrapping happens in NotificationComponent)
+                let message = notif.message.trim_end();
+                
+                NotificationEntry::new(message, kind, timestamp)
             })
             .collect();
 
