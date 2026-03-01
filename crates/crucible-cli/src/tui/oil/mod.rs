@@ -71,7 +71,7 @@ mod viewport;
 mod viewport_cache;
 
 pub use agent_selection::AgentSelection;
-pub use app::*;
+pub use app::{ViewContext, App, Action};
 pub use chat_app::{
     ChatAppMsg, ChatItem, ChatMode, McpServerDisplay, OilChatApp, PluginStatusEntry, Role,
 };
@@ -80,7 +80,7 @@ pub use chat_runner::OilChatRunner;
 pub use component::{Component, ComponentHarness};
 pub use components::{InputArea, InputMode, StatusBar, INPUT_MAX_CONTENT_LINES};
 pub use composer::{pad_popup_region, ComposerConfig};
-pub use event::*;
+pub use event::{Event, InputAction, InputBuffer};
 pub use focus::*;
 pub use graduation::{GraduatedContent, GraduationState};
 pub use layout::*;
@@ -90,13 +90,13 @@ pub use overlay::{composite_overlays, Overlay, OverlayAnchor};
 pub use planning::{FramePlan, FramePlanner, FrameSnapshot, FrameTrace};
 pub use render::*;
 pub use render_state::RenderState;
-pub use runner::*;
-pub use runtime::*;
+pub use runner::{OilRunner, run_sync};
+pub use runtime::TestRuntime;
 pub use style::*;
-pub use terminal::*;
-pub use test_harness::*;
+pub use terminal::Terminal;
+pub use test_harness::AppHarness;
 pub use theme::ThemeTokens;
-pub use viewport::*;
+pub use viewport::{clamp_lines_top, clamp_lines_bottom, pad_lines_to, ensure_min_height};
 pub use viewport_cache::CachedMessage;
 
 #[cfg(test)]

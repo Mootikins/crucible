@@ -1,5 +1,5 @@
 use crate::services::daemon::AppState;
-use crate::WebError;
+use crate::{error::WebResultExt, WebError};
 use axum::{
     extract::State,
     routing::{get, post},
@@ -29,7 +29,7 @@ async fn register_project(
         .daemon
         .project_register(&req.path)
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     Ok(Json(project))
 }
@@ -42,7 +42,7 @@ async fn unregister_project(
         .daemon
         .project_unregister(&req.path)
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     Ok(Json(serde_json::json!({ "ok": true })))
 }
@@ -54,7 +54,7 @@ async fn list_projects(
         .daemon
         .project_list()
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     Ok(Json(projects))
 }
@@ -74,6 +74,6 @@ async fn get_project(
             "Project not found: {}",
             query.path.display()
         ))),
-        Err(e) => Err(WebError::Daemon(e.to_string())),
+        Err(e) => Err(e).daemon_err(),
     }
 }

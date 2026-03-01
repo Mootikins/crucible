@@ -40,6 +40,7 @@
 //! ```
 
 use crate::error::LuaError;
+use crate::error_ext::LuaResultExt;
 use mlua::Lua;
 #[cfg(test)]
 use mlua::Table;
@@ -50,7 +51,7 @@ use std::path::Path;
 /// Read file contents to string
 fn read_file(path: &str) -> Result<String, LuaError> {
     fs::read_to_string(path)
-        .map_err(|e| LuaError::Runtime(format!("Failed to read '{}': {}", path, e)))
+        .lua_runtime()
 }
 
 /// Write content to file (creates or overwrites)
@@ -68,7 +69,7 @@ fn write_file(path: &str, content: &str) -> Result<(), LuaError> {
     }
 
     fs::write(path, content)
-        .map_err(|e| LuaError::Runtime(format!("Failed to write '{}': {}", path, e)))
+        .lua_runtime()
 }
 
 /// Append content to file (creates if doesn't exist)
