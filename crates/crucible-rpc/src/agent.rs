@@ -362,12 +362,19 @@ impl AgentHandle for DaemonAgentHandle {
                                 has_tool_calls = chunk.tool_calls.is_some(),
                                 "Converted event to ChatChunk"
                             );
-                            let is_done = chunk.done;
-                            yield Ok(chunk);
-                            if is_done {
+                            if chunk.done {
+                                if let Some(reason) = event.data.get("reason").and_then(|value| value.as_str()) {
+                                    if let Some(stripped_reason) = reason.strip_prefix("error: ") {
+                                        tracing::warn!(reason = %reason, "LLM stream ended with error");
+                                        yield Err(ChatError::Communication(stripped_reason.to_string()));
+                                        break;
+                                    }
+                                }
+                                yield Ok(chunk);
                                 tracing::debug!("Stream complete (done=true)");
                                 break;
                             }
+                            yield Ok(chunk);
                         } else {
                             tracing::debug!(event_type = %event.event_type, "Event not convertible to chunk");
                         }
@@ -672,6 +679,48 @@ mod tests {
         };
 
         let chunk = session_event_to_chat_chunk(&event).unwrap();
+        assert!(chunk.done);
+    }
+
+    #[test]
+    fn test_ended_with_error_reason_detected() {
+        let event = SessionEvent {
+            session_id: "test".to_string(),
+            event_type: "ended".to_string(),
+            data: json!({ "reason": "error: connection refused" }),
+        };
+
+        let chunk = session_event_to_chat_chunk(&event).expect("ended should convert to chunk");
+        assert!(chunk.done);
+        let reason = event
+            .data
+            .get("reason")
+            .and_then(|value| value.as_str())
+            .expect("reason should be present");
+        assert!(reason.starts_with("error: "));
+    }
+
+    #[test]
+    fn test_ended_with_cancelled_reason_yields_done_chunk() {
+        let event = SessionEvent {
+            session_id: "test".to_string(),
+            event_type: "ended".to_string(),
+            data: json!({ "reason": "cancelled" }),
+        };
+
+        let chunk = session_event_to_chat_chunk(&event).expect("ended should convert to chunk");
+        assert!(chunk.done);
+    }
+
+    #[test]
+    fn test_ended_with_complete_reason_yields_done_chunk() {
+        let event = SessionEvent {
+            session_id: "test".to_string(),
+            event_type: "ended".to_string(),
+            data: json!({ "reason": "complete" }),
+        };
+
+        let chunk = session_event_to_chat_chunk(&event).expect("ended should convert to chunk");
         assert!(chunk.done);
     }
 
