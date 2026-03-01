@@ -35,7 +35,6 @@ crucible-config = { path = "../crucible-config" }
 crucible-sqlite = { path = "../crucible-sqlite", optional = true }
 crucible-parser = { path = "../crucible-parser" }
 
-crucible-observe = { path = "../crucible-observe" }
 crucible-watch = { path = "../crucible-watch" }
 crucible-lua = { path = "../crucible-lua" }
 crucible-tools = { path = "../crucible-tools" }
@@ -56,6 +55,8 @@ blake3 = "1.8"
 walkdir = "2.5"
 sha2 = "0.10"
 serde_yaml = { workspace = true }
+rusqlite = { version = "0.37", features = ["bundled"], optional = true }
+rand = { workspace = true }
 
 [features]
 default = ["storage-sqlite"]
@@ -64,7 +65,7 @@ web = ["dep:crucible-web"]
 
 # Storage backend selection (mutually exclusive in practice)
 
-storage-sqlite = ["dep:crucible-sqlite"]
+storage-sqlite = ["dep:crucible-sqlite", "dep:rusqlite"]
 
 # Test tier flags (see justfile for usage)
 test-fixtures = []       # Tests using docs/ kiln or examples/test-kiln
@@ -74,6 +75,5 @@ test-utils = []
 [dev-dependencies]
 tempfile = { workspace = true }
 futures = { workspace = true }
-rand = { workspace = true }
 crucible-rpc = { path = "../crucible-rpc" }
 mockito = { workspace = true }

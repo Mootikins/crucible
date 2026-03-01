@@ -6,7 +6,7 @@
 //! 3. Export to Markdown (both imperative and serde-based)
 //! 4. Verify content correctness
 
-use crucible_observe::{
+use crucible_daemon::{
     events::TokenUsage, load_events, render_to_markdown, serde_md, LogEvent, RenderOptions,
     SessionType, SessionWriter,
 };

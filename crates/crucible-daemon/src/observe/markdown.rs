@@ -1,6 +1,6 @@
 //! JSONL to Markdown rendering for session export
 
-use crate::events::{LogEvent, PermissionDecision};
+use crate::observe::events::{LogEvent, PermissionDecision};
 use std::fmt::Write;
 
 /// Options for markdown rendering
@@ -360,7 +360,7 @@ fn truncate(s: &str, max_len: usize) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events::TokenUsage;
+    use crate::observe::events::TokenUsage;
 
     #[test]
     fn test_render_user_message() {

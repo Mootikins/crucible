@@ -4,10 +4,10 @@
 //! The actual session content lives in JSONL files; this index enables
 //! fast listing, searching, and filtering.
 
-#[cfg(feature = "sqlite")]
+#[cfg(feature = "storage-sqlite")]
 mod sqlite_impl {
-    use crate::id::{SessionId, SessionType};
-    use crate::session::{SessionError, SessionMetadata};
+    use crate::observe::id::{SessionId, SessionType};
+    use crate::observe::session::{SessionError, SessionMetadata};
     use chrono::DateTime;
     use rusqlite::{params, Connection, OptionalExtension};
     use std::path::Path;
@@ -511,5 +511,5 @@ mod sqlite_impl {
     }
 }
 
-#[cfg(feature = "sqlite")]
+#[cfg(feature = "storage-sqlite")]
 pub use sqlite_impl::SessionIndex;

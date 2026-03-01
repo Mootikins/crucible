@@ -18,7 +18,6 @@ members = [
     "crates/crucible-daemon",
     "crates/crucible-rpc",
     "crates/crucible-lance",
-    "crates/crucible-observe",
     "crates/crucible-oil",
 ]
 default-members = ["crates/crucible-cli"]
@@ -142,7 +141,6 @@ crucible-llm = { path = "crates/crucible-llm", default-features = false }
 
 crucible-lua = { path = "crates/crucible-lua" }
 crucible-web = { path = "crates/crucible-web" }
-crucible-observe = { path = "crates/crucible-observe" }
 crucible-daemon = { path = "crates/crucible-daemon" }
 crucible-rpc = { path = "crates/crucible-rpc" }
 crucible-oil = { path = "crates/crucible-oil" }

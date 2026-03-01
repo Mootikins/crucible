@@ -2,8 +2,8 @@
 //!
 //! Sessions are stored as append-only JSONL files in `.crucible/sessions/<id>/session.jsonl`
 
-use crate::events::LogEvent;
-use crate::id::{SessionId, SessionType};
+use crate::observe::events::LogEvent;
+use crate::observe::id::{SessionId, SessionType};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -54,7 +54,7 @@ pub enum SessionError {
     AlreadyExists(SessionId),
 }
 
-#[cfg(feature = "sqlite")]
+#[cfg(feature = "storage-sqlite")]
 impl From<rusqlite::Error> for SessionError {
     fn from(err: rusqlite::Error) -> Self {
         Self::Io(std::io::Error::other(err))
