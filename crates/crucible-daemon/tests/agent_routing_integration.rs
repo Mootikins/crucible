@@ -1,7 +1,7 @@
 use crucible_config::BackendType;
 use crucible_core::session::{SessionAgent, SessionType};
 use crucible_daemon::background_manager::BackgroundJobManager;
-use crucible_daemon::{AgentManager, FileSessionStorage, KilnManager, SessionManager};
+use crucible_daemon::{AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -14,14 +14,16 @@ fn make_agent_manager() -> (AgentManager, Arc<SessionManager>, TempDir) {
     let (event_tx, _) = broadcast::channel(16);
     let bg = Arc::new(BackgroundJobManager::new(event_tx));
     let agent_manager = AgentManager::new(
-        Arc::new(KilnManager::new()),
-        session_manager.clone(),
-        bg,
-        None,
-        None,
-        None,
-        None,
-        None,
+        AgentManagerParams {
+            kiln_manager: Arc::new(KilnManager::new()),
+            session_manager: session_manager.clone(),
+            background_manager: bg,
+            mcp_gateway: None,
+            llm_config: None,
+            acp_config: None,
+            permission_config: None,
+            plugin_loader: None,
+        },
     );
     (agent_manager, session_manager, tmp)
 }

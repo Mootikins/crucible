@@ -388,34 +388,34 @@ pub struct AgentManager {
     plugin_loader: Option<Arc<Mutex<Option<DaemonPluginLoader>>>>,
 }
 
+/// Parameters for creating an AgentManager.
+pub struct AgentManagerParams {
+    pub kiln_manager: Arc<KilnManager>,
+    pub session_manager: Arc<SessionManager>,
+    pub background_manager: Arc<BackgroundJobManager>,
+    pub mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
+    pub llm_config: Option<crucible_config::LlmConfig>,
+    pub acp_config: Option<AcpConfig>,
+    pub permission_config: Option<PermissionConfig>,
+    pub plugin_loader: Option<Arc<Mutex<Option<DaemonPluginLoader>>>>,
+}
+
 impl AgentManager {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        kiln_manager: Arc<KilnManager>,
-        session_manager: Arc<SessionManager>,
-        background_manager: Arc<BackgroundJobManager>,
-        mcp_gateway: Option<
-            Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>,
-        >,
-        llm_config: Option<crucible_config::LlmConfig>,
-        acp_config: Option<AcpConfig>,
-        permission_config: Option<PermissionConfig>,
-        plugin_loader: Option<Arc<Mutex<Option<DaemonPluginLoader>>>>,
-    ) -> Self {
+    pub fn new(params: AgentManagerParams) -> Self {
         Self {
             request_state: Arc::new(DashMap::new()),
             agent_cache: AgentCache::new(),
             model_cache: Arc::new(DashMap::new()),
-            kiln_manager,
-            session_manager,
-            background_manager,
+            kiln_manager: params.kiln_manager,
+            session_manager: params.session_manager,
+            background_manager: params.background_manager,
             session_states: SessionStateCache::new(),
             pending_permissions: Arc::new(DashMap::new()),
-            mcp_gateway,
-            llm_config,
-            acp_config,
-            permission_config,
-            plugin_loader,
+            mcp_gateway: params.mcp_gateway,
+            llm_config: params.llm_config,
+            acp_config: params.acp_config,
+            permission_config: params.permission_config,
+            plugin_loader: params.plugin_loader,
         }
     }
 

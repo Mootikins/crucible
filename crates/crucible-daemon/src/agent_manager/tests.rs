@@ -361,14 +361,16 @@ fn create_test_agent_manager(session_manager: Arc<SessionManager>) -> AgentManag
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
     AgentManager::new(
-        Arc::new(KilnManager::new()),
-        session_manager,
-        background_manager,
-        None,
-        None,
-        None,
-        None,
-        None,
+        AgentManagerParams {
+            kiln_manager: Arc::new(KilnManager::new()),
+            session_manager,
+            background_manager,
+            mcp_gateway: None,
+            llm_config: None,
+            acp_config: None,
+            permission_config: None,
+            plugin_loader: None,
+        },
     )
 }
 
@@ -379,14 +381,16 @@ fn create_test_agent_manager_with_providers(
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
     AgentManager::new(
-        Arc::new(KilnManager::new()),
-        session_manager,
-        background_manager,
-        None,
-        Some(llm_config),
-        None,
-        None,
-        None,
+        AgentManagerParams {
+            kiln_manager: Arc::new(KilnManager::new()),
+            session_manager,
+            background_manager,
+            mcp_gateway: None,
+            llm_config: Some(llm_config),
+            acp_config: None,
+            permission_config: None,
+            plugin_loader: None,
+        },
     )
 }
 
@@ -397,17 +401,19 @@ fn create_test_agent_manager_with_enrichment(
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
     AgentManager::new(
-        Arc::new(KilnManager::with_event_tx(
-            event_tx,
-            Some(enrichment_config),
-        )),
-        session_manager,
-        background_manager,
-        None,
-        None,
-        None,
-        None,
-        None,
+        AgentManagerParams {
+            kiln_manager: Arc::new(KilnManager::with_event_tx(
+                event_tx,
+                Some(enrichment_config),
+            )),
+            session_manager,
+            background_manager,
+            mcp_gateway: None,
+            llm_config: None,
+            acp_config: None,
+            permission_config: None,
+            plugin_loader: None,
+        },
     )
 }
 
@@ -2969,14 +2975,16 @@ async fn test_list_models_returns_all_providers() {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
     let agent_manager = AgentManager::new(
-        Arc::new(KilnManager::new()),
-        session_manager.clone(),
-        background_manager,
-        None,
-        Some(llm_config),
-        None,
-        None,
-        None,
+        AgentManagerParams {
+            kiln_manager: Arc::new(KilnManager::new()),
+            session_manager: session_manager.clone(),
+            background_manager,
+            mcp_gateway: None,
+            llm_config: Some(llm_config),
+            acp_config: None,
+            permission_config: None,
+            plugin_loader: None,
+        },
     );
 
     agent_manager
@@ -3607,14 +3615,16 @@ async fn test_list_models_no_llm_config() {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
     let agent_manager = AgentManager::new(
-        Arc::new(KilnManager::new()),
-        session_manager.clone(),
-        background_manager,
-        None,
-        None,
-        None,
-        None,
-        None,
+        AgentManagerParams {
+            kiln_manager: Arc::new(KilnManager::new()),
+            session_manager: session_manager.clone(),
+            background_manager,
+            mcp_gateway: None,
+            llm_config: None,
+            acp_config: None,
+            permission_config: None,
+            plugin_loader: None,
+        },
     );
 
     agent_manager
@@ -3669,14 +3679,16 @@ async fn test_list_models_prefixes_with_provider_key() {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
     let agent_manager = AgentManager::new(
-        Arc::new(KilnManager::new()),
-        session_manager.clone(),
-        background_manager,
-        None,
-        Some(llm_config),
-        None,
-        None,
-        None,
+        AgentManagerParams {
+            kiln_manager: Arc::new(KilnManager::new()),
+            session_manager: session_manager.clone(),
+            background_manager,
+            mcp_gateway: None,
+            llm_config: Some(llm_config),
+            acp_config: None,
+            permission_config: None,
+            plugin_loader: None,
+        },
     );
 
     agent_manager
@@ -3809,14 +3821,16 @@ fn create_test_agent_manager_with_llm_config(
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
     AgentManager::new(
-        Arc::new(KilnManager::new()),
-        session_manager,
-        background_manager,
-        None,
-        Some(llm_config),
-        None,
-        None,
-        None,
+        AgentManagerParams {
+            kiln_manager: Arc::new(KilnManager::new()),
+            session_manager,
+            background_manager,
+            mcp_gateway: None,
+            llm_config: Some(llm_config),
+            acp_config: None,
+            permission_config: None,
+            plugin_loader: None,
+        },
     )
 }
 
@@ -3908,14 +3922,16 @@ fn create_test_agent_manager_with_both(
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
     AgentManager::new(
-        Arc::new(KilnManager::new()),
-        session_manager,
-        background_manager,
-        None,
-        Some(llm_config),
-        None,
-        None,
-        None,
+        AgentManagerParams {
+            kiln_manager: Arc::new(KilnManager::new()),
+            session_manager,
+            background_manager,
+            mcp_gateway: None,
+            llm_config: Some(llm_config),
+            acp_config: None,
+            permission_config: None,
+            plugin_loader: None,
+        },
     )
 }
 
