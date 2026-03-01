@@ -1,5 +1,5 @@
-use crucible_skills::discovery::{default_discovery_paths, FolderDiscovery, SearchPath};
-use crucible_skills::SkillScope;
+use crucible_daemon::skills::discovery::{default_discovery_paths, FolderDiscovery, SearchPath};
+use crucible_daemon::SkillScope;
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;

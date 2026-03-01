@@ -1,8 +1,8 @@
 //! Folder-based skill discovery with priority ordering
 
-use crate::error::{SkillError, SkillResult};
-use crate::parser::SkillParser;
-use crate::types::{ResolvedSkill, Skill, SkillScope, SkillSource};
+use crate::skills::error::{SkillError, SkillResult};
+use crate::skills::parser::SkillParser;
+use crate::skills::types::{ResolvedSkill, Skill, SkillScope, SkillSource};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

@@ -24,6 +24,7 @@ tracing-subscriber = { workspace = true }
 dirs = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
+glob = { workspace = true }
 dashmap = { workspace = true }
 uuid = { workspace = true }
 futures = { workspace = true }
@@ -39,7 +40,6 @@ crucible-watch = { path = "../crucible-watch" }
 crucible-lua = { path = "../crucible-lua" }
 crucible-tools = { path = "../crucible-tools" }
 crucible-acp = { path = "../crucible-acp" }
-crucible-skills = { path = "../crucible-skills" }
 crucible-web = { path = "../crucible-web", optional = true }
 crucible-llm = { path = "../crucible-llm", default-features = false }
 genai = "0.5"
@@ -54,6 +54,8 @@ reqwest = { workspace = true }
 rustls = { version = "0.23", default-features = false, features = ["ring", "tls12"] }
 blake3 = "1.8"
 walkdir = "2.5"
+sha2 = "0.10"
+serde_yaml = { workspace = true }
 
 [features]
 default = ["storage-sqlite"]
@@ -67,6 +69,7 @@ storage-sqlite = ["dep:crucible-sqlite"]
 # Test tier flags (see justfile for usage)
 test-fixtures = []       # Tests using docs/ kiln or examples/test-kiln
 test-slow = []           # Performance benchmarks and timing tests
+test-utils = []
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use crate::types::ResolvedSkill;
+use crate::skills::types::ResolvedSkill;
 
 /// Format discovered skills into context-friendly text
 ///
@@ -47,7 +47,7 @@ pub fn format_skills_for_context(skills: &HashMap<String, ResolvedSkill>) -> Str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Skill, SkillScope, SkillSource};
+    use crate::skills::types::{Skill, SkillScope, SkillSource};
     use chrono::Utc;
     use std::path::PathBuf;
 

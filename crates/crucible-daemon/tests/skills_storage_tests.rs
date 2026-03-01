@@ -1,7 +1,7 @@
 // These tests require a live database and are ignored by default.
 
 use chrono::Utc;
-use crucible_skills::{Skill, SkillScope, SkillSource};
+use crucible_daemon::{Skill, SkillScope, SkillSource};
 use std::path::PathBuf;
 
 fn test_skill(name: &str, scope: SkillScope) -> Skill {
