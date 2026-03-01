@@ -240,6 +240,7 @@ mod tests {
         use crate::kiln_manager::KilnManager;
         use crate::session_manager::SessionManager;
         use crate::subscription::SubscriptionManager;
+        use crucible_tools::workspace::WorkspaceTools;
         use tokio::sync::broadcast;
 
         let (event_tx, _) = broadcast::channel(16);
@@ -256,6 +257,7 @@ mod tests {
             acp_config: None,
             permission_config: None,
             plugin_loader: None,
+            workspace_tools: Arc::new(WorkspaceTools::new(&std::path::PathBuf::from("/tmp"))),
         }));
 
         RpcContext::new(

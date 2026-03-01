@@ -12,6 +12,7 @@ use crate::permission_bridge::{DaemonPermissionGate, PermissionPromptCallback};
 use crate::protocol::SessionEventMessage;
 use crate::provider::model_listing;
 use crate::session_manager::{SessionError, SessionManager};
+use crate::tool_dispatch::{DaemonToolDispatcher, ToolDispatcher};
 use crate::trust_resolution::resolve_provider_trust;
 use crucible_acp::discovery::default_agent_profiles;
 use crucible_config::components::permissions::PermissionConfig;
@@ -28,6 +29,7 @@ use crucible_lua::{
     execute_permission_hooks, register_crucible_on_api, register_permission_hook_api,
     LuaScriptHandlerRegistry, PermissionHook, PermissionHookResult, PermissionRequest,
 };
+use crucible_tools::workspace::WorkspaceTools;
 use dashmap::DashMap;
 use futures::StreamExt;
 use mlua::Lua;
@@ -272,6 +274,7 @@ struct StreamContext {
     pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
     workspace_path: PathBuf,
     agent_stream_config: AgentStreamConfig,
+    tool_dispatcher: Arc<dyn ToolDispatcher>,
 }
 
 #[allow(dead_code)]
@@ -390,6 +393,7 @@ pub struct AgentManager {
     acp_config: Option<AcpConfig>,
     permission_config: Option<PermissionConfig>,
     plugin_loader: Option<Arc<Mutex<Option<DaemonPluginLoader>>>>,
+    tool_dispatcher: Arc<dyn ToolDispatcher>,
 }
 
 /// Parameters for creating an AgentManager.
@@ -403,10 +407,13 @@ pub struct AgentManagerParams {
     pub acp_config: Option<AcpConfig>,
     pub permission_config: Option<PermissionConfig>,
     pub plugin_loader: Option<Arc<Mutex<Option<DaemonPluginLoader>>>>,
+    pub workspace_tools: Arc<WorkspaceTools>,
 }
 
 impl AgentManager {
     pub fn new(params: AgentManagerParams) -> Self {
+        let tool_dispatcher: Arc<dyn ToolDispatcher> =
+            Arc::new(DaemonToolDispatcher::new(params.workspace_tools));
         Self {
             request_state: Arc::new(DashMap::new()),
             agent_cache: AgentCache::new(),
@@ -421,6 +428,7 @@ impl AgentManager {
             acp_config: params.acp_config,
             permission_config: params.permission_config,
             plugin_loader: params.plugin_loader,
+            tool_dispatcher,
         }
     }
 
