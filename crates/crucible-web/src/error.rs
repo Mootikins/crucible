@@ -55,3 +55,16 @@ impl IntoResponse for WebError {
         (status, body).into_response()
     }
 }
+
+/// Extension trait to convert `Result<T, E: Display>` into `WebResult<T>`.
+///
+/// Replaces the verbose `.map_err(|e| WebError::Daemon(e.to_string()))` pattern.
+pub trait WebResultExt<T> {
+    fn daemon_err(self) -> Result<T>;
+}
+
+impl<T, E: std::fmt::Display> WebResultExt<T> for std::result::Result<T, E> {
+    fn daemon_err(self) -> Result<T> {
+        self.map_err(|e| WebError::Daemon(e.to_string()))
+    }
+}

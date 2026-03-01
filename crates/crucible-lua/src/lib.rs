@@ -50,6 +50,7 @@ pub mod capability_gate;
 mod commands;
 pub mod core_handler;
 mod error;
+mod error_ext;
 mod executor;
 #[cfg(feature = "fennel")]
 mod fennel;

@@ -8,8 +8,8 @@ pub mod matcher;
 pub mod types;
 
 pub use loader::AgentCardLoader;
-pub use matcher::AgentCardMatcher;
-pub use types::*;
+pub use matcher::{AgentCardMatcher, MatchingWeights};
+pub use types::{AgentCard, AgentCardQuery, AgentCardMatch, AgentCardFrontmatter};
 
 use anyhow::Result;
 use std::collections::HashMap;

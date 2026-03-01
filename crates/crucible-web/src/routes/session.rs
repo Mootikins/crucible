@@ -1,5 +1,5 @@
 use crate::services::daemon::AppState;
-use crate::WebError;
+use crate::{error::WebResultExt, WebError};
 use axum::{
     extract::{Path, State},
     routing::{get, post, put},
@@ -118,7 +118,7 @@ async fn create_session(
             None,
         )
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     let session_id = result["session_id"].as_str().unwrap_or("");
 
@@ -151,13 +151,13 @@ async fn create_session(
         .daemon
         .session_configure_agent(session_id, &agent)
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     state
         .daemon
         .session_subscribe(&[session_id])
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     Ok(Json(result))
 }
@@ -184,7 +184,7 @@ async fn list_sessions(
             query.state.as_deref(),
         )
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     Ok(Json(result))
 }
@@ -197,7 +197,7 @@ async fn get_session(
         .daemon
         .session_get(&id)
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     Ok(Json(result))
 }
@@ -218,7 +218,7 @@ async fn get_session_history(
         .daemon
         .session_resume_from_storage(&id, &query.kiln, query.limit, query.offset)
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     Ok(Json(result))
 }
@@ -231,7 +231,7 @@ async fn pause_session(
         .daemon
         .session_pause(&id)
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     Ok(Json(result))
 }
@@ -244,14 +244,14 @@ async fn resume_session(
         .daemon
         .session_resume(&id)
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     let session_id = id.as_str();
     state
         .daemon
         .session_subscribe(&[session_id])
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     Ok(Json(result))
 }
@@ -264,7 +264,7 @@ async fn end_session(
         .daemon
         .session_end(&id)
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     state.events.remove_session(&id).await;
 
@@ -279,7 +279,7 @@ async fn cancel_session(
         .daemon
         .session_cancel(&id)
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     Ok(Json(serde_json::json!({ "cancelled": cancelled })))
 }
@@ -292,7 +292,7 @@ async fn list_models(
         .daemon
         .session_list_models(&id)
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     Ok(Json(serde_json::json!({ "models": models })))
 }
@@ -311,7 +311,7 @@ async fn switch_model(
         .daemon
         .session_switch_model(&id, &req.model_id)
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     Ok(Json(serde_json::json!({ "ok": true })))
 }
@@ -330,7 +330,7 @@ async fn set_session_title(
         .daemon
         .session_set_title(&id, &req.title)
         .await
-        .map_err(|e| WebError::Daemon(e.to_string()))?;
+        .daemon_err()?;
 
     Ok(Json(serde_json::json!({ "ok": true })))
 }

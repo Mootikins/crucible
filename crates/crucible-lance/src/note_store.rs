@@ -33,6 +33,9 @@ use crucible_core::events::{NoteChangeType, SessionEvent};
 use crucible_core::parser::BlockHash;
 use crucible_core::storage::{
     Filter, NoteRecord, NoteStore, Op, SearchResult, StorageError, StorageResult,
+    StorageResultExt,
+};
+    Filter, NoteRecord, NoteStore, Op, SearchResult, StorageError, StorageResult,
 };
 
 // ============================================================================
@@ -197,7 +200,7 @@ fn note_to_batch(
             let field = Arc::new(Field::new("item", DataType::Float32, true));
             Arc::new(
                 FixedSizeListArray::try_new(field, embedding_dim as i32, Arc::new(values), None)
-                    .map_err(|e| StorageError::Backend(e.to_string()))?,
+                    .storage_backend()?
             )
         }
         None => {
@@ -210,7 +213,7 @@ fn note_to_batch(
                 Arc::new(values),
                 Some(vec![false].into()),
             )
-            .map_err(|e| StorageError::Backend(e.to_string()))?;
+            .storage_backend()?
             Arc::new(list)
         }
     };
@@ -246,7 +249,7 @@ fn note_to_batch(
             Arc::new(updated_at),
         ],
     )
-    .map_err(|e| StorageError::Backend(e.to_string()))
+    .storage_backend()
 }
 
 /// Convert an Arrow RecordBatch to NoteRecords
@@ -439,7 +442,7 @@ impl LanceNoteStore {
         let connection = lancedb::connect(db_path)
             .execute()
             .await
-            .map_err(|e| StorageError::Backend(e.to_string()))?;
+            .storage_backend()?
 
         let schema = notes_schema(embedding_dim);
 
@@ -499,7 +502,7 @@ impl LanceNoteStore {
                     .create_empty_table(TABLE_NAME, schema)
                     .execute()
                     .await
-                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    .storage_backend()?
 
                 *table_guard = Some(table.clone());
                 Ok(table)
