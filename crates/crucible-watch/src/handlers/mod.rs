@@ -6,9 +6,9 @@ mod indexing;
 mod obsidian_sync;
 mod parser_handler;
 
-pub use composite::*;
-pub use indexing::*;
-pub use obsidian_sync::*;
+pub use composite::{CompositeHandler, CoordinationStrategy, HandlerState};
+pub use indexing::IndexingHandler;
+pub use obsidian_sync::{ObsidianSyncHandler, ObsidianKilnConfig, SyncConfig, SyncStats};
 pub use parser_handler::ParserHandler;
 
 use crate::{error::Result, events::FileEvent, traits::EventHandler};
