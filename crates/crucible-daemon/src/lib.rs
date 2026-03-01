@@ -54,6 +54,7 @@ pub mod subscription;
 pub mod tool_dispatch;
 pub mod tools_bridge;
 pub mod trust_resolution;
+pub mod watch;
 
 pub use acp_handle::{AcpAgentHandle, AcpHandleError};
 pub use agent_factory::{create_agent_from_session_config, AgentFactoryError};
@@ -89,3 +90,4 @@ pub use skills::{
 };
 pub use subscription::{ClientId, SubscriptionManager};
 pub use tools_bridge::DaemonToolsBridge;
+pub use watch::*;

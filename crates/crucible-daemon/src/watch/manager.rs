@@ -1,6 +1,6 @@
 //! Main watch manager that coordinates all file watching activities.
 
-use crate::{
+use crate::watch::{
     backends::{ExtendedBackendRegistry, WatcherRequirements},
     config::WatchManagerConfig,
     error::{Error, Result},

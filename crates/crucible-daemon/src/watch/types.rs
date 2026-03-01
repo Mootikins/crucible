@@ -9,7 +9,7 @@ use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::Error;
+use crate::watch::error::Error;
 use crucible_core::types::hashing::{FileHash, HashAlgorithm};
 
 /// Comprehensive file information for the crucible-watch system

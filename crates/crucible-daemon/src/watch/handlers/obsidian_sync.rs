@@ -1,6 +1,6 @@
 //! Integration handler for Obsidian synchronization and API changes.
 
-use crate::{
+use crate::watch::{
     error::{Error, Result},
     events::FileEvent,
     traits::EventHandler,
@@ -137,14 +137,14 @@ impl ObsidianSyncHandler {
         }
 
         match &event.kind {
-            crate::events::FileEventKind::Created | crate::events::FileEventKind::Modified => {
+            crate::watch::events::FileEventKind::Created | crate::watch::events::FileEventKind::Modified => {
                 self.handle_file_modification(&event.path, &kiln_config)
                     .await?;
             }
-            crate::events::FileEventKind::Deleted => {
+            crate::watch::events::FileEventKind::Deleted => {
                 self.handle_file_deletion(&event.path, &kiln_config).await?;
             }
-            crate::events::FileEventKind::Moved { from, to } => {
+            crate::watch::events::FileEventKind::Moved { from, to } => {
                 self.handle_file_move(from, to, &kiln_config).await?;
             }
             _ => {
@@ -264,11 +264,11 @@ impl EventHandler for ObsidianSyncHandler {
         }
 
         let result = match event.kind {
-            crate::events::FileEventKind::Created
-            | crate::events::FileEventKind::Modified
-            | crate::events::FileEventKind::Deleted
-            | crate::events::FileEventKind::Moved { .. } => self.sync_file_change(&event).await,
-            crate::events::FileEventKind::Batch(events) => {
+            crate::watch::events::FileEventKind::Created
+            | crate::watch::events::FileEventKind::Modified
+            | crate::watch::events::FileEventKind::Deleted
+            | crate::watch::events::FileEventKind::Moved { .. } => self.sync_file_change(&event).await,
+            crate::watch::events::FileEventKind::Batch(events) => {
                 // Handle batch events
                 for e in &events {
                     if let Err(err) = self.sync_file_change(e).await {
@@ -277,7 +277,7 @@ impl EventHandler for ObsidianSyncHandler {
                 }
                 Ok(())
             }
-            crate::events::FileEventKind::Unknown(_) => {
+            crate::watch::events::FileEventKind::Unknown(_) => {
                 debug!("Unknown event type, skipping");
                 Ok(())
             }

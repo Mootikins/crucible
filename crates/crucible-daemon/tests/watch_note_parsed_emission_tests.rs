@@ -6,7 +6,7 @@
 
 use crucible_core::events::{FileChangeKind, NotePayload, SessionEvent};
 use crucible_core::test_support::mocks::MockEventEmitter;
-use crucible_watch::handlers::ParserHandler;
+use crucible_daemon::watch::handlers::ParserHandler;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;

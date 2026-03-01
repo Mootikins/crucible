@@ -7,7 +7,7 @@
 
 #![allow(clippy::ptr_arg)]
 
-use crate::{
+use crate::watch::{
     error::{Error, Result},
     events::FileEvent,
     traits::EventHandler,
@@ -82,7 +82,7 @@ impl IndexingHandler {
     async fn index_file(
         &self,
         path: &PathBuf,
-        _event_kind: crate::events::FileEventKind,
+        _event_kind: crate::watch::events::FileEventKind,
     ) -> Result<()> {
         debug!("Indexing file: {}", path.display());
 
@@ -153,7 +153,7 @@ impl IndexingHandler {
 
         // Index new location (treat as Created event)
         if let Err(e) = self
-            .index_file(to, crate::events::FileEventKind::Created)
+            .index_file(to, crate::watch::events::FileEventKind::Created)
             .await
         {
             error!("Failed to index moved file {}: {}", to.display(), e);
@@ -217,22 +217,22 @@ impl IndexingHandler {
         use crucible_core::events::FileChangeKind;
 
         let session_event = match &event.kind {
-            crate::events::FileEventKind::Created => SessionEvent::FileChanged {
+            crate::watch::events::FileEventKind::Created => SessionEvent::FileChanged {
                 path: event.path.clone(),
                 kind: FileChangeKind::Created,
             },
-            crate::events::FileEventKind::Modified => SessionEvent::FileChanged {
+            crate::watch::events::FileEventKind::Modified => SessionEvent::FileChanged {
                 path: event.path.clone(),
                 kind: FileChangeKind::Modified,
             },
-            crate::events::FileEventKind::Deleted => SessionEvent::FileDeleted {
+            crate::watch::events::FileEventKind::Deleted => SessionEvent::FileDeleted {
                 path: event.path.clone(),
             },
-            crate::events::FileEventKind::Moved { from, to } => SessionEvent::FileMoved {
+            crate::watch::events::FileEventKind::Moved { from, to } => SessionEvent::FileMoved {
                 from: from.clone(),
                 to: to.clone(),
             },
-            crate::events::FileEventKind::Batch(events) => {
+            crate::watch::events::FileEventKind::Batch(events) => {
                 // Recursively emit events for batch operations
                 for batch_event in events {
                     // Use Box::pin to avoid infinitely-sized future
@@ -240,7 +240,7 @@ impl IndexingHandler {
                 }
                 return;
             }
-            crate::events::FileEventKind::Unknown(_) => {
+            crate::watch::events::FileEventKind::Unknown(_) => {
                 debug!(
                     "Not emitting SessionEvent for unknown file event: {}",
                     event.path.display()
@@ -319,7 +319,7 @@ impl EventHandler for IndexingHandler {
 
         // Add debouncing for rapid successive events
         let should_process = match &event.kind {
-            crate::events::FileEventKind::Created | crate::events::FileEventKind::Modified => {
+            crate::watch::events::FileEventKind::Created | crate::watch::events::FileEventKind::Modified => {
                 self.should_process_file_event(&event.path).await
             }
             _ => true, // Always process deletes and moves
@@ -335,18 +335,18 @@ impl EventHandler for IndexingHandler {
 
         let start_time = std::time::Instant::now();
         let result = match event.kind {
-            crate::events::FileEventKind::Created | crate::events::FileEventKind::Modified => {
+            crate::watch::events::FileEventKind::Created | crate::watch::events::FileEventKind::Modified => {
                 self.index_file(&event.path, event.kind.clone()).await
             }
-            crate::events::FileEventKind::Deleted => self.remove_file_index(&event.path).await,
-            crate::events::FileEventKind::Moved { ref from, ref to } => {
+            crate::watch::events::FileEventKind::Deleted => self.remove_file_index(&event.path).await,
+            crate::watch::events::FileEventKind::Moved { ref from, ref to } => {
                 // Handle move as delete + create operation
                 self.handle_file_move(from, to).await
             }
-            crate::events::FileEventKind::Batch(ref events) => {
+            crate::watch::events::FileEventKind::Batch(ref events) => {
                 self.handle_batch_events(events).await
             }
-            crate::events::FileEventKind::Unknown(_) => {
+            crate::watch::events::FileEventKind::Unknown(_) => {
                 debug!("Unknown event type, skipping: {}", event.path.display());
                 Ok(())
             }

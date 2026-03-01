@@ -98,11 +98,11 @@ pub enum WatchBackend {
 }
 
 pub mod prelude {
-    pub use crate::config::DebounceConfig as ConfigDebounceConfig;
-    pub use crate::config::WatchConfig as ConfigWatchConfig;
-    pub use crate::traits::DebounceConfig as TraitDebounceConfig;
-    pub use crate::traits::WatchConfig as TraitWatchConfig;
-    pub use crate::{
+    pub use crate::watch::config::DebounceConfig as ConfigDebounceConfig;
+    pub use crate::watch::config::WatchConfig as ConfigWatchConfig;
+    pub use crate::watch::traits::DebounceConfig as TraitDebounceConfig;
+    pub use crate::watch::traits::WatchConfig as TraitWatchConfig;
+    pub use crate::watch::{
         Error, EventHandler, FileEvent, FileEventKind, FileWatcher, Result, WatchBackend,
         WatchManager,
     };

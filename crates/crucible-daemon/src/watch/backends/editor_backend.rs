@@ -1,6 +1,6 @@
 //! Editor integration backend for low-frequency inode watching.
 
-use crate::{
+use crate::watch::{
     error::{Error, Result},
     events::FileEvent,
     traits::{BackendCapabilities, FileWatcher, WatchConfig, WatchHandle},
@@ -293,8 +293,8 @@ impl super::WatcherFactory for EditorFactory {
         Ok(Box::new(EditorWatcher::new()))
     }
 
-    fn backend_type(&self) -> crate::WatchBackend {
-        crate::WatchBackend::Editor
+    fn backend_type(&self) -> crate::watch::WatchBackend {
+        crate::watch::WatchBackend::Editor
     }
 
     fn is_available(&self) -> bool {
@@ -310,7 +310,7 @@ impl super::WatcherFactory for EditorFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::traits::FileWatcher;
+    use crate::watch::traits::FileWatcher;
 
     #[test]
     fn default_not_recursive() {

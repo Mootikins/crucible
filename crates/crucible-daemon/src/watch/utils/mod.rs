@@ -8,7 +8,7 @@ pub use debouncer::Debouncer;
 pub use monitor::{PerformanceMonitor, PerformanceStats};
 pub use queue::{EventQueue, QueueStats};
 
-use crate::FileEvent;
+use crate::watch::FileEvent;
 
 /// Utility functions for file event processing.
 pub struct EventUtils;
@@ -17,22 +17,22 @@ impl EventUtils {
     /// Create a deduplication key for an event.
     pub fn deduplication_key(event: &FileEvent) -> String {
         match &event.kind {
-            crate::events::FileEventKind::Created => {
+            crate::watch::events::FileEventKind::Created => {
                 format!("create:{}", event.path.display())
             }
-            crate::events::FileEventKind::Modified => {
+            crate::watch::events::FileEventKind::Modified => {
                 format!("modify:{}", event.path.display())
             }
-            crate::events::FileEventKind::Deleted => {
+            crate::watch::events::FileEventKind::Deleted => {
                 format!("delete:{}", event.path.display())
             }
-            crate::events::FileEventKind::Moved { from, to } => {
+            crate::watch::events::FileEventKind::Moved { from, to } => {
                 format!("move:{}->{}", from.display(), to.display())
             }
-            crate::events::FileEventKind::Batch(_) => {
+            crate::watch::events::FileEventKind::Batch(_) => {
                 format!("batch:{}", event.path.display())
             }
-            crate::events::FileEventKind::Unknown(_) => {
+            crate::watch::events::FileEventKind::Unknown(_) => {
                 format!("unknown:{}", event.path.display())
             }
         }

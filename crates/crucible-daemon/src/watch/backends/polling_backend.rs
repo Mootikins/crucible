@@ -1,6 +1,6 @@
 //! Polling-based file watching backend.
 
-use crate::{
+use crate::watch::{
     error::{Error, Result},
     events::{EventMetadata, FileEvent, FileEventKind},
     traits::{BackendCapabilities, FileWatcher, WatchConfig, WatchHandle},
@@ -341,8 +341,8 @@ impl super::WatcherFactory for PollingFactory {
         Ok(Box::new(PollingWatcher::new()))
     }
 
-    fn backend_type(&self) -> crate::WatchBackend {
-        crate::WatchBackend::Polling
+    fn backend_type(&self) -> crate::watch::WatchBackend {
+        crate::watch::WatchBackend::Polling
     }
 
     fn is_available(&self) -> bool {
@@ -358,7 +358,7 @@ impl super::WatcherFactory for PollingFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::traits::FileWatcher;
+    use crate::watch::traits::FileWatcher;
 
     #[test]
     fn default_interval_1_second() {
@@ -395,7 +395,7 @@ mod tests {
         let factory = PollingFactory::new();
         assert_eq!(
             <PollingFactory as super::super::WatcherFactory>::backend_type(&factory),
-            crate::WatchBackend::Polling
+            crate::watch::WatchBackend::Polling
         );
     }
 
