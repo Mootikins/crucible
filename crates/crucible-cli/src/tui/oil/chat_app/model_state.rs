@@ -22,4 +22,3 @@ pub struct PluginStatusEntry {
     pub state: String,
     pub error: Option<String>,
 }
-

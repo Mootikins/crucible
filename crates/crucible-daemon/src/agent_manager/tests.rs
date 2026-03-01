@@ -360,18 +360,16 @@ fn test_agent() -> SessionAgent {
 fn create_test_agent_manager(session_manager: Arc<SessionManager>) -> AgentManager {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-    AgentManager::new(
-        AgentManagerParams {
-            kiln_manager: Arc::new(KilnManager::new()),
-            session_manager,
-            background_manager,
-            mcp_gateway: None,
-            llm_config: None,
-            acp_config: None,
-            permission_config: None,
-            plugin_loader: None,
-        },
-    )
+    AgentManager::new(AgentManagerParams {
+        kiln_manager: Arc::new(KilnManager::new()),
+        session_manager,
+        background_manager,
+        mcp_gateway: None,
+        llm_config: None,
+        acp_config: None,
+        permission_config: None,
+        plugin_loader: None,
+    })
 }
 
 fn create_test_agent_manager_with_providers(
@@ -380,18 +378,16 @@ fn create_test_agent_manager_with_providers(
 ) -> AgentManager {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-    AgentManager::new(
-        AgentManagerParams {
-            kiln_manager: Arc::new(KilnManager::new()),
-            session_manager,
-            background_manager,
-            mcp_gateway: None,
-            llm_config: Some(llm_config),
-            acp_config: None,
-            permission_config: None,
-            plugin_loader: None,
-        },
-    )
+    AgentManager::new(AgentManagerParams {
+        kiln_manager: Arc::new(KilnManager::new()),
+        session_manager,
+        background_manager,
+        mcp_gateway: None,
+        llm_config: Some(llm_config),
+        acp_config: None,
+        permission_config: None,
+        plugin_loader: None,
+    })
 }
 
 fn create_test_agent_manager_with_enrichment(
@@ -400,21 +396,19 @@ fn create_test_agent_manager_with_enrichment(
 ) -> AgentManager {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
-    AgentManager::new(
-        AgentManagerParams {
-            kiln_manager: Arc::new(KilnManager::with_event_tx(
-                event_tx,
-                Some(enrichment_config),
-            )),
-            session_manager,
-            background_manager,
-            mcp_gateway: None,
-            llm_config: None,
-            acp_config: None,
-            permission_config: None,
-            plugin_loader: None,
-        },
-    )
+    AgentManager::new(AgentManagerParams {
+        kiln_manager: Arc::new(KilnManager::with_event_tx(
+            event_tx,
+            Some(enrichment_config),
+        )),
+        session_manager,
+        background_manager,
+        mcp_gateway: None,
+        llm_config: None,
+        acp_config: None,
+        permission_config: None,
+        plugin_loader: None,
+    })
 }
 
 #[tokio::test]
@@ -2974,18 +2968,16 @@ async fn test_list_models_returns_all_providers() {
 
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-    let agent_manager = AgentManager::new(
-        AgentManagerParams {
-            kiln_manager: Arc::new(KilnManager::new()),
-            session_manager: session_manager.clone(),
-            background_manager,
-            mcp_gateway: None,
-            llm_config: Some(llm_config),
-            acp_config: None,
-            permission_config: None,
-            plugin_loader: None,
-        },
-    );
+    let agent_manager = AgentManager::new(AgentManagerParams {
+        kiln_manager: Arc::new(KilnManager::new()),
+        session_manager: session_manager.clone(),
+        background_manager,
+        mcp_gateway: None,
+        llm_config: Some(llm_config),
+        acp_config: None,
+        permission_config: None,
+        plugin_loader: None,
+    });
 
     agent_manager
         .configure_agent(&session.id, test_agent())
@@ -3614,18 +3606,16 @@ async fn test_list_models_no_llm_config() {
 
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-    let agent_manager = AgentManager::new(
-        AgentManagerParams {
-            kiln_manager: Arc::new(KilnManager::new()),
-            session_manager: session_manager.clone(),
-            background_manager,
-            mcp_gateway: None,
-            llm_config: None,
-            acp_config: None,
-            permission_config: None,
-            plugin_loader: None,
-        },
-    );
+    let agent_manager = AgentManager::new(AgentManagerParams {
+        kiln_manager: Arc::new(KilnManager::new()),
+        session_manager: session_manager.clone(),
+        background_manager,
+        mcp_gateway: None,
+        llm_config: None,
+        acp_config: None,
+        permission_config: None,
+        plugin_loader: None,
+    });
 
     agent_manager
         .configure_agent(&session.id, test_agent())
@@ -3678,18 +3668,16 @@ async fn test_list_models_prefixes_with_provider_key() {
 
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-    let agent_manager = AgentManager::new(
-        AgentManagerParams {
-            kiln_manager: Arc::new(KilnManager::new()),
-            session_manager: session_manager.clone(),
-            background_manager,
-            mcp_gateway: None,
-            llm_config: Some(llm_config),
-            acp_config: None,
-            permission_config: None,
-            plugin_loader: None,
-        },
-    );
+    let agent_manager = AgentManager::new(AgentManagerParams {
+        kiln_manager: Arc::new(KilnManager::new()),
+        session_manager: session_manager.clone(),
+        background_manager,
+        mcp_gateway: None,
+        llm_config: Some(llm_config),
+        acp_config: None,
+        permission_config: None,
+        plugin_loader: None,
+    });
 
     agent_manager
         .configure_agent(&session.id, test_agent())
@@ -3820,18 +3808,16 @@ fn create_test_agent_manager_with_llm_config(
 ) -> AgentManager {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-    AgentManager::new(
-        AgentManagerParams {
-            kiln_manager: Arc::new(KilnManager::new()),
-            session_manager,
-            background_manager,
-            mcp_gateway: None,
-            llm_config: Some(llm_config),
-            acp_config: None,
-            permission_config: None,
-            plugin_loader: None,
-        },
-    )
+    AgentManager::new(AgentManagerParams {
+        kiln_manager: Arc::new(KilnManager::new()),
+        session_manager,
+        background_manager,
+        mcp_gateway: None,
+        llm_config: Some(llm_config),
+        acp_config: None,
+        permission_config: None,
+        plugin_loader: None,
+    })
 }
 
 async fn start_mock_ollama_tags_server(models: Vec<&str>) -> (String, tokio::task::JoinHandle<()>) {
@@ -3921,18 +3907,16 @@ fn create_test_agent_manager_with_both(
 ) -> AgentManager {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-    AgentManager::new(
-        AgentManagerParams {
-            kiln_manager: Arc::new(KilnManager::new()),
-            session_manager,
-            background_manager,
-            mcp_gateway: None,
-            llm_config: Some(llm_config),
-            acp_config: None,
-            permission_config: None,
-            plugin_loader: None,
-        },
-    )
+    AgentManager::new(AgentManagerParams {
+        kiln_manager: Arc::new(KilnManager::new()),
+        session_manager,
+        background_manager,
+        mcp_gateway: None,
+        llm_config: Some(llm_config),
+        acp_config: None,
+        permission_config: None,
+        plugin_loader: None,
+    })
 }
 
 #[tokio::test]

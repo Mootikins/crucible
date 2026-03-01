@@ -9,7 +9,6 @@ struct ExecuteMultiKilnSearchParams<'a> {
     original_content: &'a str,
 }
 
-
 use super::*;
 
 impl AgentManager {
@@ -210,17 +209,15 @@ impl AgentManager {
         let kilns_searched = sources.len();
 
         let results = match self
-            .execute_multi_kiln_search(
-                ExecuteMultiKilnSearchParams {
-                    session_id,
-                    sources: &sources,
-                    query_embedding,
-                    agent_config,
-                    session,
-                    event_tx,
-                    original_content,
-                },
-            )
+            .execute_multi_kiln_search(ExecuteMultiKilnSearchParams {
+                session_id,
+                sources: &sources,
+                query_embedding,
+                agent_config,
+                session,
+                event_tx,
+                original_content,
+            })
             .await
         {
             Some(r) => r,

@@ -8,7 +8,7 @@ mod parser_handler;
 
 pub use composite::{CompositeHandler, CoordinationStrategy, HandlerState};
 pub use indexing::IndexingHandler;
-pub use obsidian_sync::{ObsidianSyncHandler, ObsidianKilnConfig, SyncConfig, SyncStats};
+pub use obsidian_sync::{ObsidianKilnConfig, ObsidianSyncHandler, SyncConfig, SyncStats};
 pub use parser_handler::ParserHandler;
 
 use crate::{error::Result, events::FileEvent, traits::EventHandler};

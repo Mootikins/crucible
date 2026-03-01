@@ -193,11 +193,7 @@ async fn get_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, WebError> {
-    let result = state
-        .daemon
-        .session_get(&id)
-        .await
-        .daemon_err()?;
+    let result = state.daemon.session_get(&id).await.daemon_err()?;
 
     Ok(Json(result))
 }
@@ -227,11 +223,7 @@ async fn pause_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, WebError> {
-    let result = state
-        .daemon
-        .session_pause(&id)
-        .await
-        .daemon_err()?;
+    let result = state.daemon.session_pause(&id).await.daemon_err()?;
 
     Ok(Json(result))
 }
@@ -240,11 +232,7 @@ async fn resume_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, WebError> {
-    let result = state
-        .daemon
-        .session_resume(&id)
-        .await
-        .daemon_err()?;
+    let result = state.daemon.session_resume(&id).await.daemon_err()?;
 
     let session_id = id.as_str();
     state
@@ -260,11 +248,7 @@ async fn end_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, WebError> {
-    let result = state
-        .daemon
-        .session_end(&id)
-        .await
-        .daemon_err()?;
+    let result = state.daemon.session_end(&id).await.daemon_err()?;
 
     state.events.remove_session(&id).await;
 
@@ -275,11 +259,7 @@ async fn cancel_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, WebError> {
-    let cancelled = state
-        .daemon
-        .session_cancel(&id)
-        .await
-        .daemon_err()?;
+    let cancelled = state.daemon.session_cancel(&id).await.daemon_err()?;
 
     Ok(Json(serde_json::json!({ "cancelled": cancelled })))
 }
@@ -288,11 +268,7 @@ async fn list_models(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, WebError> {
-    let models = state
-        .daemon
-        .session_list_models(&id)
-        .await
-        .daemon_err()?;
+    let models = state.daemon.session_list_models(&id).await.daemon_err()?;
 
     Ok(Json(serde_json::json!({ "models": models })))
 }

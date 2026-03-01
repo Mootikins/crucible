@@ -1,4 +1,3 @@
-
 use crate::tui::oil::app::{Action, App, ViewContext};
 use crate::tui::oil::chat_container::ContainerList;
 use crate::tui::oil::commands::{CliValue, SetCommand};
@@ -49,9 +48,9 @@ pub mod state;
 
 pub use messages::ChatAppMsg;
 pub use model_state::{McpServerDisplay, ModelListState, PluginStatusEntry};
-pub use state::{ChatItem, ChatMode, InputMode, Role};
 use popup_state::{PermissionState, PopupState, PrecognitionState, ShellHistoryState};
 use state::{AutocompleteKind, MessageQueueState};
+pub use state::{ChatItem, ChatMode, InputMode, Role};
 
 pub struct OilChatApp {
     // ─── Viewport Projection (daemon-derived state) ───────────────────
