@@ -501,10 +501,7 @@ impl WorkspaceTools {
 
         cmd.arg(&search_path);
 
-        let output = cmd
-            .output()
-            .await
-            .mcp_err_ctx("Grep error")?;
+        let output = cmd.output().await.mcp_err_ctx("Grep error")?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let lines: Vec<&str> = stdout.lines().take(max_matches + 1).collect();

@@ -32,7 +32,6 @@ use mlua::{Lua, MetaMethod, UserData, UserDataMethods, Value};
 use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, oneshot};
 
-
 /// Extension trait to convert channel send errors to String.
 trait SendExt<T> {
     fn or_closed(self) -> Result<T, String>;
@@ -44,24 +43,45 @@ impl<T, E> SendExt<T> for Result<T, tokio::sync::mpsc::error::SendError<E>> {
     }
 }
 
-
 /// Thin RPC interface for session configuration.
 /// Does NOT expose message sending or other sensitive operations.
 ///
 /// All methods have no-op defaults so that stub implementations (e.g. daemon-side
 /// NoopSessionRpc, test mocks) don't need 16 boilerplate methods.
 pub trait SessionConfigRpc: Send + Sync {
-    fn get_temperature(&self) -> Option<f64> { None }
-    fn set_temperature(&self, _temp: f64) -> Result<(), String> { Ok(()) }
-    fn get_max_tokens(&self) -> Option<u32> { None }
-    fn set_max_tokens(&self, _tokens: Option<u32>) -> Result<(), String> { Ok(()) }
-    fn get_thinking_budget(&self) -> Option<i64> { None }
-    fn set_thinking_budget(&self, _budget: i64) -> Result<(), String> { Ok(()) }
-    fn get_model(&self) -> Option<String> { None }
-    fn switch_model(&self, _model: &str) -> Result<(), String> { Ok(()) }
-    fn list_models(&self) -> Vec<String> { Vec::new() }
-    fn get_mode(&self) -> String { "chat".to_string() }
-    fn set_mode(&self, _mode: &str) -> Result<(), String> { Ok(()) }
+    fn get_temperature(&self) -> Option<f64> {
+        None
+    }
+    fn set_temperature(&self, _temp: f64) -> Result<(), String> {
+        Ok(())
+    }
+    fn get_max_tokens(&self) -> Option<u32> {
+        None
+    }
+    fn set_max_tokens(&self, _tokens: Option<u32>) -> Result<(), String> {
+        Ok(())
+    }
+    fn get_thinking_budget(&self) -> Option<i64> {
+        None
+    }
+    fn set_thinking_budget(&self, _budget: i64) -> Result<(), String> {
+        Ok(())
+    }
+    fn get_model(&self) -> Option<String> {
+        None
+    }
+    fn switch_model(&self, _model: &str) -> Result<(), String> {
+        Ok(())
+    }
+    fn list_models(&self) -> Vec<String> {
+        Vec::new()
+    }
+    fn get_mode(&self) -> String {
+        "chat".to_string()
+    }
+    fn set_mode(&self, _mode: &str) -> Result<(), String> {
+        Ok(())
+    }
     fn notify(&self, _notification: crucible_core::types::Notification) {}
     fn toggle_messages(&self) {}
     fn show_messages(&self) {}
@@ -101,7 +121,10 @@ impl ChannelSessionRpc {
     }
 
     /// Send a query command and return the response, or None on channel failure.
-    fn query<T>(&self, cmd: impl FnOnce(oneshot::Sender<Option<T>>) -> SessionCommand) -> Option<T> {
+    fn query<T>(
+        &self,
+        cmd: impl FnOnce(oneshot::Sender<Option<T>>) -> SessionCommand,
+    ) -> Option<T> {
         let (tx, rx) = oneshot::channel();
         self.tx.send(cmd(tx)).ok()?;
         rx.blocking_recv().ok().flatten()
@@ -114,11 +137,10 @@ impl ChannelSessionRpc {
     ) -> Result<(), String> {
         let (tx, rx) = oneshot::channel();
         self.tx.send(cmd(tx)).or_closed()?;
-        rx.blocking_recv().map_err(|_| "Reply channel closed".to_string())?
+        rx.blocking_recv()
+            .map_err(|_| "Reply channel closed".to_string())?
     }
 }
-
-
 
 impl SessionConfigRpc for ChannelSessionRpc {
     fn get_temperature(&self) -> Option<f64> {
@@ -166,8 +188,7 @@ impl SessionConfigRpc for ChannelSessionRpc {
         if self.tx.send(SessionCommand::GetMode(tx)).is_err() {
             return "unknown".to_string();
         }
-        rx.blocking_recv()
-            .unwrap_or_else(|_| "unknown".to_string())
+        rx.blocking_recv().unwrap_or_else(|_| "unknown".to_string())
     }
 
     fn set_mode(&self, mode: &str) -> Result<(), String> {

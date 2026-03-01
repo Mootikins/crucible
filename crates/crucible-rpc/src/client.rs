@@ -402,7 +402,6 @@ pub struct SessionCancelResponse {
     pub cancelled: bool,
 }
 
-
 /// Response from `session.render_markdown`.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct SessionRenderMarkdownResponse {
@@ -800,8 +799,13 @@ impl DaemonClient {
 
     /// Shorthand for RPC methods that only take a session_id parameter.
     async fn session_id_call(&self, method: &str, session_id: &str) -> Result<serde_json::Value> {
-        self.typed_call(method, SessionIdRequest { session_id: session_id.to_string() })
-            .await
+        self.typed_call(
+            method,
+            SessionIdRequest {
+                session_id: session_id.to_string(),
+            },
+        )
+        .await
     }
 
     /// Fetch a nullable field from a session-scoped RPC method.
@@ -1678,9 +1682,12 @@ impl DaemonClient {
     ///
     /// Returns the configured thinking budget, or `None` if not set (using defaults).
     pub async fn session_get_thinking_budget(&self, session_id: &str) -> Result<Option<i64>> {
-        self.get_session_option("session.get_thinking_budget", session_id, "thinking_budget", |v| {
-            v.as_i64()
-        })
+        self.get_session_option(
+            "session.get_thinking_budget",
+            session_id,
+            "thinking_budget",
+            |v| v.as_i64(),
+        )
         .await
     }
 
@@ -1729,8 +1736,10 @@ impl DaemonClient {
     }
 
     pub async fn session_get_temperature(&self, session_id: &str) -> Result<Option<f64>> {
-        self.get_session_option("session.get_temperature", session_id, "temperature", |v| v.as_f64())
-            .await
+        self.get_session_option("session.get_temperature", session_id, "temperature", |v| {
+            v.as_f64()
+        })
+        .await
     }
 
     pub async fn plugin_reload(&self, name: &str) -> Result<serde_json::Value> {

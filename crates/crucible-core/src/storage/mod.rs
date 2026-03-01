@@ -6,7 +6,7 @@
 //!
 //! - **NoteStore**: Unified note metadata and vector search storage
 //! - **GraphView**: In-memory graph from denormalized links
-//! - **Precognition**: Pure computation (hash + embed)
+//! - **Pure computation**: Hash and embedding generation
 //!
 //! ## Architecture
 //!
@@ -24,5 +24,5 @@ pub mod traits;
 // Re-export main types for convenience
 pub use error::{StorageError, StorageResult};
 pub use graph::InMemoryGraph;
-pub use note_store::{Filter, GraphView, NoteRecord, NoteStore, Op, Precognition, SearchResult};
+pub use note_store::{Filter, GraphView, NoteRecord, NoteStore, Op, SearchResult};
 pub use traits::{ContentHasher, QuotaUsage, StorageBackend, StorageStats};

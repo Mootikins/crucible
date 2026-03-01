@@ -79,9 +79,7 @@ pub use crate::types::tool_ref::{ToolRef, ToolSource};
 pub use crate::types::popup::PopupEntry;
 
 // Re-export undo tree types
-pub use crate::types::undo_tree::{
-    NodeId as UndoNodeId, TreeNode, TreeSummary, UndoTree,
-};
+pub use crate::types::undo_tree::{NodeId as UndoNodeId, TreeNode, TreeSummary, UndoTree};
 
 // Re-export notification types
 pub use crate::types::notification::{Notification, NotificationKind, NotificationQueue};

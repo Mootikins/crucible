@@ -431,40 +431,6 @@ pub trait GraphView: Send + Sync {
 }
 
 // ============================================================================
-// Precognition Trait
-// ============================================================================
-
-/// Pure computation for hashing and embedding
-///
-/// This trait encapsulates the computational operations needed before
-/// storing a note: computing content hashes and generating embeddings.
-///
-/// # Design Rationale
-///
-/// Separating these operations into their own trait allows:
-/// - Easy mocking for tests
-/// - Swapping embedding backends without changing storage code
-/// - Batch processing optimizations
-#[async_trait]
-pub trait Precognition: Send + Sync {
-    /// Compute a BLAKE3 hash of content
-    ///
-    /// This is a pure, synchronous operation.
-    fn hash(&self, content: &[u8]) -> BlockHash;
-
-    /// Generate an embedding for text content
-    ///
-    /// This is typically an async operation that may call an external
-    /// service (Ollama, OpenAI, etc.) or run a local model.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if embedding generation fails (network error,
-    /// model not loaded, etc.).
-    async fn embed(&self, content: &str) -> StorageResult<Vec<f32>>;
-}
-
-// ============================================================================
 // Tests
 // ============================================================================
 

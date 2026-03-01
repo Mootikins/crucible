@@ -1217,4 +1217,3 @@ mod tests {
         assert!(!session.is_granular());
     }
 }
-

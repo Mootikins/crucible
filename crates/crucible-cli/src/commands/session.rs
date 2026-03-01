@@ -412,8 +412,6 @@ async fn list_persisted(
 
 /// Search sessions by title/content via daemon RPC (with local fallback)
 async fn search(config: CliConfig, query: String, limit: u32) -> Result<()> {
-
-
     // Try daemon RPC first
     if let Ok(client) = daemon_client().await {
         if let Ok(result) = client

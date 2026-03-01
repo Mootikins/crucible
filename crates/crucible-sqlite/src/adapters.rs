@@ -58,9 +58,7 @@ impl SqliteClientHandle {
             let start = Instant::now();
 
             pool.with_connection(|conn| {
-                let mut stmt = conn
-                    .prepare(&sql_owned)
-                    .sql()?;
+                let mut stmt = conn.prepare(&sql_owned).sql()?;
                 let column_count = stmt.column_count();
                 let column_names: Vec<String> = (0..column_count)
                     .map(|i| stmt.column_name(i).unwrap_or("").to_string())
@@ -71,10 +69,7 @@ impl SqliteClientHandle {
                     .query(params_from_iter(std::iter::empty::<&str>()))
                     .sql()?;
 
-                while let Some(row) = rows
-                    .next()
-                    .sql()?
-                {
+                while let Some(row) = rows.next().sql()? {
                     let mut data = HashMap::new();
                     let mut record_id = None;
 

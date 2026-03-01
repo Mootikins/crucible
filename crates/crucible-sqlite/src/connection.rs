@@ -82,13 +82,11 @@ impl SqlitePool {
         F: FnOnce(&Connection) -> StorageResult<T>,
     {
         let conn = self.conn.lock();
-        conn.execute("BEGIN TRANSACTION", [])
-            .sql()?;
+        conn.execute("BEGIN TRANSACTION", []).sql()?;
 
         match f(&conn) {
             Ok(result) => {
-                conn.execute("COMMIT", [])
-                    .sql()?;
+                conn.execute("COMMIT", []).sql()?;
                 Ok(result)
             }
             Err(e) => {
@@ -118,16 +116,13 @@ impl SqlitePool {
 
         // WAL mode for better concurrency
         if self.config.wal_mode {
-            conn.execute_batch("PRAGMA journal_mode = WAL;")
-                .sql()?;
-            conn.execute_batch("PRAGMA synchronous = NORMAL;")
-                .sql()?;
+            conn.execute_batch("PRAGMA journal_mode = WAL;").sql()?;
+            conn.execute_batch("PRAGMA synchronous = NORMAL;").sql()?;
         }
 
         // Foreign key enforcement
         if self.config.foreign_keys {
-            conn.execute_batch("PRAGMA foreign_keys = ON;")
-                .sql()?;
+            conn.execute_batch("PRAGMA foreign_keys = ON;").sql()?;
         }
 
         // Busy timeout
@@ -148,8 +143,7 @@ impl SqlitePool {
         }
 
         // Use memory for temp tables
-        conn.execute_batch("PRAGMA temp_store = MEMORY;")
-            .sql()?;
+        conn.execute_batch("PRAGMA temp_store = MEMORY;").sql()?;
 
         Ok(())
     }
@@ -198,9 +192,7 @@ mod tests {
         let pool = SqlitePool::memory().expect("Failed to create memory pool");
 
         pool.with_connection(|conn| {
-            let result: i64 = conn
-                .query_row("SELECT 1 + 1", [], |row| row.get(0))
-                .sql()?;
+            let result: i64 = conn.query_row("SELECT 1 + 1", [], |row| row.get(0)).sql()?;
             assert_eq!(result, 2);
             Ok(())
         })
@@ -244,9 +236,7 @@ mod tests {
                 let mut stmt = conn
                     .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
                     .sql()?;
-                let rows = stmt
-                    .query_map([], |row| row.get(0))
-                    .sql()?;
+                let rows = stmt.query_map([], |row| row.get(0)).sql()?;
                 rows.filter_map(Result::ok).collect()
             };
 

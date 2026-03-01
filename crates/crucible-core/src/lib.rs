@@ -50,7 +50,7 @@ pub use kiln::EXCLUDED_DIRS;
 // Re-export enrichment traits and types (implementations in crucible-daemon::enrichment)
 pub use enrichment::{
     BlockEmbedding, CachedEmbedding, EmbeddingCache, EmbeddingProvider, EnrichedNote,
-    EnrichedNoteStore, EnrichmentMetadata, EnrichmentService, InferredRelation, RelationType,
+    EnrichmentMetadata, EnrichmentService, InferredRelation, RelationType,
 };
 
 // Re-export merkle tree abstractions
@@ -66,8 +66,9 @@ pub use processing::{
 
 // Re-export core traits (abstractions for Dependency Inversion)
 pub use traits::{
-    ChangeDetector, ContentHasher, FilesystemHandler, HashLookupStorage, MarkdownParser, Registry,
-    RegistryBuilder, SessionManager, Storage, StreamHandler, ToolBridge, ToolExecutor,
+    ChangeDetector, ContentHasher, ContextMessage, FilesystemHandler, HashLookupStorage,
+    MarkdownParser, Registry, RegistryBuilder, SessionManager, Storage, StreamHandler, ToolBridge,
+    ToolExecutor,
 };
 
 // Re-export key types used across module boundaries
@@ -161,11 +162,9 @@ pub use events::{
     EmitResult,
     // Session event types
     EntityType,
-    EventBus,
     EventEmitter,
     EventError,
     EventFilter,
-    EventSubscriber,
     FileChangeKind,
     HandlerErrorInfo,
     HandlerFuture,

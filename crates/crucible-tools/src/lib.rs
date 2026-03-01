@@ -34,8 +34,8 @@
 #![warn(clippy::pedantic)]
 
 pub mod error_utils;
-pub mod helpers;
 pub mod extended_mcp_server;
+pub mod helpers;
 pub mod kiln;
 pub mod mcp_client;
 pub mod mcp_gateway;

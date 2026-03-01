@@ -168,10 +168,7 @@ impl FileScanner {
     }
 
     /// Create a FileScanner with default configuration.
-    pub fn with_defaults(
-        root_path: &Path,
-        hasher: Arc<dyn ContentHasher>,
-    ) -> Result<Self, Error> {
+    pub fn with_defaults(root_path: &Path, hasher: Arc<dyn ContentHasher>) -> Result<Self, Error> {
         Self::new(root_path, ScanConfig::default(), hasher)
     }
 
@@ -257,7 +254,6 @@ impl FileScanner {
             result.scan_errors.len()
         );
 
-
         Ok(result)
     }
 
@@ -310,7 +306,6 @@ impl FileScanner {
             result.successful_files,
             result.scan_errors.len()
         );
-
 
         Ok(result)
     }
@@ -401,7 +396,6 @@ impl FileScanner {
             result.scan_duration, result.successful_files
         );
 
-
         Ok(result)
     }
 
@@ -451,7 +445,6 @@ impl FileScanner {
 
                 let path = entry.path();
                 result.total_considered += 1;
-
 
                 // Handle directories
                 if path.is_dir() {

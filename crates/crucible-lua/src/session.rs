@@ -511,7 +511,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_persists_events() {
-
         let temp = TempDir::new().unwrap();
         let folder = temp.path().join("session");
         fs::create_dir_all(&folder).unwrap();

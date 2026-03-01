@@ -60,7 +60,7 @@ pub use completion_backend::{
     BackendResult, CompletionBackend,
 };
 pub use context_ops::{
-    ContextError, ContextMessage, ContextOps, MessageMetadata, MessagePredicate, Position, Range,
+    ContextError, ContextMessage, MessageMetadata, MessagePredicate, Position, Range,
 };
 pub use knowledge::{KnowledgeRepository, NoteInfo};
 pub use llm::{
@@ -80,8 +80,8 @@ pub use tools::{ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolR
 pub use input::{ChatEvent, InputMode, KeyAction, KeyCode, KeyPattern, Modifiers, SessionAction};
 // MCP abstractions
 pub use mcp::{
-    ContentBlock, McpClient, McpClientConfig, McpConnection, McpError, McpServerInfo,
-    McpToolDiscovery, McpToolExecutor, McpToolInfo, McpTransportConfig, ToolCallResult,
+    ContentBlock, McpClientConfig, McpConnection, McpError, McpServerInfo, McpToolExecutor,
+    McpToolInfo, McpTransportConfig, ToolCallResult,
 };
 pub use permission_gate::PermissionGate;
 pub use text_search::TextSearchMatch;
