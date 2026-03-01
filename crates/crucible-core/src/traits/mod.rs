@@ -59,9 +59,7 @@ pub use completion_backend::{
     BackendCompletionChunk, BackendCompletionRequest, BackendCompletionResponse, BackendError,
     BackendResult, CompletionBackend,
 };
-pub use context_ops::{
-    ContextMessage, MessageMetadata, Position, Range,
-};
+pub use context_ops::{ContextMessage, MessageMetadata, Position, Range};
 pub use knowledge::{KnowledgeRepository, NoteInfo};
 pub use llm::{
     ChatCompletionChoice, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,

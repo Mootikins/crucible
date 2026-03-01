@@ -13,7 +13,6 @@
 //! This separation allows flexible context management without hardcoding policies.
 
 use crate::traits::llm::{MessageRole, ToolCall};
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 /// Metadata associated with a context message
@@ -141,7 +140,6 @@ pub enum Range {
     /// Specific index range
     Indices(std::ops::Range<usize>),
 }
-
 
 #[cfg(test)]
 mod context_ops_tests;
