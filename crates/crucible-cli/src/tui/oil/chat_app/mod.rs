@@ -484,9 +484,21 @@ impl OilChatApp {
                 self.load_previous_messages(items);
                 Action::Continue
             }
-            ChatAppMsg::PrecognitionResult { notes_count } => {
+            ChatAppMsg::PrecognitionResult { notes_count, notes } => {
                 if notes_count > 0 {
-                    self.add_system_message(format!("📎 Found {} relevant notes", notes_count));
+                    if notes.is_empty() {
+                        self.add_system_message(format!("Found {} relevant notes", notes_count));
+                    } else {
+                        let mut msg = format!("Found {} relevant notes:", notes_count);
+                        for note in &notes {
+                            if let Some(label) = &note.kiln_label {
+                                msg.push_str(&format!("\n  \u{00B7} {} [{}]", note.title, label));
+                            } else {
+                                msg.push_str(&format!("\n  \u{00B7} {}", note.title));
+                            }
+                        }
+                        self.add_system_message(msg);
+                    }
                 }
                 Action::Continue
             }
@@ -2576,6 +2588,7 @@ mod tests {
     use crate::tui::oil::chat_container::ChatContainer;
     use crate::tui::oil::focus::FocusContext;
     use crate::tui::oil::render::render_to_string;
+    use crucible_core::traits::chat::PrecognitionNoteInfo;
 
     #[test]
     fn test_mode_cycle() {
@@ -3545,12 +3558,15 @@ mod tests {
     fn precognition_result_shows_system_message() {
         let mut app = OilChatApp::init();
 
-        app.on_message(ChatAppMsg::PrecognitionResult { notes_count: 3 });
+        app.on_message(ChatAppMsg::PrecognitionResult {
+            notes_count: 3,
+            notes: vec![],
+        });
 
         let containers = app.container_list().all_containers();
         assert_eq!(containers.len(), 1);
         if let ChatContainer::SystemMessage { content, .. } = &containers[0] {
-            assert!(content.contains("3 relevant notes"));
+            assert_eq!(content, "Found 3 relevant notes");
         } else {
             panic!("Expected SystemMessage, got {:?}", containers[0]);
         }
@@ -3560,9 +3576,70 @@ mod tests {
     fn precognition_result_zero_notes_no_message() {
         let mut app = OilChatApp::init();
 
-        app.on_message(ChatAppMsg::PrecognitionResult { notes_count: 0 });
+        app.on_message(ChatAppMsg::PrecognitionResult {
+            notes_count: 0,
+            notes: vec![],
+        });
 
         assert!(app.container_list().is_empty());
+    }
+
+    #[test]
+    fn precognition_result_single_note_primary_kiln() {
+        let mut app = OilChatApp::init();
+
+        app.on_message(ChatAppMsg::PrecognitionResult {
+            notes_count: 1,
+            notes: vec![PrecognitionNoteInfo {
+                title: "Authentication Guide".to_string(),
+                kiln_label: None,
+            }],
+        });
+
+        let containers = app.container_list().all_containers();
+        assert_eq!(containers.len(), 1);
+        if let ChatContainer::SystemMessage { content, .. } = &containers[0] {
+            assert!(content.contains("Found 1 relevant notes:"));
+            assert!(content.contains("\u{00B7} Authentication Guide"));
+            assert!(!content.contains('['));
+        } else {
+            panic!("Expected SystemMessage, got {:?}", containers[0]);
+        }
+    }
+
+    #[test]
+    fn precognition_result_mixed_kilns() {
+        let mut app = OilChatApp::init();
+
+        app.on_message(ChatAppMsg::PrecognitionResult {
+            notes_count: 3,
+            notes: vec![
+                PrecognitionNoteInfo {
+                    title: "Auth Module".to_string(),
+                    kiln_label: None,
+                },
+                PrecognitionNoteInfo {
+                    title: "Security Patterns".to_string(),
+                    kiln_label: Some("docs".to_string()),
+                },
+                PrecognitionNoteInfo {
+                    title: "OAuth2 Flow".to_string(),
+                    kiln_label: Some("reference".to_string()),
+                },
+            ],
+        });
+
+        let containers = app.container_list().all_containers();
+        assert_eq!(containers.len(), 1);
+        if let ChatContainer::SystemMessage { content, .. } = &containers[0] {
+            assert!(content.contains("Found 3 relevant notes:"));
+            assert!(content.contains("\u{00B7} Auth Module"));
+            assert!(!content.contains("Auth Module ["));
+            assert!(content.contains("\u{00B7} Security Patterns [docs]"));
+            assert!(content.contains("\u{00B7} OAuth2 Flow [reference]"));
+        } else {
+            panic!("Expected SystemMessage, got {:?}", containers[0]);
+        }
     }
 
     #[test]

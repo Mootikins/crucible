@@ -139,6 +139,7 @@ impl GenaiAgentHandle {
                 usage: None,
                 subagent_events: None,
                 precognition_notes_count: None,
+                precognition_notes: None,
             }));
             chunks.push(Ok(ChatChunk {
                 delta: String::new(),
@@ -149,6 +150,7 @@ impl GenaiAgentHandle {
                 usage: None,
                 subagent_events: None,
                 precognition_notes_count: None,
+                precognition_notes: None,
             }));
             return Box::pin(futures::stream::iter(chunks));
         }
@@ -163,6 +165,7 @@ impl GenaiAgentHandle {
                 usage: None,
                 subagent_events: None,
                 precognition_notes_count: None,
+                precognition_notes: None,
             }));
             chunks.push(Ok(ChatChunk {
                 delta: "42".to_string(),
@@ -173,6 +176,7 @@ impl GenaiAgentHandle {
                 usage: None,
                 subagent_events: None,
                 precognition_notes_count: None,
+                precognition_notes: None,
             }));
             chunks.push(Ok(ChatChunk {
                 delta: String::new(),
@@ -183,6 +187,7 @@ impl GenaiAgentHandle {
                 usage: None,
                 subagent_events: None,
                 precognition_notes_count: None,
+                precognition_notes: None,
             }));
             return Box::pin(futures::stream::iter(chunks));
         }
@@ -197,6 +202,7 @@ impl GenaiAgentHandle {
                 usage: None,
                 subagent_events: None,
                 precognition_notes_count: None,
+                precognition_notes: None,
             }));
             chunks.push(Ok(ChatChunk {
                 delta: String::new(),
@@ -207,6 +213,7 @@ impl GenaiAgentHandle {
                 usage: None,
                 subagent_events: None,
                 precognition_notes_count: None,
+                precognition_notes: None,
             }));
             return Box::pin(futures::stream::iter(chunks));
         }
@@ -238,6 +245,7 @@ impl GenaiAgentHandle {
                 usage: None,
                 subagent_events: None,
                 precognition_notes_count: None,
+                precognition_notes: None,
             }));
             chunks.push(Ok(ChatChunk {
                 delta: String::new(),
@@ -248,6 +256,7 @@ impl GenaiAgentHandle {
                 usage: None,
                 subagent_events: None,
                 precognition_notes_count: None,
+                precognition_notes: None,
             }));
             return Box::pin(futures::stream::iter(chunks));
         }
@@ -262,6 +271,7 @@ impl GenaiAgentHandle {
                 usage: None,
                 subagent_events: None,
                 precognition_notes_count: None,
+                precognition_notes: None,
             }));
             chunks.push(Ok(ChatChunk {
                 delta: " there".to_string(),
@@ -272,6 +282,7 @@ impl GenaiAgentHandle {
                 usage: None,
                 subagent_events: None,
                 precognition_notes_count: None,
+                precognition_notes: None,
             }));
             chunks.push(Ok(ChatChunk {
                 delta: String::new(),
@@ -282,6 +293,7 @@ impl GenaiAgentHandle {
                 usage: None,
                 subagent_events: None,
                 precognition_notes_count: None,
+                precognition_notes: None,
             }));
             return Box::pin(futures::stream::iter(chunks));
         }
@@ -295,6 +307,7 @@ impl GenaiAgentHandle {
             usage: None,
             subagent_events: None,
             precognition_notes_count: None,
+            precognition_notes: None,
         }));
         chunks.push(Ok(ChatChunk {
             delta: String::new(),
@@ -305,6 +318,7 @@ impl GenaiAgentHandle {
             usage: None,
             subagent_events: None,
             precognition_notes_count: None,
+            precognition_notes: None,
         }));
 
         Box::pin(futures::stream::iter(chunks))
@@ -432,6 +446,7 @@ impl AgentHandle for GenaiAgentHandle {
                             usage: None,
                             subagent_events: None,
                             precognition_notes_count: None,
+                            precognition_notes: None,
                         });
                     }
                     ChatStreamEvent::ReasoningChunk(chunk) => {
@@ -444,6 +459,7 @@ impl AgentHandle for GenaiAgentHandle {
                             usage: None,
                             subagent_events: None,
                             precognition_notes_count: None,
+                            precognition_notes: None,
                         });
                     }
                     ChatStreamEvent::ThoughtSignatureChunk(_) => {}
@@ -481,6 +497,7 @@ impl AgentHandle for GenaiAgentHandle {
                             usage,
                             subagent_events: None,
                             precognition_notes_count: None,
+                            precognition_notes: None,
                         });
                         break;
                     }

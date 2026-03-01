@@ -147,6 +147,7 @@ mod tests {
                         usage: None,
                         subagent_events: None,
                         precognition_notes_count: None,
+                        precognition_notes: None,
                     })
                 },
             )))
@@ -337,6 +338,7 @@ mod tests {
                         usage: None,
                         subagent_events: None,
                         precognition_notes_count: None,
+                        precognition_notes: None,
                     })
                 },
             )))

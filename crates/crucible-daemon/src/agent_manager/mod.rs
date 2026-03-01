@@ -230,6 +230,7 @@ fn emit_precognition_event(
     notes_count: usize,
     kilns_searched: usize,
     kilns_failed: usize,
+    notes: Option<Vec<crucible_core::traits::chat::PrecognitionNoteInfo>>,
 ) {
     let query_summary = query.chars().take(100).collect::<String>();
     let event = SessionEvent::PrecognitionComplete {
@@ -239,15 +240,19 @@ fn emit_precognition_event(
         kilns_filtered: 0,
         kilns_failed,
     };
+    let mut data = serde_json::json!({
+        "notes_count": notes_count,
+        "query_summary": query_summary,
+    });
+    if let Some(notes) = notes {
+        data["notes"] = serde_json::to_value(notes).unwrap_or_default();
+    }
     if !emit_event(
         event_tx,
         SessionEventMessage::new(
             session_id,
             event.event_type(),
-            serde_json::json!({
-                "notes_count": notes_count,
-                "query_summary": query_summary,
-            }),
+            data,
         ),
     ) {
         warn!(

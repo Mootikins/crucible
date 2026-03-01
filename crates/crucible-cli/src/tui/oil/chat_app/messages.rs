@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use crucible_core::interaction::{InteractionRequest, InteractionResponse};
+use crucible_core::traits::chat::PrecognitionNoteInfo;
 
 use super::{ChatItem, McpServerDisplay, PluginStatusEntry};
 
@@ -94,6 +95,7 @@ pub enum ChatAppMsg {
     ExportSession(PathBuf),
     PrecognitionResult {
         notes_count: usize,
+        notes: Vec<PrecognitionNoteInfo>,
     },
     /// Internal: enriched message ready to send to agent (from background precognition)
     EnrichedMessage {
