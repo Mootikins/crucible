@@ -40,7 +40,7 @@
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+
 
 /// Result type for ACP operations
 pub type AcpResult<T> = Result<T, AcpError>;
@@ -175,108 +175,6 @@ pub trait SessionManager: Send {
     async fn end_session(&mut self, session: Self::Session) -> AcpResult<()>;
 }
 
-/// Filesystem operations abstraction
-///
-/// Handles file operations requested by ACP agents (read, write, list).
-/// These operations are scoped to the workspace directory and respect
-/// the session's chat mode (plan/act) for permission enforcement.
-///
-/// ## Design Rationale
-///
-/// Separate from `ToolBridge` to follow Interface Segregation:
-/// - Filesystem operations are standard ACP primitives (ReadTextFileRequest, etc.)
-/// - Tool operations are higher-level, application-specific
-///
-/// Uses associated types for file content representation:
-/// - `FileContent` - The type representing file contents (String, Vec<u8>, etc.)
-///
-/// ## Permission Model
-///
-/// - **Plan mode**: Read-only (writes return `PermissionDenied`)
-/// - **Act mode**: Read and write allowed
-///
-/// ## Thread Safety
-///
-/// Implementations must be Send + Sync to enable concurrent file operations.
-///
-/// ## Example Implementation
-///
-/// ```rust,ignore
-/// impl FilesystemHandler for AcpFilesystem {
-///     type FileContent = String;
-///
-///     async fn read_file(&self, path: &Path) -> AcpResult<Self::FileContent> {
-///         // Resolve path relative to CWD, read file, return contents
-///     }
-/// }
-/// ```
-#[async_trait]
-pub trait FilesystemHandler: Send + Sync {
-    /// File content representation type
-    type FileContent: Send;
-
-    /// Read a text file from the filesystem
-    ///
-    /// Reads the file at the given path (relative to session CWD) and returns
-    /// its contents. This corresponds to ACP's `ReadTextFileRequest`.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to the file (relative or absolute)
-    ///
-    /// # Returns
-    ///
-    /// Returns the file contents on success, or an `AcpError`.
-    ///
-    /// # Errors
-    ///
-    /// - `AcpError::NotFound` - File doesn't exist
-    /// - `AcpError::Filesystem` - Read failed (permissions, encoding, etc.)
-    /// - `AcpError::PermissionDenied` - Path outside allowed scope
-    async fn read_file(&self, path: &Path) -> AcpResult<Self::FileContent>;
-
-    /// Write content to a text file
-    ///
-    /// Writes content to the file at the given path. Creates the file if it
-    /// doesn't exist, overwrites if it does. Respects plan/act mode permissions.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to the file (relative or absolute)
-    /// * `content` - Content to write
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` on success, or an `AcpError`.
-    ///
-    /// # Errors
-    ///
-    /// - `AcpError::PermissionDenied` - Plan mode blocks writes
-    /// - `AcpError::Filesystem` - Write failed (permissions, disk space, etc.)
-    async fn write_file(&self, path: &Path, content: Self::FileContent) -> AcpResult<()>;
-
-    /// List files in a directory
-    ///
-    /// Returns a list of file paths in the given directory. Used for agent
-    /// exploration of the workspace.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Directory path to list
-    /// * `recursive` - Whether to list recursively
-    ///
-    /// # Returns
-    ///
-    /// Returns a vector of file paths, or an `AcpError`.
-    ///
-    /// # Errors
-    ///
-    /// - `AcpError::NotFound` - Directory doesn't exist
-    /// - `AcpError::Filesystem` - Read failed
-    /// - `AcpError::PermissionDenied` - Path outside allowed scope
-    async fn list_files(&self, path: &Path, recursive: bool) -> AcpResult<Vec<PathBuf>>;
-}
-
 /// Tool discovery and execution abstraction
 ///
 /// Bridges ACP tool calls to Crucible's tool system (MCP-compatible tools for
@@ -310,75 +208,6 @@ pub trait FilesystemHandler: Send + Sync {
 ///     }
 /// }
 /// ```
-/// Response streaming abstraction
-///
-/// Handles real-time streaming of agent responses to the user interface.
-/// Processes chunks as they arrive and signals completion.
-///
-/// ## Design Rationale
-///
-/// Separate from `SessionManager` to follow Interface Segregation:
-/// - Session management handles lifecycle
-/// - Stream handling processes real-time output
-///
-/// Uses associated types for chunk representation:
-/// - `Chunk` - A single streaming chunk (text, tool call, etc.)
-///
-/// ## Thread Safety
-///
-/// Implementations must be Send to enable async processing of chunks.
-///
-/// ## Example Implementation
-///
-/// ```rust,ignore
-/// impl StreamHandler for TerminalStreamer {
-///     type Chunk = StreamChunk;
-///
-///     async fn on_stream_chunk(&mut self, chunk: Self::Chunk) -> AcpResult<()> {
-///         // Write chunk to terminal, update UI
-///     }
-/// }
-/// ```
-#[async_trait]
-pub trait StreamHandler: Send {
-    /// Stream chunk type
-    type Chunk: Send;
-
-    /// Handle a streaming response chunk
-    ///
-    /// Called for each chunk as it arrives from the agent. Implementations
-    /// should update the UI or accumulate the chunk for later processing.
-    ///
-    /// # Arguments
-    ///
-    /// * `chunk` - The stream chunk (text, tool call, metadata, etc.)
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` to continue streaming, or an `AcpError` to abort.
-    ///
-    /// # Errors
-    ///
-    /// - `AcpError::Stream` - Chunk processing failed
-    /// - `AcpError::Internal` - UI update failed
-    async fn on_stream_chunk(&mut self, chunk: Self::Chunk) -> AcpResult<()>;
-
-    /// Handle stream completion
-    ///
-    /// Called when the agent finishes streaming a response. Implementations
-    /// should finalize the UI, persist history, etc.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` on successful completion, or an `AcpError`.
-    ///
-    /// # Errors
-    ///
-    /// - `AcpError::Stream` - Completion handling failed
-    /// - `AcpError::Internal` - Finalization failed
-    async fn on_stream_complete(&mut self) -> AcpResult<()>;
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
