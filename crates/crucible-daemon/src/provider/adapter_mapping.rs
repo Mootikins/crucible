@@ -141,7 +141,7 @@ impl ChatClient {
         let client = builder.build();
         Self {
             client,
-            backend: config.provider_type.clone(),
+            backend: config.provider_type,
         }
     }
 
