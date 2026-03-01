@@ -4,7 +4,7 @@
 //! They require available inotify instances and will be skipped if the system
 //! limit is nearly exhausted (common in CI or heavily-instrumented dev envs).
 
-use crucible_watch::{
+use crucible_daemon::watch::{
     traits::{DebounceConfig, HandlerConfig, WatchConfig, WatchMode},
     EventFilter, FileEvent, FileWatcher, NotifyWatcher,
 };

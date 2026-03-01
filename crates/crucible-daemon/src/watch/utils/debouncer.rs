@@ -1,6 +1,6 @@
 //! Event debouncing for reducing event spam.
 
-use crate::FileEvent;
+use crate::watch::FileEvent;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use tracing::{debug, trace};
@@ -61,7 +61,7 @@ impl Debouncer {
         }
 
         let key = if self.deduplicate {
-            crate::utils::EventUtils::deduplication_key(&event)
+            crate::watch::utils::EventUtils::deduplication_key(&event)
         } else {
             // Use unique key if deduplication is disabled
             format!(
@@ -157,7 +157,7 @@ impl Debouncer {
 
         // Create a batch event
         let batch_event = FileEvent::new(
-            crate::events::FileEventKind::Batch(batch_events),
+            crate::watch::events::FileEventKind::Batch(batch_events),
             std::path::PathBuf::new(),
         );
 

@@ -34,7 +34,7 @@ use async_trait::async_trait;
 use tokio::sync::RwLock;
 use tracing::{debug, info, trace, warn};
 
-use crate::error::Error;
+use crate::watch::error::Error;
 
 // Import the traits and types from crucible-core
 use crucible_core::traits::change_detection::{

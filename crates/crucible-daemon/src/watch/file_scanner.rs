@@ -31,8 +31,8 @@ use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, trace, warn};
 
-use crate::error::Error;
-use crate::types::{
+use crate::watch::error::Error;
+use crate::watch::types::{
     FileInfo, FileType, ScanConfig, ScanError, ScanErrorType, ScanResult, SkipReason, SkipType,
 };
 

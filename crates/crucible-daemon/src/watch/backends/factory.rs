@@ -1,7 +1,7 @@
 //! Factory implementations for creating file watcher backends.
 
 use super::BackendRegistry;
-use crate::{
+use crate::watch::{
     error::{Error, Result},
     WatchBackend,
 };
@@ -29,7 +29,7 @@ impl ExtendedBackendRegistry {
     pub async fn create_optimal_watcher(
         &self,
         requirements: &WatcherRequirements,
-    ) -> Result<Arc<dyn crate::traits::FileWatcher>> {
+    ) -> Result<Arc<dyn crate::watch::traits::FileWatcher>> {
         let backend = self.select_optimal_backend(requirements)?;
         self.inner.create_watcher(backend).await.map(Arc::from)
     }
@@ -68,7 +68,7 @@ impl ExtendedBackendRegistry {
     /// Check if backend capabilities meet requirements.
     fn meets_requirements(
         &self,
-        capabilities: &crate::traits::BackendCapabilities,
+        capabilities: &crate::watch::traits::BackendCapabilities,
         requirements: &WatcherRequirements,
     ) -> bool {
         // Check recursive requirement

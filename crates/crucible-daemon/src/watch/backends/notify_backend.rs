@@ -1,6 +1,6 @@
 //! Notify-based file watching backend.
 
-use crate::{
+use crate::watch::{
     error::{Error, Result},
     events::{EventFilter, EventMetadata, FileEvent, FileEventKind},
     traits::{BackendCapabilities, FileWatcher, WatchConfig, WatchHandle},
@@ -157,7 +157,7 @@ impl NotifyWatcher {
     /// Update debounce configuration.
     pub fn update_debounce_config(
         &mut self,
-        _debounce_config: &crate::traits::DebounceConfig,
+        _debounce_config: &crate::watch::traits::DebounceConfig,
     ) -> Result<()> {
         // Note: notify-debouncer-full doesn't support runtime reconfiguration
         // This would require recreating the debouncer
@@ -295,8 +295,8 @@ impl super::WatcherFactory for NotifyFactory {
         Ok(Box::new(NotifyWatcher::new()))
     }
 
-    fn backend_type(&self) -> crate::WatchBackend {
-        crate::WatchBackend::Notify
+    fn backend_type(&self) -> crate::watch::WatchBackend {
+        crate::watch::WatchBackend::Notify
     }
 
     fn is_available(&self) -> bool {
