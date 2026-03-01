@@ -448,6 +448,7 @@ impl OilChatApp {
             ChatAppMsg::Error(msg) => {
                 self.notification_area
                     .add(crucible_core::types::Notification::warning(msg));
+                self.notification_area.show();
                 self.container_list.cancel_streaming();
                 Action::Continue
             }
@@ -3408,6 +3409,17 @@ mod tests {
             !app.notification_area.is_visible(),
             "Adding a notification should not open the drawer"
         );
+    }
+
+    #[test]
+    fn error_opens_messages_drawer() {
+        let mut app = OilChatApp::init();
+        assert!(!app.notification_area.is_visible());
+
+        app.on_message(ChatAppMsg::Error("Connection lost".to_string()));
+
+        assert!(app.notification_area.is_visible());
+        assert!(!app.notification_area.is_empty());
     }
 
     #[test]
