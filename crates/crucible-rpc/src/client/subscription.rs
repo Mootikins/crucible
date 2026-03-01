@@ -2,6 +2,5 @@
 //!
 //! Methods for subscribing to session events and managing event streams.
 
-
 // Subscription methods are implemented in mod.rs
 // This module serves as a logical grouping for documentation

@@ -6,8 +6,7 @@ use chrono::{DateTime, Utc};
 use crucible_core::events::SessionEvent;
 use crucible_core::parser::{BlockHash, ParsedNote};
 use crucible_core::storage::{
-    NoteRecord, NoteStore, SearchResult as StorageSearchResult, StorageResult,
-    StorageResultExt,
+    NoteRecord, NoteStore, SearchResult as StorageSearchResult, StorageResult, StorageResultExt,
 };
 use crucible_core::traits::{KnowledgeRepository, NoteInfo, StorageClient};
 use crucible_core::types::SearchResult as KnowledgeSearchResult;
