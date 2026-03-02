@@ -4,7 +4,7 @@
 //! depend on crucible-core to avoid circular dependencies. It uses BLAKE3
 //! for consistent, fast hashing of AST blocks.
 
-use crate::types::{ASTBlock, ASTBlockMetadata};
+use super::types::{ASTBlock, ASTBlockMetadata};
 use blake3::Hasher;
 use serde::Serialize;
 
@@ -32,17 +32,17 @@ impl Default for SimpleBlockHasher {
 
 impl SimpleBlockHasher {
     /// Hash a single AST block
-    pub async fn hash_block(&self, block: &ASTBlock) -> Result<crate::types::BlockHash, String> {
+    pub async fn hash_block(&self, block: &ASTBlock) -> Result<super::types::BlockHash, String> {
         let serialized = self.serialize_block(block)?;
         let hash_bytes = self.compute_hash(&serialized).await?;
-        Ok(crate::types::BlockHash::new(hash_bytes))
+        Ok(super::types::BlockHash::new(hash_bytes))
     }
 
     /// Hash multiple AST blocks in parallel
     pub async fn hash_blocks_batch(
         &self,
         blocks: &[ASTBlock],
-    ) -> Result<Vec<crate::types::BlockHash>, String> {
+    ) -> Result<Vec<super::types::BlockHash>, String> {
         let mut results = Vec::with_capacity(blocks.len());
 
         // Process blocks concurrently for better performance
@@ -79,7 +79,7 @@ impl SimpleBlockHasher {
     pub async fn build_merkle_root(
         &self,
         blocks: &[ASTBlock],
-    ) -> Result<crate::types::BlockHash, String> {
+    ) -> Result<super::types::BlockHash, String> {
         if blocks.is_empty() {
             return Err("Cannot build Merkle tree from empty block list".to_string());
         }
@@ -98,7 +98,7 @@ impl SimpleBlockHasher {
                     // Combine two hashes
                     let combined = format!("{}{}", chunk[0].to_hex(), chunk[1].to_hex());
                     let combined_hash = self.compute_hash(&combined).await?;
-                    next_level.push(crate::types::BlockHash::new(combined_hash));
+                    next_level.push(super::types::BlockHash::new(combined_hash));
                 } else {
                     // Odd number of nodes, promote the last one
                     next_level.push(chunk[0]);
@@ -222,7 +222,7 @@ impl SerializableMetadata {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::ASTBlockType;
+    use super::types::ASTBlockType;
 
     #[tokio::test]
     async fn test_simple_block_hasher() {

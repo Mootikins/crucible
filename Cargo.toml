@@ -3,7 +3,6 @@ resolver = "2"
 exclude = ["vendor/markdown-it"]
 members = [
     "crates/crucible-core",
-    "crates/crucible-parser",
 
     "crates/crucible-cli",
 
@@ -36,7 +35,6 @@ categories = ["development-tools", "text-processing", "database"]
 yrs = "0.25"
 tokio = { version = "1.49", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
-crucible-parser = { path = "crates/crucible-parser" }
 serde_json = "1.0"
 serde_yaml = "0.9"
 uuid = { version = "1.19", features = ["v4", "serde"] }

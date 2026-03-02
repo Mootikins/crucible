@@ -15,7 +15,7 @@
 //! ## Usage
 //!
 //! ```rust
-//! use crucible_parser::frontmatter_extractor::FrontmatterExtractor;
+//! use crucible_core::parser::frontmatter_extractor::FrontmatterExtractor;
 //!
 //! let content = "---\ntitle: Test\n---\n# Content here";
 //! let extractor = FrontmatterExtractor::new();
@@ -27,8 +27,8 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
-use crate::error::{ParserError, ParserResult};
-use crate::types::{Frontmatter, FrontmatterFormat};
+use super::error::{ParserError, ParserResult};
+use super::types::{Frontmatter, FrontmatterFormat};
 
 /// Maximum allowed size for frontmatter sections (64KB)
 /// This prevents denial-of-service attacks with extremely large frontmatter

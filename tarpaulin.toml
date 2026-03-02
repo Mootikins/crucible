@@ -24,7 +24,6 @@ output-dir = "target/tarpaulin"
 [quick]
 packages = [
     "crucible-core",
-    "crucible-parser",
     "crucible-config",
     "crucible-enrichment",
     "crucible-watch",

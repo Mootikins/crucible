@@ -4,8 +4,8 @@
 //! content structure of ParsedNote into semantically meaningful AST blocks.
 //! Each block represents a natural semantic boundary in the markdown note.
 
-use crate::error::ParseError;
-use crate::types::{
+use super::error::ParseError;
+use super::types::{
     ASTBlock, ASTBlockMetadata, ASTBlockType, Callout, CodeBlock, Heading, HorizontalRule,
     LatexExpression, ListBlock, ListType, ParsedNote, Table,
 };
@@ -877,7 +877,7 @@ struct ExtractionPosition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::*;
+    use super::types::*;
     use chrono::Utc;
     use std::path::PathBuf;
 

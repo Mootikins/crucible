@@ -251,7 +251,7 @@ pub fn create_latex_extension() -> Arc<dyn SyntaxExtension> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::ErrorSeverity;
+    use super::error::ErrorSeverity;
 
     #[tokio::test]
     async fn test_inline_latex_detection() {

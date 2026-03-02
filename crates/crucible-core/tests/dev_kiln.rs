@@ -207,7 +207,7 @@ fn parse_frontmatter_fields(yaml: &str) -> HashMap<String, String> {
 #[tokio::test]
 #[ignore = "slow test - parses all markdown files - run with cargo test --ignored"]
 async fn dev_kiln_all_notes_parse() {
-    use crucible_parser::test_utils::parse_note;
+    use crucible_core::parser::test_utils::parse_note;
 
     let md_files = find_markdown_files();
 
@@ -680,7 +680,7 @@ Implementation: `crates/crucible-cli/src/commands/stats.rs`
 
 See also:
 - crates/crucible-core/src/parser/types.rs
-- crates/crucible-parser/src/wikilinks.rs
+- crates/crucible-core/src/parser/wikilinks.rs
     "#;
 
     let refs = extract_code_references(content);
@@ -688,7 +688,7 @@ See also:
     assert_eq!(refs.len(), 3);
     assert!(refs.contains(&"crates/crucible-cli/src/commands/stats.rs".to_string()));
     assert!(refs.contains(&"crates/crucible-core/src/parser/types.rs".to_string()));
-    assert!(refs.contains(&"crates/crucible-parser/src/wikilinks.rs".to_string()));
+    assert!(refs.contains(&"crates/crucible-core/src/parser/wikilinks.rs".to_string()));
 }
 
 #[test]

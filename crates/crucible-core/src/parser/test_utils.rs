@@ -8,12 +8,12 @@
 //! In `Cargo.toml`:
 //! ```toml
 //! [dev-dependencies]
-//! crucible-parser = { path = "../crucible-parser", features = ["test-utils"] }
+//! crucible-core = { path = "../crucible-core" }
 //! ```
 //!
 //! In tests:
 //! ```rust,ignore
-//! use crucible_parser::test_utils::parse_note;
+//! use crucible_core::parser::test_utils::parse_note;
 //!
 //! #[tokio::test]
 //! async fn test_parsing() {
@@ -22,7 +22,7 @@
 //! }
 //! ```
 
-use crate::{CrucibleParser, MarkdownParser, ParsedNote};
+use super::{CrucibleParser, MarkdownParser, ParsedNote};
 use std::path::Path;
 
 /// Parse markdown content into a ParsedNote for testing.
@@ -42,7 +42,7 @@ use std::path::Path;
 /// # Example
 ///
 /// ```rust,ignore
-/// use crucible_parser::test_utils::parse_note;
+/// use crucible_core::parser::test_utils::parse_note;
 ///
 /// #[tokio::test]
 /// async fn test_wikilinks() {

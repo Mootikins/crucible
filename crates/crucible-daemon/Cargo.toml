@@ -33,7 +33,6 @@ crucible-core = { path = "../crucible-core" }
 crucible-config = { path = "../crucible-config" }
 
 crucible-sqlite = { path = "../crucible-sqlite", optional = true }
-crucible-parser = { path = "../crucible-parser" }
 
 crucible-lua = { path = "../crucible-lua" }
 crucible-tools = { path = "../crucible-tools" }

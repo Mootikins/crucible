@@ -5,15 +5,15 @@ use std::path::Path;
 use tokio::fs;
 use tokio::io::AsyncReadExt;
 
-use crate::block_extractor::{BlockExtractor, ExtractionConfig};
-use crate::block_hasher::SimpleBlockHasher;
-use crate::error::{ParserError, ParserResult};
-use crate::extensions::ExtensionRegistry;
-use crate::traits::{MarkdownParser, ParserCapabilities};
-use crate::types::{
+use super::block_extractor::{BlockExtractor, ExtractionConfig};
+use super::block_hasher::SimpleBlockHasher;
+use super::error::{ParserError, ParserResult};
+use super::extensions::ExtensionRegistry;
+use super::traits::{MarkdownParser, ParserCapabilities};
+use super::types::{
     Callout, FootnoteMap, LatexExpression, NoteContent, ParseError, ParsedNote, ParsedNoteMetadata,
 };
-use crucible_core::parser::error::ParseErrorType;
+use super::error::ParseErrorType;
 
 /// Default implementation of the MarkdownParser trait
 ///
@@ -104,22 +104,22 @@ impl CrucibleParser {
 
     /// Create a parser with default extensions (LaTeX, callouts, enhanced tags, and footnotes)
     pub fn with_default_extensions() -> Self {
-        let mut builder = crate::ExtensionRegistryBuilder::new();
+        let mut builder = super::ExtensionRegistryBuilder::new();
 
         // Add basic markdown extension based on parser feature
         #[cfg(feature = "markdown-it-parser")]
         {
-            builder = builder.with_extension(crate::create_basic_markdown_it_extension());
+            builder = builder.with_extension(super::create_basic_markdown_it_extension());
         }
 
         let builder = builder
-            .with_extension(crate::create_wikilink_extension()) // Wikilinks [[note]]
-            .with_extension(crate::create_inline_link_extension()) // Inline links [text](url)
-            .with_extension(crate::create_latex_extension())
-            .with_extension(crate::create_callout_extension())
-            .with_extension(crate::create_blockquote_extension())
-            .with_extension(crate::create_enhanced_tags_extension())
-            .with_extension(crate::create_footnote_extension());
+            .with_extension(super::create_wikilink_extension()) // Wikilinks [[note]]
+            .with_extension(super::create_inline_link_extension()) // Inline links [text](url)
+            .with_extension(super::create_latex_extension())
+            .with_extension(super::create_callout_extension())
+            .with_extension(super::create_blockquote_extension())
+            .with_extension(super::create_enhanced_tags_extension())
+            .with_extension(super::create_footnote_extension());
 
         let extensions = builder.build();
 
@@ -228,8 +228,8 @@ impl CrucibleParser {
     /// Vector of block hashes or error if hashing failed
     async fn compute_block_hashes(
         &self,
-        blocks: &[crate::types::ASTBlock],
-    ) -> Result<Vec<crate::types::BlockHash>, Box<dyn std::error::Error + Send + Sync>> {
+        blocks: &[super::types::ASTBlock],
+    ) -> Result<Vec<super::types::BlockHash>, Box<dyn std::error::Error + Send + Sync>> {
         let hasher = SimpleBlockHasher::new();
         let hashes = hasher.hash_blocks_batch(blocks).await?;
         Ok(hashes)
@@ -246,8 +246,8 @@ impl CrucibleParser {
     /// Merkle root hash or error if computation failed
     async fn compute_merkle_root(
         &self,
-        blocks: &[crate::types::ASTBlock],
-    ) -> Result<crate::types::BlockHash, Box<dyn std::error::Error + Send + Sync>> {
+        blocks: &[super::types::ASTBlock],
+    ) -> Result<super::types::BlockHash, Box<dyn std::error::Error + Send + Sync>> {
         let hasher = SimpleBlockHasher::new();
         let merkle_root = hasher.build_merkle_root(blocks).await?;
         Ok(merkle_root)
@@ -257,7 +257,7 @@ impl CrucibleParser {
     fn parse_frontmatter<'a>(
         &self,
         content: &'a str,
-    ) -> (Option<String>, &'a str, crate::types::FrontmatterFormat) {
+    ) -> (Option<String>, &'a str, super::types::FrontmatterFormat) {
         // Check for YAML frontmatter
         if content.starts_with("---\n") || content.starts_with("---\r\n") {
             let start = if content.starts_with("---\r\n") { 5 } else { 4 };
@@ -272,7 +272,7 @@ impl CrucibleParser {
                 return (
                     Some(frontmatter.to_string()),
                     content,
-                    crate::types::FrontmatterFormat::Yaml,
+                    super::types::FrontmatterFormat::Yaml,
                 );
             }
             if content[start..].trim_end() == "---" || content.ends_with("\n---") {
@@ -288,7 +288,7 @@ impl CrucibleParser {
                 return (
                     Some(frontmatter.to_string()),
                     "",
-                    crate::types::FrontmatterFormat::Yaml,
+                    super::types::FrontmatterFormat::Yaml,
                 );
             }
         }
@@ -307,7 +307,7 @@ impl CrucibleParser {
                 return (
                     Some(frontmatter.to_string()),
                     content,
-                    crate::types::FrontmatterFormat::Toml,
+                    super::types::FrontmatterFormat::Toml,
                 );
             }
             if content[start..].trim_end() == "+++" || content.ends_with("\n+++") {
@@ -323,12 +323,12 @@ impl CrucibleParser {
                 return (
                     Some(frontmatter.to_string()),
                     "",
-                    crate::types::FrontmatterFormat::Toml,
+                    super::types::FrontmatterFormat::Toml,
                 );
             }
         }
 
-        (None, content, crate::types::FrontmatterFormat::None)
+        (None, content, super::types::FrontmatterFormat::None)
     }
 
     /// Validate file size against limits
@@ -378,7 +378,7 @@ impl MarkdownParser for CrucibleParser {
 
         if let Some(frontmatter_text) = &frontmatter_raw {
             match frontmatter_format {
-                crate::types::FrontmatterFormat::Yaml => {
+                super::types::FrontmatterFormat::Yaml => {
                     if let Err(error) = serde_yaml::from_str::<serde_yaml::Value>(frontmatter_text)
                     {
                         let (line, column) = error
@@ -400,7 +400,7 @@ impl MarkdownParser for CrucibleParser {
                         ));
                     }
                 }
-                crate::types::FrontmatterFormat::Toml => {
+                super::types::FrontmatterFormat::Toml => {
                     if let Err(error) = toml::from_str::<toml::Value>(frontmatter_text) {
                         parse_errors.push(ParseError::warning(
                             format!("Failed to parse TOML frontmatter: {error}"),
@@ -411,13 +411,13 @@ impl MarkdownParser for CrucibleParser {
                         ));
                     }
                 }
-                crate::types::FrontmatterFormat::None => {}
+                super::types::FrontmatterFormat::None => {}
             }
         }
 
         // Parse frontmatter into Frontmatter struct if present
         let frontmatter = frontmatter_raw
-            .map(|fm_raw| crate::types::Frontmatter::new(fm_raw, frontmatter_format));
+            .map(|fm_raw| super::types::Frontmatter::new(fm_raw, frontmatter_format));
 
         // Create initial note content
         let mut document_content = NoteContent {
@@ -434,7 +434,7 @@ impl MarkdownParser for CrucibleParser {
             latex_expressions: Vec::new(),
             callouts: Vec::new(),
             blockquotes: Vec::new(),
-            footnotes: crate::types::FootnoteMap::new(),
+            footnotes: super::types::FootnoteMap::new(),
             tables: Vec::new(),
             horizontal_rules: Vec::new(),
         };
@@ -623,21 +623,21 @@ mod tests {
         let (fm, content, format) = parser.parse_frontmatter(content);
         assert!(fm.is_some());
         assert_eq!(content, "Content");
-        assert_eq!(format, crate::types::FrontmatterFormat::Yaml);
+        assert_eq!(format, super::types::FrontmatterFormat::Yaml);
 
         // TOML frontmatter
         let content = "+++\ntitle = \"Test\"\n+++\nContent";
         let (fm, content, format) = parser.parse_frontmatter(content);
         assert!(fm.is_some());
         assert_eq!(content, "Content");
-        assert_eq!(format, crate::types::FrontmatterFormat::Toml);
+        assert_eq!(format, super::types::FrontmatterFormat::Toml);
 
         // No frontmatter
         let content = "Just content";
         let (fm, content, format) = parser.parse_frontmatter(content);
         assert!(fm.is_none());
         assert_eq!(content, "Just content");
-        assert_eq!(format, crate::types::FrontmatterFormat::None);
+        assert_eq!(format, super::types::FrontmatterFormat::None);
     }
 
     #[test]
@@ -801,7 +801,7 @@ let x = 42;
         let parser = CrucibleParser::new();
         let parser_with_extensions = CrucibleParser::with_default_extensions();
         let parser_with_custom =
-            CrucibleParser::with_extensions(crate::ExtensionRegistryBuilder::new().build());
+            CrucibleParser::with_extensions(super::ExtensionRegistryBuilder::new().build());
 
         // All should have block processing disabled by default
         assert!(!parser.is_block_processing_enabled());

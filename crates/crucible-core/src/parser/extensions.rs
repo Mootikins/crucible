@@ -4,7 +4,7 @@
 //! modular addition of new syntax features to the markdown parser.
 
 use super::error::ParseError;
-use crate::parser::types::NoteContent;
+use super::types::NoteContent;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -54,11 +54,43 @@ pub trait SyntaxExtension: Send + Sync {
     fn is_enabled(&self) -> bool {
         true // Default to enabled
     }
+
+    /// Process content synchronously (convenience method for tests)
+    fn process_content(&self, content: &str) -> NoteContent {
+        let mut doc_content = NoteContent::new();
+        // Use block_in_place to bridge async to sync for tests
+        let rt = tokio::runtime::Handle::current();
+        rt.block_on(async {
+            self.parse(content, &mut doc_content).await;
+        });
+        doc_content
+    }
+
+    /// Get extension capabilities (convenience method)
+    fn capabilities(&self) -> ExtensionCapabilities {
+        ExtensionCapabilities {
+            name: self.name().to_string(),
+            priority: self.priority(),
+            enabled: self.is_enabled(),
+        }
+    }
+}
+
+/// Extension capabilities metadata
+#[derive(Debug, Clone)]
+pub struct ExtensionCapabilities {
+    /// Extension name
+    pub name: String,
+    /// Priority (higher = applied first)
+    pub priority: u8,
+    /// Whether extension is enabled
+    pub enabled: bool,
 }
 
 /// Registry for managing syntax extensions
 ///
 /// The registry handles extension discovery, registration, and execution order.
+#[derive(Clone)]
 pub struct ExtensionRegistry {
     /// Registered extensions
     extensions: Vec<Arc<dyn SyntaxExtension>>,
@@ -264,7 +296,6 @@ mod tests {
     use crate::parser::error::ParseErrorType;
 
     // Mock extension for testing
-    #[derive(Debug)]
     struct TestExtension {
         name: &'static str,
         version: &'static str,
@@ -286,7 +317,7 @@ mod tests {
         }
 
         fn can_handle(&self, content: &str) -> bool {
-            content.contains("test") || content.contains("error")
+            content.contains("test")
         }
 
         async fn parse(&self, content: &str, _doc_content: &mut NoteContent) -> Vec<ParseError> {
@@ -339,9 +370,8 @@ mod tests {
             .await;
         assert_eq!(errors.len(), 0);
 
-        let mut doc_content2 = NoteContent::new();
         let errors = registry
-            .apply_extensions("error content", &mut doc_content2)
+            .apply_extensions("test error content", &mut doc_content)
             .await;
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].error_type, ParseErrorType::SyntaxError);
