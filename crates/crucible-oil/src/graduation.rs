@@ -337,13 +337,13 @@ mod tests {
     }
 
     #[test]
-    fn format_stdout_delta_tool_then_block() {
+    fn format_stdout_delta_continuation_then_block() {
         let graduated = vec![
             GraduatedContent {
-                key: "tool-0".to_string(),
-                content: " ✓ bash(ls)".to_string(),
-                kind: ElementKind::ToolCall,
-                newline: true,
+                key: "cont-0".to_string(),
+                content: "continued".to_string(),
+                kind: ElementKind::Continuation,
+                newline: false,
             },
             GraduatedContent {
                 key: "asst-0".to_string(),
@@ -355,8 +355,8 @@ mod tests {
 
         let (delta, _) = GraduationState::format_stdout_delta(&graduated, None);
         assert_eq!(
-            delta, " ✓ bash(ls)\r\n\r\nresponse\r\n",
-            "ToolCall→Block: newline-after + blank-line-before = one blank line"
+            delta, "continuedresponse\r\n",
+            "Continuation→Block: no blank line, no newline after continuation"
         );
     }
 
@@ -376,9 +376,9 @@ mod tests {
     #[test]
     fn format_stdout_delta_empty_returns_unchanged_last_kind() {
         let (delta, last_kind) =
-            GraduationState::format_stdout_delta(&[], Some(ElementKind::ToolCall));
+            GraduationState::format_stdout_delta(&[], Some(ElementKind::Block));
         assert!(delta.is_empty());
-        assert_eq!(last_kind, Some(ElementKind::ToolCall));
+        assert_eq!(last_kind, Some(ElementKind::Block));
 
         let (delta2, last_kind2) = GraduationState::format_stdout_delta(&[], None);
         assert!(delta2.is_empty());
@@ -386,17 +386,17 @@ mod tests {
     }
 
     #[test]
-    fn format_stdout_delta_toolcall_then_block_across_frames() {
-        let tool_graduated = vec![GraduatedContent {
-            key: "tool-1".to_string(),
-            content: "Tool output".to_string(),
-            kind: ElementKind::ToolCall,
+    fn format_stdout_delta_block_then_block_across_frames() {
+        let first_graduated = vec![GraduatedContent {
+            key: "msg-0".to_string(),
+            content: "First block".to_string(),
+            kind: ElementKind::Block,
             newline: true,
         }];
 
-        let (delta1, last_kind) = GraduationState::format_stdout_delta(&tool_graduated, None);
-        assert_eq!(delta1, "Tool output\r\n");
-        assert_eq!(last_kind, Some(ElementKind::ToolCall));
+        let (delta1, last_kind) = GraduationState::format_stdout_delta(&first_graduated, None);
+        assert_eq!(delta1, "First block\r\n");
+        assert_eq!(last_kind, Some(ElementKind::Block));
 
         let block_graduated = vec![GraduatedContent {
             key: "msg-1".to_string(),
@@ -408,7 +408,7 @@ mod tests {
         let (delta2, _) = GraduationState::format_stdout_delta(&block_graduated, last_kind);
         assert_eq!(
             delta2, "\r\nAssistant text\r\n",
-            "Block after ToolCall across frames: blank-line-before + content + newline-after"
+            "Block after Block across frames: blank-line-before + content + newline-after"
         );
     }
 

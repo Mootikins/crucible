@@ -59,7 +59,7 @@ pub use node::{
     badge, bullet_list, col, divider, error_boundary, fixed, flex, focusable, focusable_auto,
     fragment, horizontal_rule, if_else, key_value, maybe, numbered_list, overlay_from_bottom,
     overlay_from_bottom_right, popup, progress_bar, raw, row, scrollback, scrollback_continuation,
-    scrollback_tool, scrollback_with_kind, spacer, spinner, styled, text, text_input, when,
+    scrollback_with_kind, spacer, spinner, styled, text, text_input, when,
     BoxNode, Direction, ElementKind, ErrorBoundaryNode, FocusableNode, InputNode, Node,
     OverlayNode, PopupItemNode, PopupNode, RawNode, Size, SpinnerNode, StaticNode, TextNode,
     DEFAULT_POPUP_BG, DEFAULT_POPUP_SELECTED_BG,
