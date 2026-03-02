@@ -392,7 +392,7 @@ verbose = false
 # # Override the global level for specific components
 # [logging.component_levels]
 # crucible_core = "debug"
-# crucible_parser = "info"
+# crucible_core::parser = "info"
 # crucible_surrealdb = "warn"
 #
 # # Formatting options

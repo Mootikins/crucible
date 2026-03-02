@@ -1,6 +1,6 @@
 //! Event handlers for integrating with existing Crucible systems.
 
-// TODO: Re-enable when crucible_mcp is available
+// TODO: Re-enable indexing handler when feature flag is ready
 pub mod composite;
 mod indexing;
 mod obsidian_sync;
@@ -88,7 +88,7 @@ pub fn create_default_handlers() -> Result<HandlerRegistry> {
     let registry = HandlerRegistry::new();
 
     // Register default handlers
-    // TODO: Re-enable when crucible_mcp is available
+    // TODO: Re-enable indexing handler when feature flag is ready
     // #[cfg(feature = "indexing")]
     // {
     //     registry.register(Arc::new(IndexingHandler::new()?));

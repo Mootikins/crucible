@@ -6,7 +6,7 @@
 //! # Usage
 //!
 //! ```rust,ignore
-//! use crucible_tools::toon_response::toon_success;
+//! use crucible_daemon::tools::toon_response::toon_success;
 //!
 //! // Instead of:
 //! // Ok(CallToolResult::success(vec![rmcp::model::Content::json(json!({...}))?]))
@@ -72,7 +72,7 @@ pub fn content_to_toon(content: &Content) -> Content {
 /// # Example
 ///
 /// ```rust,ignore
-/// use crucible_tools::toon_ok;
+/// use crucible_daemon::tools::toon_ok;
 ///
 /// toon_ok!({
 ///     "path": path,

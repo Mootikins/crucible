@@ -3,7 +3,6 @@
 //! These tests focus on the `cru` executable surface area (help text, exit behavior,
 //! and daemon-backed command wiring) rather than daemon-internal delegation logic.
 
-#[allow(deprecated)]
 mod cli_e2e_helpers;
 
 use cli_e2e_helpers::*;

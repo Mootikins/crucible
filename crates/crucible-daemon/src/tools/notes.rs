@@ -155,7 +155,7 @@ impl NoteTools {
 
         std::fs::write(&full_path, &final_content).mcp_err_ctx("Failed to write file")?;
 
-        // TODO: Notify parser for reprocessing
+        // TODO: Trigger re-parsing via crucible_core::parser after note creation
 
         json_success(serde_json::json!({
             "path": path,
@@ -375,7 +375,7 @@ impl NoteTools {
 
         std::fs::write(&full_path, &final_file_content).mcp_err_ctx("Failed to update file")?;
 
-        // TODO: Notify parser for reprocessing
+        // TODO: Trigger re-parsing via crucible_core::parser after note update
 
         json_success(serde_json::json!({
             "path": path,
@@ -404,7 +404,7 @@ impl NoteTools {
 
         std::fs::remove_file(&full_path).mcp_err_ctx("Failed to delete file")?;
 
-        // TODO: Notify parser for reprocessing
+        // TODO: Trigger re-parsing via crucible_core::parser after note deletion
 
         json_success(serde_json::json!({
             "path": path,
