@@ -135,7 +135,7 @@ fn create_tool(
 
 /// Discover and register all Crucible tools
 ///
-/// This function scans the crucible-tools crate and registers all available
+/// This function registers all available tools with the provided registry.
 /// tools with the provided registry.
 ///
 /// # Arguments
@@ -150,7 +150,7 @@ fn create_tool(
 /// # Errors
 ///
 /// Returns an error if tool discovery or registration fails
-pub fn discover_crucible_tools(registry: &mut ToolRegistry, _kiln_path: &str) -> Result<usize> {
+pub fn discover_tools(registry: &mut ToolRegistry, _kiln_path: &str) -> Result<usize> {
     //
     // Crucible tools are organized into 3 categories:
     // - NoteTools (6 tools): CRUD operations for notes

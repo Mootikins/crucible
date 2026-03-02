@@ -196,9 +196,6 @@ pub struct EnrichmentMetadata {
     pub computed_at: DateTime<Utc>,
 }
 
-/// Type alias for backward compatibility
-#[deprecated(since = "0.2.0", note = "Use EnrichmentMetadata instead")]
-pub type NoteInfo = EnrichmentMetadata;
 
 impl Default for EnrichmentMetadata {
     fn default() -> Self {

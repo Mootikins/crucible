@@ -22,18 +22,16 @@
 
 | Crate | Purpose | Key Types |
 |-------|---------|-----------|
-| `crucible-core` | Domain logic, traits, parser types | `Provider`, `CanEmbed`, `CanChat`, `ParsedNote` |
+| `crucible-core` | Domain logic, traits, parser types; includes parser module (absorbed from crucible-parser) | `Provider`, `CanEmbed`, `CanChat`, `ParsedNote` |
 | `crucible-cli` | Terminal UI, REPL, commands | `InkChatApp`, `ChatAppMsg` |
 | `crucible-oil` | Terminal rendering primitives | `Node`, `render_to_string` |
 | `crucible-web` | Browser chat UI (SolidJS + Axum) | HTTP/SSE endpoints |
-| `crucible-tools` | MCP server and tools | Tool implementations |
 | `crucible-sqlite` | SQLite storage (default); fast, lightweight; includes query/ module | `SqliteStorage` |
 | `crucible-lua` | Lua/Luau with Fennel support | `LuaExecutor`, `FennelCompiler` |
 | `crucible-llm` | Embedding backends (FastEmbed only) | `EmbeddingBackend` |
-| `crucible-parser` | Markdown parsing | `MarkdownParser` |
 | `crucible-config` | Configuration types and loading | `AppConfig`, provider configs |
 | `crucible-acp` | Agent Context Protocol | Protocol types |
-| `crucible-daemon` | Daemon server (library); includes enrichment pipeline, note processing, RPC client, observability, file watching, and skills discovery | `Server`, `SessionManager`, `AgentManager` |
+| `crucible-daemon` | Daemon server (library); includes enrichment pipeline, note processing, RPC client, observability, file watching, skills discovery, and tools (absorbed from crucible-tools) | `Server`, `SessionManager`, `AgentManager` |
 | `crucible-lance` | LanceDB vector storage backend | `LanceStore`, `LanceNoteStore` |
 
 ### Daemon Architecture
@@ -197,7 +195,7 @@ env = { ANTHROPIC_BASE_URL = "http://localhost:4000" }
 **Key files:**
 - Agent profiles and ACP types: `crucible-acp/`
 - Agent spawning and lifecycle: `crucible-daemon/src/agents/`
-- Delegation tool: `crucible-tools/src/tools/delegate_session.rs`
+- Delegation tool: `crucible-daemon/src/tools/delegate_session.rs`
 - CLI agent flag: `crucible-cli/src/commands/chat.rs` (`-a` / `--agent`)
 
 ## Project Structure
@@ -209,9 +207,13 @@ crucible/
 │   ├── crucible-cli/            # Terminal UI, REPL, commands
 │   ├── crucible-oil/            # Terminal rendering primitives
 │   ├── crucible-web/            # Browser-based chat UI
-│   ├── crucible-tools/          # MCP server and tools
-│   ├── crucible-daemon/         # Daemon server (library); includes RPC client, observability, file watching, skills |
-│   ├── crucible-sqlite/         # SQLite storage (default); includes query module |
+│   ├── crucible-daemon/         # Daemon server (library); includes RPC client, observability, file watching, skills
+│   ├── crucible-sqlite/         # SQLite storage (default); includes query module
+│   ├── crucible-config/         # Configuration types and loading
+│   ├── crucible-acp/            # Agent Context Protocol
+│   ├── crucible-llm/            # Embedding backends
+│   ├── crucible-lua/            # Lua/Fennel scripting
+│   └── crucible-lance/          # LanceDB vector storage backend
 ├── vendor/                      # Patched upstream dependencies
 ├── docs/                        # Documentation kiln (user guides + test fixture)
 ├── justfile                     # Development recipes

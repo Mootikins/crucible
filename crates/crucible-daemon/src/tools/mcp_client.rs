@@ -6,7 +6,7 @@
 //! ## Usage
 //!
 //! ```rust,ignore
-//! use crucible_tools::mcp_client::{RmcpExecutor, create_stdio_executor};
+//! use crucible_daemon::tools::mcp_client::{RmcpExecutor, create_stdio_executor};
 //!
 //! // Create executor for a stdio-based MCP server
 //! let executor = create_stdio_executor("uvx", &["mcp-server-git"]).await?;

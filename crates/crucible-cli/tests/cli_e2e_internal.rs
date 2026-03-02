@@ -5,7 +5,6 @@
 //! a real daemon-backed lifecycle flow (`create -> list -> show -> send -> pause ->
 //! unpause -> end`) using isolated sockets.
 
-#[allow(deprecated)]
 mod cli_e2e_helpers;
 
 use cli_e2e_helpers::*;

@@ -52,7 +52,7 @@ impl AgentManager {
             };
 
             if connected_config.model_name() != primary_config.model_name() {
-                // TODO: this comparison is now trivially true since all kilns share one enrichment config; future work should compare stored model metadata
+                // TODO: Compare stored model metadata instead of just model names (currently all kilns share one enrichment config)
                 warn!(
                     session_id = %session_id,
                     kiln = %connected_kiln.display(),

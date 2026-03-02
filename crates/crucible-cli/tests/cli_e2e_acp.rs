@@ -5,7 +5,6 @@
 //! profile errors, and a full create -> send -> end lifecycle with a mock ACP
 //! agent profile.
 
-#[allow(deprecated)]
 mod cli_e2e_helpers;
 
 use cli_e2e_helpers::*;

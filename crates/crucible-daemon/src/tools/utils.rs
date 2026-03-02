@@ -1,4 +1,4 @@
-//! Shared utility functions for crucible-tools
+//! Shared utility functions for crucible-daemon
 //!
 //! This module contains helper functions used across multiple tool modules.
 
@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 /// # Example
 ///
 /// ```rust
-/// use crucible_tools::utils::parse_yaml_frontmatter;
+/// use crucible_daemon::tools::utils::parse_yaml_frontmatter;
 ///
 /// let content = "---\ntitle: My Note\ntags: [rust, code]\n---\n\n# Content";
 /// let frontmatter = parse_yaml_frontmatter(content);
@@ -69,7 +69,7 @@ pub fn parse_yaml_frontmatter(content: &str) -> Option<serde_json::Value> {
 /// # Example
 ///
 /// ```rust,no_run
-/// use crucible_tools::utils::validate_path_within_kiln;
+/// use crucible_daemon::tools::utils::validate_path_within_kiln;
 ///
 /// let kiln = "/home/user/kiln";
 /// let valid = validate_path_within_kiln(kiln, "notes/test.md");
@@ -179,7 +179,7 @@ pub fn validate_path_within_kiln(
 /// # Example
 ///
 /// ```rust,no_run
-/// use crucible_tools::utils::validate_folder_within_kiln;
+/// use crucible_daemon::tools::utils::validate_folder_within_kiln;
 ///
 /// let kiln = "/home/user/kiln";
 /// let result = validate_folder_within_kiln(kiln, Some("projects"));

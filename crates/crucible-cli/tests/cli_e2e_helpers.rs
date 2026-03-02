@@ -11,7 +11,6 @@ use std::thread;
 use std::time::Duration;
 
 /// Create a `cru` CLI command via assert_cmd.
-#[allow(deprecated)]
 pub fn cru() -> Command {
     Command::cargo_bin("cru").unwrap()
 }

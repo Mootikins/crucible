@@ -93,7 +93,7 @@ Based on [[Crucible Parser Usage]] and [[Parsing Examples]], here's how
 the parser is typically used:
 
 ```rust
-use crucible_parser::parse_note;
+use crucible_core::parser::parse_note;
 
 let content = std::fs::read_to_string("note.md")?;
 let parsed = parse_note(&content)?;
