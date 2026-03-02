@@ -46,7 +46,7 @@ use tracing::{debug, error, info, warn};
 mod core;
 pub mod kiln;
 mod lua;
-mod observe;
+pub mod observe;
 mod platform;
 mod plugins;
 pub mod session;

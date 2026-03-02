@@ -54,6 +54,13 @@ pub const METHODS: &[&str] = &[
     "session.get_max_tokens",
     "session.test_interaction",
     "session.set_title",
+    "session.search",
+    "session.load_events",
+    "session.list_persisted",
+    "session.render_markdown",
+    "session.export_to_file",
+    "session.cleanup",
+    "session.reindex",
     "plugin.reload",
     "plugin.list",
     "project.register",
@@ -136,6 +143,26 @@ impl RpcDispatcher {
 
             // Models handler
             "models.list" => to_response(id, self.handle_models_list(&req).await),
+
+            // Session lifecycle handlers
+            "session.create" => to_response(id, self.handle_session_create(&req).await),
+            "session.list" => to_response(id, self.handle_session_list(&req).await),
+            "session.get" => to_response(id, self.handle_session_get(&req).await),
+            "session.pause" => to_response(id, self.handle_session_pause(&req).await),
+            "session.resume" => to_response(id, self.handle_session_resume(&req).await),
+            "session.resume_from_storage" => to_response(id, self.handle_session_resume_from_storage(&req).await),
+            "session.end" => to_response(id, self.handle_session_end(&req).await),
+            "session.compact" => to_response(id, self.handle_session_compact(&req).await),
+
+            // Session utility handlers
+            "session.search" => to_response(id, self.handle_session_search(&req).await),
+            "session.load_events" => to_response(id, self.handle_session_load_events(&req).await),
+            "session.list_persisted" => to_response(id, self.handle_session_list_persisted(&req).await),
+            "session.render_markdown" => to_response(id, self.handle_session_render_markdown(&req).await),
+            "session.export_to_file" => to_response(id, self.handle_session_export_to_file(&req).await),
+            "session.cleanup" => to_response(id, self.handle_session_cleanup(&req).await),
+            "session.reindex" => to_response(id, self.handle_session_reindex(&req).await),
+
             // For other methods, we return METHOD_NOT_FOUND here.
             // In production, server.rs will handle these until we migrate them.
             // This allows incremental migration.
@@ -541,6 +568,203 @@ impl RpcDispatcher {
             Ok(resp.result.unwrap_or(serde_json::Value::Null))
         }
     }
+
+    // ── Session lifecycle wrappers ────────────────────────────────────────────
+
+    async fn handle_session_create(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_create(
+            req.clone(),
+            &self.ctx.sessions,
+            &self.ctx.project_manager,
+            &self.ctx.llm_config,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_list(
+            req.clone(),
+            &self.ctx.sessions,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_get(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_get(
+            req.clone(),
+            &self.ctx.sessions,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_pause(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_pause(
+            req.clone(),
+            &self.ctx.sessions,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_resume(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_resume(
+            req.clone(),
+            &self.ctx.sessions,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_resume_from_storage(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_resume_from_storage(
+            req.clone(),
+            &self.ctx.sessions,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_end(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_end(
+            req.clone(),
+            &self.ctx.sessions,
+            &self.ctx.agents,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_compact(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_compact(
+            req.clone(),
+            &self.ctx.sessions,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    // ── Session utility wrappers ─────────────────────────────────────────────
+
+    async fn handle_session_search(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_search(
+            req.clone(),
+            &self.ctx.sessions,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_load_events(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::observe::handle_session_load_events(
+            req.clone(),
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_list_persisted(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::observe::handle_session_list_persisted(
+            req.clone(),
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_render_markdown(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::observe::handle_session_render_markdown(
+            req.clone(),
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_export_to_file(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::observe::handle_session_export_to_file(
+            req.clone(),
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_cleanup(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::observe::handle_session_cleanup(
+            req.clone(),
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_reindex(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::observe::handle_session_reindex(
+            req.clone(),
+            &self.ctx.kiln,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -614,7 +838,7 @@ mod tests {
 
     #[test]
     fn methods_count() {
-        assert_eq!(METHODS.len(), 49, "Update when adding RPC methods");
+        assert_eq!(METHODS.len(), 56, "Update when adding RPC methods");
     }
 
     #[tokio::test]

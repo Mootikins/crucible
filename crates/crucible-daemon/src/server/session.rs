@@ -2,7 +2,7 @@ use super::*;
 
 use crucible_core::session::{SessionState, SessionType};
 
-pub(super) async fn handle_session_create(
+pub(crate) async fn handle_session_create(
     req: Request,
     sm: &Arc<SessionManager>,
     pm: &Arc<ProjectManager>,
@@ -154,7 +154,7 @@ pub(super) fn resolve_kiln_classification_for_create(
     crate::trust_resolution::resolve_kiln_classification(&workspace_path, kiln)
 }
 
-pub(super) async fn handle_session_list(req: Request, sm: &Arc<SessionManager>) -> Response {
+pub(crate) async fn handle_session_list(req: Request, sm: &Arc<SessionManager>) -> Response {
     // Parse optional filters
     let kiln = optional_param!(req, "kiln", as_str).map(PathBuf::from);
     let workspace = optional_param!(req, "workspace", as_str).map(PathBuf::from);
@@ -200,7 +200,7 @@ pub(super) async fn handle_session_list(req: Request, sm: &Arc<SessionManager>) 
     )
 }
 
-pub(super) async fn handle_session_search(req: Request, sm: &Arc<SessionManager>) -> Response {
+pub(crate) async fn handle_session_search(req: Request, sm: &Arc<SessionManager>) -> Response {
     let query = require_param!(req, "query", as_str);
     let kiln = optional_param!(req, "kiln", as_str).map(PathBuf::from);
     let limit = optional_param!(req, "limit", as_u64).unwrap_or(20) as usize;
@@ -316,7 +316,7 @@ pub(super) async fn handle_session_search(req: Request, sm: &Arc<SessionManager>
     )
 }
 
-pub(super) async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -> Response {
+pub(crate) async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
 
     match sm.get_session(session_id) {
@@ -348,7 +348,7 @@ pub(super) async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -
     }
 }
 
-pub(super) async fn handle_session_pause(req: Request, sm: &Arc<SessionManager>) -> Response {
+pub(crate) async fn handle_session_pause(req: Request, sm: &Arc<SessionManager>) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
 
     match sm.pause_session(session_id).await {
@@ -364,7 +364,7 @@ pub(super) async fn handle_session_pause(req: Request, sm: &Arc<SessionManager>)
     }
 }
 
-pub(super) async fn handle_session_resume(req: Request, sm: &Arc<SessionManager>) -> Response {
+pub(crate) async fn handle_session_resume(req: Request, sm: &Arc<SessionManager>) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
 
     match sm.resume_session(session_id).await {
@@ -380,7 +380,7 @@ pub(super) async fn handle_session_resume(req: Request, sm: &Arc<SessionManager>
     }
 }
 
-pub(super) async fn handle_session_resume_from_storage(
+pub(crate) async fn handle_session_resume_from_storage(
     req: Request,
     sm: &Arc<SessionManager>,
 ) -> Response {
@@ -440,7 +440,7 @@ pub(super) async fn handle_session_resume_from_storage(
     )
 }
 
-pub(super) async fn handle_session_end(
+pub(crate) async fn handle_session_end(
     req: Request,
     sm: &Arc<SessionManager>,
     am: &Arc<AgentManager>,
@@ -501,7 +501,7 @@ pub(super) async fn handle_session_replay(
     }
 }
 
-pub(super) async fn handle_session_compact(req: Request, sm: &Arc<SessionManager>) -> Response {
+pub(crate) async fn handle_session_compact(req: Request, sm: &Arc<SessionManager>) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
 
     match sm.request_compaction(session_id).await {
