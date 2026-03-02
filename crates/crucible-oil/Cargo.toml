@@ -8,9 +8,8 @@ rust-version.workspace = true
 description = "Minimal Elm/Dioxus-inspired TUI framework for terminal applications"
 
 [features]
-default = ["taffy-render"]
+default = []
 test-utils = ["dep:proptest"]
-taffy-render = []
 
 [dependencies]
 crossterm = { workspace = true }
