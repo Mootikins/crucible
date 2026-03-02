@@ -26,6 +26,8 @@ pub mod layout;
 pub mod node;
 pub mod overlay;
 pub mod planning;
+pub mod runtime;
+pub mod output;
 #[cfg(any(test, feature = "test-utils"))]
 #[cfg(any(test, feature = "test-utils"))]
 pub mod proptest_strategies;
@@ -68,6 +70,8 @@ pub use render::{
 };
 pub use style::{AlignItems, Border, Color, Gap, JustifyContent, Padding, Style};
 pub use planning::{FramePlan, FramePlanner, FrameSnapshot, FrameTrace, RenderedOverlay};
+pub use runtime::TestRuntime;
+pub use output::OutputBuffer;
 
 // Re-export commonly used decrypt functions
 
