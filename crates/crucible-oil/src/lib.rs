@@ -30,6 +30,7 @@ pub mod render;
 pub mod style;
 pub mod taffy_layout;
 pub mod template;
+pub mod viewport;
 
 pub use cell_grid::{CellGrid, StyledCell};
 pub use components::{
@@ -69,3 +70,4 @@ pub mod utils;
 
 // Re-export utils for convenience
 pub use utils::{truncate_to_chars, truncate_to_width};
+pub use viewport::{clamp_lines_bottom, clamp_lines_top, ensure_min_height, pad_lines_to};
