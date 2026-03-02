@@ -7,7 +7,6 @@ pub enum ElementKind {
     #[default]
     Block,
     Continuation,
-    ToolCall,
 }
 
 impl ElementKind {
@@ -17,9 +16,6 @@ impl ElementKind {
             (_, ElementKind::Continuation) => false,
             (Some(ElementKind::Continuation), _) => false,
             (Some(ElementKind::Block), ElementKind::Block) => true,
-            (Some(ElementKind::ToolCall), ElementKind::Block) => true,
-            (Some(ElementKind::Block), ElementKind::ToolCall) => false,
-            (Some(ElementKind::ToolCall), ElementKind::ToolCall) => false,
         }
     }
 
@@ -27,7 +23,6 @@ impl ElementKind {
         match self {
             ElementKind::Block => true,
             ElementKind::Continuation => false,
-            ElementKind::ToolCall => true,
         }
     }
 }
@@ -224,9 +219,6 @@ pub fn scrollback_continuation(
     scrollback_with_kind(key, ElementKind::Continuation, children)
 }
 
-pub fn scrollback_tool(key: impl Into<String>, children: impl IntoIterator<Item = Node>) -> Node {
-    scrollback_with_kind(key, ElementKind::ToolCall, children)
-}
 
 pub fn scrollback_with_kind(
     key: impl Into<String>,
@@ -886,35 +878,8 @@ mod element_kind_tests {
     }
 
     #[test]
-    fn block_after_tool_wants_blank_line() {
-        assert!(ElementKind::Block.wants_blank_line_before(Some(ElementKind::ToolCall)));
-        assert!(!ElementKind::ToolCall.wants_blank_line_before(Some(ElementKind::Block)));
-    }
-
-    #[test]
-    fn continuation_never_wants_blank_line() {
-        assert!(!ElementKind::Continuation.wants_blank_line_before(Some(ElementKind::Block)));
-        assert!(!ElementKind::Continuation.wants_blank_line_before(Some(ElementKind::ToolCall)));
-        assert!(!ElementKind::Continuation.wants_blank_line_before(Some(ElementKind::Continuation)));
-    }
-
-    #[test]
-    fn first_element_never_wants_blank_line() {
-        assert!(!ElementKind::Block.wants_blank_line_before(None));
-        assert!(!ElementKind::ToolCall.wants_blank_line_before(None));
-        assert!(!ElementKind::Continuation.wants_blank_line_before(None));
-    }
-
-    #[test]
-    fn tool_calls_are_compact() {
-        assert!(!ElementKind::ToolCall.wants_blank_line_before(Some(ElementKind::Block)));
-        assert!(!ElementKind::ToolCall.wants_blank_line_before(Some(ElementKind::ToolCall)));
-    }
-
-    #[test]
     fn wants_newline_after_matches_kind() {
         assert!(ElementKind::Block.wants_newline_after());
-        assert!(ElementKind::ToolCall.wants_newline_after());
         assert!(!ElementKind::Continuation.wants_newline_after());
     }
 }
