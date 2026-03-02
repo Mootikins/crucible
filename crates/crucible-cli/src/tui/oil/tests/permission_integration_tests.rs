@@ -12,7 +12,7 @@ use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::render::render_to_string;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse};
+use crucible_core::interaction::{InteractionRequest, PermRequest};
 
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)

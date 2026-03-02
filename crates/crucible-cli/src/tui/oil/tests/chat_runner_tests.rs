@@ -3,16 +3,11 @@
 use crate::tui::oil::app::{Action, App, ViewContext};
 use crate::tui::oil::chat_app::{ChatAppMsg, ChatMode, OilChatApp};
 use crate::tui::oil::chat_runner::OilChatRunner;
-use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::render::render_to_string;
 use crate::tui::oil::terminal::Terminal;
 use async_trait::async_trait;
-use crossterm::event::{
-    Event as CtEvent, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind,
-};
 use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolResult};
-use crucible_core::types::acp::schema::{AvailableCommand, SessionModeState};
 use futures::stream::{self, BoxStream};
 use std::sync::{Arc, Mutex};
 

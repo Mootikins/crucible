@@ -5,8 +5,6 @@ use crate::tui::oil::app::{App, ViewContext};
 use crate::tui::oil::chat_app::{ChatAppMsg, ChatMode, OilChatApp};
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::planning::FramePlanner;
-use crate::tui::oil::render::render_to_string;
-use crate::tui::oil::test_harness::AppHarness;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crucible_core::traits::chat::PrecognitionNoteInfo;
 use insta::assert_snapshot;
