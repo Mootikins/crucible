@@ -28,6 +28,7 @@ pub struct RpcContext {
 }
 
 impl RpcContext {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         kiln: Arc<KilnManager>,
         sessions: Arc<SessionManager>,

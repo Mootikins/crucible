@@ -200,55 +200,5 @@ pub(super) async fn handle_request(
     client_id: ClientId,
     ctx: &ServerContext,
 ) -> Response {
-    let req_clone = req.clone();
-    let resp = ctx.dispatcher.dispatch(client_id, req).await;
-
-    if let Some(ref err) = resp.error {
-        if err.code == METHOD_NOT_FOUND && err.message.contains("not yet migrated") {
-            return handle_legacy_request(LegacyRequestParams {
-                req: req_clone,
-                kiln_manager: &ctx.kiln_manager,
-                session_manager: &ctx.session_manager,
-                agent_manager: &ctx.agent_manager,
-                project_manager: &ctx.project_manager,
-                lua_sessions: &ctx.lua_sessions,
-                event_tx: &ctx.event_tx,
-                plugin_loader: &ctx.plugin_loader,
-                llm_config: &ctx.llm_config,
-                mcp_server_manager: &ctx.mcp_server_manager,
-            })
-            .await;
-        }
-    }
-
-    resp
-}
-
-/// Parameters for handling legacy RPC requests.
-pub struct LegacyRequestParams<'a> {
-    req: Request,
-    kiln_manager: &'a Arc<KilnManager>,
-    session_manager: &'a Arc<SessionManager>,
-    agent_manager: &'a Arc<AgentManager>,
-    project_manager: &'a Arc<ProjectManager>,
-    lua_sessions: &'a Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
-    event_tx: &'a broadcast::Sender<SessionEventMessage>,
-    plugin_loader: &'a Arc<Mutex<Option<DaemonPluginLoader>>>,
-    llm_config: &'a Option<LlmConfig>,
-    mcp_server_manager: &'a Arc<McpServerManager>,
-}
-
-pub(super) async fn handle_legacy_request(params: LegacyRequestParams<'_>) -> Response {
-    tracing::debug!("Legacy handler for method={:?}", params.req.method);
-
-    match params.req.method.as_str() {
-        _ => {
-            tracing::warn!("Unknown RPC method: {:?}", params.req.method);
-            Response::error(
-                params.req.id,
-                METHOD_NOT_FOUND,
-                format!("Unknown method: {}", params.req.method),
-            )
-        }
-    }
+    ctx.dispatcher.dispatch(client_id, req).await
 }
