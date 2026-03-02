@@ -47,10 +47,10 @@ mod core;
 pub mod kiln;
 pub mod lua;
 pub mod observe;
-mod platform;
+pub mod platform;
 pub mod plugins;
 pub mod session;
-mod storage;
+pub mod storage;
 
 use core::*;
 // use kiln::*;  // kiln handlers are now called via crate::server::kiln::
