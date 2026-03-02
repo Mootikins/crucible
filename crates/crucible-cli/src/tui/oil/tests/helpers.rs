@@ -2,7 +2,6 @@ use crate::tui::oil::ansi::strip_ansi;
 use crate::tui::oil::app::{App, ViewContext};
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::focus::FocusContext;
-use crate::tui::oil::render::render_to_string;
 use crate::tui::oil::Node;
 use crate::tui::oil::TestRuntime;
 
@@ -14,14 +13,7 @@ pub fn view_with_default_ctx(app: &OilChatApp) -> Node {
     app.view(&ctx)
 }
 
-pub fn render_app(app: &OilChatApp, width: usize) -> String {
-    let tree = view_with_default_ctx(app);
-    render_to_string(&tree, width)
-}
 
-pub fn render_and_strip(app: &OilChatApp, width: usize) -> String {
-    strip_ansi(&render_app(app, width))
-}
 
 pub fn combined_output(runtime: &TestRuntime) -> String {
     let stdout = strip_ansi(runtime.stdout_content());
