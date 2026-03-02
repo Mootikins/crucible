@@ -1,4 +1,5 @@
 use super::*;
+use crucible_core::events::InternalSessionEvent;
 
 const DEFAULT_MAX_TOOL_DEPTH: usize = 10;
 
@@ -423,15 +424,23 @@ impl AgentManager {
         stream_config: &AgentStreamConfig,
     ) -> Option<String> {
         let mut state = stream_ctx.session_state.lock().await;
-        let pre_event = SessionEvent::PreLlmCall {
+        let pre_event = SessionEvent::internal(InternalSessionEvent::PreLlmCall {
             prompt: content.clone(),
             model: stream_config.model.clone(),
-        };
+        });
 
         match state.reactor.emit(pre_event).await {
             Ok(EmitResult::Completed { event, .. }) => {
-                if let SessionEvent::PreLlmCall { prompt, .. } = event {
-                    Some(prompt)
+                if let SessionEvent::Internal(inner) = event {
+                    if let InternalSessionEvent::PreLlmCall { prompt, .. } = inner.as_ref() {
+                        Some(prompt.clone())
+                    } else {
+                        warn!(
+                            session_id = %stream_ctx.session_id,
+                            "PreLlmCall handler returned unexpected event type, using original prompt"
+                        );
+                        Some(content)
+                    }
                 } else {
                     warn!(
                         session_id = %stream_ctx.session_id,
@@ -700,10 +709,10 @@ impl AgentManager {
 
         {
             let mut state = stream_ctx.session_state.lock().await;
-            let pre_tool_event = SessionEvent::PreToolCall {
+            let pre_tool_event = SessionEvent::internal(InternalSessionEvent::PreToolCall {
                 name: tool_call.name.clone(),
                 args: args.clone(),
-            };
+            });
             match state.reactor.emit(pre_tool_event).await {
                 Ok(EmitResult::Cancelled { by_handler, .. }) => {
                     warn!(
@@ -1116,12 +1125,12 @@ impl AgentManager {
         }
 
         let mut state = stream_ctx.session_state.lock().await;
-        let post_event = SessionEvent::PostLlmCall {
+        let post_event = SessionEvent::internal(InternalSessionEvent::PostLlmCall {
             response_summary,
             model: stream_config.model,
             duration_ms,
             token_count: None,
-        };
+        });
         if let Err(e) = state.reactor.emit(post_event).await {
             warn!(
                 session_id = %stream_ctx.session_id,

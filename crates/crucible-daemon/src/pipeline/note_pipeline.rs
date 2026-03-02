@@ -400,7 +400,7 @@ mod tests {
     use super::*;
     use crucible_core::enrichment::EnrichmentMetadata;
     use crucible_core::enrichment::{EnrichedNote, EnrichmentService, InferredRelation};
-    use crucible_core::events::SessionEvent;
+    use crucible_core::events::{InternalSessionEvent, SessionEvent};
     use crucible_core::parser::{BlockHash, ParsedNote};
     use crucible_core::processing::InMemoryChangeDetectionStore;
     use crucible_core::storage::{Filter, NoteRecord, SearchResult, StorageError};
@@ -502,10 +502,10 @@ mod tests {
         }
 
         async fn delete(&self, _path: &str) -> std::result::Result<SessionEvent, StorageError> {
-            Ok(SessionEvent::NoteDeleted {
+            Ok(SessionEvent::internal(InternalSessionEvent::NoteDeleted {
                 path: std::path::PathBuf::new(),
                 existed: false,
-            })
+            }))
         }
 
         async fn list(&self) -> std::result::Result<Vec<NoteRecord>, StorageError> {

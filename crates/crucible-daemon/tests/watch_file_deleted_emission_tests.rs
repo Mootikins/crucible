@@ -3,7 +3,7 @@
 //! These tests verify that the IndexingHandler correctly emits SessionEvent::FileDeleted
 //! events when processing file deletion events.
 
-use crucible_core::events::{Priority, SessionEvent};
+use crucible_core::events::{InternalSessionEvent, Priority, SessionEvent};
 use crucible_core::test_support::mocks::MockEventEmitter;
 use crucible_daemon::watch::handlers::IndexingHandler;
 use crucible_daemon::watch::traits::EventHandler;
@@ -34,8 +34,10 @@ async fn test_file_deleted_emission() {
     assert_eq!(emitted_events.len(), 1);
 
     match &emitted_events[0] {
-        SessionEvent::FileDeleted { path } => {
+        SessionEvent::Internal(inner) => {
+            if let InternalSessionEvent::FileDeleted { path } = inner.as_ref() {
             assert_eq!(path, &deleted_path);
+            }
         }
         other => panic!("Expected FileDeleted event, got: {:?}", other),
     }
@@ -88,8 +90,10 @@ async fn test_file_deleted_emission_various_extensions() {
         );
 
         match &emitted_events[0] {
-            SessionEvent::FileDeleted { path } => {
+            SessionEvent::Internal(inner) => {
+                if let InternalSessionEvent::FileDeleted { path } = inner.as_ref() {
                 assert_eq!(path, &deleted_path, "Path mismatch for .{} file", ext);
+                }
             }
             other => panic!("Expected FileDeleted event for .{}, got: {:?}", ext, other),
         }
@@ -118,8 +122,10 @@ async fn test_file_deleted_emission_nonexistent_file() {
     );
 
     match &emitted_events[0] {
-        SessionEvent::FileDeleted { path } => {
+        SessionEvent::Internal(inner) => {
+            if let InternalSessionEvent::FileDeleted { path } = inner.as_ref() {
             assert_eq!(path, &nonexistent_path);
+            }
         }
         other => panic!("Expected FileDeleted event, got: {:?}", other),
     }
@@ -152,8 +158,10 @@ async fn test_multiple_file_deleted_events() {
 
     for (i, emitted_event) in emitted_events.iter().enumerate() {
         match emitted_event {
-            SessionEvent::FileDeleted { path } => {
+            SessionEvent::Internal(inner) => {
+                if let InternalSessionEvent::FileDeleted { path } = inner.as_ref() {
                 assert_eq!(path, &paths[i], "Path mismatch at index {}", i);
+                }
             }
             other => panic!("Expected FileDeleted at index {}, got: {:?}", i, other),
         }
@@ -175,9 +183,11 @@ async fn test_file_deleted_emission_absolute_path() {
     assert_eq!(emitted_events.len(), 1);
 
     match &emitted_events[0] {
-        SessionEvent::FileDeleted { path } => {
+        SessionEvent::Internal(inner) => {
+            if let InternalSessionEvent::FileDeleted { path } = inner.as_ref() {
             assert!(path.is_absolute(), "Path should remain absolute");
             assert_eq!(path, &absolute_path);
+            }
         }
         other => panic!("Expected FileDeleted event, got: {:?}", other),
     }
@@ -198,8 +208,10 @@ async fn test_file_deleted_emission_unicode_filename() {
     assert_eq!(emitted_events.len(), 1);
 
     match &emitted_events[0] {
-        SessionEvent::FileDeleted { path } => {
+        SessionEvent::Internal(inner) => {
+            if let InternalSessionEvent::FileDeleted { path } = inner.as_ref() {
             assert_eq!(path, &unicode_path, "Unicode path should be preserved");
+            }
         }
         other => panic!("Expected FileDeleted event, got: {:?}", other),
     }
@@ -220,8 +232,10 @@ async fn test_file_deleted_emission_spaces_in_path() {
     assert_eq!(emitted_events.len(), 1);
 
     match &emitted_events[0] {
-        SessionEvent::FileDeleted { path } => {
+        SessionEvent::Internal(inner) => {
+            if let InternalSessionEvent::FileDeleted { path } = inner.as_ref() {
             assert_eq!(path, &spaced_path, "Path with spaces should be preserved");
+            }
         }
         other => panic!("Expected FileDeleted event, got: {:?}", other),
     }
@@ -350,17 +364,21 @@ async fn test_file_deleted_after_creation() {
 
     // First event should be FileChanged(Created)
     match &emitted_events[0] {
-        SessionEvent::FileChanged { path, kind } => {
+        SessionEvent::Internal(inner) => {
+            if let InternalSessionEvent::FileChanged { path, kind } = inner.as_ref() {
             assert_eq!(path, &test_file);
             assert_eq!(*kind, crucible_core::events::FileChangeKind::Created);
+            }
         }
         other => panic!("Expected FileChanged(Created), got: {:?}", other),
     }
 
     // Second event should be FileDeleted
     match &emitted_events[1] {
-        SessionEvent::FileDeleted { path } => {
+        SessionEvent::Internal(inner) => {
+            if let InternalSessionEvent::FileDeleted { path } = inner.as_ref() {
             assert_eq!(path, &test_file);
+            }
         }
         other => panic!("Expected FileDeleted, got: {:?}", other),
     }
@@ -382,7 +400,8 @@ async fn test_file_deleted_preserves_full_path() {
     assert_eq!(emitted_events.len(), 1);
 
     match &emitted_events[0] {
-        SessionEvent::FileDeleted { path } => {
+        SessionEvent::Internal(inner) => {
+            if let InternalSessionEvent::FileDeleted { path } = inner.as_ref() {
             // Verify the full path is preserved
             assert_eq!(path, &deep_path);
             assert_eq!(
@@ -390,6 +409,7 @@ async fn test_file_deleted_preserves_full_path() {
                 "important-note.md"
             );
             assert!(path.to_string_lossy().contains("nested/folder/structure"));
+            }
         }
         other => panic!("Expected FileDeleted event, got: {:?}", other),
     }

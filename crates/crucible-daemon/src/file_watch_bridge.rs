@@ -5,7 +5,7 @@
 //! `WatchManager` to push file change events to all subscribed clients.
 
 use async_trait::async_trait;
-use crucible_core::events::{EmitOutcome, EmitResult, EventEmitter, SessionEvent};
+use crucible_core::events::{EmitOutcome, EmitResult, EventEmitter, SessionEvent, InternalSessionEvent};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::debug;
@@ -35,29 +35,34 @@ impl EventEmitter for DaemonEventBridge {
 
     async fn emit(&self, event: Self::Event) -> EmitResult<EmitOutcome<Self::Event>> {
         let msg = match &event {
-            SessionEvent::FileChanged { path, kind } => Some(SessionEventMessage::new(
-                "system",
-                "file_changed",
-                serde_json::json!({
-                    "path": path.display().to_string(),
-                    "kind": format!("{}", kind),
-                }),
-            )),
-            SessionEvent::FileDeleted { path } => Some(SessionEventMessage::new(
-                "system",
-                "file_deleted",
-                serde_json::json!({
-                    "path": path.display().to_string(),
-                }),
-            )),
-            SessionEvent::FileMoved { from, to } => Some(SessionEventMessage::new(
-                "system",
-                "file_moved",
-                serde_json::json!({
-                    "from": from.display().to_string(),
-                    "to": to.display().to_string(),
-                }),
-            )),
+            SessionEvent::Internal(inner) => {
+                match inner.as_ref() {
+                    InternalSessionEvent::FileChanged { path, kind } => Some(SessionEventMessage::new(
+                        "system",
+                        "file_changed",
+                        serde_json::json!({
+                            "path": path.display().to_string(),
+                            "kind": format!("{}", kind),
+                        }),
+                    )),
+                    InternalSessionEvent::FileDeleted { path } => Some(SessionEventMessage::new(
+                        "system",
+                        "file_deleted",
+                        serde_json::json!({
+                            "path": path.display().to_string(),
+                        }),
+                    )),
+                    InternalSessionEvent::FileMoved { from, to } => Some(SessionEventMessage::new(
+                        "system",
+                        "file_moved",
+                        serde_json::json!({
+                            "from": from.display().to_string(),
+                            "to": to.display().to_string(),
+                        }),
+                    )),
+                    _ => None,
+                }
+            }
             _ => None,
         };
 
@@ -99,10 +104,10 @@ mod tests {
         let (tx, mut rx) = broadcast::channel(16);
         let bridge = DaemonEventBridge::new(tx);
 
-        let event = SessionEvent::FileChanged {
+        let event = SessionEvent::internal(InternalSessionEvent::FileChanged {
             path: PathBuf::from("/tmp/test.md"),
             kind: FileChangeKind::Modified,
-        };
+        });
 
         let result = bridge.emit(event).await;
         assert!(result.is_ok());
@@ -117,9 +122,9 @@ mod tests {
         let (tx, mut rx) = broadcast::channel(16);
         let bridge = DaemonEventBridge::new(tx);
 
-        let event = SessionEvent::FileDeleted {
+        let event = SessionEvent::internal(InternalSessionEvent::FileDeleted {
             path: PathBuf::from("/tmp/gone.md"),
-        };
+        });
 
         let result = bridge.emit(event).await;
         assert!(result.is_ok());
@@ -133,10 +138,10 @@ mod tests {
         let (tx, mut rx) = broadcast::channel(16);
         let bridge = DaemonEventBridge::new(tx);
 
-        let event = SessionEvent::FileMoved {
+        let event = SessionEvent::internal(InternalSessionEvent::FileMoved {
             from: PathBuf::from("/tmp/old.md"),
             to: PathBuf::from("/tmp/new.md"),
-        };
+        });
 
         let result = bridge.emit(event).await;
         assert!(result.is_ok());

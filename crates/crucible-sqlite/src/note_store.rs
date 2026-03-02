@@ -438,15 +438,15 @@ impl NoteStore for SqliteNoteStore {
                 }
 
                 let event = if existed {
-                    SessionEvent::NoteModified {
+                    SessionEvent::internal(crucible_core::events::InternalSessionEvent::NoteModified {
                         path: note.path.clone().into(),
                         change_type: crucible_core::events::NoteChangeType::Content,
-                    }
+                    })
                 } else {
-                    SessionEvent::NoteCreated {
+                    SessionEvent::internal(crucible_core::events::InternalSessionEvent::NoteCreated {
                         path: note.path.clone().into(),
                         title: Some(note.title.clone()),
-                    }
+                    })
                 };
 
                 Ok(vec![event])
@@ -506,10 +506,10 @@ impl NoteStore for SqliteNoteStore {
         .await??;
 
         // Return NoteDeleted event
-        let event = SessionEvent::NoteDeleted {
+        let event = SessionEvent::internal(crucible_core::events::InternalSessionEvent::NoteDeleted {
             path: path_for_event.into(),
             existed,
-        };
+        });
         Ok(event)
     }
 

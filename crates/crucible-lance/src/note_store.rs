@@ -591,15 +591,15 @@ impl NoteStore for LanceNoteStore {
 
         // Return appropriate event based on whether the note existed before
         let event = if existed {
-            SessionEvent::NoteModified {
+            SessionEvent::internal(crucible_core::events::InternalSessionEvent::NoteModified {
                 path: note.path.into(),
                 change_type: NoteChangeType::Content,
-            }
+            })
         } else {
-            SessionEvent::NoteCreated {
+            SessionEvent::internal(crucible_core::events::InternalSessionEvent::NoteCreated {
                 path: note.path.into(),
                 title: Some(note.title),
-            }
+            })
         };
 
         Ok(vec![event])
@@ -648,10 +648,10 @@ impl NoteStore for LanceNoteStore {
             Some(t) => t,
             None => {
                 // Table doesn't exist, nothing to delete
-                return Ok(SessionEvent::NoteDeleted {
+                return Ok(SessionEvent::internal(crucible_core::events::InternalSessionEvent::NoteDeleted {
                     path: path.into(),
                     existed: false,
-                });
+                }));
             }
         };
 
@@ -666,10 +666,10 @@ impl NoteStore for LanceNoteStore {
 
         debug!("Deleted note: {}", path);
 
-        Ok(SessionEvent::NoteDeleted {
+        Ok(SessionEvent::internal(crucible_core::events::InternalSessionEvent::NoteDeleted {
             path: path.into(),
             existed,
-        })
+        }))
     }
 
     async fn list(&self) -> StorageResult<Vec<NoteRecord>> {

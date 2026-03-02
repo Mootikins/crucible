@@ -349,7 +349,7 @@ mod tests {
 mod store_tests {
     use super::*;
     use async_trait::async_trait;
-    use crucible_core::events::SessionEvent;
+    use crucible_core::events::{InternalSessionEvent, SessionEvent};
     use crucible_core::parser::BlockHash;
     use crucible_core::storage::{Filter, NoteRecord, NoteStore, SearchResult, StorageResult};
     use std::collections::HashMap;
@@ -386,10 +386,10 @@ mod store_tests {
             let path = note.path.clone();
             let mut map = self.notes.lock().unwrap();
             map.insert(note.path.clone(), note);
-            let event = SessionEvent::NoteCreated {
+            let event = SessionEvent::internal(InternalSessionEvent::NoteCreated {
                 path: path.into(),
                 title: Some(title),
-            };
+            });
             Ok(vec![event])
         }
 
@@ -401,10 +401,10 @@ mod store_tests {
         async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
             let mut map = self.notes.lock().unwrap();
             map.remove(path);
-            Ok(SessionEvent::NoteDeleted {
+            Ok(SessionEvent::internal(InternalSessionEvent::NoteDeleted {
                 path: path.into(),
                 existed: false,
-            })
+            }))
         }
 
         async fn list(&self) -> StorageResult<Vec<NoteRecord>> {

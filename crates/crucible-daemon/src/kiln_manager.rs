@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{broadcast, RwLock};
 use tracing::{info, warn};
+use crucible_core::events::InternalSessionEvent;
 
 use crate::pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
 use crucible_core::processing::InMemoryChangeDetectionStore;
@@ -397,7 +398,13 @@ impl KilnManager {
         let event = conn.handle.as_note_store().delete(&relative_path).await?;
 
         match event {
-            SessionEvent::NoteDeleted { existed, .. } => Ok(existed),
+            SessionEvent::Internal(inner) => {
+                if let InternalSessionEvent::NoteDeleted { existed, .. } = inner.as_ref() {
+                    Ok(*existed)
+                } else {
+                    Ok(false)
+                }
+            }
             _ => Ok(false),
         }
     }

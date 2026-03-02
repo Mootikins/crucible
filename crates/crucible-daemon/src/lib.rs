@@ -28,6 +28,7 @@ pub mod background_manager;
 pub mod daemon_plugins;
 pub mod embedding;
 mod empty_providers;
+pub mod internal_events;
 pub mod enrichment;
 pub mod event_emitter;
 pub mod file_watch_bridge;
