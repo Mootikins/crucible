@@ -35,6 +35,7 @@ pub mod file_watch_bridge;
 pub mod kiln_manager;
 pub mod lifecycle;
 pub mod mcp_server;
+pub mod mcp_host;
 pub mod multi_kiln_search;
 pub mod observe;
 pub mod permission_bridge;
@@ -57,6 +58,7 @@ pub mod tool_dispatch;
 pub mod tools_bridge;
 pub mod trust_resolution;
 pub mod watch;
+pub mod tools;
 
 pub use acp_handle::{AcpAgentHandle, AcpHandleError};
 pub use agent_factory::{create_agent_from_session_config, AgentFactoryError};
@@ -69,6 +71,7 @@ pub use file_watch_bridge::{create_event_bridge, DaemonEventBridge};
 pub use kiln_manager::KilnManager;
 pub use lifecycle::{remove_socket, socket_path, wait_for_shutdown};
 pub use mcp_server::McpServerManager;
+pub use mcp_host::InProcessMcpHost;
 pub use observe::{events, id, indexer, markdown, serde_md, session, storage, truncate};
 pub use observe::{
     extract_session_content, list_sessions, load_events, render_to_markdown, truncate_for_log,

@@ -10,7 +10,7 @@ use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::{
     AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager,
 };
-use crucible_tools::workspace::WorkspaceTools;
+use crucible_daemon::tools::workspace::WorkspaceTools;
 use futures::stream::{self, BoxStream};
 use futures::StreamExt;
 use std::collections::HashMap;

@@ -5,7 +5,7 @@
 
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
-use crucible_tools::CrucibleMcpServer;
+use crucible_daemon::tools::CrucibleMcpServer;
 use rmcp::ServerHandler;
 use std::sync::Arc;
 use tempfile::TempDir;

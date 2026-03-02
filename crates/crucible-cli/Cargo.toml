@@ -48,7 +48,6 @@ crucible-config = { path = "../crucible-config", features = ["toml"] }
 crucible-llm = { path = "../crucible-llm", default-features = false }
 crucible-lua = { path = "../crucible-lua" }
 
-crucible-tools = { path = "../crucible-tools" }
 crucible-acp = { path = "../crucible-acp" }
 
 crucible-daemon = { path = "../crucible-daemon" }

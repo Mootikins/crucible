@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use crucible_core::traits::tools::{ExecutionContext, ToolExecutor};
-use crucible_tools::workspace::WorkspaceTools;
+use crate::tools::workspace::WorkspaceTools;
 use std::sync::Arc;
 
 #[async_trait]
@@ -47,7 +47,7 @@ mod tests {
 
     #[test]
     fn test_daemon_tool_dispatcher_construction() {
-        let workspace_tools = Arc::new(crucible_tools::workspace::WorkspaceTools::new(
+        let workspace_tools = Arc::new(crate::tools::workspace::WorkspaceTools::new(
             &std::path::PathBuf::from("/tmp"),
         ));
 
@@ -58,7 +58,7 @@ mod tests {
 
     #[test]
     fn test_daemon_tool_dispatcher_holds_workspace_tools_arc() {
-        let workspace_tools = Arc::new(crucible_tools::workspace::WorkspaceTools::new(
+        let workspace_tools = Arc::new(crate::tools::workspace::WorkspaceTools::new(
             &std::path::PathBuf::from("/tmp"),
         ));
 
@@ -71,7 +71,7 @@ mod tests {
 
     #[test]
     fn test_has_tool_checks_workspace_definitions() {
-        let workspace_tools = Arc::new(crucible_tools::workspace::WorkspaceTools::new(
+        let workspace_tools = Arc::new(crate::tools::workspace::WorkspaceTools::new(
             &std::path::PathBuf::from("/tmp"),
         ));
         let dispatcher = DaemonToolDispatcher::new(workspace_tools);

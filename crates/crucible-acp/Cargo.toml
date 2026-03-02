@@ -21,8 +21,6 @@ crucible-core = { path = "../crucible-core" }
 # Configuration types
 crucible-config = { path = "../crucible-config" }
 
-# Crucible tools for execution
-crucible-tools = { path = "../crucible-tools" }
 
 # TOON Query language for tabular encoding
 oq = { workspace = true }
@@ -75,6 +73,7 @@ tracing-subscriber = { workspace = true }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 which = "8.0"
 regex = "1.12"
+crucible-daemon = { path = "../crucible-daemon" }
 
 # Test binaries for integration testing
 [[test]]
