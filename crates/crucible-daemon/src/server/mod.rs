@@ -325,7 +325,7 @@ impl Server {
         };
 
         #[cfg(not(feature = "web"))]
-        let web_cancel = CancellationToken::new();
+        let _web_cancel = CancellationToken::new();
 
         // Spawn event persistence task with cancellation support
         let storage = FileSessionStorage::new();
