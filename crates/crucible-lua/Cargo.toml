@@ -35,7 +35,7 @@ walkdir = "2"
 crucible-core = { path = "../crucible-core" }
 
 # Oil TUI framework for Lua UI building
-crucible-oil = { path = "../crucible-oil" }
+crucible-oil = { path = "../crucible-oil", default-features = false }
 
 # XDG config directories
 dirs = "6"

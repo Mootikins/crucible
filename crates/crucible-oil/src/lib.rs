@@ -25,6 +25,7 @@ pub mod graduation;
 pub mod layout;
 pub mod node;
 pub mod overlay;
+pub mod planning;
 #[cfg(any(test, feature = "test-utils"))]
 #[cfg(any(test, feature = "test-utils"))]
 pub mod proptest_strategies;
@@ -66,6 +67,7 @@ pub use render::{
     RenderResult,
 };
 pub use style::{AlignItems, Border, Color, Gap, JustifyContent, Padding, Style};
+pub use planning::{FramePlan, FramePlanner, FrameSnapshot, FrameTrace, RenderedOverlay};
 
 // Re-export commonly used decrypt functions
 
