@@ -1,4 +1,4 @@
-use crate::tui::oil::*;
+use crucible_oil::*;
 
 mod viewport_layout_tests {
     use super::*;

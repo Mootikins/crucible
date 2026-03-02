@@ -14,8 +14,6 @@ mod event_loop_tests;
 mod event_tests;
 mod focus_tests;
 mod graduation_invariant_property_tests;
-mod graduation_invariant_tests;
-mod graduation_tests;
 mod interrupt_tests;
 mod layout_tests;
 mod markdown_fuzz_tests;
