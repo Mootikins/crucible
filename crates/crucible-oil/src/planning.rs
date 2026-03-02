@@ -3,7 +3,7 @@ use crate::graduation::{GraduatedContent, GraduationState};
 use crate::layout::{build_layout_tree, render_layout_tree_filtered};
 use crate::node::{ElementKind, Node, OverlayNode};
 use crate::overlay::{extract_overlays, filter_overlays, OverlayAnchor};
-use crate::render::{render_to_string, render_with_cursor_filtered, CursorInfo, RenderResult};
+use crate::render::{render_to_string, CursorInfo, RenderResult};
 
 #[derive(Debug, Clone)]
 pub struct FrameTrace {
@@ -110,11 +110,7 @@ impl FramePlanner {
     }
 
     pub fn plan(&mut self, tree: &Node) -> FrameSnapshot {
-        #[cfg(feature = "taffy-render")]
-        return self.plan_with_layout_tree(tree);
-
-        #[cfg(not(feature = "taffy-render"))]
-        return self.plan_legacy(tree);
+        self.plan_with_layout_tree(tree)
     }
 
     pub fn plan_with_layout_tree(&mut self, tree: &Node) -> FrameSnapshot {
@@ -164,44 +160,6 @@ impl FramePlanner {
         }
     }
 
-    pub fn plan_legacy(&mut self, tree: &Node) -> FrameSnapshot {
-        self.frame_no += 1;
-
-        let overlay_nodes = extract_overlays(tree);
-        let main_tree = filter_overlays(tree.clone());
-
-        let graduated = self
-            .graduation
-            .plan_graduation(&main_tree, self.width as usize);
-
-        let (stdout_delta, new_last_kind) =
-            GraduationState::format_stdout_delta(&graduated, self.last_graduated_kind);
-        self.last_graduated_kind = new_last_kind;
-
-        self.graduation.commit_graduation(&graduated);
-
-        let viewport =
-            render_with_cursor_filtered(&main_tree, self.width as usize, &self.graduation);
-
-        let rendered_overlays = self.render_overlays(&overlay_nodes);
-
-        let trace = FrameTrace {
-            frame_no: self.frame_no,
-            graduated_keys: graduated.iter().map(|g| g.key.clone()).collect(),
-            viewport_visual_rows: visual_rows(&viewport.content, self.width as usize),
-        };
-
-        FrameSnapshot {
-            plan: FramePlan {
-                frame_no: self.frame_no,
-                graduated,
-                viewport,
-                overlays: rendered_overlays,
-                trace,
-            },
-            stdout_delta,
-        }
-    }
 
     fn render_overlays(&self, overlay_nodes: &[OverlayNode]) -> Vec<RenderedOverlay> {
         overlay_nodes
@@ -291,28 +249,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn plan_legacy_still_works() {
-        let mut planner = FramePlanner::new(80, 24);
-        let tree = col([text("Hello, World!")]);
-        let snapshot = planner.plan_legacy(&tree);
-
-        assert!(snapshot.viewport_content().contains("Hello, World!"));
-    }
-
-    #[cfg(not(feature = "taffy-render"))]
-    #[test]
-    fn plan_defaults_to_legacy() {
-        let mut planner = FramePlanner::new(80, 24);
-        let tree = col([text("Test content")]);
-
-        let legacy_snapshot = planner.plan_legacy(&tree);
-        planner.reset_graduation();
-        let default_snapshot = planner.plan(&tree);
-
-        assert_eq!(
-            legacy_snapshot.viewport_content(),
-            default_snapshot.viewport_content()
-        );
-    }
 }

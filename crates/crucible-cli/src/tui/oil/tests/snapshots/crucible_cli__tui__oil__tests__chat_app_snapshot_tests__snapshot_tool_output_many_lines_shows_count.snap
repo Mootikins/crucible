@@ -1,19 +1,24 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests.rs
+assertion_line: 162
 expression: render_app(&app)
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  > Run ls                                                                       
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
- ✓ Bash(command="ls -la")
-   │ (7 more lines)
-   │ file8.txt
-   │ file9.txt
-   │ file10.txt
- ◐
-
- 
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ ✓ Bash(command="ls -la")                                                       
+   │ (7 more lines)                                                             
+   │ file8.txt                                                                  
+   │ file9.txt                                                                  
+   │ file10.txt                                                                 
+                                                                                
+ ◐                                                                              
+                                                                                
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  >                                                                              
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
- NORMAL  ...                                                              — ctx
+ NORMAL...                                                                 —

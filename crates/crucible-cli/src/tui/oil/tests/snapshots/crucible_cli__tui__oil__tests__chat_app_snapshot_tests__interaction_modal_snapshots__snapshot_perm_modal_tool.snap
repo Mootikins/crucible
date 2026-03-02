@@ -1,8 +1,9 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests.rs
+assertion_line: 1066
 expression: render_app(&app)
 ---
- 
+                                                                                
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
   semantic_search (query="rust memory safety", limit=10)                        
                                                                                 

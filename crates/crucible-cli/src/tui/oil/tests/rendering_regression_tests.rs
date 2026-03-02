@@ -285,7 +285,23 @@ That's the overview."#;
             .join("\n")
     };
 
-    for i in 0..lines.len().saturating_sub(1) {
+    // Find where the UI chrome starts (first line of all box-drawing characters).
+    // Everything before that is content + padding, which we need to check.
+    let ui_chrome_start = lines
+        .iter()
+        .position(|l| {
+            // UI chrome separator is all box-drawing characters (▄ or ▀)
+            l.chars().all(|c| c == '\u{2584}' || c == '\u{2580}')
+        })
+        .unwrap_or(lines.len());
+
+    // Find the last non-blank line before the UI chrome
+    let last_content = lines[..ui_chrome_start]
+        .iter()
+        .rposition(|l| !l.trim().is_empty())
+        .unwrap_or(0);
+
+    for i in 0..last_content {
         let both_blank = lines[i].trim().is_empty() && lines[i + 1].trim().is_empty();
         assert!(
             !both_blank,
