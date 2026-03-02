@@ -92,7 +92,7 @@ impl BackgroundJobManager {
             subagent_contexts: Arc::new(DashMap::new()),
         }
     }
-    #[allow(dead_code)]
+    #[allow(dead_code)] // builder API, exercised by tests
     pub fn with_subagent_factory(mut self, factory: SubagentFactory) -> Self {
         self.subagent_factory = Some(Arc::new(factory));
         self
@@ -202,7 +202,7 @@ impl BackgroundJobManager {
         info!(job_id = %job_id, "Job cancelled");
         true
     }
-    #[allow(dead_code)]
+    #[allow(dead_code)] // lifecycle API, exercised by tests
     pub async fn cleanup_session(&self, session_id: &str, clear_history: bool) {
         let job_ids: Vec<JobId> = self
             .running
@@ -221,14 +221,14 @@ impl BackgroundJobManager {
 
         debug!(session_id = %session_id, "Session cleanup completed");
     }
-    #[allow(dead_code)]
+    #[allow(dead_code)] // diagnostic API, exercised by tests
     pub fn running_count(&self, session_id: &str) -> usize {
         self.running
             .iter()
             .filter(|entry| entry.value().info.session_id == session_id)
             .count()
     }
-    #[allow(dead_code)]
+    #[allow(dead_code)] // diagnostic API, exercised by tests
     pub fn total_running_count(&self) -> usize {
         self.running.len()
     }

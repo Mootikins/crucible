@@ -156,7 +156,6 @@ impl SessionManager {
     }
 
     /// List all active sessions.
-    #[allow(dead_code)]
     pub fn list_sessions(&self) -> Vec<SessionSummary> {
         self.sessions
             .iter()
@@ -167,7 +166,7 @@ impl SessionManager {
     /// List sessions filtered by criteria (in-memory only).
     ///
     /// For listing that includes persisted sessions, use `list_sessions_filtered_async`.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // sync counterpart of list_sessions_filtered_async, exercised by tests
     pub fn list_sessions_filtered(
         &self,
         kiln: Option<&PathBuf>,
@@ -305,12 +304,6 @@ impl SessionManager {
     ) -> Option<mpsc::Sender<SessionEventMessage>> {
         self.recording_senders.get(session_id).map(|r| r.clone())
     }
-
-    #[allow(dead_code)]
-    pub fn remove_recording_sender(&self, session_id: &str) {
-        self.recording_senders.remove(session_id);
-    }
-
     pub async fn end_session(&self, session_id: &str) -> Result<Session, SessionError> {
         let session = {
             let mut entry = self
@@ -367,7 +360,7 @@ impl SessionManager {
     /// Remove an ended session from memory.
     ///
     /// Returns the session if it was found and ended.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // session lifecycle API, exercised by tests
     pub fn remove_session(&self, session_id: &str) -> Result<Session, SessionError> {
         let session = self.sessions.get(session_id).map(|r| r.clone());
 
@@ -386,7 +379,7 @@ impl SessionManager {
     }
 
     /// Get the count of active sessions.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // diagnostic API, exercised by tests
     pub fn active_count(&self) -> usize {
         self.sessions
             .iter()
@@ -395,7 +388,7 @@ impl SessionManager {
     }
 
     /// Get the total count of sessions (including paused/ended).
-    #[allow(dead_code)]
+    #[allow(dead_code)] // diagnostic API, exercised by tests
     pub fn total_count(&self) -> usize {
         self.sessions.len()
     }

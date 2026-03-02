@@ -281,7 +281,7 @@ impl BackgroundJobManager {
             );
         }
 
-        let _ = emit_event(
+        if !emit_event(
             &self.event_tx,
             SessionEventMessage::new(
                 session_id,
@@ -292,11 +292,13 @@ impl BackgroundJobManager {
                     "prompt": truncate(&prompt, 100),
                 }),
             ),
-        );
+        ) {
+            tracing::debug!("Failed to emit SUBAGENT_SPAWNED event (no subscribers)");
+        }
 
         if is_delegation {
             if let Some(ref parent_id) = parent_session_id {
-                let _ = emit_event(
+                if !emit_event(
                     &self.event_tx,
                     SessionEventMessage::new(
                         parent_id,
@@ -308,7 +310,9 @@ impl BackgroundJobManager {
                             "target_agent": effective_target_name,
                         }),
                     ),
-                );
+                ) {
+                    tracing::debug!("Failed to emit DELEGATION_SPAWNED event (no subscribers)");
+                }
             }
         }
 
@@ -592,12 +596,13 @@ impl BackgroundJobManager {
                 )
             };
 
-            let _ = emit_event(
+            if !emit_event(
                 event_tx,
                 SessionEventMessage::new(parent_id, deleg_type, deleg_data),
-            );
+            ) {
+                tracing::debug!("Failed to emit delegation event (no subscribers)");
+            }
         }
-
         Self::emit_background_completed(event_tx, session_id, job_id, result, "subagent");
     }
 }

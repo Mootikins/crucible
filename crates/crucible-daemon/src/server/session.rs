@@ -622,7 +622,7 @@ pub(crate) async fn handle_session_interaction_respond(
         }
     }
 
-    let _ = emit_event(
+    if !emit_event(
         event_tx,
         SessionEventMessage::new(
             session_id,
@@ -632,7 +632,9 @@ pub(crate) async fn handle_session_interaction_respond(
                 "response": response,
             }),
         ),
-    );
+    ) {
+        tracing::debug!("Failed to emit interaction_completed event (no subscribers)");
+    }
 
     Response::success(
         req.id,
@@ -691,7 +693,7 @@ pub(crate) async fn handle_session_test_interaction(
         }
     };
 
-    let _ = emit_event(
+    if !emit_event(
         event_tx,
         SessionEventMessage::new(
             session_id.to_string(),
@@ -701,7 +703,9 @@ pub(crate) async fn handle_session_test_interaction(
                 "request": request,
             }),
         ),
-    );
+    ) {
+        tracing::debug!("Failed to emit interaction_requested event (no subscribers)");
+    }
 
     Response::success(
         req.id,
