@@ -237,10 +237,14 @@ mod tests {
     fn test_context() -> RpcContext {
         use crate::agent_manager::{AgentManager, AgentManagerParams};
         use crate::background_manager::BackgroundJobManager;
+        use crate::daemon_plugins::DaemonPluginLoader;
         use crate::kiln_manager::KilnManager;
+        use crate::mcp_server::McpServerManager;
+        use crate::project_manager::ProjectManager;
         use crate::session_manager::SessionManager;
         use crate::subscription::SubscriptionManager;
         use crucible_tools::workspace::WorkspaceTools;
+        use dashmap::DashMap;
         use tokio::sync::broadcast;
 
         let (event_tx, _) = broadcast::channel(16);
@@ -267,6 +271,11 @@ mod tests {
             Arc::new(SubscriptionManager::new()),
             event_tx,
             shutdown_tx,
+            Arc::new(ProjectManager::new(std::path::PathBuf::from("/tmp/projects.json"))),
+            Arc::new(DashMap::new()),
+            Arc::new(tokio::sync::Mutex::new(None)),
+            None,
+            Arc::new(McpServerManager::new()),
         )
     }
 

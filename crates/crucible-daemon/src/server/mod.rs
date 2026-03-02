@@ -87,7 +87,7 @@ pub struct Server {
 struct NoopSessionRpc;
 impl SessionConfigRpc for NoopSessionRpc {}
 
-struct LuaSessionState {
+pub struct LuaSessionState {
     executor: LuaExecutor,
     registry: LuaScriptHandlerRegistry,
 }
@@ -209,6 +209,11 @@ impl Server {
             subscription_manager.clone(),
             event_tx.clone(),
             shutdown_tx.clone(),
+            project_manager.clone(),
+            lua_sessions.clone(),
+            plugin_loader.clone(),
+            params.llm_config.clone(),
+            mcp_server_manager.clone(),
         );
         let dispatcher = Arc::new(RpcDispatcher::new(ctx));
 
