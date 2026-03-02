@@ -423,18 +423,6 @@ pub fn assert_key_is_empty(tree: &LayoutTree, key: &str) {
 ///     "   └─ Text \"Content\" [0,1 80x23]",
 /// ]);
 /// ```
-pub fn assert_tree_structure(tree: &LayoutTree, expected_lines: &[&str]) {
-    let debug = tree.debug_print();
-    let actual_lines: Vec<&str> = debug.lines().collect();
-
-    assert_eq!(
-        actual_lines,
-        expected_lines,
-        "Tree structure mismatch.\nExpected:\n{}\n\nActual:\n{}",
-        expected_lines.join("\n"),
-        debug
-    );
-}
 
 /// Assert that the tree debug output contains a specific substring.
 ///
