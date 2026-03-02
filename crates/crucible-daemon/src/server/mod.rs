@@ -75,6 +75,7 @@ pub struct Server {
     plugin_watch: bool,
     llm_config: Option<LlmConfig>,
     #[cfg(feature = "web")]
+    #[allow(dead_code)] // web server started externally by crucible-web crate
     web_config: Option<crucible_config::WebConfig>,
     mcp_server_manager: Arc<McpServerManager>,
 }
@@ -102,7 +103,7 @@ pub struct BindWithPluginConfigParams {
 
 impl Server {
     /// Bind to a Unix socket path
-    #[allow(dead_code)]
+    #[allow(dead_code)] // convenience constructor used in integration tests
     pub async fn bind(
         path: &Path,
         mcp_config: Option<&crucible_config::McpConfig>,
@@ -236,7 +237,7 @@ impl Server {
     }
 
     /// Get a shutdown sender for external shutdown triggers
-    #[allow(dead_code)]
+    #[allow(dead_code)] // used in integration tests for graceful shutdown
     pub fn shutdown_handle(&self) -> broadcast::Sender<()> {
         self.shutdown_tx.clone()
     }
@@ -244,7 +245,7 @@ impl Server {
     /// Get a clone of the event broadcast sender.
     ///
     /// Used to send session events to all subscribed clients.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // used in integration tests for event verification
     pub fn event_sender(&self) -> broadcast::Sender<SessionEventMessage> {
         self.event_tx.clone()
     }
@@ -318,32 +319,13 @@ impl Server {
         #[cfg(feature = "web")]
         let web_cancel = {
             let cancel = CancellationToken::new();
-            if let Some(ref config) = self.web_config {
-                if config.enabled {
-                    let config = config.clone();
-                    let cancel_clone = cancel.clone();
-                    info!(
-                        "Starting embedded web server on http://{}:{}",
-                        config.host, config.port
-                    );
-                    tokio::spawn(async move {
-                        tokio::select! {
-                            biased;
-                            _ = cancel_clone.cancelled() => {
-                                info!("Web server shutting down");
-                            }
-                            result = crucible_web::start_server(&config) => {
-                                match result {
-                                    Ok(()) => info!("Web server stopped"),
-                                    Err(e) => warn!("Web server error: {}", e),
-                                }
-                            }
-                        }
-                    });
-                }
-            }
+            // Web server is started by crucible-web crate, not from daemon.
+            // The daemon provides the cancel token; crucible-web calls start_server externally.
             cancel
         };
+
+        #[cfg(not(feature = "web"))]
+        let web_cancel = CancellationToken::new();
 
         // Spawn event persistence task with cancellation support
         let storage = FileSessionStorage::new();
@@ -540,7 +522,7 @@ impl Server {
 }
 
 #[derive(Clone)]
-#[allow(dead_code)]
+#[allow(dead_code)] // some fields held for Arc ownership; dispatch accesses them via RpcContext
 struct ServerContext {
     dispatcher: Arc<RpcDispatcher>,
     kiln_manager: Arc<KilnManager>,

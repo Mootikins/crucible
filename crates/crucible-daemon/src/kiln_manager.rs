@@ -322,7 +322,7 @@ impl KilnManager {
     }
 
     /// Get handle for a kiln if it's already open (does not open if closed)
-    #[allow(dead_code)]
+    #[allow(dead_code)] // peek-without-open API, exercised by tests
     pub async fn get(&self, kiln_path: &Path) -> Option<StorageHandle> {
         let canonical = kiln_path
             .canonicalize()

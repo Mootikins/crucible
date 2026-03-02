@@ -111,7 +111,7 @@ impl RpcDispatcher {
         Self { ctx }
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code)] // accessor for direct RpcContext access by handlers
     pub fn context(&self) -> &RpcContext {
         &self.ctx
     }

@@ -163,7 +163,7 @@ pub enum AgentError {
 struct RequestState {
     cancel_tx: Option<oneshot::Sender<()>>,
     task_handle: Option<JoinHandle<()>>,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // stored for timing diagnostics; written on creation, readable for metrics
     started_at: Instant,
 }
 
@@ -277,7 +277,7 @@ struct StreamContext {
     tool_dispatcher: Arc<dyn ToolDispatcher>,
 }
 
-#[allow(dead_code)]
+#[allow(dead_code)] // fields capture config snapshot; model used in events, others reserved for stream configuration
 #[derive(Clone)]
 struct AgentStreamConfig {
     model: String,
@@ -488,7 +488,7 @@ impl AgentManager {
         }
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code)] // permission system API, exercised by tests
     pub fn await_permission(
         &self,
         session_id: &str,
@@ -542,7 +542,7 @@ impl AgentManager {
         Ok(())
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code)] // permission system API, exercised by tests
     pub fn get_pending_permission(
         &self,
         session_id: &str,
@@ -553,7 +553,7 @@ impl AgentManager {
             .and_then(|perms| perms.get(permission_id).map(|p| p.request.clone()))
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code)] // permission system API, exercised by tests
     pub fn list_pending_permissions(&self, session_id: &str) -> Vec<(PermissionId, PermRequest)> {
         self.pending_permissions
             .get(session_id)

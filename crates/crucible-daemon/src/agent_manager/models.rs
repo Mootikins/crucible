@@ -134,14 +134,16 @@ impl AgentManager {
         );
 
         if let Some(tx) = event_tx {
-            let _ = emit_event(
+            if !emit_event(
                 tx,
                 SessionEventMessage::model_switched(
                     session_id,
                     &agent_config.model,
                     agent_config.provider.as_str(),
                 ),
-            );
+            ) {
+                tracing::debug!("Failed to emit model_switched event (no subscribers)");
+            }
         }
 
         Ok(())
@@ -280,14 +282,16 @@ impl AgentManager {
         );
 
         if let Some(tx) = event_tx {
-            let _ = emit_event(
+            if !emit_event(
                 tx,
                 SessionEventMessage::new(
                     session_id,
                     "thinking_budget_changed",
                     serde_json::json!({ "budget": budget }),
                 ),
-            );
+            ) {
+                tracing::debug!("Failed to emit thinking_budget_changed event (no subscribers)");
+            }
         }
 
         Ok(())
@@ -327,14 +331,16 @@ impl AgentManager {
         );
 
         if let Some(tx) = event_tx {
-            let _ = emit_event(
+            if !emit_event(
                 tx,
                 SessionEventMessage::new(
                     session_id,
                     "precognition_toggled",
                     serde_json::json!({ "enabled": enabled }),
                 ),
-            );
+            ) {
+                tracing::debug!("Failed to emit precognition_toggled event (no subscribers)");
+            }
         }
 
         Ok(())
@@ -374,14 +380,16 @@ impl AgentManager {
         );
 
         if let Some(tx) = event_tx {
-            let _ = emit_event(
+            if !emit_event(
                 tx,
                 SessionEventMessage::new(
                     session_id,
                     "temperature_changed",
                     serde_json::json!({ "temperature": temperature }),
                 ),
-            );
+            ) {
+                tracing::debug!("Failed to emit temperature_changed event (no subscribers)");
+            }
         }
 
         Ok(())
@@ -414,14 +422,16 @@ impl AgentManager {
         );
 
         if let Some(tx) = event_tx {
-            let _ = emit_event(
+            if !emit_event(
                 tx,
                 SessionEventMessage::new(
                     session_id,
                     "notification_added",
                     serde_json::json!({ "notification_id": notification.id }),
                 ),
-            );
+            ) {
+                tracing::debug!("Failed to emit notification_added event (no subscribers)");
+            }
         }
 
         Ok(())
@@ -458,14 +468,16 @@ impl AgentManager {
             );
 
             if let Some(tx) = event_tx {
-                let _ = emit_event(
+                if !emit_event(
                     tx,
                     SessionEventMessage::new(
                         session_id,
                         "notification_dismissed",
                         serde_json::json!({ "notification_id": notification_id }),
                     ),
-                );
+                ) {
+                    tracing::debug!("Failed to emit notification_dismissed event (no subscribers)");
+                }
             }
         }
 
@@ -501,16 +513,17 @@ impl AgentManager {
         );
 
         if let Some(tx) = event_tx {
-            let _ = emit_event(
+            if !emit_event(
                 tx,
                 SessionEventMessage::new(
                     session_id,
                     "max_tokens_changed",
                     serde_json::json!({ "max_tokens": max_tokens }),
                 ),
-            );
+            ) {
+                tracing::debug!("Failed to emit max_tokens_changed event (no subscribers)");
+            }
         }
-
         Ok(())
     }
 

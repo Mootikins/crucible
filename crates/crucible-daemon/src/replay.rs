@@ -161,7 +161,9 @@ impl ReplaySession {
                 serde_json::json!({"status": "complete", "total_events": total_events}),
             );
             complete.msg_type = "replay_event".to_string();
-            let _ = self.event_tx.send(complete);
+            if let Err(e) = self.event_tx.send(complete) {
+                tracing::debug!("Failed to send replay_complete event: {e}");
+            }
 
             Ok(())
         })

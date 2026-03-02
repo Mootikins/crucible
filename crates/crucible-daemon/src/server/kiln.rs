@@ -29,7 +29,7 @@ pub(crate) async fn handle_kiln_open(
     if process {
         match km.open_and_process(kiln_path, force).await {
             Ok((discovered, processed, skipped, errors)) => {
-                let _ = event_tx.send(SessionEventMessage::new(
+                if let Err(e) = event_tx.send(SessionEventMessage::new(
                     "process",
                     "process_complete",
                     serde_json::json!({
@@ -39,7 +39,9 @@ pub(crate) async fn handle_kiln_open(
                         "skipped": skipped,
                         "errors": errors.len()
                     }),
-                ));
+                )) {
+                    tracing::debug!("Failed to send process_complete event: {e}");
+                }
 
                 Response::success(
                     req.id,
@@ -426,7 +428,7 @@ pub(crate) async fn handle_process_batch(
         .unwrap_or_else(|| "batch-unknown".to_string());
 
     // Emit start event
-    let _ = event_tx.send(SessionEventMessage::new(
+    if let Err(e) = event_tx.send(SessionEventMessage::new(
         "process",
         "process_start",
         serde_json::json!({
@@ -435,7 +437,9 @@ pub(crate) async fn handle_process_batch(
             "total": paths.len(),
             "kiln": kiln_path
         }),
-    ));
+    )) {
+        tracing::debug!("Failed to send process_start event: {e}");
+    }
 
     let mut processed = 0usize;
     let mut skipped = 0usize;
@@ -445,7 +449,7 @@ pub(crate) async fn handle_process_batch(
         match km.process_file(Path::new(kiln_path), path).await {
             Ok(true) => {
                 processed += 1;
-                let _ = event_tx.send(SessionEventMessage::new(
+                if let Err(e) = event_tx.send(SessionEventMessage::new(
                     "process",
                     "process_progress",
                     serde_json::json!({
@@ -454,11 +458,13 @@ pub(crate) async fn handle_process_batch(
                         "file": path.to_string_lossy(),
                         "result": "processed"
                     }),
-                ));
+                )) {
+                    tracing::debug!("Failed to send process_progress event: {e}");
+                }
             }
             Ok(false) => {
                 skipped += 1;
-                let _ = event_tx.send(SessionEventMessage::new(
+                if let Err(e) = event_tx.send(SessionEventMessage::new(
                     "process",
                     "process_progress",
                     serde_json::json!({
@@ -467,12 +473,14 @@ pub(crate) async fn handle_process_batch(
                         "file": path.to_string_lossy(),
                         "result": "skipped"
                     }),
-                ));
+                )) {
+                    tracing::debug!("Failed to send process_progress event: {e}");
+                }
             }
             Err(e) => {
                 let error_msg = e.to_string();
                 errors.push((path.clone(), error_msg.clone()));
-                let _ = event_tx.send(SessionEventMessage::new(
+                if let Err(e) = event_tx.send(SessionEventMessage::new(
                     "process",
                     "process_progress",
                     serde_json::json!({
@@ -482,13 +490,15 @@ pub(crate) async fn handle_process_batch(
                         "result": "error",
                         "error_msg": error_msg
                     }),
-                ));
+                )) {
+                    tracing::debug!("Failed to send process_progress event: {e}");
+                }
             }
         }
     }
 
     // Emit completion event
-    let _ = event_tx.send(SessionEventMessage::new(
+    if let Err(e) = event_tx.send(SessionEventMessage::new(
         "process",
         "process_complete",
         serde_json::json!({
@@ -498,7 +508,9 @@ pub(crate) async fn handle_process_batch(
             "skipped": skipped,
             "errors": errors.len()
         }),
-    ));
+    )) {
+        tracing::debug!("Failed to send process_complete event: {e}");
+    }
 
     Response::success(
         request_id,

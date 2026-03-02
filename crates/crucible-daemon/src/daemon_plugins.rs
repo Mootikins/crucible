@@ -342,12 +342,6 @@ impl DaemonPluginLoader {
         info!("Executed plugin in daemon runtime: {}", init_path.display());
         Ok(services)
     }
-
-    #[allow(dead_code)]
-    pub fn loaded_specs(&self) -> &[PluginSpec] {
-        &self.loaded_specs
-    }
-
     /// Reload a plugin: clear its Lua module cache, unload registrations,
     /// re-execute `init.lua`, and re-extract service functions.
     pub async fn reload_plugin(&mut self, name: &str) -> anyhow::Result<PluginSpec> {
@@ -437,16 +431,8 @@ impl DaemonPluginLoader {
             .collect()
     }
 
-    /// Borrow the underlying [`LuaExecutor`].
-    #[allow(dead_code)]
     pub fn executor(&self) -> &LuaExecutor {
         &self.executor
-    }
-
-    /// Borrow the underlying [`PluginManager`].
-    #[allow(dead_code)]
-    pub fn plugin_manager(&self) -> &PluginManager {
-        &self.plugin_manager
     }
 }
 

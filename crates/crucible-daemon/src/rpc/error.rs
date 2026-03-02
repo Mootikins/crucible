@@ -3,10 +3,10 @@
 use crate::agent_manager::AgentError;
 use crate::protocol::{RpcError, INTERNAL_ERROR, INVALID_PARAMS};
 
-#[allow(dead_code)]
+#[allow(dead_code)] // re-exported from rpc module; dispatch.rs uses its own copy
 pub type RpcResult<T> = Result<T, RpcError>;
 
-#[allow(dead_code)]
+#[allow(dead_code)] // error conversion utility, exercised by tests
 pub fn agent_error_to_rpc_error(e: AgentError) -> RpcError {
     use AgentError::*;
     match e {
@@ -41,7 +41,7 @@ pub fn agent_error_to_rpc_error(e: AgentError) -> RpcError {
     }
 }
 
-#[allow(dead_code)]
+#[allow(dead_code)] // error conversion utility, exercised by tests
 pub fn anyhow_to_rpc_error(e: anyhow::Error) -> RpcError {
     tracing::error!("Internal error: {}", e);
     RpcError {

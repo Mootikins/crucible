@@ -17,7 +17,7 @@ impl BackgroundJobManager {
         let timeout = timeout.unwrap_or(DEFAULT_BASH_TIMEOUT);
         let (cancel_tx, cancel_rx) = oneshot::channel();
 
-        let _ = emit_event(
+        if !emit_event(
             &self.event_tx,
             SessionEventMessage::new(
                 session_id,
@@ -27,7 +27,9 @@ impl BackgroundJobManager {
                     "command": command,
                 }),
             ),
-        );
+        ) {
+            tracing::debug!("Failed to emit BASH_SPAWNED event (no subscribers)");
+        }
 
         info!(
             job_id = %job_id,
