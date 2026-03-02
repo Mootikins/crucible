@@ -18,10 +18,10 @@ pub fn llm_tool_to_genai(tool: &LlmToolDefinition) -> Tool {
 pub(crate) fn sanitize_tool_schema(schema: &mut serde_json::Value) {
     if let Some(obj) = schema.as_object_mut() {
         // If this is an object type without properties, add empty properties
-        if obj.get("type").and_then(|v| v.as_str()) == Some("object") {
-            if !obj.contains_key("properties") {
-                obj.insert("properties".to_string(), serde_json::Value::Object(serde_json::Map::new()));
-            }
+        if obj.get("type").and_then(|v| v.as_str()) == Some("object")
+            && !obj.contains_key("properties")
+        {
+            obj.insert("properties".to_string(), serde_json::Value::Object(serde_json::Map::new()));
         }
 
         // Remove metadata fields that llama.cpp doesn't like
