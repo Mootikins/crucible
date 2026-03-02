@@ -303,19 +303,6 @@ pub(super) async fn handle_legacy_request(params: LegacyRequestParams<'_>) -> Re
             handle_session_switch_model(params.req, params.agent_manager, params.event_tx).await
         }
         "session.list_models" => handle_session_list_models(params.req, params.agent_manager).await,
-        "session.set_thinking_budget" => {
-            handle_session_set_thinking_budget(params.req, params.agent_manager, params.event_tx)
-                .await
-        }
-        "session.get_thinking_budget" => {
-            handle_session_get_thinking_budget(params.req, params.agent_manager).await
-        }
-        "session.set_precognition" => {
-            handle_session_set_precognition(params.req, params.agent_manager, params.event_tx).await
-        }
-        "session.get_precognition" => {
-            handle_session_get_precognition(params.req, params.agent_manager).await
-        }
         "session.add_notification" => {
             handle_session_add_notification(params.req, params.agent_manager, params.event_tx).await
         }
@@ -325,18 +312,6 @@ pub(super) async fn handle_legacy_request(params: LegacyRequestParams<'_>) -> Re
         "session.dismiss_notification" => {
             handle_session_dismiss_notification(params.req, params.agent_manager, params.event_tx)
                 .await
-        }
-        "session.set_temperature" => {
-            handle_session_set_temperature(params.req, params.agent_manager, params.event_tx).await
-        }
-        "session.get_temperature" => {
-            handle_session_get_temperature(params.req, params.agent_manager).await
-        }
-        "session.set_max_tokens" => {
-            handle_session_set_max_tokens(params.req, params.agent_manager, params.event_tx).await
-        }
-        "session.get_max_tokens" => {
-            handle_session_get_max_tokens(params.req, params.agent_manager).await
         }
         "session.test_interaction" => {
             handle_session_test_interaction(params.req, params.event_tx).await
