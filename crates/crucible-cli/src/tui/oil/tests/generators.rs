@@ -50,9 +50,6 @@ pub fn arb_markdown_content() -> impl Strategy<Value = String> {
     ]
 }
 
-pub fn arb_terminal_width() -> impl Strategy<Value = usize> {
-    60usize..120
-}
 
 #[derive(Debug, Clone)]
 pub enum TextStreamEvent {
@@ -60,12 +57,6 @@ pub enum TextStreamEvent {
     ThinkingDelta(String),
 }
 
-pub fn arb_text_stream_event() -> impl Strategy<Value = TextStreamEvent> {
-    prop_oneof![
-        arb_text_content().prop_map(TextStreamEvent::TextDelta),
-        arb_text_content().prop_map(TextStreamEvent::ThinkingDelta),
-    ]
-}
 
 #[derive(Debug, Clone)]
 pub enum StreamEvent {
@@ -81,6 +72,7 @@ pub fn arb_stream_event() -> impl Strategy<Value = StreamEvent> {
         3 => arb_text_content().prop_map(StreamEvent::TextDelta),
         2 => arb_text_content().prop_map(StreamEvent::ThinkingDelta),
         1 => (arb_tool_name(), arb_tool_args()).prop_map(|(name, args)| StreamEvent::ToolCall { name, args }),
+        1 => (arb_tool_name(), arb_text_content()).prop_map(|(name, delta)| StreamEvent::ToolResultDelta { name, delta }),
     ]
 }
 
