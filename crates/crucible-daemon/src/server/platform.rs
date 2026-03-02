@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) async fn handle_mcp_start(
+pub(crate) async fn handle_mcp_start(
     req: Request,
     km: &Arc<KilnManager>,
     mcp_mgr: &Arc<McpServerManager>,
@@ -20,19 +20,19 @@ pub(super) async fn handle_mcp_start(
     }
 }
 
-pub(super) async fn handle_mcp_stop(req: Request, mcp_mgr: &Arc<McpServerManager>) -> Response {
+pub(crate) async fn handle_mcp_stop(req: Request, mcp_mgr: &Arc<McpServerManager>) -> Response {
     match mcp_mgr.stop().await {
         Ok(result) => Response::success(req.id, result),
         Err(e) => Response::error(req.id, INVALID_PARAMS, e),
     }
 }
 
-pub(super) async fn handle_mcp_status(req: Request, mcp_mgr: &Arc<McpServerManager>) -> Response {
+pub(crate) async fn handle_mcp_status(req: Request, mcp_mgr: &Arc<McpServerManager>) -> Response {
     let status = mcp_mgr.status().await;
     Response::success(req.id, status)
 }
 
-pub(super) async fn handle_skills_list(req: Request) -> Response {
+pub(crate) async fn handle_skills_list(req: Request) -> Response {
     let kiln_path = require_param!(req, "kiln_path", as_str).to_string();
     let scope_filter = optional_param!(req, "scope_filter", as_str).map(|s| s.to_string());
 
@@ -78,7 +78,7 @@ pub(super) async fn handle_skills_list(req: Request) -> Response {
     }
 }
 
-pub(super) async fn handle_skills_get(req: Request) -> Response {
+pub(crate) async fn handle_skills_get(req: Request) -> Response {
     let name = require_param!(req, "name", as_str).to_string();
     let kiln_path = require_param!(req, "kiln_path", as_str).to_string();
 
@@ -115,7 +115,7 @@ pub(super) async fn handle_skills_get(req: Request) -> Response {
     }
 }
 
-pub(super) async fn handle_skills_search(req: Request) -> Response {
+pub(crate) async fn handle_skills_search(req: Request) -> Response {
     let query = require_param!(req, "query", as_str).to_string();
     let kiln_path = require_param!(req, "kiln_path", as_str).to_string();
     let limit = optional_param!(req, "limit", as_u64).unwrap_or(20) as usize;
@@ -159,7 +159,7 @@ pub(super) async fn handle_skills_search(req: Request) -> Response {
     }
 }
 
-pub(super) async fn handle_agents_list_profiles(
+pub(crate) async fn handle_agents_list_profiles(
     req: Request,
     agent_manager: &Arc<AgentManager>,
 ) -> Response {
@@ -186,7 +186,7 @@ pub(super) async fn handle_agents_list_profiles(
     Response::success(req.id, serde_json::json!({ "profiles": entries }))
 }
 
-pub(super) async fn handle_agents_resolve_profile(
+pub(crate) async fn handle_agents_resolve_profile(
     req: Request,
     agent_manager: &Arc<AgentManager>,
 ) -> Response {

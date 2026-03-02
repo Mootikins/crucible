@@ -76,6 +76,18 @@ pub const METHODS: &[&str] = &[
     "project.unregister",
     "project.list",
     "project.get",
+    "storage.verify",
+    "storage.cleanup",
+    "storage.backup",
+    "storage.restore",
+    "mcp.start",
+    "mcp.stop",
+    "mcp.status",
+    "skills.list",
+    "skills.get",
+    "skills.search",
+    "agents.list_profiles",
+    "agents.resolve_profile",
 ];
 
 fn to_response(id: Option<RequestId>, result: RpcResult<serde_json::Value>) -> Response {
@@ -199,6 +211,32 @@ impl RpcDispatcher {
             // Plugin RPC handlers
             "plugin.reload" => to_response(id, self.handle_plugin_reload(&req).await),
             "plugin.list" => to_response(id, self.handle_plugin_list(&req).await),
+
+            // Project RPC handlers
+            "project.register" => to_response(id, self.handle_project_register(&req).await),
+            "project.unregister" => to_response(id, self.handle_project_unregister(&req).await),
+            "project.list" => to_response(id, self.handle_project_list(&req).await),
+            "project.get" => to_response(id, self.handle_project_get(&req).await),
+
+            // Storage RPC handlers
+            "storage.verify" => to_response(id, self.handle_storage_verify(&req).await),
+            "storage.cleanup" => to_response(id, self.handle_storage_cleanup(&req).await),
+            "storage.backup" => to_response(id, self.handle_storage_backup(&req).await),
+            "storage.restore" => to_response(id, self.handle_storage_restore(&req).await),
+
+            // MCP RPC handlers
+            "mcp.start" => to_response(id, self.handle_mcp_start(&req).await),
+            "mcp.stop" => to_response(id, self.handle_mcp_stop(&req).await),
+            "mcp.status" => to_response(id, self.handle_mcp_status(&req).await),
+
+            // Skills RPC handlers
+            "skills.list" => to_response(id, self.handle_skills_list(&req).await),
+            "skills.get" => to_response(id, self.handle_skills_get(&req).await),
+            "skills.search" => to_response(id, self.handle_skills_search(&req).await),
+
+            // Agents RPC handlers
+            "agents.list_profiles" => to_response(id, self.handle_agents_list_profiles(&req).await),
+            "agents.resolve_profile" => to_response(id, self.handle_agents_resolve_profile(&req).await),
 
             // For other methods, we return METHOD_NOT_FOUND here.
             // In production, server.rs will handle these until we migrate them.
@@ -1096,6 +1134,218 @@ impl RpcDispatcher {
             Ok(resp.result.unwrap_or(serde_json::Value::Null))
         }
     }
+
+    // ── Project RPC wrappers ────────────────────────────────────────────
+
+    async fn handle_project_register(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::plugins::handle_project_register(
+            req.clone(),
+            &self.ctx.project_manager,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_project_unregister(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::plugins::handle_project_unregister(
+            req.clone(),
+            &self.ctx.project_manager,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_project_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::plugins::handle_project_list(
+            req.clone(),
+            &self.ctx.project_manager,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_project_get(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::plugins::handle_project_get(
+            req.clone(),
+            &self.ctx.project_manager,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    // ── Storage RPC wrappers ────────────────────────────────────────────
+
+    async fn handle_storage_verify(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::storage::handle_storage_verify(
+            req.clone(),
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_storage_cleanup(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::storage::handle_storage_cleanup(
+            req.clone(),
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_storage_backup(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::storage::handle_storage_backup(
+            req.clone(),
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_storage_restore(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::storage::handle_storage_restore(
+            req.clone(),
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    // ── MCP RPC wrappers ────────────────────────────────────────────────
+
+    async fn handle_mcp_start(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::platform::handle_mcp_start(
+            req.clone(),
+            &self.ctx.kiln,
+            &self.ctx.mcp_server_manager,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_mcp_stop(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::platform::handle_mcp_stop(
+            req.clone(),
+            &self.ctx.mcp_server_manager,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_mcp_status(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::platform::handle_mcp_status(
+            req.clone(),
+            &self.ctx.mcp_server_manager,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    // ── Skills RPC wrappers ─────────────────────────────────────────────
+
+    async fn handle_skills_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::platform::handle_skills_list(
+            req.clone(),
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_skills_get(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::platform::handle_skills_get(
+            req.clone(),
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_skills_search(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::platform::handle_skills_search(
+            req.clone(),
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    // ── Agents RPC wrappers ─────────────────────────────────────────────
+
+    async fn handle_agents_list_profiles(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::platform::handle_agents_list_profiles(
+            req.clone(),
+            &self.ctx.agents,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_agents_resolve_profile(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::platform::handle_agents_resolve_profile(
+            req.clone(),
+            &self.ctx.agents,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1169,7 +1419,7 @@ mod tests {
 
     #[test]
     fn methods_count() {
-        assert_eq!(METHODS.len(), 65, "Update when adding RPC methods");
+        assert_eq!(METHODS.len(), 77, "Update when adding RPC methods");
     }
 
     #[tokio::test]

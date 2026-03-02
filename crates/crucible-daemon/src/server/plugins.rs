@@ -61,7 +61,7 @@ pub(crate) async fn handle_plugin_list(
 
 // --- Project handlers ---
 
-pub(super) async fn handle_project_register(req: Request, pm: &Arc<ProjectManager>) -> Response {
+pub(crate) async fn handle_project_register(req: Request, pm: &Arc<ProjectManager>) -> Response {
     let path = require_param!(req, "path", as_str);
 
     match pm.register(Path::new(path)) {
@@ -73,7 +73,7 @@ pub(super) async fn handle_project_register(req: Request, pm: &Arc<ProjectManage
     }
 }
 
-pub(super) async fn handle_project_unregister(req: Request, pm: &Arc<ProjectManager>) -> Response {
+pub(crate) async fn handle_project_unregister(req: Request, pm: &Arc<ProjectManager>) -> Response {
     let path = require_param!(req, "path", as_str);
 
     match pm.unregister(Path::new(path)) {
@@ -82,7 +82,7 @@ pub(super) async fn handle_project_unregister(req: Request, pm: &Arc<ProjectMana
     }
 }
 
-pub(super) async fn handle_project_list(req: Request, pm: &Arc<ProjectManager>) -> Response {
+pub(crate) async fn handle_project_list(req: Request, pm: &Arc<ProjectManager>) -> Response {
     let projects = pm.list();
     match serde_json::to_value(projects) {
         Ok(v) => Response::success(req.id, v),
@@ -90,7 +90,7 @@ pub(super) async fn handle_project_list(req: Request, pm: &Arc<ProjectManager>) 
     }
 }
 
-pub(super) async fn handle_project_get(req: Request, pm: &Arc<ProjectManager>) -> Response {
+pub(crate) async fn handle_project_get(req: Request, pm: &Arc<ProjectManager>) -> Response {
     let path = require_param!(req, "path", as_str);
 
     match pm.get(Path::new(path)) {
