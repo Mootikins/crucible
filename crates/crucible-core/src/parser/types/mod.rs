@@ -14,8 +14,7 @@
 //! ## Import Guidelines
 //!
 //! Import from the canonical location `crucible_core::parser` or
-//! `crucible_core::parser::types`. The `crucible_parser` crate re-exports
-//! these types for implementation purposes.
+//! `crucible_core::parser::types`.
 
 mod ast;
 mod block_hash;

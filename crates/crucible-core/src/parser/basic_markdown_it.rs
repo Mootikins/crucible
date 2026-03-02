@@ -10,10 +10,10 @@ use async_trait::async_trait;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::Arc;
 
-use crate::error::ParseError;
-use crate::extensions::SyntaxExtension;
-use crate::markdown_it::converter::AstConverter;
-use crate::types::NoteContent;
+use super::error::ParseError;
+use super::extensions::SyntaxExtension;
+use super::markdown_it::converter::AstConverter;
+use super::types::NoteContent;
 
 /// Extension for parsing basic markdown structures using markdown-it
 #[derive(Debug, Clone)]
@@ -126,11 +126,11 @@ impl SyntaxExtension for BasicMarkdownItExtension {
 
                 errors.push(ParseError {
                     message: error_detail,
-                    error_type: crate::error::ParseErrorType::SyntaxError,
+                    error_type: super::error::ParseErrorType::SyntaxError,
                     line: 0,
                     column: 0,
                     offset: 0,
-                    severity: crate::error::ErrorSeverity::Error,
+                    severity: super::error::ErrorSeverity::Error,
                 });
 
                 return errors;

@@ -6,9 +6,9 @@ use std::path::Path;
 
 use super::converter::AstConverter;
 use super::plugins;
-use crate::error::{ParserError, ParserResult};
-use crate::traits::{MarkdownParser, ParserCapabilities};
-use crate::types::{Frontmatter, FrontmatterFormat, ParsedNote};
+use crate::parser::error::{ParserError, ParserResult};
+use crate::parser::traits::{MarkdownParser, ParserCapabilities};
+use crate::parser::types::{Frontmatter, FrontmatterFormat, ParsedNote};
 
 /// Parser implementation using markdown-it-rust
 pub struct MarkdownItParser {

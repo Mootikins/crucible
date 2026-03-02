@@ -1895,7 +1895,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tinytemplate",
- "tokio",
  "walkdir",
 ]
 
@@ -2140,11 +2139,11 @@ dependencies = [
  "blake3",
  "chrono",
  "crucible-config",
- "crucible-parser",
  "dirs",
  "futures",
  "glob-match",
  "hex",
+ "markdown-it",
  "notify",
  "nucleo-matcher",
  "parking_lot",
@@ -2184,7 +2183,6 @@ dependencies = [
  "crucible-core",
  "crucible-llm",
  "crucible-lua",
- "crucible-parser",
  "crucible-sqlite",
  "crucible-tools",
  "dashmap",
@@ -2324,30 +2322,6 @@ dependencies = [
  "textwrap",
  "thiserror 2.0.18",
  "unicode-width 0.2.0",
-]
-
-[[package]]
-name = "crucible-parser"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "blake3",
- "chrono",
- "criterion",
- "crucible-core",
- "futures",
- "hex",
- "markdown-it",
- "proptest",
- "regex",
- "serde",
- "serde_json",
- "serde_yaml",
- "thiserror 2.0.18",
- "tokio",
- "tokio-test",
- "toml 0.9.12+spec-1.1.0",
 ]
 
 [[package]]
