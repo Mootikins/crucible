@@ -10,7 +10,7 @@ use crate::kiln_manager::KilnManager;
 use crate::mcp_server::McpServerManager;
 use crate::project_manager::ProjectManager;
 use crate::protocol::{
-    Request, Response, SessionEventMessage, INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND,
+    Request, Response, SessionEventMessage, INTERNAL_ERROR, INVALID_PARAMS,
     PARSE_ERROR,
 };
 use crate::recording::RecordingWriter;
@@ -54,12 +54,7 @@ pub mod storage;
 
 use core::*;
 // use kiln::*;  // kiln handlers are now called via crate::server::kiln::
-use lua::*;
-use observe::*;
-use platform::*;
 use plugins::*;
-use session::*;
-use storage::*;
 
 /// Daemon server that listens on a Unix socket
 pub struct Server {
@@ -545,6 +540,7 @@ impl Server {
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 struct ServerContext {
     dispatcher: Arc<RpcDispatcher>,
     kiln_manager: Arc<KilnManager>,
@@ -562,6 +558,11 @@ struct ServerContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lua::*;
+    use observe::*;
+    use platform::*;
+    use session::*;
+    use storage::*;
     use crate::session_storage::FileSessionStorage;
     use serde_json::json;
     use serde_json::Value;
