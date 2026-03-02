@@ -217,12 +217,11 @@ test-ci: build-test-fixtures
     cargo nextest run --profile ci --workspace
 
 # Build test fixtures required by integration tests
-# Build test fixtures required by integration tests
 build-test-fixtures: build-mock-acp-agent
     @echo "Test fixtures built"
+
 
 # Build mock-acp-agent binary for acp_smoke tests
 # Required before running: cargo nextest run -p crucible-daemon --test acp_smoke
 build-mock-acp-agent:
-    cargo build -p crucible-acp --features test-utils --bin mock-acp-agent
     cargo build -p crucible-acp --features test-utils --bin mock-acp-agent
