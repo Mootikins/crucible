@@ -1,4 +1,5 @@
 use crate::tui::oil::ansi::{strip_ansi, visual_rows};
+#[allow(unused_imports)] // WIP: OverlayAnchor not yet used
 use crate::tui::oil::overlay::{composite_overlays, Overlay, OverlayAnchor};
 use crate::tui::oil::planning::RenderedOverlay;
 use crossterm::{cursor, execute, terminal};
@@ -46,10 +47,12 @@ impl OutputBuffer {
         self.terminal_height = height;
     }
 
+    #[allow(dead_code)] // WIP: render not yet used
     pub fn render(&mut self, content: &str) -> io::Result<bool> {
         self.render_with_overlays(content, 0, &[])
     }
 
+    #[allow(dead_code)] // WIP: render_with_cursor_restore not yet used
     pub fn render_with_cursor_restore(
         &mut self,
         content: &str,
@@ -196,6 +199,7 @@ impl OutputBuffer {
         self.previous_visual_rows
     }
 
+    #[allow(dead_code)] // WIP: reset not yet used
     pub fn reset(&mut self) {
         self.previous_lines.clear();
         self.previous_visual_rows = 0;

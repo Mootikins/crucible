@@ -1,5 +1,6 @@
 //! SetCommand parser for vim-style `:set` commands.
 
+#[allow(unused_imports)] // WIP: fmt not yet used
 use std::fmt;
 
 use crate::tui::oil::config::ThinkingPreset;

@@ -9,6 +9,7 @@ use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::terminal::Terminal;
 use crate::tui::oil::theme::ThemeTokens;
 use anyhow::{Context, Result};
+#[allow(unused_imports)] // WIP: KeyCode, KeyModifiers not yet used
 use crossterm::event::{Event as CtEvent, EventStream, KeyCode, KeyModifiers};
 use crucible_core::events::SessionEvent;
 use crucible_core::interaction::InteractionRequest;

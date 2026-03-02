@@ -6,6 +6,7 @@ use crate::tui::oil::ViewContext;
 use crucible_oil::InputStyle;
 
 // Re-export Oil's InputArea and related items
+#[allow(unused_imports)] // WIP: clamp_input_lines, wrap_content not yet used
 pub use crucible_oil::{
     clamp_input_lines, wrap_content, InputArea as OilInputArea, INPUT_MAX_CONTENT_LINES,
 };

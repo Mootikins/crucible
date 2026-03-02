@@ -148,11 +148,65 @@ impl SessionEvent {
 
             SessionEvent::Custom { name, payload } => format_custom_event(name, payload),
 
-            SessionEvent::Internal(inner) => {
+            SessionEvent::Internal(inner) => match inner.as_ref() {
+                InternalSessionEvent::BashTaskSpawned { id, command } => {
+                    format!(
+                        "**Task ID:** `{}`\n**Command:**\n```\n{}\n```\n",
+                        id, command
+                    )
+                }
+                InternalSessionEvent::BashTaskCompleted { id, output, exit_code } => {
+                    format!(
+                        "**Task ID:** `{}`\n**Exit Code:** {}\n**Output:**\n```\n{}\n```\n",
+                        id, exit_code, output
+                    )
+                }
+                InternalSessionEvent::BashTaskFailed { id, error, exit_code } => {
+                    let exit_code_str = match exit_code {
+                        Some(code) => code.to_string(),
+                        None => "none".to_string(),
+                    };
+                    format!(
+                        "**Task ID:** `{}`\n**Exit Code:** {}\n**Error:** {}\n",
+                        id, exit_code_str, error
+                    )
+                }
+                InternalSessionEvent::BackgroundTaskCompleted { id, kind, summary } => {
+                    format!(
+                        "**Task ID:** `{}`\n**Kind:** {}\n**Summary:**\n> {}\n",
+                        id, kind, summary
+                    )
+                }
+                InternalSessionEvent::SubagentSpawned { id, prompt } => {
+                    format!(
+                        "**Subagent ID:** `{}`\n**Prompt:**\n> {}\n",
+                        id, prompt
+                    )
+                }
+                InternalSessionEvent::SubagentCompleted { id, result } => {
+                    format!(
+                        "**Subagent ID:** `{}`\n**Result:**\n> {}\n",
+                        id, result
+                    )
+                }
+                InternalSessionEvent::SubagentFailed { id, error } => {
+                    format!(
+                        "**Subagent ID:** `{}`\n**Error:** {}\n",
+                        id, error
+                    )
+                }
+                InternalSessionEvent::SessionCompacted { summary, new_file } => {
+                    format!(
+                        "**New File:** `{}`\n**Summary:**\n{}\n",
+                        new_file.display(), summary
+                    )
+                }
+                _ => {
                 format!("**Internal Event:** {}\n{}\n",
-                    inner.type_name(),
-                    inner.summary(200)
-                )
+                        inner.type_name(),
+                        inner.summary(200)
+                    )
+                }
             }
         };
 

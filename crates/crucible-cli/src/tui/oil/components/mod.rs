@@ -16,6 +16,7 @@ mod subagent_render;
 pub(crate) mod tool_render;
 
 pub use crucible_oil::components::DrawerKind;
+#[allow(unused_imports)] // WIP: render_diff_preview not yet used
 pub(crate) use diff_preview::render_diff_preview;
 pub use drawer::Drawer;
 pub use input_area::{InputArea, InputMode, INPUT_MAX_CONTENT_LINES};
@@ -23,6 +24,7 @@ pub use input_component::InputComponent;
 pub use interaction_modal::{
     InteractionModal, InteractionModalMsg, InteractionModalOutput, InteractionMode,
 };
+#[allow(unused_imports)] // WIP: MessageList not yet used
 pub(crate) use message_list::MessageList;
 pub use message_list::{render_thinking_block, render_user_prompt};
 pub use notification_area::NotificationArea;

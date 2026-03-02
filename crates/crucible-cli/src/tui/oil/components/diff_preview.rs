@@ -3,12 +3,14 @@
 //! Displays file diffs above the input area when requesting write/create/delete permissions.
 
 use crate::formatting::{HighlightedLine, SyntaxHighlighter};
+#[allow(unused_imports)] // WIP: diff_to_node not yet used
 use crate::tui::oil::diff::{diff_to_node, diff_to_node_width};
 use crate::tui::oil::node::{col, row, styled, Node};
 use crate::tui::oil::style::{Color, Style};
 use crate::tui::oil::theme::ThemeTokens;
 
 /// Maximum number of lines to display before truncating.
+#[allow(dead_code)] // WIP: MAX_LINES not yet used
 const MAX_LINES: usize = 500;
 
 /// Renders a diff preview for file operations.
@@ -24,6 +26,7 @@ const MAX_LINES: usize = 500;
 /// # Returns
 ///
 /// A `Node` representing the diff preview UI.
+#[allow(dead_code)] // WIP: render_diff_preview not yet used
 pub fn render_diff_preview(
     file_path: &str,
     action: &str,
@@ -34,6 +37,7 @@ pub fn render_diff_preview(
     render_diff_preview_width(file_path, action, old_content, new_content, collapsed, None)
 }
 
+#[allow(dead_code)] // WIP: render_diff_preview_width not yet used
 pub fn render_diff_preview_width(
     file_path: &str,
     action: &str,
@@ -65,6 +69,7 @@ pub fn render_diff_preview_width(
 }
 
 /// Extracts the file extension from a path.
+#[allow(dead_code)] // WIP: extract_extension not yet used
 fn extract_extension(file_path: &str) -> Option<String> {
     std::path::Path::new(file_path)
         .extension()
@@ -73,6 +78,7 @@ fn extract_extension(file_path: &str) -> Option<String> {
 }
 
 /// Checks if a file extension indicates a binary file that shouldn't be highlighted.
+#[allow(dead_code)] // WIP: is_binary_extension not yet used
 fn is_binary_extension(ext: &str) -> bool {
     matches!(
         ext,
@@ -117,6 +123,7 @@ fn is_binary_extension(ext: &str) -> bool {
     )
 }
 
+#[allow(dead_code)] // WIP: render_header not yet used
 fn render_header(file_path: &str, action: &str) -> Node {
     let label = match action {
         "create" => "[new file]",
@@ -138,6 +145,7 @@ fn render_header(file_path: &str, action: &str) -> Node {
     ])
 }
 
+#[allow(dead_code)] // WIP: render_all_lines_styled not yet used
 fn render_all_lines_styled(content: &str, is_insert: bool, extension: Option<&str>) -> Node {
     let theme = ThemeTokens::default_ref();
     let diff_bg = if is_insert {
@@ -196,6 +204,7 @@ fn render_all_lines_styled(content: &str, is_insert: bool, extension: Option<&st
     col(nodes)
 }
 
+#[allow(dead_code)] // WIP: render_highlighted_diff_line not yet used
 fn render_highlighted_diff_line(line: &HighlightedLine, prefix: &str, diff_bg: Color) -> Node {
     if line.spans.is_empty() {
         return styled(prefix.to_string(), Style::new().fg(diff_bg));
@@ -215,6 +224,7 @@ fn render_highlighted_diff_line(line: &HighlightedLine, prefix: &str, diff_bg: C
     row(children)
 }
 
+#[allow(dead_code)] // WIP: render_modification_diff not yet used
 fn render_modification_diff(old: &str, new: &str, max_width: Option<usize>) -> Node {
     let old_lines: Vec<&str> = old.lines().collect();
     let new_lines: Vec<&str> = new.lines().collect();
@@ -238,6 +248,7 @@ fn render_modification_diff(old: &str, new: &str, max_width: Option<usize>) -> N
     }
 }
 
+#[allow(dead_code)] // WIP: truncate_content not yet used
 fn truncate_content(content: &str, max_lines: usize) -> String {
     content
         .lines()

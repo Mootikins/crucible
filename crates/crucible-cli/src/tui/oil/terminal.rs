@@ -2,6 +2,7 @@ use crate::tui::oil::node::Node;
 use crate::tui::oil::output::OutputBuffer;
 use crate::tui::oil::planning::{FramePlanner, FrameSnapshot};
 use crate::tui::oil::render::{render_to_string, CursorInfo};
+#[allow(unused_imports)] // WIP: self not yet used in cursor and event modules
 use crossterm::{
     cursor::{self, Hide, MoveDown, MoveTo, MoveToColumn, MoveUp, Show},
     event::{
