@@ -824,7 +824,7 @@ pub(super) async fn handle_models_list(req: Request, am: &Arc<AgentManager>) -> 
     }
 }
 
-pub(super) async fn handle_session_set_thinking_budget(
+pub(crate) async fn handle_session_set_thinking_budget(
     req: Request,
     am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
@@ -850,7 +850,7 @@ pub(super) async fn handle_session_set_thinking_budget(
     }
 }
 
-pub(super) async fn handle_session_get_thinking_budget(
+pub(crate) async fn handle_session_get_thinking_budget(
     req: Request,
     am: &Arc<AgentManager>,
 ) -> Response {
@@ -874,7 +874,7 @@ pub(super) async fn handle_session_get_thinking_budget(
     }
 }
 
-pub(super) async fn handle_session_set_precognition(
+pub(crate) async fn handle_session_set_precognition(
     req: Request,
     am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
@@ -897,7 +897,7 @@ pub(super) async fn handle_session_set_precognition(
     }
 }
 
-pub(super) async fn handle_session_get_precognition(
+pub(crate) async fn handle_session_get_precognition(
     req: Request,
     am: &Arc<AgentManager>,
 ) -> Response {
@@ -1002,7 +1002,7 @@ pub(super) async fn handle_session_dismiss_notification(
     }
 }
 
-pub(super) async fn handle_session_set_temperature(
+pub(crate) async fn handle_session_set_temperature(
     req: Request,
     am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
@@ -1025,7 +1025,7 @@ pub(super) async fn handle_session_set_temperature(
     }
 }
 
-pub(super) async fn handle_session_get_temperature(
+pub(crate) async fn handle_session_get_temperature(
     req: Request,
     am: &Arc<AgentManager>,
 ) -> Response {
@@ -1049,7 +1049,7 @@ pub(super) async fn handle_session_get_temperature(
     }
 }
 
-pub(super) async fn handle_session_set_max_tokens(
+pub(crate) async fn handle_session_set_max_tokens(
     req: Request,
     am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
@@ -1073,7 +1073,7 @@ pub(super) async fn handle_session_set_max_tokens(
     }
 }
 
-pub(super) async fn handle_session_get_max_tokens(
+pub(crate) async fn handle_session_get_max_tokens(
     req: Request,
     am: &Arc<AgentManager>,
 ) -> Response {
