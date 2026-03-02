@@ -710,9 +710,6 @@ impl CrucibleAcpClient {
         Ok(mode_response)
     }
 
-    /// Connect to agent with full ACP protocol handshake
-    ///
-
     /// Connect to agent with capability-aware MCP transport negotiation.
     ///
     /// This performs the complete connection sequence and picks the best MCP
