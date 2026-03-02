@@ -402,7 +402,7 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
     let decrypt_fn = lua.create_function(
         |_, (content, revealed, frame): (String, usize, Option<usize>)| {
             let frame = frame.unwrap_or(0);
-            Ok(LuaNode(crucible_oil::decrypt_text(
+            Ok(LuaNode(crucible_oil::decrypt::decrypt_text(
                 &content, revealed, frame,
             )))
         },
