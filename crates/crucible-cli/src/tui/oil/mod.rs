@@ -43,6 +43,7 @@ pub mod chat_runner;
 pub mod commands;
 pub mod component;
 pub mod components;
+mod decrypt;
 mod composer;
 pub mod config;
 pub mod diff;
@@ -98,6 +99,7 @@ pub use test_harness::AppHarness;
 pub use theme::ThemeTokens;
 pub use viewport::{clamp_lines_bottom, clamp_lines_top, ensure_min_height, pad_lines_to};
 pub use viewport_cache::CachedMessage;
+pub use crucible_oil::decrypt::{decrypt_text, DecryptConfig, CIPHER_CHARS};
 
 #[cfg(test)]
 mod tests;

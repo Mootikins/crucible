@@ -64,7 +64,6 @@ pub use render::{
 pub use style::{AlignItems, Border, Color, Gap, JustifyContent, Padding, Style};
 
 // Re-export commonly used decrypt functions
-pub use decrypt::{decrypt_text, DecryptConfig, CIPHER_CHARS};
 
 pub mod utils;
 
