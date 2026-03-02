@@ -1,6 +1,7 @@
 use crate::tui::oil::node::Node;
 
 // Re-export graduation types for backward compatibility
+#[allow(unused_imports)] // WIP: GraduatedContent, GraduationState not yet used
 pub use crate::tui::oil::graduation::{GraduatedContent, GraduationState};
 
 pub struct TestRuntime {

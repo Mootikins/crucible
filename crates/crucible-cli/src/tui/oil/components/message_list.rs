@@ -19,16 +19,19 @@ use super::subagent_render::render_subagent;
 use super::tool_render::render_tool_call;
 use crate::tui::oil::utils::wrap_words;
 
+#[allow(dead_code)] // WIP: MessageList not yet used
 pub struct MessageList<'a> {
     items: &'a [&'a CachedChatItem],
     width: usize,
 }
 
 impl<'a> MessageList<'a> {
+    #[allow(dead_code)] // WIP: new method not yet used
     pub fn new(items: &'a [&'a CachedChatItem], width: usize) -> Self {
         Self { items, width }
     }
 
+    #[allow(dead_code)] // WIP: render_item_sequence method not yet used
     fn render_item_sequence(&self) -> Node {
         let mut nodes = Vec::with_capacity(self.items.len());
 
@@ -46,6 +49,7 @@ impl<'a> MessageList<'a> {
         col(nodes)
     }
 
+    #[allow(dead_code)] // WIP: render_message method not yet used
     fn render_message(&self, msg: &CachedMessage) -> Node {
         let content_node = match msg.role {
             Role::User => render_user_prompt(msg.content(), self.width),

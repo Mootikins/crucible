@@ -23,6 +23,7 @@ enum Role {
 
 struct StreamingMessage {
     content: String,
+    #[allow(dead_code)] // WIP: complete field not yet used
     complete: bool,
 }
 

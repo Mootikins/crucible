@@ -2,42 +2,51 @@ use crate::tui::oil::app::{Action, App, ViewContext};
 use crate::tui::oil::chat_container::ContainerList;
 use crate::tui::oil::commands::{CliValue, SetCommand};
 use crate::tui::oil::component::Component;
-use crate::tui::oil::components::{
+#[allow(unused_imports)] // WIP: Drawer, DrawerKind not yet used
+    use crate::tui::oil::components::{
     Drawer, DrawerKind, InteractionModal, InteractionModalMsg, InteractionModalOutput,
     InteractionMode, NotificationArea, PopupComponent, ShellHistoryItem, ShellModal, ShellModalMsg,
     ShellModalOutput, ShellStatus, StatusComponent,
 };
 use crate::tui::oil::config::{ConfigValue, ModSource, RuntimeConfig};
 use crate::tui::oil::event::{Event, InputAction, InputBuffer};
-use crate::tui::oil::markdown::{
+#[allow(unused_imports)] // WIP: markdown_to_node_styled, markdown_to_node_with_width, Margins, RenderStyle not yet used
+    use crate::tui::oil::markdown::{
     markdown_to_node_styled, markdown_to_node_with_width, Margins, RenderStyle,
 };
 use crate::tui::oil::node::*;
 use crate::tui::oil::render_state::RenderState;
+#[allow(unused_imports)] // WIP: Color, Style not yet used
 use crate::tui::oil::style::{Color, Gap, Padding, Style};
 use crate::tui::oil::theme::ThemeTokens;
 use crate::tui::oil::utils::wrap_chars;
 use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
 use chrono::Local;
+#[allow(unused_imports)] // WIP: KeyCode not yet used
 use crossterm::event::KeyCode;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
-use crucible_core::interaction::{
+#[allow(unused_imports)] // WIP: AskRequest, AskResponse, PermAction, PermRequest not yet used
+    use crucible_core::interaction::{
     AskRequest, AskResponse, InteractionRequest, InteractionResponse, PermAction, PermRequest,
     PermResponse, PermissionScope,
 };
 use std::cell::Cell;
+#[allow(unused_imports)] // WIP: VecDeque not yet used
 use std::collections::VecDeque;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
+#[allow(unused_imports)] // WIP: Instant not yet used
 use std::time::{Duration, Instant};
 
 const FOCUS_INPUT: &str = "input";
+#[allow(dead_code)] // WIP: FOCUS_POPUP not yet used
 const FOCUS_POPUP: &str = "popup";
 const POPUP_HEIGHT: usize = 10;
 pub const INPUT_MAX_CONTENT_LINES: usize = 3;
 
+#[allow(dead_code)] // WIP: MAX_DISPLAY_ITEMS not yet used
 const MAX_DISPLAY_ITEMS: usize = 512;
 const MAX_SHELL_HISTORY: usize = 100;
 
@@ -116,6 +125,7 @@ pub struct OilChatApp {
     // Callbacks, filesystem state, and registries that ideally move
     // behind a trait or into a dedicated struct later.
     /// Submit callback — fires when the user sends a message
+    #[allow(dead_code)] // WIP: on_submit callback not yet used
     on_submit: Option<Box<dyn Fn(String) + Send + Sync>>,
     /// Filesystem path for saving session transcripts
     session_dir: Option<PathBuf>,
@@ -238,6 +248,7 @@ impl App for OilChatApp {
     }
 }
 
+#[allow(dead_code)] // WIP: multiple methods not yet used
 impl OilChatApp {
     fn handle_stream_msg(&mut self, msg: ChatAppMsg) -> Action<ChatAppMsg> {
         match msg {

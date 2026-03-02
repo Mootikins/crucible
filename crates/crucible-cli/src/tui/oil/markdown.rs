@@ -15,6 +15,7 @@
 
 use crate::tui::oil::ansi::{visible_width, wrap_styled_text};
 use crate::tui::oil::node::*;
+#[allow(unused_imports)] // WIP: Color not yet used
 use crate::tui::oil::style::{Color, Style};
 use crate::tui::oil::theme::ThemeTokens;
 use markdown_it::parser::inline::Text;
@@ -33,6 +34,7 @@ use markdown_it::MarkdownIt;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
+#[allow(dead_code)] // WIP: NATURAL_TEXT_WIDTH not yet used
 const NATURAL_TEXT_WIDTH: usize = 10000;
 
 /// Regex to match HTML <br> tags in various forms: <br>, <br/>, <br />, <BR>, etc.
@@ -1024,6 +1026,7 @@ fn text_node(content: &str) -> Node {
     text(content)
 }
 
+#[allow(dead_code)] // WIP: normalize_br_tags not yet used
 fn normalize_br_tags(input: &str) -> String {
     // Replace with "  \n" (two trailing spaces = markdown Hardbreak)
     BR_TAG_REGEX.replace_all(input, "  \n").into_owned()

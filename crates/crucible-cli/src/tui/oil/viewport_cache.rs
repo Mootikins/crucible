@@ -206,6 +206,7 @@ impl CachedSubagent {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // WIP: CachedChatItem not yet used
 pub enum CachedChatItem {
     Message(CachedMessage),
     ToolCall(CachedToolCall),
@@ -214,7 +215,9 @@ pub enum CachedChatItem {
     Delegation(CachedSubagent),
 }
 
+#[allow(dead_code)] // WIP: multiple methods not yet used
 impl CachedChatItem {
+    #[allow(dead_code)] // WIP: id method not yet used
     pub fn id(&self) -> &str {
         match self {
             CachedChatItem::Message(m) => &m.id,

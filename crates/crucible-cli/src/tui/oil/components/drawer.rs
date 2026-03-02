@@ -1,6 +1,7 @@
 use crate::tui::oil::component::Component;
 use crate::tui::oil::node::Node;
 use crate::tui::oil::ViewContext;
+#[allow(unused_imports)] // WIP: DrawerKind not yet used
 use crucible_oil::components::{Drawer as OilDrawer, DrawerKind};
 
 /// Type alias for Oil's Drawer
