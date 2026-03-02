@@ -460,7 +460,19 @@ fn render_text(text: &TextNode, width: usize, output: &mut String) {
     let styled_content = apply_style(&text.content, &text.style);
 
     if width == 0 || text.content.chars().count() <= width {
-        output.push_str(&styled_content);
+        // Fast path: content fits on one line (or no width constraint)
+        // But handle embedded newlines by converting them to \r\n
+        if text.content.contains('\n') {
+            let segments: Vec<&str> = text.content.split('\n').collect();
+            for (i, segment) in segments.iter().enumerate() {
+                if i > 0 {
+                    output.push_str("\r\n");
+                }
+                output.push_str(&apply_style(segment, &text.style));
+            }
+        } else {
+            output.push_str(&styled_content);
+        }
     } else {
         let options = Options::new(width).word_splitter(WordSplitter::NoHyphenation);
         let wrapped: Vec<_> = wrap(&text.content, options);
@@ -1000,5 +1012,23 @@ mod tests {
         let result = render_to_string(&node, 80);
         assert!(result.contains("A"));
         assert!(result.contains("B"));
+    }
+
+    #[test]
+    fn test_render_text_embedded_newlines_use_crlf() {
+        // Test that embedded newlines in text content are converted to \r\n
+        let node = text("line1\nline2\nline3");
+        let result = render_to_string(&node, 200); // width > total char count, triggers fast path
+        
+        // Should contain \r\n, not bare \n
+        assert!(result.contains("line1\r\nline2\r\nline3"), 
+                "Expected \\r\\n between lines, got: {:?}", result);
+        
+        // Verify no bare \n without \r
+        let lines: Vec<&str> = result.split("\r\n").collect();
+        assert_eq!(lines.len(), 3, "Expected 3 lines separated by \\r\\n");
+        assert_eq!(lines[0], "line1");
+        assert_eq!(lines[1], "line2");
+        assert_eq!(lines[2], "line3");
     }
 }
