@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) async fn handle_lua_init_session(
+pub(crate) async fn handle_lua_init_session(
     req: Request,
     lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
 ) -> Response {
@@ -59,7 +59,7 @@ pub(super) async fn handle_lua_init_session(
     )
 }
 
-pub(super) async fn handle_lua_register_hooks(
+pub(crate) async fn handle_lua_register_hooks(
     req: Request,
     lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
 ) -> Response {
@@ -113,7 +113,7 @@ pub(super) async fn handle_lua_register_hooks(
     )
 }
 
-pub(super) async fn handle_lua_execute_hook(
+pub(crate) async fn handle_lua_execute_hook(
     req: Request,
     lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
 ) -> Response {
@@ -176,7 +176,7 @@ pub(super) async fn handle_lua_execute_hook(
     )
 }
 
-pub(super) async fn handle_lua_shutdown_session(
+pub(crate) async fn handle_lua_shutdown_session(
     req: Request,
     lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
 ) -> Response {
@@ -194,7 +194,7 @@ pub(super) async fn handle_lua_shutdown_session(
 // Lua plugin management RPC handlers
 // ─────────────────────────────────────────────────────────────────────────────
 
-pub(super) async fn handle_lua_discover_plugins(req: Request) -> Response {
+pub(crate) async fn handle_lua_discover_plugins(req: Request) -> Response {
     let kiln_path = require_param!(req, "kiln_path", as_str).to_string();
 
     match PluginManager::initialize(Some(Path::new(&kiln_path))) {
@@ -216,7 +216,7 @@ pub(super) async fn handle_lua_discover_plugins(req: Request) -> Response {
     }
 }
 
-pub(super) async fn handle_lua_plugin_health(req: Request) -> Response {
+pub(crate) async fn handle_lua_plugin_health(req: Request) -> Response {
     let plugin_path_str = require_param!(req, "plugin_path", as_str).to_string();
     let plugin_path = PathBuf::from(&plugin_path_str);
 
@@ -344,7 +344,7 @@ pub(super) async fn handle_lua_plugin_health(req: Request) -> Response {
     )
 }
 
-pub(super) async fn handle_lua_generate_stubs(req: Request) -> Response {
+pub(crate) async fn handle_lua_generate_stubs(req: Request) -> Response {
     let output_dir = require_param!(req, "output_dir", as_str).to_string();
     let verify = optional_param!(req, "verify", as_bool).unwrap_or(false);
 
@@ -371,7 +371,7 @@ pub(super) async fn handle_lua_generate_stubs(req: Request) -> Response {
     }
 }
 
-pub(super) async fn handle_lua_run_plugin_tests(req: Request) -> Response {
+pub(crate) async fn handle_lua_run_plugin_tests(req: Request) -> Response {
     let test_path_str = require_param!(req, "test_path", as_str).to_string();
     let filter = optional_param!(req, "filter", as_str).map(|s| s.to_string());
     let test_path = PathBuf::from(&test_path_str);
@@ -523,7 +523,7 @@ end
     )
 }
 
-pub(super) async fn handle_lua_register_commands(
+pub(crate) async fn handle_lua_register_commands(
     req: Request,
     lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
 ) -> Response {
