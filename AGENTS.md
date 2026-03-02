@@ -27,19 +27,14 @@
 | `crucible-oil` | Terminal rendering primitives | `Node`, `render_to_string` |
 | `crucible-web` | Browser chat UI (SolidJS + Axum) | HTTP/SSE endpoints |
 | `crucible-tools` | MCP server and tools | Tool implementations |
-| `crucible-sqlite` | SQLite storage (default); fast, lightweight | `SqliteStorage` |
+| `crucible-sqlite` | SQLite storage (default); fast, lightweight; includes query/ module | `SqliteStorage` |
 | `crucible-lua` | Lua/Luau with Fennel support | `LuaExecutor`, `FennelCompiler` |
-| `crucible-llm` | Embedding backends | `EmbeddingBackend` (FastEmbed, Burn, LlamaCpp) |
+| `crucible-llm` | Embedding backends (FastEmbed only) | `EmbeddingBackend` |
 | `crucible-parser` | Markdown parsing | `MarkdownParser` |
 | `crucible-config` | Configuration types and loading | `AppConfig`, provider configs |
-| `crucible-watch` | File system watching | Change detection |
 | `crucible-acp` | Agent Context Protocol | Protocol types |
-| `crucible-daemon` | Daemon server (library); includes enrichment pipeline and note processing | `Server`, `SessionManager`, `AgentManager` |
-| `crucible-rpc` | Daemon RPC client library | `DaemonClient`, `DaemonStorageClient` |
-| `crucible-observe` | Session logging and observability | `SessionWriter`, `SessionMetadata` |
+| `crucible-daemon` | Daemon server (library); includes enrichment pipeline, note processing, RPC client, observability, file watching, and skills discovery | `Server`, `SessionManager`, `AgentManager` |
 | `crucible-lance` | LanceDB vector storage backend | `LanceStore`, `LanceNoteStore` |
-| `crucible-skills` | Agent skills discovery and loading | `Skill`, `SkillSource`, `SkillScope` |
-| `crucible-query` | Composable query translation pipeline | `SqlSugarSyntax`, `JaqSyntax` |
 
 ### Daemon Architecture
 
@@ -84,13 +79,13 @@ When implementing features that affect agent/session behavior (not just UI displ
 | TUI-local | theme, show_thinking, verbose | `InkChatApp` fields, no RPC needed |
 
 **Before Implementing:**
-- [ ] Check if daemon already has RPC for this (`crucible-rpc/src/client.rs`)
+- [ ] Check if daemon already has RPC for this (`crucible-daemon/src/rpc_client/`)
 - [ ] Check if `SessionAgent` has a field for this (`crucible-core/src/session/types.rs`)
 - [ ] Determine scope: Does this need multi-client consistency? If yes → session-scoped
 
 **Implementation (session-scoped features):**
 - [ ] Add method to `AgentHandle` trait (`crucible-core/src/traits/chat.rs`)
-- [ ] Implement in `DaemonAgentHandle` (`crucible-rpc/src/agent.rs`)
+- [ ] Implement in `DaemonAgentHandle` (`crucible-daemon/src/rpc_client/agent.rs`)
 - [ ] Add `ChatAppMsg` variant (`crucible-cli/src/tui/oil/chat_app.rs`)
 - [ ] Handle in `chat_runner` (`crucible-cli/src/tui/oil/chat_runner.rs`)
 - [ ] Wire TUI command (`:set`, etc.) to emit the `ChatAppMsg`
@@ -135,6 +130,10 @@ use crucible_core::traits::{StorageResult, ChatResult, BackendResult, ToolResult
 use crucible_core::protocol::{Request, Response, RpcError, SessionEventMessage};
 use crucible_daemon::enrichment::{EmbeddingHandler, create_default_enrichment_service};
 use crucible_daemon::pipeline::{NotePipeline, NotePipelineConfig};
+use crucible_daemon::rpc_client::{DaemonClient, DaemonStorageClient};
+use crucible_daemon::observe::{SessionWriter, SessionMetadata};
+use crucible_daemon::skills::{Skill, SkillSource, SkillScope};
+use crucible_sqlite::query::{SqlSugarSyntax, JaqSyntax};
 ```
 
 ### LLM Provider System
@@ -151,8 +150,6 @@ Provider (base trait)
 | Ollama | Yes | Yes | No | default |
 | OpenAI | Yes | Yes | JSON Schema | default |
 | FastEmbed | Yes | No | No | `fastembed` |
-| LlamaCpp | Yes | Yes | GBNF | `llama-cpp` |
-| Burn | Yes | No | No | `burn` |
 
 ### Systems
 
@@ -213,19 +210,8 @@ crucible/
 │   ├── crucible-oil/            # Terminal rendering primitives
 │   ├── crucible-web/            # Browser-based chat UI
 │   ├── crucible-tools/          # MCP server and tools
-│   ├── crucible-daemon/         # Daemon server (library)
-│   ├── crucible-rpc/            # Daemon RPC client library
-│   ├── crucible-observe/        # Session logging and observability
-│   ├── crucible-sqlite/         # SQLite storage (default)
-│   ├── crucible-lance/          # LanceDB vector storage
-│   ├── crucible-lua/            # Lua/Luau with Fennel
-│   ├── crucible-llm/            # Embedding backends
-│   ├── crucible-parser/         # Markdown parsing
-│   ├── crucible-config/         # Configuration types
-│   ├── crucible-watch/          # File watching
-│   ├── crucible-acp/            # Agent Context Protocol
-│   ├── crucible-skills/         # Agent skills discovery
-│   ├── crucible-query/          # Query translation pipeline
+│   ├── crucible-daemon/         # Daemon server (library); includes RPC client, observability, file watching, skills |
+│   ├── crucible-sqlite/         # SQLite storage (default); includes query module |
 ├── vendor/                      # Patched upstream dependencies
 ├── docs/                        # Documentation kiln (user guides + test fixture)
 ├── justfile                     # Development recipes
