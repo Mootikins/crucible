@@ -1,6 +1,5 @@
 use crate::tui::oil::node::*;
 use crate::tui::oil::render::render_to_string;
-use crate::tui::oil::style::Style;
 
 #[test]
 fn error_boundary_renders_child_when_no_error() {
