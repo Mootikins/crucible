@@ -104,6 +104,15 @@ impl RpcDispatcher {
             // Session title handler
             "session.set_title" => to_response(id, self.handle_set_title(&req).await),
 
+            // Config get/set handlers
+            "session.set_thinking_budget" => to_response(id, self.handle_session_set_thinking_budget(&req).await),
+            "session.get_thinking_budget" => to_response(id, self.handle_session_get_thinking_budget(&req).await),
+            "session.set_temperature" => to_response(id, self.handle_session_set_temperature(&req).await),
+            "session.get_temperature" => to_response(id, self.handle_session_get_temperature(&req).await),
+            "session.set_max_tokens" => to_response(id, self.handle_session_set_max_tokens(&req).await),
+            "session.get_max_tokens" => to_response(id, self.handle_session_get_max_tokens(&req).await),
+            "session.set_precognition" => to_response(id, self.handle_session_set_precognition(&req).await),
+            "session.get_precognition" => to_response(id, self.handle_session_get_precognition(&req).await),
             // For other methods, we return METHOD_NOT_FOUND here.
             // In production, server.rs will handle these until we migrate them.
             // This allows incremental migration.
@@ -215,6 +224,114 @@ impl RpcDispatcher {
             "session_id": p.session_id,
             "title": p.title,
         }))
+    }
+
+    async fn handle_session_set_thinking_budget(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_set_thinking_budget(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_get_thinking_budget(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_get_thinking_budget(
+            req.clone(),
+            &self.ctx.agents,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_set_temperature(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_set_temperature(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_get_temperature(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_get_temperature(
+            req.clone(),
+            &self.ctx.agents,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_set_max_tokens(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_set_max_tokens(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_get_max_tokens(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_get_max_tokens(
+            req.clone(),
+            &self.ctx.agents,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_set_precognition(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_set_precognition(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_get_precognition(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_get_precognition(
+            req.clone(),
+            &self.ctx.agents,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
     }
 }
 

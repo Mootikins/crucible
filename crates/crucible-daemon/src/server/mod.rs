@@ -49,7 +49,7 @@ mod lua;
 mod observe;
 mod platform;
 mod plugins;
-mod session;
+pub mod session;
 mod storage;
 
 use core::*;
