@@ -11,6 +11,7 @@ use crucible_core::interaction::{
     InteractionResponse, InteractivePanel, PanelResult, PanelState, PermAction, PermRequest,
     PermResponse, PermissionScope, PopupRequest, PopupResponse, ShowRequest,
 };
+#[allow(unused_imports)] // WIP: PopupEntry not yet used
 use crucible_core::types::PopupEntry;
 use std::collections::HashSet;
 
