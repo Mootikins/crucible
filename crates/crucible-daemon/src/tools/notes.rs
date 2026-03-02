@@ -15,7 +15,7 @@
 
 #![allow(missing_docs)]
 
-use crate::helpers::{json_success, McpResultExt};
+use super::helpers::{json_success, McpResultExt};
 use crucible_core::serde_helpers::default_true;
 use crucible_core::storage::NoteStore;
 use rmcp::handler::server::wrapper::Parameters;
@@ -631,7 +631,7 @@ impl NoteTools {
 }
 
 // Use shared utilities for frontmatter parsing and path validation
-use crate::utils::{
+use super::utils::{
     parse_yaml_frontmatter, validate_folder_within_kiln, validate_path_within_kiln,
 };
 

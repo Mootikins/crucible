@@ -34,8 +34,7 @@ crucible-config = { path = "../crucible-config" }
 
 crucible-sqlite = { path = "../crucible-sqlite", optional = true }
 
-crucible-lua = { path = "../crucible-lua" }
-crucible-tools = { path = "../crucible-tools" }
+crucible-lua = { path = "../crucible-lua", features = ["send"] }
 crucible-acp = { path = "../crucible-acp" }
 crucible-llm = { path = "../crucible-llm", default-features = false }
 genai = "0.5"
@@ -59,6 +58,20 @@ serde_yaml = { workspace = true }
 rusqlite = { version = "0.37", features = ["bundled"], optional = true }
 rand = { workspace = true }
 
+# Tools dependencies (absorbed from crucible-tools)
+rmcp = { version = "0.13", features = ["macros", "server", "client", "transport-io", "transport-streamable-http-server", "transport-child-process", "transport-streamable-http-client-reqwest"] }
+axum = "0.8"
+schemars = { workspace = true }
+regex = { workspace = true }
+lazy_static = { workspace = true }
+urlencoding = { workspace = true }
+oq = { workspace = true }
+pathdiff = "0.2"
+url = "2.5"
+validator = { version = "0.20", features = ["derive"] }
+grep = "0.4"
+ignore = "0.4"
+
 [features]
 default = ["storage-sqlite"]
 
@@ -78,6 +91,9 @@ obsidian = []
 tempfile = { workspace = true }
 futures = { workspace = true }
 mockito = { workspace = true }
+tokio-test = "0.4"
+tracing-subscriber = { workspace = true }
+encoding_rs = "0.8"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

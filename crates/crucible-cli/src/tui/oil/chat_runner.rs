@@ -429,7 +429,7 @@ impl OilChatRunner {
                 let mcp_config = mcp_config.clone();
                 let mcp_tx = msg_tx.clone();
                 background_tasks.push(tokio::spawn(async move {
-                    use crucible_tools::mcp_gateway::McpGatewayManager;
+                    use crucible_daemon::tools::mcp_gateway::McpGatewayManager;
                     match McpGatewayManager::from_config(&mcp_config).await {
                         Ok(gateway) => {
                             let servers: Vec<McpServerDisplay> = gateway

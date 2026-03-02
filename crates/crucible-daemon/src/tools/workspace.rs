@@ -18,7 +18,7 @@
 #![allow(clippy::doc_markdown)] // Parameter names in docs don't need backticks
 #![allow(clippy::needless_pass_by_value)] // Tools take owned strings for JSON compat
 
-use crate::helpers::{text_success, McpResultExt};
+use super::helpers::{text_success, McpResultExt};
 use rmcp::model::{CallToolResult, RawContent, Tool};
 use std::borrow::Cow;
 use std::path::PathBuf;

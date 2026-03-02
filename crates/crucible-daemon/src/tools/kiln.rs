@@ -7,7 +7,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use crate::helpers::json_success;
+use super::helpers::json_success;
 use crucible_core::storage::NoteStore;
 use rmcp::{model::CallToolResult, tool, tool_router};
 

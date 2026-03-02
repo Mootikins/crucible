@@ -1,6 +1,6 @@
 //! MCP Gateway Manager - aggregates upstream MCP servers
 
-use crate::mcp_client::{create_stdio_executor_with_env, RmcpExecutor};
+use super::mcp_client::{create_stdio_executor_with_env, RmcpExecutor};
 use crucible_config::mcp::{McpConfig, TransportType, UpstreamServerConfig};
 use crucible_core::traits::mcp::{McpToolInfo, ToolCallResult};
 use crucible_core::utils::glob_match;

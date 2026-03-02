@@ -1373,7 +1373,7 @@ mod tests {
         use crate::project_manager::ProjectManager;
         use crate::session_manager::SessionManager;
         use crate::subscription::SubscriptionManager;
-        use crucible_tools::workspace::WorkspaceTools;
+        use crate::tools::workspace::WorkspaceTools;
         use dashmap::DashMap;
         use tokio::sync::broadcast;
 
