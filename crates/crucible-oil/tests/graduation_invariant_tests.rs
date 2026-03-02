@@ -16,11 +16,11 @@
 //! Uses unique markers in content to track specific strings through the graduation
 //! pipeline. Markers are UUIDs or unique prefixes that won't appear in other content.
 
-use crate::tui::oil::ansi::strip_ansi;
-use crate::tui::oil::node::{
+use crucible_oil::ansi::strip_ansi;
+use crucible_oil::node::{
     col, overlay_from_bottom, scrollback, scrollback_continuation, text, Node,
 };
-use crate::tui::oil::runtime::TestRuntime;
+use crucible_oil::runtime::TestRuntime;
 use proptest::prelude::*;
 
 // ============================================================================
