@@ -20,7 +20,7 @@ pub use tokens::ThemeTokens;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_oil::style::{Color, Style};
+    use crucible_oil::style::Color;
 
     #[test]
     fn color_tokens_are_distinct() {

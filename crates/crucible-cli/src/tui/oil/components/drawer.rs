@@ -16,7 +16,6 @@ impl Component for Drawer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::oil::component::ComponentHarness;
     use crate::tui::oil::render::render_to_plain_text;
 
     #[test]
