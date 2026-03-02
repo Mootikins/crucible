@@ -21,7 +21,7 @@ use anyhow::{Context, Result};
 use crucible_core::processing::{ChangeDetectionStore, FileState, ProcessingResult};
 use crucible_core::storage::{NoteRecord, NoteStore};
 use crucible_core::EnrichmentService;
-use crucible_parser::{traits::MarkdownParser, CrucibleParser};
+use crucible_core::parser::{traits::MarkdownParser, CrucibleParser};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;

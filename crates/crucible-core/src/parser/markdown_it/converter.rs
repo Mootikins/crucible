@@ -1,7 +1,7 @@
 //! Convert markdown-it AST to Crucible's NoteContent format
 
-use crate::error::ParserResult;
-use crate::types::*;
+use crate::parser::error::ParserResult;
+use crate::parser::types::*;
 use markdown_it::plugins::cmark::block::fence::CodeFence;
 use markdown_it::plugins::cmark::block::heading::ATXHeading;
 use markdown_it::plugins::cmark::block::hr::ThematicBreak;
@@ -323,7 +323,7 @@ impl AstConverter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_core::parser::CheckboxStatus;
+    use crate::parser::CheckboxStatus;
     use markdown_it::MarkdownIt;
 
     fn setup_parser() -> MarkdownIt {
