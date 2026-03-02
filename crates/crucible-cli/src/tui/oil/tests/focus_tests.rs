@@ -4,8 +4,6 @@ use crate::tui::oil::focus::{FocusContext, FocusId};
 use crate::tui::oil::node::*;
 use crate::tui::oil::render::render_to_string;
 use crate::tui::oil::style::Style;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use std::time::Duration;
 
 struct FocusableApp {
     items: Vec<String>,

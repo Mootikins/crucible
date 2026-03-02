@@ -9,13 +9,12 @@
 //! Uses property-based testing with proptest to verify invariants across
 //! a wide range of permission requests and key sequences.
 
-use crate::tui::oil::app::{Action, App, ViewContext};
+use crate::tui::oil::app::{Action, App};
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::event::Event;
-use crate::tui::oil::focus::FocusContext;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crucible_core::interaction::{
-    InteractionRequest, InteractionResponse, PermRequest, PermResponse,
+    InteractionRequest, InteractionResponse, PermRequest,
 };
 use proptest::prelude::*;
 
@@ -34,28 +33,8 @@ fn ctrl_c() -> KeyEvent {
 }
 
 /// Check if a response is a permission denial.
-fn is_denial(response: &InteractionResponse) -> bool {
-    match response {
-        InteractionResponse::Permission(perm) => !perm.allowed,
-        _ => false,
-    }
-}
 
-/// Check if a response is a permission allow.
-fn is_allow(response: &InteractionResponse) -> bool {
-    match response {
-        InteractionResponse::Permission(perm) => perm.allowed,
-        _ => false,
-    }
-}
 
-/// Extract the permission response from an InteractionResponse.
-fn extract_perm_response(response: &InteractionResponse) -> Option<PermResponse> {
-    match response {
-        InteractionResponse::Permission(perm) => Some(perm.clone()),
-        _ => None,
-    }
-}
 
 // ============================================================================
 // PROPERTY GENERATORS

@@ -3,47 +3,14 @@
 //! Tests popup behavior, Ctrl+C handling, command processing, and error states.
 
 use crate::tui::oil::app::{Action, App, ViewContext};
-use crate::tui::oil::chat_app::{ChatAppMsg, ChatMode, ModelListState, OilChatApp};
+use crate::tui::oil::chat_app::{ChatAppMsg, ModelListState, OilChatApp};
 use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::render::render_to_string;
 use crate::tui::oil::test_harness::AppHarness;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-fn assert_contains(output: &str, needle: &str, context: &str) {
-    assert!(
-        output.contains(needle),
-        "Expected to find '{}' in output. Context: {}\nOutput:\n{}",
-        needle,
-        context,
-        output
-    );
-}
 
-fn assert_appears_before(output: &str, first: &str, second: &str, context: &str) {
-    let first_pos = output.find(first).unwrap_or_else(|| {
-        panic!(
-            "Expected to find '{}' in output. Context: {}\nOutput:\n{}",
-            first, context, output
-        )
-    });
-    let second_pos = output.find(second).unwrap_or_else(|| {
-        panic!(
-            "Expected to find '{}' in output. Context: {}\nOutput:\n{}",
-            second, context, output
-        )
-    });
-    assert!(
-        first_pos < second_pos,
-        "'{}' (pos {}) should appear before '{}' (pos {}). Context: {}\nOutput:\n{}",
-        first,
-        first_pos,
-        second,
-        second_pos,
-        context,
-        output
-    );
-}
 
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
@@ -1625,9 +1592,6 @@ fn rendered_status_bar(app: &OilChatApp) -> String {
     crate::tui::oil::ansi::strip_ansi(&output)
 }
 
-fn status_contains_mode(app: &OilChatApp, mode: &str) -> bool {
-    rendered_status_bar(app).contains(mode)
-}
 
 #[test]
 fn backtab_cycles_mode_from_default() {

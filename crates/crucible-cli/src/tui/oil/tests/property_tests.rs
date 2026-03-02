@@ -464,16 +464,12 @@ mod chat_mode_properties {
 mod composer_stability_properties {
     use crate::tui::oil::app::App;
     use crate::tui::oil::chat_app::{OilChatApp, INPUT_MAX_CONTENT_LINES};
-    use crate::tui::oil::event::{Event, InputAction};
+    use crate::tui::oil::event::InputAction;
     use crate::tui::oil::focus::FocusContext;
     use crate::tui::oil::render::render_to_string;
     use crate::tui::ViewContext;
-    use crossterm::event::KeyCode;
     use proptest::prelude::*;
 
-    fn count_lines(output: &str) -> usize {
-        output.split("\r\n").count()
-    }
 
     fn extract_input_region(output: &str) -> Vec<&str> {
         let lines: Vec<&str> = output.split("\r\n").collect();

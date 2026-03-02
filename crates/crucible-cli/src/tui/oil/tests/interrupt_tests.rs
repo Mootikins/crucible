@@ -12,9 +12,6 @@ fn ctrl(c: char) -> KeyEvent {
     KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
 }
 
-fn ctrl_enter() -> KeyEvent {
-    KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL)
-}
 
 fn view_with_default_ctx(app: &OilChatApp) -> crate::tui::oil::node::Node {
     let focus = FocusContext::new();

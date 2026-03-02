@@ -1,4 +1,4 @@
-use crate::tui::oil::render::{render_with_cursor, CursorInfo};
+use crate::tui::oil::render::render_with_cursor;
 use crate::tui::oil::*;
 use insta::assert_snapshot;
 
