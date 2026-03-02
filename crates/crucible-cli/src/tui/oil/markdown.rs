@@ -1486,7 +1486,7 @@ mod tests {
 
     mod render_style_tests {
         use super::*;
-        use crate::tui::oil::markdown::{markdown_to_node_styled, RenderStyle, NATURAL_TEXT_WIDTH};
+        use crate::tui::oil::markdown::{markdown_to_node_styled, RenderStyle};
 
         #[test]
         fn render_style_viewport_widths() {

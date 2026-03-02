@@ -1319,7 +1319,6 @@ mod tests {
         use crate::tui::oil::app::{App, ViewContext};
         use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
         use crate::tui::oil::focus::FocusContext;
-        use crate::tui::oil::render::render_to_string;
         use crate::tui::oil::TestRuntime;
 
         let mut runtime = TestRuntime::new(80, 24);
