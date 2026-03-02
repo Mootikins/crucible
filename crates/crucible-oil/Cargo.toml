@@ -8,8 +8,9 @@ rust-version.workspace = true
 description = "Minimal Elm/Dioxus-inspired TUI framework for terminal applications"
 
 [features]
-default = []
+default = ["taffy-render"]
 test-utils = ["dep:proptest"]
+taffy-render = []
 
 [dependencies]
 crossterm = { workspace = true }
@@ -20,6 +21,7 @@ similar = "2.7"
 html_parser = "0.7"
 proptest = { version = "1.4", optional = true }
 thiserror = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 insta = { version = "1.46", features = ["filters"] }
