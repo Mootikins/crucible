@@ -168,7 +168,7 @@ impl Drop for InProcessMcpHost {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ClientError;
+    use crucible_acp::ClientError;
     use tempfile::TempDir;
 
     // Mock implementations for testing

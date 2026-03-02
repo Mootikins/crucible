@@ -157,7 +157,7 @@ pub fn create_callout_extension() -> Arc<dyn SyntaxExtension> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::error::ErrorSeverity;
+    use crate::parser::error::ErrorSeverity;
 
     #[tokio::test]
     async fn test_callout_detection() {

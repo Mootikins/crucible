@@ -623,21 +623,21 @@ mod tests {
         let (fm, content, format) = parser.parse_frontmatter(content);
         assert!(fm.is_some());
         assert_eq!(content, "Content");
-        assert_eq!(format, super::types::FrontmatterFormat::Yaml);
+        assert_eq!(format, crate::parser::types::FrontmatterFormat::Yaml);
 
         // TOML frontmatter
         let content = "+++\ntitle = \"Test\"\n+++\nContent";
         let (fm, content, format) = parser.parse_frontmatter(content);
         assert!(fm.is_some());
         assert_eq!(content, "Content");
-        assert_eq!(format, super::types::FrontmatterFormat::Toml);
+        assert_eq!(format, crate::parser::types::FrontmatterFormat::Toml);
 
         // No frontmatter
         let content = "Just content";
         let (fm, content, format) = parser.parse_frontmatter(content);
         assert!(fm.is_none());
         assert_eq!(content, "Just content");
-        assert_eq!(format, super::types::FrontmatterFormat::None);
+        assert_eq!(format, crate::parser::types::FrontmatterFormat::None);
     }
 
     #[test]
@@ -801,7 +801,7 @@ let x = 42;
         let parser = CrucibleParser::new();
         let parser_with_extensions = CrucibleParser::with_default_extensions();
         let parser_with_custom =
-            CrucibleParser::with_extensions(super::ExtensionRegistryBuilder::new().build());
+            CrucibleParser::with_extensions(crate::parser::ExtensionRegistryBuilder::new().build());
 
         // All should have block processing disabled by default
         assert!(!parser.is_block_processing_enabled());
