@@ -15,7 +15,7 @@ pub fn llm_tool_to_genai(tool: &LlmToolDefinition) -> Tool {
 
 /// Sanitize tool schema for OpenAI-spec compliance.
 /// Ensures empty object schemas have a `properties` key and removes metadata fields.
-fn sanitize_tool_schema(schema: &mut serde_json::Value) {
+pub(crate) fn sanitize_tool_schema(schema: &mut serde_json::Value) {
     if let Some(obj) = schema.as_object_mut() {
         // If this is an object type without properties, add empty properties
         if obj.get("type").and_then(|v| v.as_str()) == Some("object") {
@@ -32,6 +32,12 @@ fn sanitize_tool_schema(schema: &mut serde_json::Value) {
         if let Some(properties) = obj.get_mut("properties") {
             if let Some(props_obj) = properties.as_object_mut() {
                 for (_, prop_schema) in props_obj.iter_mut() {
+                    // Remove redundant "default": null from Option<T> fields
+                    if let Some(prop_obj) = prop_schema.as_object_mut() {
+                        if prop_obj.get("default").and_then(|v| v.as_null()).is_some() {
+                            prop_obj.remove("default");
+                        }
+                    }
                     sanitize_tool_schema(prop_schema);
                 }
             }
