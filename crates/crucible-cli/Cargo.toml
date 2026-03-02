@@ -33,7 +33,7 @@ web = ["dep:crucible-web"]
 fastembed = ["crucible-llm/fastembed"]
 
 # Rendering pipeline selection
-taffy-render = []  # Use new Taffy-based layout pipeline (experimental)
+taffy-render = ["crucible-oil/taffy-render"]  # Use new Taffy-based layout pipeline (experimental)
 
 # Test tier flags (see justfile for usage)
 test-fixtures = []       # Tests using docs/ kiln or examples/test-kiln
@@ -53,7 +53,7 @@ crucible-acp = { path = "../crucible-acp" }
 crucible-daemon = { path = "../crucible-daemon" }
 
 
-crucible-oil = { path = "../crucible-oil" }
+crucible-oil = { path = "../crucible-oil", default-features = false }
 crucible-web = { path = "../crucible-web", optional = true }
 
 # CLI framework
