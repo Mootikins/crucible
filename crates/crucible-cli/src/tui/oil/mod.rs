@@ -43,7 +43,6 @@ pub mod chat_runner;
 pub mod commands;
 pub mod component;
 pub mod components;
-mod decrypt;
 mod composer;
 pub mod config;
 pub mod diff;
