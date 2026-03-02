@@ -163,6 +163,19 @@ impl RpcDispatcher {
             "session.cleanup" => to_response(id, self.handle_session_cleanup(&req).await),
             "session.reindex" => to_response(id, self.handle_session_reindex(&req).await),
 
+            // Agent operation handlers
+            "session.configure_agent" => to_response(id, self.handle_session_configure_agent(&req).await),
+            "session.send_message" => to_response(id, self.handle_session_send_message(&req).await),
+            "session.cancel" => to_response(id, self.handle_session_cancel(&req).await),
+            "session.interaction_respond" => to_response(id, self.handle_session_interaction_respond(&req).await),
+            "session.switch_model" => to_response(id, self.handle_session_switch_model(&req).await),
+            "session.list_models" => to_response(id, self.handle_session_list_models(&req).await),
+            "session.add_notification" => to_response(id, self.handle_session_add_notification(&req).await),
+            "session.list_notifications" => to_response(id, self.handle_session_list_notifications(&req).await),
+            "session.dismiss_notification" => to_response(id, self.handle_session_dismiss_notification(&req).await),
+            "session.test_interaction" => to_response(id, self.handle_session_test_interaction(&req).await),
+            "session.replay" => to_response(id, self.handle_session_replay(&req).await),
+
             // For other methods, we return METHOD_NOT_FOUND here.
             // In production, server.rs will handle these until we migrate them.
             // This allows incremental migration.
@@ -757,6 +770,157 @@ impl RpcDispatcher {
         let resp = crate::server::observe::handle_session_reindex(
             req.clone(),
             &self.ctx.kiln,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    // ── Agent operation wrappers ─────────────────────────────────────────────
+
+    async fn handle_session_configure_agent(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_configure_agent(
+            req.clone(),
+            &self.ctx.agents,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_send_message(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_send_message(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_cancel(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_cancel(
+            req.clone(),
+            &self.ctx.agents,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_interaction_respond(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_interaction_respond(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_switch_model(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_switch_model(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_list_models(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_list_models(
+            req.clone(),
+            &self.ctx.agents,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_add_notification(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_add_notification(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_list_notifications(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_list_notifications(
+            req.clone(),
+            &self.ctx.agents,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_dismiss_notification(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_dismiss_notification(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_test_interaction(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_test_interaction(
+            req.clone(),
+            &self.ctx.event_tx,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_session_replay(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_replay(
+            req.clone(),
+            &self.ctx.sessions,
+            &self.ctx.event_tx,
         )
         .await;
         if let Some(err) = resp.error {
