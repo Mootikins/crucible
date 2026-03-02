@@ -208,7 +208,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_kiln_info_uses_note_store() {
         use async_trait::async_trait;
-        use crucible_core::events::SessionEvent;
+        use crucible_core::events::{InternalSessionEvent, SessionEvent};
         use crucible_core::parser::BlockHash;
         use crucible_core::storage::{Filter, NoteRecord, NoteStore, StorageResult};
         use std::sync::{Arc, Mutex};
@@ -234,10 +234,10 @@ mod tests {
                 Ok(None)
             }
             async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
-                Ok(SessionEvent::NoteDeleted {
+                Ok(SessionEvent::internal(InternalSessionEvent::NoteDeleted {
                     path: path.into(),
                     existed: false,
-                })
+                }))
             }
             async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
                 Ok(self.notes.lock().unwrap().clone())

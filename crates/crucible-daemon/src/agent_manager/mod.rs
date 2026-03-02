@@ -20,7 +20,7 @@ use crucible_config::{
     AcpConfig, AgentProfile, BackendType, DataClassification, LlmProviderConfig, PatternStore,
 };
 use crucible_core::discovery::DiscoveryPaths;
-use crucible_core::events::{Reactor, ReactorEmitResult as EmitResult, SessionEvent};
+use crucible_core::events::{Reactor, ReactorEmitResult as EmitResult, SessionEvent, InternalSessionEvent};
 use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, PermissionScope};
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
@@ -235,13 +235,13 @@ fn emit_precognition_event(
     notes: Option<Vec<crucible_core::traits::chat::PrecognitionNoteInfo>>,
 ) {
     let query_summary = query.chars().take(100).collect::<String>();
-    let event = SessionEvent::PrecognitionComplete {
+    let event = SessionEvent::internal(InternalSessionEvent::PrecognitionComplete {
         notes_count,
         query_summary: query_summary.clone(),
         kilns_searched,
         kilns_filtered: 0,
         kilns_failed,
-    };
+    });
     let mut data = serde_json::json!({
         "notes_count": notes_count,
         "query_summary": query_summary,

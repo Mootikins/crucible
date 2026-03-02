@@ -877,7 +877,7 @@ async fn test_watch_detects_file_deletion() -> Result<()> {
 // the Reactor, allowing Rune handlers to react to note changes.
 
 use async_trait::async_trait;
-use crucible_core::events::{Handler, HandlerContext, HandlerResult, Reactor, SessionEvent};
+use crucible_core::events::{Handler, HandlerContext, HandlerResult, InternalSessionEvent, Reactor, SessionEvent};
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 
 /// A test handler that counts events matching a pattern
@@ -984,15 +984,15 @@ async fn test_reactor_receives_note_modified_events() -> Result<()> {
         .expect("Should register handler");
 
     // WHEN: Emitting note events (simulating what process.rs does)
-    let note_modified_event = SessionEvent::NoteModified {
+    let note_modified_event = SessionEvent::internal(InternalSessionEvent::NoteModified {
         path: PathBuf::from("/test/note.md"),
         change_type: crucible_core::events::NoteChangeType::Content,
-    };
-    let note_parsed_event = SessionEvent::NoteParsed {
+    });
+    let note_parsed_event = SessionEvent::internal(InternalSessionEvent::NoteParsed {
         path: PathBuf::from("/test/note.md"),
         block_count: 5,
         payload: None,
-    };
+    });
 
     reactor
         .emit(note_modified_event)
@@ -1031,24 +1031,24 @@ async fn test_reactor_wildcard_pattern_receives_note_events() -> Result<()> {
 
     // WHEN: Emitting different note lifecycle events
     let events = vec![
-        SessionEvent::NoteModified {
+        SessionEvent::internal(InternalSessionEvent::NoteModified {
             path: PathBuf::from("/test/note1.md"),
             change_type: crucible_core::events::NoteChangeType::Content,
-        },
-        SessionEvent::NoteParsed {
+        }),
+        SessionEvent::internal(InternalSessionEvent::NoteParsed {
             path: PathBuf::from("/test/note1.md"),
             block_count: 3,
             payload: None,
-        },
-        SessionEvent::NoteModified {
+        }),
+        SessionEvent::internal(InternalSessionEvent::NoteModified {
             path: PathBuf::from("/test/note2.md"),
             change_type: crucible_core::events::NoteChangeType::Content,
-        },
-        SessionEvent::NoteParsed {
+        }),
+        SessionEvent::internal(InternalSessionEvent::NoteParsed {
             path: PathBuf::from("/test/note2.md"),
             block_count: 7,
             payload: None,
-        },
+        }),
     ];
 
     for event in events {

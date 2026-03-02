@@ -3,7 +3,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use crucible_core::events::SessionEvent;
+use crucible_core::events::{SessionEvent, InternalSessionEvent};
 use crucible_core::parser::{BlockHash, ParsedNote};
 use crucible_core::storage::{
     NoteRecord, NoteStore, SearchResult as StorageSearchResult, StorageResult, StorageResultExt,
@@ -216,10 +216,10 @@ impl NoteStore for DaemonNoteStore {
             .storage_backend()?;
 
         // Return a single event indicating the note was created/updated
-        Ok(vec![SessionEvent::NoteCreated {
+        Ok(vec![SessionEvent::internal(InternalSessionEvent::NoteCreated {
             path: note_path,
             title: note_title,
-        }])
+        })])
     }
 
     async fn get(&self, path: &str) -> StorageResult<Option<NoteRecord>> {
@@ -240,10 +240,10 @@ impl NoteStore for DaemonNoteStore {
             .await
             .storage_backend()?;
 
-        Ok(SessionEvent::NoteDeleted {
+        Ok(SessionEvent::internal(InternalSessionEvent::NoteDeleted {
             path: PathBuf::from(path),
             existed,
-        })
+        }))
     }
 
     async fn list(&self) -> StorageResult<Vec<NoteRecord>> {

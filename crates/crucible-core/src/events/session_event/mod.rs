@@ -34,10 +34,13 @@ pub mod helpers;
 pub mod payloads;
 pub mod tool_call;
 pub mod types;
+pub mod internal;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::path::PathBuf;
+
+pub use internal::InternalSessionEvent;
 
 /// Terminal stream identifier for output events.
 ///
@@ -63,25 +66,23 @@ impl std::fmt::Display for TerminalStream {
     }
 }
 
-/// Events that flow through a session.
+/// Events that flow through a session (wire-facing).
 ///
-/// These are the high-level session events that reactors and handlers process.
-/// They integrate with the EventBus system for pub/sub delivery.
+/// These are the events that cross the RPC wire between daemon and clients.
+/// Internal pipeline events live in [`InternalSessionEvent`] and are wrapped
+/// via the `Internal` variant for reactor dispatch.
 ///
-/// # Event Categories
-///
-/// Events are grouped by their source and purpose:
+/// # Wire Event Categories
 ///
 /// - **User/participant**: `MessageReceived`
 /// - **Agent**: `AgentResponded`, `AgentThinking`
-/// - **Tool**: `ToolCalled`, `ToolCompleted`, `ToolDiscovered`
-/// - **Session lifecycle**: `SessionStarted`, `SessionCompacted`, `SessionEnded`
-/// - **Subagent**: `SubagentSpawned`, `SubagentCompleted`, `SubagentFailed`
+/// - **Tool**: `ToolCalled`, `ToolCompleted`
+/// - **Session lifecycle**: `SessionStarted`, `SessionEnded`
+/// - **Delegation**: `DelegationSpawned`, `DelegationCompleted`, `DelegationFailed`
 /// - **Streaming**: `TextDelta`
-/// - **Note**: `NoteParsed`, `NoteCreated`, `NoteModified`
-/// - **Storage**: `EntityStored`, `EntityDeleted`, `BlocksUpdated`, `RelationStored`, `RelationDeleted`, `EmbeddingStored`
-/// - **MCP**: `McpAttached`
+/// - **Interaction**: `InteractionRequested`, `InteractionCompleted`
 /// - **Custom**: `Custom` for extensibility
+/// - **Internal**: Wrapper for [`InternalSessionEvent`]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
@@ -115,148 +116,6 @@ pub enum SessionEvent {
     },
 
     // ─────────────────────────────────────────────────────────────────────
-    // Pre-events (interception points for handlers)
-    // ─────────────────────────────────────────────────────────────────────
-    /// Pre-event before tool execution (allows cancellation/modification).
-    ///
-    /// Handlers can intercept this event to:
-    /// - Cancel dangerous tool calls (e.g., `rm`, `sudo`)
-    /// - Modify arguments before execution
-    /// - Log tool usage for auditing
-    PreToolCall {
-        /// Name of the tool about to be called.
-        name: String,
-        /// Arguments that will be passed to the tool.
-        args: JsonValue,
-    },
-
-    /// Pre-event before file parsing (allows cancellation/modification).
-    ///
-    /// Handlers can intercept this event to:
-    /// - Skip parsing certain files
-    /// - Apply preprocessing transformations
-    /// - Record parse requests for metrics
-    PreParse {
-        /// Path to the file about to be parsed.
-        path: PathBuf,
-    },
-
-    /// Pre-event before LLM call (allows cancellation/modification).
-    ///
-    /// Handlers can intercept this event to:
-    /// - Modify prompts before sending
-    /// - Switch models based on content
-    /// - Implement rate limiting
-    /// - Log LLM usage
-    PreLlmCall {
-        /// The prompt text being sent.
-        prompt: String,
-        /// The model being used.
-        model: String,
-    },
-
-    /// Post-event after LLM call completes (fire-and-forget notification).
-    ///
-    /// Emitted after the LLM returns a response. This is a fire-and-forget notification
-    /// event (not a direct-call hook). Handlers can use
-    /// this event to:
-    /// - Log LLM response metrics and performance
-    /// - Update UI with response statistics
-    /// - Trigger post-processing or analysis
-    /// - Record token usage for billing/monitoring
-    PostLlmCall {
-        /// Summary of the response (first 200 chars, truncated).
-        response_summary: String,
-        /// The model that was used.
-        model: String,
-        /// Duration of the LLM call in milliseconds.
-        duration_ms: u64,
-        /// Token count if available from the provider.
-        token_count: Option<u64>,
-    },
-
-    /// Precognition (context enrichment) completed.
-    ///
-    /// Emitted when Precognition finishes enriching the prompt with relevant notes
-    /// from the knowledge base. This event provides feedback about how many notes
-    /// were found and a summary of the query used for enrichment.
-    ///
-    /// Handlers can use this event to:
-    /// - Display "N notes found" feedback in the status bar
-    /// - Log enrichment statistics
-    /// - Trigger UI updates to show enrichment progress
-    PrecognitionComplete {
-        /// Number of notes found and injected into context.
-        notes_count: usize,
-        /// Summary of the query used for enrichment.
-        query_summary: String,
-        /// Number of kilns searched during enrichment.
-        kilns_searched: usize,
-        /// Number of kilns filtered out by trust level.
-        kilns_filtered: usize,
-        /// Number of kilns that failed during search.
-        kilns_failed: usize,
-    },
-
-    /// Emitted when a kiln requires data classification before use.
-    ///
-    /// This event is emitted when a kiln is opened but has no `data_classification`
-    /// configured in its workspace config. Clients should prompt the user to set
-    /// a classification level via `kiln.set_classification`.
-    ClassificationRequired {
-        /// Path to the kiln that needs classification.
-        kiln_path: PathBuf,
-    },
-
-    /// System is awaiting human input (HIL gate / idle prompt).
-    ///
-    /// Fired when the system pauses and needs human interaction to proceed.
-    /// Use cases include:
-    /// - **Idle prompt**: Assistant finished, waiting for next user message
-    /// - **HIL gate**: Agent needs approval before a sensitive operation
-    /// - **Multi-agent**: User must select which agent path to follow
-    ///
-    /// Handlers can intercept this event to:
-    /// - Show UI indicators (spinners, prompts)
-    /// - Trigger notifications (desktop, mobile)
-    /// - Implement timeouts or auto-responses
-    /// - Log wait times for metrics
-    AwaitingInput {
-        /// What kind of input is needed.
-        input_type: InputType,
-        /// Optional context (e.g., which agent is waiting, what for).
-        context: Option<String>,
-    },
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Interaction events
-    // ─────────────────────────────────────────────────────────────────────
-    /// Agent/tool requests structured user interaction.
-    ///
-    /// This event carries an [`InteractionRequest`] that describes what kind of
-    /// input is needed (question, permission, edit, show). The UI should render
-    /// an appropriate widget and send back an [`InteractionResponse`].
-    ///
-    /// [`InteractionRequest`]: crate::interaction::InteractionRequest
-    /// [`InteractionResponse`]: crate::interaction::InteractionResponse
-    InteractionRequested {
-        /// Unique ID for correlating request with response.
-        request_id: String,
-        /// The interaction request details.
-        request: crate::interaction::InteractionRequest,
-    },
-
-    /// User responded to an interaction request.
-    ///
-    /// Sent after the UI collects user input for an [`InteractionRequested`] event.
-    InteractionCompleted {
-        /// The request ID this response corresponds to.
-        request_id: String,
-        /// The user's response.
-        response: crate::interaction::InteractionResponse,
-    },
-
-    // ─────────────────────────────────────────────────────────────────────
     // Tool events
     // ─────────────────────────────────────────────────────────────────────
     /// Tool was called.
@@ -286,70 +145,40 @@ pub enum SessionEvent {
         config: SessionEventConfig,
     },
 
-    /// Session context was compacted.
-    SessionCompacted {
-        /// Summary of the compacted context.
-        summary: String,
-        /// Path to the new context file.
-        new_file: PathBuf,
-    },
-
     /// Session ended.
     SessionEnded {
         /// Reason for ending the session.
         reason: String,
     },
 
-    /// Session state changed (daemon protocol event).
-    ///
-    /// Emitted when a session transitions between states (Active, Paused, Compacting, Ended).
-    /// This is used by the daemon protocol to notify clients of state changes.
-    SessionStateChanged {
-        /// The session ID (e.g., "chat-2025-01-08T1530-abc123").
-        session_id: String,
-        /// The new state.
-        state: crate::session::SessionState,
-        /// The previous state (if known).
-        previous_state: Option<crate::session::SessionState>,
-    },
-
-    /// Session paused (agent stops acting).
-    SessionPaused {
-        /// The session ID.
-        session_id: String,
-    },
-
-    /// Session resumed after being paused.
-    SessionResumed {
-        /// The session ID.
-        session_id: String,
+    // ─────────────────────────────────────────────────────────────────────
+    // Streaming events
+    // ─────────────────────────────────────────────────────────────────────
+    /// Incremental text delta from agent (for streaming responses).
+    TextDelta {
+        /// The text chunk.
+        delta: String,
+        /// Sequence number for ordering.
+        seq: u64,
     },
 
     // ─────────────────────────────────────────────────────────────────────
-    // Subagent events
+    // Interaction events
     // ─────────────────────────────────────────────────────────────────────
-    /// Subagent was spawned.
-    SubagentSpawned {
-        /// Unique identifier for the subagent.
-        id: String,
-        /// Prompt given to the subagent.
-        prompt: String,
+    /// Agent/tool requests structured user interaction.
+    InteractionRequested {
+        /// Unique ID for correlating request with response.
+        request_id: String,
+        /// The interaction request details.
+        request: crate::interaction::InteractionRequest,
     },
 
-    /// Subagent completed successfully.
-    SubagentCompleted {
-        /// Identifier of the completed subagent.
-        id: String,
-        /// Result from the subagent.
-        result: String,
-    },
-
-    /// Subagent failed.
-    SubagentFailed {
-        /// Identifier of the failed subagent.
-        id: String,
-        /// Error message.
-        error: String,
+    /// User responded to an interaction request.
+    InteractionCompleted {
+        /// The request ID this response corresponds to.
+        request_id: String,
+        /// The user's response.
+        response: crate::interaction::InteractionResponse,
     },
 
     // ─────────────────────────────────────────────────────────────────────
@@ -363,7 +192,7 @@ pub enum SessionEvent {
         prompt: String,
         /// Parent session ID that initiated the delegation.
         parent_session_id: String,
-        /// Target agent name if delegating to a different agent (e.g., "cursor", "claude").
+        /// Target agent name if delegating to a different agent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         target_agent: Option<String>,
     },
@@ -389,300 +218,6 @@ pub enum SessionEvent {
     },
 
     // ─────────────────────────────────────────────────────────────────────
-    // Background bash task events
-    // ─────────────────────────────────────────────────────────────────────
-    /// Background bash task was spawned.
-    BashTaskSpawned {
-        /// Unique task identifier.
-        id: String,
-        /// Shell command being executed.
-        command: String,
-    },
-
-    /// Background bash task completed successfully.
-    BashTaskCompleted {
-        /// Task identifier.
-        id: String,
-        /// Command output (stdout).
-        output: String,
-        /// Process exit code.
-        exit_code: i32,
-    },
-
-    /// Background bash task failed.
-    BashTaskFailed {
-        /// Task identifier.
-        id: String,
-        /// Error message.
-        error: String,
-        /// Process exit code if available.
-        exit_code: Option<i32>,
-    },
-
-    /// Background task completed (for injection into conversation context).
-    BackgroundTaskCompleted {
-        /// Task identifier.
-        id: String,
-        /// Task kind ("subagent" or "bash").
-        kind: String,
-        /// Truncated summary of the result.
-        summary: String,
-    },
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Streaming events
-    // ─────────────────────────────────────────────────────────────────────
-    /// Incremental text delta from agent (for streaming responses).
-    TextDelta {
-        /// The text chunk.
-        delta: String,
-        /// Sequence number for ordering.
-        seq: u64,
-    },
-
-    /// Terminal output from tool execution (daemon protocol event).
-    ///
-    /// Used to stream PTY output from commands executed by tools.
-    /// Content is base64 encoded for binary safety in JSON protocol.
-    TerminalOutput {
-        /// The session ID.
-        session_id: String,
-        /// Stream identifier (stdout or stderr).
-        stream: TerminalStream,
-        /// Base64-encoded content for binary safety.
-        content_base64: String,
-    },
-
-    // ─────────────────────────────────────────────────────────────────────
-    // File system events (raw file changes before parsing)
-    // ─────────────────────────────────────────────────────────────────────
-    /// File was changed (created or modified) on disk.
-    ///
-    /// This is a raw file system event emitted before parsing. Use this to
-    /// trigger downstream processing like parsing, indexing, or embedding.
-    FileChanged {
-        /// Path to the changed file.
-        path: PathBuf,
-        /// Kind of change (created vs modified).
-        kind: FileChangeKind,
-    },
-
-    /// File was deleted from disk.
-    FileDeleted {
-        /// Path to the deleted file.
-        path: PathBuf,
-    },
-
-    /// File was moved or renamed.
-    FileMoved {
-        /// Original path before the move.
-        from: PathBuf,
-        /// New path after the move.
-        to: PathBuf,
-    },
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Note events (parsed note changes)
-    // ─────────────────────────────────────────────────────────────────────
-    /// Note was parsed (AST available).
-    ///
-    /// This event is emitted after a markdown note has been parsed. It includes
-    /// basic metadata (path, block count) and optionally a full [`NotePayload`]
-    /// containing extracted information like tags, wikilinks, and frontmatter.
-    NoteParsed {
-        /// Path to the parsed note.
-        path: PathBuf,
-        /// Number of parsed blocks.
-        block_count: usize,
-        /// Optional payload with full parsed note data.
-        ///
-        /// When present, contains tags, wikilinks, frontmatter, and other
-        /// extracted information. May be omitted for lightweight events.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        payload: Option<NotePayload>,
-    },
-
-    /// New note was created.
-    NoteCreated {
-        /// Path to the new note.
-        path: PathBuf,
-        /// Optional title from frontmatter.
-        title: Option<String>,
-    },
-
-    /// Note content was modified.
-    NoteModified {
-        /// Path to the modified note.
-        path: PathBuf,
-        /// Type of modification.
-        change_type: NoteChangeType,
-    },
-
-    /// Note was deleted.
-    NoteDeleted {
-        /// Path to the deleted note.
-        path: PathBuf,
-        /// Whether the note existed before deletion.
-        existed: bool,
-    },
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Storage events (database persistence)
-    // ─────────────────────────────────────────────────────────────────────
-    /// Entity was stored/upserted to the database.
-    ///
-    /// Emitted when a note, block, tag, or other entity is persisted.
-    /// This event is typically emitted after parsing completes.
-    EntityStored {
-        /// The entity identifier (e.g., "entities:note:my-note").
-        entity_id: String,
-        /// Type of entity that was stored.
-        entity_type: EntityType,
-    },
-
-    /// Entity was deleted from the database.
-    EntityDeleted {
-        /// The entity identifier that was deleted.
-        entity_id: String,
-        /// Type of entity that was deleted.
-        entity_type: EntityType,
-    },
-
-    /// Blocks for an entity were updated.
-    ///
-    /// Emitted when content blocks (paragraphs, headings, code blocks, etc.)
-    /// are replaced or modified for a note.
-    BlocksUpdated {
-        /// The parent entity identifier.
-        entity_id: String,
-        /// Number of blocks after the update.
-        block_count: usize,
-    },
-
-    /// A relation between entities was stored.
-    ///
-    /// Relations represent links between entities (wikilinks, tags, etc.).
-    RelationStored {
-        /// Source entity identifier.
-        from_id: String,
-        /// Target entity identifier.
-        to_id: String,
-        /// Type of relation (e.g., "wikilink", "tag", "backlink").
-        relation_type: String,
-    },
-
-    /// A relation between entities was deleted.
-    RelationDeleted {
-        /// Source entity identifier.
-        from_id: String,
-        /// Target entity identifier.
-        to_id: String,
-        /// Type of relation that was deleted.
-        relation_type: String,
-    },
-
-    /// A tag was associated with an entity.
-    ///
-    /// Emitted when a tag is linked to a note or other entity.
-    /// Multiple TagAssociated events may be emitted for a single note
-    /// if it has multiple tags.
-    TagAssociated {
-        /// The entity identifier the tag is associated with.
-        entity_id: String,
-        /// The tag name (without the # prefix).
-        tag: String,
-    },
-
-    /// Embedding generation was requested.
-    ///
-    /// Emitted when embedding generation is queued for an entity or block.
-    /// This triggers the embedding pipeline to process the content.
-    EmbeddingRequested {
-        /// The entity identifier to generate embeddings for.
-        entity_id: String,
-        /// Optional block identifier for block-level embeddings.
-        block_id: Option<String>,
-        /// Priority of the request (affects queue ordering).
-        priority: Priority,
-    },
-
-    /// An embedding vector was stored.
-    ///
-    /// Emitted when embedding generation completes and the vector is persisted.
-    EmbeddingStored {
-        /// The entity identifier the embedding belongs to.
-        entity_id: String,
-        /// Optional block identifier for block-level embeddings.
-        block_id: Option<String>,
-        /// Dimensions of the embedding vector.
-        dimensions: usize,
-        /// Model used to generate the embedding.
-        model: String,
-    },
-
-    /// Embedding generation failed.
-    ///
-    /// Emitted when embedding generation fails for an entity or block.
-    /// The error message contains details about what went wrong.
-    EmbeddingFailed {
-        /// The entity identifier for which embedding failed.
-        entity_id: String,
-        /// Optional block identifier for block-level embeddings.
-        block_id: Option<String>,
-        /// Error message describing the failure.
-        error: String,
-    },
-
-    /// Batch of embeddings completed for an entity.
-    ///
-    /// Emitted when a batch of embedding generations completes for an entity.
-    /// This is useful for tracking overall progress and performance metrics.
-    EmbeddingBatchComplete {
-        /// The entity identifier for which embeddings were generated.
-        entity_id: String,
-        /// Number of embeddings generated in this batch.
-        count: usize,
-        /// Duration of the batch processing in milliseconds.
-        duration_ms: u64,
-    },
-
-    /// Emitted when the stored embedding model differs from the currently configured model.
-    ///
-    /// Non-blocking — kiln opens normally. This is an informational event that allows
-    /// clients to notify users about potential stale embeddings and offer re-embedding.
-    EmbeddingModelMismatch {
-        /// Path to the kiln with the mismatch.
-        kiln_path: String,
-        /// The embedding model stored in the kiln.
-        stored_model: String,
-        /// The currently configured embedding model.
-        current_model: String,
-        /// Number of notes with embeddings in the kiln.
-        note_count: usize,
-    },
-
-    // ─────────────────────────────────────────────────────────────────────
-    // MCP/Tool discovery events
-    // ─────────────────────────────────────────────────────────────────────
-    /// Upstream MCP server connected.
-    McpAttached {
-        /// Name of the MCP server.
-        server: String,
-        /// Number of tools provided by the server.
-        tool_count: usize,
-    },
-
-    /// New tool discovered (can be filtered).
-    ToolDiscovered {
-        /// Name of the discovered tool.
-        name: String,
-        /// Source of the tool.
-        source: ToolProvider,
-        /// Optional JSON schema for the tool's arguments.
-        schema: Option<JsonValue>,
-    },
-
-    // ─────────────────────────────────────────────────────────────────────
     // Custom events
     // ─────────────────────────────────────────────────────────────────────
     /// Custom event for extensibility.
@@ -692,9 +227,18 @@ pub enum SessionEvent {
         /// Arbitrary payload.
         payload: JsonValue,
     },
+
+    /// Internal daemon event (never crosses RPC wire).
+    /// Wraps [`InternalSessionEvent`] for reactor dispatch.
+    Internal(Box<InternalSessionEvent>),
 }
 
 impl SessionEvent {
+    /// Create an `Internal` variant wrapping an [`InternalSessionEvent`].
+    pub fn internal(event: InternalSessionEvent) -> Self {
+        Self::Internal(Box::new(event))
+    }
+
     /// Get the event type name for filtering and pattern matching.
     ///
     /// Returns a stable string identifier that can be used for:
@@ -706,56 +250,18 @@ impl SessionEvent {
             Self::MessageReceived { .. } => "message_received",
             Self::AgentResponded { .. } => "agent_responded",
             Self::AgentThinking { .. } => "agent_thinking",
-            Self::PreToolCall { .. } => "pre_tool_call",
-            Self::PreParse { .. } => "pre_parse",
-            Self::PreLlmCall { .. } => "pre_llm_call",
-            Self::PostLlmCall { .. } => "post_llm_call",
-            Self::PrecognitionComplete { .. } => "precognition_complete",
-            Self::ClassificationRequired { .. } => "classification_required",
-            Self::AwaitingInput { .. } => "awaiting_input",
-            Self::InteractionRequested { .. } => "interaction_requested",
-            Self::InteractionCompleted { .. } => "interaction_completed",
             Self::ToolCalled { .. } => "tool_called",
             Self::ToolCompleted { .. } => "tool_completed",
             Self::SessionStarted { .. } => "session_started",
-            Self::SessionCompacted { .. } => "session_compacted",
             Self::SessionEnded { .. } => "session_ended",
-            Self::SessionStateChanged { .. } => "session_state_changed",
-            Self::SessionPaused { .. } => "session_paused",
-            Self::SessionResumed { .. } => "session_resumed",
-            Self::SubagentSpawned { .. } => "subagent_spawned",
-            Self::SubagentCompleted { .. } => "subagent_completed",
-            Self::SubagentFailed { .. } => "subagent_failed",
+            Self::TextDelta { .. } => "text_delta",
+            Self::InteractionRequested { .. } => "interaction_requested",
+            Self::InteractionCompleted { .. } => "interaction_completed",
             Self::DelegationSpawned { .. } => "delegation_spawned",
             Self::DelegationCompleted { .. } => "delegation_completed",
             Self::DelegationFailed { .. } => "delegation_failed",
-            Self::BashTaskSpawned { .. } => "bash_task_spawned",
-            Self::BashTaskCompleted { .. } => "bash_task_completed",
-            Self::BashTaskFailed { .. } => "bash_task_failed",
-            Self::BackgroundTaskCompleted { .. } => "background_task_completed",
-            Self::TextDelta { .. } => "text_delta",
-            Self::TerminalOutput { .. } => "terminal_output",
-            Self::FileChanged { .. } => "file_changed",
-            Self::FileDeleted { .. } => "file_deleted",
-            Self::FileMoved { .. } => "file_moved",
-            Self::NoteParsed { .. } => "note_parsed",
-            Self::NoteCreated { .. } => "note_created",
-            Self::NoteModified { .. } => "note_modified",
-            Self::NoteDeleted { .. } => "note_deleted",
-            Self::EntityStored { .. } => "entity_stored",
-            Self::EntityDeleted { .. } => "entity_deleted",
-            Self::BlocksUpdated { .. } => "blocks_updated",
-            Self::RelationStored { .. } => "relation_stored",
-            Self::RelationDeleted { .. } => "relation_deleted",
-            Self::TagAssociated { .. } => "tag_associated",
-            Self::EmbeddingRequested { .. } => "embedding_requested",
-            Self::EmbeddingStored { .. } => "embedding_stored",
-            Self::EmbeddingFailed { .. } => "embedding_failed",
-            Self::EmbeddingBatchComplete { .. } => "embedding_batch_complete",
-            Self::EmbeddingModelMismatch { .. } => "embedding_model_mismatch",
-            Self::McpAttached { .. } => "mcp_attached",
-            Self::ToolDiscovered { .. } => "tool_discovered",
             Self::Custom { .. } => "custom",
+            Self::Internal(inner) => inner.event_type(),
         }
     }
 
@@ -768,10 +274,11 @@ impl SessionEvent {
 
     /// Check if this is a tool-related event.
     pub fn is_tool_event(&self) -> bool {
-        matches!(
-            self,
-            Self::ToolCalled { .. } | Self::ToolCompleted { .. } | Self::ToolDiscovered { .. }
-        )
+        match self {
+            Self::ToolCalled { .. } | Self::ToolCompleted { .. } => true,
+            Self::Internal(inner) => inner.is_tool_event(),
+            _ => false,
+        }
     }
 
     /// Check if this is a pre-event (interception point).
@@ -779,10 +286,10 @@ impl SessionEvent {
     /// Pre-events are emitted before the corresponding action occurs,
     /// allowing handlers to modify or cancel the operation.
     pub fn is_pre_event(&self) -> bool {
-        matches!(
-            self,
-            Self::PreToolCall { .. } | Self::PreParse { .. } | Self::PreLlmCall { .. }
-        )
+        match self {
+            Self::Internal(inner) => inner.is_pre_event(),
+            _ => false,
+        }
     }
 
     /// Check if this is an interaction event.
@@ -797,26 +304,19 @@ impl SessionEvent {
 
     /// Check if this is a note-related event.
     pub fn is_note_event(&self) -> bool {
-        matches!(
-            self,
-            Self::NoteParsed { .. }
-                | Self::NoteCreated { .. }
-                | Self::NoteModified { .. }
-                | Self::NoteDeleted { .. }
-        )
+        match self {
+            Self::Internal(inner) => inner.is_note_event(),
+            _ => false,
+        }
     }
 
     /// Check if this is a session lifecycle event.
     pub fn is_lifecycle_event(&self) -> bool {
-        matches!(
-            self,
-            Self::SessionStarted { .. }
-                | Self::SessionCompacted { .. }
-                | Self::SessionEnded { .. }
-                | Self::SessionStateChanged { .. }
-                | Self::SessionPaused { .. }
-                | Self::SessionResumed { .. }
-        )
+        match self {
+            Self::SessionStarted { .. } | Self::SessionEnded { .. } => true,
+            Self::Internal(inner) => inner.is_lifecycle_event(),
+            _ => false,
+        }
     }
 
     /// Check if this is an agent-related event.
@@ -829,28 +329,27 @@ impl SessionEvent {
 
     /// Check if this is a subagent-related event.
     pub fn is_subagent_event(&self) -> bool {
-        matches!(
-            self,
-            Self::SubagentSpawned { .. }
-                | Self::SubagentCompleted { .. }
-                | Self::SubagentFailed { .. }
-        )
+        match self {
+            Self::Internal(inner) => inner.is_subagent_event(),
+            _ => false,
+        }
     }
 
     /// Check if this is a background task event (bash tasks or completion notifications).
     pub fn is_background_task_event(&self) -> bool {
-        matches!(
-            self,
-            Self::BashTaskSpawned { .. }
-                | Self::BashTaskCompleted { .. }
-                | Self::BashTaskFailed { .. }
-                | Self::BackgroundTaskCompleted { .. }
-        )
+        match self {
+            Self::Internal(inner) => inner.is_background_task_event(),
+            _ => false,
+        }
     }
 
     /// Check if this is a streaming event.
     pub fn is_streaming_event(&self) -> bool {
-        matches!(self, Self::TextDelta { .. } | Self::TerminalOutput { .. })
+        match self {
+            Self::TextDelta { .. } => true,
+            Self::Internal(inner) => inner.is_streaming_event(),
+            _ => false,
+        }
     }
 
     /// Check if this is a file system event (raw file changes).
@@ -858,10 +357,10 @@ impl SessionEvent {
     /// File events represent raw file system changes before parsing.
     /// They are distinct from note events which represent parsed content.
     pub fn is_file_event(&self) -> bool {
-        matches!(
-            self,
-            Self::FileChanged { .. } | Self::FileDeleted { .. } | Self::FileMoved { .. }
-        )
+        match self {
+            Self::Internal(inner) => inner.is_file_event(),
+            _ => false,
+        }
     }
 
     /// Check if this is an embedding-related event.
@@ -869,14 +368,10 @@ impl SessionEvent {
     /// Embedding events track the lifecycle of embedding generation:
     /// request, success (stored), or failure.
     pub fn is_embedding_event(&self) -> bool {
-        matches!(
-            self,
-            Self::EmbeddingRequested { .. }
-                | Self::EmbeddingStored { .. }
-                | Self::EmbeddingFailed { .. }
-                | Self::EmbeddingBatchComplete { .. }
-                | Self::EmbeddingModelMismatch { .. }
-        )
+        match self {
+            Self::Internal(inner) => inner.is_embedding_event(),
+            _ => false,
+        }
     }
 
     /// Check if this is a storage event (database operations).
@@ -885,24 +380,18 @@ impl SessionEvent {
     /// They are emitted after entities, blocks, relations, tags, or embeddings
     /// are stored or deleted.
     pub fn is_storage_event(&self) -> bool {
-        matches!(
-            self,
-            Self::EntityStored { .. }
-                | Self::EntityDeleted { .. }
-                | Self::BlocksUpdated { .. }
-                | Self::RelationStored { .. }
-                | Self::RelationDeleted { .. }
-                | Self::TagAssociated { .. }
-                | Self::EmbeddingRequested { .. }
-                | Self::EmbeddingStored { .. }
-                | Self::EmbeddingFailed { .. }
-                | Self::EmbeddingBatchComplete { .. }
-        )
+        match self {
+            Self::Internal(inner) => inner.is_storage_event(),
+            _ => false,
+        }
     }
 
     /// Check if this is an MCP-related event.
     pub fn is_mcp_event(&self) -> bool {
-        matches!(self, Self::McpAttached { .. })
+        match self {
+            Self::Internal(inner) => inner.is_mcp_event(),
+            _ => false,
+        }
     }
 
     /// Check if this is a custom event.
@@ -926,30 +415,23 @@ impl SessionEvent {
     /// # Example
     ///
     /// ```
-    /// use crucible_core::events::{SessionEvent, FileChangeKind, Priority};
+    /// use crucible_core::events::{SessionEvent, InternalSessionEvent, FileChangeKind, Priority};
     /// use std::path::PathBuf;
     ///
-    /// let created = SessionEvent::FileChanged {
+    /// let created = SessionEvent::internal(InternalSessionEvent::FileChanged {
     ///     path: PathBuf::from("/notes/new.md"),
     ///     kind: FileChangeKind::Created,
-    /// };
+    /// });
     /// assert_eq!(created.priority(), Priority::High);
     ///
-    /// let deleted = SessionEvent::FileDeleted {
+    /// let deleted = SessionEvent::internal(InternalSessionEvent::FileDeleted {
     ///     path: PathBuf::from("/notes/old.md"),
-    /// };
+    /// });
     /// assert_eq!(deleted.priority(), Priority::Low);
     /// ```
     pub fn priority(&self) -> Priority {
         match self {
-            Self::FileChanged { kind, .. } => match kind {
-                FileChangeKind::Created => Priority::High,
-                FileChangeKind::Modified => Priority::Normal,
-            },
-            Self::FileDeleted { .. } => Priority::Low,
-            Self::FileMoved { .. } => Priority::Normal,
-            Self::EmbeddingRequested { priority, .. } => *priority,
-            // All other events default to Normal priority
+            Self::Internal(inner) => inner.priority(),
             _ => Priority::Normal,
         }
     }
@@ -980,53 +462,15 @@ impl SessionEvent {
             Self::ToolCalled { .. } => "ToolCalled",
             Self::ToolCompleted { .. } => "ToolCompleted",
             Self::SessionStarted { .. } => "SessionStarted",
-            Self::SessionCompacted { .. } => "SessionCompacted",
             Self::SessionEnded { .. } => "SessionEnded",
-            Self::SubagentSpawned { .. } => "SubagentSpawned",
-            Self::SubagentCompleted { .. } => "SubagentCompleted",
-            Self::SubagentFailed { .. } => "SubagentFailed",
+            Self::TextDelta { .. } => "TextDelta",
+            Self::InteractionRequested { .. } => "InteractionRequested",
+            Self::InteractionCompleted { .. } => "InteractionCompleted",
             Self::DelegationSpawned { .. } => "DelegationSpawned",
             Self::DelegationCompleted { .. } => "DelegationCompleted",
             Self::DelegationFailed { .. } => "DelegationFailed",
-            Self::BashTaskSpawned { .. } => "BashTaskSpawned",
-            Self::BashTaskCompleted { .. } => "BashTaskCompleted",
-            Self::BashTaskFailed { .. } => "BashTaskFailed",
-            Self::BackgroundTaskCompleted { .. } => "BackgroundTaskCompleted",
-            Self::TextDelta { .. } => "TextDelta",
-            Self::NoteParsed { .. } => "NoteParsed",
-            Self::NoteCreated { .. } => "NoteCreated",
-            Self::NoteModified { .. } => "NoteModified",
-            Self::NoteDeleted { .. } => "NoteDeleted",
-            Self::McpAttached { .. } => "McpAttached",
-            Self::ToolDiscovered { .. } => "ToolDiscovered",
             Self::Custom { .. } => "Custom",
-            Self::FileChanged { .. } => "FileChanged",
-            Self::FileDeleted { .. } => "FileDeleted",
-            Self::FileMoved { .. } => "FileMoved",
-            Self::EntityStored { .. } => "EntityStored",
-            Self::EntityDeleted { .. } => "EntityDeleted",
-            Self::BlocksUpdated { .. } => "BlocksUpdated",
-            Self::RelationStored { .. } => "RelationStored",
-            Self::RelationDeleted { .. } => "RelationDeleted",
-            Self::TagAssociated { .. } => "TagAssociated",
-            Self::EmbeddingRequested { .. } => "EmbeddingRequested",
-            Self::EmbeddingStored { .. } => "EmbeddingStored",
-            Self::EmbeddingFailed { .. } => "EmbeddingFailed",
-            Self::EmbeddingBatchComplete { .. } => "EmbeddingBatchComplete",
-            Self::EmbeddingModelMismatch { .. } => "EmbeddingModelMismatch",
-            Self::PreToolCall { .. } => "PreToolCall",
-            Self::PreParse { .. } => "PreParse",
-            Self::PreLlmCall { .. } => "PreLlmCall",
-            Self::PostLlmCall { .. } => "PostLlmCall",
-            Self::AwaitingInput { .. } => "AwaitingInput",
-            Self::PrecognitionComplete { .. } => "PrecognitionComplete",
-            Self::ClassificationRequired { .. } => "ClassificationRequired",
-            Self::InteractionRequested { .. } => "InteractionRequested",
-            Self::InteractionCompleted { .. } => "InteractionCompleted",
-            Self::SessionStateChanged { .. } => "SessionStateChanged",
-            Self::SessionPaused { .. } => "SessionPaused",
-            Self::SessionResumed { .. } => "SessionResumed",
-            Self::TerminalOutput { .. } => "TerminalOutput",
+            Self::Internal(inner) => inner.type_name(),
         }
     }
 
@@ -1091,24 +535,20 @@ impl SessionEvent {
             Self::SessionStarted { config } => {
                 format!("session_id={}", config.session_id)
             }
-            Self::SessionCompacted { summary, new_file } => {
-                format!(
-                    "summary_len={}, new_file={}",
-                    summary.len(),
-                    new_file.display()
-                )
-            }
             Self::SessionEnded { reason } => {
                 format!("reason={}", truncate(reason, max_len))
             }
-            Self::SubagentSpawned { id, prompt } => {
-                format!("id={}, prompt_len={}", id, prompt.len())
+            Self::TextDelta { delta, seq } => {
+                format!("seq={}, delta_len={}", seq, delta.len())
             }
-            Self::SubagentCompleted { id, result } => {
-                format!("id={}, result_len={}", id, result.len())
+            Self::InteractionRequested {
+                request_id,
+                request,
+            } => {
+                format!("id={}, kind={}", request_id, request.kind())
             }
-            Self::SubagentFailed { id, error } => {
-                format!("id={}, error={}", id, truncate(error, max_len))
+            Self::InteractionCompleted { request_id, .. } => {
+                format!("id={}", request_id)
             }
             Self::DelegationSpawned {
                 delegation_id,
@@ -1152,264 +592,10 @@ impl SessionEvent {
                     truncate(error, max_len)
                 )
             }
-            Self::BashTaskSpawned { id, command } => {
-                format!("id={}, command={}", id, truncate(command, max_len))
-            }
-            Self::BashTaskCompleted {
-                id,
-                output,
-                exit_code,
-            } => {
-                format!(
-                    "id={}, exit_code={}, output_len={}",
-                    id,
-                    exit_code,
-                    output.len()
-                )
-            }
-            Self::BashTaskFailed {
-                id,
-                error,
-                exit_code,
-            } => {
-                let code_str = exit_code.map_or("none".to_string(), |c| c.to_string());
-                format!(
-                    "id={}, exit_code={}, error={}",
-                    id,
-                    code_str,
-                    truncate(error, max_len)
-                )
-            }
-            Self::BackgroundTaskCompleted { id, kind, summary } => {
-                format!(
-                    "id={}, kind={}, summary={}",
-                    id,
-                    kind,
-                    truncate(summary, max_len)
-                )
-            }
-            Self::TextDelta { delta, seq } => {
-                format!("seq={}, delta_len={}", seq, delta.len())
-            }
-            Self::NoteParsed {
-                path,
-                block_count,
-                payload,
-            } => {
-                let payload_str = if payload.is_some() {
-                    ", has_payload"
-                } else {
-                    ""
-                };
-                format!(
-                    "path={}, blocks={}{}",
-                    path.display(),
-                    block_count,
-                    payload_str
-                )
-            }
-            Self::NoteCreated { path, title } => {
-                let title_str = title.as_deref().unwrap_or("(none)");
-                format!(
-                    "path={}, title={}",
-                    path.display(),
-                    truncate(title_str, max_len)
-                )
-            }
-            Self::NoteModified { path, change_type } => {
-                format!("path={}, change={:?}", path.display(), change_type)
-            }
-            Self::NoteDeleted { path, existed } => {
-                format!("path={}, existed={}", path.display(), existed)
-            }
-            Self::McpAttached { server, tool_count } => {
-                format!("server={}, tools={}", server, tool_count)
-            }
-            Self::ToolDiscovered { name, source, .. } => {
-                format!("name={}, source={:?}", name, source)
-            }
             Self::Custom { name, payload } => {
                 format!("name={}, payload_size={}", name, payload.to_string().len())
             }
-            Self::FileChanged { path, kind } => {
-                format!("path={}, kind={:?}", path.display(), kind)
-            }
-            Self::FileDeleted { path } => {
-                format!("path={}", path.display())
-            }
-            Self::FileMoved { from, to } => {
-                format!("from={}, to={}", from.display(), to.display())
-            }
-            Self::EntityStored {
-                entity_id,
-                entity_type,
-            } => {
-                format!("entity_id={}, type={:?}", entity_id, entity_type)
-            }
-            Self::EntityDeleted {
-                entity_id,
-                entity_type,
-            } => {
-                format!("entity_id={}, type={:?}", entity_id, entity_type)
-            }
-            Self::BlocksUpdated {
-                entity_id,
-                block_count,
-            } => {
-                format!("entity_id={}, blocks={}", entity_id, block_count)
-            }
-            Self::RelationStored {
-                from_id,
-                to_id,
-                relation_type,
-            } => {
-                format!("from={}, to={}, type={}", from_id, to_id, relation_type)
-            }
-            Self::RelationDeleted {
-                from_id,
-                to_id,
-                relation_type,
-            } => {
-                format!("from={}, to={}, type={}", from_id, to_id, relation_type)
-            }
-            Self::TagAssociated { entity_id, tag } => {
-                format!("entity_id={}, tag={}", entity_id, tag)
-            }
-            Self::EmbeddingRequested {
-                entity_id,
-                priority,
-                ..
-            } => {
-                format!("entity_id={}, priority={:?}", entity_id, priority)
-            }
-            Self::EmbeddingStored {
-                entity_id,
-                dimensions,
-                ..
-            } => {
-                format!("entity_id={}, dims={}", entity_id, dimensions)
-            }
-            Self::EmbeddingFailed {
-                entity_id, error, ..
-            } => {
-                format!(
-                    "entity_id={}, error={}",
-                    entity_id,
-                    truncate(error, max_len)
-                )
-            }
-            Self::EmbeddingBatchComplete {
-                entity_id,
-                count,
-                duration_ms,
-            } => {
-                format!(
-                    "entity_id={}, count={}, duration={}ms",
-                    entity_id, count, duration_ms
-                )
-            }
-            Self::PreToolCall { name, args } => {
-                format!("tool={}, args_size={}", name, args.to_string().len())
-            }
-            Self::PreParse { path } => {
-                format!("path={}", path.display())
-            }
-            Self::PreLlmCall { prompt, model } => {
-                format!("model={}, prompt_len={}", model, prompt.len())
-            }
-            Self::PostLlmCall {
-                response_summary,
-                model,
-                duration_ms,
-                token_count,
-            } => {
-                let tokens_str = token_count.map_or("none".to_string(), |t| t.to_string());
-                format!(
-                    "model={}, duration={}ms, tokens={}, summary_len={}",
-                    model,
-                    duration_ms,
-                    tokens_str,
-                    response_summary.len()
-                )
-            }
-            Self::AwaitingInput {
-                input_type,
-                context,
-            } => {
-                format!(
-                    "type={}, context={}",
-                    input_type,
-                    context.as_deref().unwrap_or("(none)")
-                )
-            }
-            Self::InteractionRequested {
-                request_id,
-                request,
-            } => {
-                format!("id={}, kind={}", request_id, request.kind())
-            }
-            Self::InteractionCompleted { request_id, .. } => {
-                format!("id={}", request_id)
-            }
-            Self::SessionStateChanged {
-                session_id,
-                state,
-                previous_state,
-            } => {
-                let prev = previous_state
-                    .as_ref()
-                    .map(|s| format!("{:?}", s))
-                    .unwrap_or_else(|| "(none)".to_string());
-                format!("session={}, state={:?}, prev={}", session_id, state, prev)
-            }
-            Self::SessionPaused { session_id } => {
-                format!("session={}", session_id)
-            }
-            Self::SessionResumed { session_id } => {
-                format!("session={}", session_id)
-            }
-            Self::TerminalOutput {
-                session_id,
-                stream,
-                content_base64,
-            } => {
-                format!(
-                    "session={}, stream={:?}, content_len={}",
-                    session_id,
-                    stream,
-                    content_base64.len()
-                )
-            }
-            Self::PrecognitionComplete {
-                notes_count,
-                query_summary,
-                kilns_searched,
-                kilns_filtered,
-                kilns_failed,
-            } => {
-                format!(
-                    "notes={}, query={}, searched={}, filtered={}, failed={}",
-                    notes_count,
-                    truncate(query_summary, max_len),
-                    kilns_searched,
-                    kilns_filtered,
-                    kilns_failed
-                )
-            }
-            Self::ClassificationRequired { kiln_path } => {
-                format!("kiln_path={}", kiln_path.display())
-            }
-            Self::EmbeddingModelMismatch {
-                kiln_path,
-                stored_model,
-                current_model,
-                note_count,
-            } => {
-                format!(
-                    "kiln={}, stored={}, current={}, notes={}",
-                    kiln_path, stored_model, current_model, note_count
-                )
-            }
+            Self::Internal(inner) => inner.summary(max_len),
         }
     }
 
@@ -1480,14 +666,11 @@ fn identifier_for_event(event: &SessionEvent) -> String {
         }
         SessionEvent::AgentResponded { .. } => "agent:responded".into(),
         SessionEvent::AgentThinking { .. } => "agent:thinking".into(),
-        SessionEvent::PreToolCall { name, .. } => format!("pre:tool:{}", name),
-        SessionEvent::PreParse { path, .. } => format!("pre:parse:{}", path.display()),
-        SessionEvent::PreLlmCall { model, .. } => format!("pre:llm:{}", model),
-        SessionEvent::PrecognitionComplete { .. } => "precognition:complete".into(),
-        SessionEvent::ClassificationRequired { kiln_path, .. } => {
-            format!("classification:required:{}", kiln_path.display())
-        }
-        SessionEvent::AwaitingInput { input_type, .. } => format!("await:{}", input_type),
+        SessionEvent::ToolCalled { name, .. } => name.clone(),
+        SessionEvent::ToolCompleted { name, .. } => name.clone(),
+        SessionEvent::SessionStarted { config, .. } => format!("session:{}", config.session_id),
+        SessionEvent::SessionEnded { .. } => "session:ended".into(),
+        SessionEvent::TextDelta { seq, .. } => format!("streaming:delta:{}", seq),
         SessionEvent::InteractionRequested {
             request_id,
             request,
@@ -1497,23 +680,6 @@ fn identifier_for_event(event: &SessionEvent) -> String {
         SessionEvent::InteractionCompleted { request_id, .. } => {
             format!("interaction:completed:{}", request_id)
         }
-        SessionEvent::ToolCalled { name, .. } => name.clone(),
-        SessionEvent::ToolCompleted { name, .. } => name.clone(),
-        SessionEvent::SessionStarted { config, .. } => format!("session:{}", config.session_id),
-        SessionEvent::SessionCompacted { .. } => "session:compacted".into(),
-        SessionEvent::SessionEnded { .. } => "session:ended".into(),
-        SessionEvent::SessionStateChanged { session_id, .. } => {
-            format!("session:state_changed:{}", session_id)
-        }
-        SessionEvent::SessionPaused { session_id, .. } => {
-            format!("session:paused:{}", session_id)
-        }
-        SessionEvent::SessionResumed { session_id, .. } => {
-            format!("session:resumed:{}", session_id)
-        }
-        SessionEvent::SubagentSpawned { id, .. } => format!("subagent:spawned:{}", id),
-        SessionEvent::SubagentCompleted { id, .. } => format!("subagent:completed:{}", id),
-        SessionEvent::SubagentFailed { id, .. } => format!("subagent:failed:{}", id),
         SessionEvent::DelegationSpawned { delegation_id, .. } => {
             format!("delegation:spawned:{}", delegation_id)
         }
@@ -1523,72 +689,8 @@ fn identifier_for_event(event: &SessionEvent) -> String {
         SessionEvent::DelegationFailed { delegation_id, .. } => {
             format!("delegation:failed:{}", delegation_id)
         }
-        SessionEvent::BashTaskSpawned { id, .. } => format!("bash:spawned:{}", id),
-        SessionEvent::BashTaskCompleted { id, .. } => format!("bash:completed:{}", id),
-        SessionEvent::BashTaskFailed { id, .. } => format!("bash:failed:{}", id),
-        SessionEvent::BackgroundTaskCompleted { id, kind, .. } => {
-            format!("background:{}:{}", kind, id)
-        }
-        SessionEvent::TextDelta { seq, .. } => format!("streaming:delta:{}", seq),
-        SessionEvent::TerminalOutput {
-            session_id, stream, ..
-        } => format!("terminal:{}:{}", session_id, stream),
-        SessionEvent::FileChanged { path, .. } => path.display().to_string(),
-        SessionEvent::FileDeleted { path, .. } => path.display().to_string(),
-        SessionEvent::FileMoved { to, .. } => to.display().to_string(),
-        SessionEvent::NoteParsed { path, .. } => path.display().to_string(),
-        SessionEvent::NoteCreated { path, .. } => path.display().to_string(),
-        SessionEvent::NoteModified { path, .. } => path.display().to_string(),
-        SessionEvent::NoteDeleted { path, .. } => path.display().to_string(),
-        SessionEvent::EntityStored { entity_id, .. } => entity_id.clone(),
-        SessionEvent::EntityDeleted { entity_id, .. } => entity_id.clone(),
-        SessionEvent::BlocksUpdated { entity_id, .. } => entity_id.clone(),
-        SessionEvent::RelationStored { from_id, to_id, .. } => format!("{}:{}", from_id, to_id),
-        SessionEvent::RelationDeleted { from_id, to_id, .. } => {
-            format!("{}:{}", from_id, to_id)
-        }
-        SessionEvent::TagAssociated { entity_id, tag } => format!("{}#{}", entity_id, tag),
-        SessionEvent::EmbeddingRequested {
-            entity_id,
-            block_id,
-            ..
-        } => {
-            if let Some(block) = block_id {
-                format!("{}#{}", entity_id, block)
-            } else {
-                entity_id.clone()
-            }
-        }
-        SessionEvent::EmbeddingStored {
-            entity_id,
-            block_id,
-            ..
-        } => {
-            if let Some(block) = block_id {
-                format!("{}#{}", entity_id, block)
-            } else {
-                entity_id.clone()
-            }
-        }
-        SessionEvent::EmbeddingFailed {
-            entity_id,
-            block_id,
-            ..
-        } => {
-            if let Some(block) = block_id {
-                format!("{}#{}", entity_id, block)
-            } else {
-                entity_id.clone()
-            }
-        }
-        SessionEvent::EmbeddingBatchComplete { entity_id, .. } => entity_id.clone(),
-        SessionEvent::EmbeddingModelMismatch { kiln_path, .. } => {
-            format!("embedding:mismatch:{}", kiln_path)
-        }
-        SessionEvent::McpAttached { server, .. } => server.clone(),
-        SessionEvent::ToolDiscovered { name, .. } => name.clone(),
         SessionEvent::Custom { name, .. } => name.clone(),
-        SessionEvent::PostLlmCall { model, .. } => format!("post:llm:{}", model),
+        SessionEvent::Internal(inner) => inner.identifier(),
     }
 }
 
@@ -1602,132 +704,16 @@ fn payload_for_event(event: &SessionEvent) -> Option<String> {
         SessionEvent::AgentThinking { thought } => Some(thought.clone()),
         SessionEvent::ToolCalled { args, .. } => Some(args.to_string()),
         SessionEvent::ToolCompleted { result, .. } => Some(result.clone()),
-        SessionEvent::SessionCompacted { summary, .. } => Some(summary.clone()),
+        SessionEvent::SessionStarted { .. } => None,
         SessionEvent::SessionEnded { reason } => Some(reason.clone()),
-        SessionEvent::SubagentSpawned { prompt, .. } => Some(prompt.clone()),
-        SessionEvent::SubagentCompleted { result, .. } => Some(result.clone()),
-        SessionEvent::SubagentFailed { error, .. } => Some(error.clone()),
+        SessionEvent::TextDelta { delta, .. } => Some(delta.clone()),
+        SessionEvent::InteractionRequested { .. } => None,
+        SessionEvent::InteractionCompleted { .. } => None,
         SessionEvent::DelegationSpawned { prompt, .. } => Some(prompt.clone()),
         SessionEvent::DelegationCompleted { result_summary, .. } => Some(result_summary.clone()),
         SessionEvent::DelegationFailed { error, .. } => Some(error.clone()),
-        SessionEvent::BashTaskSpawned { command, .. } => Some(command.clone()),
-        SessionEvent::BashTaskCompleted { output, .. } => Some(output.clone()),
-        SessionEvent::BashTaskFailed { error, .. } => Some(error.clone()),
-        SessionEvent::BackgroundTaskCompleted { summary, .. } => Some(summary.clone()),
         SessionEvent::Custom { payload, .. } => Some(payload.to_string()),
-        SessionEvent::SessionStarted { .. } => None,
-        SessionEvent::TextDelta { delta, .. } => Some(delta.clone()),
-        SessionEvent::NoteParsed { path, .. } => Some(path.display().to_string()),
-        SessionEvent::NoteCreated { path, title } => Some(format!(
-            "{}: {}",
-            path.display(),
-            title.as_deref().unwrap_or("(none)")
-        )),
-        SessionEvent::NoteModified { path, change_type } => {
-            Some(format!("{}: {:?}", path.display(), change_type))
-        }
-        SessionEvent::NoteDeleted { path, existed } => {
-            Some(format!("{}: existed={}", path.display(), existed))
-        }
-        SessionEvent::McpAttached { server, tool_count } => {
-            Some(format!("{}: {} tools", server, tool_count))
-        }
-        SessionEvent::ToolDiscovered {
-            name,
-            source,
-            schema,
-        } => {
-            let schema_len = schema.as_ref().map(|s| s.to_string().len()).unwrap_or(0);
-            Some(format!("{}: {:?}, schema_len={}", name, source, schema_len))
-        }
-        SessionEvent::FileChanged { path, kind } => Some(format!("{}: {:?}", path.display(), kind)),
-        SessionEvent::FileDeleted { path } => Some(path.display().to_string()),
-        SessionEvent::FileMoved { from, to } => {
-            Some(format!("{} -> {}", from.display(), to.display()))
-        }
-        SessionEvent::EntityStored {
-            entity_id,
-            entity_type,
-        } => Some(format!("{}: {:?}", entity_id, entity_type)),
-        SessionEvent::EntityDeleted {
-            entity_id,
-            entity_type,
-        } => Some(format!("{}: {:?}", entity_id, entity_type)),
-        SessionEvent::BlocksUpdated {
-            entity_id,
-            block_count,
-        } => Some(format!("{}: {} blocks", entity_id, block_count)),
-        SessionEvent::RelationStored {
-            from_id,
-            to_id,
-            relation_type,
-        } => Some(format!("{} -> {} ({})", from_id, to_id, relation_type)),
-        SessionEvent::RelationDeleted {
-            from_id,
-            to_id,
-            relation_type,
-        } => Some(format!("{} -> {} ({})", from_id, to_id, relation_type)),
-        SessionEvent::TagAssociated { entity_id, tag } => Some(format!("{}#{}", entity_id, tag)),
-        SessionEvent::EmbeddingRequested {
-            entity_id,
-            priority,
-            ..
-        } => Some(format!("{}: {:?}", entity_id, priority)),
-        SessionEvent::EmbeddingStored {
-            entity_id,
-            dimensions,
-            model,
-            ..
-        } => Some(format!(
-            "{}: {} dims, model={}",
-            entity_id, dimensions, model
-        )),
-        SessionEvent::EmbeddingFailed {
-            entity_id, error, ..
-        } => Some(format!("{}: {}", entity_id, error)),
-        SessionEvent::EmbeddingBatchComplete {
-            entity_id,
-            count,
-            duration_ms,
-        } => Some(format!(
-            "{}: {} embeddings in {}ms",
-            entity_id, count, duration_ms
-        )),
-        SessionEvent::PreToolCall { args, .. } => Some(args.to_string()),
-        SessionEvent::PreParse { path } => Some(path.display().to_string()),
-        SessionEvent::PreLlmCall { prompt, .. } => Some(prompt.clone()),
-        SessionEvent::PostLlmCall {
-            response_summary, ..
-        } => Some(response_summary.clone()),
-        SessionEvent::AwaitingInput { context, .. } => context.clone(),
-        SessionEvent::InteractionRequested { .. } => None,
-        SessionEvent::InteractionCompleted { .. } => None,
-        SessionEvent::SessionStateChanged {
-            session_id,
-            state,
-            previous_state,
-        } => Some(format!(
-            "session={}, state={:?}, previous={:?}",
-            session_id, state, previous_state
-        )),
-        SessionEvent::SessionPaused { session_id } => Some(format!("session={}", session_id)),
-        SessionEvent::SessionResumed { session_id } => Some(format!("session={}", session_id)),
-        SessionEvent::TerminalOutput { content_base64, .. } => Some(content_base64.clone()),
-        SessionEvent::PrecognitionComplete {
-            notes_count,
-            query_summary,
-            ..
-        } => Some(format!("notes={}, query={}", notes_count, query_summary)),
-        SessionEvent::ClassificationRequired { kiln_path } => Some(kiln_path.display().to_string()),
-        SessionEvent::EmbeddingModelMismatch {
-            kiln_path,
-            stored_model,
-            current_model,
-            note_count,
-        } => Some(format!(
-            "kiln={}, stored={}, current={}, notes={}",
-            kiln_path, stored_model, current_model, note_count
-        )),
+        SessionEvent::Internal(inner) => inner.payload_content(),
     }
 }
 
@@ -1743,80 +729,16 @@ fn estimate_content_len(event: &SessionEvent) -> usize {
         SessionEvent::ToolCompleted { result, error, .. } => {
             result.len() + error.as_ref().map(|e| e.len()).unwrap_or(0)
         }
-        SessionEvent::SessionCompacted { summary, .. } => summary.len(),
+        SessionEvent::SessionStarted { .. } => 100,
         SessionEvent::SessionEnded { reason } => reason.len(),
-        SessionEvent::SubagentSpawned { prompt, .. } => prompt.len(),
-        SessionEvent::SubagentCompleted { result, .. } => result.len(),
-        SessionEvent::SubagentFailed { error, .. } => error.len(),
+        SessionEvent::TextDelta { delta, .. } => delta.len(),
+        SessionEvent::InteractionRequested { .. } => 100,
+        SessionEvent::InteractionCompleted { .. } => 50,
         SessionEvent::DelegationSpawned { prompt, .. } => prompt.len(),
         SessionEvent::DelegationCompleted { result_summary, .. } => result_summary.len(),
         SessionEvent::DelegationFailed { error, .. } => error.len(),
-        SessionEvent::BashTaskSpawned { command, .. } => command.len(),
-        SessionEvent::BashTaskCompleted { output, .. } => output.len(),
-        SessionEvent::BashTaskFailed { error, .. } => error.len(),
-        SessionEvent::BackgroundTaskCompleted { summary, .. } => summary.len(),
         SessionEvent::Custom { payload, .. } => payload.to_string().len(),
-        SessionEvent::SessionStarted { .. } => 100, // Fixed overhead
-        // Streaming events
-        SessionEvent::TextDelta { delta, .. } => delta.len(),
-        // Note events (small metadata)
-        SessionEvent::NoteParsed { .. } => 50,
-        SessionEvent::NoteCreated { title, .. } => {
-            title.as_ref().map(|t| t.len()).unwrap_or(0) + 50
-        }
-        SessionEvent::NoteModified { .. } => 50,
-        SessionEvent::NoteDeleted { .. } => 50,
-        // MCP/Tool events
-        SessionEvent::McpAttached { server, .. } => server.len() + 50,
-        SessionEvent::ToolDiscovered { name, schema, .. } => {
-            name.len() + schema.as_ref().map(|s| s.to_string().len()).unwrap_or(0)
-        }
-        // File events (small metadata)
-        SessionEvent::FileChanged { .. } => 50,
-        SessionEvent::FileDeleted { .. } => 50,
-        SessionEvent::FileMoved { .. } => 50,
-        // Storage events (small metadata)
-        SessionEvent::EntityStored { .. } => 50,
-        SessionEvent::EntityDeleted { .. } => 50,
-        SessionEvent::BlocksUpdated { .. } => 50,
-        SessionEvent::RelationStored { .. } => 50,
-        SessionEvent::RelationDeleted { .. } => 50,
-        SessionEvent::TagAssociated { tag, .. } => tag.len() + 50,
-        // Embedding events (small metadata)
-        SessionEvent::EmbeddingRequested { .. } => 50,
-        SessionEvent::EmbeddingStored { .. } => 50,
-        SessionEvent::EmbeddingFailed { error, .. } => error.len() + 50,
-        SessionEvent::EmbeddingBatchComplete { .. } => 50,
-        // Pre-events (interception points)
-        SessionEvent::PreToolCall { name, .. } => name.len() + 50,
-        SessionEvent::PreParse { .. } => 50,
-        SessionEvent::PreLlmCall { prompt, .. } => prompt.len(),
-        SessionEvent::PostLlmCall {
-            response_summary, ..
-        } => response_summary.len(),
-        SessionEvent::AwaitingInput { context, .. } => {
-            context.as_ref().map_or(20, |c| c.len() + 20)
-        }
-        // Interaction events
-        SessionEvent::InteractionRequested { .. } => 100, // Request metadata
-        SessionEvent::InteractionCompleted { .. } => 50,  // Response metadata
-        // Daemon protocol events
-        SessionEvent::SessionStateChanged { .. } => 50,
-        SessionEvent::SessionPaused { .. } => 50,
-        SessionEvent::SessionResumed { .. } => 50,
-        SessionEvent::TerminalOutput { content_base64, .. } => content_base64.len(),
-        SessionEvent::PrecognitionComplete {
-            notes_count,
-            query_summary,
-            ..
-        } => notes_count.to_string().len() + query_summary.len() + 50,
-        SessionEvent::ClassificationRequired { .. } => 50,
-        SessionEvent::EmbeddingModelMismatch {
-            kiln_path,
-            stored_model,
-            current_model,
-            ..
-        } => kiln_path.len() + stored_model.len() + current_model.len() + 50,
+        SessionEvent::Internal(inner) => inner.estimate_content_len(),
     }
 }
 
@@ -2298,105 +1220,105 @@ mod tests {
             "tool_called"
         );
         assert_eq!(
-            SessionEvent::FileChanged {
+            SessionEvent::internal(InternalSessionEvent::FileChanged {
                 path: PathBuf::new(),
                 kind: FileChangeKind::Created
-            }
+            })
             .event_type(),
             "file_changed"
         );
         assert_eq!(
-            SessionEvent::FileDeleted {
+            SessionEvent::internal(InternalSessionEvent::FileDeleted {
                 path: PathBuf::new()
-            }
+            })
             .event_type(),
             "file_deleted"
         );
         assert_eq!(
-            SessionEvent::FileMoved {
+            SessionEvent::internal(InternalSessionEvent::FileMoved {
                 from: PathBuf::new(),
                 to: PathBuf::new()
-            }
+            })
             .event_type(),
             "file_moved"
         );
         assert_eq!(
-            SessionEvent::NoteParsed {
+            SessionEvent::internal(InternalSessionEvent::NoteParsed {
                 path: PathBuf::new(),
                 block_count: 0,
                 payload: None,
-            }
+            })
             .event_type(),
             "note_parsed"
         );
         // Storage events
         assert_eq!(
-            SessionEvent::EntityStored {
+            SessionEvent::internal(InternalSessionEvent::EntityStored {
                 entity_id: "".into(),
                 entity_type: EntityType::Note
-            }
+            })
             .event_type(),
             "entity_stored"
         );
         assert_eq!(
-            SessionEvent::EntityDeleted {
+            SessionEvent::internal(InternalSessionEvent::EntityDeleted {
                 entity_id: "".into(),
                 entity_type: EntityType::Note
-            }
+            })
             .event_type(),
             "entity_deleted"
         );
         assert_eq!(
-            SessionEvent::BlocksUpdated {
+            SessionEvent::internal(InternalSessionEvent::BlocksUpdated {
                 entity_id: "".into(),
                 block_count: 0
-            }
+            })
             .event_type(),
             "blocks_updated"
         );
         assert_eq!(
-            SessionEvent::RelationStored {
+            SessionEvent::internal(InternalSessionEvent::RelationStored {
                 from_id: "".into(),
                 to_id: "".into(),
                 relation_type: "".into()
-            }
+            })
             .event_type(),
             "relation_stored"
         );
         assert_eq!(
-            SessionEvent::RelationDeleted {
+            SessionEvent::internal(InternalSessionEvent::RelationDeleted {
                 from_id: "".into(),
                 to_id: "".into(),
                 relation_type: "".into()
-            }
+            })
             .event_type(),
             "relation_deleted"
         );
         assert_eq!(
-            SessionEvent::EmbeddingRequested {
+            SessionEvent::internal(InternalSessionEvent::EmbeddingRequested {
                 entity_id: "".into(),
                 block_id: None,
                 priority: Priority::Normal
-            }
+            })
             .event_type(),
             "embedding_requested"
         );
         assert_eq!(
-            SessionEvent::EmbeddingStored {
+            SessionEvent::internal(InternalSessionEvent::EmbeddingStored {
                 entity_id: "".into(),
                 block_id: None,
                 dimensions: 0,
                 model: "".into()
-            }
+            })
             .event_type(),
             "embedding_stored"
         );
         assert_eq!(
-            SessionEvent::EmbeddingFailed {
+            SessionEvent::internal(InternalSessionEvent::EmbeddingFailed {
                 entity_id: "".into(),
                 block_id: None,
                 error: "".into()
-            }
+            })
             .event_type(),
             "embedding_failed"
         );
@@ -2418,11 +1340,11 @@ mod tests {
         };
         assert_eq!(event.identifier(), "search");
 
-        let event = SessionEvent::NoteParsed {
+        let event = SessionEvent::internal(InternalSessionEvent::NoteParsed {
             path: PathBuf::from("/notes/test.md"),
             block_count: 5,
             payload: None,
-        };
+        });
         assert_eq!(event.identifier(), "/notes/test.md");
 
         let event = SessionEvent::MessageReceived {
@@ -2432,105 +1354,105 @@ mod tests {
         assert_eq!(event.identifier(), "message:user");
 
         // File events identifiers
-        let event = SessionEvent::FileChanged {
+        let event = SessionEvent::internal(InternalSessionEvent::FileChanged {
             path: PathBuf::from("/notes/changed.md"),
             kind: FileChangeKind::Modified,
-        };
+        });
         assert_eq!(event.identifier(), "/notes/changed.md");
 
-        let event = SessionEvent::FileDeleted {
+        let event = SessionEvent::internal(InternalSessionEvent::FileDeleted {
             path: PathBuf::from("/notes/deleted.md"),
-        };
+        });
         assert_eq!(event.identifier(), "/notes/deleted.md");
 
         // FileMoved uses the "to" path as identifier
-        let event = SessionEvent::FileMoved {
+        let event = SessionEvent::internal(InternalSessionEvent::FileMoved {
             from: PathBuf::from("/notes/old.md"),
             to: PathBuf::from("/notes/new.md"),
-        };
+        });
         assert_eq!(event.identifier(), "/notes/new.md");
 
         // Storage events identifiers
-        let event = SessionEvent::EntityStored {
+        let event = SessionEvent::internal(InternalSessionEvent::EntityStored {
             entity_id: "entities:note:test".into(),
             entity_type: EntityType::Note,
-        };
+        });
         assert_eq!(event.identifier(), "entities:note:test");
 
-        let event = SessionEvent::EntityDeleted {
+        let event = SessionEvent::internal(InternalSessionEvent::EntityDeleted {
             entity_id: "entities:note:test".into(),
             entity_type: EntityType::Note,
-        };
+        });
         assert_eq!(event.identifier(), "entities:note:test");
 
-        let event = SessionEvent::BlocksUpdated {
+        let event = SessionEvent::internal(InternalSessionEvent::BlocksUpdated {
             entity_id: "entities:note:test".into(),
             block_count: 5,
-        };
+        });
         assert_eq!(event.identifier(), "entities:note:test");
 
-        let event = SessionEvent::RelationStored {
+        let event = SessionEvent::internal(InternalSessionEvent::RelationStored {
             from_id: "entities:note:a".into(),
             to_id: "entities:note:b".into(),
             relation_type: "wikilink".into(),
-        };
+        });
         assert_eq!(event.identifier(), "entities:note:a:entities:note:b");
 
-        let event = SessionEvent::RelationDeleted {
+        let event = SessionEvent::internal(InternalSessionEvent::RelationDeleted {
             from_id: "entities:note:a".into(),
             to_id: "entities:note:b".into(),
             relation_type: "wikilink".into(),
-        };
+        });
         assert_eq!(event.identifier(), "entities:note:a:entities:note:b");
 
         // EmbeddingRequested with block_id
-        let event = SessionEvent::EmbeddingRequested {
+        let event = SessionEvent::internal(InternalSessionEvent::EmbeddingRequested {
             entity_id: "entities:note:test".into(),
             block_id: Some("block:0".into()),
             priority: Priority::High,
-        };
+        });
         assert_eq!(event.identifier(), "entities:note:test#block:0");
 
         // EmbeddingRequested without block_id
-        let event = SessionEvent::EmbeddingRequested {
+        let event = SessionEvent::internal(InternalSessionEvent::EmbeddingRequested {
             entity_id: "entities:note:test".into(),
             block_id: None,
             priority: Priority::Normal,
-        };
+        });
         assert_eq!(event.identifier(), "entities:note:test");
 
         // EmbeddingStored with block_id
-        let event = SessionEvent::EmbeddingStored {
+        let event = SessionEvent::internal(InternalSessionEvent::EmbeddingStored {
             entity_id: "entities:note:test".into(),
             block_id: Some("block:0".into()),
             dimensions: 384,
             model: "nomic-embed-text".into(),
-        };
+        });
         assert_eq!(event.identifier(), "entities:note:test#block:0");
 
         // EmbeddingStored without block_id
-        let event = SessionEvent::EmbeddingStored {
+        let event = SessionEvent::internal(InternalSessionEvent::EmbeddingStored {
             entity_id: "entities:note:test".into(),
             block_id: None,
             dimensions: 384,
             model: "nomic-embed-text".into(),
-        };
+        });
         assert_eq!(event.identifier(), "entities:note:test");
 
         // EmbeddingFailed with block_id
-        let event = SessionEvent::EmbeddingFailed {
+        let event = SessionEvent::internal(InternalSessionEvent::EmbeddingFailed {
             entity_id: "entities:note:test".into(),
             block_id: Some("block:0".into()),
             error: "provider timeout".into(),
-        };
+        });
         assert_eq!(event.identifier(), "entities:note:test#block:0");
 
         // EmbeddingFailed without block_id
-        let event = SessionEvent::EmbeddingFailed {
+        let event = SessionEvent::internal(InternalSessionEvent::EmbeddingFailed {
             entity_id: "entities:note:test".into(),
             block_id: None,
             error: "provider timeout".into(),
-        };
+        });
         assert_eq!(event.identifier(), "entities:note:test");
     }
 
@@ -2555,21 +1477,21 @@ mod tests {
         .is_tool_event());
 
         // Note events
-        assert!(SessionEvent::NoteParsed {
+        assert!(SessionEvent::internal(InternalSessionEvent::NoteParsed {
             path: PathBuf::new(),
             block_count: 0,
             payload: None,
-        }
+        })
         .is_note_event());
-        assert!(SessionEvent::NoteCreated {
+        assert!(SessionEvent::internal(InternalSessionEvent::NoteCreated {
             path: PathBuf::new(),
             title: None
-        }
+        })
         .is_note_event());
-        assert!(SessionEvent::NoteDeleted {
+        assert!(SessionEvent::internal(InternalSessionEvent::NoteDeleted {
             path: PathBuf::from("/notes/test.md"),
             existed: true,
-        }
+        })
         .is_note_event());
         assert!(!SessionEvent::ToolCalled {
             name: "".into(),
@@ -2593,10 +1515,10 @@ mod tests {
         assert!(SessionEvent::AgentThinking { thought: "".into() }.is_agent_event());
 
         // Subagent events
-        assert!(SessionEvent::SubagentSpawned {
+        assert!(SessionEvent::internal(InternalSessionEvent::SubagentSpawned {
             id: "".into(),
             prompt: "".into()
-        }
+        })
         .is_subagent_event());
 
         // Streaming events
@@ -2607,125 +1529,125 @@ mod tests {
         .is_streaming_event());
 
         // File events
-        assert!(SessionEvent::FileChanged {
+        assert!(SessionEvent::internal(InternalSessionEvent::FileChanged {
             path: PathBuf::new(),
             kind: FileChangeKind::Created
-        }
+        })
         .is_file_event());
-        assert!(SessionEvent::FileDeleted {
+        assert!(SessionEvent::internal(InternalSessionEvent::FileDeleted {
             path: PathBuf::new()
-        }
+        })
         .is_file_event());
-        assert!(SessionEvent::FileMoved {
+        assert!(SessionEvent::internal(InternalSessionEvent::FileMoved {
             from: PathBuf::new(),
             to: PathBuf::new()
-        }
+        })
         .is_file_event());
         // File events are not note events
-        assert!(!SessionEvent::FileChanged {
+        assert!(!SessionEvent::internal(InternalSessionEvent::FileChanged {
             path: PathBuf::new(),
             kind: FileChangeKind::Modified
-        }
+        })
         .is_note_event());
 
         // Embedding events
-        assert!(SessionEvent::EmbeddingRequested {
+        assert!(SessionEvent::internal(InternalSessionEvent::EmbeddingRequested {
             entity_id: "".into(),
             block_id: None,
             priority: Priority::Normal
-        }
+        })
         .is_embedding_event());
-        assert!(SessionEvent::EmbeddingStored {
+        assert!(SessionEvent::internal(InternalSessionEvent::EmbeddingStored {
             entity_id: "".into(),
             block_id: None,
             dimensions: 0,
             model: "".into()
-        }
+        })
         .is_embedding_event());
-        assert!(SessionEvent::EmbeddingFailed {
+        assert!(SessionEvent::internal(InternalSessionEvent::EmbeddingFailed {
             entity_id: "".into(),
             block_id: None,
             error: "".into()
-        }
+        })
         .is_embedding_event());
-        assert!(SessionEvent::EmbeddingBatchComplete {
+        assert!(SessionEvent::internal(InternalSessionEvent::EmbeddingBatchComplete {
             entity_id: "".into(),
             count: 5,
             duration_ms: 100
-        }
+        })
         .is_embedding_event());
         // Non-embedding events
-        assert!(!SessionEvent::EntityStored {
+        assert!(!SessionEvent::internal(InternalSessionEvent::EntityStored {
             entity_id: "".into(),
             entity_type: EntityType::Note
-        }
+        })
         .is_embedding_event());
 
         // Storage events
-        assert!(SessionEvent::EntityStored {
+        assert!(SessionEvent::internal(InternalSessionEvent::EntityStored {
             entity_id: "".into(),
             entity_type: EntityType::Note
-        }
+        })
         .is_storage_event());
-        assert!(SessionEvent::EntityDeleted {
+        assert!(SessionEvent::internal(InternalSessionEvent::EntityDeleted {
             entity_id: "".into(),
             entity_type: EntityType::Note
-        }
+        })
         .is_storage_event());
-        assert!(SessionEvent::BlocksUpdated {
+        assert!(SessionEvent::internal(InternalSessionEvent::BlocksUpdated {
             entity_id: "".into(),
             block_count: 0
-        }
+        })
         .is_storage_event());
-        assert!(SessionEvent::RelationStored {
+        assert!(SessionEvent::internal(InternalSessionEvent::RelationStored {
             from_id: "".into(),
             to_id: "".into(),
             relation_type: "".into()
-        }
+        })
         .is_storage_event());
-        assert!(SessionEvent::RelationDeleted {
+        assert!(SessionEvent::internal(InternalSessionEvent::RelationDeleted {
             from_id: "".into(),
             to_id: "".into(),
             relation_type: "".into()
-        }
+        })
         .is_storage_event());
-        assert!(SessionEvent::EmbeddingRequested {
+        assert!(SessionEvent::internal(InternalSessionEvent::EmbeddingRequested {
             entity_id: "".into(),
             block_id: None,
             priority: Priority::Normal
-        }
+        })
         .is_storage_event());
-        assert!(SessionEvent::EmbeddingStored {
+        assert!(SessionEvent::internal(InternalSessionEvent::EmbeddingStored {
             entity_id: "".into(),
             block_id: None,
             dimensions: 0,
             model: "".into()
-        }
+        })
         .is_storage_event());
-        assert!(SessionEvent::EmbeddingFailed {
+        assert!(SessionEvent::internal(InternalSessionEvent::EmbeddingFailed {
             entity_id: "".into(),
             block_id: None,
             error: "".into()
-        }
+        })
         .is_storage_event());
-        assert!(SessionEvent::EmbeddingBatchComplete {
+        assert!(SessionEvent::internal(InternalSessionEvent::EmbeddingBatchComplete {
             entity_id: "".into(),
             count: 5,
             duration_ms: 100
-        }
+        })
         .is_storage_event());
         // Storage events are not note events
-        assert!(!SessionEvent::EntityStored {
+        assert!(!SessionEvent::internal(InternalSessionEvent::EntityStored {
             entity_id: "".into(),
             entity_type: EntityType::Note
-        }
+        })
         .is_note_event());
 
         // MCP events
-        assert!(SessionEvent::McpAttached {
+        assert!(SessionEvent::internal(InternalSessionEvent::McpAttached {
             server: "".into(),
             tool_count: 0
-        }
+        })
         .is_mcp_event());
 
         // Custom events
@@ -2777,123 +1699,123 @@ mod tests {
             SessionEvent::SessionStarted {
                 config: SessionEventConfig::default(),
             },
-            SessionEvent::SessionCompacted {
+            SessionEvent::internal(InternalSessionEvent::SessionCompacted {
                 summary: "summary".into(),
                 new_file: test_path("new"),
-            },
+            }),
             SessionEvent::SessionEnded {
                 reason: "user closed".into(),
             },
-            SessionEvent::SubagentSpawned {
+            SessionEvent::internal(InternalSessionEvent::SubagentSpawned {
                 id: "sub1".into(),
                 prompt: "do stuff".into(),
-            },
-            SessionEvent::SubagentCompleted {
+            }),
+            SessionEvent::internal(InternalSessionEvent::SubagentCompleted {
                 id: "sub1".into(),
                 result: "done".into(),
-            },
-            SessionEvent::SubagentFailed {
+            }),
+            SessionEvent::internal(InternalSessionEvent::SubagentFailed {
                 id: "sub1".into(),
                 error: "failed".into(),
-            },
+            }),
             SessionEvent::TextDelta {
                 delta: "chunk".into(),
                 seq: 1,
             },
             // File system events
-            SessionEvent::FileChanged {
+            SessionEvent::internal(InternalSessionEvent::FileChanged {
                 path: PathBuf::from("/notes/test.md"),
                 kind: FileChangeKind::Created,
-            },
-            SessionEvent::FileChanged {
+            }),
+            SessionEvent::internal(InternalSessionEvent::FileChanged {
                 path: PathBuf::from("/notes/test.md"),
                 kind: FileChangeKind::Modified,
-            },
-            SessionEvent::FileDeleted {
+            }),
+            SessionEvent::internal(InternalSessionEvent::FileDeleted {
                 path: PathBuf::from("/notes/deleted.md"),
-            },
-            SessionEvent::FileMoved {
+            }),
+            SessionEvent::internal(InternalSessionEvent::FileMoved {
                 from: PathBuf::from("/notes/old.md"),
                 to: PathBuf::from("/notes/new.md"),
-            },
+            }),
             // Note events
-            SessionEvent::NoteParsed {
+            SessionEvent::internal(InternalSessionEvent::NoteParsed {
                 path: PathBuf::from("/notes/test.md"),
                 block_count: 5,
                 payload: None,
-            },
-            SessionEvent::NoteCreated {
+            }),
+            SessionEvent::internal(InternalSessionEvent::NoteCreated {
                 path: PathBuf::from("/notes/new.md"),
                 title: Some("New Note".into()),
-            },
-            SessionEvent::NoteModified {
+            }),
+            SessionEvent::internal(InternalSessionEvent::NoteModified {
                 path: PathBuf::from("/notes/test.md"),
                 change_type: NoteChangeType::Content,
-            },
-            SessionEvent::NoteDeleted {
+            }),
+            SessionEvent::internal(InternalSessionEvent::NoteDeleted {
                 path: PathBuf::from("/notes/deleted.md"),
                 existed: true,
-            },
+            }),
             // Storage events
-            SessionEvent::EntityStored {
+            SessionEvent::internal(InternalSessionEvent::EntityStored {
                 entity_id: "entities:note:test".into(),
                 entity_type: EntityType::Note,
-            },
-            SessionEvent::EntityDeleted {
+            }),
+            SessionEvent::internal(InternalSessionEvent::EntityDeleted {
                 entity_id: "entities:note:test".into(),
                 entity_type: EntityType::Note,
-            },
-            SessionEvent::BlocksUpdated {
+            }),
+            SessionEvent::internal(InternalSessionEvent::BlocksUpdated {
                 entity_id: "entities:note:test".into(),
                 block_count: 5,
-            },
-            SessionEvent::RelationStored {
+            }),
+            SessionEvent::internal(InternalSessionEvent::RelationStored {
                 from_id: "entities:note:source".into(),
                 to_id: "entities:note:target".into(),
                 relation_type: "wikilink".into(),
-            },
-            SessionEvent::RelationDeleted {
+            }),
+            SessionEvent::internal(InternalSessionEvent::RelationDeleted {
                 from_id: "entities:note:source".into(),
                 to_id: "entities:note:target".into(),
                 relation_type: "wikilink".into(),
-            },
-            SessionEvent::EmbeddingRequested {
+            }),
+            SessionEvent::internal(InternalSessionEvent::EmbeddingRequested {
                 entity_id: "entities:note:test".into(),
                 block_id: None,
                 priority: Priority::Normal,
-            },
-            SessionEvent::EmbeddingRequested {
+            }),
+            SessionEvent::internal(InternalSessionEvent::EmbeddingRequested {
                 entity_id: "entities:note:test".into(),
                 block_id: Some("block:0".into()),
                 priority: Priority::High,
-            },
-            SessionEvent::EmbeddingStored {
+            }),
+            SessionEvent::internal(InternalSessionEvent::EmbeddingStored {
                 entity_id: "entities:note:test".into(),
                 block_id: Some("block:0".into()),
                 dimensions: 384,
                 model: "nomic-embed-text".into(),
-            },
-            SessionEvent::EmbeddingFailed {
+            }),
+            SessionEvent::internal(InternalSessionEvent::EmbeddingFailed {
                 entity_id: "entities:note:test".into(),
                 block_id: None,
                 error: "provider timeout".into(),
-            },
-            SessionEvent::EmbeddingFailed {
+            }),
+            SessionEvent::internal(InternalSessionEvent::EmbeddingFailed {
                 entity_id: "entities:note:test".into(),
                 block_id: Some("block:0".into()),
                 error: "rate limited".into(),
-            },
-            SessionEvent::McpAttached {
+            }),
+            SessionEvent::internal(InternalSessionEvent::McpAttached {
                 server: "crucible".into(),
                 tool_count: 10,
-            },
-            SessionEvent::ToolDiscovered {
+            }),
+            SessionEvent::internal(InternalSessionEvent::ToolDiscovered {
                 name: "search".into(),
                 source: ToolProvider::Mcp {
                     server: "crucible".into(),
                 },
                 schema: Some(serde_json::json!({"type": "object"})),
-            },
+            }),
             SessionEvent::Custom {
                 name: "custom".into(),
                 payload: serde_json::json!({}),
@@ -3136,52 +2058,52 @@ mod tests {
     #[test]
     fn test_session_event_priority() {
         // FileChanged(Created) → High
-        let created = SessionEvent::FileChanged {
+        let created = SessionEvent::internal(InternalSessionEvent::FileChanged {
             path: PathBuf::from("/notes/new.md"),
             kind: FileChangeKind::Created,
-        };
+        });
         assert_eq!(created.priority(), Priority::High);
 
         // FileChanged(Modified) → Normal
-        let modified = SessionEvent::FileChanged {
+        let modified = SessionEvent::internal(InternalSessionEvent::FileChanged {
             path: PathBuf::from("/notes/existing.md"),
             kind: FileChangeKind::Modified,
-        };
+        });
         assert_eq!(modified.priority(), Priority::Normal);
 
         // FileDeleted → Low
-        let deleted = SessionEvent::FileDeleted {
+        let deleted = SessionEvent::internal(InternalSessionEvent::FileDeleted {
             path: PathBuf::from("/notes/old.md"),
-        };
+        });
         assert_eq!(deleted.priority(), Priority::Low);
 
         // FileMoved → Normal
-        let moved = SessionEvent::FileMoved {
+        let moved = SessionEvent::internal(InternalSessionEvent::FileMoved {
             from: PathBuf::from("/notes/old.md"),
             to: PathBuf::from("/notes/new.md"),
-        };
+        });
         assert_eq!(moved.priority(), Priority::Normal);
 
         // EmbeddingRequested → uses embedded priority
-        let embedding_normal = SessionEvent::EmbeddingRequested {
+        let embedding_normal = SessionEvent::internal(InternalSessionEvent::EmbeddingRequested {
             entity_id: "test".into(),
             block_id: None,
             priority: Priority::Normal,
-        };
+        });
         assert_eq!(embedding_normal.priority(), Priority::Normal);
 
-        let embedding_high = SessionEvent::EmbeddingRequested {
+        let embedding_high = SessionEvent::internal(InternalSessionEvent::EmbeddingRequested {
             entity_id: "test".into(),
             block_id: None,
             priority: Priority::High,
-        };
+        });
         assert_eq!(embedding_high.priority(), Priority::High);
 
-        let embedding_critical = SessionEvent::EmbeddingRequested {
+        let embedding_critical = SessionEvent::internal(InternalSessionEvent::EmbeddingRequested {
             entity_id: "test".into(),
             block_id: None,
             priority: Priority::Critical,
-        };
+        });
         assert_eq!(embedding_critical.priority(), Priority::Critical);
 
         // Other events default to Normal
@@ -3197,10 +2119,10 @@ mod tests {
         };
         assert_eq!(tool_called.priority(), Priority::Normal);
 
-        let entity_stored = SessionEvent::EntityStored {
+        let entity_stored = SessionEvent::internal(InternalSessionEvent::EntityStored {
             entity_id: "test".into(),
             entity_type: EntityType::Note,
-        };
+        });
         assert_eq!(entity_stored.priority(), Priority::Normal);
 
         let custom = SessionEvent::Custom {
@@ -3216,10 +2138,10 @@ mod tests {
 
     #[test]
     fn test_pre_tool_call_event_type() {
-        let event = SessionEvent::PreToolCall {
+        let event = SessionEvent::internal(InternalSessionEvent::PreToolCall {
             name: "search".into(),
             args: serde_json::json!({"q": "rust"}),
-        };
+        });
         assert_eq!(event.event_type(), "pre_tool_call");
         assert!(event.is_pre_event());
         assert!(!event.is_tool_event()); // Pre-events are separate from tool events
@@ -3227,9 +2149,9 @@ mod tests {
 
     #[test]
     fn test_pre_parse_event_type() {
-        let event = SessionEvent::PreParse {
+        let event = SessionEvent::internal(InternalSessionEvent::PreParse {
             path: PathBuf::from("/notes/test.md"),
-        };
+        });
         assert_eq!(event.event_type(), "pre_parse");
         assert!(event.is_pre_event());
         assert!(!event.is_note_event()); // Pre-events are separate from note events
@@ -3237,40 +2159,40 @@ mod tests {
 
     #[test]
     fn test_pre_llm_call_event_type() {
-        let event = SessionEvent::PreLlmCall {
+        let event = SessionEvent::internal(InternalSessionEvent::PreLlmCall {
             prompt: "Hello".into(),
             model: "gpt-4".into(),
-        };
+        });
         assert_eq!(event.event_type(), "pre_llm_call");
         assert!(event.is_pre_event());
     }
 
     #[test]
     fn test_pre_event_identifiers() {
-        let tool_event = SessionEvent::PreToolCall {
+        let tool_event = SessionEvent::internal(InternalSessionEvent::PreToolCall {
             name: "bash".into(),
             args: serde_json::json!({"cmd": "ls"}),
-        };
+        });
         assert_eq!(tool_event.identifier(), "pre:tool:bash");
 
-        let parse_event = SessionEvent::PreParse {
+        let parse_event = SessionEvent::internal(InternalSessionEvent::PreParse {
             path: PathBuf::from("/notes/test.md"),
-        };
+        });
         assert_eq!(parse_event.identifier(), "pre:parse:/notes/test.md");
 
-        let llm_event = SessionEvent::PreLlmCall {
+        let llm_event = SessionEvent::internal(InternalSessionEvent::PreLlmCall {
             prompt: "Hello".into(),
             model: "gpt-4".into(),
-        };
+        });
         assert_eq!(llm_event.identifier(), "pre:llm:gpt-4");
     }
 
     #[test]
     fn test_pre_event_serialization() {
-        let event = SessionEvent::PreToolCall {
+        let event = SessionEvent::internal(InternalSessionEvent::PreToolCall {
             name: "bash".into(),
             args: serde_json::json!({"cmd": "ls"}),
-        };
+        });
 
         let json = serde_json::to_string(&event).unwrap();
         let restored: SessionEvent = serde_json::from_str(&json).unwrap();
@@ -3281,17 +2203,17 @@ mod tests {
     #[test]
     fn test_all_pre_events_serialize() {
         let events = vec![
-            SessionEvent::PreToolCall {
+            SessionEvent::internal(InternalSessionEvent::PreToolCall {
                 name: "search".into(),
                 args: serde_json::json!({"q": "test"}),
-            },
-            SessionEvent::PreParse {
+            }),
+            SessionEvent::internal(InternalSessionEvent::PreParse {
                 path: PathBuf::from("/notes/test.md"),
-            },
-            SessionEvent::PreLlmCall {
+            }),
+            SessionEvent::internal(InternalSessionEvent::PreLlmCall {
                 prompt: "Hello".into(),
                 model: "claude-3".into(),
-            },
+            }),
         ];
 
         for event in events {
@@ -3304,21 +2226,21 @@ mod tests {
     #[test]
     fn test_pre_event_priority() {
         // Pre-events default to Normal priority
-        let pre_tool = SessionEvent::PreToolCall {
+        let pre_tool = SessionEvent::internal(InternalSessionEvent::PreToolCall {
             name: "search".into(),
             args: JsonValue::Null,
-        };
+        });
         assert_eq!(pre_tool.priority(), Priority::Normal);
 
-        let pre_parse = SessionEvent::PreParse {
+        let pre_parse = SessionEvent::internal(InternalSessionEvent::PreParse {
             path: PathBuf::from("/notes/test.md"),
-        };
+        });
         assert_eq!(pre_parse.priority(), Priority::Normal);
 
-        let pre_llm = SessionEvent::PreLlmCall {
+        let pre_llm = SessionEvent::internal(InternalSessionEvent::PreLlmCall {
             prompt: "test".into(),
             model: "gpt-4".into(),
-        };
+        });
         assert_eq!(pre_llm.priority(), Priority::Normal);
     }
 
@@ -3352,34 +2274,34 @@ mod tests {
 
     #[test]
     fn test_awaiting_input_event_type() {
-        let event = SessionEvent::AwaitingInput {
+        let event = SessionEvent::internal(InternalSessionEvent::AwaitingInput {
             input_type: InputType::Message,
             context: None,
-        };
+        });
         assert_eq!(event.event_type(), "awaiting_input");
     }
 
     #[test]
     fn test_awaiting_input_identifier() {
-        let message_event = SessionEvent::AwaitingInput {
+        let message_event = SessionEvent::internal(InternalSessionEvent::AwaitingInput {
             input_type: InputType::Message,
             context: None,
-        };
+        });
         assert_eq!(message_event.identifier(), "await:message");
 
-        let approval_event = SessionEvent::AwaitingInput {
+        let approval_event = SessionEvent::internal(InternalSessionEvent::AwaitingInput {
             input_type: InputType::Approval,
             context: Some("delete files".into()),
-        };
+        });
         assert_eq!(approval_event.identifier(), "await:approval");
     }
 
     #[test]
     fn test_awaiting_input_serialization() {
-        let event = SessionEvent::AwaitingInput {
+        let event = SessionEvent::internal(InternalSessionEvent::AwaitingInput {
             input_type: InputType::Approval,
             context: Some("Agent wants to delete files".into()),
-        };
+        });
 
         let json = serde_json::to_string(&event).unwrap();
         let restored: SessionEvent = serde_json::from_str(&json).unwrap();
@@ -3395,10 +2317,10 @@ mod tests {
     #[test]
     fn test_awaiting_input_not_pre_event() {
         // AwaitingInput is NOT a pre-event (it's a state change, not an interception point)
-        let event = SessionEvent::AwaitingInput {
+        let event = SessionEvent::internal(InternalSessionEvent::AwaitingInput {
             input_type: InputType::Message,
             context: None,
-        };
+        });
         assert!(!event.is_pre_event());
     }
 
@@ -3410,11 +2332,11 @@ mod tests {
     fn test_session_state_changed_event() {
         use crate::session::SessionState;
 
-        let event = SessionEvent::SessionStateChanged {
+        let event = SessionEvent::internal(InternalSessionEvent::SessionStateChanged {
             session_id: "chat-2025-01-08T1530-abc123".into(),
             state: SessionState::Paused,
             previous_state: Some(SessionState::Active),
-        };
+        });
 
         assert_eq!(event.event_type(), "session_state_changed");
         assert!(event.is_lifecycle_event());
@@ -3431,9 +2353,9 @@ mod tests {
 
     #[test]
     fn test_session_paused_event() {
-        let event = SessionEvent::SessionPaused {
+        let event = SessionEvent::internal(InternalSessionEvent::SessionPaused {
             session_id: "chat-2025-01-08T1530-abc123".into(),
-        };
+        });
 
         assert_eq!(event.event_type(), "session_paused");
         assert!(event.is_lifecycle_event());
@@ -3449,9 +2371,9 @@ mod tests {
 
     #[test]
     fn test_session_resumed_event() {
-        let event = SessionEvent::SessionResumed {
+        let event = SessionEvent::internal(InternalSessionEvent::SessionResumed {
             session_id: "chat-2025-01-08T1530-abc123".into(),
-        };
+        });
 
         assert_eq!(event.event_type(), "session_resumed");
         assert!(event.is_lifecycle_event());
@@ -3467,11 +2389,11 @@ mod tests {
 
     #[test]
     fn test_terminal_output_event() {
-        let event = SessionEvent::TerminalOutput {
+        let event = SessionEvent::internal(InternalSessionEvent::TerminalOutput {
             session_id: "chat-2025-01-08T1530-abc123".into(),
             stream: TerminalStream::Stdout,
             content_base64: "SGVsbG8gV29ybGQK".into(), // "Hello World\n"
-        };
+        });
 
         assert_eq!(event.event_type(), "terminal_output");
         assert!(event.is_streaming_event());
@@ -3517,42 +2439,42 @@ mod tests {
         use crate::session::SessionState;
 
         let events = vec![
-            SessionEvent::SessionStateChanged {
+            SessionEvent::internal(InternalSessionEvent::SessionStateChanged {
                 session_id: "chat-test".into(),
                 state: SessionState::Active,
                 previous_state: None,
-            },
-            SessionEvent::SessionStateChanged {
+            }),
+            SessionEvent::internal(InternalSessionEvent::SessionStateChanged {
                 session_id: "chat-test".into(),
                 state: SessionState::Paused,
                 previous_state: Some(SessionState::Active),
-            },
-            SessionEvent::SessionStateChanged {
+            }),
+            SessionEvent::internal(InternalSessionEvent::SessionStateChanged {
                 session_id: "chat-test".into(),
                 state: SessionState::Compacting,
                 previous_state: Some(SessionState::Active),
-            },
-            SessionEvent::SessionStateChanged {
+            }),
+            SessionEvent::internal(InternalSessionEvent::SessionStateChanged {
                 session_id: "chat-test".into(),
                 state: SessionState::Ended,
                 previous_state: Some(SessionState::Active),
-            },
-            SessionEvent::SessionPaused {
+            }),
+            SessionEvent::internal(InternalSessionEvent::SessionPaused {
                 session_id: "agent-test".into(),
-            },
-            SessionEvent::SessionResumed {
+            }),
+            SessionEvent::internal(InternalSessionEvent::SessionResumed {
                 session_id: "agent-test".into(),
-            },
-            SessionEvent::TerminalOutput {
+            }),
+            SessionEvent::internal(InternalSessionEvent::TerminalOutput {
                 session_id: "workflow-test".into(),
                 stream: TerminalStream::Stdout,
                 content_base64: "dGVzdA==".into(),
-            },
-            SessionEvent::TerminalOutput {
+            }),
+            SessionEvent::internal(InternalSessionEvent::TerminalOutput {
                 session_id: "workflow-test".into(),
                 stream: TerminalStream::Stderr,
                 content_base64: "ZXJyb3I=".into(),
-            },
+            }),
         ];
 
         for event in events {
@@ -3586,11 +2508,11 @@ mod tests {
             "ToolCalled"
         );
         assert_eq!(
-            SessionEvent::SessionStateChanged {
+            SessionEvent::internal(InternalSessionEvent::SessionStateChanged {
                 session_id: "".into(),
                 state: crate::session::SessionState::Active,
                 previous_state: None,
-            }
+            })
             .type_name(),
             "SessionStateChanged"
         );
@@ -3681,10 +2603,10 @@ mod tests {
         assert_eq!(tokens, 100 / 4 + 10); // 100 fixed + overhead
 
         // Test small metadata events
-        let event = SessionEvent::FileChanged {
+        let event = SessionEvent::internal(InternalSessionEvent::FileChanged {
             path: PathBuf::from("/notes/test.md"),
             kind: FileChangeKind::Modified,
-        };
+        });
         let tokens = event.estimate_tokens();
         assert_eq!(tokens, 50 / 4 + 10); // 50 fixed + overhead
     }
@@ -3756,26 +2678,26 @@ mod tests {
     #[test]
     fn test_subagent_variants_still_deserialize() {
         // Verify backwards compatibility: existing SubagentSpawned/Completed/Failed still work
-        let subagent_spawned = SessionEvent::SubagentSpawned {
+        let subagent_spawned = SessionEvent::internal(InternalSessionEvent::SubagentSpawned {
             id: "sub-123".into(),
             prompt: "Do something".into(),
-        };
+        });
         let json = serde_json::to_string(&subagent_spawned).expect("serialize");
         let deserialized: SessionEvent = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(subagent_spawned, deserialized);
 
-        let subagent_completed = SessionEvent::SubagentCompleted {
+        let subagent_completed = SessionEvent::internal(InternalSessionEvent::SubagentCompleted {
             id: "sub-123".into(),
             result: "Done".into(),
-        };
+        });
         let json = serde_json::to_string(&subagent_completed).expect("serialize");
         let deserialized: SessionEvent = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(subagent_completed, deserialized);
 
-        let subagent_failed = SessionEvent::SubagentFailed {
+        let subagent_failed = SessionEvent::internal(InternalSessionEvent::SubagentFailed {
             id: "sub-123".into(),
             error: "Failed".into(),
-        };
+        });
         let json = serde_json::to_string(&subagent_failed).expect("serialize");
         let deserialized: SessionEvent = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(subagent_failed, deserialized);

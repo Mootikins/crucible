@@ -4,7 +4,7 @@
 //! events when processing FileChanged events. This tests the second stage of the
 //! event pipeline: FileChanged -> ParserHandler -> NoteParsed
 
-use crucible_core::events::{FileChangeKind, NotePayload, SessionEvent};
+use crucible_core::events::{InternalSessionEvent, FileChangeKind, NotePayload, SessionEvent};
 use crucible_core::test_support::mocks::MockEventEmitter;
 use crucible_daemon::watch::handlers::ParserHandler;
 use std::path::PathBuf;
@@ -35,14 +35,15 @@ async fn test_note_parsed_emission_basic() {
     );
 
     match &emitted_events[0] {
-        SessionEvent::NoteParsed {
+        SessionEvent::Internal(inner) => { if let InternalSessionEvent::NoteParsed {
             path,
             block_count,
             payload,
-        } => {
+            } = inner.as_ref() {
             assert_eq!(path, &test_file, "Path mismatch");
             assert!(*block_count > 0, "Expected at least one block");
             assert!(payload.is_some(), "Expected payload to be present");
+        }
         }
         other => panic!("Expected NoteParsed event, got: {:?}", other),
     }
@@ -83,13 +84,15 @@ let code = "block";
     assert_eq!(emitted_events.len(), 1);
 
     match &emitted_events[0] {
-        SessionEvent::NoteParsed { block_count, .. } => {
+        SessionEvent::Internal(inner) => {
+            if let InternalSessionEvent::NoteParsed { block_count, .. } = inner.as_ref() {
             // Should have: 2 headings + 2 paragraphs + 1 code block + 1 list + 1 blockquote = 7
             assert!(
                 *block_count >= 5,
                 "Expected at least 5 blocks, got {}",
                 block_count
             );
+            }
         }
         other => panic!("Expected NoteParsed event, got: {:?}", other),
     }
@@ -113,7 +116,8 @@ async fn test_note_parsed_payload_tags() {
     assert_eq!(emitted_events.len(), 1);
 
     match &emitted_events[0] {
-        SessionEvent::NoteParsed { payload, .. } => {
+        SessionEvent::Internal(inner) => {
+            if let InternalSessionEvent::NoteParsed { payload, .. } = inner.as_ref() {
             let payload = payload.as_ref().expect("Expected payload");
             // Tags should be extracted from inline content
             // Note: The exact tag extraction depends on parser implementation
@@ -124,6 +128,7 @@ async fn test_note_parsed_payload_tags() {
                 "Tags should be extracted or empty: {:?}",
                 payload.tags
             );
+            }
         }
         other => panic!("Expected NoteParsed event, got: {:?}", other),
     }
@@ -147,7 +152,8 @@ async fn test_note_parsed_payload_wikilinks() {
     assert_eq!(emitted_events.len(), 1);
 
     match &emitted_events[0] {
-        SessionEvent::NoteParsed { payload, .. } => {
+        SessionEvent::Internal(inner) => {
+            if let InternalSessionEvent::NoteParsed { payload, .. } = inner.as_ref() {
             let payload = payload.as_ref().expect("Expected payload");
             assert_eq!(payload.wikilinks.len(), 2, "Expected 2 wikilinks");
             assert!(
@@ -158,6 +164,7 @@ async fn test_note_parsed_payload_wikilinks() {
                 payload.wikilinks.contains(&"Another Note".to_string()),
                 "Expected 'Another Note' wikilink"
             );
+            }
         }
         other => panic!("Expected NoteParsed event, got: {:?}", other),
     }
@@ -182,7 +189,8 @@ async fn test_note_parsed_payload_title() {
     assert_eq!(emitted_events.len(), 1);
 
     match &emitted_events[0] {
-        SessionEvent::NoteParsed { payload, .. } => {
+        SessionEvent::Internal(inner) => {
+            if let InternalSessionEvent::NoteParsed { payload, .. } = inner.as_ref() {
             let payload = payload.as_ref().expect("Expected payload");
             // Parser derives title from filename (without extension) by default
             // Title may be "titled" (from filename) or "My Document Title" (from H1)
@@ -191,6 +199,7 @@ async fn test_note_parsed_payload_title() {
                 "Title should be present, got: {:?}",
                 payload.title
             );
+            }
         }
         other => panic!("Expected NoteParsed event, got: {:?}", other),
     }
@@ -243,10 +252,10 @@ async fn test_handle_event_dispatches_file_changed() {
     std::fs::write(&test_file, "# Dispatch Test\n\nContent.").unwrap();
 
     // Create a FileChanged event
-    let file_changed = SessionEvent::FileChanged {
+    let file_changed = SessionEvent::Internal(Box::new(InternalSessionEvent::FileChanged {
         path: test_file.clone(),
         kind: FileChangeKind::Modified,
-    };
+    }));
 
     // Handle via handle_event
     handler.handle_event(&file_changed).await;
@@ -255,8 +264,10 @@ async fn test_handle_event_dispatches_file_changed() {
     assert_eq!(emitted_events.len(), 1);
 
     match &emitted_events[0] {
-        SessionEvent::NoteParsed { path, .. } => {
+        SessionEvent::Internal(inner) => {
+            if let InternalSessionEvent::NoteParsed { path, .. } = inner.as_ref() {
             assert_eq!(path, &test_file);
+            }
         }
         other => panic!("Expected NoteParsed event, got: {:?}", other),
     }
@@ -270,17 +281,17 @@ async fn test_handle_event_ignores_other_events() {
 
     // Events that should be ignored
     let events = vec![
-        SessionEvent::FileDeleted {
+        SessionEvent::Internal(Box::new(InternalSessionEvent::FileDeleted {
             path: PathBuf::from("/test.md"),
-        },
+        })),
         SessionEvent::ToolCalled {
             name: "test".to_string(),
             args: serde_json::json!({}),
         },
-        SessionEvent::EntityStored {
+        SessionEvent::Internal(Box::new(InternalSessionEvent::EntityStored {
             entity_id: "test".to_string(),
             entity_type: crucible_core::events::EntityType::Note,
-        },
+        })),
     ];
 
     for event in events {
@@ -304,10 +315,10 @@ async fn test_note_parsed_for_created_file() {
     let test_file = temp_dir.path().join("new_note.md");
     std::fs::write(&test_file, "# New Note\n\nJust created.").unwrap();
 
-    let file_changed = SessionEvent::FileChanged {
+    let file_changed = SessionEvent::Internal(Box::new(InternalSessionEvent::FileChanged {
         path: test_file.clone(),
         kind: FileChangeKind::Created,
-    };
+    }));
 
     handler.handle_event(&file_changed).await;
 
@@ -315,7 +326,8 @@ async fn test_note_parsed_for_created_file() {
     assert_eq!(emitted_events.len(), 1);
 
     match &emitted_events[0] {
-        SessionEvent::NoteParsed { path, payload, .. } => {
+        SessionEvent::Internal(inner) => {
+            if let InternalSessionEvent::NoteParsed { path, payload, .. } = inner.as_ref() {
             assert_eq!(path, &test_file);
             let payload = payload.as_ref().expect("Expected payload");
             // Title derived from filename ("new_note") or H1 ("New Note")
@@ -324,6 +336,7 @@ async fn test_note_parsed_for_created_file() {
                 "Title should be present, got: {:?}",
                 payload.title
             );
+            }
         }
         other => panic!("Expected NoteParsed event, got: {:?}", other),
     }
@@ -353,7 +366,7 @@ async fn test_multiple_file_changes_emit_multiple_note_parsed() {
     // Verify both are NoteParsed
     for event in &emitted_events {
         assert!(
-            matches!(event, SessionEvent::NoteParsed { .. }),
+            matches!(event, SessionEvent::Internal(_)),
             "Expected NoteParsed, got: {:?}",
             event
         );
@@ -426,7 +439,8 @@ Content here.
     assert_eq!(emitted_events.len(), 1);
 
     match &emitted_events[0] {
-        SessionEvent::NoteParsed { payload, .. } => {
+        SessionEvent::Internal(inner) => {
+            if let InternalSessionEvent::NoteParsed { payload, .. } = inner.as_ref() {
             let payload = payload.as_ref().expect("Expected payload");
             // Title should come from frontmatter OR heading depending on parser config
             assert!(
@@ -434,6 +448,7 @@ Content here.
                 "Title should be extracted: got '{}'",
                 payload.title
             );
+            }
         }
         other => panic!("Expected NoteParsed event, got: {:?}", other),
     }

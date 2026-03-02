@@ -23,7 +23,7 @@
 //! ParserHandler runs at priority 50 (before storage handlers at 100) to ensure
 //! files are parsed before storage operations attempt to persist them.
 
-use crucible_core::events::{EventEmitter, NoOpEmitter, NotePayload, SessionEvent};
+use crucible_core::events::{EventEmitter, NoOpEmitter, NotePayload, SessionEvent, InternalSessionEvent};
 use crucible_parser::{CrucibleParser, MarkdownParser};
 use std::path::Path;
 use std::sync::Arc;
@@ -163,11 +163,11 @@ impl ParserHandler {
                     );
 
                 // Emit NoteParsed event with payload
-                let event = SessionEvent::NoteParsed {
+                let event = SessionEvent::internal(InternalSessionEvent::NoteParsed {
                     path: path.to_path_buf(),
                     block_count,
                     payload: Some(payload),
-                };
+                });
 
                 if let Err(e) = self.emitter.emit(event).await {
                     error!(
@@ -213,8 +213,10 @@ impl ParserHandler {
     /// parsing happens before storage handlers process the NoteParsed events.
     pub async fn handle_event(&self, event: &SessionEvent) {
         match event {
-            SessionEvent::FileChanged { path, kind: _ } => {
-                self.handle_file_changed(path).await;
+            SessionEvent::Internal(inner) => {
+                if let InternalSessionEvent::FileChanged { path, kind: _ } = inner.as_ref() {
+                    self.handle_file_changed(path).await;
+                }
             }
             _ => {
                 // Ignore other event types
@@ -324,14 +326,17 @@ mod tests {
         );
 
         match &events[0] {
-            SessionEvent::NoteParsed {
-                path,
-                block_count,
-                payload,
-            } => {
-                assert_eq!(path, &file_path);
-                assert!(*block_count > 0, "Expected at least 1 block");
-                assert!(payload.is_some(), "Expected payload to be present");
+            SessionEvent::Internal(inner) => {
+                if let InternalSessionEvent::NoteParsed {
+                    path,
+                    block_count,
+                    payload,
+                } = inner.as_ref()
+                {
+                    assert_eq!(path, &file_path);
+                    assert!(*block_count > 0, "Expected at least 1 block");
+                    assert!(payload.is_some(), "Expected payload to be present");
+                }
             }
             other => panic!("Expected NoteParsed event, got {:?}", other),
         }
@@ -387,10 +392,10 @@ mod tests {
             .unwrap();
 
         // Create a FileChanged event
-        let event = SessionEvent::FileChanged {
+        let event = SessionEvent::internal(InternalSessionEvent::FileChanged {
             path: file_path.clone(),
             kind: crucible_core::events::FileChangeKind::Modified,
-        };
+        });
 
         // Handle the event
         handler.handle_event(&event).await;
@@ -400,7 +405,7 @@ mod tests {
         assert!(
             events
                 .iter()
-                .any(|e| matches!(e, SessionEvent::NoteParsed { .. })),
+                .any(|e| matches!(e, SessionEvent::Internal(inner) if matches!(inner.as_ref(), InternalSessionEvent::NoteParsed { .. }))),
             "FileChanged should trigger NoteParsed emission"
         );
     }
@@ -412,13 +417,13 @@ mod tests {
 
         // Create events that should be ignored
         let events_to_ignore = vec![
-            SessionEvent::FileDeleted {
+            SessionEvent::internal(InternalSessionEvent::FileDeleted {
                 path: Path::new("/test.md").to_path_buf(),
-            },
-            SessionEvent::EntityStored {
+            }),
+            SessionEvent::internal(InternalSessionEvent::EntityStored {
                 entity_id: "test".to_string(),
                 entity_type: crucible_core::events::EntityType::Note,
-            },
+            }),
             SessionEvent::ToolCalled {
                 name: "test".to_string(),
                 args: serde_json::json!({}),

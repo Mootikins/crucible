@@ -22,7 +22,7 @@
 //! service with appropriate parameters.
 
 use crucible_core::enrichment::EnrichmentService;
-use crucible_core::events::SessionEvent;
+use crucible_core::events::{SessionEvent, InternalSessionEvent};
 use crucible_core::ParsedNote;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -149,34 +149,41 @@ impl EmbeddingHandler {
     /// For direct enrichment with a `ParsedNote`, use `handle_note_parsed` directly.
     pub async fn handle_event(&self, event: &SessionEvent) {
         match event {
-            SessionEvent::NoteParsed {
-                path,
-                block_count,
-                payload,
-            } => {
-                // Log the event - full enrichment requires the ParsedNote
-                debug!(
-                    path = %path.display(),
-                    block_count = block_count,
-                    has_payload = payload.is_some(),
-                    "NoteParsed event received"
-                );
+            SessionEvent::Internal(inner) => {
+                match inner.as_ref() {
+                    InternalSessionEvent::NoteParsed {
+                        path,
+                        block_count,
+                        payload,
+                    } => {
+                        // Log the event - full enrichment requires the ParsedNote
+                        debug!(
+                            path = %path.display(),
+                            block_count = block_count,
+                            has_payload = payload.is_some(),
+                            "NoteParsed event received"
+                        );
 
-                // If payload is present, we have metadata but not the full AST
-                // For full enrichment, the caller should provide ParsedNote directly
-                // via handle_note_parsed()
-                if payload.is_some() {
-                    info!(
-                        path = %path.display(),
-                        "NoteParsed has payload - enrichment requires full ParsedNote"
-                    );
+                        // If payload is present, we have metadata but not the full AST
+                        // For full enrichment, the caller should provide ParsedNote directly
+                        // via handle_note_parsed()
+                        if payload.is_some() {
+                            info!(
+                                path = %path.display(),
+                                "NoteParsed has payload - enrichment requires full ParsedNote"
+                            );
+                        }
+                    }
+                    InternalSessionEvent::BlocksUpdated {
+                        entity_id,
+                        block_count,
+                    } => {
+                        self.handle_blocks_updated(entity_id, *block_count).await;
+                    }
+                    _ => {
+                        // Ignore other internal event types
+                    }
                 }
-            }
-            SessionEvent::BlocksUpdated {
-                entity_id,
-                block_count,
-            } => {
-                self.handle_blocks_updated(entity_id, *block_count).await;
             }
             _ => {
                 // Ignore other event types
@@ -364,10 +371,10 @@ mod tests {
         let service = Arc::new(MockEnrichmentService::new());
         let handler = EmbeddingHandler::new(service.clone());
 
-        let event = SessionEvent::BlocksUpdated {
+        let event = SessionEvent::Internal(Box::new(InternalSessionEvent::BlocksUpdated {
             entity_id: "test_entity".to_string(),
             block_count: 5,
-        };
+        }));
 
         // This should not panic and should log appropriately
         handler.handle_event(&event).await;
