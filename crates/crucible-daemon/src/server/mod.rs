@@ -45,10 +45,10 @@ use tracing::{debug, error, info, warn};
 
 mod core;
 pub mod kiln;
-mod lua;
+pub mod lua;
 pub mod observe;
 mod platform;
-mod plugins;
+pub mod plugins;
 pub mod session;
 mod storage;
 

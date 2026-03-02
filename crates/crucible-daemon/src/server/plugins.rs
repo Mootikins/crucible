@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) async fn handle_plugin_reload(
+pub(crate) async fn handle_plugin_reload(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
@@ -41,7 +41,7 @@ pub(super) async fn handle_plugin_reload(
     }
 }
 
-pub(super) async fn handle_plugin_list(
+pub(crate) async fn handle_plugin_list(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
