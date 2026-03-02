@@ -10,7 +10,6 @@ members = [
     "crates/crucible-config",
     "crates/crucible-acp",
     "crates/crucible-llm",
-    "crates/crucible-tools",
     "crates/crucible-lua",
     "crates/crucible-web",
     "crates/crucible-daemon",
@@ -132,7 +131,6 @@ crossterm = { version = "0.29", features = ["event-stream"] }
 crucible-core = { path = "crates/crucible-core" }
 crucible-config = { path = "crates/crucible-config" }
 crucible-acp = { path = "crates/crucible-acp" }
-crucible-tools = { path = "crates/crucible-tools" }
 crucible-llm = { path = "crates/crucible-llm", default-features = false }
 
 crucible-lua = { path = "crates/crucible-lua" }

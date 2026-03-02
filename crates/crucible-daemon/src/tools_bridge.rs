@@ -1,6 +1,6 @@
 use crucible_core::traits::tools::{ExecutionContext, ToolExecutor};
 use crucible_lua::DaemonToolsApi;
-use crucible_tools::workspace::WorkspaceTools;
+use crate::tools::workspace::WorkspaceTools;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -46,7 +46,7 @@ mod tests {
 
     #[test]
     fn test_daemon_tools_bridge_construction() {
-        let workspace_tools = Arc::new(crucible_tools::workspace::WorkspaceTools::new(
+        let workspace_tools = Arc::new(crate::tools::workspace::WorkspaceTools::new(
             &std::path::PathBuf::from("/tmp"),
         ));
 
@@ -58,7 +58,7 @@ mod tests {
 
     #[test]
     fn test_daemon_tools_bridge_delegates_to_workspace_tools() {
-        let workspace_tools = Arc::new(crucible_tools::workspace::WorkspaceTools::new(
+        let workspace_tools = Arc::new(crate::tools::workspace::WorkspaceTools::new(
             &std::path::PathBuf::from("/tmp"),
         ));
 

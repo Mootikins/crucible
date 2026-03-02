@@ -12,7 +12,7 @@ use crucible_core::traits::chat::{
 use crucible_core::traits::knowledge::NoteInfo;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_core::types::SearchResult;
-use crucible_tools::workspace::WorkspaceTools;
+use crate::tools::workspace::WorkspaceTools;
 use futures::stream::BoxStream;
 use futures::StreamExt;
 use std::collections::HashMap;

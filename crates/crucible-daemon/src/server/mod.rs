@@ -29,7 +29,7 @@ use crucible_lua::{
     ScriptHandlerResult, Session as LuaSession, SessionConfigRpc,
 };
 use crate::skills::discovery::{default_discovery_paths, FolderDiscovery};
-use crucible_tools::workspace::WorkspaceTools;
+use crate::tools::workspace::WorkspaceTools;
 use dashmap::DashMap;
 
 use crate::protocol::RequestId;
@@ -137,7 +137,7 @@ impl Server {
         let (shutdown_tx, _) = broadcast::channel(1);
         let (event_tx, _) = broadcast::channel(1024);
 
-        use crucible_tools::mcp_gateway::McpGatewayManager;
+        use crate::tools::mcp_gateway::McpGatewayManager;
         use tokio::sync::RwLock;
 
         let mcp_gateway = if let Some(mcp_cfg) = params.mcp_config.as_ref() {

@@ -16,7 +16,7 @@
 
 #![allow(clippy::doc_markdown, clippy::manual_let_else, missing_docs)]
 
-use crate::helpers::{json_success, McpResultExt};
+use super::helpers::{json_success, McpResultExt};
 use crucible_core::serde_helpers::default_true;
 use crucible_core::storage::NoteStore;
 use crucible_core::{enrichment::EmbeddingProvider, traits::KnowledgeRepository};
@@ -464,7 +464,7 @@ fn match_tags_property(tags: &[String], search_value: &serde_json::Value) -> boo
 }
 
 // Use shared utilities for frontmatter parsing and path validation
-use crate::utils::{parse_yaml_frontmatter, validate_folder_within_kiln};
+use super::utils::{parse_yaml_frontmatter, validate_folder_within_kiln};
 
 #[cfg(test)]
 mod tests {
@@ -924,7 +924,7 @@ mod tests {
     /// - Using bare `serde_json::Value` without `#[schemars(schema_with = "...")]`
     #[test]
     fn test_tool_schemas_llama_cpp_compatible() {
-        use crate::notes::{
+        use super::notes::{
             CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMetadataParams,
             ReadNoteParams, UpdateNoteParams,
         };

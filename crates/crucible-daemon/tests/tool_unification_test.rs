@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use crucible_acp::InProcessMcpHost;
+use crucible_daemon::InProcessMcpHost;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
 use tempfile::TempDir;

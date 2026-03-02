@@ -22,10 +22,10 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
-use crate::{ClientError, Result};
+use crucible_acp::{ClientError, Result as AcpResult};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
-use crucible_tools::{CrucibleMcpServer, DelegationContext};
+use crate::tools::{CrucibleMcpServer, DelegationContext};
 
 async fn ensure_streamable_accept(
     mut request: axum::http::Request<axum::body::Body>,
@@ -72,7 +72,7 @@ impl InProcessMcpHost {
         knowledge_repo: Arc<dyn KnowledgeRepository>,
         embedding_provider: Arc<dyn EmbeddingProvider>,
         delegation_context: Option<DelegationContext>,
-    ) -> Result<Self> {
+    ) -> AcpResult<Self> {
         use rmcp::transport::streamable_http_server::{
             session::local::LocalSessionManager, tower::StreamableHttpService,
         };

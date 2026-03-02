@@ -344,7 +344,7 @@ async fn test_opencode_line_sequence() {
 #[tokio::test]
 #[ignore = "requires opencode binary - run with --ignored"]
 async fn test_opencode_with_sse_mcp() {
-    use crucible_acp::InProcessMcpHost;
+    use crucible_daemon::InProcessMcpHost;
     use crucible_core::enrichment::EmbeddingProvider;
     use crucible_core::traits::KnowledgeRepository;
     use std::sync::Arc;
@@ -697,7 +697,7 @@ async fn test_opencode_no_mcp() {
 #[tokio::test]
 #[ignore = "requires opencode binary - run with --ignored"]
 async fn test_opencode_raw_sse_mcp() {
-    use crucible_acp::InProcessMcpHost;
+    use crucible_daemon::InProcessMcpHost;
     use crucible_core::enrichment::EmbeddingProvider;
     use crucible_core::traits::KnowledgeRepository;
     use std::io::{BufRead, BufReader, Write};

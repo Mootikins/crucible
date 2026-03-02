@@ -16,7 +16,6 @@ pub mod acp_client;
 pub mod client;
 pub mod discovery;
 pub mod filesystem;
-pub mod mcp_host;
 pub mod protocol;
 pub mod session;
 pub mod streaming;
@@ -35,7 +34,6 @@ pub use discovery::{
     probe_all_agents, AgentInfo, KnownAgent,
 };
 pub use filesystem::FileSystemHandler;
-pub use mcp_host::InProcessMcpHost;
 pub use protocol::MessageHandler;
 pub use session::{AcpSession, TransportConfig};
 pub use streaming::{

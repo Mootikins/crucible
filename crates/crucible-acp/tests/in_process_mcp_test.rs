@@ -3,7 +3,7 @@
 //! These tests verify that agents can discover and use Crucible tools
 //! when connected via the in-process SSE MCP server.
 
-use crucible_acp::InProcessMcpHost;
+use crucible_daemon::InProcessMcpHost;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
 use std::path::PathBuf;

@@ -4,7 +4,7 @@
 
 #![allow(clippy::missing_errors_doc)]
 
-use crate::helpers::McpResultExt;
+use super::helpers::McpResultExt;
 use std::path::{Path, PathBuf};
 
 /// Parse YAML frontmatter from markdown content

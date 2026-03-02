@@ -23,10 +23,10 @@
 //! Lua plugins use `@tool` doc comments to register tools.
 //! Lua handlers use `@handler` doc comments to register event handlers.
 
-use crate::helpers::{text_success, McpResultExt};
-use crate::mcp_gateway::McpGatewayManager;
-use crate::toon_response::toon_success_smart;
-use crate::CrucibleMcpServer;
+use super::helpers::{text_success, McpResultExt};
+use super::mcp_gateway::McpGatewayManager;
+use super::toon_response::toon_success_smart;
+use super::CrucibleMcpServer;
 use crucible_core::discovery::DiscoveryPaths;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::events::{Reactor, ReactorEmitResult, SessionEvent};
@@ -707,7 +707,7 @@ fn handle_discovery_tool(
     arguments: Value,
     tools: Vec<Tool>,
 ) -> Result<CallToolResult, rmcp::ErrorData> {
-    use crate::tool_discovery::{DiscoverToolsParams, GetToolSchemaParams, ToolDiscovery};
+    use super::tool_discovery::{DiscoverToolsParams, GetToolSchemaParams, ToolDiscovery};
 
     let discovery = ToolDiscovery::new(tools);
 

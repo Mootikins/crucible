@@ -22,7 +22,7 @@ use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
 
 use crucible_acp::client::{ClientConfig, CrucibleAcpClient, PermissionRequestHandler};
 use crucible_acp::streaming::{channel_callback, StreamingChunk};
-use crucible_acp::InProcessMcpHost;
+use crate::mcp_host::InProcessMcpHost;
 use crucible_config::{AcpConfig, DataClassification, DelegationConfig};
 use crucible_core::background::BackgroundSpawner;
 use crucible_core::enrichment::EmbeddingProvider;
@@ -33,7 +33,7 @@ use crucible_core::traits::chat::{
 use crucible_core::traits::KnowledgeRepository;
 use crucible_core::types::acp::schema::{AvailableCommand, SessionModeState};
 use crucible_core::types::mode::default_internal_modes;
-use crucible_tools::DelegationContext;
+use crate::tools::DelegationContext;
 
 /// Errors specific to ACP agent handle creation and management.
 #[derive(Error, Debug)]

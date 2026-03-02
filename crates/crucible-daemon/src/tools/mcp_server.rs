@@ -26,8 +26,8 @@
 
 #![allow(missing_docs)]
 
-use crate::helpers::McpResultExt;
-use crate::{KilnTools, NoteTools, SearchTools};
+use super::helpers::McpResultExt;
+use super::{KilnTools, NoteTools, SearchTools};
 use crucible_config::{DataClassification, TrustLevel};
 use crucible_core::background::{BackgroundSpawner, JobStatus, SubagentBlockingConfig};
 use crucible_core::enrichment::EmbeddingProvider;
@@ -41,11 +41,11 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 // Re-export parameter types from individual modules
-use crate::notes::{
+use super::notes::{
     CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMetadataParams, ReadNoteParams,
     UpdateNoteParams,
 };
-use crate::search::{PropertySearchParams, SemanticSearchParams, TextSearchParams};
+use super::search::{PropertySearchParams, SemanticSearchParams, TextSearchParams};
 
 /// Unified MCP server exposing all Crucible tools
 ///

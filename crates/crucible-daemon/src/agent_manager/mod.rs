@@ -29,7 +29,7 @@ use crucible_lua::{
     execute_permission_hooks, register_crucible_on_api, register_permission_hook_api,
     LuaScriptHandlerRegistry, PermissionHook, PermissionHookResult, PermissionRequest,
 };
-use crucible_tools::workspace::WorkspaceTools;
+use crate::tools::workspace::WorkspaceTools;
 use dashmap::DashMap;
 use futures::StreamExt;
 use mlua::Lua;
@@ -388,7 +388,7 @@ pub struct AgentManager {
     background_manager: Arc<BackgroundJobManager>,
     session_states: SessionStateCache,
     pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
-    mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
+    mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     llm_config: Option<crucible_config::LlmConfig>,
     acp_config: Option<AcpConfig>,
     permission_config: Option<PermissionConfig>,
@@ -402,7 +402,7 @@ pub struct AgentManagerParams {
     pub session_manager: Arc<SessionManager>,
     pub background_manager: Arc<BackgroundJobManager>,
     pub mcp_gateway:
-        Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
+        Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     pub llm_config: Option<crucible_config::LlmConfig>,
     pub acp_config: Option<AcpConfig>,
     pub permission_config: Option<PermissionConfig>,

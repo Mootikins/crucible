@@ -4,7 +4,7 @@
 //! at runtime, enabling proactive tool search ("what tools can help with X?") and
 //! progressive disclosure (don't dump all tools in context).
 
-use crate::helpers::text_success;
+use super::helpers::text_success;
 use rmcp::model::{CallToolResult, Tool};
 use serde::{Deserialize, Serialize};
 use serde_json::json;

@@ -21,8 +21,8 @@ use crucible_core::traits::llm::LlmToolDefinition;
 use crucible_core::traits::mcp::McpToolInfo;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_lua::auth_plugin::{fire_provider_auth_hooks, get_provider_auth_hooks};
-use crucible_tools::mcp_server::CrucibleMcpServer;
-use crucible_tools::DelegationContext;
+use crate::tools::mcp_server::CrucibleMcpServer;
+use crate::tools::DelegationContext;
 use mlua::Lua;
 use std::path::Path;
 use std::sync::Arc;
@@ -35,7 +35,7 @@ pub struct CreateInternalMcpToolDefsParams<'a> {
     pub workspace: &'a Path,
     pub kiln_path: Option<&'a Path>,
     pub mcp_gateway:
-        Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
+        Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     pub server_names: &'a [String],
     pub knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
     pub embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
@@ -54,7 +54,7 @@ pub struct CreateAgentFromSessionConfigParams<'a> {
     pub background_spawner: Option<Arc<dyn BackgroundSpawner>>,
     pub event_tx: &'a broadcast::Sender<SessionEventMessage>,
     pub mcp_gateway:
-        Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
+        Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     pub acp_permission_handler: Option<PermissionRequestHandler>,
     pub acp_config: Option<&'a crucible_config::components::acp::AcpConfig>,
     pub knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
@@ -190,14 +190,14 @@ async fn create_internal_mcp_tool_defs(
 }
 
 fn is_plan_mode_tool(name: &str) -> bool {
-    crucible_tools::tool_modes::PLAN_TOOL_NAMES.contains(&name)
+    crate::tools::tool_modes::PLAN_TOOL_NAMES.contains(&name)
 }
 
 #[cfg(test)]
 async fn create_internal_mcp_tool_names_for_tests(
     workspace: &Path,
     kiln_path: Option<&Path>,
-    mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
+    mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     server_names: &[String],
     knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
     embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
@@ -434,7 +434,7 @@ mod tests {
         kiln_path: Option<&Path>,
         knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
         embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
-        mcp_gateway: Option<Arc<RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
+        mcp_gateway: Option<Arc<RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
         user_tools: &[McpToolInfo],
         mode: &str,
     ) -> Vec<String> {
@@ -508,7 +508,7 @@ mod tests {
     #[tokio::test]
     async fn internal_tools_include_adapter_tools() {
         let gateway = Arc::new(RwLock::new(
-            crucible_tools::mcp_gateway::McpGatewayManager::new(),
+            crate::tools::mcp_gateway::McpGatewayManager::new(),
         ));
 
         let names = build_internal_tool_names_for_tests(
@@ -530,7 +530,7 @@ mod tests {
     #[tokio::test]
     async fn adapter_tools_come_before_user_mcp_tools() {
         let gateway = Arc::new(RwLock::new(
-            crucible_tools::mcp_gateway::McpGatewayManager::new(),
+            crate::tools::mcp_gateway::McpGatewayManager::new(),
         ));
 
         let user_tools = vec![McpToolInfo {

@@ -500,7 +500,7 @@ mod tests {
     use crate::background_manager::BackgroundJobManager;
     use crate::kiln_manager::KilnManager;
     use crate::session_manager::SessionManager;
-    use crucible_tools::workspace::WorkspaceTools;
+    use crate::tools::workspace::WorkspaceTools;
 
     #[test]
     fn test_daemon_session_bridge_construction() {
