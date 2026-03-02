@@ -242,8 +242,6 @@ pub(super) async fn handle_legacy_request(params: LegacyRequestParams<'_>) -> Re
     tracing::debug!("Legacy handler for method={:?}", params.req.method);
 
     match params.req.method.as_str() {
-        "plugin.reload" => handle_plugin_reload(params.req, params.plugin_loader).await,
-        "plugin.list" => handle_plugin_list(params.req, params.plugin_loader).await,
         "project.register" => handle_project_register(params.req, params.project_manager).await,
         "project.unregister" => handle_project_unregister(params.req, params.project_manager).await,
         "project.list" => handle_project_list(params.req, params.project_manager).await,
@@ -252,19 +250,6 @@ pub(super) async fn handle_legacy_request(params: LegacyRequestParams<'_>) -> Re
         "storage.cleanup" => handle_storage_cleanup(params.req).await,
         "storage.backup" => handle_storage_backup(params.req).await,
         "storage.restore" => handle_storage_restore(params.req).await,
-        "lua.init_session" => handle_lua_init_session(params.req, params.lua_sessions).await,
-        "lua.register_hooks" => handle_lua_register_hooks(params.req, params.lua_sessions).await,
-        "lua.execute_hook" => handle_lua_execute_hook(params.req, params.lua_sessions).await,
-        "lua.shutdown_session" => {
-            handle_lua_shutdown_session(params.req, params.lua_sessions).await
-        }
-        "lua.discover_plugins" => handle_lua_discover_plugins(params.req).await,
-        "lua.plugin_health" => handle_lua_plugin_health(params.req).await,
-        "lua.generate_stubs" => handle_lua_generate_stubs(params.req).await,
-        "lua.run_plugin_tests" => handle_lua_run_plugin_tests(params.req).await,
-        "lua.register_commands" => {
-            handle_lua_register_commands(params.req, params.lua_sessions).await
-        }
         "mcp.start" => {
             handle_mcp_start(params.req, params.kiln_manager, params.mcp_server_manager).await
         }

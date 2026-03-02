@@ -63,6 +63,15 @@ pub const METHODS: &[&str] = &[
     "session.reindex",
     "plugin.reload",
     "plugin.list",
+    "lua.init_session",
+    "lua.register_hooks",
+    "lua.execute_hook",
+    "lua.shutdown_session",
+    "lua.discover_plugins",
+    "lua.plugin_health",
+    "lua.generate_stubs",
+    "lua.run_plugin_tests",
+    "lua.register_commands",
     "project.register",
     "project.unregister",
     "project.list",
@@ -175,6 +184,21 @@ impl RpcDispatcher {
             "session.dismiss_notification" => to_response(id, self.handle_session_dismiss_notification(&req).await),
             "session.test_interaction" => to_response(id, self.handle_session_test_interaction(&req).await),
             "session.replay" => to_response(id, self.handle_session_replay(&req).await),
+
+            // Lua RPC handlers
+            "lua.init_session" => to_response(id, self.handle_lua_init_session(&req).await),
+            "lua.register_hooks" => to_response(id, self.handle_lua_register_hooks(&req).await),
+            "lua.execute_hook" => to_response(id, self.handle_lua_execute_hook(&req).await),
+            "lua.shutdown_session" => to_response(id, self.handle_lua_shutdown_session(&req).await),
+            "lua.discover_plugins" => to_response(id, self.handle_lua_discover_plugins(&req).await),
+            "lua.plugin_health" => to_response(id, self.handle_lua_plugin_health(&req).await),
+            "lua.generate_stubs" => to_response(id, self.handle_lua_generate_stubs(&req).await),
+            "lua.run_plugin_tests" => to_response(id, self.handle_lua_run_plugin_tests(&req).await),
+            "lua.register_commands" => to_response(id, self.handle_lua_register_commands(&req).await),
+
+            // Plugin RPC handlers
+            "plugin.reload" => to_response(id, self.handle_plugin_reload(&req).await),
+            "plugin.list" => to_response(id, self.handle_plugin_list(&req).await),
 
             // For other methods, we return METHOD_NOT_FOUND here.
             // In production, server.rs will handle these until we migrate them.
@@ -929,6 +953,149 @@ impl RpcDispatcher {
             Ok(resp.result.unwrap_or(serde_json::Value::Null))
         }
     }
+
+    // ── Lua RPC wrappers ─────────────────────────────────────────────────
+
+    async fn handle_lua_init_session(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::lua::handle_lua_init_session(
+            req.clone(),
+            &self.ctx.lua_sessions,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_lua_register_hooks(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::lua::handle_lua_register_hooks(
+            req.clone(),
+            &self.ctx.lua_sessions,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_lua_execute_hook(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::lua::handle_lua_execute_hook(
+            req.clone(),
+            &self.ctx.lua_sessions,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_lua_shutdown_session(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::lua::handle_lua_shutdown_session(
+            req.clone(),
+            &self.ctx.lua_sessions,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_lua_discover_plugins(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::lua::handle_lua_discover_plugins(
+            req.clone(),
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_lua_plugin_health(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::lua::handle_lua_plugin_health(
+            req.clone(),
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_lua_generate_stubs(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::lua::handle_lua_generate_stubs(
+            req.clone(),
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_lua_run_plugin_tests(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::lua::handle_lua_run_plugin_tests(
+            req.clone(),
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_lua_register_commands(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::lua::handle_lua_register_commands(
+            req.clone(),
+            &self.ctx.lua_sessions,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    // ── Plugin RPC wrappers ──────────────────────────────────────────────
+
+    async fn handle_plugin_reload(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::plugins::handle_plugin_reload(
+            req.clone(),
+            &self.ctx.plugin_loader,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_plugin_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::plugins::handle_plugin_list(
+            req.clone(),
+            &self.ctx.plugin_loader,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1002,7 +1169,7 @@ mod tests {
 
     #[test]
     fn methods_count() {
-        assert_eq!(METHODS.len(), 56, "Update when adding RPC methods");
+        assert_eq!(METHODS.len(), 65, "Update when adding RPC methods");
     }
 
     #[tokio::test]
