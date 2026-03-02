@@ -242,26 +242,6 @@ pub(super) async fn handle_legacy_request(params: LegacyRequestParams<'_>) -> Re
     tracing::debug!("Legacy handler for method={:?}", params.req.method);
 
     match params.req.method.as_str() {
-        "session.create" => {
-            handle_session_create(
-                params.req,
-                params.session_manager,
-                params.project_manager,
-                params.llm_config,
-            )
-            .await
-        }
-        "session.list" => handle_session_list(params.req, params.session_manager).await,
-        "session.get" => handle_session_get(params.req, params.session_manager).await,
-        "session.pause" => handle_session_pause(params.req, params.session_manager).await,
-        "session.resume" => handle_session_resume(params.req, params.session_manager).await,
-        "session.resume_from_storage" => {
-            handle_session_resume_from_storage(params.req, params.session_manager).await
-        }
-        "session.end" => {
-            handle_session_end(params.req, params.session_manager, params.agent_manager).await
-        }
-        "session.compact" => handle_session_compact(params.req, params.session_manager).await,
         "session.configure_agent" => {
             handle_session_configure_agent(params.req, params.agent_manager).await
         }
@@ -303,13 +283,6 @@ pub(super) async fn handle_legacy_request(params: LegacyRequestParams<'_>) -> Re
         "storage.cleanup" => handle_storage_cleanup(params.req).await,
         "storage.backup" => handle_storage_backup(params.req).await,
         "storage.restore" => handle_storage_restore(params.req).await,
-        "session.search" => handle_session_search(params.req, params.session_manager).await,
-        "session.load_events" => handle_session_load_events(params.req).await,
-        "session.list_persisted" => handle_session_list_persisted(params.req).await,
-        "session.render_markdown" => handle_session_render_markdown(params.req).await,
-        "session.export_to_file" => handle_session_export_to_file(params.req).await,
-        "session.cleanup" => handle_session_cleanup(params.req).await,
-        "session.reindex" => handle_session_reindex(params.req, params.kiln_manager).await,
         "lua.init_session" => handle_lua_init_session(params.req, params.lua_sessions).await,
         "lua.register_hooks" => handle_lua_register_hooks(params.req, params.lua_sessions).await,
         "lua.execute_hook" => handle_lua_execute_hook(params.req, params.lua_sessions).await,

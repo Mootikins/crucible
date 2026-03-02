@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) async fn handle_session_load_events(req: Request) -> Response {
+pub(crate) async fn handle_session_load_events(req: Request) -> Response {
     let session_dir = require_param!(req, "session_dir", as_str);
 
     match crate::observe::load_events(session_dir).await {
@@ -19,7 +19,7 @@ pub(super) async fn handle_session_load_events(req: Request) -> Response {
 ///   - `session_type` (string, optional): Filter by type ("chat", "agent", etc.)
 ///   - `limit` (u64, optional): Max sessions to return (default 50, newest first)
 ///     Returns: { sessions: [...], total: N }
-pub(super) async fn handle_session_list_persisted(req: Request) -> Response {
+pub(crate) async fn handle_session_list_persisted(req: Request) -> Response {
     let kiln = require_param!(req, "kiln", as_str);
     let session_type_filter = optional_param!(req, "session_type", as_str);
     let limit = optional_param!(req, "limit", as_u64).unwrap_or(50) as usize;
@@ -105,7 +105,7 @@ pub(super) async fn handle_session_list_persisted(req: Request) -> Response {
 ///   - `include_tools` (bool, optional): Include tool details (default true)
 ///   - `max_content_length` (u64, optional): Truncation limit (default 0 = no limit)
 ///     Returns: { markdown: "..." }
-pub(super) async fn handle_session_render_markdown(req: Request) -> Response {
+pub(crate) async fn handle_session_render_markdown(req: Request) -> Response {
     let session_dir = require_param!(req, "session_dir", as_str);
     let include_timestamps = optional_param!(req, "include_timestamps", as_bool).unwrap_or(false);
     let include_tokens = optional_param!(req, "include_tokens", as_bool).unwrap_or(true);
@@ -137,7 +137,7 @@ pub(super) async fn handle_session_render_markdown(req: Request) -> Response {
 ///   - `output_path` (string, optional): Output file path (default: session_dir/session.md)
 ///   - `include_timestamps` (bool, optional): Include timestamps (default false)
 ///     Returns: { status: "ok", output_path: "..." }
-pub(super) async fn handle_session_export_to_file(req: Request) -> Response {
+pub(crate) async fn handle_session_export_to_file(req: Request) -> Response {
     let session_dir_str = require_param!(req, "session_dir", as_str);
     let output_path = optional_param!(req, "output_path", as_str);
     let timestamps = optional_param!(req, "include_timestamps", as_bool).unwrap_or(false);
@@ -181,7 +181,7 @@ pub(super) async fn handle_session_export_to_file(req: Request) -> Response {
 ///   - `older_than_days` (u64, required): Delete sessions older than N days
 ///   - `dry_run` (bool, optional): If true, just report what would be deleted (default false)
 ///     Returns: { deleted: [...], total: N, dry_run: bool }
-pub(super) async fn handle_session_cleanup(req: Request) -> Response {
+pub(crate) async fn handle_session_cleanup(req: Request) -> Response {
     let kiln = require_param!(req, "kiln", as_str);
     let older_than_days = require_param!(req, "older_than_days", as_u64);
     let dry_run = optional_param!(req, "dry_run", as_bool).unwrap_or(false);
@@ -255,7 +255,7 @@ pub(super) async fn handle_session_cleanup(req: Request) -> Response {
 ///   - `kiln` (string, required): Path to the kiln
 ///   - `force` (bool, optional): Re-index even if already present (default false)
 ///     Returns: { indexed: N, skipped: N, errors: N }
-pub(super) async fn handle_session_reindex(req: Request, km: &Arc<KilnManager>) -> Response {
+pub(crate) async fn handle_session_reindex(req: Request, km: &Arc<KilnManager>) -> Response {
     let kiln_str = require_param!(req, "kiln", as_str);
     let force = optional_param!(req, "force", as_bool).unwrap_or(false);
 
