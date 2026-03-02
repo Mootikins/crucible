@@ -13,7 +13,7 @@ use crate::watch::{
     traits::EventHandler,
 };
 use async_trait::async_trait;
-use crucible_core::events::{EventEmitter, NoOpEmitter, SessionEvent};
+use crucible_core::events::{EventEmitter, NoOpEmitter, SessionEvent, InternalSessionEvent};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -217,21 +217,21 @@ impl IndexingHandler {
         use crucible_core::events::FileChangeKind;
 
         let session_event = match &event.kind {
-            crate::watch::events::FileEventKind::Created => SessionEvent::FileChanged {
+            crate::watch::events::FileEventKind::Created => SessionEvent::internal(InternalSessionEvent::FileChanged {
                 path: event.path.clone(),
                 kind: FileChangeKind::Created,
-            },
-            crate::watch::events::FileEventKind::Modified => SessionEvent::FileChanged {
+            }),
+            crate::watch::events::FileEventKind::Modified => SessionEvent::internal(InternalSessionEvent::FileChanged {
                 path: event.path.clone(),
                 kind: FileChangeKind::Modified,
-            },
-            crate::watch::events::FileEventKind::Deleted => SessionEvent::FileDeleted {
+            }),
+            crate::watch::events::FileEventKind::Deleted => SessionEvent::internal(InternalSessionEvent::FileDeleted {
                 path: event.path.clone(),
-            },
-            crate::watch::events::FileEventKind::Moved { from, to } => SessionEvent::FileMoved {
+            }),
+            crate::watch::events::FileEventKind::Moved { from, to } => SessionEvent::internal(InternalSessionEvent::FileMoved {
                 from: from.clone(),
                 to: to.clone(),
-            },
+            }),
             crate::watch::events::FileEventKind::Batch(events) => {
                 // Recursively emit events for batch operations
                 for batch_event in events {

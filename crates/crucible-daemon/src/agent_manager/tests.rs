@@ -3,6 +3,7 @@ use crate::session_storage::FileSessionStorage;
 use async_trait::async_trait;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::events::handler::{Handler, HandlerContext, HandlerResult};
+use crucible_core::events::{InternalSessionEvent, SessionEvent};
 use crucible_core::parser::ParsedNote;
 use crucible_core::session::SessionType;
 use crucible_core::traits::chat::{
@@ -59,11 +60,15 @@ impl Handler for MockHandler {
         match &self.behavior {
             MockHandlerBehavior::Passthrough => HandlerResult::Continue(event),
             MockHandlerBehavior::ModifyPrompt(new_prompt) => {
-                if let SessionEvent::PreLlmCall { model, .. } = event {
-                    HandlerResult::Continue(SessionEvent::PreLlmCall {
-                        prompt: new_prompt.clone(),
-                        model,
-                    })
+                if let SessionEvent::Internal(inner) = &event {
+                    if let InternalSessionEvent::PreLlmCall { model, .. } = inner.as_ref() {
+                        HandlerResult::Continue(SessionEvent::internal(InternalSessionEvent::PreLlmCall {
+                            prompt: new_prompt.clone(),
+                            model: model.clone(),
+                        }))
+                    } else {
+                        HandlerResult::Continue(event)
+                    }
                 } else {
                     HandlerResult::Continue(event)
                 }
@@ -646,24 +651,24 @@ fn event_patterns_match_event_type() {
     let _repo = MockKnowledgeRepository { results: vec![] };
     let _embedding = MockEmbeddingProvider { should_fail: false };
 
-    let pre_llm = SessionEvent::PreLlmCall {
+    let pre_llm = SessionEvent::internal(InternalSessionEvent::PreLlmCall {
         prompt: String::new(),
         model: String::new(),
-    };
+    });
     assert_eq!(pre_llm.event_type(), "pre_llm_call");
 
-    let post_llm = SessionEvent::PostLlmCall {
+    let post_llm = SessionEvent::internal(InternalSessionEvent::PostLlmCall {
         response_summary: String::new(),
         model: String::new(),
         duration_ms: 0,
         token_count: None,
-    };
+    });
     assert_eq!(post_llm.event_type(), "post_llm_call");
 
-    let pre_tool = SessionEvent::PreToolCall {
+    let pre_tool = SessionEvent::internal(InternalSessionEvent::PreToolCall {
         name: String::new(),
         args: serde_json::Value::Null,
-    };
+    });
     assert_eq!(pre_tool.event_type(), "pre_tool_call");
 }
 

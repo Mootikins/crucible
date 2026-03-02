@@ -38,7 +38,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::events::{SessionEvent, SessionEventConfig, ToolCall};
+use crate::events::{InternalSessionEvent, SessionEvent, SessionEventConfig, ToolCall};
 
 impl SessionEvent {
     pub fn event_type_name(&self) -> &'static str {
@@ -49,59 +49,15 @@ impl SessionEvent {
             SessionEvent::ToolCalled { .. } => "ToolCalled",
             SessionEvent::ToolCompleted { .. } => "ToolCompleted",
             SessionEvent::SessionStarted { .. } => "SessionStarted",
-            SessionEvent::SessionCompacted { .. } => "SessionCompacted",
             SessionEvent::SessionEnded { .. } => "SessionEnded",
-            SessionEvent::SubagentSpawned { .. } => "SubagentSpawned",
-            SessionEvent::SubagentCompleted { .. } => "SubagentCompleted",
-            SessionEvent::SubagentFailed { .. } => "SubagentFailed",
+            SessionEvent::TextDelta { .. } => "TextDelta",
+            SessionEvent::InteractionRequested { .. } => "InteractionRequested",
+            SessionEvent::InteractionCompleted { .. } => "InteractionCompleted",
             SessionEvent::DelegationSpawned { .. } => "DelegationSpawned",
             SessionEvent::DelegationCompleted { .. } => "DelegationCompleted",
             SessionEvent::DelegationFailed { .. } => "DelegationFailed",
-            SessionEvent::BashTaskSpawned { .. } => "BashTaskSpawned",
-            SessionEvent::BashTaskCompleted { .. } => "BashTaskCompleted",
-            SessionEvent::BashTaskFailed { .. } => "BashTaskFailed",
-            SessionEvent::BackgroundTaskCompleted { .. } => "BackgroundTaskCompleted",
-            SessionEvent::TextDelta { .. } => "TextDelta",
-            SessionEvent::NoteParsed { .. } => "NoteParsed",
-            SessionEvent::NoteCreated { .. } => "NoteCreated",
-            SessionEvent::NoteModified { .. } => "NoteModified",
-            SessionEvent::NoteDeleted { .. } => "NoteDeleted",
-            SessionEvent::McpAttached { .. } => "McpAttached",
-            SessionEvent::ToolDiscovered { .. } => "ToolDiscovered",
             SessionEvent::Custom { .. } => "Custom",
-            // File events
-            SessionEvent::FileChanged { .. } => "FileChanged",
-            SessionEvent::FileDeleted { .. } => "FileDeleted",
-            SessionEvent::FileMoved { .. } => "FileMoved",
-            // Storage events
-            SessionEvent::EntityStored { .. } => "EntityStored",
-            SessionEvent::EntityDeleted { .. } => "EntityDeleted",
-            SessionEvent::BlocksUpdated { .. } => "BlocksUpdated",
-            SessionEvent::RelationStored { .. } => "RelationStored",
-            SessionEvent::RelationDeleted { .. } => "RelationDeleted",
-            SessionEvent::TagAssociated { .. } => "TagAssociated",
-            // Embedding events
-            SessionEvent::EmbeddingRequested { .. } => "EmbeddingRequested",
-            SessionEvent::EmbeddingStored { .. } => "EmbeddingStored",
-            SessionEvent::EmbeddingFailed { .. } => "EmbeddingFailed",
-            SessionEvent::EmbeddingBatchComplete { .. } => "EmbeddingBatchComplete",
-            // Pre-events
-            SessionEvent::PreToolCall { .. } => "PreToolCall",
-            SessionEvent::PreParse { .. } => "PreParse",
-            SessionEvent::PreLlmCall { .. } => "PreLlmCall",
-            SessionEvent::AwaitingInput { .. } => "AwaitingInput",
-            // Interaction events
-            SessionEvent::InteractionRequested { .. } => "InteractionRequested",
-            SessionEvent::InteractionCompleted { .. } => "InteractionCompleted",
-            // Daemon protocol events
-            SessionEvent::SessionStateChanged { .. } => "SessionStateChanged",
-            SessionEvent::SessionPaused { .. } => "SessionPaused",
-            SessionEvent::SessionResumed { .. } => "SessionResumed",
-            SessionEvent::TerminalOutput { .. } => "TerminalOutput",
-            SessionEvent::PrecognitionComplete { .. } => "PrecognitionComplete",
-            SessionEvent::ClassificationRequired { .. } => "ClassificationRequired",
-            SessionEvent::PostLlmCall { .. } => "PostLlmCall",
-            SessionEvent::EmbeddingModelMismatch { .. } => "EmbeddingModelMismatch",
+            SessionEvent::Internal(inner) => inner.type_name(),
         }
     }
 
@@ -136,241 +92,12 @@ impl SessionEvent {
                 format_session_started(&config.session_id, folder)
             }
 
-            SessionEvent::SessionCompacted { summary, new_file } => {
-                format_session_compacted(summary, new_file)
-            }
-
             SessionEvent::SessionEnded { reason } => format_session_ended(reason),
-
-            SessionEvent::SubagentSpawned { id, prompt } => format_subagent_spawned(id, prompt),
-
-            SessionEvent::SubagentCompleted { id, result } => format_subagent_completed(id, result),
-
-            SessionEvent::SubagentFailed { id, error } => format_subagent_failed(id, error),
-
-            SessionEvent::DelegationSpawned {
-                delegation_id,
-                prompt,
-                parent_session_id,
-                ..
-            } => format_delegation_spawned(delegation_id, prompt, parent_session_id),
-
-            SessionEvent::DelegationCompleted {
-                delegation_id,
-                result_summary,
-                parent_session_id,
-            } => format_delegation_completed(delegation_id, result_summary, parent_session_id),
-
-            SessionEvent::DelegationFailed {
-                delegation_id,
-                error,
-                parent_session_id,
-            } => format_delegation_failed(delegation_id, error, parent_session_id),
-
-            SessionEvent::BashTaskSpawned { id, command } => format_bash_task_spawned(id, command),
-
-            SessionEvent::BashTaskCompleted {
-                id,
-                output,
-                exit_code,
-            } => format_bash_task_completed(id, output, *exit_code),
-
-            SessionEvent::BashTaskFailed {
-                id,
-                error,
-                exit_code,
-            } => format_bash_task_failed(id, error, *exit_code),
-
-            SessionEvent::BackgroundTaskCompleted { id, kind, summary } => {
-                format_background_task_completed(id, kind, summary)
-            }
 
             SessionEvent::TextDelta { delta, seq } => {
                 format!("**Seq:** {}\n\n```\n{}\n```\n", seq, delta)
             }
 
-            SessionEvent::NoteParsed {
-                path,
-                block_count,
-                payload,
-            } => {
-                let mut out = format!(
-                    "**Path:** `{}`\n**Blocks:** {}\n",
-                    path.display(),
-                    block_count
-                );
-                if let Some(p) = payload {
-                    out.push_str(&format!("**Title:** {}\n", p.title));
-                    if !p.tags.is_empty() {
-                        out.push_str(&format!("**Tags:** {}\n", p.tags.join(", ")));
-                    }
-                }
-                out
-            }
-
-            SessionEvent::NoteCreated { path, title } => {
-                let title_str = title.as_deref().unwrap_or("(untitled)");
-                format!("**Path:** `{}`\n**Title:** {}\n", path.display(), title_str)
-            }
-
-            SessionEvent::NoteModified { path, change_type } => {
-                format!(
-                    "**Path:** `{}`\n**Change:** {:?}\n",
-                    path.display(),
-                    change_type
-                )
-            }
-
-            SessionEvent::NoteDeleted { path, existed } => {
-                format!("**Path:** `{}`\n**Existed:** {}\n", path.display(), existed)
-            }
-
-            SessionEvent::McpAttached { server, tool_count } => {
-                format!("**Server:** {}\n**Tools:** {}\n", server, tool_count)
-            }
-
-            SessionEvent::ToolDiscovered {
-                name,
-                source,
-                schema,
-            } => {
-                let schema_str = schema
-                    .as_ref()
-                    .map(|s| {
-                        format!(
-                            "\n```json\n{}\n```\n",
-                            serde_json::to_string_pretty(s).unwrap_or_default()
-                        )
-                    })
-                    .unwrap_or_default();
-                format!("**Name:** {}\n**Source:** {:?}{}", name, source, schema_str)
-            }
-
-            SessionEvent::Custom { name, payload } => format_custom_event(name, payload),
-
-            // File events
-            SessionEvent::FileChanged { path, kind } => {
-                format!("**Path:** `{}`\n**Kind:** {:?}\n", path.display(), kind)
-            }
-            SessionEvent::FileDeleted { path } => {
-                format!("**Path:** `{}`\n", path.display())
-            }
-            SessionEvent::FileMoved { from, to } => {
-                format!(
-                    "**From:** `{}`\n**To:** `{}`\n",
-                    from.display(),
-                    to.display()
-                )
-            }
-
-            // Storage events
-            SessionEvent::EntityStored {
-                entity_id,
-                entity_type,
-            } => {
-                format!("**Entity:** {:?}\n**ID:** {}\n", entity_type, entity_id)
-            }
-            SessionEvent::EntityDeleted {
-                entity_id,
-                entity_type,
-            } => {
-                format!("**Entity:** {:?}\n**ID:** {}\n", entity_type, entity_id)
-            }
-            SessionEvent::BlocksUpdated {
-                entity_id,
-                block_count,
-            } => {
-                format!("**Entity:** {}\n**Blocks:** {}\n", entity_id, block_count)
-            }
-            SessionEvent::RelationStored {
-                from_id,
-                to_id,
-                relation_type,
-            } => {
-                format!(
-                    "**From:** {}\n**To:** {}\n**Type:** {}\n",
-                    from_id, to_id, relation_type
-                )
-            }
-            SessionEvent::RelationDeleted {
-                from_id,
-                to_id,
-                relation_type,
-            } => {
-                format!(
-                    "**From:** {}\n**To:** {}\n**Type:** {}\n",
-                    from_id, to_id, relation_type
-                )
-            }
-            SessionEvent::TagAssociated { entity_id, tag } => {
-                format!("**Entity:** {}\n**Tag:** #{}\n", entity_id, tag)
-            }
-
-            // Embedding events
-            SessionEvent::EmbeddingRequested {
-                entity_id,
-                priority,
-                ..
-            } => {
-                format!("**Entity:** {}\n**Priority:** {:?}\n", entity_id, priority)
-            }
-            SessionEvent::EmbeddingStored {
-                entity_id,
-                dimensions,
-                ..
-            } => {
-                format!(
-                    "**Entity:** {}\n**Dimensions:** {}\n",
-                    entity_id, dimensions
-                )
-            }
-            SessionEvent::EmbeddingFailed {
-                entity_id, error, ..
-            } => {
-                format!("**Entity:** {}\n**Error:** {}\n", entity_id, error)
-            }
-            SessionEvent::EmbeddingBatchComplete {
-                entity_id,
-                count,
-                duration_ms,
-            } => {
-                format!(
-                    "**Entity:** {}\n**Count:** {}\n**Duration:** {}ms\n",
-                    entity_id, count, duration_ms
-                )
-            }
-
-            // Pre-events
-            SessionEvent::PreToolCall { name, args } => {
-                format!(
-                    "**Tool:** {}\n**Args:** {}\n",
-                    name,
-                    serde_json::to_string_pretty(args).unwrap_or_default()
-                )
-            }
-            SessionEvent::PreParse { path } => {
-                format!("**Path:** `{}`\n", path.display())
-            }
-            SessionEvent::PreLlmCall { prompt, model } => {
-                let truncated = if prompt.len() > 200 {
-                    format!("{}...", &prompt[..200])
-                } else {
-                    prompt.clone()
-                };
-                format!("**Model:** {}\n**Prompt:** {}\n", model, truncated)
-            }
-            SessionEvent::AwaitingInput {
-                input_type,
-                context,
-            } => {
-                format!(
-                    "**Input Type:** {}\n**Context:** {}\n",
-                    input_type,
-                    context.as_deref().unwrap_or("(none)")
-                )
-            }
-
-            // Interaction events
             SessionEvent::InteractionRequested {
                 request_id,
                 request,
@@ -400,84 +127,31 @@ impl SessionEvent {
                 )
             }
 
-            // Daemon protocol events
-            SessionEvent::SessionStateChanged {
-                session_id,
-                state,
-                previous_state,
-            } => {
-                let prev = previous_state
-                    .as_ref()
-                    .map(|s| format!("{:?}", s))
-                    .unwrap_or_else(|| "(none)".to_string());
-                format!(
-                    "**Session:** {}\n**State:** {:?}\n**Previous:** {}\n",
-                    session_id, state, prev
-                )
-            }
-            SessionEvent::SessionPaused { session_id } => {
-                format!("**Session:** {}\n", session_id)
-            }
-            SessionEvent::SessionResumed { session_id } => {
-                format!("**Session:** {}\n", session_id)
-            }
-            SessionEvent::TerminalOutput {
-                session_id,
-                stream,
-                content_base64,
-            } => {
-                // Show base64 content as-is (decoding would require additional dep)
-                let truncated = if content_base64.len() > 200 {
-                    format!(
-                        "{}... ({} bytes)",
-                        &content_base64[..200],
-                        content_base64.len()
-                    )
-                } else {
-                    content_base64.clone()
-                };
-                format!(
-                    "**Session:** {}\n**Stream:** {:?}\n**Content (base64):** {}\n",
-                    session_id, stream, truncated
-                )
-            }
-            SessionEvent::PrecognitionComplete {
-                notes_count,
-                query_summary,
+            SessionEvent::DelegationSpawned {
+                delegation_id,
+                prompt,
+                parent_session_id,
                 ..
-            } => {
-                format!(
-                    "**Notes Found:** {}\n**Query:** {}\n",
-                    notes_count, query_summary
-                )
-            }
-            SessionEvent::ClassificationRequired { kiln_path } => {
-                format!("**Kiln Path:** `{}`\n**Action Required:** Set data classification via `kiln.set_classification`\n", kiln_path.display())
-            }
-            SessionEvent::PostLlmCall {
-                response_summary,
-                model,
-                duration_ms,
-                token_count,
-            } => {
-                let token_info = token_count
-                    .map(|t| format!("\n**Tokens:** {}\n", t))
-                    .unwrap_or_default();
-                format!(
-                    "**Model:** {}\n**Duration:** {}ms{}**Response:** {}\n",
-                    model, duration_ms, token_info, response_summary
-                )
-            }
+            } => format_delegation_spawned(delegation_id, prompt, parent_session_id),
 
-            SessionEvent::EmbeddingModelMismatch {
-                kiln_path,
-                stored_model,
-                current_model,
-                note_count,
-            } => {
-                format!(
-                    "**Kiln:** `{}`\n**Stored Model:** {}\n**Current Model:** {}\n**Notes with Embeddings:** {}\n",
-                    kiln_path, stored_model, current_model, note_count
+            SessionEvent::DelegationCompleted {
+                delegation_id,
+                result_summary,
+                parent_session_id,
+            } => format_delegation_completed(delegation_id, result_summary, parent_session_id),
+
+            SessionEvent::DelegationFailed {
+                delegation_id,
+                error,
+                parent_session_id,
+            } => format_delegation_failed(delegation_id, error, parent_session_id),
+
+            SessionEvent::Custom { name, payload } => format_custom_event(name, payload),
+
+            SessionEvent::Internal(inner) => {
+                format!("**Internal Event:** {}\n{}\n",
+                    inner.type_name(),
+                    inner.summary(200)
                 )
             }
         };
@@ -643,42 +317,6 @@ fn format_session_started(session_id: &str, folder: &Path) -> String {
     )
 }
 
-fn format_session_compacted(summary: &str, new_file: &Path) -> String {
-    let mut body = format!("**New File:** `{}`\n\n", new_file.display());
-
-    if !summary.is_empty() {
-        body.push_str("**Summary:**\n\n");
-        body.push_str(summary);
-        body.push('\n');
-    }
-
-    body
-}
-
-fn format_session_ended(reason: &str) -> String {
-    format!("**Reason:** {}\n", reason)
-}
-
-fn format_subagent_spawned(id: &str, prompt: &str) -> String {
-    let quoted_prompt = quote_content(prompt);
-    format!(
-        "**Subagent ID:** `{}`\n\n**Prompt:**\n{}\n",
-        id, quoted_prompt
-    )
-}
-
-fn format_subagent_completed(id: &str, result: &str) -> String {
-    format!(
-        "**Subagent ID:** `{}`\n\n**Result:**\n{}\n",
-        id,
-        quote_content(result)
-    )
-}
-
-fn format_subagent_failed(id: &str, error: &str) -> String {
-    format!("**Subagent ID:** `{}`\n\n**Error:** {}\n", id, error)
-}
-
 fn format_delegation_spawned(delegation_id: &str, prompt: &str, parent_session_id: &str) -> String {
     let quoted_prompt = quote_content(prompt);
     format!(
@@ -707,35 +345,8 @@ fn format_delegation_failed(delegation_id: &str, error: &str, parent_session_id:
     )
 }
 
-fn format_bash_task_spawned(id: &str, command: &str) -> String {
-    format!(
-        "**Task ID:** `{}`\n\n**Command:**\n```bash\n{}\n```\n",
-        id, command
-    )
-}
-
-fn format_bash_task_completed(id: &str, output: &str, exit_code: i32) -> String {
-    format!(
-        "**Task ID:** `{}`\n**Exit Code:** {}\n\n**Output:**\n```\n{}\n```\n",
-        id, exit_code, output
-    )
-}
-
-fn format_bash_task_failed(id: &str, error: &str, exit_code: Option<i32>) -> String {
-    let code_str = exit_code.map_or("none".to_string(), |c| c.to_string());
-    format!(
-        "**Task ID:** `{}`\n**Exit Code:** {}\n\n**Error:** {}\n",
-        id, code_str, error
-    )
-}
-
-fn format_background_task_completed(id: &str, kind: &str, summary: &str) -> String {
-    format!(
-        "**Task ID:** `{}`\n**Kind:** {}\n\n**Summary:**\n{}\n",
-        id,
-        kind,
-        quote_content(summary)
-    )
+fn format_session_ended(reason: &str) -> String {
+    format!("**Reason:** {}\n", reason)
 }
 
 fn format_custom_event(name: &str, payload: &serde_json::Value) -> String {
@@ -1089,7 +700,7 @@ fn parse_session_compacted(body: &str) -> MarkdownParseResult<SessionEvent> {
         String::new()
     };
 
-    Ok(SessionEvent::SessionCompacted { summary, new_file })
+    Ok(SessionEvent::internal(InternalSessionEvent::SessionCompacted { summary, new_file }))
 }
 
 /// Parse SessionEnded event from body.
@@ -1110,7 +721,7 @@ fn parse_subagent_spawned(body: &str) -> MarkdownParseResult<SessionEvent> {
         String::new()
     };
 
-    Ok(SessionEvent::SubagentSpawned { id, prompt })
+    Ok(SessionEvent::internal(InternalSessionEvent::SubagentSpawned { id, prompt }))
 }
 
 /// Parse SubagentCompleted event from body.
@@ -1125,7 +736,7 @@ fn parse_subagent_completed(body: &str) -> MarkdownParseResult<SessionEvent> {
         String::new()
     };
 
-    Ok(SessionEvent::SubagentCompleted { id, result })
+    Ok(SessionEvent::internal(InternalSessionEvent::SubagentCompleted { id, result }))
 }
 
 /// Parse SubagentFailed event from body.
@@ -1133,14 +744,14 @@ fn parse_subagent_failed(body: &str) -> MarkdownParseResult<SessionEvent> {
     let id = extract_inline_code_field(body, "**Subagent ID:**")?;
     let error = extract_field(body, "**Error:**")?;
 
-    Ok(SessionEvent::SubagentFailed { id, error })
+    Ok(SessionEvent::internal(InternalSessionEvent::SubagentFailed { id, error }))
 }
 
 fn parse_bash_task_spawned(body: &str) -> MarkdownParseResult<SessionEvent> {
     let id = extract_inline_code_field(body, "**Task ID:**")?;
     let command = extract_code_block(body, "**Command:**")?;
 
-    Ok(SessionEvent::BashTaskSpawned { id, command })
+    Ok(SessionEvent::internal(InternalSessionEvent::BashTaskSpawned { id, command }))
 }
 
 fn parse_bash_task_completed(body: &str) -> MarkdownParseResult<SessionEvent> {
@@ -1155,11 +766,11 @@ fn parse_bash_task_completed(body: &str) -> MarkdownParseResult<SessionEvent> {
             })?;
     let output = extract_code_block(body, "**Output:**").unwrap_or_default();
 
-    Ok(SessionEvent::BashTaskCompleted {
+    Ok(SessionEvent::internal(InternalSessionEvent::BashTaskCompleted {
         id,
         output,
         exit_code,
-    })
+    }))
 }
 
 fn parse_bash_task_failed(body: &str) -> MarkdownParseResult<SessionEvent> {
@@ -1179,11 +790,11 @@ fn parse_bash_task_failed(body: &str) -> MarkdownParseResult<SessionEvent> {
     };
     let error = extract_field(body, "**Error:**")?;
 
-    Ok(SessionEvent::BashTaskFailed {
+    Ok(SessionEvent::internal(InternalSessionEvent::BashTaskFailed {
         id,
         error,
         exit_code,
-    })
+    }))
 }
 
 fn parse_background_task_completed(body: &str) -> MarkdownParseResult<SessionEvent> {
@@ -1196,7 +807,7 @@ fn parse_background_task_completed(body: &str) -> MarkdownParseResult<SessionEve
         String::new()
     };
 
-    Ok(SessionEvent::BackgroundTaskCompleted { id, kind, summary })
+    Ok(SessionEvent::internal(InternalSessionEvent::BackgroundTaskCompleted { id, kind, summary }))
 }
 
 /// Parse Custom event from body.
@@ -1422,6 +1033,7 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::events::SessionEventConfig;
+    use crate::events::InternalSessionEvent;
 
     /// Cross-platform test path helper
     fn test_path(name: &str) -> PathBuf {
@@ -1676,10 +1288,10 @@ mod tests {
 
     #[test]
     fn session_compacted_to_markdown() {
-        let event = SessionEvent::SessionCompacted {
+        let event = SessionEvent::internal(InternalSessionEvent::SessionCompacted {
             summary: "Discussed task harness implementation.".into(),
             new_file: PathBuf::from("/kiln/Sessions/test/001-context.md"),
-        };
+        });
 
         let md = event.to_markdown_block(Some(TEST_TIMESTAMP_MS));
 
@@ -1703,10 +1315,10 @@ mod tests {
 
     #[test]
     fn subagent_spawned_to_markdown() {
-        let event = SessionEvent::SubagentSpawned {
+        let event = SessionEvent::internal(InternalSessionEvent::SubagentSpawned {
             id: "sub_abc123".into(),
             prompt: "Find all files related to task harness".into(),
-        };
+        });
 
         let md = event.to_markdown_block(Some(TEST_TIMESTAMP_MS));
 
@@ -1718,10 +1330,10 @@ mod tests {
 
     #[test]
     fn subagent_completed_to_markdown() {
-        let event = SessionEvent::SubagentCompleted {
+        let event = SessionEvent::internal(InternalSessionEvent::SubagentCompleted {
             id: "sub_abc123".into(),
             result: "Found 5 files.".into(),
-        };
+        });
 
         let md = event.to_markdown_block(Some(TEST_TIMESTAMP_MS));
 
@@ -1733,10 +1345,10 @@ mod tests {
 
     #[test]
     fn subagent_failed_to_markdown() {
-        let event = SessionEvent::SubagentFailed {
+        let event = SessionEvent::internal(InternalSessionEvent::SubagentFailed {
             id: "sub_abc123".into(),
             error: "Timeout exceeded".into(),
-        };
+        });
 
         let md = event.to_markdown_block(Some(TEST_TIMESTAMP_MS));
 
@@ -1747,10 +1359,10 @@ mod tests {
 
     #[test]
     fn bash_task_spawned_to_markdown() {
-        let event = SessionEvent::BashTaskSpawned {
+        let event = SessionEvent::internal(InternalSessionEvent::BashTaskSpawned {
             id: "task-20250123-1830-abc123".into(),
             command: "cargo build --release".into(),
-        };
+        });
 
         let md = event.to_markdown_block(Some(TEST_TIMESTAMP_MS));
 
@@ -1762,11 +1374,11 @@ mod tests {
 
     #[test]
     fn bash_task_completed_to_markdown() {
-        let event = SessionEvent::BashTaskCompleted {
+        let event = SessionEvent::internal(InternalSessionEvent::BashTaskCompleted {
             id: "task-20250123-1830-abc123".into(),
             output: "Build succeeded\n".into(),
             exit_code: 0,
-        };
+        });
 
         let md = event.to_markdown_block(Some(TEST_TIMESTAMP_MS));
 
@@ -1779,11 +1391,11 @@ mod tests {
 
     #[test]
     fn bash_task_failed_to_markdown() {
-        let event = SessionEvent::BashTaskFailed {
+        let event = SessionEvent::internal(InternalSessionEvent::BashTaskFailed {
             id: "task-20250123-1830-abc123".into(),
             error: "Command not found".into(),
             exit_code: Some(127),
-        };
+        });
 
         let md = event.to_markdown_block(Some(TEST_TIMESTAMP_MS));
 
@@ -1795,11 +1407,11 @@ mod tests {
 
     #[test]
     fn bash_task_failed_no_exit_code_to_markdown() {
-        let event = SessionEvent::BashTaskFailed {
+        let event = SessionEvent::internal(InternalSessionEvent::BashTaskFailed {
             id: "task-20250123-1830-abc123".into(),
             error: "Timeout".into(),
             exit_code: None,
-        };
+        });
 
         let md = event.to_markdown_block(Some(TEST_TIMESTAMP_MS));
 
@@ -1808,11 +1420,11 @@ mod tests {
 
     #[test]
     fn background_task_completed_to_markdown() {
-        let event = SessionEvent::BackgroundTaskCompleted {
+        let event = SessionEvent::internal(InternalSessionEvent::BackgroundTaskCompleted {
             id: "task-20250123-1830-abc123".into(),
             kind: "bash".into(),
             summary: "Build completed successfully".into(),
-        };
+        });
 
         let md = event.to_markdown_block(Some(TEST_TIMESTAMP_MS));
 
@@ -2168,22 +1780,25 @@ mod tests {
 
     #[test]
     fn roundtrip_session_compacted() {
-        let original = SessionEvent::SessionCompacted {
+        let original = SessionEvent::internal(InternalSessionEvent::SessionCompacted {
             summary: "Discussed task harness implementation.".into(),
             new_file: PathBuf::from("/kiln/Sessions/test/001-context.md"),
-        };
+        });
 
         let md = original.to_markdown_block(Some(TEST_TIMESTAMP_MS));
         let (parsed, _) = SessionEvent::from_markdown_block(&md).unwrap();
 
         match parsed {
-            SessionEvent::SessionCompacted { summary, new_file } => {
-                assert_eq!(summary, "Discussed task harness implementation.");
-                assert_eq!(
-                    new_file,
-                    PathBuf::from("/kiln/Sessions/test/001-context.md")
-                );
-            }
+            SessionEvent::Internal(inner) => match *inner {
+                InternalSessionEvent::SessionCompacted { summary, new_file } => {
+                    assert_eq!(summary, "Discussed task harness implementation.");
+                    assert_eq!(
+                        new_file,
+                        PathBuf::from("/kiln/Sessions/test/001-context.md")
+                    );
+                }
+                _ => panic!("Wrong internal event type"),
+            },
             _ => panic!("Wrong event type"),
         }
     }
@@ -2207,172 +1822,196 @@ mod tests {
 
     #[test]
     fn roundtrip_subagent_spawned() {
-        let original = SessionEvent::SubagentSpawned {
+        let original = SessionEvent::internal(InternalSessionEvent::SubagentSpawned {
             id: "sub_abc123".into(),
             prompt: "Find all files related to task harness".into(),
-        };
+        });
 
         let md = original.to_markdown_block(Some(TEST_TIMESTAMP_MS));
         let (parsed, _) = SessionEvent::from_markdown_block(&md).unwrap();
 
         match parsed {
-            SessionEvent::SubagentSpawned { id, prompt } => {
-                assert_eq!(id, "sub_abc123");
-                assert_eq!(prompt, "Find all files related to task harness");
-            }
+            SessionEvent::Internal(inner) => match *inner {
+                InternalSessionEvent::SubagentSpawned { id, prompt } => {
+                    assert_eq!(id, "sub_abc123");
+                    assert_eq!(prompt, "Find all files related to task harness");
+                }
+                _ => panic!("Wrong internal event type"),
+            },
             _ => panic!("Wrong event type"),
         }
     }
 
     #[test]
     fn roundtrip_subagent_completed() {
-        let original = SessionEvent::SubagentCompleted {
+        let original = SessionEvent::internal(InternalSessionEvent::SubagentCompleted {
             id: "sub_abc123".into(),
             result: "Found 5 files.".into(),
-        };
+        });
 
         let md = original.to_markdown_block(Some(TEST_TIMESTAMP_MS));
         let (parsed, _) = SessionEvent::from_markdown_block(&md).unwrap();
 
         match parsed {
-            SessionEvent::SubagentCompleted { id, result } => {
-                assert_eq!(id, "sub_abc123");
-                assert_eq!(result, "Found 5 files.");
-            }
+            SessionEvent::Internal(inner) => match *inner {
+                InternalSessionEvent::SubagentCompleted { id, result } => {
+                    assert_eq!(id, "sub_abc123");
+                    assert_eq!(result, "Found 5 files.");
+                }
+                _ => panic!("Wrong internal event type"),
+            },
             _ => panic!("Wrong event type"),
         }
     }
 
     #[test]
     fn roundtrip_subagent_failed() {
-        let original = SessionEvent::SubagentFailed {
+        let original = SessionEvent::internal(InternalSessionEvent::SubagentFailed {
             id: "sub_abc123".into(),
             error: "Timeout exceeded".into(),
-        };
+        });
 
         let md = original.to_markdown_block(Some(TEST_TIMESTAMP_MS));
         let (parsed, _) = SessionEvent::from_markdown_block(&md).unwrap();
 
         match parsed {
-            SessionEvent::SubagentFailed { id, error } => {
-                assert_eq!(id, "sub_abc123");
-                assert_eq!(error, "Timeout exceeded");
-            }
+            SessionEvent::Internal(inner) => match *inner {
+                InternalSessionEvent::SubagentFailed { id, error } => {
+                    assert_eq!(id, "sub_abc123");
+                    assert_eq!(error, "Timeout exceeded");
+                }
+                _ => panic!("Wrong internal event type"),
+            },
             _ => panic!("Wrong event type"),
         }
     }
 
     #[test]
     fn roundtrip_bash_task_spawned() {
-        let original = SessionEvent::BashTaskSpawned {
+        let original = SessionEvent::internal(InternalSessionEvent::BashTaskSpawned {
             id: "task-20250123-1830-abc123".into(),
             command: "cargo build --release".into(),
-        };
+        });
 
         let md = original.to_markdown_block(Some(TEST_TIMESTAMP_MS));
         let (parsed, _) = SessionEvent::from_markdown_block(&md).unwrap();
 
         match parsed {
-            SessionEvent::BashTaskSpawned { id, command } => {
-                assert_eq!(id, "task-20250123-1830-abc123");
-                assert_eq!(command, "cargo build --release");
-            }
+            SessionEvent::Internal(inner) => match *inner {
+                InternalSessionEvent::BashTaskSpawned { id, command } => {
+                    assert_eq!(id, "task-20250123-1830-abc123");
+                    assert_eq!(command, "cargo build --release");
+                }
+                _ => panic!("Wrong internal event type"),
+            },
             _ => panic!("Wrong event type"),
         }
     }
 
     #[test]
     fn roundtrip_bash_task_completed() {
-        let original = SessionEvent::BashTaskCompleted {
+        let original = SessionEvent::internal(InternalSessionEvent::BashTaskCompleted {
             id: "task-20250123-1830-abc123".into(),
             output: "Build succeeded\n".into(),
             exit_code: 0,
-        };
+        });
 
         let md = original.to_markdown_block(Some(TEST_TIMESTAMP_MS));
         let (parsed, _) = SessionEvent::from_markdown_block(&md).unwrap();
 
         match parsed {
-            SessionEvent::BashTaskCompleted {
-                id,
-                output,
-                exit_code,
-            } => {
-                assert_eq!(id, "task-20250123-1830-abc123");
-                assert_eq!(output, "Build succeeded\n");
-                assert_eq!(exit_code, 0);
-            }
+            SessionEvent::Internal(inner) => match *inner {
+                InternalSessionEvent::BashTaskCompleted {
+                    id,
+                    output,
+                    exit_code,
+                } => {
+                    assert_eq!(id, "task-20250123-1830-abc123");
+                    assert_eq!(output, "Build succeeded\n");
+                    assert_eq!(exit_code, 0);
+                }
+                _ => panic!("Wrong internal event type"),
+            },
             _ => panic!("Wrong event type"),
         }
     }
 
     #[test]
     fn roundtrip_bash_task_failed() {
-        let original = SessionEvent::BashTaskFailed {
+        let original = SessionEvent::internal(InternalSessionEvent::BashTaskFailed {
             id: "task-20250123-1830-abc123".into(),
             error: "Command not found".into(),
             exit_code: Some(127),
-        };
+        });
 
         let md = original.to_markdown_block(Some(TEST_TIMESTAMP_MS));
         let (parsed, _) = SessionEvent::from_markdown_block(&md).unwrap();
 
         match parsed {
-            SessionEvent::BashTaskFailed {
-                id,
-                error,
-                exit_code,
-            } => {
-                assert_eq!(id, "task-20250123-1830-abc123");
-                assert_eq!(error, "Command not found");
-                assert_eq!(exit_code, Some(127));
-            }
+            SessionEvent::Internal(inner) => match *inner {
+                InternalSessionEvent::BashTaskFailed {
+                    id,
+                    error,
+                    exit_code,
+                } => {
+                    assert_eq!(id, "task-20250123-1830-abc123");
+                    assert_eq!(error, "Command not found");
+                    assert_eq!(exit_code, Some(127));
+                }
+                _ => panic!("Wrong internal event type"),
+            },
             _ => panic!("Wrong event type"),
         }
     }
 
     #[test]
     fn roundtrip_bash_task_failed_no_exit_code() {
-        let original = SessionEvent::BashTaskFailed {
+        let original = SessionEvent::internal(InternalSessionEvent::BashTaskFailed {
             id: "task-20250123-1830-abc123".into(),
             error: "Timeout".into(),
             exit_code: None,
-        };
+        });
 
         let md = original.to_markdown_block(Some(TEST_TIMESTAMP_MS));
         let (parsed, _) = SessionEvent::from_markdown_block(&md).unwrap();
 
         match parsed {
-            SessionEvent::BashTaskFailed {
-                id,
-                error,
-                exit_code,
-            } => {
-                assert_eq!(id, "task-20250123-1830-abc123");
-                assert_eq!(error, "Timeout");
-                assert_eq!(exit_code, None);
-            }
+            SessionEvent::Internal(inner) => match *inner {
+                InternalSessionEvent::BashTaskFailed {
+                    id,
+                    error,
+                    exit_code,
+                } => {
+                    assert_eq!(id, "task-20250123-1830-abc123");
+                    assert_eq!(error, "Timeout");
+                    assert_eq!(exit_code, None);
+                }
+                _ => panic!("Wrong internal event type"),
+            },
             _ => panic!("Wrong event type"),
         }
     }
 
     #[test]
     fn roundtrip_background_task_completed() {
-        let original = SessionEvent::BackgroundTaskCompleted {
+        let original = SessionEvent::internal(InternalSessionEvent::BackgroundTaskCompleted {
             id: "task-20250123-1830-abc123".into(),
             kind: "bash".into(),
             summary: "Build completed successfully".into(),
-        };
+        });
 
         let md = original.to_markdown_block(Some(TEST_TIMESTAMP_MS));
         let (parsed, _) = SessionEvent::from_markdown_block(&md).unwrap();
 
         match parsed {
-            SessionEvent::BackgroundTaskCompleted { id, kind, summary } => {
-                assert_eq!(id, "task-20250123-1830-abc123");
-                assert_eq!(kind, "bash");
-                assert_eq!(summary, "Build completed successfully");
-            }
+            SessionEvent::Internal(inner) => match *inner {
+                InternalSessionEvent::BackgroundTaskCompleted { id, kind, summary } => {
+                    assert_eq!(id, "task-20250123-1830-abc123");
+                    assert_eq!(kind, "bash");
+                    assert_eq!(summary, "Build completed successfully");
+                }
+                _ => panic!("Wrong internal event type"),
+            },
             _ => panic!("Wrong event type"),
         }
     }

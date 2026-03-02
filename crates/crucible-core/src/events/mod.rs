@@ -144,8 +144,8 @@ pub use subscriber::{
 
 // Session event types
 pub use session_event::{
-    EntityType, FileChangeKind, InputType, NoteChangeType, NotePayload, Priority, SessionEvent,
-    SessionEventConfig, TerminalStream, ToolCall, ToolProvider,
+    EntityType, FileChangeKind, InputType, InternalSessionEvent, NoteChangeType, NotePayload,
+    Priority, SessionEvent, SessionEventConfig, TerminalStream, ToolCall, ToolProvider,
 };
 
 // Ring buffer for event storage

@@ -8,7 +8,7 @@ use super::types::{BlockEmbedding, EnrichmentMetadata, InferredRelation};
 use anyhow::Result;
 use async_trait::async_trait;
 use crucible_core::enrichment::{EmbeddingProvider, EnrichedNote};
-use crucible_core::events::{SessionEvent, SharedEventBus};
+use crucible_core::events::{SessionEvent, InternalSessionEvent, SharedEventBus};
 use crucible_core::ParsedNote;
 use std::sync::Arc;
 use tracing::{debug, info};
@@ -130,11 +130,11 @@ impl DefaultEnrichmentService {
         if !embeddings.is_empty() {
             if let Some(ref emitter) = self.emitter {
                 let entity_id = format!("note:{}", parsed.path.display());
-                drop(emitter.emit(SessionEvent::EmbeddingBatchComplete {
+                drop(emitter.emit(SessionEvent::internal(InternalSessionEvent::EmbeddingBatchComplete {
                     entity_id,
                     count: embeddings.len(),
                     duration_ms: embed_duration.as_millis() as u64,
-                }));
+                })));
                 debug!(
                     "Emitted EmbeddingBatchComplete for {} embeddings in {}ms",
                     embeddings.len(),
