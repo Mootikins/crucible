@@ -877,7 +877,7 @@ struct ExtractionPosition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::types::*;
+    use crate::parser::types::*;
     use chrono::Utc;
     use std::path::PathBuf;
 

@@ -924,7 +924,7 @@ mod tests {
     /// - Using bare `serde_json::Value` without `#[schemars(schema_with = "...")]`
     #[test]
     fn test_tool_schemas_llama_cpp_compatible() {
-        use super::notes::{
+        use crate::tools::notes::{
             CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMetadataParams,
             ReadNoteParams, UpdateNoteParams,
         };
