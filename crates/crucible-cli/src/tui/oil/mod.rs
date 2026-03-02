@@ -92,6 +92,7 @@ pub use render::*;
 pub use render_state::RenderState;
 pub use runner::{run_sync, OilRunner};
 pub use runtime::TestRuntime;
+pub use output::OutputBuffer;
 pub use style::*;
 pub use terminal::Terminal;
 pub use test_harness::AppHarness;
