@@ -41,7 +41,7 @@ pub(super) struct RunningJob {
     pub(crate) is_delegation: bool,
     pub(crate) parent_session_id: Option<String>,
     pub(crate) cancel_tx: oneshot::Sender<()>,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // stored to keep JoinHandle alive; dropping would detach the task
     pub(crate) task_handle: JoinHandle<()>,
 }
 

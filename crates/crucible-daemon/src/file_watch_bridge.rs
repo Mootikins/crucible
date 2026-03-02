@@ -68,7 +68,9 @@ impl EventEmitter for DaemonEventBridge {
 
         if let Some(msg) = msg {
             debug!(event_type = %msg.event, "Broadcasting file event via daemon bus");
-            let _ = emit_event(&self.event_tx, msg);
+            if !emit_event(&self.event_tx, msg) {
+                tracing::debug!("Failed to emit file watch event (no subscribers)");
+            }
         }
 
         Ok(EmitOutcome::new(event))

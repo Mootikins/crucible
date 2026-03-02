@@ -61,20 +61,6 @@ impl ProjectManager {
         Ok(project)
     }
 
-    #[allow(dead_code)]
-    pub fn find_by_repository(&self, repo_root: &Path) -> Vec<Project> {
-        self.projects
-            .iter()
-            .filter(|entry| {
-                entry.value().repository.as_ref().is_some_and(|r| {
-                    let id = r.main_repo_git_dir.as_ref().unwrap_or(&r.root);
-                    id == repo_root
-                })
-            })
-            .map(|entry| entry.value().clone())
-            .collect()
-    }
-
     pub fn register_if_missing(&self, path: &Path) -> Result<Project, ProjectError> {
         if let Some(existing) = self.get(path) {
             self.touch(path);

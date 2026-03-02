@@ -322,14 +322,16 @@ impl AgentManager {
                     .insert(permission_id.clone(), pending);
 
                 let interaction_request = InteractionRequest::Permission(perm_request);
-                let _ = emit_event(
+                if !emit_event(
                     &event_tx_owned,
                     SessionEventMessage::interaction_requested(
                         &session_id_owned,
                         &permission_id,
                         &interaction_request,
                     ),
-                );
+                ) {
+                    tracing::debug!("Failed to emit interaction_requested event (no subscribers)");
+                }
 
                 let result =
                     tokio::time::timeout(std::time::Duration::from_secs(300), response_rx).await;

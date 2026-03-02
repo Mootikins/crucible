@@ -28,7 +28,7 @@ impl ClientId {
         Self(CLIENT_ID_COUNTER.fetch_add(1, Ordering::Relaxed))
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code)] // conversion API, exercised by tests
     pub fn as_u64(&self) -> u64 {
         self.0
     }
@@ -135,7 +135,7 @@ impl SubscriptionManager {
         self.subscribe(client_id, WILDCARD_SESSION);
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code)] // query API, exercised by tests
     pub fn get_subscribers(&self, session_id: &str) -> Vec<ClientId> {
         let mut subscribers = HashSet::new();
 
