@@ -113,6 +113,29 @@ impl RpcDispatcher {
             "session.get_max_tokens" => to_response(id, self.handle_session_get_max_tokens(&req).await),
             "session.set_precognition" => to_response(id, self.handle_session_set_precognition(&req).await),
             "session.get_precognition" => to_response(id, self.handle_session_get_precognition(&req).await),
+            // Kiln CRUD handlers
+            "kiln.open" => to_response(id, self.handle_kiln_open(&req).await),
+            "kiln.close" => to_response(id, self.handle_kiln_close(&req).await),
+            "kiln.list" => to_response(id, self.handle_kiln_list(&req).await),
+            "kiln.set_classification" => to_response(id, self.handle_kiln_set_classification(&req).await),
+
+            // Note search and retrieval handlers
+            "search_vectors" => to_response(id, self.handle_search_vectors(&req).await),
+            "list_notes" => to_response(id, self.handle_list_notes(&req).await),
+            "get_note_by_name" => to_response(id, self.handle_get_note_by_name(&req).await),
+
+            // Note CRUD handlers
+            "note.upsert" => to_response(id, self.handle_note_upsert(&req).await),
+            "note.get" => to_response(id, self.handle_note_get(&req).await),
+            "note.delete" => to_response(id, self.handle_note_delete(&req).await),
+            "note.list" => to_response(id, self.handle_note_list(&req).await),
+
+            // Processing handlers
+            "process_file" => to_response(id, self.handle_process_file(&req).await),
+            "process_batch" => to_response(id, self.handle_process_batch(&req).await),
+
+            // Models handler
+            "models.list" => to_response(id, self.handle_models_list(&req).await),
             // For other methods, we return METHOD_NOT_FOUND here.
             // In production, server.rs will handle these until we migrate them.
             // This allows incremental migration.
@@ -323,6 +346,191 @@ impl RpcDispatcher {
 
     async fn handle_session_get_precognition(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::session::handle_session_get_precognition(
+            req.clone(),
+            &self.ctx.agents,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_kiln_open(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::kiln::handle_kiln_open(
+            req.clone(),
+            &self.ctx.kiln,
+            &self.ctx.plugin_loader,
+            &self.ctx.event_tx,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_kiln_close(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::kiln::handle_kiln_close(
+            req.clone(),
+            &self.ctx.kiln,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_kiln_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::kiln::handle_kiln_list(
+            req.clone(),
+            &self.ctx.kiln,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_kiln_set_classification(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::kiln::handle_kiln_set_classification(
+            req.clone(),
+            &self.ctx.kiln,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_search_vectors(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::kiln::handle_search_vectors(
+            req.clone(),
+            &self.ctx.kiln,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_list_notes(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::kiln::handle_list_notes(
+            req.clone(),
+            &self.ctx.kiln,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_get_note_by_name(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::kiln::handle_get_note_by_name(
+            req.clone(),
+            &self.ctx.kiln,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_note_upsert(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::kiln::handle_note_upsert(
+            req.clone(),
+            &self.ctx.kiln,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_note_get(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::kiln::handle_note_get(
+            req.clone(),
+            &self.ctx.kiln,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_note_delete(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::kiln::handle_note_delete(
+            req.clone(),
+            &self.ctx.kiln,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_note_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::kiln::handle_note_list(
+            req.clone(),
+            &self.ctx.kiln,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_process_file(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::kiln::handle_process_file(
+            req.clone(),
+            &self.ctx.kiln,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_process_batch(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::kiln::handle_process_batch(
+            req.clone(),
+            &self.ctx.kiln,
+            &self.ctx.event_tx,
+        )
+        .await;
+        if let Some(err) = resp.error {
+            Err(err)
+        } else {
+            Ok(resp.result.unwrap_or(serde_json::Value::Null))
+        }
+    }
+
+    async fn handle_models_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_models_list(
             req.clone(),
             &self.ctx.agents,
         )

@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) async fn handle_kiln_open(
+pub(crate) async fn handle_kiln_open(
     req: Request,
     km: &Arc<KilnManager>,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
@@ -70,7 +70,7 @@ pub(super) async fn handle_kiln_open(
     }
 }
 
-pub(super) async fn handle_kiln_close(req: Request, km: &Arc<KilnManager>) -> Response {
+pub(crate) async fn handle_kiln_close(req: Request, km: &Arc<KilnManager>) -> Response {
     let path = require_param!(req, "path", as_str);
 
     match km.close(Path::new(path)).await {
@@ -79,7 +79,7 @@ pub(super) async fn handle_kiln_close(req: Request, km: &Arc<KilnManager>) -> Re
     }
 }
 
-pub(super) async fn handle_kiln_list(req: Request, km: &Arc<KilnManager>) -> Response {
+pub(crate) async fn handle_kiln_list(req: Request, km: &Arc<KilnManager>) -> Response {
     let kilns = km.list().await;
     let list: Vec<_> = kilns
         .iter()
@@ -93,7 +93,7 @@ pub(super) async fn handle_kiln_list(req: Request, km: &Arc<KilnManager>) -> Res
     Response::success(req.id, list)
 }
 
-pub(super) async fn handle_kiln_set_classification(
+pub(crate) async fn handle_kiln_set_classification(
     req: Request,
     _km: &Arc<KilnManager>,
 ) -> Response {
@@ -198,7 +198,7 @@ pub(super) async fn handle_kiln_set_classification(
     )
 }
 
-pub(super) async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -> Response {
+pub(crate) async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -> Response {
     let kiln_path = require_param!(req, "kiln", as_str);
     let vector_arr = require_param!(req, "vector", as_array);
     let vector: Vec<f32> = vector_arr
@@ -231,7 +231,7 @@ pub(super) async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -
     }
 }
 
-pub(super) async fn handle_list_notes(req: Request, km: &Arc<KilnManager>) -> Response {
+pub(crate) async fn handle_list_notes(req: Request, km: &Arc<KilnManager>) -> Response {
     let kiln_path = require_param!(req, "kiln", as_str);
     let path_filter = optional_param!(req, "path_filter", as_str);
 
@@ -260,7 +260,7 @@ pub(super) async fn handle_list_notes(req: Request, km: &Arc<KilnManager>) -> Re
     }
 }
 
-pub(super) async fn handle_get_note_by_name(req: Request, km: &Arc<KilnManager>) -> Response {
+pub(crate) async fn handle_get_note_by_name(req: Request, km: &Arc<KilnManager>) -> Response {
     let kiln_path = require_param!(req, "kiln", as_str);
     let name = require_param!(req, "name", as_str);
 
@@ -289,7 +289,7 @@ pub(super) async fn handle_get_note_by_name(req: Request, km: &Arc<KilnManager>)
 // NoteStore RPC Handlers
 // =============================================================================
 
-pub(super) async fn handle_note_upsert(req: Request, km: &Arc<KilnManager>) -> Response {
+pub(crate) async fn handle_note_upsert(req: Request, km: &Arc<KilnManager>) -> Response {
     use crucible_core::storage::NoteRecord;
 
     let kiln_path = require_param!(req, "kiln", as_str);
@@ -328,7 +328,7 @@ pub(super) async fn handle_note_upsert(req: Request, km: &Arc<KilnManager>) -> R
     }
 }
 
-pub(super) async fn handle_note_get(req: Request, km: &Arc<KilnManager>) -> Response {
+pub(crate) async fn handle_note_get(req: Request, km: &Arc<KilnManager>) -> Response {
     let kiln_path = require_param!(req, "kiln", as_str);
     let path = require_param!(req, "path", as_str);
 
@@ -348,7 +348,7 @@ pub(super) async fn handle_note_get(req: Request, km: &Arc<KilnManager>) -> Resp
     }
 }
 
-pub(super) async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> Response {
+pub(crate) async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> Response {
     let kiln_path = require_param!(req, "kiln", as_str);
     let path = require_param!(req, "path", as_str);
 
@@ -364,7 +364,7 @@ pub(super) async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> R
     }
 }
 
-pub(super) async fn handle_note_list(req: Request, km: &Arc<KilnManager>) -> Response {
+pub(crate) async fn handle_note_list(req: Request, km: &Arc<KilnManager>) -> Response {
     let kiln_path = require_param!(req, "kiln", as_str);
 
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
@@ -386,7 +386,7 @@ pub(super) async fn handle_note_list(req: Request, km: &Arc<KilnManager>) -> Res
 // Pipeline RPC Handlers
 // =============================================================================
 
-pub(super) async fn handle_process_file(req: Request, km: &Arc<KilnManager>) -> Response {
+pub(crate) async fn handle_process_file(req: Request, km: &Arc<KilnManager>) -> Response {
     let kiln_path = require_param!(req, "kiln", as_str);
     let file_path = require_param!(req, "path", as_str);
 
@@ -405,7 +405,7 @@ pub(super) async fn handle_process_file(req: Request, km: &Arc<KilnManager>) -> 
     }
 }
 
-pub(super) async fn handle_process_batch(
+pub(crate) async fn handle_process_batch(
     req: Request,
     km: &Arc<KilnManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
