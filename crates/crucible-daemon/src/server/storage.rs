@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) async fn handle_storage_verify(req: Request) -> Response {
+pub(crate) async fn handle_storage_verify(req: Request) -> Response {
     Response::success(
         req.id,
         serde_json::json!({
@@ -10,7 +10,7 @@ pub(super) async fn handle_storage_verify(req: Request) -> Response {
     )
 }
 
-pub(super) async fn handle_storage_cleanup(req: Request) -> Response {
+pub(crate) async fn handle_storage_cleanup(req: Request) -> Response {
     Response::success(
         req.id,
         serde_json::json!({
@@ -20,7 +20,7 @@ pub(super) async fn handle_storage_cleanup(req: Request) -> Response {
     )
 }
 
-pub(super) async fn handle_storage_backup(req: Request) -> Response {
+pub(crate) async fn handle_storage_backup(req: Request) -> Response {
     Response::success(
         req.id,
         serde_json::json!({
@@ -30,7 +30,7 @@ pub(super) async fn handle_storage_backup(req: Request) -> Response {
     )
 }
 
-pub(super) async fn handle_storage_restore(req: Request) -> Response {
+pub(crate) async fn handle_storage_restore(req: Request) -> Response {
     Response::success(
         req.id,
         serde_json::json!({

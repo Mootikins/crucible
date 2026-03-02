@@ -242,28 +242,6 @@ pub(super) async fn handle_legacy_request(params: LegacyRequestParams<'_>) -> Re
     tracing::debug!("Legacy handler for method={:?}", params.req.method);
 
     match params.req.method.as_str() {
-        "project.register" => handle_project_register(params.req, params.project_manager).await,
-        "project.unregister" => handle_project_unregister(params.req, params.project_manager).await,
-        "project.list" => handle_project_list(params.req, params.project_manager).await,
-        "project.get" => handle_project_get(params.req, params.project_manager).await,
-        "storage.verify" => handle_storage_verify(params.req).await,
-        "storage.cleanup" => handle_storage_cleanup(params.req).await,
-        "storage.backup" => handle_storage_backup(params.req).await,
-        "storage.restore" => handle_storage_restore(params.req).await,
-        "mcp.start" => {
-            handle_mcp_start(params.req, params.kiln_manager, params.mcp_server_manager).await
-        }
-        "mcp.stop" => handle_mcp_stop(params.req, params.mcp_server_manager).await,
-        "mcp.status" => handle_mcp_status(params.req, params.mcp_server_manager).await,
-        "skills.list" => handle_skills_list(params.req).await,
-        "skills.get" => handle_skills_get(params.req).await,
-        "skills.search" => handle_skills_search(params.req).await,
-        "agents.list_profiles" => {
-            handle_agents_list_profiles(params.req, params.agent_manager).await
-        }
-        "agents.resolve_profile" => {
-            handle_agents_resolve_profile(params.req, params.agent_manager).await
-        }
         _ => {
             tracing::warn!("Unknown RPC method: {:?}", params.req.method);
             Response::error(
