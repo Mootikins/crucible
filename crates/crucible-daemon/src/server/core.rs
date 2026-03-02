@@ -242,32 +242,6 @@ pub(super) async fn handle_legacy_request(params: LegacyRequestParams<'_>) -> Re
     tracing::debug!("Legacy handler for method={:?}", params.req.method);
 
     match params.req.method.as_str() {
-        "kiln.open" => {
-            handle_kiln_open(
-                params.req,
-                params.kiln_manager,
-                params.plugin_loader,
-                params.event_tx,
-            )
-            .await
-        }
-        "kiln.close" => handle_kiln_close(params.req, params.kiln_manager).await,
-        "kiln.list" => handle_kiln_list(params.req, params.kiln_manager).await,
-        "kiln.set_classification" => {
-            handle_kiln_set_classification(params.req, params.kiln_manager).await
-        }
-        "search_vectors" => handle_search_vectors(params.req, params.kiln_manager).await,
-        "list_notes" => handle_list_notes(params.req, params.kiln_manager).await,
-        "get_note_by_name" => handle_get_note_by_name(params.req, params.kiln_manager).await,
-        "note.upsert" => handle_note_upsert(params.req, params.kiln_manager).await,
-        "note.get" => handle_note_get(params.req, params.kiln_manager).await,
-        "note.delete" => handle_note_delete(params.req, params.kiln_manager).await,
-        "note.list" => handle_note_list(params.req, params.kiln_manager).await,
-        "models.list" => handle_models_list(params.req, params.agent_manager).await,
-        "process_file" => handle_process_file(params.req, params.kiln_manager).await,
-        "process_batch" => {
-            handle_process_batch(params.req, params.kiln_manager, params.event_tx).await
-        }
         "session.create" => {
             handle_session_create(
                 params.req,

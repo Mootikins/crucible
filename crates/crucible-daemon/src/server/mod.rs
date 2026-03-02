@@ -44,7 +44,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 mod core;
-mod kiln;
+pub mod kiln;
 mod lua;
 mod observe;
 mod platform;
@@ -53,7 +53,7 @@ pub mod session;
 mod storage;
 
 use core::*;
-use kiln::*;
+// use kiln::*;  // kiln handlers are now called via crate::server::kiln::
 use lua::*;
 use observe::*;
 use platform::*;
@@ -2044,7 +2044,7 @@ mod tests {
             }),
         };
 
-        let response = handle_process_batch(req, &km, &event_tx).await;
+        let response = crate::server::kiln::handle_process_batch(req, &km, &event_tx).await;
         assert!(response.error.is_none());
 
         let mut events = Vec::new();

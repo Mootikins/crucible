@@ -803,7 +803,7 @@ pub(super) async fn handle_session_list_models(req: Request, am: &Arc<AgentManag
 /// List all available models without requiring an active session.
 ///
 /// Accepts an optional `kiln_path` parameter. When provided, the handler
-pub(super) async fn handle_models_list(req: Request, am: &Arc<AgentManager>) -> Response {
+pub(crate) async fn handle_models_list(req: Request, am: &Arc<AgentManager>) -> Response {
     let kiln_path = req
         .params
         .get("kiln_path")
