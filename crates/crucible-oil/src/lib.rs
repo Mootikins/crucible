@@ -21,9 +21,11 @@ pub mod cell_grid;
 pub mod components;
 pub mod decrypt;
 pub mod focus;
+pub mod graduation;
 pub mod layout;
 pub mod node;
 pub mod overlay;
+#[cfg(any(test, feature = "test-utils"))]
 #[cfg(any(test, feature = "test-utils"))]
 pub mod proptest_strategies;
 pub mod render;
@@ -39,6 +41,7 @@ pub use components::{
     POPUP_MAX_VISIBLE,
 };
 pub use focus::{FocusContext, FocusId};
+pub use graduation::{GraduatedContent, GraduationState};
 pub use layout::flex::{
     calculate_column_heights, calculate_row_widths, ChildMeasurement, FlexLayoutInput,
     FlexLayoutResult,
