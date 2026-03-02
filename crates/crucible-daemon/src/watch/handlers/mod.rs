@@ -85,6 +85,7 @@ impl Default for HandlerRegistry {
 
 /// Create a default set of handlers for a typical Crucible installation.
 pub fn create_default_handlers() -> Result<HandlerRegistry> {
+    #[cfg_attr(not(feature = "obsidian"), allow(unused_mut))]
     let mut registry = HandlerRegistry::new();
 
     // Register default handlers
