@@ -914,6 +914,17 @@ mod tests {
         {
             return Err("Schema contains 'additionalProperties: true' - use #[schemars(schema_with = \"...\")] for serde_json::Value fields".into());
         }
+        if (json.contains(r#""type":"object""#) || json.contains(r#""type": "object""#))
+            && !json.contains(r#""properties""#)
+        {
+            return Err("Schema has type=object but missing properties key".into());
+        }
+        if json.contains(r#""$schema""#) {
+            return Err("Schema contains $schema meta field".into());
+        }
+        if json.contains(r#""title""#) {
+            return Err("Schema contains title meta field".into());
+        }
         Ok(())
     }
 
@@ -928,43 +939,69 @@ mod tests {
             CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMetadataParams,
             ReadNoteParams, UpdateNoteParams,
         };
+        use crate::tools::mcp_server::{
+            CancelJobParams, DelegateSessionParams, GetJobResultParams, ListJobsParams,
+        };
+        use crate::provider::tool_bridge::sanitize_tool_schema;
+
+        let sanitize = |raw: schemars::Schema| -> String {
+            let mut v: serde_json::Value = serde_json::to_value(&raw).unwrap();
+            sanitize_tool_schema(&mut v);
+            serde_json::to_string(&v).unwrap()
+        };
 
         let schemas: &[(&str, String)] = &[
             (
                 "TextSearchParams",
-                serde_json::to_string(&schemars::schema_for!(TextSearchParams)).unwrap(),
+                sanitize(schemars::schema_for!(TextSearchParams)),
             ),
             (
                 "SemanticSearchParams",
-                serde_json::to_string(&schemars::schema_for!(SemanticSearchParams)).unwrap(),
+                sanitize(schemars::schema_for!(SemanticSearchParams)),
             ),
             (
                 "PropertySearchParams",
-                serde_json::to_string(&schemars::schema_for!(PropertySearchParams)).unwrap(),
+                sanitize(schemars::schema_for!(PropertySearchParams)),
             ),
             (
                 "CreateNoteParams",
-                serde_json::to_string(&schemars::schema_for!(CreateNoteParams)).unwrap(),
+                sanitize(schemars::schema_for!(CreateNoteParams)),
             ),
             (
                 "ReadNoteParams",
-                serde_json::to_string(&schemars::schema_for!(ReadNoteParams)).unwrap(),
+                sanitize(schemars::schema_for!(ReadNoteParams)),
             ),
             (
                 "ReadMetadataParams",
-                serde_json::to_string(&schemars::schema_for!(ReadMetadataParams)).unwrap(),
+                sanitize(schemars::schema_for!(ReadMetadataParams)),
             ),
             (
                 "UpdateNoteParams",
-                serde_json::to_string(&schemars::schema_for!(UpdateNoteParams)).unwrap(),
+                sanitize(schemars::schema_for!(UpdateNoteParams)),
             ),
             (
                 "DeleteNoteParams",
-                serde_json::to_string(&schemars::schema_for!(DeleteNoteParams)).unwrap(),
+                sanitize(schemars::schema_for!(DeleteNoteParams)),
             ),
             (
                 "ListNotesParams",
-                serde_json::to_string(&schemars::schema_for!(ListNotesParams)).unwrap(),
+                sanitize(schemars::schema_for!(ListNotesParams)),
+            ),
+            (
+                "ListJobsParams",
+                sanitize(schemars::schema_for!(ListJobsParams)),
+            ),
+            (
+                "GetJobResultParams",
+                sanitize(schemars::schema_for!(GetJobResultParams)),
+            ),
+            (
+                "CancelJobParams",
+                sanitize(schemars::schema_for!(CancelJobParams)),
+            ),
+            (
+                "DelegateSessionParams",
+                sanitize(schemars::schema_for!(DelegateSessionParams)),
             ),
         ];
 
@@ -979,6 +1016,37 @@ mod tests {
             errors.is_empty(),
             "Schema compatibility issues:\n{}",
             errors.join("\n")
+        );
+    }
+
+    #[test]
+    fn test_check_schema_catches_missing_properties() {
+        // Raw schema with type=object but no properties (like ListJobsParams before sanitization)
+        let raw = r#"{"type":"object"}"#;
+        assert!(
+            check_schema_compatible(raw).is_err(),
+            "Should reject schema with type=object but missing properties"
+        );
+
+        // Schema with $schema field
+        let with_schema_field = r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{}}"#;
+        assert!(
+            check_schema_compatible(with_schema_field).is_err(),
+            "Should reject schema with $schema field"
+        );
+
+        // Schema with title field
+        let with_title = r#"{"title":"Foo","type":"object","properties":{}}"#;
+        assert!(
+            check_schema_compatible(with_title).is_err(),
+            "Should reject schema with title field"
+        );
+
+        // Valid schema should pass
+        let valid = r#"{"type":"object","properties":{}}"#;
+        assert!(
+            check_schema_compatible(valid).is_ok(),
+            "Should accept valid schema"
         );
     }
 }
