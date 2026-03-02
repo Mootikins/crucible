@@ -36,6 +36,7 @@ pub mod style;
 pub mod taffy_layout;
 pub mod template;
 pub mod viewport;
+pub mod terminal;
 
 pub use cell_grid::{CellGrid, StyledCell};
 pub use components::{
@@ -72,6 +73,7 @@ pub use style::{AlignItems, Border, Color, Gap, JustifyContent, Padding, Style};
 pub use planning::{FramePlan, FramePlanner, FrameSnapshot, FrameTrace, RenderedOverlay};
 pub use runtime::TestRuntime;
 pub use output::OutputBuffer;
+pub use terminal::Terminal;
 
 // Re-export commonly used decrypt functions
 
