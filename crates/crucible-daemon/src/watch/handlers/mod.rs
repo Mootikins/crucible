@@ -3,12 +3,10 @@
 // TODO: Re-enable indexing handler when feature flag is ready
 pub mod composite;
 mod indexing;
-mod obsidian_sync;
 mod parser_handler;
 
 pub use composite::{CompositeHandler, CoordinationStrategy, HandlerState};
 pub use indexing::IndexingHandler;
-pub use obsidian_sync::{ObsidianKilnConfig, ObsidianSyncHandler, SyncConfig, SyncStats};
 pub use parser_handler::ParserHandler;
 
 use crate::watch::{error::Result, events::FileEvent, traits::EventHandler};
@@ -85,8 +83,7 @@ impl Default for HandlerRegistry {
 
 /// Create a default set of handlers for a typical Crucible installation.
 pub fn create_default_handlers() -> Result<HandlerRegistry> {
-    #[cfg_attr(not(feature = "obsidian"), allow(unused_mut))]
-    let mut registry = HandlerRegistry::new();
+    let registry = HandlerRegistry::new();
 
     // Register default handlers
     // TODO: Re-enable indexing handler when feature flag is ready
@@ -95,10 +92,6 @@ pub fn create_default_handlers() -> Result<HandlerRegistry> {
     //     registry.register(Arc::new(IndexingHandler::new()?));
     // }
 
-    #[cfg(feature = "obsidian")]
-    {
-        registry.register(Arc::new(ObsidianSyncHandler::new()?));
-    }
 
     Ok(registry)
 }

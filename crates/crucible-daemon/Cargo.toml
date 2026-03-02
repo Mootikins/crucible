@@ -85,7 +85,6 @@ storage-sqlite = ["dep:crucible-sqlite", "dep:rusqlite"]
 test-fixtures = []       # Tests using docs/ kiln or examples/test-kiln
 test-slow = []           # Performance benchmarks and timing tests
 test-utils = []
-obsidian = []
 
 [dev-dependencies]
 tempfile = { workspace = true }

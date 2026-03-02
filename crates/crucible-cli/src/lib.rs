@@ -21,5 +21,4 @@ pub mod progress;
 pub mod provider_detect;
 pub mod search;
 pub mod sync;
-#[allow(dead_code, unused_imports)] // WIP TUI code — clean up as features stabilize
 pub mod tui;
