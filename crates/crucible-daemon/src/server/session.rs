@@ -463,7 +463,7 @@ pub(crate) async fn handle_session_end(
     }
 }
 
-pub(super) async fn handle_session_replay(
+pub(crate) async fn handle_session_replay(
     req: Request,
     sm: &Arc<SessionManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
@@ -518,7 +518,7 @@ pub(crate) async fn handle_session_compact(req: Request, sm: &Arc<SessionManager
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-pub(super) async fn handle_session_configure_agent(
+pub(crate) async fn handle_session_configure_agent(
     req: Request,
     am: &Arc<AgentManager>,
 ) -> Response {
@@ -554,7 +554,7 @@ pub(super) async fn handle_session_configure_agent(
     }
 }
 
-pub(super) async fn handle_session_send_message(
+pub(crate) async fn handle_session_send_message(
     req: Request,
     am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
@@ -577,7 +577,7 @@ pub(super) async fn handle_session_send_message(
     }
 }
 
-pub(super) async fn handle_session_cancel(req: Request, am: &Arc<AgentManager>) -> Response {
+pub(crate) async fn handle_session_cancel(req: Request, am: &Arc<AgentManager>) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
 
     let cancelled = am.cancel(session_id).await;
@@ -590,7 +590,7 @@ pub(super) async fn handle_session_cancel(req: Request, am: &Arc<AgentManager>) 
     )
 }
 
-pub(super) async fn handle_session_interaction_respond(
+pub(crate) async fn handle_session_interaction_respond(
     req: Request,
     am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
@@ -643,7 +643,7 @@ pub(super) async fn handle_session_interaction_respond(
     )
 }
 
-pub(super) async fn handle_session_test_interaction(
+pub(crate) async fn handle_session_test_interaction(
     req: Request,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
@@ -713,7 +713,7 @@ pub(super) async fn handle_session_test_interaction(
     )
 }
 
-pub(super) async fn handle_session_switch_model(
+pub(crate) async fn handle_session_switch_model(
     req: Request,
     am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
@@ -753,7 +753,7 @@ pub(super) async fn handle_session_switch_model(
     }
 }
 
-pub(super) async fn handle_session_list_models(req: Request, am: &Arc<AgentManager>) -> Response {
+pub(crate) async fn handle_session_list_models(req: Request, am: &Arc<AgentManager>) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
 
     let classification = match am.get_session_with_agent(session_id) {
@@ -921,7 +921,7 @@ pub(crate) async fn handle_session_get_precognition(
     }
 }
 
-pub(super) async fn handle_session_add_notification(
+pub(crate) async fn handle_session_add_notification(
     req: Request,
     am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
@@ -954,7 +954,7 @@ pub(super) async fn handle_session_add_notification(
     }
 }
 
-pub(super) async fn handle_session_list_notifications(
+pub(crate) async fn handle_session_list_notifications(
     req: Request,
     am: &Arc<AgentManager>,
 ) -> Response {
@@ -975,7 +975,7 @@ pub(super) async fn handle_session_list_notifications(
     }
 }
 
-pub(super) async fn handle_session_dismiss_notification(
+pub(crate) async fn handle_session_dismiss_notification(
     req: Request,
     am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,

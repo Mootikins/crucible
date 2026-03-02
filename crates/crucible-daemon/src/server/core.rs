@@ -242,37 +242,6 @@ pub(super) async fn handle_legacy_request(params: LegacyRequestParams<'_>) -> Re
     tracing::debug!("Legacy handler for method={:?}", params.req.method);
 
     match params.req.method.as_str() {
-        "session.configure_agent" => {
-            handle_session_configure_agent(params.req, params.agent_manager).await
-        }
-        "session.send_message" => {
-            handle_session_send_message(params.req, params.agent_manager, params.event_tx).await
-        }
-        "session.cancel" => handle_session_cancel(params.req, params.agent_manager).await,
-        "session.interaction_respond" => {
-            handle_session_interaction_respond(params.req, params.agent_manager, params.event_tx)
-                .await
-        }
-        "session.switch_model" => {
-            handle_session_switch_model(params.req, params.agent_manager, params.event_tx).await
-        }
-        "session.list_models" => handle_session_list_models(params.req, params.agent_manager).await,
-        "session.add_notification" => {
-            handle_session_add_notification(params.req, params.agent_manager, params.event_tx).await
-        }
-        "session.list_notifications" => {
-            handle_session_list_notifications(params.req, params.agent_manager).await
-        }
-        "session.dismiss_notification" => {
-            handle_session_dismiss_notification(params.req, params.agent_manager, params.event_tx)
-                .await
-        }
-        "session.test_interaction" => {
-            handle_session_test_interaction(params.req, params.event_tx).await
-        }
-        "session.replay" => {
-            handle_session_replay(params.req, params.session_manager, params.event_tx).await
-        }
         "plugin.reload" => handle_plugin_reload(params.req, params.plugin_loader).await,
         "plugin.list" => handle_plugin_list(params.req, params.plugin_loader).await,
         "project.register" => handle_project_register(params.req, params.project_manager).await,
