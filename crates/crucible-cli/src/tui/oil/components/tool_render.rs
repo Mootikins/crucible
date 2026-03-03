@@ -5,7 +5,6 @@
 
 use crate::tui::oil::node::{col, row, styled, Node, SpinnerNode, SpinnerStyle};
 use crate::tui::oil::style::Style;
-use crate::tui::oil::theme::ThemeTokens;
 use crate::tui::oil::utils::{terminal_width, truncate_first_line, truncate_to_chars};
 use crate::tui::oil::viewport_cache::CachedToolCall;
 use std::time::Duration;
@@ -44,14 +43,14 @@ fn render_tool_error(
     args_formatted: &str,
     error: &str,
 ) -> Node {
-    let theme = ThemeTokens::default_ref();
+    let t = crate::tui::oil::theme::active();
     row([
-        styled(" ✗ ", Style::new().fg(theme.error)),
-        styled(display_name, Style::new().fg(theme.text_dim)),
-        styled(format!("({}) ", args_formatted), theme.dim()),
+        styled(" ✗ ", Style::new().fg(t.resolve_color(t.colors.error))),
+        styled(display_name, Style::new().fg(t.resolve_color(t.colors.text_dim))),
+        styled(format!("({}) ", args_formatted), Style::new().fg(t.resolve_color(t.colors.text_dim)).dim()),
         styled(
             format!("→ {}", truncate_first_line(error, 50, true)),
-            theme.error_style(),
+            Style::new().fg(t.resolve_color(t.colors.error)).bold(),
         ),
     ])
 }
@@ -71,24 +70,24 @@ fn render_tool_complete(
     let collapsed = collapse_result(&tool.name, result_str, result_summary.as_deref());
     let has_arrow_suffix = tool.output_path.is_some() || collapsed.is_some();
 
-    let theme = ThemeTokens::default_ref();
+    let t = crate::tui::oil::theme::active();
     let arrow_suffix = if let Some(ref path) = tool.output_path {
-        styled(format!("→ {}", path.display()), theme.muted())
+        styled(format!("→ {}", path.display()), Style::new().fg(t.resolve_color(t.colors.text_muted)))
     } else if let Some(ref s) = collapsed {
-        styled(format!("→ {}", s), theme.muted())
+        styled(format!("→ {}", s), Style::new().fg(t.resolve_color(t.colors.text_muted)))
     } else {
         Node::Empty
     };
 
     let header = row([
-        styled(" ✓ ", Style::new().fg(theme.success)),
-        styled(display_name, Style::new().fg(theme.text_dim)),
+        styled(" ✓ ", Style::new().fg(t.resolve_color(t.colors.success))),
+        styled(display_name, Style::new().fg(t.resolve_color(t.colors.text_dim))),
         if args_formatted.is_empty() {
             Node::Empty
         } else if has_arrow_suffix {
-            styled(format!("({}) ", args_formatted), theme.dim())
+            styled(format!("({}) ", args_formatted), Style::new().fg(t.resolve_color(t.colors.text_dim)).dim())
         } else {
-            styled(format!("({})", args_formatted), theme.dim())
+            styled(format!("({})", args_formatted), Style::new().fg(t.resolve_color(t.colors.text_dim)).dim())
         },
         arrow_suffix,
     ]);
@@ -116,20 +115,20 @@ fn render_tool_running(
     let elapsed = tool.elapsed();
     let show_elapsed = elapsed >= Duration::from_secs(2);
 
-    let theme = ThemeTokens::default_ref();
+    let t = crate::tui::oil::theme::active();
     let spinner = Node::Spinner(
         SpinnerNode::new(spinner_frame)
-            .style(Style::new().fg(theme.text_dim))
+            .style(Style::new().fg(t.resolve_color(t.colors.text_dim)))
             .style_variant(SpinnerStyle::Braille),
     );
     let header = row([
         styled(" ", Style::new()),
         spinner,
         styled(" ", Style::new()),
-        styled(display_name, Style::new().fg(theme.text_dim)),
-        styled(format!("({})", args_formatted), theme.dim()),
+        styled(display_name, Style::new().fg(t.resolve_color(t.colors.text_dim))),
+        styled(format!("({})", args_formatted), Style::new().fg(t.resolve_color(t.colors.text_dim)).dim()),
         if show_elapsed {
-            styled(format!("  {}", format_elapsed(elapsed)), theme.dim())
+            styled(format!("  {}", format_elapsed(elapsed)), Style::new().fg(t.resolve_color(t.colors.text_dim)).dim())
         } else {
             Node::Empty
         },
@@ -233,9 +232,10 @@ pub fn format_tool_args(args: &str) -> String {
 /// Format tool result for display.
 pub fn format_tool_result(name: &str, result: &str) -> Node {
     if let Some(summary) = summarize_tool_result(name, result) {
+        let t = crate::tui::oil::theme::active();
         return styled(
             format!("   {}", summary),
-            ThemeTokens::default_ref().muted(),
+            Style::new().fg(t.resolve_color(t.colors.text_muted)),
         );
     }
     let inner = unwrap_json_result(result);
@@ -285,10 +285,11 @@ pub fn format_output_tail(output: &str, prefix: &str) -> Node {
     let bar_prefix = format!("{}│ ", prefix);
     let truncate_at = width.saturating_sub(bar_prefix.len() + 1);
 
+    let t = crate::tui::oil::theme::active();
     col(std::iter::once(if hidden_count > 0 {
         styled(
             format!("{}({} more lines)", bar_prefix, hidden_count),
-            ThemeTokens::default_ref().tool_result(),
+            Style::new().fg(t.resolve_color(t.colors.text_dim)),
         )
     } else {
         Node::Empty
@@ -299,7 +300,7 @@ pub fn format_output_tail(output: &str, prefix: &str) -> Node {
         } else {
             format!("{}{}", bar_prefix, line)
         };
-        styled(display, ThemeTokens::default_ref().tool_result())
+        styled(display, Style::new().fg(t.resolve_color(t.colors.text_dim)))
     })))
 }
 

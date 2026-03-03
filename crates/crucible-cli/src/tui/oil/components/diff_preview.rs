@@ -7,7 +7,6 @@ use crate::formatting::{HighlightedLine, SyntaxHighlighter};
 use crate::tui::oil::diff::{diff_to_node, diff_to_node_width};
 use crate::tui::oil::node::{col, row, styled, Node};
 use crate::tui::oil::style::{Color, Style};
-use crate::tui::oil::theme::ThemeTokens;
 
 /// Maximum number of lines to display before truncating.
 #[allow(dead_code)] // WIP: MAX_LINES not yet used
@@ -132,26 +131,26 @@ fn render_header(file_path: &str, action: &str) -> Node {
         _ => "[unknown]",
     };
 
-    let theme = ThemeTokens::default_ref();
+    let t = crate::tui::oil::theme::active();
     let label_style = match action {
-        "create" => theme.diff_insert(),
-        "delete" => theme.diff_delete(),
-        _ => theme.info_style(),
+        "create" => Style::new().fg(t.resolve_color(t.colors.success)),
+        "delete" => Style::new().fg(t.resolve_color(t.colors.error)),
+        _ => Style::new().fg(t.resolve_color(t.colors.info)),
     };
 
     row([
         styled(format!("{} ", label), label_style),
-        styled(file_path.to_string(), theme.accent()),
+        styled(file_path.to_string(), Style::new().fg(t.resolve_color(t.colors.primary))),
     ])
 }
 
 #[allow(dead_code)] // WIP: render_all_lines_styled not yet used
 fn render_all_lines_styled(content: &str, is_insert: bool, extension: Option<&str>) -> Node {
-    let theme = ThemeTokens::default_ref();
+    let t = crate::tui::oil::theme::active();
     let diff_bg = if is_insert {
-        theme.success
+        t.resolve_color(t.colors.success)
     } else {
-        theme.error
+        t.resolve_color(t.colors.error)
     };
     let prefix = if is_insert { "+" } else { "-" };
 
@@ -197,7 +196,7 @@ fn render_all_lines_styled(content: &str, is_insert: bool, extension: Option<&st
         let remaining = total_lines - MAX_LINES;
         nodes.push(styled(
             format!("... {} more lines", remaining),
-            ThemeTokens::default_ref().muted(),
+            Style::new().fg(t.resolve_color(t.colors.text_muted)),
         ));
     }
 
@@ -240,7 +239,10 @@ fn render_modification_diff(old: &str, new: &str, max_width: Option<usize>) -> N
             diff_node,
             styled(
                 format!("... {} more lines", remaining),
-                ThemeTokens::default_ref().muted(),
+                {
+                    let t = crate::tui::oil::theme::active();
+                    Style::new().fg(t.resolve_color(t.colors.text_muted))
+                },
             ),
         ])
     } else {
