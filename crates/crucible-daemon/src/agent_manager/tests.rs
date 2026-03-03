@@ -1,5 +1,6 @@
 use super::*;
 use crate::session_storage::FileSessionStorage;
+use crate::tool_dispatch::ToolDispatcher;
 use async_trait::async_trait;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::events::handler::{Handler, HandlerContext, HandlerResult};
@@ -23,6 +24,38 @@ struct MockAgent;
 
 struct StreamingMockAgent {
     chunks: Vec<ChatChunk>,
+}
+
+enum MockToolDispatchBehavior {
+    Success(serde_json::Value),
+    Error(String),
+    Timeout,
+}
+
+struct MockToolDispatcher {
+    behavior: MockToolDispatchBehavior,
+}
+
+#[async_trait]
+impl ToolDispatcher for MockToolDispatcher {
+    async fn dispatch_tool(
+        &self,
+        _name: &str,
+        _args: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        match &self.behavior {
+            MockToolDispatchBehavior::Success(value) => Ok(value.clone()),
+            MockToolDispatchBehavior::Error(error) => Err(error.clone()),
+            MockToolDispatchBehavior::Timeout => {
+                tokio::time::sleep(Duration::MAX).await;
+                unreachable!("sleep(Duration::MAX) should never resolve");
+            }
+        }
+    }
+
+    fn has_tool(&self, _name: &str) -> bool {
+        true
+    }
 }
 
 struct MockHandler {
@@ -308,6 +341,10 @@ impl ReactorTestHarness {
                 Box::new(StreamingMockAgent { chunks }) as BoxedAgentHandle
             )),
         );
+    }
+
+    fn inject_tool_dispatcher(&mut self, dispatcher: Arc<dyn ToolDispatcher>) {
+        self.agent_manager.tool_dispatcher = dispatcher;
     }
 
     fn default_ok_chunks() -> Vec<ChatChunk> {
@@ -1537,13 +1574,169 @@ async fn send_message_emits_tool_call_and_tool_result_events() {
     assert_eq!(tool_call.data["tool"], "read_file");
     assert_eq!(tool_call.data["args"]["path"], "test.md");
 
-    let tool_result = next_event_or_skip(&mut event_rx, "tool_result").await;
+    let tool_result = timeout(Duration::from_secs(2), async {
+        loop {
+            let event = event_rx.recv().await.expect("event channel closed");
+            if event.event != "tool_result" {
+                continue;
+            }
+            if event.data["result"]["result"] == "content" {
+                break event;
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for stream-provided tool_result event");
     assert_eq!(tool_result.data["tool"], "read_file");
-    assert_eq!(tool_result.data["result"]["result"], "content");
 
     let complete = next_event_or_skip(&mut event_rx, "message_complete").await;
     assert_eq!(complete.data["message_id"], message_id);
     assert_eq!(complete.data["full_response"], "Done.");
+}
+
+#[tokio::test]
+async fn tool_dispatch_success() {
+    let mut h = ReactorTestHarness::new().await;
+    h.inject_tool_dispatcher(Arc::new(MockToolDispatcher {
+        behavior: MockToolDispatchBehavior::Success(serde_json::json!({ "ok": true })),
+    }));
+
+    h.inject_streaming_agent(vec![
+        ChatChunk {
+            delta: String::new(),
+            done: false,
+            tool_calls: Some(vec![ChatToolCall {
+                name: "read_file".to_string(),
+                arguments: Some(serde_json::json!({ "path": "test.md" })),
+                id: Some("call-dispatch-success".to_string()),
+            }]),
+            tool_results: None,
+            reasoning: None,
+            usage: None,
+            subagent_events: None,
+            precognition_notes_count: None,
+            precognition_notes: None,
+        },
+        ChatChunk {
+            delta: "Done".to_string(),
+            done: true,
+            tool_calls: None,
+            tool_results: None,
+            reasoning: None,
+            usage: None,
+            subagent_events: None,
+            precognition_notes_count: None,
+            precognition_notes: None,
+        },
+    ]);
+
+    h.send("run tool").await;
+
+    let tool_result = h.wait_for("tool_result").await;
+    assert_eq!(tool_result.data["tool"], "read_file");
+    assert_eq!(tool_result.data["result"]["result"], "{\"ok\":true}");
+
+    h.wait_for("message_complete").await;
+}
+
+#[tokio::test]
+async fn tool_dispatch_error_event() {
+    let mut h = ReactorTestHarness::new().await;
+    h.inject_tool_dispatcher(Arc::new(MockToolDispatcher {
+        behavior: MockToolDispatchBehavior::Error("tool failed".to_string()),
+    }));
+
+    h.inject_streaming_agent(vec![
+        ChatChunk {
+            delta: String::new(),
+            done: false,
+            tool_calls: Some(vec![ChatToolCall {
+                name: "read_file".to_string(),
+                arguments: Some(serde_json::json!({ "path": "test.md" })),
+                id: Some("call-dispatch-error".to_string()),
+            }]),
+            tool_results: None,
+            reasoning: None,
+            usage: None,
+            subagent_events: None,
+            precognition_notes_count: None,
+            precognition_notes: None,
+        },
+        ChatChunk {
+            delta: "Done".to_string(),
+            done: true,
+            tool_calls: None,
+            tool_results: None,
+            reasoning: None,
+            usage: None,
+            subagent_events: None,
+            precognition_notes_count: None,
+            precognition_notes: None,
+        },
+    ]);
+
+    h.send("run tool").await;
+
+    let tool_result = h.wait_for("tool_result").await;
+    assert_eq!(tool_result.data["tool"], "read_file");
+    assert_eq!(tool_result.data["result"]["error"], "tool failed");
+
+    h.wait_for("message_complete").await;
+}
+
+#[tokio::test]
+async fn tool_dispatch_timeout() {
+    tokio::time::pause();
+
+    let mut h = ReactorTestHarness::new().await;
+    h.inject_tool_dispatcher(Arc::new(MockToolDispatcher {
+        behavior: MockToolDispatchBehavior::Timeout,
+    }));
+
+    h.inject_streaming_agent(vec![
+        ChatChunk {
+            delta: String::new(),
+            done: false,
+            tool_calls: Some(vec![ChatToolCall {
+                name: "read_file".to_string(),
+                arguments: Some(serde_json::json!({ "path": "test.md" })),
+                id: Some("call-dispatch-timeout".to_string()),
+            }]),
+            tool_results: None,
+            reasoning: None,
+            usage: None,
+            subagent_events: None,
+            precognition_notes_count: None,
+            precognition_notes: None,
+        },
+        ChatChunk {
+            delta: "Done".to_string(),
+            done: true,
+            tool_calls: None,
+            tool_results: None,
+            reasoning: None,
+            usage: None,
+            subagent_events: None,
+            precognition_notes_count: None,
+            precognition_notes: None,
+        },
+    ]);
+
+    h.send("run tool").await;
+
+    tokio::task::yield_now().await;
+    tokio::time::advance(Duration::from_secs(31)).await;
+    tokio::task::yield_now().await;
+    tokio::time::resume();
+
+    let tool_result = h.wait_for("tool_result").await;
+    assert_eq!(tool_result.data["tool"], "read_file");
+    assert_eq!(
+        tool_result.data["result"]["error"],
+        "Tool 'read_file' timed out after 30 seconds"
+    );
+
+    h.wait_for("message_complete").await;
 }
 
 #[tokio::test]
