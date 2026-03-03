@@ -101,7 +101,7 @@ fn spinner_cycles_frames() {
         label: None,
         style: Style::default(),
         frame: 0,
-        frames: None,
+        style_variant: None,
     };
     assert_eq!(s.current_char(), '◐');
 

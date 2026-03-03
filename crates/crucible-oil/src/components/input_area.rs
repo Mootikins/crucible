@@ -32,6 +32,8 @@ pub struct InputArea {
     pub width: usize,
     pub focused: bool,
     pub show_popup: bool,
+    pub border_top: char,
+    pub border_bottom: char,
 }
 
 impl InputArea {
@@ -42,6 +44,8 @@ impl InputArea {
             width,
             focused: true,
             show_popup: false,
+            border_top: '▄',
+            border_bottom: '▀',
         }
     }
 
@@ -55,13 +59,25 @@ impl InputArea {
         self
     }
 
+    /// Set border top character
+    pub fn border_top(mut self, ch: char) -> Self {
+        self.border_top = ch;
+        self
+    }
+
+    /// Set border bottom character
+    pub fn border_bottom(mut self, ch: char) -> Self {
+        self.border_bottom = ch;
+        self
+    }
+
     /// Render the input area with the given style
     pub fn view<S: InputStyle>(&self, style: &S, focus: &FocusContext) -> Node {
         let prompt = style.prompt();
         let bg = style.bg_color();
 
-        let top_edge = styled("▄".repeat(self.width), Style::new().fg(bg));
-        let bottom_edge = styled("▀".repeat(self.width), Style::new().fg(bg));
+        let top_edge = styled(self.border_top.to_string().repeat(self.width), Style::new().fg(bg));
+        let bottom_edge = styled(self.border_bottom.to_string().repeat(self.width), Style::new().fg(bg));
 
         let display_content = style.display_content(&self.content);
         let display_cursor = style.display_cursor(self.cursor);

@@ -119,8 +119,8 @@ pub struct SpinnerNode {
     pub label: Option<String>,
     pub style: Style,
     pub frame: usize,
-    /// Custom spinner frames. If None, uses default SPINNER_FRAMES.
-    pub frames: Option<&'static [char]>,
+    /// Spinner style (Default or Braille). If None, uses Default.
+    pub style_variant: Option<SpinnerStyle>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -177,6 +177,31 @@ pub enum Size {
 
 pub const SPINNER_FRAMES: &[char] = &['◐', '◓', '◑', '◒'];
 pub const BRAILLE_SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+/// Spinner frame style variants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpinnerStyle {
+    /// Default spinner frames: ◐ ◓ ◑ ◒
+    Default,
+    /// Braille spinner frames: ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏
+    Braille,
+}
+
+impl SpinnerStyle {
+    /// Get the frame characters for this spinner style.
+    pub fn frames(&self) -> &'static [char] {
+        match self {
+            SpinnerStyle::Default => SPINNER_FRAMES,
+            SpinnerStyle::Braille => BRAILLE_SPINNER_FRAMES,
+        }
+    }
+}
+
+impl Default for SpinnerStyle {
+    fn default() -> Self {
+        SpinnerStyle::Default
+    }
+}
 
 pub fn text(content: impl Into<String>) -> Node {
     Node::Text(TextNode {
@@ -616,7 +641,7 @@ impl SpinnerNode {
             label: None,
             style: Style::default(),
             frame,
-            frames: None,
+            style_variant: None,
         }
     }
 
@@ -632,14 +657,15 @@ impl SpinnerNode {
         self
     }
 
-    /// Set custom spinner frames.
-    pub fn frames(mut self, frames: &'static [char]) -> Self {
-        self.frames = Some(frames);
+    /// Set the spinner style variant (Default or Braille).
+    pub fn style_variant(mut self, variant: SpinnerStyle) -> Self {
+        self.style_variant = Some(variant);
         self
     }
 
     pub fn current_char(&self) -> char {
-        let frames = self.frames.unwrap_or(SPINNER_FRAMES);
+        let variant = self.style_variant.unwrap_or_default();
+        let frames = variant.frames();
         debug_assert!(!frames.is_empty(), "spinner frames must not be empty");
         frames[self.frame % frames.len()]
     }
@@ -746,7 +772,7 @@ mod tests {
             label: None,
             style: Style::default(),
             frame: 0,
-            frames: None,
+            style_variant: None,
         };
         assert_eq!(spinner.current_char(), SPINNER_FRAMES[0]);
 
@@ -754,7 +780,7 @@ mod tests {
             label: None,
             style: Style::default(),
             frame: 4,
-            frames: None,
+            style_variant: None,
         };
         assert_eq!(spinner_4.current_char(), SPINNER_FRAMES[0]);
     }
