@@ -425,15 +425,18 @@ impl LayoutEngine {
                 },
             ),
 
-            Node::Spinner(spinner) => LayoutBox::new(
-                rect,
-                LayoutContent::Spinner {
-                    label: spinner.label.clone(),
-                    frame: spinner.frame,
-                    frames: spinner.frames,
-                    style: spinner.style,
-                },
-            ),
+            Node::Spinner(spinner) => {
+                let variant = spinner.style_variant.unwrap_or_default();
+                LayoutBox::new(
+                    rect,
+                    LayoutContent::Spinner {
+                        label: spinner.label.clone(),
+                        frame: spinner.frame,
+                        frames: Some(variant.frames()),
+                        style: spinner.style,
+                    },
+                )
+            }
 
             Node::Popup(popup) => LayoutBox::new(
                 rect,
