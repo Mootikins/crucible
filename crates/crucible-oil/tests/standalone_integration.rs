@@ -1,283 +1,149 @@
-//! Standalone integration tests for crucible-oil.
-//!
-//! These tests prove that crucible-oil works as a standalone TUI framework
-//! with zero crucible-* domain dependencies. All imports are from `crucible_oil` only.
+use crucible_oil::{col, scrollback, scrollback_with_kind, text, ElementKind, TestRuntime};
 
-use crucible_oil::{
-    col, scrollback, scrollback_continuation, scrollback_with_kind, text, ElementKind, TestRuntime,
-};
+fn count_occurrences(haystack: &str, needle: &str) -> usize {
+    haystack.matches(needle).count()
+}
 
-/// Test 1: Basic graduation lifecycle.
-///
-/// Verifies that scrollback nodes graduate to stdout on first render,
-/// and that live nodes remain in the viewport.
 #[test]
 fn graduation_lifecycle_basic() {
     let mut runtime = TestRuntime::new(80, 24);
-
     let tree = col([scrollback("msg-1", [text("Hello")]), text("Live content")]);
 
-    // First render: msg-1 graduates to stdout
     runtime.render(&tree);
+    assert!(runtime.stdout_content().contains("Hello"));
+    assert!(!runtime.viewport_content().contains("Hello"));
+    assert!(runtime.viewport_content().contains("Live content"));
 
-    assert!(
-        runtime.stdout_content().contains("Hello"),
-        "Graduated content should appear in stdout"
-    );
-    assert!(
-        !runtime.viewport_content().contains("Hello"),
-        "Graduated content should NOT appear in viewport"
-    );
-    assert!(
-        runtime.viewport_content().contains("Live content"),
-        "Live content should appear in viewport"
-    );
-
-    // Second render with same tree: msg-1 already graduated, no duplicate
     runtime.render(&tree);
+    assert!(runtime.stdout_content().contains("Hello"));
+    assert_eq!(count_occurrences(runtime.stdout_content(), "Hello"), 1);
+}
+
+#[test]
+fn multi_frame_graduation_xor_invariant() {
+    let mut runtime = TestRuntime::new(80, 24);
+
+    let frames = [
+        col([scrollback("msg-1", [text("Message 1")]), text("live-1")]),
+        col([
+            scrollback("msg-1", [text("Message 1")]),
+            scrollback("msg-2", [text("Message 2")]),
+            text("live-2"),
+        ]),
+        col([
+            scrollback("msg-1", [text("Message 1")]),
+            scrollback("msg-2", [text("Message 2")]),
+            scrollback("msg-3", [text("Message 3")]),
+            text("live-3"),
+        ]),
+    ];
+
+    for (idx, tree) in frames.iter().enumerate() {
+        runtime.render(tree);
+        let stdout = runtime.stdout_content();
+        let viewport = runtime.viewport_content();
+
+        for i in 1..=(idx + 1) {
+            let marker = format!("Message {}", i);
+            let in_stdout = stdout.contains(&marker);
+            let in_viewport = viewport.contains(&marker);
+            assert!(
+                in_stdout ^ in_viewport,
+                "{} must be in stdout XOR viewport",
+                marker
+            );
+        }
+    }
 
     let stdout = runtime.stdout_content();
-    let hello_count = stdout.matches("Hello").count();
-    assert_eq!(
-        hello_count, 1,
-        "Graduated content should appear exactly once in stdout, not duplicated"
-    );
+    let viewport = runtime.viewport_content();
+    for i in 1..=3 {
+        let marker = format!("Message {}", i);
+        assert!(stdout.contains(&marker));
+        assert!(!viewport.contains(&marker));
+    }
 }
 
-/// Test 2: XOR invariant across multiple frames.
-///
-/// Content must appear in exactly one of stdout OR viewport, never both.
 #[test]
-fn multi_frame_xor_invariant() {
+fn viewport_resize_preserves_content() {
     let mut runtime = TestRuntime::new(80, 24);
-
-    // Frame 1: msg-1 graduates
-    let tree1 = col([scrollback("msg-1", [text("First message")]), text("live")]);
-    runtime.render(&tree1);
-
-    assert!(
-        runtime.stdout_content().contains("First message"),
-        "msg-1 should be in stdout"
-    );
-    assert!(
-        !runtime.viewport_content().contains("First message"),
-        "msg-1 should NOT be in viewport"
-    );
-
-    // Frame 2: msg-2 graduates, msg-1 stays in stdout
-    let tree2 = col([
-        scrollback("msg-1", [text("First message")]),
-        scrollback("msg-2", [text("Second message")]),
-        text("live"),
-    ]);
-    runtime.render(&tree2);
-
-    assert!(
-        runtime.stdout_content().contains("First message"),
-        "msg-1 still in stdout"
-    );
-    assert!(
-        runtime.stdout_content().contains("Second message"),
-        "msg-2 should be in stdout"
-    );
-    assert!(
-        !runtime.viewport_content().contains("First message"),
-        "msg-1 NOT in viewport"
-    );
-    assert!(
-        !runtime.viewport_content().contains("Second message"),
-        "msg-2 NOT in viewport"
-    );
-
-    // Frame 3: msg-3 graduates
-    let tree3 = col([
-        scrollback("msg-1", [text("First message")]),
-        scrollback("msg-2", [text("Second message")]),
-        scrollback("msg-3", [text("Third message")]),
-        text("live"),
-    ]);
-    runtime.render(&tree3);
-
-    assert!(
-        runtime.stdout_content().contains("Third message"),
-        "msg-3 should be in stdout"
-    );
-    assert!(
-        !runtime.viewport_content().contains("Third message"),
-        "msg-3 NOT in viewport"
-    );
-
-    // All 3 graduated
-    assert_eq!(
-        runtime.graduated_count(),
-        3,
-        "Should have 3 graduated nodes"
-    );
-}
-
-/// Test 3: Viewport resize preserves graduated content.
-///
-/// Resizing the terminal should not lose already-graduated content.
-#[test]
-fn viewport_resize_preserves_graduated_content() {
-    let mut runtime = TestRuntime::new(80, 24);
-
-    // Graduate some content
     let tree = col([
-        scrollback("msg-1", [text("Graduated content")]),
-        text("Live"),
+        scrollback("msg-1", [text("Graduated before resize")]),
+        text("live-line-1"),
+        text("live-line-2"),
+        text("live-line-3"),
+        text("live-line-4"),
+        text("live-line-5"),
+        text("live-line-6"),
+        text("live-line-7"),
+        text("live-line-8"),
+        text("live-line-9"),
+        text("live-line-10"),
+        text("live-line-11"),
+        text("live-line-12"),
     ]);
+
     runtime.render(&tree);
+    assert!(runtime.stdout_content().contains("Graduated before resize"));
+    let before_resize_lines = runtime.viewport_content().lines().count();
 
-    assert!(runtime.stdout_content().contains("Graduated content"));
-
-    // Resize to smaller height
     runtime.resize(80, 10);
-    assert_eq!(runtime.height(), 10, "Height should update after resize");
-    assert_eq!(runtime.width(), 80, "Width should remain unchanged");
-
-    // Render again after resize
     runtime.render(&tree);
 
-    // Graduated content should still be in stdout (not lost)
-    assert!(
-        runtime.stdout_content().contains("Graduated content"),
-        "Graduated content should survive resize"
-    );
-}
-
-/// Test 4: TestRuntime accumulates stdout across frames.
-///
-/// Each frame's graduated content accumulates in stdout_content().
-#[test]
-fn test_runtime_accumulates_stdout_across_frames() {
-    let mut runtime = TestRuntime::new(80, 24);
-
-    // Render 5 frames, each adding a new scrollback node
-    for i in 1..=5 {
-        let key = format!("msg-{i}");
-        let content = format!("Message number {i}");
-
-        // Build tree with all previous messages + new one
-        let mut nodes: Vec<_> = (1..=i)
-            .map(|j| scrollback(format!("msg-{j}"), [text(format!("Message number {j}"))]))
-            .collect();
-        nodes.push(text("live viewport"));
-
-        let tree = col(nodes);
-        runtime.render(&tree);
-
-        // Verify the new message graduated
-        assert!(
-            runtime.stdout_content().contains(&content),
-            "Frame {i}: '{content}' should be in stdout"
-        );
-        assert!(
-            !runtime.viewport_content().contains(&content),
-            "Frame {i}: '{content}' should NOT be in viewport"
-        );
-        let _ = key; // suppress unused warning
-    }
-
-    // After all 5 frames, all messages should be in stdout
+    assert_eq!(runtime.height(), 10);
+    assert!(runtime.stdout_content().contains("Graduated before resize"));
     assert_eq!(
-        runtime.graduated_count(),
-        5,
-        "All 5 messages should be graduated"
+        count_occurrences(runtime.stdout_content(), "Graduated before resize"),
+        1
     );
-
-    for i in 1..=5 {
-        assert!(
-            runtime
-                .stdout_content()
-                .contains(&format!("Message number {i}")),
-            "Message {i} should be in accumulated stdout"
-        );
-    }
-
-    // Viewport should only show live content
-    assert!(
-        runtime.viewport_content().contains("live viewport"),
-        "Live content should be in viewport"
-    );
-    for i in 1..=5 {
-        assert!(
-            !runtime
-                .viewport_content()
-                .contains(&format!("Message number {i}")),
-            "Message {i} should NOT be in viewport (graduated)"
-        );
-    }
+    let after_resize = runtime.viewport_content();
+    let after_resize_lines = after_resize.lines().count();
+    assert!(after_resize.contains("live-line"));
+    assert!(after_resize_lines <= before_resize_lines);
 }
 
-/// Test 5: Spacing rules between Block and Continuation elements.
-///
-/// Block elements get blank lines between them.
-/// Continuation elements do NOT get extra blank lines.
 #[test]
-fn spacing_between_block_and_continuation_elements() {
+fn test_runtime_accumulates_stdout() {
     let mut runtime = TestRuntime::new(80, 24);
 
-    // Two Block elements — should have blank line between them
-    let tree = col([
-        scrollback_with_kind("block-1", ElementKind::Block, [text("Block one")]),
-        scrollback_with_kind("block-2", ElementKind::Block, [text("Block two")]),
-        text("live"),
-    ]);
-    runtime.render(&tree);
+    for i in 1..=6 {
+        let mut nodes = Vec::new();
+        for j in 1..=i {
+            let key = format!("msg-{}", j);
+            let content = format!("history-{}", j);
+            nodes.push(scrollback(key, [text(content)]));
+        }
+        nodes.push(text(format!("live-{}", i)));
+        runtime.render(&col(nodes));
+    }
 
     let stdout = runtime.stdout_content();
-    assert!(
-        stdout.contains("Block one"),
-        "Block one should be in stdout"
-    );
-    assert!(
-        stdout.contains("Block two"),
-        "Block two should be in stdout"
-    );
+    let viewport = runtime.viewport_content();
 
-    // Block elements should have a blank line between them
-    // Find positions of both blocks and check there's a blank line between
-    let pos1 = stdout.find("Block one").expect("Block one not found");
-    let pos2 = stdout.find("Block two").expect("Block two not found");
-    let between = &stdout[pos1..pos2];
-    assert!(
-        between.contains("\n\n") || between.contains("\n \n") || between.contains("\r\n\r\n"),
-        "Block elements should have blank line spacing between them, got: {:?}",
-        between
-    );
+    for i in 1..=6 {
+        let marker = format!("history-{}", i);
+        assert!(stdout.contains(&marker));
+        assert!(!viewport.contains(&marker));
+    }
+    assert!(viewport.contains("live-6"));
+    assert!(!stdout.contains("live-6"));
+}
 
-    // Now test Continuation elements — no blank lines between them
-    let mut runtime2 = TestRuntime::new(80, 24);
-    let tree2 = col([
-        scrollback("cont-parent", [text("Parent block")]),
-        scrollback_continuation("cont-1", [text("Continuation one")]),
-        scrollback_continuation("cont-2", [text("Continuation two")]),
+#[test]
+fn spacing_rules_between_elements() {
+    let mut runtime = TestRuntime::new(80, 24);
+    let tree = col([
+        scrollback_with_kind("block-1", ElementKind::Block, [text("Block 1")]),
+        scrollback_with_kind("block-2", ElementKind::Block, [text("Block 2")]),
+        scrollback_with_kind("cont-1", ElementKind::Continuation, [text("cont-1")]),
+        scrollback_with_kind("cont-2", ElementKind::Continuation, [text("cont-2")]),
         text("live"),
     ]);
-    runtime2.render(&tree2);
 
-    let stdout2 = runtime2.stdout_content();
-    assert!(
-        stdout2.contains("Continuation one"),
-        "Continuation one should be in stdout"
-    );
-    assert!(
-        stdout2.contains("Continuation two"),
-        "Continuation two should be in stdout"
-    );
+    runtime.render(&tree);
+    let stdout = runtime.stdout_content();
 
-    // Continuation elements should NOT have blank lines between them
-    let pos_c1 = stdout2
-        .find("Continuation one")
-        .expect("Continuation one not found");
-    let pos_c2 = stdout2
-        .find("Continuation two")
-        .expect("Continuation two not found");
-    let between_cont = &stdout2[pos_c1..pos_c2];
-    assert!(
-        !between_cont.contains("\n\n"),
-        "Continuation elements should NOT have blank line spacing, got: {:?}",
-        between_cont
-    );
+    assert!(stdout.contains("Block 1\r\n\r\nBlock 2"));
+    assert!(stdout.contains("Block 2cont-1cont-2"));
+    assert!(!stdout.contains("cont-1\r\n\r\ncont-2"));
 }
