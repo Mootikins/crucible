@@ -28,8 +28,6 @@ pub struct ThemeColors {
     pub secondary: AdaptiveColor,
     /// Main background color (input areas, panels)
     pub background: AdaptiveColor,
-    /// Normal mode input background color
-    pub input_bg: AdaptiveColor,
     /// Panel/block background (code blocks, thinking blocks)
     pub background_panel: AdaptiveColor,
     /// Command mode input background (amber tint)
@@ -136,14 +134,13 @@ impl Default for ThemeColors {
             primary: AdaptiveColor::from_single(Cyan), // text_accent / prompt
             secondary: AdaptiveColor::from_single(Magenta), // role_tool
             background: AdaptiveColor::from_single(Rgb(40, 44, 52)), // input_bg
-            input_bg: AdaptiveColor::from_single(Rgb(50, 54, 62)),
             background_panel: AdaptiveColor::from_single(Rgb(35, 39, 47)), // code_bg
-            command_bg: AdaptiveColor::from_single(Rgb(60, 50, 20)),       // command mode bg
-            shell_bg: AdaptiveColor::from_single(Rgb(60, 30, 30)),         // shell mode bg
-            text: AdaptiveColor::from_single(White),                       // text_primary
-            text_muted: AdaptiveColor::from_single(DarkGray),              // text_muted
-            text_dim: AdaptiveColor::from_single(Gray),                    // text_dim
-            text_emphasized: AdaptiveColor::from_single(Cyan),             // text_accent
+            command_bg: AdaptiveColor::from_single(Rgb(60, 50, 20)), // command mode bg
+            shell_bg: AdaptiveColor::from_single(Rgb(60, 30, 30)), // shell mode bg
+            text: AdaptiveColor::from_single(White),   // text_primary
+            text_muted: AdaptiveColor::from_single(DarkGray), // text_muted
+            text_dim: AdaptiveColor::from_single(Gray),           // text_dim
+            text_emphasized: AdaptiveColor::from_single(Cyan), // text_accent
 
             // Semantic
             error: AdaptiveColor::from_single(Rgb(247, 118, 142)),
@@ -325,6 +322,7 @@ impl ThemeSpinnerStyle {
     }
 }
 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // BorderStyle — theme-level border style selection
 // ─────────────────────────────────────────────────────────────────────────────
@@ -350,6 +348,7 @@ pub enum BorderStyle {
     Hidden,
 }
 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // StatusBarPosition — layout option for status bar placement
 // ─────────────────────────────────────────────────────────────────────────────
@@ -365,6 +364,7 @@ pub enum StatusBarPosition {
     /// Status bar hidden
     Hidden,
 }
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ThemeLayout — layout and spacing preferences
@@ -757,11 +757,7 @@ fn parse_colors_into(table: &Table, colors: &mut ThemeColors) {
                 match parse_adaptive_color(&val) {
                     Some(c) => colors.$field = c,
                     None => {
-                        warn!(
-                            "Invalid color for '{}': {:?}, using default",
-                            stringify!($field),
-                            val
-                        );
+                        warn!("Invalid color for '{}': {:?}, using default", stringify!($field), val);
                     }
                 }
             }
@@ -770,7 +766,6 @@ fn parse_colors_into(table: &Table, colors: &mut ThemeColors) {
     parse_color_field!(primary);
     parse_color_field!(secondary);
     parse_color_field!(background);
-    parse_color_field!(input_bg);
     parse_color_field!(background_panel);
     parse_color_field!(command_bg);
     parse_color_field!(shell_bg);
@@ -1119,38 +1114,20 @@ mod tests {
         assert_ne!(config.resolve_color(config.colors.success), Color::Reset);
 
         // Overlay (including overlay_bright)
-        assert_ne!(
-            config.resolve_color(config.colors.overlay_text),
-            Color::Reset
-        );
-        assert_ne!(
-            config.resolve_color(config.colors.overlay_bright),
-            Color::Reset
-        );
+        assert_ne!(config.resolve_color(config.colors.overlay_text), Color::Reset);
+        assert_ne!(config.resolve_color(config.colors.overlay_bright), Color::Reset);
 
         // Markdown
-        assert_ne!(
-            config.resolve_color(config.colors.code_inline),
-            Color::Reset
-        );
+        assert_ne!(config.resolve_color(config.colors.code_inline), Color::Reset);
         assert_ne!(config.resolve_color(config.colors.heading_1), Color::Reset);
         assert_ne!(config.resolve_color(config.colors.link), Color::Reset);
 
         // Decorations
-        assert_eq!(
-            config.decorations.border_style,
-            dark.decorations.border_style
-        );
-        assert_eq!(
-            config.decorations.message_user_indicator,
-            dark.decorations.message_user_indicator
-        );
+        assert_eq!(config.decorations.border_style, dark.decorations.border_style);
+        assert_eq!(config.decorations.message_user_indicator, dark.decorations.message_user_indicator);
 
         // Layout
-        assert_eq!(
-            config.layout.status_bar_position,
-            dark.layout.status_bar_position
-        );
+        assert_eq!(config.layout.status_bar_position, dark.layout.status_bar_position);
         assert_eq!(config.layout.message_spacing, dark.layout.message_spacing);
         assert_eq!(config.layout.input_max_lines, dark.layout.input_max_lines);
 
@@ -1184,12 +1161,10 @@ mod tests {
         // The Lua default should match the Rust default exactly
         // (name differs: "default" vs "crucible-dark" — that's intentional)
         assert_eq!(from_lua.colors, from_rust.colors, "colors diverged");
-        assert_eq!(
-            from_lua.decorations, from_rust.decorations,
-            "decorations diverged"
-        );
+        assert_eq!(from_lua.decorations, from_rust.decorations, "decorations diverged");
         assert_eq!(from_lua.icons, from_rust.icons, "icons diverged");
         assert_eq!(from_lua.spinner, from_rust.spinner, "spinner diverged");
         assert_eq!(from_lua.layout, from_rust.layout, "layout diverged");
     }
+
 }

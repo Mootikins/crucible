@@ -797,39 +797,26 @@ impl AgentManager {
             );
         }
 
-        let tool_result = tokio::time::timeout(
-            std::time::Duration::from_secs(30),
-            stream_ctx.tool_dispatcher.dispatch_tool(&tool_call.name, args.clone()),
-        )
-        .await;
+        let tool_result = stream_ctx
+            .tool_dispatcher
+            .dispatch_tool(&tool_call.name, args.clone())
+            .await;
         let (result_str, error_str) = match tool_result {
-            Ok(Ok(val)) => (val.to_string(), None),
-            Ok(Err(e)) => (String::new(), Some(e)),
-            Err(_elapsed) => (
-                String::new(),
-                Some(anyhow::anyhow!(
-                    "Tool '{}' timed out after 30 seconds",
-                    tool_call.name
-                )
-                .to_string()),
-            ),
+            Ok(val) => (val.to_string(), None),
+            Err(e) => (String::new(), Some(e)),
         };
 
-        let event_result = if let Some(error) = &error_str {
-            serde_json::json!({ "error": error })
-        } else {
-            serde_json::json!({ "result": result_str })
-        };
-
-        if !emit_event(
-            &stream_ctx.event_tx,
-            SessionEventMessage::tool_result(
-                &stream_ctx.session_id,
-                &call_id,
-                &tool_call.name,
-                event_result,
-            ),
-        ) {
+        if error_str.is_none()
+            && !emit_event(
+                &stream_ctx.event_tx,
+                SessionEventMessage::tool_result(
+                    &stream_ctx.session_id,
+                    &call_id,
+                    &tool_call.name,
+                    serde_json::json!({ "result": result_str }),
+                ),
+            )
+        {
             warn!(
                 session_id = %stream_ctx.session_id,
                 tool = %tool_call.name,

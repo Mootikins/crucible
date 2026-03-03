@@ -23,7 +23,7 @@ impl InputMode {
     pub fn bg_color(&self) -> Color {
         let t = theme::active();
         match self {
-            InputMode::Normal => t.resolve_color(t.colors.input_bg),
+            InputMode::Normal => t.resolve_color(t.colors.background),
             InputMode::Command => t.resolve_color(t.colors.command_bg),
             InputMode::Shell => t.resolve_color(t.colors.shell_bg),
         }
