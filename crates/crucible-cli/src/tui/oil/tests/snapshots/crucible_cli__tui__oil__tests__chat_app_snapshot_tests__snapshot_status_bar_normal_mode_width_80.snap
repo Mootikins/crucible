@@ -1,0 +1,6 @@
+---
+source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests.rs
+assertion_line: 819
+expression: "render_node_with_planner(&bar.emergency_view(), 80, 4)"
+---
+ NORMAL  gpt-4o                                                          50% ctx

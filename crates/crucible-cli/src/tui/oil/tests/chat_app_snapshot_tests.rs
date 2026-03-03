@@ -29,6 +29,12 @@ fn render_app_raw(app: &OilChatApp) -> String {
     snapshot.viewport_with_overlays(80)
 }
 
+fn render_node_with_planner(node: &crate::tui::oil::Node, width: u16, height: u16) -> String {
+    let mut planner = FramePlanner::new(width, height);
+    let snapshot = planner.plan(node);
+    strip_ansi(&snapshot.screen_with_overlays(width as usize))
+}
+
 #[test]
 fn snapshot_empty_chat_view() {
     let app = OilChatApp::default();
@@ -770,6 +776,69 @@ fn snapshot_status_bar_auto_mode() {
         total: 128000,
     });
     assert_snapshot!(render_app(&app));
+}
+
+#[test]
+fn status_bar_modes_and_ctx_visible_across_widths() {
+    use crate::tui::oil::components::StatusBar;
+
+    for mode in [ChatMode::Normal, ChatMode::Plan, ChatMode::Auto] {
+        for width in [80u16, 120u16, 200u16] {
+            let bar = StatusBar::new()
+                .mode(mode)
+                .model("gpt-4o")
+                .context(64000, 128000);
+            let rendered = render_node_with_planner(&bar.emergency_view(), width, 4);
+
+            let expected_mode = match mode {
+                ChatMode::Normal => "NORMAL",
+                ChatMode::Plan => "PLAN",
+                ChatMode::Auto => "AUTO",
+            };
+
+            assert!(
+                rendered.contains(expected_mode),
+                "mode label {expected_mode} should be visible at width {width}: {rendered:?}"
+            );
+            assert!(
+                rendered.contains("ctx"),
+                "ctx suffix should be visible at width {width}: {rendered:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn snapshot_status_bar_normal_mode_width_80() {
+    use crate::tui::oil::components::StatusBar;
+
+    let bar = StatusBar::new()
+        .mode(ChatMode::Normal)
+        .model("gpt-4o")
+        .context(64000, 128000);
+    assert_snapshot!(render_node_with_planner(&bar.emergency_view(), 80, 4));
+}
+
+#[test]
+fn snapshot_status_bar_normal_mode_width_120() {
+    use crate::tui::oil::components::StatusBar;
+
+    let bar = StatusBar::new()
+        .mode(ChatMode::Normal)
+        .model("gpt-4o")
+        .context(64000, 128000);
+    assert_snapshot!(render_node_with_planner(&bar.emergency_view(), 120, 4));
+}
+
+#[test]
+fn snapshot_status_bar_normal_mode_width_200() {
+    use crate::tui::oil::components::StatusBar;
+
+    let bar = StatusBar::new()
+        .mode(ChatMode::Normal)
+        .model("gpt-4o")
+        .context(64000, 128000);
+    assert_snapshot!(render_node_with_planner(&bar.emergency_view(), 200, 4));
 }
 
 #[test]

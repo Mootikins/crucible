@@ -266,6 +266,24 @@ fn builder_methods_work() {
 }
 
 #[test]
+fn row_wrapped_spacer_fills_remaining_width() {
+    let node = row([
+        text(" NORMAL "),
+        focusable("status-spacer", spacer()),
+        text("50% ctx"),
+    ]);
+
+    let layout = build_layout_tree(&node, 80, 4).root;
+
+    assert_eq!(layout.children.len(), 3);
+    assert_eq!(layout.children[2].rect.width, 7);
+    assert_eq!(
+        layout.children[2].rect.x, 73,
+        "right segment should be right-aligned when spacer expands"
+    );
+}
+
+#[test]
 fn gap_types_work() {
     assert_eq!(Gap::all(5), Gap { row: 5, column: 5 });
     assert_eq!(Gap::row(3), Gap { row: 3, column: 0 });

@@ -231,7 +231,8 @@ impl LayoutEngine {
                     .iter()
                     .map(|c| self.build_node_content_sized(c, available_width))
                     .collect();
-                let node_id = self.tree
+                let node_id = self
+                    .tree
                     .new_with_children(
                         Style {
                             display: Display::Flex,
@@ -289,7 +290,7 @@ impl LayoutEngine {
 
         let (width, height, flex_grow) = match boxnode.size {
             OilSize::Fixed(h) => (length(available_width), length(h as f32), 0.0),
-            OilSize::Flex(weight) => (length(available_width), auto(), weight as f32),
+            OilSize::Flex(weight) => (auto(), auto(), weight as f32),
             OilSize::Content => (length(available_width), auto(), 0.0),
         };
 
