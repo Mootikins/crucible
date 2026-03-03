@@ -142,7 +142,9 @@ fn test_discover_tools_returns_tool_list() {
 #[test]
 fn test_tool_dispatch_routes_to_daemon_tools() {
     let workspace_tools = Arc::new(WorkspaceTools::new(&PathBuf::from("/tmp")));
-    let dispatcher = DaemonToolDispatcher::new(workspace_tools);
+    let dispatcher = DaemonToolDispatcher::new(vec![
+        workspace_tools as Arc<dyn crucible_core::traits::tools::ToolExecutor>,
+    ]);
 
     // Verify known workspace tools are recognized
     assert!(
@@ -188,7 +190,9 @@ async fn test_tool_dispatch_executes_read_file() {
     std::fs::write(&test_file, "hello world").expect("write test file");
 
     let workspace_tools = Arc::new(WorkspaceTools::new(temp.path()));
-    let dispatcher = DaemonToolDispatcher::new(workspace_tools);
+    let dispatcher = DaemonToolDispatcher::new(vec![
+        workspace_tools as Arc<dyn crucible_core::traits::tools::ToolExecutor>,
+    ]);
 
     // Dispatch a read_file call
     let result: Result<serde_json::Value, String> = dispatcher
