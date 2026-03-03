@@ -1122,4 +1122,22 @@ mod tests {
         // Spinner
         assert_eq!(config.spinner, ThemeSpinnerStyle::Braille);
     }
+
+    #[test]
+    fn test_opencode_theme_loads() {
+        let lua_src = include_str!("../../../runtime/themes/opencode.lua");
+        let theme = load_theme_from_lua(lua_src).expect("opencode theme should load");
+        assert_eq!(theme.name, "opencode");
+        assert!(theme.is_dark);
+        // Verify it differs from default
+        let default = ThemeConfig::default_dark();
+        // primary should be different (fab283 vs cyan)
+        assert_ne!(
+            theme.resolve_color(theme.colors.primary),
+            default.resolve_color(default.colors.primary),
+            "opencode primary should differ from default"
+        );
+        // border_style should be sharp
+        assert_eq!(theme.decorations.border_style, BorderStyle::Sharp);
+    }
 }
