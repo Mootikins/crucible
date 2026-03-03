@@ -523,6 +523,23 @@ mod tests {
         assert_eq!(g4.column, 2);
     }
 
+    struct EnvGuard {
+        key: &'static str,
+    }
+
+    impl EnvGuard {
+        fn new(key: &'static str, value: &str) -> Self {
+            std::env::set_var(key, value);
+            EnvGuard { key }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            std::env::remove_var(self.key);
+        }
+    }
+
     #[test]
     fn test_adaptive_color_from_single() {
         let ac = AdaptiveColor::from_single(Color::Red);
@@ -554,52 +571,48 @@ mod tests {
             dark: Color::Red,
             light: Color::Blue,
         };
-        // Set NO_COLOR environment variable
-        std::env::set_var("NO_COLOR", "1");
+        // Use guard to ensure cleanup even if test panics
+        let _guard = EnvGuard::new("NO_COLOR", "1");
         assert_eq!(ac.resolve(true), Color::Reset);
         assert_eq!(ac.resolve(false), Color::Reset);
-        // Clean up
-        std::env::remove_var("NO_COLOR");
     }
 
     #[test]
     fn test_detect_dark_terminal_dark_bg() {
         // bg < 8 means dark terminal
-        std::env::set_var("COLORFGBG", "15;0");
+        let _guard = EnvGuard::new("COLORFGBG", "15;0");
         assert!(detect_dark_terminal());
-        std::env::remove_var("COLORFGBG");
     }
 
     #[test]
     fn test_detect_dark_terminal_light_bg() {
         // bg >= 8 means light terminal
-        std::env::set_var("COLORFGBG", "0;15");
+        let _guard = EnvGuard::new("COLORFGBG", "0;15");
         assert!(!detect_dark_terminal());
-        std::env::remove_var("COLORFGBG");
     }
 
-    #[test]
-    fn test_detect_dark_terminal_not_set() {
-        // Default to dark if not set
-        std::env::remove_var("COLORFGBG");
-        assert!(detect_dark_terminal());
-    }
+#[test]
+fn test_detect_dark_terminal_not_set() {
+// Default to dark if not set
+std::env::remove_var("COLORFGBG");
+assert!(detect_dark_terminal());
+}
 
     #[test]
     fn test_detect_dark_terminal_invalid_format() {
         // Default to dark if format is invalid
-        std::env::set_var("COLORFGBG", "invalid");
+        let _guard = EnvGuard::new("COLORFGBG", "invalid");
         assert!(detect_dark_terminal());
-        std::env::remove_var("COLORFGBG");
     }
 
     #[test]
     fn test_detect_dark_terminal_boundary() {
         // Test boundary: bg = 7 (dark), bg = 8 (light)
-        std::env::set_var("COLORFGBG", "15;7");
+        let _guard = EnvGuard::new("COLORFGBG", "15;7");
         assert!(detect_dark_terminal());
-        std::env::set_var("COLORFGBG", "15;8");
+        // Now test bg = 8 (light) - drop guard and create new one
+        drop(_guard);
+        let _guard2 = EnvGuard::new("COLORFGBG", "15;8");
         assert!(!detect_dark_terminal());
-        std::env::remove_var("COLORFGBG");
     }
 }
