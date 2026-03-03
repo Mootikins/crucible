@@ -163,6 +163,95 @@ mod status_bar_tests {
     }
 
     #[test]
+    fn notification_toast_right_alignment() {
+        use crate::tui::oil::components::NotificationToastKind;
+        use crucible_lua::statusline::{
+            ModeStyleSpec, StatuslineComponent, StatuslineConfig, StyleSpec,
+        };
+
+        let bar_default = StatusBar::new()
+            .mode(ChatMode::Normal)
+            .model("claude-3-5-sonnet-20241022")
+            .toast("Ctrl+C again to quit", NotificationToastKind::Info);
+
+        let bar_overflow = StatusBar::new()
+            .mode(ChatMode::Normal)
+            .model("claude-3-5-sonnet-20241022-very-long-model-id-that-overflows-content-width")
+            .toast("Ctrl+C again to quit", NotificationToastKind::Info);
+
+        let assert_badge_near_right_edge =
+            |bar: &StatusBar, config: &StatuslineConfig, width: usize| {
+                for (label, rendered) in [
+                    (
+                        "plain",
+                        render_to_plain_text(&bar.view_from_config(config), width),
+                    ),
+                    (
+                        "ansi",
+                        render_to_string(&bar.view_from_config(config), width),
+                    ),
+                ] {
+                    let line = rendered.lines().next().unwrap_or(rendered.as_str());
+                    let visible_line = strip_ansi(line);
+
+                    let info_pos = visible_line
+                        .rfind("INFO")
+                        .expect("expected INFO badge to exist in rendered statusline");
+                    let col_from_left = visible_width(&visible_line[..info_pos]) + 1;
+                    let chars_from_right_edge = width.saturating_sub(col_from_left);
+
+                    println!(
+                    "{label} width={width} line={:?} info_col_from_left={} chars_from_right_edge={} visible_width={}",
+                    visible_line,
+                    col_from_left,
+                    chars_from_right_edge,
+                    visible_width(&visible_line)
+                );
+
+                    assert!(
+                    col_from_left <= width,
+                    "INFO badge overflows width at {label} width {width}: line={:?}, col_from_left={}",
+                    visible_line,
+                    col_from_left
+                );
+                    assert!(
+                    chars_from_right_edge <= 10,
+                    "INFO badge misaligned at {label} width {width}: line={:?}, col_from_left={}, chars_from_right_edge={} (expected <= 10)",
+                    visible_line,
+                    col_from_left,
+                    chars_from_right_edge
+                );
+                }
+            };
+
+        let default_config = default_statusline_config();
+        assert_badge_near_right_edge(&bar_default, &default_config, 80);
+        assert_badge_near_right_edge(&bar_default, &default_config, 120);
+
+        let overflow_config = StatuslineConfig {
+            left: vec![
+                StatuslineComponent::Mode {
+                    normal: ModeStyleSpec::default(),
+                    plan: ModeStyleSpec::default(),
+                    auto: ModeStyleSpec::default(),
+                },
+                StatuslineComponent::Model {
+                    max_length: None,
+                    fallback: None,
+                    style: StyleSpec::default(),
+                },
+            ],
+            center: vec![],
+            right: vec![StatuslineComponent::Notification {
+                style: StyleSpec::default(),
+                fallback: None,
+            }],
+            separator: Some(" ".to_string()),
+        };
+        assert_badge_near_right_edge(&bar_overflow, &overflow_config, 80);
+    }
+
+    #[test]
     fn fits_width_80() {
         use crate::tui::oil::components::NotificationToastKind;
         let bar = StatusBar::new()
