@@ -1,6 +1,6 @@
 -- Default dark theme for Crucible TUI
 -- Mirrors ThemeConfig::default_dark() exactly.
--- All color values match ThemeTokens::default_tokens().
+-- All color values match ThemeConfig::default_dark().
 --
 -- Color formats:
 --   "#rrggbb"  — hex RGB
@@ -19,6 +19,8 @@ return {
     secondary        = "magenta",       -- Secondary accent (tool calls, metadata)
     background       = "#282c34",       -- Main background (input areas, panels)
     background_panel = "#23272f",       -- Panel/block background (code blocks)
+    command_bg       = "#3c3214",       -- Command mode input background (amber tint)
+    shell_bg         = "#3c1e1e",       -- Shell mode input background (red tint)
     text             = "white",         -- Primary text
     text_muted       = "dark_gray",     -- Muted/secondary text
     text_dim         = "gray",          -- Dimmed text (timestamps, metadata)
@@ -58,6 +60,7 @@ return {
     popup_selected_bg = "#323844",  -- Popup selected item background
     toast_bg          = "#282c34",  -- Toast notification background
     overlay_text      = "#c0caf5",  -- overlay/popup primary text (Rgb(192, 202, 245))
+    overlay_bright   = "#ffffff",  -- Overlay bright text (action details, pure white)
 
     -- Markdown rendering
     code_inline       = "yellow",     -- Inline code foreground

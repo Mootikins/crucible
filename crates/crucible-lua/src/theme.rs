@@ -1,8 +1,8 @@
 //! Theme configuration types and Lua loading for the TUI theming system.
 //!
 //! These types define the full theme schema: colors, decorations, icons, layout,
-//! and spinner style. `ThemeConfig::default_dark()` produces values identical
-//! to the current `ThemeTokens::default_tokens()` dark theme.
+//! and spinner style. `ThemeConfig::default_dark()` produces the built-in
+//! dark theme values.
 //!
 //! [`load_theme_from_lua`] parses a Lua table string into a `ThemeConfig`,
 //! merging partial overrides onto the dark defaults.
@@ -190,9 +190,10 @@ pub struct ThemeIcons {
 ///
 /// Each variant defines a set of animation frames cycled during async operations.
 /// Use [`ThemeSpinnerStyle::frames()`] to get the frame characters.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ThemeSpinnerStyle {
     /// Braille dots: ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏
+    #[default]
     Braille,
     /// Braille minidots: ⠋ ⠙ ⠚ ⠞ ⠖ ⠦ ⠴ ⠲ ⠳ ⠓
     BrailleMinidot,
@@ -221,11 +222,6 @@ impl ThemeSpinnerStyle {
     }
 }
 
-impl Default for ThemeSpinnerStyle {
-    fn default() -> Self {
-        ThemeSpinnerStyle::Braille
-    }
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BorderStyle — theme-level border style selection
@@ -235,9 +231,10 @@ impl Default for ThemeSpinnerStyle {
 ///
 /// This is a theme-level abstraction over `crucible_oil::style::Border`.
 /// Maps to oil's `Border` enum for actual character rendering.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BorderStyle {
     /// Rounded corners: ╭ ╮ ╰ ╯
+    #[default]
     Rounded,
     /// Sharp corners: ┌ ┐ └ ┘
     Sharp,
@@ -251,32 +248,23 @@ pub enum BorderStyle {
     Hidden,
 }
 
-impl Default for BorderStyle {
-    fn default() -> Self {
-        BorderStyle::Rounded
-    }
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // StatusBarPosition — layout option for status bar placement
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Position of the status bar in the TUI layout.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StatusBarPosition {
     /// Status bar at the top of the screen
     Top,
     /// Status bar at the bottom of the screen
+    #[default]
     Bottom,
     /// Status bar hidden
     Hidden,
 }
 
-impl Default for StatusBarPosition {
-    fn default() -> Self {
-        StatusBarPosition::Bottom
-    }
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ThemeLayout — layout and spacing preferences
@@ -314,7 +302,7 @@ impl Default for ThemeLayout {
 ///
 /// Bundles colors, decorations, icons, spinner style, and layout into a single
 /// struct. Use [`ThemeConfig::default_dark()`] for the built-in dark theme that
-/// matches `ThemeTokens::default_tokens()`.
+/// matches the built-in dark theme.
 #[derive(Debug, Clone)]
 pub struct ThemeConfig {
     /// Human-readable theme name
@@ -336,9 +324,9 @@ pub struct ThemeConfig {
 impl ThemeConfig {
     /// Construct the default dark theme.
     ///
-    /// Color values are identical to `ThemeTokens::default_tokens()` —
-    /// each ThemeTokens color is wrapped in `AdaptiveColor::from_single()`
-    /// so dark and light variants are the same (v1 behavior).
+    /// Color values define the canonical dark theme. Each color is wrapped
+    /// in `AdaptiveColor::from_single()` so dark and light variants are the
+    /// same (v1 behavior).
     pub fn default_dark() -> Self {
         use Color::*;
 
@@ -346,7 +334,7 @@ impl ThemeConfig {
             name: "crucible-dark".to_string(),
             is_dark: true,
             colors: ThemeColors {
-                // Core — mapped from ThemeTokens
+                // Core
                 primary: AdaptiveColor::from_single(Cyan), // text_accent / prompt
                 secondary: AdaptiveColor::from_single(Magenta), // role_tool
                 background: AdaptiveColor::from_single(Rgb(40, 44, 52)), // input_bg
@@ -358,43 +346,43 @@ impl ThemeConfig {
                 text_dim: AdaptiveColor::from_single(Gray),           // text_dim
                 text_emphasized: AdaptiveColor::from_single(Cyan), // text_accent
 
-                // Semantic — exact ThemeTokens values
+                // Semantic
                 error: AdaptiveColor::from_single(Rgb(247, 118, 142)),
                 warning: AdaptiveColor::from_single(Rgb(224, 175, 104)),
                 success: AdaptiveColor::from_single(Rgb(158, 206, 106)),
                 info: AdaptiveColor::from_single(Rgb(0, 206, 209)),
 
-                // Borders — from ThemeTokens
+                // Borders
                 border: AdaptiveColor::from_single(Rgb(40, 44, 52)), // border (= input_bg)
                 border_focused: AdaptiveColor::from_single(Cyan),    // selected
                 border_dim: AdaptiveColor::from_single(Gray),        // text_dim
 
-                // Chat roles — from ThemeTokens
+                // Chat roles
                 user_message: AdaptiveColor::from_single(Green), // role_user
                 assistant_message: AdaptiveColor::from_single(Cyan), // role_assistant
                 system_message: AdaptiveColor::from_single(Yellow), // role_system
 
-                // Modes — from ThemeTokens
+                // Modes
                 mode_normal: AdaptiveColor::from_single(Green),
                 mode_insert: AdaptiveColor::from_single(Cyan), // prompt color (insert = typing)
                 mode_plan: AdaptiveColor::from_single(Blue),
                 mode_auto: AdaptiveColor::from_single(Yellow),
 
-                // Diff — from ThemeTokens
+                // Diff
                 diff_added: AdaptiveColor::from_single(Rgb(158, 206, 106)), // diff_add
                 diff_removed: AdaptiveColor::from_single(Rgb(247, 118, 142)), // diff_del
                 diff_added_bg: AdaptiveColor::from_single(Rgb(30, 50, 30)), // subtle green tint
                 diff_removed_bg: AdaptiveColor::from_single(Rgb(50, 30, 30)), // subtle red tint
                 diff_context: AdaptiveColor::from_single(Rgb(100, 110, 130)), // diff_ctx
 
-                // Overlay — from ThemeTokens
+                // Overlay
                 popup_bg: AdaptiveColor::from_single(Rgb(30, 34, 42)), // popup_bg
                 popup_selected_bg: AdaptiveColor::from_single(Rgb(50, 56, 68)), // popup_selected_bg
                 toast_bg: AdaptiveColor::from_single(Rgb(45, 40, 55)), // thinking_bg
                 overlay_text: AdaptiveColor::from_single(Rgb(192, 202, 245)),
                 overlay_bright: AdaptiveColor::from_single(Rgb(255, 255, 255)),
 
-                // Markdown rendering — exact ThemeTokens values
+                // Markdown rendering
                 code_inline: AdaptiveColor::from_single(Yellow),
                 code_fallback: AdaptiveColor::from_single(Green),
                 fence_marker: AdaptiveColor::from_single(DarkGray),
@@ -1086,5 +1074,52 @@ mod tests {
     fn test_non_table_returns_error() {
         let lua = r#"return "not a table""#;
         assert!(load_theme_from_lua(lua).is_err());
+    }
+
+    #[test]
+    fn test_default_theme_loads_all_tokens() {
+        let lua_src = include_str!("../../../runtime/themes/default.lua");
+        let config = load_theme_from_lua(lua_src).expect("default theme should load");
+        let dark = ThemeConfig::default_dark();
+
+        // Metadata
+        assert_eq!(config.name, "default");
+        assert!(config.is_dark);
+
+        // Verify all color fields are populated by comparing resolved colors
+        // against a non-default value (Color::Reset means unset/fallback).
+        // We spot-check fields from each section to ensure the Lua file covers them.
+
+        // Core
+        assert_ne!(config.resolve_color(config.colors.primary), Color::Reset);
+        assert_ne!(config.resolve_color(config.colors.background), Color::Reset);
+        assert_ne!(config.resolve_color(config.colors.command_bg), Color::Reset);
+        assert_ne!(config.resolve_color(config.colors.shell_bg), Color::Reset);
+        assert_ne!(config.resolve_color(config.colors.text_dim), Color::Reset);
+
+        // Semantic
+        assert_ne!(config.resolve_color(config.colors.error), Color::Reset);
+        assert_ne!(config.resolve_color(config.colors.success), Color::Reset);
+
+        // Overlay (including overlay_bright)
+        assert_ne!(config.resolve_color(config.colors.overlay_text), Color::Reset);
+        assert_ne!(config.resolve_color(config.colors.overlay_bright), Color::Reset);
+
+        // Markdown
+        assert_ne!(config.resolve_color(config.colors.code_inline), Color::Reset);
+        assert_ne!(config.resolve_color(config.colors.heading_1), Color::Reset);
+        assert_ne!(config.resolve_color(config.colors.link), Color::Reset);
+
+        // Decorations
+        assert_eq!(config.decorations.border_style, dark.decorations.border_style);
+        assert_eq!(config.decorations.message_user_indicator, dark.decorations.message_user_indicator);
+
+        // Layout
+        assert_eq!(config.layout.status_bar_position, dark.layout.status_bar_position);
+        assert_eq!(config.layout.message_spacing, dark.layout.message_spacing);
+        assert_eq!(config.layout.input_max_lines, dark.layout.input_max_lines);
+
+        // Spinner
+        assert_eq!(config.spinner, ThemeSpinnerStyle::Braille);
     }
 }
