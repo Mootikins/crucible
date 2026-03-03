@@ -393,15 +393,15 @@ impl ShellModal {
                 styled(" ", text_style),
                 styled("i", key_style),
                 styled(" insert ", text_style),
-                styled("│", sep_style),
+                styled(t.decorations.separator_char.clone(), sep_style),
                 styled(" ", text_style),
                 styled("t", key_style),
                 styled(" truncated ", text_style),
-                styled("│", sep_style),
+                styled(t.decorations.separator_char.clone(), sep_style),
                 styled(" ", text_style),
                 styled("e", key_style),
                 styled(" edit ", text_style),
-                styled("│", sep_style),
+                styled(t.decorations.separator_char.clone(), sep_style),
                 styled(" ", text_style),
                 styled("q", key_style),
                 styled(" quit  ", text_style),
@@ -515,29 +515,33 @@ impl ShellModal {
     }
 
     fn format_header(&self) -> String {
+        let t = crate::tui::oil::theme::active();
         let status_str = match &self.status {
-            ShellStatus::Running => "● running".to_string(),
+            ShellStatus::Running => format!("{} running", t.decorations.tool_pending_icon),
             ShellStatus::Completed { exit_code } if *exit_code == 0 => {
-                format!("✓ exit 0 {:.1?}", self.duration.unwrap_or_default())
+                format!("{} exit 0 {:.1?}", t.decorations.tool_success_icon, self.duration.unwrap_or_default())
             }
             ShellStatus::Completed { exit_code } => {
                 format!(
-                    "✗ exit {} {:.1?}",
+                    "{} exit {} {:.1?}",
+                    t.decorations.tool_error_icon,
                     exit_code,
                     self.duration.unwrap_or_default()
                 )
             }
-            ShellStatus::Cancelled => "⏹ cancelled".to_string(),
+            ShellStatus::Cancelled => "\u{23F9} cancelled".to_string(),
         };
         format!("$ {}  {}", self.command, status_str)
     }
 
     fn format_footer_text(&self) -> String {
+        let t = crate::tui::oil::theme::active();
+        let sep = &t.decorations.separator_char;
         let line_info = format!("({} lines)", self.output_lines.len());
         if self.is_running() {
             format!("Ctrl+C cancel  {}", line_info)
         } else {
-            format!("i insert │ t truncated │ e edit │ q quit  {}", line_info)
+            format!("i insert {} t truncated {} e edit {} q quit  {}", sep, sep, sep, line_info)
         }
     }
 }

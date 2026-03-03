@@ -45,7 +45,7 @@ fn render_tool_error(
 ) -> Node {
     let t = crate::tui::oil::theme::active();
     row([
-        styled(" ✗ ", Style::new().fg(t.resolve_color(t.colors.error))),
+        styled(format!(" {} ", t.decorations.tool_error_icon), Style::new().fg(t.resolve_color(t.colors.error))),
         styled(display_name, Style::new().fg(t.resolve_color(t.colors.text_dim))),
         styled(format!("({}) ", args_formatted), Style::new().fg(t.resolve_color(t.colors.text_dim)).dim()),
         styled(
@@ -80,7 +80,7 @@ fn render_tool_complete(
     };
 
     let header = row([
-        styled(" ✓ ", Style::new().fg(t.resolve_color(t.colors.success))),
+        styled(format!(" {} ", t.decorations.tool_success_icon), Style::new().fg(t.resolve_color(t.colors.success))),
         styled(display_name, Style::new().fg(t.resolve_color(t.colors.text_dim))),
         if args_formatted.is_empty() {
             Node::Empty
@@ -282,10 +282,9 @@ pub fn format_output_tail(output: &str, prefix: &str) -> Node {
     let all_lines: Vec<&str> = output.lines().collect();
     let lines: Vec<&str> = all_lines.iter().rev().take(3).rev().copied().collect();
     let hidden_count = all_lines.len().saturating_sub(3);
-    let bar_prefix = format!("{}│ ", prefix);
-    let truncate_at = width.saturating_sub(bar_prefix.len() + 1);
-
     let t = crate::tui::oil::theme::active();
+    let bar_prefix = format!("{}{} ", prefix, t.decorations.separator_char);
+    let truncate_at = width.saturating_sub(bar_prefix.len() + 1);
     col(std::iter::once(if hidden_count > 0 {
         styled(
             format!("{}({} more lines)", bar_prefix, hidden_count),
