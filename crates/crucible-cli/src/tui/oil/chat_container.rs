@@ -14,8 +14,8 @@ use crate::tui::oil::components::{
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
 use crate::tui::oil::node::{col, row, scrollback, spinner, text, Node};
 use crate::tui::oil::render_state::RenderState;
-use crate::tui::oil::style::Padding;
-use crate::tui::oil::theme::ThemeTokens;
+use crate::tui::oil::style::{Padding, Style};
+
 use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
 
 /// Parameters for rendering a container view.
@@ -288,14 +288,20 @@ fn render_assistant_blocks_with_graduation(
             row([
                 text(" "),
                 spinner(None, render_state.spinner_frame)
-                    .with_style(ThemeTokens::default_ref().spinner_style()),
+                    .with_style({
+                        let t = crate::tui::oil::theme::active();
+                        Style::new().fg(t.resolve_color(t.colors.text))
+                    }),
             ])
         } else {
             // No content at all yet — show spinner as the only indicator
             row([
                 text(" "),
                 spinner(None, render_state.spinner_frame)
-                    .with_style(ThemeTokens::default_ref().spinner_style()),
+                    .with_style({
+                        let t = crate::tui::oil::theme::active();
+                        Style::new().fg(t.resolve_color(t.colors.text))
+                    }),
             ])
         };
         nodes.push(spinner_node.with_margin(Padding {
@@ -349,7 +355,10 @@ fn render_assistant_blocks_with_graduation(
         nodes.push(row([
             text(" "),
             spinner(None, render_state.spinner_frame)
-                .with_style(ThemeTokens::default_ref().spinner_style()),
+                .with_style({
+                    let t = crate::tui::oil::theme::active();
+                    Style::new().fg(t.resolve_color(t.colors.text))
+                }),
         ]))
     }
 
@@ -374,11 +383,12 @@ fn render_tool_group(tools: &[CachedToolCall], render_state: &RenderState) -> No
 /// Render a system message.
 fn render_system_message(content: &str) -> Node {
     use crate::tui::oil::node::styled;
-    use crate::tui::oil::theme::ThemeTokens;
+    use crate::tui::oil::style::Style;
+    let t = crate::tui::oil::theme::active();
 
     styled(
         format!(" * {} ", content),
-        ThemeTokens::default_ref().system_message(),
+        Style::new().fg(t.resolve_color(t.colors.system_message)).italic(),
     )
     .with_margin(Padding {
         top: 1,
