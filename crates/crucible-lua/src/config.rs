@@ -238,8 +238,8 @@ pub fn register_theme_namespace(lua: &Lua, crucible: &Table) -> Result<(), LuaEr
     let theme = lua.create_table()?;
 
     // crucible.theme.setup(config) — parses and stores the theme config
-    let setup_fn = lua.create_function(|_lua, config: Table| {
-        let theme_config = crate::theme::parse_theme_from_table(&config);
+    let setup_fn = lua.create_function(|lua, config: Table| {
+        let theme_config = crate::theme::parse_theme_from_table(lua, &config);
         debug!("Theme config parsed successfully: {}", theme_config.name);
         set_theme_config(theme_config);
         Ok(())
