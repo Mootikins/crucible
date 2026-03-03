@@ -2167,3 +2167,137 @@ fn snapshot_stream_cancelled_by_user() {
     app.on_message(ChatAppMsg::StreamCancelled);
     assert_snapshot!(render_app(&app));
 }
+
+// =============================================================================
+// Raw ANSI Snapshot Baselines
+// =============================================================================
+
+#[test]
+fn snapshot_raw_empty_chat_view() {
+    let app = OilChatApp::default();
+    assert_snapshot!(render_app_raw(&app));
+}
+
+#[test]
+fn snapshot_raw_user_and_assistant_exchange() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("What is 2+2?".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("The answer is ".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("4.".to_string()));
+    app.on_message(ChatAppMsg::StreamComplete);
+    assert_snapshot!(render_app_raw(&app));
+}
+
+#[test]
+fn snapshot_raw_streaming_in_progress() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Tell me a story".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("Once upon a time".to_string()));
+    assert_snapshot!(render_app_raw(&app));
+}
+
+#[test]
+fn snapshot_raw_tool_call_pending() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Read a file".to_string()));
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "read_file".to_string(),
+        args: r#"{"path":"README.md","offset":1,"limit":100}"#.to_string(),
+        call_id: None,
+    });
+    assert_snapshot!(render_app_raw(&app));
+}
+
+#[test]
+fn snapshot_raw_tool_call_complete() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Read a file".to_string()));
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "read_file".to_string(),
+        args: r#"{"path":"README.md"}"#.to_string(),
+        call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "read_file".to_string(),
+        delta: "# README\n\nThis is the content.\n".to_string(),
+        call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "read_file".to_string(),
+        call_id: None,
+    });
+    assert_snapshot!(render_app_raw(&app));
+}
+
+#[test]
+fn snapshot_raw_popup_open() {
+    let mut app = OilChatApp::default();
+    app.update(crate::tui::oil::event::Event::Key(KeyEvent::new(
+        KeyCode::F(1),
+        KeyModifiers::NONE,
+    )));
+    assert_snapshot!(render_app_raw(&app));
+}
+
+#[test]
+fn snapshot_raw_status_bar_plan_mode() {
+    let mut app = OilChatApp::default();
+    app.set_mode(ChatMode::Plan);
+    app.on_message(ChatAppMsg::ContextUsage {
+        used: 5000,
+        total: 128000,
+    });
+    assert_snapshot!(render_app_raw(&app));
+}
+
+#[test]
+fn snapshot_raw_status_bar_auto_mode() {
+    let mut app = OilChatApp::default();
+    app.set_mode(ChatMode::Auto);
+    app.on_message(ChatAppMsg::ContextUsage {
+        used: 100000,
+        total: 128000,
+    });
+    assert_snapshot!(render_app_raw(&app));
+}
+
+#[test]
+fn snapshot_raw_error_displayed_as_notification() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Do something".to_string()));
+    app.on_message(ChatAppMsg::Error("Connection failed: timeout".to_string()));
+    assert_snapshot!(render_app_raw(&app));
+}
+
+#[test]
+fn snapshot_raw_notification_no_content_above() {
+    let mut app = OilChatApp::default();
+    app.update(crate::tui::oil::event::Event::Key(KeyEvent::new(
+        KeyCode::Char('c'),
+        KeyModifiers::CONTROL,
+    )));
+    assert_snapshot!(render_app_raw(&app));
+}
+
+#[test]
+fn snapshot_raw_thinking_delta_during_stream() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Solve this puzzle".to_string()));
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "Let me think about this step by step...".to_string(),
+    ));
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "\nFirst, I need to consider the constraints.".to_string(),
+    ));
+    assert_snapshot!(render_app_raw(&app));
+}
+
+#[test]
+fn snapshot_raw_perm_modal_bash_command() {
+    let mut app = OilChatApp::default();
+    let request = crucible_core::interaction::InteractionRequest::Permission(
+        crucible_core::interaction::PermRequest::bash(["npm", "install", "lodash"]),
+    );
+    app.open_interaction("perm-bash".to_string(), request);
+    assert_snapshot!(render_app_raw(&app));
+}
