@@ -34,6 +34,26 @@ fn has_ansi_codes(s: &str) -> bool {
     s.contains("\x1b[")
 }
 
+/// Extract RGB values from ANSI truecolor background escape code \x1b[48;2;R;G;Bm
+fn extract_ansi_bg_color(s: &str) -> Option<(i32, i32, i32)> {
+    // Look for pattern: \x1b[48;2;R;G;Bm
+    for part in s.split("\x1b[") {
+        if part.starts_with("48;2;") {
+            let rest = &part[5..]; // Skip "48;2;"
+            let end = rest.find('m')?;
+            let color_str = &rest[..end];
+            let parts: Vec<&str> = color_str.split(';').collect();
+            if parts.len() >= 3 {
+                let r: i32 = parts[0].parse().ok()?;
+                let g: i32 = parts[1].parse().ok()?;
+                let b: i32 = parts[2].parse().ok()?;
+                return Some((r, g, b));
+            }
+        }
+    }
+    None
+}
+
 fn assert_fits_width(output: &str, max_width: usize) {
     for (i, line) in output.lines().enumerate() {
         let width = visible_width(line);
@@ -365,6 +385,86 @@ mod input_area_tests {
     fn snapshot_shell_mode() {
         let input = InputArea::new("!cargo test", 11, 80);
         assert_snapshot!("input_area_shell", render_plain(&input, 80));
+    }
+
+    #[test]
+    fn input_area_bg_distinct_from_terminal() {
+        // RED: fails until Bug 1 is fixed — Normal mode bg is identical to terminal bg
+        // Terminal background is Rgb(40,44,52). Normal mode should differ by >= 20 on at least one channel.
+        let input = InputArea::new("hello world", 11, 80);
+        let ansi = render_ansi(&input, 80);
+
+        let (r, g, b) =
+            extract_ansi_bg_color(&ansi).expect("Should have ANSI background color code");
+
+        // Terminal background is Rgb(40,44,52)
+        let terminal_r = 40i32;
+        let terminal_g = 44i32;
+        let terminal_b = 52i32;
+
+        // Assert at least one channel differs by >= 20 units
+        let r_delta = (r - terminal_r).abs();
+        let g_delta = (g - terminal_g).abs();
+        let b_delta = (b - terminal_b).abs();
+
+        let max_delta = r_delta.max(g_delta).max(b_delta);
+        assert!(
+            max_delta >= 20,
+            "Normal mode bg should differ from terminal bg by >= 20 on at least one channel. Got Rgb({},{},{}) vs terminal Rgb({},{},{}). Deltas: R={}, G={}, B={}",
+            r, g, b, terminal_r, terminal_g, terminal_b, r_delta, g_delta, b_delta
+        );
+    }
+
+    #[test]
+    fn input_area_command_mode_bg_distinct() {
+        // PASS: Command mode should have distinct color (Rgb(60,50,20))
+        let input = InputArea::new(":help", 5, 80);
+        let ansi = render_ansi(&input, 80);
+
+        let (r, g, b) =
+            extract_ansi_bg_color(&ansi).expect("Should have ANSI background color code");
+
+        // Terminal background is Rgb(40,44,52)
+        let terminal_r = 40i32;
+        let terminal_g = 44i32;
+        let terminal_b = 52i32;
+
+        let r_delta = (r - terminal_r).abs();
+        let g_delta = (g - terminal_g).abs();
+        let b_delta = (b - terminal_b).abs();
+
+        let max_delta = r_delta.max(g_delta).max(b_delta);
+        assert!(
+            max_delta >= 20,
+            "Command mode bg should differ from terminal bg by >= 20. Got Rgb({},{},{}) vs Rgb({},{},{})",
+            r, g, b, terminal_r, terminal_g, terminal_b
+        );
+    }
+
+    #[test]
+    fn input_area_shell_mode_bg_distinct() {
+        // PASS: Shell mode should have distinct color (Rgb(60,30,30))
+        let input = InputArea::new("!pwd", 4, 80);
+        let ansi = render_ansi(&input, 80);
+
+        let (r, g, b) =
+            extract_ansi_bg_color(&ansi).expect("Should have ANSI background color code");
+
+        // Terminal background is Rgb(40,44,52)
+        let terminal_r = 40i32;
+        let terminal_g = 44i32;
+        let terminal_b = 52i32;
+
+        let r_delta = (r - terminal_r).abs();
+        let g_delta = (g - terminal_g).abs();
+        let b_delta = (b - terminal_b).abs();
+
+        let max_delta = r_delta.max(g_delta).max(b_delta);
+        assert!(
+            max_delta >= 20,
+            "Shell mode bg should differ from terminal bg by >= 20. Got Rgb({},{},{}) vs Rgb({},{},{})",
+            r, g, b, terminal_r, terminal_g, terminal_b
+        );
     }
 }
 
