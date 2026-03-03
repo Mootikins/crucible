@@ -25,14 +25,6 @@ pub fn set(config: ThemeConfig) {
     let _ = ACTIVE_THEME.set(config);
 }
 
-/// Initialize the global theme if not already set.
-///
-/// Unlike [`set`], this is explicitly designed to be called multiple times
-/// without concern — a safe no-op if already initialized.
-pub fn set_if_unset(config: ThemeConfig) {
-    let _ = ACTIVE_THEME.set(config);
-}
-
 /// Returns `true` if the global theme has been initialized.
 pub fn is_initialized() -> bool {
     ACTIVE_THEME.get().is_some()
@@ -80,12 +72,4 @@ mod tests {
         assert!(addrs.windows(2).all(|w| w[0] == w[1]));
     }
 
-    #[test]
-    fn theme_global_set_if_unset_is_safe_noop() {
-        // active() may have already initialized the theme in another test,
-        // but set_if_unset should never panic regardless.
-        let custom = ThemeConfig::default_dark();
-        set_if_unset(custom);
-        assert!(is_initialized());
-    }
 }

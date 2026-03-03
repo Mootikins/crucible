@@ -35,7 +35,7 @@ return {
     -- Borders
     border         = "#282c34",  -- Default border (same as background)
     border_focused = "cyan",     -- Focused/active border
-    border_dim     = "dark_gray", -- Dimmed border
+    border_dim     = "gray",       -- Dimmed border
 
     -- Chat roles
     user_message      = "green",    -- User message indicator
@@ -51,14 +51,14 @@ return {
     -- Diff
     diff_added      = "#9ece6a",  -- Diff added line foreground
     diff_removed    = "#f7768e",  -- Diff removed line foreground
-    diff_added_bg   = "#1c2028",  -- Diff added line background tint
-    diff_removed_bg = "#1c2028",  -- Diff removed line background tint
+    diff_added_bg   = "#1e321e",  -- Diff added line background tint
+    diff_removed_bg = "#321e1e",  -- Diff removed line background tint
     diff_context    = "#646e82",  -- Diff context line color
 
     -- Overlay
     popup_bg          = "#1e222a",  -- Popup/overlay background
     popup_selected_bg = "#323844",  -- Popup selected item background
-    toast_bg          = "#282c34",  -- Toast notification background
+    toast_bg          = "#2d2837",  -- Toast notification background
     overlay_text      = "#c0caf5",  -- overlay/popup primary text (Rgb(192, 202, 245))
     overlay_bright   = "#ffffff",  -- Overlay bright text (action details, pure white)
 
@@ -96,7 +96,7 @@ return {
     error       = "✖",  -- Failure/rejection
     warning     = "⚠",  -- Caution
     info        = "ℹ",  -- Informational
-    loading     = "⟳",  -- Loading/spinner label
+    loading     = "…",  -- Loading/spinner label
     arrow_right = "→",  -- Navigation/flow
   },
 

@@ -19,7 +19,7 @@ pub mod config;
 pub use config::*;
 
 pub mod global;
-pub use global::{active, is_initialized, set, set_if_unset};
+pub use global::{active, is_initialized, set};
 
 #[cfg(test)]
 mod tests {
