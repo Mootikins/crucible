@@ -7,7 +7,7 @@ use crate::tui::oil::chat_app::{
 use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::terminal::Terminal;
-use crate::tui::oil::theme::ThemeTokens;
+use crate::tui::oil::theme;
 use anyhow::{Context, Result};
 #[allow(unused_imports)] // WIP: KeyCode, KeyModifiers not yet used
 use crossterm::event::{Event as CtEvent, EventStream, KeyCode, KeyModifiers};
@@ -337,7 +337,7 @@ impl OilChatRunner {
 
         let terminal_size = self.terminal.size();
         let ctx =
-            ViewContext::with_terminal_size(&self.focus, ThemeTokens::default_ref(), terminal_size);
+            ViewContext::with_terminal_size(&self.focus, theme::active(), terminal_size);
         let tree = app.view(&ctx);
         let _ = self.terminal.render(&tree)?;
 
@@ -610,7 +610,7 @@ impl OilChatRunner {
 
         let terminal_size = self.terminal.size();
         let ctx =
-            ViewContext::with_terminal_size(&self.focus, ThemeTokens::default_ref(), terminal_size);
+            ViewContext::with_terminal_size(&self.focus, theme::active(), terminal_size);
         let tree = app.view(&ctx);
 
         let graduated_keys = if app.has_shell_modal() {

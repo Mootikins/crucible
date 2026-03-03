@@ -1,17 +1,19 @@
-//! Semantic color tokens and style presets for the TUI.
+//! Theme system for the TUI.
 //!
-//! All colors and styles are accessed via [`ThemeTokens`], which provides
-//! runtime theme tokens for the chat interface. Use `ThemeTokens::default_ref()`
-//! for a zero-cost static reference to the default dark theme.
+//! Provides two complementary systems:
+//! - [`ThemeTokens`] — runtime color tokens and style presets (current system)
+//! - [`ThemeConfig`] — full theme configuration with adaptive colors, icons, layout
+//!
+//! Use [`active()`] to access the global `ThemeConfig` (initialized lazily with
+//! `ThemeConfig::default_dark()`). Use [`set()`] at startup to override.
 //!
 //! # Usage
 //!
 //! ```rust,ignore
-//! use crate::tui::oil::theme::ThemeTokens;
+//! use crate::tui::oil::theme;
 //!
-//! let theme = ThemeTokens::default_ref();
-//! styled("Error!", theme.error_style());
-//! styled("Hello", theme.user_prompt());
+//! let config = theme::active();
+//! let color = config.resolve_color(config.colors.error);
 //! ```
 
 pub mod tokens;
@@ -19,6 +21,9 @@ pub use tokens::ThemeTokens;
 
 pub mod config;
 pub use config::*;
+
+pub mod global;
+pub use global::{active, is_initialized, set, set_if_unset};
 
 #[cfg(test)]
 mod tests {
