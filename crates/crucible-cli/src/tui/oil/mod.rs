@@ -96,7 +96,6 @@ pub use output::OutputBuffer;
 pub use style::*;
 pub use terminal::Terminal;
 pub use test_harness::AppHarness;
-pub use theme::ThemeTokens;
 pub use viewport::{clamp_lines_bottom, clamp_lines_top, ensure_min_height, pad_lines_to};
 pub use viewport_cache::CachedMessage;
 pub use crucible_oil::decrypt::{decrypt_text, DecryptConfig, CIPHER_CHARS};

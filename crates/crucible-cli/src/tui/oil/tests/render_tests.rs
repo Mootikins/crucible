@@ -566,11 +566,11 @@ fn default_gap_has_no_extra_blank_lines() {
 #[test]
 fn spinner_with_theme_style_renders_with_ansi_codes() {
     use crate::tui::oil::style::Style;
-    use crate::tui::oil::theme::ThemeTokens;
+    use crate::tui::oil::theme::ThemeConfig;
 
-    // Create a spinner with the theme's spinner style
-    let theme = ThemeTokens::default_ref();
-    let spinner_style = theme.spinner_style();
+    // Create a spinner with a theme-derived style
+    let theme = ThemeConfig::default_dark();
+    let spinner_style = Style::new().fg(theme.resolve_color(theme.colors.text));
     let node = spinner(None, 0).with_style(spinner_style);
 
     let output = render_to_string(&node, 80);

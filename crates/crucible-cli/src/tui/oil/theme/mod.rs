@@ -1,8 +1,7 @@
 //! Theme system for the TUI.
 //!
-//! Provides two complementary systems:
-//! - [`ThemeTokens`] — runtime color tokens and style presets (current system)
-//! - [`ThemeConfig`] — full theme configuration with adaptive colors, icons, layout
+//! Provides [`ThemeConfig`] — full theme configuration with adaptive colors,
+//! icons, layout, loaded from Lua.
 //!
 //! Use [`active()`] to access the global `ThemeConfig` (initialized lazily with
 //! `ThemeConfig::default_dark()`). Use [`set()`] at startup to override.
@@ -15,9 +14,6 @@
 //! let config = theme::active();
 //! let color = config.resolve_color(config.colors.error);
 //! ```
-
-pub mod tokens;
-pub use tokens::ThemeTokens;
 
 pub mod config;
 pub use config::*;
@@ -32,40 +28,31 @@ mod tests {
 
     #[test]
     fn color_tokens_are_distinct() {
-        let t = ThemeTokens::default_ref();
-        assert_ne!(t.error, t.success);
-        assert_ne!(t.role_user, t.role_assistant);
-        assert_ne!(t.input_bg, t.command_bg);
+        let t = ThemeConfig::default_dark();
+        assert_ne!(t.colors.error, t.colors.success);
+        assert_ne!(t.colors.user_message, t.colors.assistant_message);
+        assert_ne!(t.colors.background, t.colors.command_bg);
     }
 
     #[test]
-    fn style_presets_build_correctly() {
-        let t = ThemeTokens::default_ref();
+    fn semantic_colors_resolve_correctly() {
+        let t = ThemeConfig::default_dark();
 
-        let user = t.user_prompt();
-        assert_eq!(user.fg, Some(Color::Green));
-        assert!(user.bold);
-
-        let err = t.error_style();
-        assert_eq!(err.fg, Some(Color::Rgb(247, 118, 142)));
-        assert!(err.bold);
+        assert_eq!(t.resolve_color(t.colors.user_message), Color::Green);
+        assert_eq!(t.resolve_color(t.colors.error), Color::Rgb(247, 118, 142));
     }
 
     #[test]
-    fn mode_styles_have_contrasting_fg() {
-        let t = ThemeTokens::default_ref();
-        assert_eq!(t.mode_normal_style().fg, Some(Color::Black));
-        assert_eq!(t.mode_plan_style().fg, Some(Color::Black));
-        assert_eq!(t.mode_auto_style().fg, Some(Color::Black));
+    fn mode_colors_are_set() {
+        let t = ThemeConfig::default_dark();
+        // Modes should have distinct colors
+        assert_ne!(t.colors.mode_normal, t.colors.mode_plan);
+        assert_ne!(t.colors.mode_plan, t.colors.mode_auto);
     }
 
     #[test]
     fn muted_and_dim_are_different() {
-        let t = ThemeTokens::default_ref();
-        let muted = t.muted();
-        let dim = t.dim();
-
-        assert!(!muted.dim);
-        assert!(dim.dim);
+        let t = ThemeConfig::default_dark();
+        assert_ne!(t.colors.text_muted, t.colors.text_dim);
     }
 }

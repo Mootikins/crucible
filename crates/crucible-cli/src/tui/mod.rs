@@ -7,6 +7,6 @@ pub use oil::{
     Event, FramePlan, FramePlanner, FrameSnapshot, FrameTrace, GraduatedContent, GraduationState,
     InputAction, InputArea, InputBuffer, InputMode, LuaView, McpServerDisplay, OilChatApp,
     OilChatRunner, OilRunner, Overlay, OverlayAnchor, PluginStatusEntry, RenderState, Role,
-    StatusBar, Terminal, TestRuntime, ThemeTokens, ThinkingBlock, ViewAction, ViewContext,
+    StatusBar, Terminal, TestRuntime, ThinkingBlock, ViewAction, ViewContext,
     INPUT_MAX_CONTENT_LINES,
 };

@@ -1802,13 +1802,13 @@ fn set_available_models_does_not_set_loaded_state_when_empty() {
 }
 
 #[test]
-fn spinner_style_is_not_default() {
+fn spinner_style_uses_theme_color() {
     use crate::tui::oil::style::Style;
-    use crate::tui::oil::theme::ThemeTokens;
+    use crate::tui::oil::theme::ThemeConfig;
 
-    // Verify that the spinner style from theme tokens is not the default style
-    let theme = ThemeTokens::default_ref();
-    let spinner_style = theme.spinner_style();
+    // Verify that constructing a spinner style from ThemeConfig produces a non-default style
+    let theme = ThemeConfig::default_dark();
+    let spinner_style = Style::new().fg(theme.resolve_color(theme.colors.text));
 
     assert_ne!(
         spinner_style,
