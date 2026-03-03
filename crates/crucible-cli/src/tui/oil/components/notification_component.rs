@@ -84,13 +84,15 @@ impl Component for NotificationComponent {
         }
 
         let t = crate::tui::oil::theme::active();
+        let bg = t.resolve_color(t.colors.background);
+        let text_style = Style::new()
+            .bg(bg)
+            .fg(t.resolve_color(t.colors.overlay_text));
 
         let content_rows: Vec<Node> = self
             .entries
             .iter()
             .flat_map(|entry| {
-                let bg = t.resolve_color(t.colors.background);
-                let text_style = Style::new().bg(bg).fg(t.resolve_color(t.colors.overlay_text));
                 let badge_style = Style::new().fg(entry.kind.color()).bold().reverse();
 
                 let timestamp_part = format!(" {}: ", entry.timestamp_label());
