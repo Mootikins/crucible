@@ -20,8 +20,8 @@ pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize) -> Node 
             let frame = BRAILLE_SPINNER_FRAMES[spinner_frame % BRAILLE_SPINNER_FRAMES.len()];
             (format!(" {} ", frame), Style::new().fg(t.resolve_color(t.colors.primary)))
         }
-        SubagentStatus::Completed => (" ✓ ".to_string(), Style::new().fg(t.resolve_color(t.colors.success))),
-        SubagentStatus::Failed => (" ✗ ".to_string(), Style::new().fg(t.resolve_color(t.colors.error))),
+        SubagentStatus::Completed => (format!(" {} ", t.decorations.tool_success_icon), Style::new().fg(t.resolve_color(t.colors.success))),
+        SubagentStatus::Failed => (format!(" {} ", t.decorations.tool_error_icon), Style::new().fg(t.resolve_color(t.colors.error))),
     };
 
     let prompt_preview = truncate_first_line(&subagent.prompt, 60, true);
