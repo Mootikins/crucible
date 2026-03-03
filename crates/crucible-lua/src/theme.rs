@@ -90,6 +90,8 @@ pub struct ThemeColors {
     pub popup_selected_bg: AdaptiveColor,
     /// Toast notification background
     pub toast_bg: AdaptiveColor,
+    /// Overlay/popup primary text color
+    pub overlay_text: AdaptiveColor,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -354,6 +356,7 @@ impl ThemeConfig {
                 popup_bg: AdaptiveColor::from_single(Rgb(30, 34, 42)), // popup_bg
                 popup_selected_bg: AdaptiveColor::from_single(Rgb(50, 56, 68)), // popup_selected_bg
                 toast_bg: AdaptiveColor::from_single(Rgb(45, 40, 55)), // thinking_bg
+                overlay_text: AdaptiveColor::from_single(Rgb(192, 202, 245)),
             },
             decorations: ThemeDecorations {
                 border_style: BorderStyle::Rounded,
@@ -537,6 +540,7 @@ fn parse_colors_into(table: &mlua::Table, colors: &mut ThemeColors) {
     parse_color_field!(popup_bg);
     parse_color_field!(popup_selected_bg);
     parse_color_field!(toast_bg);
+    parse_color_field!(overlay_text);
 }
 
 fn parse_decorations_into(table: &mlua::Table, dec: &mut ThemeDecorations) {
