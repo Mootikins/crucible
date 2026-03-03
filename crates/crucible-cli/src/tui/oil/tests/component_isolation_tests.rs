@@ -297,6 +297,63 @@ mod input_area_tests {
     }
 
     #[test]
+    fn input_area_normal_mode_emits_background_ansi() {
+        let normal = InputArea::new("hello", 5, 80);
+        let command = InputArea::new(":help", 5, 80);
+        let shell = InputArea::new("!pwd", 4, 80);
+
+        let normal_ansi = render_ansi(&normal, 80);
+        let command_ansi = render_ansi(&command, 80);
+        let shell_ansi = render_ansi(&shell, 80);
+
+        let normal_bg = "\x1b[48;2;50;54;62m";
+        let command_bg = "\x1b[48;2;60;50;20m";
+        let shell_bg = "\x1b[48;2;60;30;30m";
+
+        if !normal_ansi.contains(normal_bg) {
+            println!("Normal mode ANSI output: {:?}", normal_ansi);
+        }
+        assert!(
+            normal_ansi.contains(normal_bg),
+            "Normal mode missing expected bg ANSI {}. Actual output: {:?}",
+            normal_bg,
+            normal_ansi
+        );
+
+        if !command_ansi.contains(command_bg) {
+            println!("Command mode ANSI output: {:?}", command_ansi);
+        }
+        assert!(
+            command_ansi.contains(command_bg),
+            "Command mode missing expected bg ANSI {}. Actual output: {:?}",
+            command_bg,
+            command_ansi
+        );
+
+        if !shell_ansi.contains(shell_bg) {
+            println!("Shell mode ANSI output: {:?}", shell_ansi);
+        }
+        assert!(
+            shell_ansi.contains(shell_bg),
+            "Shell mode missing expected bg ANSI {}. Actual output: {:?}",
+            shell_bg,
+            shell_ansi
+        );
+    }
+
+    #[test]
+    fn snapshot_normal_mode_contains_background_ansi() {
+        let normal = InputArea::new("hello", 5, 80);
+        let ansi = render_ansi(&normal, 80);
+        assert_snapshot!("input_area_normal_mode_ansi", ansi.clone());
+        assert!(
+            ansi.contains("\x1b[48;2;50;54;62m"),
+            "Normal mode should include background ANSI code. Got: {:?}",
+            ansi
+        );
+    }
+
+    #[test]
     fn content_wraps_at_width() {
         let long_text = "a".repeat(150);
         let input = InputArea::new(&long_text, 150, 80);
