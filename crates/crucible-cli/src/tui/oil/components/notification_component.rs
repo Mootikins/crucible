@@ -3,7 +3,7 @@ use crate::tui::oil::components::status_bar::NotificationToastKind;
 use crate::tui::oil::components::{Drawer, DrawerKind};
 use crate::tui::oil::node::{row, styled, Node};
 use crate::tui::oil::style::Style;
-use crate::tui::oil::theme::ThemeTokens;
+
 use crate::tui::oil::utils::wrap::wrap_to_width;
 use crate::tui::oil::ViewContext;
 
@@ -83,15 +83,15 @@ impl Component for NotificationComponent {
             return Node::Empty;
         }
 
-        let theme = ThemeTokens::default_ref();
+        let t = crate::tui::oil::theme::active();
 
         let content_rows: Vec<Node> = self
             .entries
             .iter()
             .flat_map(|entry| {
-                let bg = theme.input_bg;
-                let text_style = Style::new().bg(bg).fg(theme.overlay_text);
-                let badge_style = theme.notification_badge(entry.kind.color());
+                let bg = t.resolve_color(t.colors.background);
+                let text_style = Style::new().bg(bg).fg(t.resolve_color(t.colors.overlay_text));
+                let badge_style = Style::new().fg(entry.kind.color()).bold().reverse();
 
                 let timestamp_part = format!(" {}: ", entry.timestamp_label());
                 let badge_text = format!(" {} ", entry.kind_label());

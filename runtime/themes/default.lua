@@ -56,6 +56,7 @@ return {
     popup_bg          = "#1e222a",  -- Popup/overlay background
     popup_selected_bg = "#323844",  -- Popup selected item background
     toast_bg          = "#282c34",  -- Toast notification background
+    overlay_text      = "#c0caf5",  -- overlay/popup primary text (Rgb(192, 202, 245))
   },
 
   decorations = {
