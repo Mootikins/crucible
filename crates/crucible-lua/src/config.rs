@@ -25,17 +25,20 @@
 
 use crate::error::LuaError;
 use crate::statusline::{parse_statusline_config, StatuslineConfig};
+use crate::theme::ThemeConfig;
 use mlua::{Lua, Table, Value};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use tracing::{debug, info, warn};
 
 const DEFAULT_STATUSLINE_LUA: &str = include_str!("defaults/statusline.lua");
+const DEFAULT_THEME_LUA: &str = include_str!("../../../runtime/themes/default.lua");
 
 /// Global config state - stores parsed configuration from Lua
 #[derive(Debug, Default)]
 pub struct ConfigState {
     pub statusline: Option<StatuslineConfig>,
+    pub theme: Option<ThemeConfig>,
 }
 
 /// Thread-safe config registry
@@ -54,6 +57,18 @@ pub fn get_statusline_config() -> Option<StatuslineConfig> {
 fn set_statusline_config(config: StatuslineConfig) {
     if let Ok(mut state) = get_config().write() {
         state.statusline = Some(config);
+    }
+}
+
+/// Get the current theme configuration (if set via crucible.theme.setup())
+pub fn get_theme_config() -> Option<ThemeConfig> {
+    get_config().read().ok()?.theme.clone()
+}
+
+/// Set the theme configuration
+fn set_theme_config(config: ThemeConfig) {
+    if let Ok(mut state) = get_config().write() {
+        state.theme = Some(config);
     }
 }
 
@@ -218,6 +233,47 @@ pub fn register_statusline_namespace(lua: &Lua, crucible: &Table) -> Result<(), 
     Ok(())
 }
 
+/// Register the crucible.theme module with setup() support
+pub fn register_theme_namespace(lua: &Lua, crucible: &Table) -> Result<(), LuaError> {
+    let theme = lua.create_table()?;
+
+    // crucible.theme.setup(config) — parses and stores the theme config
+    let setup_fn = lua.create_function(|_lua, config: Table| {
+        let theme_config = crate::theme::parse_theme_from_table(&config);
+        debug!("Theme config parsed successfully: {}", theme_config.name);
+        set_theme_config(theme_config);
+        Ok(())
+    })?;
+    theme.set("setup", setup_fn)?;
+
+    crucible.set("theme", theme)?;
+    Ok(())
+}
+
+/// List available theme names from a config directory's `themes/` subdirectory.
+///
+/// Returns sorted theme names (without `.lua` extension) discovered in
+/// `config_dir/themes/*.lua`.
+pub fn list_available_themes(config_dir: &Path) -> Vec<String> {
+    let themes_dir = config_dir.join("themes");
+    if !themes_dir.exists() {
+        return vec![];
+    }
+    let mut names = vec![];
+    if let Ok(entries) = std::fs::read_dir(&themes_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("lua") {
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    names.push(stem.to_string());
+                }
+            }
+        }
+    }
+    names.sort();
+    names
+}
+
 /// Register the crucible.include() function
 fn register_include(lua: &Lua, crucible: &Table, config_dir: PathBuf) -> Result<(), LuaError> {
     let include_fn = lua.create_function(move |lua, path: String| {
@@ -287,6 +343,17 @@ impl ConfigLoader {
         // Register crucible.statusline
         register_statusline_namespace(lua, &crucible)?;
 
+        // Register crucible.theme
+        register_theme_namespace(lua, &crucible)?;
+
+        // Load embedded default theme (user init.lua can override via crucible.theme.setup())
+        match crate::theme::load_theme_from_lua(DEFAULT_THEME_LUA) {
+            Ok(config) => set_theme_config(config),
+            Err(e) => {
+                warn!("Failed to load default theme: {}, using Rust defaults", e);
+                set_theme_config(ThemeConfig::default_dark());
+            }
+        }
         // Load embedded default statusline (user init.lua can override via setup())
         if let Err(e) = lua
             .load(DEFAULT_STATUSLINE_LUA)
@@ -335,7 +402,11 @@ impl ConfigLoader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
     use tempfile::TempDir;
+
+    // Serialize tests that touch the global CONFIG to avoid race conditions
+    static CONFIG_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     fn create_test_lua() -> Lua {
         let lua = Lua::new();
@@ -347,6 +418,7 @@ mod tests {
 
     #[test]
     fn test_statusline_setup() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
         reset_config();
 
         let lua = create_test_lua();
@@ -416,6 +488,7 @@ mod tests {
 
     #[test]
     fn test_config_loader_with_init() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
         reset_config();
 
         let tmp = TempDir::new().unwrap();
@@ -452,5 +525,95 @@ mod tests {
         let normal: Table = result.get("normal").unwrap();
         assert_eq!(normal.get::<String>("text").unwrap(), " NORMAL ");
         assert_eq!(normal.get::<String>("bg").unwrap(), "green");
+    }
+
+    #[test]
+    fn test_theme_pipeline_default() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+
+        let tmp = TempDir::new().unwrap();
+        let loader = ConfigLoader::new(tmp.path(), None);
+        let lua = create_test_lua();
+        loader.load(&lua).unwrap();
+
+        let config = get_theme_config();
+        assert!(config.is_some(), "theme config should be set after load");
+        let config = config.unwrap();
+        assert_eq!(config.name, "default");
+        assert!(config.is_dark);
+    }
+
+    #[test]
+    fn test_theme_setup_via_lua() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+
+        let lua = create_test_lua();
+        let crucible: Table = lua.globals().get("crucible").unwrap();
+        register_theme_namespace(&lua, &crucible).unwrap();
+
+        lua.load(
+            r##"
+            crucible.theme.setup({
+                colors = { error = "#ff0000" },
+                name = "custom",
+            })
+        "##,
+        )
+        .exec()
+        .unwrap();
+
+        let config = get_theme_config();
+        assert!(config.is_some());
+        let config = config.unwrap();
+        assert_eq!(config.name, "custom");
+        // Error color should be overridden to red
+        use crucible_oil::style::{AdaptiveColor, Color};
+        assert_eq!(
+            config.colors.error,
+            AdaptiveColor::from_single(Color::Rgb(255, 0, 0))
+        );
+    }
+
+    #[test]
+    fn test_list_available_themes() {
+        let tmp = TempDir::new().unwrap();
+        let themes_dir = tmp.path().join("themes");
+        std::fs::create_dir_all(&themes_dir).unwrap();
+        std::fs::write(themes_dir.join("dark.lua"), "return {}").unwrap();
+        std::fs::write(themes_dir.join("light.lua"), "return {}").unwrap();
+        std::fs::write(themes_dir.join("not_a_theme.txt"), "").unwrap();
+
+        let themes = list_available_themes(tmp.path());
+        assert_eq!(themes, vec!["dark".to_string(), "light".to_string()]);
+    }
+
+    #[test]
+    fn test_theme_fallback_corrupted() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+
+        let lua = create_test_lua();
+        let crucible: Table = lua.globals().get("crucible").unwrap();
+        register_theme_namespace(&lua, &crucible).unwrap();
+
+        // Setup with an invalid color — should not panic, should use default for that field
+        lua.load(
+            r#"
+            crucible.theme.setup({
+                colors = { error = "not_a_valid_color_xyz" },
+            })
+        "#,
+        )
+        .exec()
+        .unwrap();
+
+        let config = get_theme_config();
+        assert!(config.is_some());
+        let config = config.unwrap();
+        // Invalid color falls back to default
+        let default = crate::theme::ThemeConfig::default_dark();
+        assert_eq!(config.colors.error, default.colors.error);
     }
 }

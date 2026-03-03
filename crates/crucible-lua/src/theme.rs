@@ -408,6 +408,14 @@ pub fn load_theme_from_lua(lua_string: &str) -> anyhow::Result<ThemeConfig> {
         _ => anyhow::bail!("Theme must be a Lua table"),
     };
 
+    Ok(parse_theme_from_table(&table))
+}
+
+/// Parse a ThemeConfig directly from a Lua table.
+///
+/// Missing fields use defaults from [`ThemeConfig::default_dark()`].
+/// Invalid fields log a warning and use defaults (never panic).
+pub fn parse_theme_from_table(table: &mlua::Table) -> ThemeConfig {
     let mut config = ThemeConfig::default_dark();
 
     if let Ok(name) = table.get::<String>("name") {
@@ -435,7 +443,7 @@ pub fn load_theme_from_lua(lua_string: &str) -> anyhow::Result<ThemeConfig> {
         parse_layout_into(&layout_table, &mut config.layout);
     }
 
-    Ok(config)
+    config
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

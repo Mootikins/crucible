@@ -105,7 +105,9 @@ pub use ask::{
 pub use auth_plugin::{fire_provider_auth_hooks, get_provider_auth_hooks};
 pub use capability_gate::{check_module_access, module_capability_map, ModuleCapabilityMapping};
 pub use commands::{command_to_descriptor, LuaCommandHandler};
-pub use config::{get_statusline_config, ConfigLoader, ConfigState};
+pub use config::{
+    get_statusline_config, get_theme_config, list_available_themes, ConfigLoader, ConfigState,
+};
 pub use core_handler::{LuaHandler, LuaHandlerMeta};
 pub use error::LuaError;
 pub use executor::LuaExecutor;
