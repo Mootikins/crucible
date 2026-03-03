@@ -17,7 +17,7 @@ use crate::tui::oil::ansi::{visible_width, wrap_styled_text};
 use crate::tui::oil::node::*;
 #[allow(unused_imports)] // WIP: Color not yet used
 use crate::tui::oil::style::{Color, Style};
-use crate::tui::oil::theme::ThemeTokens;
+use crate::tui::oil::theme;
 use markdown_it::parser::inline::Text;
 use markdown_it::plugins::cmark::block::blockquote::Blockquote;
 use markdown_it::plugins::cmark::block::code::CodeBlock as MdCodeBlock;
@@ -345,7 +345,10 @@ fn render_node(node: &markdown_it::Node, ctx: &mut RenderContext) {
             let prefix = if show_bullet {
                 styled(
                     ASSISTANT_BULLET,
-                    ThemeTokens::default_ref().bullet_prefix_style(),
+                    {
+                        let t = theme::active();
+                        Style::new().fg(t.resolve_color(t.colors.bullet_prefix))
+                    },
                 )
             } else {
                 text(" ".repeat(margins.left))
@@ -447,7 +450,10 @@ fn render_node(node: &markdown_it::Node, ctx: &mut RenderContext) {
         let code_text = extract_all_text(node);
         ctx.current_spans.push((
             format!("`{}`", code_text),
-            ThemeTokens::default_ref().inline_code(),
+            {
+                let t = theme::active();
+                Style::new().fg(t.resolve_color(t.colors.code_inline))
+            },
         ));
         return;
     }
@@ -494,7 +500,10 @@ fn render_paragraph(node: &markdown_it::Node, ctx: &mut RenderContext) {
         let prefix = if i == 0 && show_bullet {
             styled(
                 ASSISTANT_BULLET,
-                ThemeTokens::default_ref().bullet_prefix_style(),
+                {
+                    let t = theme::active();
+                    Style::new().fg(t.resolve_color(t.colors.bullet_prefix))
+                },
             )
         } else {
             text(&indent)
@@ -528,14 +537,15 @@ fn render_code_block(node: &markdown_it::Node, ctx: &mut RenderContext) {
         "```".to_string()
     };
 
-    let theme = ThemeTokens::default_ref();
+    let t = theme::active();
+    let fence_style = Style::new().fg(t.resolve_color(t.colors.fence_marker));
     push_indented_block(
         ctx,
-        styled(&fence_marker, theme.fence_marker_style()),
+        styled(&fence_marker, fence_style),
         &indent,
     );
     render_highlighted_code(&content, lang_str, ctx, &indent);
-    push_indented_block(ctx, styled("```", theme.fence_marker_style()), &indent);
+    push_indented_block(ctx, styled("```", fence_style), &indent);
 
     ctx.mark_block_end();
 }
@@ -554,7 +564,8 @@ fn render_highlighted_code(content: &str, lang: &str, ctx: &mut RenderContext, i
     use crate::tui::oil::ansi::wrap_styled_text;
 
     if lang.is_empty() || !SyntaxHighlighter::supports_language(lang) {
-        let fallback = ThemeTokens::default_ref().code_fallback_style();
+        let t = theme::active();
+        let fallback = Style::new().fg(t.resolve_color(t.colors.code_fallback));
         for line in content.lines() {
             let spans = vec![(line.to_string(), fallback.to_ansi_codes())];
             for wrapped in wrap_styled_text(&spans, ctx.width) {
@@ -682,8 +693,14 @@ fn render_blockquote(node: &markdown_it::Node, ctx: &mut RenderContext) {
         let wrapped = wrap_text(&child_text, content_width);
         for line in wrapped {
             let quote_row = row([
-                styled(prefix, ThemeTokens::default_ref().blockquote_prefix_style()),
-                styled(line, ThemeTokens::default_ref().blockquote_text_style()),
+                styled(prefix, {
+                    let t = theme::active();
+                    Style::new().fg(t.resolve_color(t.colors.blockquote_prefix))
+                }),
+                styled(line, {
+                    let t = theme::active();
+                    Style::new().fg(t.resolve_color(t.colors.blockquote_text)).italic()
+                }),
             ]);
             if margins.left > 0 {
                 ctx.push_block(row([text(&margin_indent), quote_row]));
@@ -993,15 +1010,18 @@ fn render_link(node: &markdown_it::Node, link: &Link, ctx: &mut RenderContext) {
         link_text
     };
     ctx.current_spans
-        .push((display, ThemeTokens::default_ref().link_style()));
+        .push((display, {
+            let t = theme::active();
+            Style::new().fg(t.resolve_color(t.colors.link)).underline()
+        }));
 }
 
 fn heading_style(level: u8) -> Style {
-    let theme = ThemeTokens::default_ref();
+    let t = theme::active();
     match level {
-        1 => theme.heading_1_style(),
-        2 => theme.heading_2_style(),
-        3 => theme.heading_3_style(),
+        1 => Style::new().fg(t.resolve_color(t.colors.heading_1)).bold(),
+        2 => Style::new().fg(t.resolve_color(t.colors.heading_2)).bold(),
+        3 => Style::new().fg(t.resolve_color(t.colors.heading_3)).bold(),
         _ => Style::new().bold(),
     }
 }
