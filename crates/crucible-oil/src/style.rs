@@ -188,6 +188,59 @@ impl Color {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AdaptiveColor {
+    pub dark: Color,
+    pub light: Color,
+}
+
+impl AdaptiveColor {
+    /// Create an AdaptiveColor with the same color for both dark and light modes.
+    pub fn from_single(color: Color) -> Self {
+        Self {
+            dark: color,
+            light: color,
+        }
+    }
+
+    /// Resolve the color based on terminal background detection.
+    /// Returns Color::Reset if NO_COLOR environment variable is set.
+    pub fn resolve(self, is_dark: bool) -> Color {
+        if std::env::var("NO_COLOR").is_ok() {
+            return Color::Reset;
+        }
+        if is_dark {
+            self.dark
+        } else {
+            self.light
+        }
+    }
+}
+
+/// Detect if the terminal has a dark background.
+/// Parses COLORFGBG environment variable (format: "fg;bg").
+/// If bg < 8, terminal is dark; if bg >= 8, terminal is light.
+/// Defaults to dark (true) if COLORFGBG is not set or cannot be parsed.
+pub fn detect_dark_terminal() -> bool {
+    match std::env::var("COLORFGBG") {
+        Ok(value) => {
+            // Format is "foreground;background"
+            if let Some(bg_str) = value.split(';').nth(1) {
+                if let Ok(bg) = bg_str.parse::<u8>() {
+                    // bg < 8 means dark terminal, bg >= 8 means light terminal
+                    return bg < 8;
+                }
+            }
+            // Default to dark if parsing fails
+            true
+        }
+        Err(_) => {
+            // Default to dark if COLORFGBG is not set
+            true
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Padding {
     pub top: u16,
@@ -468,5 +521,85 @@ mod tests {
         let g4 = Gap::new(1, 2);
         assert_eq!(g4.row, 1);
         assert_eq!(g4.column, 2);
+    }
+
+    #[test]
+    fn test_adaptive_color_from_single() {
+        let ac = AdaptiveColor::from_single(Color::Red);
+        assert_eq!(ac.dark, Color::Red);
+        assert_eq!(ac.light, Color::Red);
+    }
+
+    #[test]
+    fn test_adaptive_color_resolve_dark() {
+        let ac = AdaptiveColor {
+            dark: Color::Red,
+            light: Color::Blue,
+        };
+        assert_eq!(ac.resolve(true), Color::Red);
+    }
+
+    #[test]
+    fn test_adaptive_color_resolve_light() {
+        let ac = AdaptiveColor {
+            dark: Color::Red,
+            light: Color::Blue,
+        };
+        assert_eq!(ac.resolve(false), Color::Blue);
+    }
+
+    #[test]
+    fn test_adaptive_color_no_color_env() {
+        let ac = AdaptiveColor {
+            dark: Color::Red,
+            light: Color::Blue,
+        };
+        // Set NO_COLOR environment variable
+        std::env::set_var("NO_COLOR", "1");
+        assert_eq!(ac.resolve(true), Color::Reset);
+        assert_eq!(ac.resolve(false), Color::Reset);
+        // Clean up
+        std::env::remove_var("NO_COLOR");
+    }
+
+    #[test]
+    fn test_detect_dark_terminal_dark_bg() {
+        // bg < 8 means dark terminal
+        std::env::set_var("COLORFGBG", "15;0");
+        assert!(detect_dark_terminal());
+        std::env::remove_var("COLORFGBG");
+    }
+
+    #[test]
+    fn test_detect_dark_terminal_light_bg() {
+        // bg >= 8 means light terminal
+        std::env::set_var("COLORFGBG", "0;15");
+        assert!(!detect_dark_terminal());
+        std::env::remove_var("COLORFGBG");
+    }
+
+    #[test]
+    fn test_detect_dark_terminal_not_set() {
+        // Default to dark if not set
+        std::env::remove_var("COLORFGBG");
+        assert!(detect_dark_terminal());
+    }
+
+    #[test]
+    fn test_detect_dark_terminal_invalid_format() {
+        // Default to dark if format is invalid
+        std::env::set_var("COLORFGBG", "invalid");
+        assert!(detect_dark_terminal());
+        std::env::remove_var("COLORFGBG");
+    }
+
+    #[test]
+    fn test_detect_dark_terminal_boundary() {
+        // Test boundary: bg = 7 (dark), bg = 8 (light)
+        std::env::set_var("COLORFGBG", "15;7");
+        assert!(detect_dark_terminal());
+        std::env::set_var("COLORFGBG", "15;8");
+        assert!(!detect_dark_terminal());
+        std::env::remove_var("COLORFGBG");
     }
 }
