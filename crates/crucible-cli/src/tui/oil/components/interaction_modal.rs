@@ -522,7 +522,7 @@ impl InteractionModal {
         let mut lines: Vec<Node> = Vec::new();
 
         lines.push(styled(
-            "\u{2584}".repeat(term_width),
+            t.decorations.half_block_bottom.to_string().repeat(term_width),
             Style::new().fg(border_fg),
         ));
 
@@ -571,7 +571,7 @@ impl InteractionModal {
         }
 
         lines.push(styled(
-            "\u{2580}".repeat(term_width),
+            t.decorations.half_block_top.to_string().repeat(term_width),
             Style::new().fg(border_fg),
         ));
 
@@ -658,8 +658,8 @@ impl InteractionModal {
         let t = crate::tui::oil::theme::active();
         let header_bg = t.resolve_color(t.colors.background);
         let footer_bg = t.resolve_color(t.colors.background);
-        let top_border = styled("▄".repeat(term_width), Style::new().fg(t.resolve_color(t.colors.background)));
-        let bottom_border = styled("▀".repeat(term_width), Style::new().fg(t.resolve_color(t.colors.background)));
+        let top_border = styled(t.decorations.half_block_bottom.to_string().repeat(term_width), Style::new().fg(t.resolve_color(t.colors.background)));
+        let bottom_border = styled(t.decorations.half_block_top.to_string().repeat(term_width), Style::new().fg(t.resolve_color(t.colors.background)));
 
         let header_text = if total_questions > 1 {
             format!(
@@ -721,11 +721,11 @@ impl InteractionModal {
             styled(" ", text_style),
             styled("↑/↓", key_style),
             styled(" navigate ", text_style),
-            styled("│", sep_style),
+            styled(t.decorations.separator_char.clone(), sep_style),
             styled(" ", text_style),
             styled("Enter", key_style),
             styled(" select ", text_style),
-            styled("│", sep_style),
+            styled(t.decorations.separator_char.clone(), sep_style),
             styled(" ", text_style),
             styled("Esc", key_style),
             styled(" cancel ", text_style),
@@ -759,7 +759,7 @@ impl InteractionModal {
         ])
     }
 
-    // ─── Show handler ──────────────────────────────────────────────────
+    // --- Show handler -------------------------------------------------------
 
     fn handle_show_key(&mut self, key: KeyEvent) -> InteractionModalOutput {
         let content_lines = if let InteractionRequest::Show(show) = &self.request {
@@ -829,7 +829,7 @@ impl InteractionModal {
         let visible = &content_lines[self.scroll_offset..end];
 
         let mut lines: Vec<Node> = Vec::with_capacity(visible_count + 6);
-        lines.push(styled("▄".repeat(term_width), Style::new().fg(border_fg)));
+        lines.push(styled(t.decorations.half_block_bottom.to_string().repeat(term_width), Style::new().fg(border_fg)));
         lines.push(title);
 
         for line in visible {
@@ -840,7 +840,7 @@ impl InteractionModal {
             ));
         }
 
-        lines.push(styled("▀".repeat(term_width), Style::new().fg(border_fg)));
+        lines.push(styled(t.decorations.half_block_top.to_string().repeat(term_width), Style::new().fg(border_fg)));
 
         let key_style = Style::new().fg(t.resolve_color(t.colors.primary));
         let hint_style = Style::new().fg(t.resolve_color(t.colors.text_muted)).dim();
@@ -860,7 +860,7 @@ impl InteractionModal {
         col(lines)
     }
 
-    // ─── Popup handler ─────────────────────────────────────────────────
+    // --- Popup handler ------------------------------------------------------
 
     fn handle_popup_key(&mut self, key: KeyEvent, popup: PopupRequest) -> InteractionModalOutput {
         let entries_count = popup.entries.len();
@@ -985,10 +985,10 @@ impl InteractionModal {
 
         col([
             text(""),
-            styled("▄".repeat(term_width), Style::new().fg(border_fg)),
+            styled(t.decorations.half_block_bottom.to_string().repeat(term_width), Style::new().fg(border_fg)),
             title,
             col(choice_nodes),
-            styled("▀".repeat(term_width), Style::new().fg(border_fg)),
+            styled(t.decorations.half_block_top.to_string().repeat(term_width), Style::new().fg(border_fg)),
             row([
                 styled(" POPUP ", Style::new().fg(t.resolve_color(t.colors.error)).bold().reverse()),
                 styled("  ↑/↓", key_style),
@@ -1002,7 +1002,7 @@ impl InteractionModal {
         ])
     }
 
-    // ─── Edit handler ──────────────────────────────────────────────────
+    // --- Edit handler -------------------------------------------------------
 
     fn handle_edit_key(&mut self, key: KeyEvent) -> InteractionModalOutput {
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('s') {
@@ -1236,16 +1236,16 @@ impl InteractionModal {
 
         col([
             text(""),
-            styled("▄".repeat(term_width), Style::new().fg(border_fg)),
+            styled(t.decorations.half_block_bottom.to_string().repeat(term_width), Style::new().fg(border_fg)),
             header,
             col(content_nodes),
-            styled("▀".repeat(term_width), Style::new().fg(border_fg)),
+            styled(t.decorations.half_block_top.to_string().repeat(term_width), Style::new().fg(border_fg)),
             footer,
             text(""),
         ])
     }
 
-    // ─── Panel handler ─────────────────────────────────────────────────
+    // --- Panel handler ------------------------------------------------------
 
     fn handle_panel_key(
         &mut self,
@@ -1510,10 +1510,10 @@ impl InteractionModal {
 
         col([
             text(""),
-            styled("▄".repeat(term_width), Style::new().fg(border_fg)),
+            styled(t.decorations.half_block_bottom.to_string().repeat(term_width), Style::new().fg(border_fg)),
             header,
             col(item_nodes),
-            styled("▀".repeat(term_width), Style::new().fg(border_fg)),
+            styled(t.decorations.half_block_top.to_string().repeat(term_width), Style::new().fg(border_fg)),
             row(footer_nodes),
             text(""),
         ])

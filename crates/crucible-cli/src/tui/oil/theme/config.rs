@@ -131,7 +131,7 @@ mod tests {
         let config = ThemeConfig::default_dark();
         assert_eq!(config.decorations.message_user_indicator, "▌");
         assert_eq!(config.decorations.tool_success_icon, "✓");
-        assert_eq!(config.decorations.tool_error_icon, "✖");
+        assert_eq!(config.decorations.tool_error_icon, "✗");
         assert_eq!(config.decorations.half_block_top, '▀');
         assert_eq!(config.decorations.half_block_bottom, '▄');
     }

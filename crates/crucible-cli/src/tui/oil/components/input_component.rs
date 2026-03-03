@@ -79,8 +79,9 @@ impl Component for InputComponent<'_> {
         let prompt = self.mode.prompt();
         let bg = self.mode.bg_color();
 
-        let top_edge = styled("▄".repeat(self.width), Style::new().fg(bg));
-        let bottom_edge = styled("▀".repeat(self.width), Style::new().fg(bg));
+        let t = crate::tui::oil::theme::active();
+        let top_edge = styled(t.decorations.half_block_bottom.to_string().repeat(self.width), Style::new().fg(bg));
+        let bottom_edge = styled(t.decorations.half_block_top.to_string().repeat(self.width), Style::new().fg(bg));
 
         let display_content = match self.mode {
             InputMode::Command => self.content.strip_prefix(':').unwrap_or(self.content),

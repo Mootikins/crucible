@@ -82,8 +82,8 @@ impl Component for MessageList<'_> {
 /// Render a user prompt with styled background.
 pub fn render_user_prompt(content: &str, width: usize) -> Node {
     let t = crate::tui::oil::theme::active();
-    let top_edge = styled("▄".repeat(width), Style::new().fg(t.resolve_color(t.colors.background)));
-    let bottom_edge = styled("▀".repeat(width), Style::new().fg(t.resolve_color(t.colors.background)));
+    let top_edge = styled(t.decorations.half_block_bottom.to_string().repeat(width), Style::new().fg(t.resolve_color(t.colors.background)));
+    let bottom_edge = styled(t.decorations.half_block_top.to_string().repeat(width), Style::new().fg(t.resolve_color(t.colors.background)));
 
     let prefix = " > ";
     let continuation_prefix = "   ";
@@ -111,12 +111,10 @@ pub fn render_user_prompt(content: &str, width: usize) -> Node {
 
 /// Render a thinking block with token count header.
 pub fn render_thinking_block(content: &str, token_count: usize, width: usize) -> Node {
+    let t = crate::tui::oil::theme::active();
     let header = styled(
-        format!("  ┌─ thinking ({} tokens)", token_count),
-        {
-            let t = crate::tui::oil::theme::active();
-            Style::new().fg(t.resolve_color(t.colors.text_muted)).italic()
-        },
+        format!("  \u{250C}{} thinking ({} tokens)", t.decorations.divider_char, token_count),
+        Style::new().fg(t.resolve_color(t.colors.text_muted)).italic(),
     );
 
     let display_content: Cow<'_, str> = if content.len() > 1200 {

@@ -400,7 +400,7 @@ impl ThemeConfig {
                 message_assistant_indicator: " ".to_string(),
                 tool_pending_icon: "●".to_string(),
                 tool_success_icon: "✓".to_string(),
-                tool_error_icon: "✖".to_string(),
+                tool_error_icon: "✗".to_string(),
                 bullet_char: "•".to_string(),
                 divider_char: "─".to_string(),
                 check_char: "✓".to_string(),

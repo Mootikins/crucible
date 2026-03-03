@@ -81,7 +81,7 @@ return {
     message_assistant_indicator  = " ",        -- Left-edge indicator for assistant messages
     tool_pending_icon            = "●",        -- Icon for pending tool calls
     tool_success_icon            = "✓",        -- Icon for successful tool calls
-    tool_error_icon              = "✖",        -- Icon for failed tool calls
+    tool_error_icon              = "✗",        -- Icon for failed tool calls
     bullet_char                  = "•",        -- Bullet character for lists
     divider_char                 = "─",        -- Horizontal divider character
     check_char                   = "✓",        -- Checkmark character
