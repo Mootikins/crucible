@@ -1,12 +1,12 @@
 use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::node::Node;
-use crate::tui::oil::theme::ThemeTokens;
+use crate::tui::oil::theme::{self, ThemeConfig};
 use std::time::Duration;
 
 pub struct ViewContext<'a> {
     pub focus: &'a FocusContext,
-    pub theme: &'a ThemeTokens,
+    pub theme: &'a ThemeConfig,
     pub terminal_size: (u16, u16),
 }
 
@@ -14,12 +14,12 @@ impl<'a> ViewContext<'a> {
     pub fn new(focus: &'a FocusContext) -> Self {
         Self {
             focus,
-            theme: ThemeTokens::default_ref(),
+            theme: theme::active(),
             terminal_size: (80, 24),
         }
     }
 
-    pub fn with_theme(focus: &'a FocusContext, theme: &'a ThemeTokens) -> Self {
+    pub fn with_theme(focus: &'a FocusContext, theme: &'a ThemeConfig) -> Self {
         Self {
             focus,
             theme,
@@ -29,7 +29,7 @@ impl<'a> ViewContext<'a> {
 
     pub fn with_terminal_size(
         focus: &'a FocusContext,
-        theme: &'a ThemeTokens,
+        theme: &'a ThemeConfig,
         terminal_size: (u16, u16),
     ) -> Self {
         Self {
@@ -39,7 +39,7 @@ impl<'a> ViewContext<'a> {
         }
     }
 
-    pub fn theme(&self) -> &ThemeTokens {
+    pub fn theme(&self) -> &ThemeConfig {
         self.theme
     }
 
