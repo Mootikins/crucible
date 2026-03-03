@@ -89,7 +89,22 @@ impl AgentManager {
             pending_permissions: self.pending_permissions.clone(),
             workspace_path: session.workspace.clone(),
             agent_stream_config: AgentStreamConfig::from_session_agent(&agent_config),
-            tool_dispatcher: self.tool_dispatcher.clone(),
+            tool_dispatcher: if !session.workspace.as_os_str().is_empty() {
+                use crate::tools::mcp_server::CrucibleMcpServer;
+                use crate::tool_dispatch::McpToolExecutor;
+                use crate::empty_providers::{EmptyKnowledgeRepository, EmptyEmbeddingProvider};
+                let mcp = Arc::new(CrucibleMcpServer::new(
+                    session.workspace.to_string_lossy().to_string(),
+                    Arc::new(EmptyKnowledgeRepository),
+                    Arc::new(EmptyEmbeddingProvider),
+                ));
+                Arc::new(crate::tool_dispatch::DaemonToolDispatcher::new(vec![
+                    self.workspace_tools.clone() as Arc<dyn ToolExecutor>,
+                    Arc::new(McpToolExecutor::new(mcp)),
+                ]))
+            } else {
+                self.tool_dispatcher.clone()
+            },
         };
 
         let task = tokio::spawn(async move {
@@ -797,26 +812,40 @@ impl AgentManager {
             );
         }
 
-        let tool_result = stream_ctx
-            .tool_dispatcher
-            .dispatch_tool(&tool_call.name, args.clone())
-            .await;
+        let tool_result = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            stream_ctx
+                .tool_dispatcher
+                .dispatch_tool(&tool_call.name, args.clone()),
+        )
+        .await;
         let (result_str, error_str) = match tool_result {
-            Ok(val) => (val.to_string(), None),
-            Err(e) => (String::new(), Some(e)),
+            Ok(Ok(val)) => (val.to_string(), None),
+            Ok(Err(e)) => (String::new(), Some(e)),
+            Err(_elapsed) => (
+                String::new(),
+                Some(anyhow::anyhow!(
+                    "Tool '{}' timed out after 30 seconds",
+                    tool_call.name
+                ).to_string()),
+            ),
         };
 
-        if error_str.is_none()
-            && !emit_event(
-                &stream_ctx.event_tx,
-                SessionEventMessage::tool_result(
-                    &stream_ctx.session_id,
-                    &call_id,
-                    &tool_call.name,
-                    serde_json::json!({ "result": result_str }),
-                ),
-            )
-        {
+        let event_result = if let Some(error) = &error_str {
+            serde_json::json!({ "error": error })
+        } else {
+            serde_json::json!({ "result": result_str })
+        };
+
+        if !emit_event(
+            &stream_ctx.event_tx,
+            SessionEventMessage::tool_result(
+                &stream_ctx.session_id,
+                &call_id,
+                &tool_call.name,
+                event_result,
+            ),
+        ) {
             warn!(
                 session_id = %stream_ctx.session_id,
                 tool = %tool_call.name,
