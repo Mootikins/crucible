@@ -187,6 +187,7 @@ impl LayoutEngine {
                 let lines = measure_text_lines(&text.content, content_width as usize);
                 self.tree
                     .new_leaf(Style {
+                        flex_shrink: 0.0,
                         size: Size {
                             width: length(content_width),
                             height: length(lines as f32),
@@ -204,6 +205,7 @@ impl LayoutEngine {
                     .unwrap_or(1) as f32;
                 self.tree
                     .new_leaf(Style {
+                        flex_shrink: 0.0,
                         size: Size {
                             width: length(label_width),
                             height: length(1.0),
