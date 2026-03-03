@@ -24,6 +24,7 @@ use crucible_core::events::{Reactor, ReactorEmitResult as EmitResult, SessionEve
 use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, PermissionScope};
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
+use crucible_core::traits::tools::ToolExecutor;
 use crucible_core::traits::PermissionGate;
 use crucible_lua::{
     execute_permission_hooks, register_crucible_on_api, register_permission_hook_api,
@@ -393,6 +394,7 @@ pub struct AgentManager {
     acp_config: Option<AcpConfig>,
     permission_config: Option<PermissionConfig>,
     plugin_loader: Option<Arc<Mutex<Option<DaemonPluginLoader>>>>,
+    workspace_tools: Arc<WorkspaceTools>,
     tool_dispatcher: Arc<dyn ToolDispatcher>,
 }
 
@@ -412,8 +414,10 @@ pub struct AgentManagerParams {
 
 impl AgentManager {
     pub fn new(params: AgentManagerParams) -> Self {
-        let tool_dispatcher: Arc<dyn ToolDispatcher> =
-            Arc::new(DaemonToolDispatcher::new(params.workspace_tools));
+        let workspace_tools = params.workspace_tools;
+        let tool_dispatcher: Arc<dyn ToolDispatcher> = Arc::new(DaemonToolDispatcher::new(vec![
+            workspace_tools.clone() as Arc<dyn ToolExecutor>,
+        ]));
         Self {
             request_state: Arc::new(DashMap::new()),
             agent_cache: AgentCache::new(),
@@ -428,6 +432,7 @@ impl AgentManager {
             acp_config: params.acp_config,
             permission_config: params.permission_config,
             plugin_loader: params.plugin_loader,
+            workspace_tools,
             tool_dispatcher,
         }
     }
