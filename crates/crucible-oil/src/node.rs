@@ -179,9 +179,10 @@ pub const SPINNER_FRAMES: &[char] = &['◐', '◓', '◑', '◒'];
 pub const BRAILLE_SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 /// Spinner frame style variants.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SpinnerStyle {
     /// Default spinner frames: ◐ ◓ ◑ ◒
+    #[default]
     Default,
     /// Braille spinner frames: ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏
     Braille,
@@ -194,12 +195,6 @@ impl SpinnerStyle {
             SpinnerStyle::Default => SPINNER_FRAMES,
             SpinnerStyle::Braille => BRAILLE_SPINNER_FRAMES,
         }
-    }
-}
-
-impl Default for SpinnerStyle {
-    fn default() -> Self {
-        SpinnerStyle::Default
     }
 }
 
@@ -243,7 +238,6 @@ pub fn scrollback_continuation(
 ) -> Node {
     scrollback_with_kind(key, ElementKind::Continuation, children)
 }
-
 
 pub fn scrollback_with_kind(
     key: impl Into<String>,
