@@ -423,7 +423,6 @@ pub fn assert_key_is_empty(tree: &LayoutTree, key: &str) {
 ///     "   └─ Text \"Content\" [0,1 80x23]",
 /// ]);
 /// ```
-
 /// Assert that the tree debug output contains a specific substring.
 ///
 /// Useful for checking that certain nodes or structures exist without

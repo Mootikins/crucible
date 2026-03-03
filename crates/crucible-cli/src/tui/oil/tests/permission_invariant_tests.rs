@@ -32,10 +32,6 @@ fn ctrl_c() -> KeyEvent {
     KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)
 }
 
-/// Check if a response is a permission denial.
-
-
-
 // ============================================================================
 // PROPERTY GENERATORS
 // ============================================================================

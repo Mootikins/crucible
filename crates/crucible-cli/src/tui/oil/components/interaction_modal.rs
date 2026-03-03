@@ -3,7 +3,7 @@
 //! Follows Elm-style architecture: Msg → update → Output.
 
 use crate::tui::oil::node::{col, row, styled, text, Node};
-use crate::tui::oil::style::{Color, Style};
+use crate::tui::oil::style::Style;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crucible_core::interaction::{
@@ -515,7 +515,7 @@ impl InteractionModal {
             let pad = " ".repeat(term_width.saturating_sub(visible_len));
             styled(
                 format!("{content}{pad}"),
-                Style::new().bg(panel_bg).fg(Color::Rgb(255, 255, 255)),
+                Style::new().bg(panel_bg).fg(t.resolve_color(t.colors.overlay_bright)),
             )
         };
 
@@ -554,7 +554,7 @@ impl InteractionModal {
                     styled(key_part, Style::new().bg(panel_bg).fg(t.resolve_color(t.colors.overlay_text))),
                     styled(
                         label_part,
-                        Style::new().bg(panel_bg).fg(Color::Rgb(255, 255, 255)),
+                        Style::new().bg(panel_bg).fg(t.resolve_color(t.colors.overlay_bright)),
                     ),
                     styled(pad, Style::new().bg(panel_bg)),
                 ]));

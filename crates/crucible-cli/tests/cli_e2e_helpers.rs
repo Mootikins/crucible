@@ -12,7 +12,7 @@ use std::time::Duration;
 
 /// Create a `cru` CLI command via assert_cmd.
 pub fn cru() -> Command {
-    Command::cargo_bin("cru").unwrap()
+    assert_cmd::cargo_bin_cmd!("cru")
 }
 
 /// Escape a path for embedding in TOML string values (Windows backslash handling).
