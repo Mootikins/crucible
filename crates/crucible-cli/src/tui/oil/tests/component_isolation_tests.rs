@@ -55,7 +55,7 @@ fn extract_ansi_bg_color(s: &str) -> Option<(i32, i32, i32)> {
 }
 
 /// Extract RGB values from ANSI truecolor foreground escape code \x1b[38;2;R;G;Bm
-fn extract_ansi_fg_color(s: &str) -> Option<(i32, i32, i32)> {
+fn extract_ansi_fg_color(s: &str) -> Option<(u8, u8, u8)> {
     // Look for pattern: \x1b[38;2;R;G;Bm
     for part in s.split("\x1b[") {
         if part.starts_with("38;2;") {
@@ -64,9 +64,9 @@ fn extract_ansi_fg_color(s: &str) -> Option<(i32, i32, i32)> {
             let color_str = &rest[..end];
             let parts: Vec<&str> = color_str.split(';').collect();
             if parts.len() >= 3 {
-                let r: i32 = parts[0].parse().ok()?;
-                let g: i32 = parts[1].parse().ok()?;
-                let b: i32 = parts[2].parse().ok()?;
+                let r: u8 = parts[0].parse().ok()?;
+                let g: u8 = parts[1].parse().ok()?;
+                let b: u8 = parts[2].parse().ok()?;
                 return Some((r, g, b));
             }
         }
