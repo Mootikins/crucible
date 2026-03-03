@@ -126,6 +126,73 @@ pub struct ThemeColors {
     pub heading_3: AdaptiveColor,
 }
 
+impl Default for ThemeColors {
+    fn default() -> Self {
+        use Color::*;
+        Self {
+            // Core
+            primary: AdaptiveColor::from_single(Cyan), // text_accent / prompt
+            secondary: AdaptiveColor::from_single(Magenta), // role_tool
+            background: AdaptiveColor::from_single(Rgb(40, 44, 52)), // input_bg
+            background_panel: AdaptiveColor::from_single(Rgb(35, 39, 47)), // code_bg
+            command_bg: AdaptiveColor::from_single(Rgb(60, 50, 20)), // command mode bg
+            shell_bg: AdaptiveColor::from_single(Rgb(60, 30, 30)), // shell mode bg
+            text: AdaptiveColor::from_single(White),   // text_primary
+            text_muted: AdaptiveColor::from_single(DarkGray), // text_muted
+            text_dim: AdaptiveColor::from_single(Gray),           // text_dim
+            text_emphasized: AdaptiveColor::from_single(Cyan), // text_accent
+
+            // Semantic
+            error: AdaptiveColor::from_single(Rgb(247, 118, 142)),
+            warning: AdaptiveColor::from_single(Rgb(224, 175, 104)),
+            success: AdaptiveColor::from_single(Rgb(158, 206, 106)),
+            info: AdaptiveColor::from_single(Rgb(0, 206, 209)),
+
+            // Borders
+            border: AdaptiveColor::from_single(Rgb(40, 44, 52)), // border (= input_bg)
+            border_focused: AdaptiveColor::from_single(Cyan),    // selected
+            border_dim: AdaptiveColor::from_single(Gray),        // text_dim
+
+            // Chat roles
+            user_message: AdaptiveColor::from_single(Green), // role_user
+            assistant_message: AdaptiveColor::from_single(Cyan), // role_assistant
+            system_message: AdaptiveColor::from_single(Yellow), // role_system
+
+            // Modes
+            mode_normal: AdaptiveColor::from_single(Green),
+            mode_insert: AdaptiveColor::from_single(Cyan), // prompt color (insert = typing)
+            mode_plan: AdaptiveColor::from_single(Blue),
+            mode_auto: AdaptiveColor::from_single(Yellow),
+
+            // Diff
+            diff_added: AdaptiveColor::from_single(Rgb(158, 206, 106)), // diff_add
+            diff_removed: AdaptiveColor::from_single(Rgb(247, 118, 142)), // diff_del
+            diff_added_bg: AdaptiveColor::from_single(Rgb(30, 50, 30)), // subtle green tint
+            diff_removed_bg: AdaptiveColor::from_single(Rgb(50, 30, 30)), // subtle red tint
+            diff_context: AdaptiveColor::from_single(Rgb(100, 110, 130)), // diff_ctx
+
+            // Overlay
+            popup_bg: AdaptiveColor::from_single(Rgb(30, 34, 42)), // popup_bg
+            popup_selected_bg: AdaptiveColor::from_single(Rgb(50, 56, 68)), // popup_selected_bg
+            toast_bg: AdaptiveColor::from_single(Rgb(45, 40, 55)), // thinking_bg
+            overlay_text: AdaptiveColor::from_single(Rgb(192, 202, 245)),
+            overlay_bright: AdaptiveColor::from_single(Rgb(255, 255, 255)),
+
+            // Markdown rendering
+            code_inline: AdaptiveColor::from_single(Yellow),
+            code_fallback: AdaptiveColor::from_single(Green),
+            fence_marker: AdaptiveColor::from_single(DarkGray),
+            bullet_prefix: AdaptiveColor::from_single(DarkGray),
+            blockquote_prefix: AdaptiveColor::from_single(DarkGray),
+            blockquote_text: AdaptiveColor::from_single(Gray),
+            link: AdaptiveColor::from_single(Blue),
+            heading_1: AdaptiveColor::from_single(Cyan),
+            heading_2: AdaptiveColor::from_single(Blue),
+            heading_3: AdaptiveColor::from_single(Magenta),
+        }
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ThemeDecorations — border style, indicator chars, icons
 // ─────────────────────────────────────────────────────────────────────────────
@@ -161,6 +228,26 @@ pub struct ThemeDecorations {
     pub half_block_bottom: char,
 }
 
+impl Default for ThemeDecorations {
+    fn default() -> Self {
+        Self {
+            border_style: BorderStyle::Rounded,
+            message_user_indicator: "▌".to_string(),
+            message_assistant_indicator: " ".to_string(),
+            tool_pending_icon: "●".to_string(),
+            tool_success_icon: "✓".to_string(),
+            tool_error_icon: "✗".to_string(),
+            bullet_char: "•".to_string(),
+            divider_char: "─".to_string(),
+            check_char: "✓".to_string(),
+            error_char: "✗".to_string(),
+            separator_char: "│".to_string(),
+            half_block_top: '▀',
+            half_block_bottom: '▄',
+        }
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ThemeIcons — semantic icon characters
 // ─────────────────────────────────────────────────────────────────────────────
@@ -180,6 +267,19 @@ pub struct ThemeIcons {
     pub loading: String,
     /// Right arrow (navigation, flow)
     pub arrow_right: String,
+}
+
+impl Default for ThemeIcons {
+    fn default() -> Self {
+        Self {
+            check: "✓".to_string(),
+            error: "✖".to_string(),
+            warning: "⚠".to_string(),
+            info: "ℹ".to_string(),
+            loading: "…".to_string(),
+            arrow_right: "→".to_string(),
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -328,96 +428,13 @@ impl ThemeConfig {
     /// in `AdaptiveColor::from_single()` so dark and light variants are the
     /// same (v1 behavior).
     pub fn default_dark() -> Self {
-        use Color::*;
-
         Self {
             name: "crucible-dark".to_string(),
             is_dark: true,
-            colors: ThemeColors {
-                // Core
-                primary: AdaptiveColor::from_single(Cyan), // text_accent / prompt
-                secondary: AdaptiveColor::from_single(Magenta), // role_tool
-                background: AdaptiveColor::from_single(Rgb(40, 44, 52)), // input_bg
-                background_panel: AdaptiveColor::from_single(Rgb(35, 39, 47)), // code_bg
-                command_bg: AdaptiveColor::from_single(Rgb(60, 50, 20)), // command mode bg
-                shell_bg: AdaptiveColor::from_single(Rgb(60, 30, 30)), // shell mode bg
-                text: AdaptiveColor::from_single(White),   // text_primary
-                text_muted: AdaptiveColor::from_single(DarkGray), // text_muted
-                text_dim: AdaptiveColor::from_single(Gray),           // text_dim
-                text_emphasized: AdaptiveColor::from_single(Cyan), // text_accent
-
-                // Semantic
-                error: AdaptiveColor::from_single(Rgb(247, 118, 142)),
-                warning: AdaptiveColor::from_single(Rgb(224, 175, 104)),
-                success: AdaptiveColor::from_single(Rgb(158, 206, 106)),
-                info: AdaptiveColor::from_single(Rgb(0, 206, 209)),
-
-                // Borders
-                border: AdaptiveColor::from_single(Rgb(40, 44, 52)), // border (= input_bg)
-                border_focused: AdaptiveColor::from_single(Cyan),    // selected
-                border_dim: AdaptiveColor::from_single(Gray),        // text_dim
-
-                // Chat roles
-                user_message: AdaptiveColor::from_single(Green), // role_user
-                assistant_message: AdaptiveColor::from_single(Cyan), // role_assistant
-                system_message: AdaptiveColor::from_single(Yellow), // role_system
-
-                // Modes
-                mode_normal: AdaptiveColor::from_single(Green),
-                mode_insert: AdaptiveColor::from_single(Cyan), // prompt color (insert = typing)
-                mode_plan: AdaptiveColor::from_single(Blue),
-                mode_auto: AdaptiveColor::from_single(Yellow),
-
-                // Diff
-                diff_added: AdaptiveColor::from_single(Rgb(158, 206, 106)), // diff_add
-                diff_removed: AdaptiveColor::from_single(Rgb(247, 118, 142)), // diff_del
-                diff_added_bg: AdaptiveColor::from_single(Rgb(30, 50, 30)), // subtle green tint
-                diff_removed_bg: AdaptiveColor::from_single(Rgb(50, 30, 30)), // subtle red tint
-                diff_context: AdaptiveColor::from_single(Rgb(100, 110, 130)), // diff_ctx
-
-                // Overlay
-                popup_bg: AdaptiveColor::from_single(Rgb(30, 34, 42)), // popup_bg
-                popup_selected_bg: AdaptiveColor::from_single(Rgb(50, 56, 68)), // popup_selected_bg
-                toast_bg: AdaptiveColor::from_single(Rgb(45, 40, 55)), // thinking_bg
-                overlay_text: AdaptiveColor::from_single(Rgb(192, 202, 245)),
-                overlay_bright: AdaptiveColor::from_single(Rgb(255, 255, 255)),
-
-                // Markdown rendering
-                code_inline: AdaptiveColor::from_single(Yellow),
-                code_fallback: AdaptiveColor::from_single(Green),
-                fence_marker: AdaptiveColor::from_single(DarkGray),
-                bullet_prefix: AdaptiveColor::from_single(DarkGray),
-                blockquote_prefix: AdaptiveColor::from_single(DarkGray),
-                blockquote_text: AdaptiveColor::from_single(Gray),
-                link: AdaptiveColor::from_single(Blue),
-                heading_1: AdaptiveColor::from_single(Cyan),
-                heading_2: AdaptiveColor::from_single(Blue),
-                heading_3: AdaptiveColor::from_single(Magenta),
-            },
-            decorations: ThemeDecorations {
-                border_style: BorderStyle::Rounded,
-                message_user_indicator: "▌".to_string(),
-                message_assistant_indicator: " ".to_string(),
-                tool_pending_icon: "●".to_string(),
-                tool_success_icon: "✓".to_string(),
-                tool_error_icon: "✗".to_string(),
-                bullet_char: "•".to_string(),
-                divider_char: "─".to_string(),
-                check_char: "✓".to_string(),
-                error_char: "✗".to_string(),
-                separator_char: "│".to_string(),
-                half_block_top: '▀',
-                half_block_bottom: '▄',
-            },
-            icons: ThemeIcons {
-                check: "✓".to_string(),
-                error: "✖".to_string(),
-                warning: "⚠".to_string(),
-                info: "ℹ".to_string(),
-                loading: "…".to_string(),
-                arrow_right: "→".to_string(),
-            },
-            spinner: ThemeSpinnerStyle::Braille,
+            colors: ThemeColors::default(),
+            decorations: ThemeDecorations::default(),
+            icons: ThemeIcons::default(),
+            spinner: ThemeSpinnerStyle::default(),
             layout: ThemeLayout::default(),
         }
     }
@@ -534,11 +551,11 @@ impl FromLua for ThemeColors {
     fn from_lua(value: Value, _lua: &Lua) -> LuaResult<Self> {
         match value {
             Value::Table(table) => {
-                let mut colors = ThemeConfig::default_dark().colors;
+                let mut colors = ThemeColors::default();
                 parse_colors_into(&table, &mut colors);
                 Ok(colors)
             }
-            Value::Nil => Ok(ThemeConfig::default_dark().colors),
+            Value::Nil => Ok(ThemeColors::default()),
             _ => Err(mlua::Error::FromLuaConversionError {
                 from: value.type_name(),
                 to: "ThemeColors".to_string(),
@@ -552,11 +569,11 @@ impl FromLua for ThemeDecorations {
     fn from_lua(value: Value, _lua: &Lua) -> LuaResult<Self> {
         match value {
             Value::Table(table) => {
-                let mut decorations = ThemeConfig::default_dark().decorations;
+                let mut decorations = ThemeDecorations::default();
                 parse_decorations_into(&table, &mut decorations);
                 Ok(decorations)
             }
-            Value::Nil => Ok(ThemeConfig::default_dark().decorations),
+            Value::Nil => Ok(ThemeDecorations::default()),
             _ => Err(mlua::Error::FromLuaConversionError {
                 from: value.type_name(),
                 to: "ThemeDecorations".to_string(),
@@ -570,11 +587,11 @@ impl FromLua for ThemeIcons {
     fn from_lua(value: Value, _lua: &Lua) -> LuaResult<Self> {
         match value {
             Value::Table(table) => {
-                let mut icons = ThemeConfig::default_dark().icons;
+                let mut icons = ThemeIcons::default();
                 parse_icons_into(&table, &mut icons);
                 Ok(icons)
             }
-            Value::Nil => Ok(ThemeConfig::default_dark().icons),
+            Value::Nil => Ok(ThemeIcons::default()),
             _ => Err(mlua::Error::FromLuaConversionError {
                 from: value.type_name(),
                 to: "ThemeIcons".to_string(),
@@ -673,6 +690,24 @@ impl FromLua for StatusBarPosition {
 // Parsing helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+macro_rules! parse_string_field {
+    ($table:expr, $target:expr, $field:ident) => {
+        if let Ok(s) = $table.get::<String>(stringify!($field)) {
+            $target.$field = s;
+        }
+    };
+}
+
+macro_rules! parse_char_field {
+    ($table:expr, $target:expr, $field:ident) => {
+        if let Ok(s) = $table.get::<String>(stringify!($field)) {
+            if let Some(c) = s.chars().next() {
+                $target.$field = c;
+            }
+        }
+    };
+}
+
 fn parse_adaptive_color(value: &Value) -> Option<AdaptiveColor> {
     match value {
         Value::String(s) => {
@@ -722,7 +757,7 @@ fn parse_colors_into(table: &Table, colors: &mut ThemeColors) {
                 match parse_adaptive_color(&val) {
                     Some(c) => colors.$field = c,
                     None => {
-                        warn!("Invalid color for '{}', using default", stringify!($field));
+                        warn!("Invalid color for '{}': {:?}, using default", stringify!($field), val);
                     }
                 }
             }
@@ -781,50 +816,27 @@ fn parse_decorations_into(table: &Table, dec: &mut ThemeDecorations) {
             None => warn!("Unknown border_style '{}', using default", s),
         }
     }
-    macro_rules! parse_string_field {
-        ($field:ident) => {
-            if let Ok(s) = table.get::<String>(stringify!($field)) {
-                dec.$field = s;
-            }
-        };
-    }
-    macro_rules! parse_char_field {
-        ($field:ident) => {
-            if let Ok(s) = table.get::<String>(stringify!($field)) {
-                if let Some(c) = s.chars().next() {
-                    dec.$field = c;
-                }
-            }
-        };
-    }
-    parse_string_field!(message_user_indicator);
-    parse_string_field!(message_assistant_indicator);
-    parse_string_field!(tool_pending_icon);
-    parse_string_field!(tool_success_icon);
-    parse_string_field!(tool_error_icon);
-    parse_string_field!(bullet_char);
-    parse_string_field!(divider_char);
-    parse_string_field!(check_char);
-    parse_string_field!(error_char);
-    parse_string_field!(separator_char);
-    parse_char_field!(half_block_top);
-    parse_char_field!(half_block_bottom);
+    parse_string_field!(table, dec, message_user_indicator);
+    parse_string_field!(table, dec, message_assistant_indicator);
+    parse_string_field!(table, dec, tool_pending_icon);
+    parse_string_field!(table, dec, tool_success_icon);
+    parse_string_field!(table, dec, tool_error_icon);
+    parse_string_field!(table, dec, bullet_char);
+    parse_string_field!(table, dec, divider_char);
+    parse_string_field!(table, dec, check_char);
+    parse_string_field!(table, dec, error_char);
+    parse_string_field!(table, dec, separator_char);
+    parse_char_field!(table, dec, half_block_top);
+    parse_char_field!(table, dec, half_block_bottom);
 }
 
 fn parse_icons_into(table: &Table, icons: &mut ThemeIcons) {
-    macro_rules! parse_string_field {
-        ($field:ident) => {
-            if let Ok(s) = table.get::<String>(stringify!($field)) {
-                icons.$field = s;
-            }
-        };
-    }
-    parse_string_field!(check);
-    parse_string_field!(error);
-    parse_string_field!(warning);
-    parse_string_field!(info);
-    parse_string_field!(loading);
-    parse_string_field!(arrow_right);
+    parse_string_field!(table, icons, check);
+    parse_string_field!(table, icons, error);
+    parse_string_field!(table, icons, warning);
+    parse_string_field!(table, icons, info);
+    parse_string_field!(table, icons, loading);
+    parse_string_field!(table, icons, arrow_right);
 }
 
 fn parse_layout_into(table: &Table, layout: &mut ThemeLayout) {
@@ -1140,4 +1152,19 @@ mod tests {
         // border_style should be sharp
         assert_eq!(theme.decorations.border_style, BorderStyle::Sharp);
     }
+    #[test]
+    fn default_lua_matches_default_dark() {
+        let from_lua = load_theme_from_lua(include_str!("../../../runtime/themes/default.lua"))
+            .expect("default.lua should load");
+        let from_rust = ThemeConfig::default_dark();
+
+        // The Lua default should match the Rust default exactly
+        // (name differs: "default" vs "crucible-dark" — that's intentional)
+        assert_eq!(from_lua.colors, from_rust.colors, "colors diverged");
+        assert_eq!(from_lua.decorations, from_rust.decorations, "decorations diverged");
+        assert_eq!(from_lua.icons, from_rust.icons, "icons diverged");
+        assert_eq!(from_lua.spinner, from_rust.spinner, "spinner diverged");
+        assert_eq!(from_lua.layout, from_rust.layout, "layout diverged");
+    }
+
 }
