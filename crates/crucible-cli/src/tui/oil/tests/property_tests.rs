@@ -862,6 +862,10 @@ mod cli_invariants {
                 "Setting the same mode twice should produce identical renders"
             );
         }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
 
         /// Text in the input buffer survives mode changes.
         #[test]
@@ -887,5 +891,5 @@ mod cli_invariants {
                 text, mode
             );
         }
-    }
+}
 }
