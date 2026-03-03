@@ -21,6 +21,7 @@ return {
     background_panel = "#23272f",       -- Panel/block background (code blocks)
     text             = "white",         -- Primary text
     text_muted       = "dark_gray",     -- Muted/secondary text
+    text_dim         = "gray",          -- Dimmed text (timestamps, metadata)
     text_emphasized  = "cyan",          -- Emphasized text (accents)
 
     -- Semantic
@@ -57,6 +58,18 @@ return {
     popup_selected_bg = "#323844",  -- Popup selected item background
     toast_bg          = "#282c34",  -- Toast notification background
     overlay_text      = "#c0caf5",  -- overlay/popup primary text (Rgb(192, 202, 245))
+
+    -- Markdown rendering
+    code_inline       = "yellow",     -- Inline code foreground
+    code_fallback     = "green",      -- Code block fallback foreground
+    fence_marker      = "dark_gray",  -- Fence marker (```) foreground
+    bullet_prefix     = "dark_gray",  -- Bullet prefix foreground
+    blockquote_prefix = "dark_gray",  -- Blockquote prefix (│) foreground
+    blockquote_text   = "gray",       -- Blockquote text foreground
+    link              = "blue",       -- Link foreground
+    heading_1         = "cyan",       -- Heading level 1 foreground
+    heading_2         = "blue",       -- Heading level 2 foreground
+    heading_3         = "magenta",    -- Heading level 3 foreground
   },
 
   decorations = {
