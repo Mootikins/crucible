@@ -8,6 +8,8 @@
 //! merging partial overrides onto the dark defaults.
 
 use crucible_oil::style::{AdaptiveColor, Color};
+use mlua::{FromLua, Lua, Result as LuaResult, Table, Value};
+use tracing::warn;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ThemeColors — semantic color slots using AdaptiveColor
@@ -404,62 +406,246 @@ impl ThemeConfig {
 /// Missing fields use defaults from [`ThemeConfig::default_dark()`].
 /// Invalid fields log a warning and use defaults (never panic).
 pub fn load_theme_from_lua(lua_string: &str) -> anyhow::Result<ThemeConfig> {
-    let lua = mlua::Lua::new();
-    let value: mlua::Value = lua.load(lua_string).eval().map_err(|e| anyhow::anyhow!("{e}"))?;
-    let table = match value {
-        mlua::Value::Table(t) => t,
-        _ => anyhow::bail!("Theme must be a Lua table"),
-    };
-
-    Ok(parse_theme_from_table(&table))
+    let lua = Lua::new();
+    let value: Value = lua
+        .load(lua_string)
+        .eval()
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    ThemeConfig::from_lua(value, &lua).map_err(|e| anyhow::anyhow!("{e}"))
 }
 
 /// Parse a ThemeConfig directly from a Lua table.
 ///
 /// Missing fields use defaults from [`ThemeConfig::default_dark()`].
 /// Invalid fields log a warning and use defaults (never panic).
-pub fn parse_theme_from_table(table: &mlua::Table) -> ThemeConfig {
-    let mut config = ThemeConfig::default_dark();
-
-    if let Ok(name) = table.get::<String>("name") {
-        config.name = name;
-    }
-    if let Ok(is_dark) = table.get::<bool>("is_dark") {
-        config.is_dark = is_dark;
-    }
-    if let Ok(colors_table) = table.get::<mlua::Table>("colors") {
-        parse_colors_into(&colors_table, &mut config.colors);
-    }
-    if let Ok(dec_table) = table.get::<mlua::Table>("decorations") {
-        parse_decorations_into(&dec_table, &mut config.decorations);
-    }
-    if let Ok(icons_table) = table.get::<mlua::Table>("icons") {
-        parse_icons_into(&icons_table, &mut config.icons);
-    }
-    if let Ok(spinner_str) = table.get::<String>("spinner") {
-        match parse_spinner_style(&spinner_str) {
-            Some(s) => config.spinner = s,
-            None => tracing::warn!("Unknown spinner style '{}', using default", spinner_str),
+pub fn parse_theme_from_table(lua: &Lua, table: &Table) -> ThemeConfig {
+    match ThemeConfig::from_lua(Value::Table(table.clone()), lua) {
+        Ok(config) => config,
+        Err(e) => {
+            warn!("Invalid theme table, using defaults: {e}");
+            ThemeConfig::default_dark()
         }
     }
-    if let Ok(layout_table) = table.get::<mlua::Table>("layout") {
-        parse_layout_into(&layout_table, &mut config.layout);
-    }
+}
 
-    config
+impl FromLua for ThemeConfig {
+    fn from_lua(value: Value, lua: &Lua) -> LuaResult<Self> {
+        let table = match value {
+            Value::Table(table) => table,
+            _ => {
+                return Err(mlua::Error::FromLuaConversionError {
+                    from: value.type_name(),
+                    to: "ThemeConfig".to_string(),
+                    message: Some("expected table".to_string()),
+                });
+            }
+        };
+
+        let mut config = ThemeConfig::default_dark();
+
+        if let Ok(value) = table.get::<Value>("name") {
+            match String::from_lua(value, lua) {
+                Ok(name) => config.name = name,
+                Err(e) => warn!("Invalid theme name, using default: {e}"),
+            }
+        }
+
+        if let Ok(value) = table.get::<Value>("is_dark") {
+            match bool::from_lua(value, lua) {
+                Ok(is_dark) => config.is_dark = is_dark,
+                Err(e) => warn!("Invalid is_dark value, using default: {e}"),
+            }
+        }
+
+        if let Ok(value) = table.get::<Value>("colors") {
+            match ThemeColors::from_lua(value, lua) {
+                Ok(colors) => config.colors = colors,
+                Err(e) => warn!("Invalid colors table, using default colors: {e}"),
+            }
+        }
+
+        if let Ok(value) = table.get::<Value>("decorations") {
+            match ThemeDecorations::from_lua(value, lua) {
+                Ok(decorations) => config.decorations = decorations,
+                Err(e) => warn!("Invalid decorations table, using defaults: {e}"),
+            }
+        }
+
+        if let Ok(value) = table.get::<Value>("icons") {
+            match ThemeIcons::from_lua(value, lua) {
+                Ok(icons) => config.icons = icons,
+                Err(e) => warn!("Invalid icons table, using defaults: {e}"),
+            }
+        }
+
+        if let Ok(value) = table.get::<Value>("spinner") {
+            match ThemeSpinnerStyle::from_lua(value, lua) {
+                Ok(spinner) => config.spinner = spinner,
+                Err(e) => warn!("Invalid spinner style, using default: {e}"),
+            }
+        }
+
+        if let Ok(value) = table.get::<Value>("layout") {
+            match ThemeLayout::from_lua(value, lua) {
+                Ok(layout) => config.layout = layout,
+                Err(e) => warn!("Invalid layout table, using defaults: {e}"),
+            }
+        }
+
+        Ok(config)
+    }
+}
+
+impl FromLua for ThemeColors {
+    fn from_lua(value: Value, _lua: &Lua) -> LuaResult<Self> {
+        match value {
+            Value::Table(table) => {
+                let mut colors = ThemeConfig::default_dark().colors;
+                parse_colors_into(&table, &mut colors);
+                Ok(colors)
+            }
+            Value::Nil => Ok(ThemeConfig::default_dark().colors),
+            _ => Err(mlua::Error::FromLuaConversionError {
+                from: value.type_name(),
+                to: "ThemeColors".to_string(),
+                message: Some("expected table or nil".to_string()),
+            }),
+        }
+    }
+}
+
+impl FromLua for ThemeDecorations {
+    fn from_lua(value: Value, _lua: &Lua) -> LuaResult<Self> {
+        match value {
+            Value::Table(table) => {
+                let mut decorations = ThemeConfig::default_dark().decorations;
+                parse_decorations_into(&table, &mut decorations);
+                Ok(decorations)
+            }
+            Value::Nil => Ok(ThemeConfig::default_dark().decorations),
+            _ => Err(mlua::Error::FromLuaConversionError {
+                from: value.type_name(),
+                to: "ThemeDecorations".to_string(),
+                message: Some("expected table or nil".to_string()),
+            }),
+        }
+    }
+}
+
+impl FromLua for ThemeIcons {
+    fn from_lua(value: Value, _lua: &Lua) -> LuaResult<Self> {
+        match value {
+            Value::Table(table) => {
+                let mut icons = ThemeConfig::default_dark().icons;
+                parse_icons_into(&table, &mut icons);
+                Ok(icons)
+            }
+            Value::Nil => Ok(ThemeConfig::default_dark().icons),
+            _ => Err(mlua::Error::FromLuaConversionError {
+                from: value.type_name(),
+                to: "ThemeIcons".to_string(),
+                message: Some("expected table or nil".to_string()),
+            }),
+        }
+    }
+}
+
+impl FromLua for ThemeLayout {
+    fn from_lua(value: Value, _lua: &Lua) -> LuaResult<Self> {
+        match value {
+            Value::Table(table) => {
+                let mut layout = ThemeLayout::default();
+                parse_layout_into(&table, &mut layout);
+                Ok(layout)
+            }
+            Value::Nil => Ok(ThemeLayout::default()),
+            _ => Err(mlua::Error::FromLuaConversionError {
+                from: value.type_name(),
+                to: "ThemeLayout".to_string(),
+                message: Some("expected table or nil".to_string()),
+            }),
+        }
+    }
+}
+
+impl FromLua for ThemeSpinnerStyle {
+    fn from_lua(value: Value, lua: &Lua) -> LuaResult<Self> {
+        match value {
+            Value::String(_) => {
+                let spinner = String::from_lua(value, lua)?;
+                parse_spinner_style(&spinner).ok_or_else(|| mlua::Error::FromLuaConversionError {
+                    from: "string",
+                    to: "ThemeSpinnerStyle".to_string(),
+                    message: Some(format!("unknown spinner style '{spinner}'")),
+                })
+            }
+            Value::Nil => Ok(ThemeSpinnerStyle::default()),
+            _ => Err(mlua::Error::FromLuaConversionError {
+                from: value.type_name(),
+                to: "ThemeSpinnerStyle".to_string(),
+                message: Some("expected string or nil".to_string()),
+            }),
+        }
+    }
+}
+
+impl FromLua for BorderStyle {
+    fn from_lua(value: Value, lua: &Lua) -> LuaResult<Self> {
+        match value {
+            Value::String(_) => {
+                let border_style = String::from_lua(value, lua)?;
+                parse_border_style(&border_style).ok_or_else(|| {
+                    mlua::Error::FromLuaConversionError {
+                        from: "string",
+                        to: "BorderStyle".to_string(),
+                        message: Some(format!("unknown border style '{border_style}'")),
+                    }
+                })
+            }
+            Value::Nil => Ok(BorderStyle::default()),
+            _ => Err(mlua::Error::FromLuaConversionError {
+                from: value.type_name(),
+                to: "BorderStyle".to_string(),
+                message: Some("expected string or nil".to_string()),
+            }),
+        }
+    }
+}
+
+impl FromLua for StatusBarPosition {
+    fn from_lua(value: Value, lua: &Lua) -> LuaResult<Self> {
+        match value {
+            Value::String(_) => {
+                let position = String::from_lua(value, lua)?;
+                parse_status_bar_position(&position).ok_or_else(|| {
+                    mlua::Error::FromLuaConversionError {
+                        from: "string",
+                        to: "StatusBarPosition".to_string(),
+                        message: Some(format!("unknown status bar position '{position}'")),
+                    }
+                })
+            }
+            Value::Nil => Ok(StatusBarPosition::default()),
+            _ => Err(mlua::Error::FromLuaConversionError {
+                from: value.type_name(),
+                to: "StatusBarPosition".to_string(),
+                message: Some("expected string or nil".to_string()),
+            }),
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Parsing helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn parse_adaptive_color(value: &mlua::Value) -> Option<AdaptiveColor> {
+fn parse_adaptive_color(value: &Value) -> Option<AdaptiveColor> {
     match value {
-        mlua::Value::String(s) => {
+        Value::String(s) => {
             let color = parse_color_string(&s.to_str().ok()?)?;
             Some(AdaptiveColor::from_single(color))
         }
-        mlua::Value::Table(t) => {
+        Value::Table(t) => {
             let dark_str: String = t.get("dark").ok()?;
             let light_str: String = t.get("light").ok()?;
             let dark = parse_color_string(&dark_str)?;
@@ -495,17 +681,14 @@ fn parse_color_string(s: &str) -> Option<Color> {
     }
 }
 
-fn parse_colors_into(table: &mlua::Table, colors: &mut ThemeColors) {
+fn parse_colors_into(table: &Table, colors: &mut ThemeColors) {
     macro_rules! parse_color_field {
         ($field:ident) => {
-            if let Ok(val) = table.get::<mlua::Value>(stringify!($field)) {
+            if let Ok(val) = table.get::<Value>(stringify!($field)) {
                 match parse_adaptive_color(&val) {
                     Some(c) => colors.$field = c,
                     None => {
-                        tracing::warn!(
-                            "Invalid color for '{}', using default",
-                            stringify!($field)
-                        );
+                        warn!("Invalid color for '{}', using default", stringify!($field));
                     }
                 }
             }
@@ -543,16 +726,11 @@ fn parse_colors_into(table: &mlua::Table, colors: &mut ThemeColors) {
     parse_color_field!(overlay_text);
 }
 
-fn parse_decorations_into(table: &mlua::Table, dec: &mut ThemeDecorations) {
+fn parse_decorations_into(table: &Table, dec: &mut ThemeDecorations) {
     if let Ok(s) = table.get::<String>("border_style") {
-        match s.as_str() {
-            "rounded" => dec.border_style = BorderStyle::Rounded,
-            "sharp" => dec.border_style = BorderStyle::Sharp,
-            "double" => dec.border_style = BorderStyle::Double,
-            "thick" => dec.border_style = BorderStyle::Thick,
-            "ascii" => dec.border_style = BorderStyle::Ascii,
-            "hidden" => dec.border_style = BorderStyle::Hidden,
-            _ => tracing::warn!("Unknown border_style '{}', using default", s),
+        match parse_border_style(&s) {
+            Some(style) => dec.border_style = style,
+            None => warn!("Unknown border_style '{}', using default", s),
         }
     }
     macro_rules! parse_string_field {
@@ -585,7 +763,7 @@ fn parse_decorations_into(table: &mlua::Table, dec: &mut ThemeDecorations) {
     parse_char_field!(half_block_bottom);
 }
 
-fn parse_icons_into(table: &mlua::Table, icons: &mut ThemeIcons) {
+fn parse_icons_into(table: &Table, icons: &mut ThemeIcons) {
     macro_rules! parse_string_field {
         ($field:ident) => {
             if let Ok(s) = table.get::<String>(stringify!($field)) {
@@ -601,13 +779,11 @@ fn parse_icons_into(table: &mlua::Table, icons: &mut ThemeIcons) {
     parse_string_field!(arrow_right);
 }
 
-fn parse_layout_into(table: &mlua::Table, layout: &mut ThemeLayout) {
+fn parse_layout_into(table: &Table, layout: &mut ThemeLayout) {
     if let Ok(s) = table.get::<String>("status_bar_position") {
-        match s.as_str() {
-            "top" => layout.status_bar_position = StatusBarPosition::Top,
-            "bottom" => layout.status_bar_position = StatusBarPosition::Bottom,
-            "hidden" => layout.status_bar_position = StatusBarPosition::Hidden,
-            _ => tracing::warn!("Unknown status_bar_position '{}', using default", s),
+        match parse_status_bar_position(&s) {
+            Some(position) => layout.status_bar_position = position,
+            None => warn!("Unknown status_bar_position '{}', using default", s),
         }
     }
     if let Ok(n) = table.get::<u16>("message_spacing") {
@@ -628,6 +804,27 @@ fn parse_spinner_style(s: &str) -> Option<ThemeSpinnerStyle> {
         "ascii" => Some(ThemeSpinnerStyle::Ascii),
         "pulse" => Some(ThemeSpinnerStyle::Pulse),
         "none" => Some(ThemeSpinnerStyle::None),
+        _ => None,
+    }
+}
+
+fn parse_border_style(s: &str) -> Option<BorderStyle> {
+    match s.to_lowercase().as_str() {
+        "rounded" => Some(BorderStyle::Rounded),
+        "sharp" => Some(BorderStyle::Sharp),
+        "double" => Some(BorderStyle::Double),
+        "thick" => Some(BorderStyle::Thick),
+        "ascii" => Some(BorderStyle::Ascii),
+        "hidden" => Some(BorderStyle::Hidden),
+        _ => None,
+    }
+}
+
+fn parse_status_bar_position(s: &str) -> Option<StatusBarPosition> {
+    match s.to_lowercase().as_str() {
+        "top" => Some(StatusBarPosition::Top),
+        "bottom" => Some(StatusBarPosition::Bottom),
+        "hidden" => Some(StatusBarPosition::Hidden),
         _ => None,
     }
 }
@@ -671,12 +868,29 @@ mod tests {
 
     #[test]
     fn test_theme_named_colors() {
-        let lua = r#"return { colors = { primary = "green" } }"#;
-        let config = load_theme_from_lua(lua).expect("named color should load");
-        assert_eq!(
-            config.colors.primary,
-            AdaptiveColor::from_single(Color::Green)
-        );
+        let cases = [
+            ("black", Color::Black),
+            ("red", Color::Red),
+            ("green", Color::Green),
+            ("yellow", Color::Yellow),
+            ("blue", Color::Blue),
+            ("magenta", Color::Magenta),
+            ("cyan", Color::Cyan),
+            ("white", Color::White),
+            ("gray", Color::Gray),
+            ("grey", Color::Gray),
+            ("dark_gray", Color::DarkGray),
+            ("darkgray", Color::DarkGray),
+            ("dark_grey", Color::DarkGray),
+            ("darkgrey", Color::DarkGray),
+            ("reset", Color::Reset),
+        ];
+
+        for (name, expected) in cases {
+            let lua = format!(r#"return {{ colors = {{ primary = "{name}" }} }}"#);
+            let config = load_theme_from_lua(&lua).expect("named color should load");
+            assert_eq!(config.colors.primary, AdaptiveColor::from_single(expected));
+        }
     }
 
     #[test]
@@ -699,6 +913,22 @@ mod tests {
                 dark: Color::Rgb(255, 255, 255),
                 light: Color::Rgb(0, 0, 0),
             }
+        );
+    }
+
+    #[test]
+    fn test_theme_from_lua_conversion() {
+        let lua = mlua::Lua::new();
+        let value: mlua::Value = lua
+            .load(r##"return { name = "from-lua", colors = { warning = "#ffaa00" } }"##)
+            .eval()
+            .expect("valid lua");
+
+        let config = ThemeConfig::from_lua(value, &lua).expect("FromLua conversion should work");
+        assert_eq!(config.name, "from-lua");
+        assert_eq!(
+            config.colors.warning,
+            AdaptiveColor::from_single(Color::Rgb(255, 170, 0))
         );
     }
 
