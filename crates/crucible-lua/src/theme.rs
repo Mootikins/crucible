@@ -34,6 +34,8 @@ pub struct ThemeColors {
     pub command_bg: AdaptiveColor,
     /// Shell mode input background (red tint)
     pub shell_bg: AdaptiveColor,
+    /// Normal mode input background (distinct from terminal bg)
+    pub input_bg: AdaptiveColor,
     /// Primary text color
     pub text: AdaptiveColor,
     /// Muted/secondary text color
@@ -137,6 +139,7 @@ impl Default for ThemeColors {
             background_panel: AdaptiveColor::from_single(Rgb(35, 39, 47)), // code_bg
             command_bg: AdaptiveColor::from_single(Rgb(60, 50, 20)), // command mode bg
             shell_bg: AdaptiveColor::from_single(Rgb(60, 30, 30)), // shell mode bg
+            input_bg: AdaptiveColor::from_single(Rgb(60, 64, 72)), // normal mode input bg (delta +20,+20,+20 from terminal bg)
             text: AdaptiveColor::from_single(White),   // text_primary
             text_muted: AdaptiveColor::from_single(DarkGray), // text_muted
             text_dim: AdaptiveColor::from_single(Gray),           // text_dim
@@ -769,6 +772,7 @@ fn parse_colors_into(table: &Table, colors: &mut ThemeColors) {
     parse_color_field!(background_panel);
     parse_color_field!(command_bg);
     parse_color_field!(shell_bg);
+    parse_color_field!(input_bg);
     parse_color_field!(text);
     parse_color_field!(text_muted);
     parse_color_field!(text_dim);
