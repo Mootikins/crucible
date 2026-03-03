@@ -809,6 +809,65 @@ fn status_bar_modes_and_ctx_visible_across_widths() {
 }
 
 #[test]
+fn status_bar_layout_regression_full_pipeline() {
+    use crate::tui::oil::components::StatusBar;
+
+    let bar = StatusBar::new()
+        .mode(ChatMode::Normal)
+        .model("gpt-4o")
+        .context(64000, 128000);
+
+    let rendered = render_node_with_planner(&bar.emergency_view(), 80, 4);
+    let line = rendered.lines().next().unwrap_or("");
+
+    assert!(
+        line.starts_with(" NORMAL "),
+        "mode label should remain at left edge: {line:?}"
+    );
+    assert!(
+        line.contains("50% ctx"),
+        "context suffix should remain visible: {line:?}"
+    );
+    assert!(
+        line.ends_with("50% ctx"),
+        "context suffix should be right-aligned: {line:?}"
+    );
+}
+
+#[test]
+fn snapshot_status_bar_layout_regression_width_80() {
+    use crate::tui::oil::components::StatusBar;
+
+    let bar = StatusBar::new()
+        .mode(ChatMode::Normal)
+        .model("gpt-4o")
+        .context(64000, 128000);
+    assert_snapshot!(render_node_with_planner(&bar.emergency_view(), 80, 4));
+}
+
+#[test]
+fn snapshot_status_bar_layout_regression_width_120() {
+    use crate::tui::oil::components::StatusBar;
+
+    let bar = StatusBar::new()
+        .mode(ChatMode::Normal)
+        .model("gpt-4o")
+        .context(64000, 128000);
+    assert_snapshot!(render_node_with_planner(&bar.emergency_view(), 120, 4));
+}
+
+#[test]
+fn snapshot_status_bar_layout_regression_width_200() {
+    use crate::tui::oil::components::StatusBar;
+
+    let bar = StatusBar::new()
+        .mode(ChatMode::Normal)
+        .model("gpt-4o")
+        .context(64000, 128000);
+    assert_snapshot!(render_node_with_planner(&bar.emergency_view(), 200, 4));
+}
+
+#[test]
 fn snapshot_status_bar_normal_mode_width_80() {
     use crate::tui::oil::components::StatusBar;
 
