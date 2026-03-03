@@ -3,8 +3,8 @@
 //! Follows Elm-style architecture: Msg → update → Output.
 
 use crate::tui::oil::node::{col, row, styled, text, Node};
-use crate::tui::oil::style::Style;
-use crate::tui::oil::theme::ThemeTokens;
+use crate::tui::oil::style::{Color, Style};
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crucible_core::interaction::{
     AskBatch, AskRequest, AskResponse, EditRequest, EditResponse, InteractionRequest,
@@ -495,9 +495,9 @@ impl InteractionModal {
         term_width: usize,
         queue_size: usize,
     ) -> Node {
-        let theme = ThemeTokens::default_ref();
-        let panel_bg = theme.input_bg;
-        let border_fg = theme.border;
+        let t = crate::tui::oil::theme::active();
+        let panel_bg = t.resolve_color(t.colors.background);
+        let border_fg = t.resolve_color(t.colors.border);
 
         let (type_label, action_detail, is_write) = match &perm_request.action {
             PermAction::Bash { tokens } => ("BASH", tokens.join(" "), false),
@@ -515,7 +515,7 @@ impl InteractionModal {
             let pad = " ".repeat(term_width.saturating_sub(visible_len));
             styled(
                 format!("{content}{pad}"),
-                Style::new().bg(panel_bg).fg(theme.overlay_bright),
+                Style::new().bg(panel_bg).fg(Color::Rgb(255, 255, 255)),
             )
         };
 
@@ -544,17 +544,17 @@ impl InteractionModal {
                 let pad = " ".repeat(term_width.saturating_sub(content.len()));
                 lines.push(styled(
                     format!("{content}{pad}"),
-                    Style::new().bg(panel_bg).fg(theme.text_accent).bold(),
+                    Style::new().bg(panel_bg).fg(t.resolve_color(t.colors.primary)).bold(),
                 ));
             } else {
                 let key_part = format!("    [{}]", key);
                 let label_part = format!(" {}", label);
                 let pad = " ".repeat(term_width.saturating_sub(key_part.len() + label_part.len()));
                 lines.push(row([
-                    styled(key_part, Style::new().bg(panel_bg).fg(theme.overlay_text)),
+                    styled(key_part, Style::new().bg(panel_bg).fg(t.resolve_color(t.colors.overlay_text))),
                     styled(
                         label_part,
-                        Style::new().bg(panel_bg).fg(theme.overlay_bright),
+                        Style::new().bg(panel_bg).fg(Color::Rgb(255, 255, 255)),
                     ),
                     styled(pad, Style::new().bg(panel_bg)),
                 ]));
@@ -565,7 +565,7 @@ impl InteractionModal {
                 let pad = " ".repeat(term_width.saturating_sub(prompt.len()));
                 lines.push(styled(
                     format!("{prompt}{pad}"),
-                    Style::new().bg(panel_bg).fg(theme.text_primary),
+                    Style::new().bg(panel_bg).fg(t.resolve_color(t.colors.text)),
                 ));
             }
         }
@@ -575,13 +575,13 @@ impl InteractionModal {
             Style::new().fg(border_fg),
         ));
 
-        let key_style = theme.overlay_key(theme.error);
-        let hint_style = theme.overlay_hint();
+        let key_style = Style::new().fg(t.resolve_color(t.colors.error));
+        let hint_style = Style::new().fg(t.resolve_color(t.colors.diff_context));
 
         let footer_nodes: Vec<Node> = if self.mode == InteractionMode::TextInput {
             let mut nodes = vec![
-                styled(" PERMISSION ", theme.permission_badge()),
-                styled(format!(" {} ", type_label), theme.permission_type()),
+                styled(" PERMISSION ", Style::new().fg(t.resolve_color(t.colors.error)).bold().reverse()),
+                styled(format!(" {} ", type_label), Style::new().fg(t.resolve_color(t.colors.error)).bold()),
                 styled("  Enter", key_style),
                 styled(" send", hint_style),
             ];
@@ -594,8 +594,8 @@ impl InteractionModal {
             nodes
         } else {
             let mut nodes = vec![
-                styled(" PERMISSION ", theme.permission_badge()),
-                styled(format!(" {} ", type_label), theme.permission_type()),
+                styled(" PERMISSION ", Style::new().fg(t.resolve_color(t.colors.error)).bold().reverse()),
+                styled(format!(" {} ", type_label), Style::new().fg(t.resolve_color(t.colors.error)).bold()),
                 styled("  y/n/a", key_style),
                 styled(" options", hint_style),
                 styled("  ↑↓", key_style),
@@ -655,11 +655,11 @@ impl InteractionModal {
         total_questions: usize,
         term_width: usize,
     ) -> Node {
-        let theme = ThemeTokens::default_ref();
-        let header_bg = theme.input_bg;
-        let footer_bg = theme.input_bg;
-        let top_border = styled("▄".repeat(term_width), Style::new().fg(theme.input_bg));
-        let bottom_border = styled("▀".repeat(term_width), Style::new().fg(theme.input_bg));
+        let t = crate::tui::oil::theme::active();
+        let header_bg = t.resolve_color(t.colors.background);
+        let footer_bg = t.resolve_color(t.colors.background);
+        let top_border = styled("▄".repeat(term_width), Style::new().fg(t.resolve_color(t.colors.background)));
+        let bottom_border = styled("▀".repeat(term_width), Style::new().fg(t.resolve_color(t.colors.background)));
 
         let header_text = if total_questions > 1 {
             format!(
@@ -694,9 +694,9 @@ impl InteractionModal {
                 "   "
             };
             let style = if is_selected {
-                Style::new().fg(theme.text_accent).bold()
+                Style::new().fg(t.resolve_color(t.colors.primary)).bold()
             } else {
-                Style::new().fg(theme.text_primary)
+                Style::new().fg(t.resolve_color(t.colors.text))
             };
             choice_nodes.push(styled(format!("{}{}", prefix, choice), style));
         }
@@ -706,16 +706,16 @@ impl InteractionModal {
             let is_selected = self.selected == other_idx;
             let prefix = if is_selected { " > " } else { "   " };
             let style = if is_selected {
-                Style::new().fg(theme.text_accent).bold()
+                Style::new().fg(t.resolve_color(t.colors.primary)).bold()
             } else {
-                Style::new().fg(theme.text_muted).italic()
+                Style::new().fg(t.resolve_color(t.colors.text_muted)).italic()
             };
             choice_nodes.push(styled(format!("{}Other...", prefix), style));
         }
 
-        let key_style = Style::new().bg(footer_bg).fg(theme.text_accent);
-        let sep_style = Style::new().bg(footer_bg).fg(theme.text_muted);
-        let text_style = Style::new().bg(footer_bg).fg(theme.text_primary).dim();
+        let key_style = Style::new().bg(footer_bg).fg(t.resolve_color(t.colors.primary));
+        let sep_style = Style::new().bg(footer_bg).fg(t.resolve_color(t.colors.text_muted));
+        let text_style = Style::new().bg(footer_bg).fg(t.resolve_color(t.colors.text)).dim();
 
         let footer_content = row([
             styled(" ", text_style),
@@ -739,9 +739,9 @@ impl InteractionModal {
 
         if self.mode == InteractionMode::TextInput {
             let input_line = row([
-                styled("   Enter text: ", Style::new().fg(theme.text_muted)),
-                styled(&self.other_text, Style::new().fg(theme.text_primary)),
-                styled("_", Style::new().fg(theme.text_accent)),
+                styled("   Enter text: ", Style::new().fg(t.resolve_color(t.colors.text_muted))),
+                styled(&self.other_text, Style::new().fg(t.resolve_color(t.colors.text))),
+                styled("_", Style::new().fg(t.resolve_color(t.colors.primary))),
             ]);
             choice_nodes.push(input_line);
         }
@@ -808,9 +808,9 @@ impl InteractionModal {
     }
 
     fn render_show_interaction(&self, show: &ShowRequest, term_width: usize) -> Node {
-        let theme = ThemeTokens::default_ref();
-        let panel_bg = theme.input_bg;
-        let border_fg = theme.input_bg;
+        let t = crate::tui::oil::theme::active();
+        let panel_bg = t.resolve_color(t.colors.background);
+        let border_fg = t.resolve_color(t.colors.background);
 
         let title_text = show
             .title
@@ -836,18 +836,18 @@ impl InteractionModal {
             let pad = " ".repeat(term_width.saturating_sub(line.len() + 2));
             lines.push(styled(
                 format!("  {line}{pad}"),
-                Style::new().bg(panel_bg).fg(theme.text_primary),
+                Style::new().bg(panel_bg).fg(t.resolve_color(t.colors.text)),
             ));
         }
 
         lines.push(styled("▀".repeat(term_width), Style::new().fg(border_fg)));
 
-        let key_style = Style::new().fg(theme.text_accent);
-        let hint_style = Style::new().fg(theme.text_muted).dim();
+        let key_style = Style::new().fg(t.resolve_color(t.colors.primary));
+        let hint_style = Style::new().fg(t.resolve_color(t.colors.text_muted)).dim();
         let scroll_info = format!(" {}/{}", self.scroll_offset + 1, content_lines.len().max(1));
 
         lines.push(row([
-            styled(" SHOW ", theme.permission_badge()),
+            styled(" SHOW ", Style::new().fg(t.resolve_color(t.colors.error)).bold().reverse()),
             styled(scroll_info, hint_style),
             styled("  j/k", key_style),
             styled(" scroll", hint_style),
@@ -930,9 +930,9 @@ impl InteractionModal {
     }
 
     fn render_popup_interaction(&self, popup: &PopupRequest, term_width: usize) -> Node {
-        let theme = ThemeTokens::default_ref();
-        let panel_bg = theme.input_bg;
-        let border_fg = theme.input_bg;
+        let t = crate::tui::oil::theme::active();
+        let panel_bg = t.resolve_color(t.colors.background);
+        let border_fg = t.resolve_color(t.colors.background);
 
         let title_text = format!(" {} ", popup.title);
         let title_pad = " ".repeat(term_width.saturating_sub(title_text.len()));
@@ -946,14 +946,14 @@ impl InteractionModal {
             let is_selected = i == self.selected;
             let prefix = if is_selected { " > " } else { "   " };
             let label_style = if is_selected {
-                Style::new().fg(theme.text_accent).bold()
+                Style::new().fg(t.resolve_color(t.colors.primary)).bold()
             } else {
-                Style::new().fg(theme.text_primary)
+                Style::new().fg(t.resolve_color(t.colors.text))
             };
             if let Some(ref desc) = entry.description {
                 choice_nodes.push(row([
                     styled(format!("{prefix}{}", entry.label), label_style),
-                    styled(format!("  {desc}"), Style::new().fg(theme.text_muted).dim()),
+                    styled(format!("  {desc}"), Style::new().fg(t.resolve_color(t.colors.text_muted)).dim()),
                 ]));
             } else {
                 choice_nodes.push(styled(format!("{prefix}{}", entry.label), label_style));
@@ -965,23 +965,23 @@ impl InteractionModal {
             let is_selected = self.selected == other_idx;
             let prefix = if is_selected { " > " } else { "   " };
             let style = if is_selected {
-                Style::new().fg(theme.text_accent).bold()
+                Style::new().fg(t.resolve_color(t.colors.primary)).bold()
             } else {
-                Style::new().fg(theme.text_muted).italic()
+                Style::new().fg(t.resolve_color(t.colors.text_muted)).italic()
             };
             choice_nodes.push(styled(format!("{prefix}Other..."), style));
         }
 
         if self.mode == InteractionMode::TextInput {
             choice_nodes.push(row([
-                styled("   Enter text: ", Style::new().fg(theme.text_muted)),
-                styled(&self.other_text, Style::new().fg(theme.text_primary)),
-                styled("_", Style::new().fg(theme.text_accent)),
+                styled("   Enter text: ", Style::new().fg(t.resolve_color(t.colors.text_muted))),
+                styled(&self.other_text, Style::new().fg(t.resolve_color(t.colors.text))),
+                styled("_", Style::new().fg(t.resolve_color(t.colors.primary))),
             ]));
         }
 
-        let key_style = Style::new().fg(theme.text_accent);
-        let hint_style = Style::new().fg(theme.text_muted).dim();
+        let key_style = Style::new().fg(t.resolve_color(t.colors.primary));
+        let hint_style = Style::new().fg(t.resolve_color(t.colors.text_muted)).dim();
 
         col([
             text(""),
@@ -990,7 +990,7 @@ impl InteractionModal {
             col(choice_nodes),
             styled("▀".repeat(term_width), Style::new().fg(border_fg)),
             row([
-                styled(" POPUP ", theme.permission_badge()),
+                styled(" POPUP ", Style::new().fg(t.resolve_color(t.colors.error)).bold().reverse()),
                 styled("  ↑/↓", key_style),
                 styled(" navigate", hint_style),
                 styled("  Enter", key_style),
@@ -1139,9 +1139,9 @@ impl InteractionModal {
     }
 
     fn render_edit_interaction(&self, edit: &EditRequest, term_width: usize) -> Node {
-        let theme = ThemeTokens::default_ref();
-        let panel_bg = theme.input_bg;
-        let border_fg = theme.input_bg;
+        let t = crate::tui::oil::theme::active();
+        let panel_bg = t.resolve_color(t.colors.background);
+        let border_fg = t.resolve_color(t.colors.background);
 
         let format_label = match edit.format {
             crucible_core::interaction::ArtifactFormat::Markdown => "MD",
@@ -1187,28 +1187,28 @@ impl InteractionModal {
                 content_nodes.push(row([
                     styled(
                         line_num,
-                        Style::new().bg(panel_bg).fg(theme.text_muted).dim(),
+                        Style::new().bg(panel_bg).fg(t.resolve_color(t.colors.text_muted)).dim(),
                     ),
-                    styled(before, Style::new().bg(panel_bg).fg(theme.text_primary)),
+                    styled(before, Style::new().bg(panel_bg).fg(t.resolve_color(t.colors.text))),
                     styled(
                         cursor_char,
-                        Style::new().bg(theme.text_accent).fg(theme.input_bg).bold(),
+                        Style::new().bg(t.resolve_color(t.colors.primary)).fg(panel_bg).bold(),
                     ),
-                    styled(after, Style::new().bg(panel_bg).fg(theme.text_primary)),
+                    styled(after, Style::new().bg(panel_bg).fg(t.resolve_color(t.colors.text))),
                 ]));
             } else {
                 content_nodes.push(row([
                     styled(
                         line_num,
-                        Style::new().bg(panel_bg).fg(theme.text_muted).dim(),
+                        Style::new().bg(panel_bg).fg(t.resolve_color(t.colors.text_muted)).dim(),
                     ),
-                    styled(line, Style::new().bg(panel_bg).fg(theme.text_primary)),
+                    styled(line, Style::new().bg(panel_bg).fg(t.resolve_color(t.colors.text))),
                 ]));
             }
         }
 
-        let key_style = Style::new().fg(theme.text_accent);
-        let hint_style = Style::new().fg(theme.text_muted).dim();
+        let key_style = Style::new().fg(t.resolve_color(t.colors.primary));
+        let hint_style = Style::new().fg(t.resolve_color(t.colors.text_muted)).dim();
         let mode_label = match self.mode {
             InteractionMode::Selecting => "NORMAL",
             InteractionMode::TextInput => "INSERT",
@@ -1216,7 +1216,7 @@ impl InteractionModal {
 
         let footer = if self.mode == InteractionMode::TextInput {
             row([
-                styled(format!(" {mode_label} "), theme.permission_badge()),
+                styled(format!(" {mode_label} "), Style::new().fg(t.resolve_color(t.colors.error)).bold().reverse()),
                 styled("  Ctrl+S", key_style),
                 styled(" save", hint_style),
                 styled("  Esc", key_style),
@@ -1224,7 +1224,7 @@ impl InteractionModal {
             ])
         } else {
             row([
-                styled(format!(" {mode_label} "), theme.permission_badge()),
+                styled(format!(" {mode_label} "), Style::new().fg(t.resolve_color(t.colors.error)).bold().reverse()),
                 styled("  i", key_style),
                 styled(" insert", hint_style),
                 styled("  Ctrl+S", key_style),
@@ -1400,9 +1400,9 @@ impl InteractionModal {
     }
 
     fn render_panel_interaction(&self, panel: &InteractivePanel, term_width: usize) -> Node {
-        let theme = ThemeTokens::default_ref();
-        let panel_bg = theme.input_bg;
-        let border_fg = theme.input_bg;
+        let t = crate::tui::oil::theme::active();
+        let panel_bg = t.resolve_color(t.colors.background);
+        let border_fg = t.resolve_color(t.colors.background);
 
         let header_text = format!(" {} ", panel.header);
         let header_pad = " ".repeat(term_width.saturating_sub(header_text.len()));
@@ -1420,9 +1420,9 @@ impl InteractionModal {
         if panel.hints.filterable {
             let filter_text = state.map(|s| s.filter.as_str()).unwrap_or("");
             let filter_style = if self.mode == InteractionMode::TextInput {
-                Style::new().fg(theme.text_primary)
+                Style::new().fg(t.resolve_color(t.colors.text))
             } else {
-                Style::new().fg(theme.text_muted)
+                Style::new().fg(t.resolve_color(t.colors.text_muted))
             };
             let cursor_mark = if self.mode == InteractionMode::TextInput {
                 "_"
@@ -1430,9 +1430,9 @@ impl InteractionModal {
                 ""
             };
             item_nodes.push(row([
-                styled("  / ", Style::new().fg(theme.text_accent)),
+                styled("  / ", Style::new().fg(t.resolve_color(t.colors.primary))),
                 styled(filter_text, filter_style),
-                styled(cursor_mark, Style::new().fg(theme.text_accent)),
+                styled(cursor_mark, Style::new().fg(t.resolve_color(t.colors.primary))),
             ]));
         }
 
@@ -1454,15 +1454,15 @@ impl InteractionModal {
                 };
 
                 let label_style = if is_cursor {
-                    Style::new().fg(theme.text_accent).bold()
+                    Style::new().fg(t.resolve_color(t.colors.primary)).bold()
                 } else {
-                    Style::new().fg(theme.text_primary)
+                    Style::new().fg(t.resolve_color(t.colors.text))
                 };
 
                 if let Some(ref desc) = item.description {
                     item_nodes.push(row([
                         styled(format!("{prefix}{}", item.label), label_style),
-                        styled(format!("  {desc}"), Style::new().fg(theme.text_muted).dim()),
+                        styled(format!("  {desc}"), Style::new().fg(t.resolve_color(t.colors.text_muted)).dim()),
                     ]));
                 } else {
                     item_nodes.push(styled(format!("{prefix}{}", item.label), label_style));
@@ -1475,25 +1475,25 @@ impl InteractionModal {
             let is_cursor = cursor == other_cursor;
             let prefix = if is_cursor { " >  " } else { "    " };
             let style = if is_cursor {
-                Style::new().fg(theme.text_accent).bold()
+                Style::new().fg(t.resolve_color(t.colors.primary)).bold()
             } else {
-                Style::new().fg(theme.text_muted).italic()
+                Style::new().fg(t.resolve_color(t.colors.text_muted)).italic()
             };
             item_nodes.push(styled(format!("{prefix}Other..."), style));
 
             if self.mode == InteractionMode::TextInput && !panel.hints.filterable {
                 item_nodes.push(row([
-                    styled("     Enter text: ", Style::new().fg(theme.text_muted)),
-                    styled(&self.other_text, Style::new().fg(theme.text_primary)),
-                    styled("_", Style::new().fg(theme.text_accent)),
+                    styled("     Enter text: ", Style::new().fg(t.resolve_color(t.colors.text_muted))),
+                    styled(&self.other_text, Style::new().fg(t.resolve_color(t.colors.text))),
+                    styled("_", Style::new().fg(t.resolve_color(t.colors.primary))),
                 ]));
             }
         }
 
-        let key_style = Style::new().fg(theme.text_accent);
-        let hint_style = Style::new().fg(theme.text_muted).dim();
+        let key_style = Style::new().fg(t.resolve_color(t.colors.primary));
+        let hint_style = Style::new().fg(t.resolve_color(t.colors.text_muted)).dim();
 
-        let mut footer_nodes = vec![styled(" PANEL ", theme.permission_badge())];
+        let mut footer_nodes = vec![styled(" PANEL ", Style::new().fg(t.resolve_color(t.colors.error)).bold().reverse())];
         footer_nodes.extend([styled("  ↑/↓", key_style), styled(" move", hint_style)]);
         if panel.hints.multi_select {
             footer_nodes.extend([styled("  Space", key_style), styled(" toggle", hint_style)]);
