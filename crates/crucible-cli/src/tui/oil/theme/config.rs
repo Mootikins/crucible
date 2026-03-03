@@ -9,127 +9,72 @@ pub use crucible_lua::theme::{
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tests — verify re-exported types match ThemeTokens
+// Tests — verify ThemeConfig defaults and re-exported types
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::oil::theme::ThemeTokens;
     use crucible_oil::style::{AdaptiveColor, Color};
 
     #[test]
-    fn default_dark_core_colors_match_theme_tokens() {
+    fn default_dark_core_colors_are_set() {
         let config = ThemeConfig::default_dark();
-        let tokens = ThemeTokens::default_tokens();
 
         // Text colors
-        assert_eq!(
-            config.resolve_color(config.colors.text),
-            tokens.text_primary
-        );
-        assert_eq!(
-            config.resolve_color(config.colors.text_muted),
-            tokens.text_muted
-        );
-        assert_eq!(
-            config.resolve_color(config.colors.text_emphasized),
-            tokens.text_accent
-        );
+        assert_eq!(config.resolve_color(config.colors.text), Color::White);
+        assert_eq!(config.resolve_color(config.colors.text_muted), Color::DarkGray);
+        assert_eq!(config.resolve_color(config.colors.text_emphasized), Color::Cyan);
 
         // Background
-        assert_eq!(
-            config.resolve_color(config.colors.background),
-            tokens.input_bg
-        );
-        assert_eq!(
-            config.resolve_color(config.colors.background_panel),
-            tokens.code_bg
-        );
+        assert_eq!(config.resolve_color(config.colors.background), Color::Rgb(40, 44, 52));
+        assert_eq!(config.resolve_color(config.colors.background_panel), Color::Rgb(35, 39, 47));
     }
 
     #[test]
-    fn default_dark_semantic_colors_match_theme_tokens() {
+    fn default_dark_semantic_colors_are_set() {
         let config = ThemeConfig::default_dark();
-        let tokens = ThemeTokens::default_tokens();
 
-        assert_eq!(config.resolve_color(config.colors.error), tokens.error);
-        assert_eq!(config.resolve_color(config.colors.warning), tokens.warning);
-        assert_eq!(config.resolve_color(config.colors.success), tokens.success);
-        assert_eq!(config.resolve_color(config.colors.info), tokens.info);
+        assert_eq!(config.resolve_color(config.colors.error), Color::Rgb(247, 118, 142));
+        assert_eq!(config.resolve_color(config.colors.warning), Color::Rgb(224, 175, 104));
+        assert_eq!(config.resolve_color(config.colors.success), Color::Rgb(158, 206, 106));
+        assert_eq!(config.resolve_color(config.colors.info), Color::Rgb(0, 206, 209));
     }
 
     #[test]
-    fn default_dark_chat_role_colors_match_theme_tokens() {
+    fn default_dark_chat_role_colors_are_set() {
         let config = ThemeConfig::default_dark();
-        let tokens = ThemeTokens::default_tokens();
 
-        assert_eq!(
-            config.resolve_color(config.colors.user_message),
-            tokens.role_user
-        );
-        assert_eq!(
-            config.resolve_color(config.colors.assistant_message),
-            tokens.role_assistant
-        );
-        assert_eq!(
-            config.resolve_color(config.colors.system_message),
-            tokens.role_system
-        );
+        assert_eq!(config.resolve_color(config.colors.user_message), Color::Green);
+        assert_eq!(config.resolve_color(config.colors.assistant_message), Color::Cyan);
+        assert_eq!(config.resolve_color(config.colors.system_message), Color::Yellow);
     }
 
     #[test]
-    fn default_dark_mode_colors_match_theme_tokens() {
+    fn default_dark_mode_colors_are_set() {
         let config = ThemeConfig::default_dark();
-        let tokens = ThemeTokens::default_tokens();
 
-        assert_eq!(
-            config.resolve_color(config.colors.mode_normal),
-            tokens.mode_normal
-        );
-        assert_eq!(
-            config.resolve_color(config.colors.mode_plan),
-            tokens.mode_plan
-        );
-        assert_eq!(
-            config.resolve_color(config.colors.mode_auto),
-            tokens.mode_auto
-        );
+        assert_eq!(config.resolve_color(config.colors.mode_normal), Color::Green);
+        assert_eq!(config.resolve_color(config.colors.mode_plan), Color::Blue);
+        assert_eq!(config.resolve_color(config.colors.mode_auto), Color::Yellow);
     }
 
     #[test]
-    fn default_dark_diff_colors_match_theme_tokens() {
+    fn default_dark_diff_colors_are_set() {
         let config = ThemeConfig::default_dark();
-        let tokens = ThemeTokens::default_tokens();
 
-        assert_eq!(
-            config.resolve_color(config.colors.diff_added),
-            tokens.diff_add
-        );
-        assert_eq!(
-            config.resolve_color(config.colors.diff_removed),
-            tokens.diff_del
-        );
-        assert_eq!(
-            config.resolve_color(config.colors.diff_context),
-            tokens.diff_ctx
-        );
+        assert_eq!(config.resolve_color(config.colors.diff_added), Color::Rgb(158, 206, 106));
+        assert_eq!(config.resolve_color(config.colors.diff_removed), Color::Rgb(247, 118, 142));
+        assert_eq!(config.resolve_color(config.colors.diff_context), Color::Rgb(100, 110, 130));
     }
 
     #[test]
-    fn default_dark_overlay_colors_match_theme_tokens() {
+    fn default_dark_overlay_colors_are_set() {
         let config = ThemeConfig::default_dark();
-        let tokens = ThemeTokens::default_tokens();
 
-        assert_eq!(
-            config.resolve_color(config.colors.popup_bg),
-            tokens.popup_bg
-        );
-        assert_eq!(
-            config.resolve_color(config.colors.popup_selected_bg),
-            tokens.popup_selected_bg
-        );
-        assert_eq!(config.resolve_color(config.colors.border), tokens.border);
+        assert_eq!(config.resolve_color(config.colors.popup_bg), Color::Rgb(30, 34, 42));
+        assert_eq!(config.resolve_color(config.colors.popup_selected_bg), Color::Rgb(50, 56, 68));
+        assert_eq!(config.resolve_color(config.colors.border), Color::Rgb(40, 44, 52));
     }
 
     #[test]
