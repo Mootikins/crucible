@@ -142,3 +142,34 @@ mod ansi_with_codes_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod styled_render_tests {
+    use crucible_oil::proptest_strategies::arb_style;
+    use crucible_oil::{render_to_string, text};
+    use super::*;
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+
+        #[test]
+        fn prop_styled_text_ansi_invisible_to_visible_width(
+            s in "[a-zA-Z0-9]{1,30}",
+            style in arb_style()
+        ) {
+            let plain_node = text(s.clone());
+            let styled_node = text(s).with_style(style);
+            let plain_output = render_to_string(&plain_node, 200);
+            let styled_output = render_to_string(&styled_node, 200);
+            for (plain_line, styled_line) in plain_output.split("\r\n").zip(styled_output.split("\r\n")) {
+                let plain_vw = visible_width(plain_line);
+                let styled_vw = visible_width(styled_line);
+                prop_assert_eq!(
+                    plain_vw, styled_vw,
+                    "ANSI style codes should not affect visible_width: plain={}, styled={}",
+                    plain_vw, styled_vw
+                );
+            }
+        }
+    }
+}
