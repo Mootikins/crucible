@@ -88,6 +88,7 @@ mod views;
 mod ws;
 
 pub mod config;
+pub mod theme;
 
 pub use annotations::{
     DiscoveredCommand, DiscoveredHandler, DiscoveredPlugin, DiscoveredService, DiscoveredTool,
