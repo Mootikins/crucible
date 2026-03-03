@@ -134,3 +134,23 @@ mod column_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod styled_tests {
+    use super::*;
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+
+        #[test]
+        fn prop_styled_node_renders_within_width(
+            node in arb_visible_node(),
+            style in arb_style(),
+            width in arb_width()
+        ) {
+            let styled = node.with_style(style);
+            let output = render_to_string(&styled, width);
+            assert_render_fits_width(&output, width)?;
+        }
+    }
+}
