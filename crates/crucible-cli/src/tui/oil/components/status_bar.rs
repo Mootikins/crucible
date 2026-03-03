@@ -229,6 +229,30 @@ mod tests {
         assert_ne!(plan.mode_style().bg, auto.mode_style().bg);
     }
 
+    #[test]
+    fn emergency_view_spacer_fills_width() {
+        // Test that spacer() in row layout expands to fill remaining width
+        let bar = StatusBar::new()
+            .mode(ChatMode::Normal)
+            .model("gpt-4o")
+            .context(4000, 8000);
+        let plain = render_to_plain_text(&bar.emergency_view(), 80);
+        // The status bar should use the full 80 character width
+        // Mode label + space + model + spacer + context should fill 80 chars
+        assert_eq!(plain.len(), 80, "Status bar should fill full width at 80 chars");
+    }
+    
+    #[test]
+    fn emergency_view_spacer_fills_width_at_120() {
+        // Test that spacer() expands correctly at different widths
+        let bar = StatusBar::new()
+            .mode(ChatMode::Normal)
+            .model("gpt-4o")
+            .context(4000, 8000);
+        let plain = render_to_plain_text(&bar.emergency_view(), 120);
+        assert_eq!(plain.len(), 120, "Status bar should fill full width at 120 chars");
+    }
+
     mod config_driven {
         use super::*;
         use crucible_lua::statusline::{

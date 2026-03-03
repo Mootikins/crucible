@@ -218,6 +218,38 @@ impl LayoutEngine {
                 return self.build_node(node, available_width);
             }
 
+            Node::Box(boxnode) if matches!(boxnode.size, OilSize::Flex(_)) => {
+                // Flex boxes in rows need auto() width so Taffy can distribute remaining space.
+                // build_box() always uses length(available_width) for Flex which is wrong here.
+                let weight = match boxnode.size {
+                    OilSize::Flex(w) => w as f32,
+                    _ => unreachable!(),
+                };
+                // Build children content-sized too (spacer usually has no children)
+                let child_ids: Vec<NodeId> = boxnode
+                    .children
+                    .iter()
+                    .map(|c| self.build_node_content_sized(c, available_width))
+                    .collect();
+                let node_id = self.tree
+                    .new_with_children(
+                        Style {
+                            display: Display::Flex,
+                            flex_direction: FlexDirection::Row,
+                            flex_grow: weight,
+                            size: Size {
+                                width: auto(),
+                                height: auto(),
+                            },
+                            ..Default::default()
+                        },
+                        &child_ids,
+                    )
+                    .unwrap();
+                self.node_map.insert(id, node_id);
+                return node_id;
+            }
+
             // For all other node types, delegate to normal build
             _ => return self.build_node(node, available_width),
         };
