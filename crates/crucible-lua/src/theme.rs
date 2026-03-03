@@ -34,6 +34,8 @@ pub struct ThemeColors {
     pub text: AdaptiveColor,
     /// Muted/secondary text color
     pub text_muted: AdaptiveColor,
+    /// Dimmed text (timestamps, metadata — less prominent than muted)
+    pub text_dim: AdaptiveColor,
     /// Emphasized text color (accents, highlights)
     pub text_emphasized: AdaptiveColor,
 
@@ -94,6 +96,28 @@ pub struct ThemeColors {
     pub toast_bg: AdaptiveColor,
     /// Overlay/popup primary text color
     pub overlay_text: AdaptiveColor,
+
+    // ── Markdown rendering ────────────────────────────────────────────
+    /// Inline code foreground
+    pub code_inline: AdaptiveColor,
+    /// Code block fallback (unsupported language) foreground
+    pub code_fallback: AdaptiveColor,
+    /// Fence marker (``` delimiters) foreground
+    pub fence_marker: AdaptiveColor,
+    /// Bullet prefix foreground
+    pub bullet_prefix: AdaptiveColor,
+    /// Blockquote prefix (│) foreground
+    pub blockquote_prefix: AdaptiveColor,
+    /// Blockquote text foreground
+    pub blockquote_text: AdaptiveColor,
+    /// Link foreground
+    pub link: AdaptiveColor,
+    /// Heading level 1 foreground
+    pub heading_1: AdaptiveColor,
+    /// Heading level 2 foreground
+    pub heading_2: AdaptiveColor,
+    /// Heading level 3 foreground
+    pub heading_3: AdaptiveColor,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -323,6 +347,7 @@ impl ThemeConfig {
                 background_panel: AdaptiveColor::from_single(Rgb(35, 39, 47)), // code_bg
                 text: AdaptiveColor::from_single(White),   // text_primary
                 text_muted: AdaptiveColor::from_single(DarkGray), // text_muted
+                text_dim: AdaptiveColor::from_single(Gray),           // text_dim
                 text_emphasized: AdaptiveColor::from_single(Cyan), // text_accent
 
                 // Semantic — exact ThemeTokens values
@@ -359,6 +384,18 @@ impl ThemeConfig {
                 popup_selected_bg: AdaptiveColor::from_single(Rgb(50, 56, 68)), // popup_selected_bg
                 toast_bg: AdaptiveColor::from_single(Rgb(45, 40, 55)), // thinking_bg
                 overlay_text: AdaptiveColor::from_single(Rgb(192, 202, 245)),
+
+                // Markdown rendering — exact ThemeTokens values
+                code_inline: AdaptiveColor::from_single(Yellow),
+                code_fallback: AdaptiveColor::from_single(Green),
+                fence_marker: AdaptiveColor::from_single(DarkGray),
+                bullet_prefix: AdaptiveColor::from_single(DarkGray),
+                blockquote_prefix: AdaptiveColor::from_single(DarkGray),
+                blockquote_text: AdaptiveColor::from_single(Gray),
+                link: AdaptiveColor::from_single(Blue),
+                heading_1: AdaptiveColor::from_single(Cyan),
+                heading_2: AdaptiveColor::from_single(Blue),
+                heading_3: AdaptiveColor::from_single(Magenta),
             },
             decorations: ThemeDecorations {
                 border_style: BorderStyle::Rounded,
@@ -700,6 +737,7 @@ fn parse_colors_into(table: &Table, colors: &mut ThemeColors) {
     parse_color_field!(background_panel);
     parse_color_field!(text);
     parse_color_field!(text_muted);
+    parse_color_field!(text_dim);
     parse_color_field!(text_emphasized);
     parse_color_field!(error);
     parse_color_field!(warning);
@@ -724,6 +762,16 @@ fn parse_colors_into(table: &Table, colors: &mut ThemeColors) {
     parse_color_field!(popup_selected_bg);
     parse_color_field!(toast_bg);
     parse_color_field!(overlay_text);
+    parse_color_field!(code_inline);
+    parse_color_field!(code_fallback);
+    parse_color_field!(fence_marker);
+    parse_color_field!(bullet_prefix);
+    parse_color_field!(blockquote_prefix);
+    parse_color_field!(blockquote_text);
+    parse_color_field!(link);
+    parse_color_field!(heading_1);
+    parse_color_field!(heading_2);
+    parse_color_field!(heading_3);
 }
 
 fn parse_decorations_into(table: &Table, dec: &mut ThemeDecorations) {
