@@ -18,7 +18,6 @@ use crate::tui::oil::node::*;
 use crate::tui::oil::render_state::RenderState;
 #[allow(unused_imports)] // WIP: Color, Style not yet used
 use crate::tui::oil::style::{Color, Gap, Padding, Style};
-use crate::tui::oil::theme::ThemeTokens;
 use crate::tui::oil::utils::wrap_chars;
 use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
 use chrono::Local;
@@ -2250,11 +2249,12 @@ impl OilChatApp {
         // is currently displaying a spinner (e.g. after tools complete, before
         // next TextDelta or StreamComplete).
         if self.container_list.needs_turn_spinner() {
+            let t = crate::tui::oil::theme::active();
             nodes.push(
                 row([
                     text(" "),
                     spinner(None, self.spinner_frame)
-                        .with_style(ThemeTokens::default_ref().spinner_style()),
+                        .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
                 ])
                 .with_margin(Padding {
                     top: 1,

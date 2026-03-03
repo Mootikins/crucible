@@ -30,6 +30,10 @@ pub struct ThemeColors {
     pub background: AdaptiveColor,
     /// Panel/block background (code blocks, thinking blocks)
     pub background_panel: AdaptiveColor,
+    /// Command mode input background (amber tint)
+    pub command_bg: AdaptiveColor,
+    /// Shell mode input background (red tint)
+    pub shell_bg: AdaptiveColor,
     /// Primary text color
     pub text: AdaptiveColor,
     /// Muted/secondary text color
@@ -96,6 +100,8 @@ pub struct ThemeColors {
     pub toast_bg: AdaptiveColor,
     /// Overlay/popup primary text color
     pub overlay_text: AdaptiveColor,
+    /// Overlay bright text (action details, pure white)
+    pub overlay_bright: AdaptiveColor,
 
     // ── Markdown rendering ────────────────────────────────────────────
     /// Inline code foreground
@@ -345,6 +351,8 @@ impl ThemeConfig {
                 secondary: AdaptiveColor::from_single(Magenta), // role_tool
                 background: AdaptiveColor::from_single(Rgb(40, 44, 52)), // input_bg
                 background_panel: AdaptiveColor::from_single(Rgb(35, 39, 47)), // code_bg
+                command_bg: AdaptiveColor::from_single(Rgb(60, 50, 20)), // command mode bg
+                shell_bg: AdaptiveColor::from_single(Rgb(60, 30, 30)), // shell mode bg
                 text: AdaptiveColor::from_single(White),   // text_primary
                 text_muted: AdaptiveColor::from_single(DarkGray), // text_muted
                 text_dim: AdaptiveColor::from_single(Gray),           // text_dim
@@ -384,6 +392,7 @@ impl ThemeConfig {
                 popup_selected_bg: AdaptiveColor::from_single(Rgb(50, 56, 68)), // popup_selected_bg
                 toast_bg: AdaptiveColor::from_single(Rgb(45, 40, 55)), // thinking_bg
                 overlay_text: AdaptiveColor::from_single(Rgb(192, 202, 245)),
+                overlay_bright: AdaptiveColor::from_single(Rgb(255, 255, 255)),
 
                 // Markdown rendering — exact ThemeTokens values
                 code_inline: AdaptiveColor::from_single(Yellow),
@@ -735,6 +744,8 @@ fn parse_colors_into(table: &Table, colors: &mut ThemeColors) {
     parse_color_field!(secondary);
     parse_color_field!(background);
     parse_color_field!(background_panel);
+    parse_color_field!(command_bg);
+    parse_color_field!(shell_bg);
     parse_color_field!(text);
     parse_color_field!(text_muted);
     parse_color_field!(text_dim);
@@ -762,6 +773,7 @@ fn parse_colors_into(table: &Table, colors: &mut ThemeColors) {
     parse_color_field!(popup_selected_bg);
     parse_color_field!(toast_bg);
     parse_color_field!(overlay_text);
+    parse_color_field!(overlay_bright);
     parse_color_field!(code_inline);
     parse_color_field!(code_fallback);
     parse_color_field!(fence_marker);

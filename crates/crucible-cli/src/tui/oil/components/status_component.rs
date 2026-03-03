@@ -4,7 +4,8 @@ use crate::tui::oil::chat_app::ChatMode;
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::status_bar::{NotificationToastKind, StatusBar};
 use crate::tui::oil::node::{col, styled, Node};
-use crate::tui::oil::theme::ThemeTokens;
+use crate::tui::oil::style::Style;
+use crate::tui::oil::theme;
 use crate::tui::oil::ViewContext;
 
 /// View-only component composing error display + [`StatusBar`].
@@ -75,7 +76,10 @@ impl Component for StatusComponent<'_> {
         let error_node = if let Some(err) = self.error {
             styled(
                 format!("Error: {}", err),
-                ThemeTokens::default_ref().error_style(),
+                {
+                    let t = theme::active();
+                    Style::new().fg(t.resolve_color(t.colors.error)).bold()
+                },
             )
         } else {
             Node::Empty

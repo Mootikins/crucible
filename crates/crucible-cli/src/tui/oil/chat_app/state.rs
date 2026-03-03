@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 
 use crate::tui::oil::style::Color;
-use crate::tui::oil::theme::ThemeTokens;
+use crate::tui::oil::theme;
 
 #[derive(Debug, Clone)]
 pub enum ChatItem {
@@ -79,11 +79,11 @@ pub enum InputMode {
 
 impl InputMode {
     pub fn bg_color(&self) -> Color {
-        let theme = ThemeTokens::default_ref();
+        let t = theme::active();
         match self {
-            InputMode::Normal => theme.input_bg,
-            InputMode::Command => theme.command_bg,
-            InputMode::Shell => theme.shell_bg,
+            InputMode::Normal => t.resolve_color(t.colors.background),
+            InputMode::Command => t.resolve_color(t.colors.command_bg),
+            InputMode::Shell => t.resolve_color(t.colors.shell_bg),
         }
     }
 

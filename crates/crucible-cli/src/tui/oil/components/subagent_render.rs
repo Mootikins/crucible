@@ -5,7 +5,7 @@
 
 use crate::tui::oil::node::{col, row, scrollback, styled, text, Node, BRAILLE_SPINNER_FRAMES};
 use crate::tui::oil::style::Style;
-use crate::tui::oil::theme::ThemeTokens;
+use crate::tui::oil::theme;
 use crate::tui::oil::utils::truncate_first_line;
 use crate::tui::oil::viewport_cache::{CachedSubagent, SubagentStatus};
 use std::time::Duration;
@@ -14,14 +14,14 @@ use super::tool_render::format_elapsed;
 
 /// Render a subagent with status indicator and prompt preview.
 pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize) -> Node {
-    let theme = ThemeTokens::default_ref();
+    let t = theme::active();
     let (icon, icon_style) = match subagent.status {
         SubagentStatus::Running => {
             let frame = BRAILLE_SPINNER_FRAMES[spinner_frame % BRAILLE_SPINNER_FRAMES.len()];
-            (format!(" {} ", frame), Style::new().fg(theme.text_accent))
+            (format!(" {} ", frame), Style::new().fg(t.resolve_color(t.colors.primary)))
         }
-        SubagentStatus::Completed => (" ✓ ".to_string(), Style::new().fg(theme.success)),
-        SubagentStatus::Failed => (" ✗ ".to_string(), Style::new().fg(theme.error)),
+        SubagentStatus::Completed => (" ✓ ".to_string(), Style::new().fg(t.resolve_color(t.colors.success))),
+        SubagentStatus::Failed => (" ✗ ".to_string(), Style::new().fg(t.resolve_color(t.colors.error))),
     };
 
     let prompt_preview = truncate_first_line(&subagent.prompt, 60, true);
@@ -50,15 +50,15 @@ pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize) -> Node 
     };
 
     let status_style = match subagent.status {
-        SubagentStatus::Running => theme.dim(),
-        SubagentStatus::Completed => theme.muted(),
-        SubagentStatus::Failed => theme.error_style(),
+        SubagentStatus::Running => Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+        SubagentStatus::Completed => Style::new().fg(t.resolve_color(t.colors.text_muted)),
+        SubagentStatus::Failed => Style::new().fg(t.resolve_color(t.colors.error)).bold(),
     };
 
     let header = row([
         styled(icon, icon_style),
-        styled(label_with_target, Style::new().fg(theme.text_primary)),
-        styled(format!(" {}", prompt_preview), theme.muted()),
+        styled(label_with_target, Style::new().fg(t.resolve_color(t.colors.text))),
+        styled(format!(" {}", prompt_preview), Style::new().fg(t.resolve_color(t.colors.text_muted))),
         styled(status_text, status_style),
     ]);
 
