@@ -812,3 +812,80 @@ mod markdown_block_spacing_properties {
         }
     }
 }
+
+mod cli_invariants {
+    use super::super::generators::arb_short_text;
+    use crate::tui::oil::app::App;
+    use crate::tui::oil::chat_app::{ChatMode, OilChatApp};
+    use crate::tui::oil::focus::FocusContext;
+    use crate::tui::oil::render::render_to_string;
+    use crate::tui::ViewContext;
+    use proptest::prelude::*;
+
+    fn arb_chat_mode() -> impl Strategy<Value = ChatMode> {
+        prop_oneof![
+            Just(ChatMode::Normal),
+            Just(ChatMode::Plan),
+            Just(ChatMode::Auto),
+        ]
+    }
+
+    fn render_app(app: &OilChatApp) -> String {
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let node = app.view(&ctx);
+        render_to_string(&node, 80)
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        /// Switching to the same mode twice produces identical observable state.
+        #[test]
+        fn prop_mode_switch_to_same_is_idempotent(
+            text in arb_short_text(),
+            mode in arb_chat_mode(),
+        ) {
+            let mut app = OilChatApp::default();
+            app.set_input_content(&text);
+
+            // Switch to mode M
+            app.set_mode(mode);
+            let rendered_once = render_app(&app);
+
+            // Switch to mode M again
+            app.set_mode(mode);
+            let rendered_twice = render_app(&app);
+
+            prop_assert_eq!(
+                rendered_once, rendered_twice,
+                "Setting the same mode twice should produce identical renders"
+            );
+        }
+
+        /// Text in the input buffer survives mode changes.
+        #[test]
+        fn prop_input_text_preserved_through_mode_switch(
+            text in arb_short_text(),
+            mode in arb_chat_mode(),
+        ) {
+            let mut app = OilChatApp::default();
+            app.set_input_content(&text);
+
+            // Verify text is set
+            let before = app.input_content().to_string();
+            prop_assert_eq!(&before, &text, "Input should match before mode switch");
+
+            // Switch mode
+            app.set_mode(mode);
+
+            // Verify text preserved
+            let after = app.input_content().to_string();
+            prop_assert_eq!(
+                before, after,
+                "Input text '{}' should survive switching to {:?}",
+                text, mode
+            );
+        }
+    }
+}
