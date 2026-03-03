@@ -689,7 +689,7 @@ mod tests {
             label: Some("Loading".to_string()),
             style: Style::default(),
             frame: 0,
-            frames: None,
+            style_variant: None,
         });
         let result = render_to_string(&node, 80);
         assert!(result.contains("Loading"));
@@ -702,7 +702,7 @@ mod tests {
             label: None,
             style: Style::default(),
             frame: 1,
-            frames: None,
+            style_variant: None,
         });
         let result = render_to_string(&node, 80);
         assert_eq!(result, "◓");

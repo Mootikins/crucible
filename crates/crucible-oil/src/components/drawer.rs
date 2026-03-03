@@ -45,6 +45,8 @@ pub struct Drawer {
     pub border_color: Color,
     pub bg_color: Color,
     pub dim_color: Color,
+    pub border_top: char,
+    pub border_bottom: char,
 }
 
 impl Drawer {
@@ -59,6 +61,8 @@ impl Drawer {
             border_color: Color::Rgb(40, 44, 52),
             bg_color: Color::Rgb(40, 44, 52),
             dim_color: Color::Rgb(100, 110, 130),
+            border_top: '▄',
+            border_bottom: '▀',
         }
     }
 
@@ -111,13 +115,27 @@ impl Drawer {
         self
     }
 
+    /// Set border top character
+    #[must_use]
+    pub fn border_top(mut self, ch: char) -> Self {
+        self.border_top = ch;
+        self
+    }
+
+    /// Set border bottom character
+    #[must_use]
+    pub fn border_bottom(mut self, ch: char) -> Self {
+        self.border_bottom = ch;
+        self
+    }
+
     fn render_border_top(&self) -> Node {
-        let border: String = "▄".repeat(self.width);
+        let border: String = self.border_top.to_string().repeat(self.width);
         styled(border, Style::new().fg(self.border_color))
     }
 
     fn render_border_bottom(&self) -> Node {
-        let border: String = "▀".repeat(self.width);
+        let border: String = self.border_bottom.to_string().repeat(self.width);
         styled(border, Style::new().fg(self.border_color))
     }
 

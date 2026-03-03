@@ -17,6 +17,9 @@
 pub mod tokens;
 pub use tokens::ThemeTokens;
 
+pub mod config;
+pub use config::*;
+
 #[cfg(test)]
 mod tests {
     use super::*;
