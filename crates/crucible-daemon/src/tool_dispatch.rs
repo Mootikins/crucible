@@ -342,4 +342,42 @@ mod tests {
 
         assert!(result.is_ok(), "workspace tool should still dispatch: {result:?}");
     }
+
+    #[tokio::test]
+    async fn mcp_tool_executor_handles_all_listed_tools() {
+        // This test catches the case where a #[tool] method is added to CrucibleMcpServer
+        // without a corresponding match arm in execute_tool(). If a tool is listed but not dispatched,
+        // execute_tool returns ToolError::NotFound, which fails this test.
+        let temp = TempDir::new().expect("tempdir");
+        let mcp_server = Arc::new(CrucibleMcpServer::new(
+            temp.path().display().to_string(),
+            Arc::new(EmptyKnowledgeRepository),
+            Arc::new(EmptyEmbeddingProvider),
+        ));
+        let executor = McpToolExecutor::new(mcp_server);
+        let ctx = ExecutionContext::default();
+
+        // Get all tools from list_tools()
+        let tools = futures::executor::block_on(executor.list_tools())
+            .expect("list_tools should succeed");
+
+        // For each tool, verify it has a match arm in execute_tool()
+        for tool in tools {
+            let result = futures::executor::block_on(executor.execute_tool(
+                &tool.name,
+                serde_json::json!({}),
+                &ctx,
+            ));
+
+            // We expect either Ok or an error OTHER than NotFound.
+            // NotFound means the tool was listed but not dispatched (bug).
+            // InvalidParameters or ExecutionFailed are fine — they prove the match arm was hit.
+            assert!(
+                !matches!(result, Err(ToolError::NotFound(_))),
+                "Tool '{}' is listed by list_tools() but not handled in execute_tool(): {:?}",
+                tool.name,
+                result
+            );
+        }
+    }
 }
