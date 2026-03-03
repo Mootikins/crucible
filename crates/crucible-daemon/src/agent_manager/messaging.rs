@@ -89,22 +89,7 @@ impl AgentManager {
             pending_permissions: self.pending_permissions.clone(),
             workspace_path: session.workspace.clone(),
             agent_stream_config: AgentStreamConfig::from_session_agent(&agent_config),
-            tool_dispatcher: if !session.workspace.as_os_str().is_empty() {
-                use crate::tools::mcp_server::CrucibleMcpServer;
-                use crate::tool_dispatch::McpToolExecutor;
-                use crate::empty_providers::{EmptyKnowledgeRepository, EmptyEmbeddingProvider};
-                let mcp = Arc::new(CrucibleMcpServer::new(
-                    session.workspace.to_string_lossy().to_string(),
-                    Arc::new(EmptyKnowledgeRepository),
-                    Arc::new(EmptyEmbeddingProvider),
-                ));
-                Arc::new(crate::tool_dispatch::DaemonToolDispatcher::new(vec![
-                    self.workspace_tools.clone() as Arc<dyn ToolExecutor>,
-                    Arc::new(McpToolExecutor::new(mcp)),
-                ]))
-            } else {
-                self.tool_dispatcher.clone()
-            },
+            tool_dispatcher: self.get_or_create_session_dispatcher(&session),
         };
 
         let task = tokio::spawn(async move {

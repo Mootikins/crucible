@@ -383,6 +383,8 @@ pub struct AgentManager {
     request_state: Arc<DashMap<String, RequestState>>,
     // TODO: invalidate agent_cache entries on kiln hot-swap (multi-kiln support)
     agent_cache: AgentCache,
+    // TODO: invalidate session_dispatchers on kiln hot-swap (multi-kiln support)
+    session_dispatchers: Arc<DashMap<String, Arc<dyn ToolDispatcher>>>,
     pub(crate) model_cache: Arc<DashMap<String, (Vec<String>, Instant)>>,
     kiln_manager: Arc<KilnManager>,
     session_manager: Arc<SessionManager>,
@@ -427,6 +429,7 @@ impl AgentManager {
             background_manager: params.background_manager,
             session_states: SessionStateCache::new(),
             pending_permissions: Arc::new(DashMap::new()),
+            session_dispatchers: Arc::new(DashMap::new()),
             mcp_gateway: params.mcp_gateway,
             llm_config: params.llm_config,
             acp_config: params.acp_config,
@@ -475,12 +478,45 @@ impl AgentManager {
         self.model_cache.clear();
     }
 
+    pub fn get_or_create_session_dispatcher(&self, session: &crucible_core::session::Session) -> Arc<dyn ToolDispatcher> {
+        let session_id = &session.id;
+        
+        // Return cached dispatcher if it exists
+        if let Some(dispatcher) = self.session_dispatchers.get(session_id) {
+            return dispatcher.clone();
+        }
+        
+        // Build new dispatcher for this session
+        let dispatcher = if !session.workspace.as_os_str().is_empty() {
+            use crate::tools::mcp_server::CrucibleMcpServer;
+            use crate::tool_dispatch::McpToolExecutor;
+            use crate::empty_providers::{EmptyKnowledgeRepository, EmptyEmbeddingProvider};
+            
+            let mcp = Arc::new(CrucibleMcpServer::new(
+                session.workspace.to_string_lossy().to_string(),
+                Arc::new(EmptyKnowledgeRepository),
+                Arc::new(EmptyEmbeddingProvider),
+            ));
+            Arc::new(DaemonToolDispatcher::new(vec![
+                self.workspace_tools.clone() as Arc<dyn ToolExecutor>,
+                Arc::new(McpToolExecutor::new(mcp)),
+            ]))
+        } else {
+            self.tool_dispatcher.clone()
+        };
+        
+        // Cache and return
+        self.session_dispatchers.insert(session_id.clone(), dispatcher.clone());
+        dispatcher
+    }
+
     pub fn cleanup_session(&self, session_id: &str) {
         if self.session_states.remove(session_id).is_some() {
             debug!(session_id = %session_id, "Cleaned up Lua state for session");
         }
 
         self.agent_cache.remove(session_id);
+        self.session_dispatchers.remove(session_id);
 
         if let Some((_, mut state)) = self.request_state.remove(session_id) {
             if let Some(cancel_tx) = state.cancel_tx.take() {
