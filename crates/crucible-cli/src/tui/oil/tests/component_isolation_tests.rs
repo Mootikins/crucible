@@ -54,6 +54,26 @@ fn extract_ansi_bg_color(s: &str) -> Option<(i32, i32, i32)> {
     None
 }
 
+/// Extract RGB values from ANSI truecolor foreground escape code \x1b[38;2;R;G;Bm
+fn extract_ansi_fg_color(s: &str) -> Option<(i32, i32, i32)> {
+    // Look for pattern: \x1b[38;2;R;G;Bm
+    for part in s.split("\x1b[") {
+        if part.starts_with("38;2;") {
+            let rest = &part[5..]; // Skip "38;2;"
+            let end = rest.find('m')?;
+            let color_str = &rest[..end];
+            let parts: Vec<&str> = color_str.split(';').collect();
+            if parts.len() >= 3 {
+                let r: i32 = parts[0].parse().ok()?;
+                let g: i32 = parts[1].parse().ok()?;
+                let b: i32 = parts[2].parse().ok()?;
+                return Some((r, g, b));
+            }
+        }
+    }
+    None
+}
+
 fn assert_fits_width(output: &str, max_width: usize) {
     for (i, line) in output.lines().enumerate() {
         let width = visible_width(line);
@@ -65,6 +85,35 @@ fn assert_fits_width(output: &str, max_width: usize) {
             width,
             strip_ansi(line)
         );
+    }
+}
+
+#[cfg(test)]
+mod extract_ansi_fg_color_tests {
+    use super::*;
+
+    #[test]
+    fn extracts_rgb_from_foreground_escape() {
+        let result = extract_ansi_fg_color("\x1b[38;2;60;64;72mtext");
+        assert_eq!(result, Some((60, 64, 72)));
+    }
+
+    #[test]
+    fn extracts_different_rgb_values() {
+        let result = extract_ansi_fg_color("\x1b[38;2;255;128;0mtext");
+        assert_eq!(result, Some((255, 128, 0)));
+    }
+
+    #[test]
+    fn returns_none_for_plain_text() {
+        let result = extract_ansi_fg_color("plain text");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn returns_none_for_background_color() {
+        let result = extract_ansi_fg_color("\x1b[48;2;60;64;72mtext");
+        assert_eq!(result, None);
     }
 }
 
