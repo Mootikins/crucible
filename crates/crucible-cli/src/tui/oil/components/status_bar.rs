@@ -1,7 +1,7 @@
 use crate::tui::oil::chat_app::ChatMode;
 use crate::tui::oil::node::{row, spacer, styled, Node};
 use crate::tui::oil::style::{Color, Style};
-use crate::tui::oil::theme::ThemeTokens;
+
 use crate::tui::oil::utils::truncate_to_chars;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -13,11 +13,11 @@ pub enum NotificationToastKind {
 
 impl NotificationToastKind {
     pub fn color(&self) -> Color {
-        let theme = ThemeTokens::default_ref();
+        let t = crate::tui::oil::theme::active();
         match self {
-            NotificationToastKind::Info => theme.info,
-            NotificationToastKind::Warning => theme.warning,
-            NotificationToastKind::Error => theme.error,
+            NotificationToastKind::Info => t.resolve_color(t.colors.info),
+            NotificationToastKind::Warning => t.resolve_color(t.colors.warning),
+            NotificationToastKind::Error => t.resolve_color(t.colors.error),
         }
     }
 
@@ -78,11 +78,11 @@ impl StatusBar {
     }
 
     fn mode_style(&self) -> Style {
-        let theme = ThemeTokens::default_ref();
+        let t = crate::tui::oil::theme::active();
         match self.mode {
-            ChatMode::Normal => theme.mode_normal_style(),
-            ChatMode::Plan => theme.mode_plan_style(),
-            ChatMode::Auto => theme.mode_auto_style(),
+            ChatMode::Normal => Style::new().bg(t.resolve_color(t.colors.mode_normal)).fg(Color::Black).bold(),
+            ChatMode::Plan => Style::new().bg(t.resolve_color(t.colors.mode_plan)).fg(Color::Black).bold(),
+            ChatMode::Auto => Style::new().bg(t.resolve_color(t.colors.mode_auto)).fg(Color::Black).bold(),
         }
     }
 
@@ -119,7 +119,7 @@ impl StatusBar {
     pub fn view_from_config(&self, config: &crucible_lua::statusline::StatuslineConfig) -> Node {
         use crate::tui::oil::lua_bridge::{render_component_node, StatusBarData};
 
-        let theme = ThemeTokens::default_ref();
+        let t = crate::tui::oil::theme::active();
         let data = StatusBarData {
             mode: self.mode,
             model: self.model.clone(),
@@ -141,7 +141,7 @@ impl StatusBar {
             let mut nodes = Vec::new();
             for (i, component) in components.iter().enumerate() {
                 if i > 0 && !sep.is_empty() {
-                    nodes.push(styled(sep.to_string(), theme.muted()));
+                    nodes.push(styled(sep.to_string(), Style::new().fg(t.resolve_color(t.colors.text_muted))));
                 }
                 nodes.push(render_component_node(component, data));
             }
@@ -167,13 +167,13 @@ impl StatusBar {
 
 impl StatusBar {
     pub fn emergency_view(&self) -> Node {
-        let theme = ThemeTokens::default_ref();
+        let t = crate::tui::oil::theme::active();
         row(vec![
             styled(self.mode_label().to_string(), self.mode_style()),
-            styled(" ".to_string(), theme.muted()),
-            styled(self.model_display(), theme.model_name_style()),
+            styled(" ".to_string(), Style::new().fg(t.resolve_color(t.colors.text_muted))),
+            styled(self.model_display(), Style::new().fg(t.resolve_color(t.colors.primary))),
             spacer(),
-            styled(self.context_display(), theme.muted()),
+            styled(self.context_display(), Style::new().fg(t.resolve_color(t.colors.text_muted))),
         ])
     }
 }
