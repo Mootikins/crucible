@@ -6,6 +6,7 @@ use crate::node::{
     BoxNode, Direction, InputNode, Node, PopupNode, RawNode, Size, SpinnerNode, TextNode,
 };
 use crate::style::Style;
+use crate::render_helpers::format_popup_item_line;
 use textwrap::{wrap, Options, WordSplitter};
 
 pub trait RenderFilter {
@@ -538,60 +539,14 @@ fn render_popup(popup: &PopupNode, width: usize, output: &mut String) {
             popup.unselected_style
         };
 
-        let mut line = String::new();
-        line.push(' ');
-
-        if is_selected {
-            line.push_str("▸ ");
-        } else {
-            line.push_str("  ");
-        }
-
-        if let Some(kind) = &item.kind {
-            line.push_str(kind);
-            line.push(' ');
-        }
-
-        let prefix_width = visible_width(&line);
-        let max_label_width = popup_width.saturating_sub(prefix_width + 2);
-        let label = if item.label.chars().count() > max_label_width && max_label_width > 4 {
-            let s: String = item.label.chars().take(max_label_width - 1).collect();
-            format!("{}…", s)
-        } else {
-            item.label.clone()
-        };
-        line.push_str(&label);
-
-        let label_width = visible_width(&line);
-
-        if let Some(desc) = &item.description {
-            let available = popup_width.saturating_sub(label_width + 3);
-            if available > 10 {
-                let truncated = if desc.chars().count() > available {
-                    let s: String = desc.chars().take(available - 1).collect();
-                    format!("{}…", s)
-                } else {
-                    desc.clone()
-                };
-                line.push_str("  ");
-                line.push_str(&truncated);
-                let after_desc_width = label_width + 2 + visible_width(&truncated);
-                let padding = popup_width.saturating_sub(after_desc_width);
-                line.push_str(&" ".repeat(padding));
-                line.push(' ');
-                output.push_str(&apply_style(&line, &item_style));
-            } else {
-                let padding = popup_width.saturating_sub(label_width);
-                line.push_str(&" ".repeat(padding));
-                line.push(' ');
-                output.push_str(&apply_style(&line, &item_style));
-            }
-        } else {
-            let padding = popup_width.saturating_sub(label_width);
-            line.push_str(&" ".repeat(padding));
-            line.push(' ');
-            output.push_str(&apply_style(&line, &item_style));
-        }
+        let line = format_popup_item_line(
+            is_selected,
+            item.kind.as_deref(),
+            &item.label,
+            item.description.as_deref(),
+            popup_width,
+        );
+        output.push_str(&apply_style(&line, &item_style));
 
         lines_rendered += 1;
         if lines_rendered < popup.max_visible {
