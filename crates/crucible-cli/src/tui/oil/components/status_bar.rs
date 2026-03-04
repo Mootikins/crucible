@@ -467,8 +467,8 @@ mod tests {
                 "notification should start near the right edge (>=52 at width 80), got {toast_start}: {plain:?}"
             );
             assert_eq!(
-                last_non_space, 79,
-                "right section should end flush-right at index 79, got {last_non_space}: {plain:?}"
+                last_non_space, 78,
+                "right section should end flush-right at index 78 (with badge trailing space), got {last_non_space}: {plain:?}"
             );
         }
     }
