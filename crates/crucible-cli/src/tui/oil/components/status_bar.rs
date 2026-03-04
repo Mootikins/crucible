@@ -170,8 +170,16 @@ impl StatusBar {
 
         if !config.right.is_empty() {
             items.push(spacer());
+            let right_ends_with_notification = matches!(
+                config.right.last(),
+                Some(crucible_lua::statusline::StatuslineComponent::Notification { .. })
+            );
+            let has_active_notification =
+                data.notification_toast.is_some() || !data.notification_counts.is_empty();
             items.extend(render_section(&config.right, &data, sep));
-            items.push(styled(" ".to_string(), Style::new()));
+            if !(right_ends_with_notification && has_active_notification) {
+                items.push(styled(" ".to_string(), Style::new()));
+            }
         }
 
         row(items)
@@ -422,6 +430,45 @@ mod tests {
                 plain.contains("A") && plain.contains("|") && plain.contains("B"),
                 "Should contain separator between components: {}",
                 plain
+            );
+        }
+
+        #[test]
+        fn view_from_config_right_aligns_right_section_notification() {
+            let config = make_config(
+                vec![StatuslineComponent::Text {
+                    content: "LEFT".to_string(),
+                    style: StyleSpec::default(),
+                }],
+                vec![],
+                vec![StatuslineComponent::Notification {
+                    style: StyleSpec::default(),
+                    fallback: None,
+                }],
+            );
+
+            let bar =
+                StatusBar::new().toast("Ctrl+C again to quit", NotificationToastKind::Warning);
+            let node = bar.view_from_config(&config);
+            let plain = render_to_plain_text(&node, 80);
+
+            let toast_start = plain
+                .find("Ctrl+C again to quit")
+                .expect("notification toast should render in right section");
+            let last_non_space = plain
+                .char_indices()
+                .rev()
+                .find(|(_, c)| *c != ' ')
+                .map(|(idx, _)| idx)
+                .expect("status bar output should include visible content");
+
+            assert!(
+                toast_start >= 52,
+                "notification should start near the right edge (>=52 at width 80), got {toast_start}: {plain:?}"
+            );
+            assert_eq!(
+                last_non_space, 79,
+                "right section should end flush-right at index 79, got {last_non_space}: {plain:?}"
             );
         }
     }

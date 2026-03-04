@@ -138,7 +138,7 @@ pub fn render_component_node(component: &StatuslineComponent, data: &StatusBarDa
                 ));
                 items.push(styled(" ".to_string(), Style::new()));
                 items.push(styled(
-                    format!(" {} ", kind.label()),
+                    format!(" {}", kind.label()),
                     Style::new().fg(kind.color()).bold().reverse(),
                 ));
             } else if !data.notification_counts.is_empty() {
