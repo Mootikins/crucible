@@ -361,11 +361,35 @@ fn render_popup(
         };
         line.push_str(&label);
 
-        // Pad to full width
-        let current_width = visible_width(&line);
-        let padding = width.saturating_sub(current_width + 1);
-        line.push_str(&" ".repeat(padding));
-        line.push(' ');
+        let label_width = visible_width(&line);
+
+        if let Some(desc) = &item.description {
+            let available = width.saturating_sub(label_width + 3);
+            if available > 10 {
+                let truncated = if desc.chars().count() > available {
+                    let s: String = desc.chars().take(available - 1).collect();
+                    format!("{}…", s)
+                } else {
+                    desc.clone()
+                };
+
+                line.push_str("  ");
+                line.push_str(&truncated);
+
+                let after_desc_width = label_width + 2 + visible_width(&truncated);
+                let padding = width.saturating_sub(after_desc_width);
+                line.push_str(&" ".repeat(padding));
+                line.push(' ');
+            } else {
+                let padding = width.saturating_sub(label_width);
+                line.push_str(&" ".repeat(padding));
+                line.push(' ');
+            }
+        } else {
+            let padding = width.saturating_sub(label_width);
+            line.push_str(&" ".repeat(padding));
+            line.push(' ');
+        }
 
         let styled_line = apply_style(&line, &Style::new().bg(bg));
         grid.blit_line(&styled_line, x, current_y);
@@ -430,10 +454,10 @@ fn render_box_content(
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ansi::strip_ansi;
     use crate::layout::Rect;
     use crate::utils::truncate_to_width;
 
@@ -675,6 +699,40 @@ mod tests {
         assert!(result.contains("Item 3"));
         // Selected item should have indicator
         assert!(result.contains("▸"));
+    }
+
+    #[test]
+    fn render_popup_items_with_descriptions() {
+        let items = vec![
+            PopupItem::new("Open").with_description("Open file"),
+            PopupItem::new("Save").with_description("Save current buffer to disk"),
+            PopupItem::new("Quit"),
+        ];
+
+        let tree = LayoutTree::new(LayoutBox::new(
+            Rect::new(0, 0, 34, 3),
+            LayoutContent::Popup {
+                items,
+                selected: 0,
+                viewport_offset: 0,
+                max_visible: 3,
+                bg_style: Style::new(),
+                selected_style: Style::new(),
+            },
+        ));
+
+        let (result, _) = render_layout_tree(&tree);
+        assert!(result.contains("Open file"));
+        assert!(result.contains("Save current buffer"));
+        assert!(!result.contains("Save current buffer to disk"));
+
+        let quit_line = result
+            .lines()
+            .find(|line| line.contains("Quit"))
+            .expect("expected Quit item to render");
+        let plain_quit_line = strip_ansi(quit_line);
+        assert!(!plain_quit_line.contains("Quit  Save"));
+        assert!(!plain_quit_line.contains("Quit  Open"));
     }
 
     #[test]
