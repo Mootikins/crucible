@@ -37,6 +37,10 @@ pub fn render_to_string(node: &Node, width: usize) -> String {
     render_with_cursor(node, width).content
 }
 
+pub fn render_to_string_filtered(node: &Node, width: usize, filter: &dyn RenderFilter) -> String {
+    render_with_cursor_filtered(node, width, filter).content
+}
+
 pub fn render_to_plain_text(node: &Node, width: usize) -> String {
     let mut output = String::new();
     render_node_plain_text(node, width, &mut output);
@@ -1049,5 +1053,33 @@ mod tests {
         assert_eq!(lines[0], "line1");
         assert_eq!(lines[1], "line2");
         assert_eq!(lines[2], "line3");
+    }
+
+    #[test]
+    fn test_render_to_string_filtered_skips_matching_key() {
+        struct SkipFirst;
+        impl RenderFilter for SkipFirst {
+            fn skip_static(&self, key: &str) -> bool {
+                key == "msg-1"
+            }
+        }
+        let tree = col(vec![
+            scrollback("msg-1", vec![text("Hello")]),
+            scrollback("msg-2", vec![text("World")]),
+        ]);
+        let output = render_to_string_filtered(&tree, 80, &SkipFirst);
+        assert!(output.contains("World"), "Output should contain 'World'");
+        assert!(!output.contains("Hello"), "Output should not contain 'Hello'");
+    }
+
+    #[test]
+    fn test_render_to_string_filtered_with_no_filter() {
+        let tree = col(vec![
+            scrollback("msg-1", vec![text("Hello")]),
+            scrollback("msg-2", vec![text("World")]),
+        ]);
+        let output = render_to_string_filtered(&tree, 80, &NoFilter);
+        assert!(output.contains("Hello"), "Output should contain 'Hello'");
+        assert!(output.contains("World"), "Output should contain 'World'");
     }
 }
