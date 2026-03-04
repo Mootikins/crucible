@@ -570,15 +570,12 @@ fn render_popup(popup: &PopupNode, width: usize, output: &mut String) {
                     desc.clone()
                 };
                 line.push_str("  ");
-                let desc_style = item_style.dim();
-                output.push_str(&apply_style(&line, &item_style));
-                line.clear();
                 line.push_str(&truncated);
                 let after_desc_width = label_width + 2 + visible_width(&truncated);
                 let padding = popup_width.saturating_sub(after_desc_width);
                 line.push_str(&" ".repeat(padding));
                 line.push(' ');
-                output.push_str(&apply_style(&line, &desc_style));
+                output.push_str(&apply_style(&line, &item_style));
             } else {
                 let padding = popup_width.saturating_sub(label_width);
                 line.push_str(&" ".repeat(padding));
@@ -728,6 +725,25 @@ mod tests {
         assert!(result.contains("Option 1"));
         assert!(result.contains("Option 2"));
         assert!(result.contains("Option 3"));
+    }
+
+    #[test]
+    fn popup_description_has_no_style_reset_gap() {
+        let items = vec![popup_item("Open file")
+            .kind("CMD")
+            .desc("Open a file in the current workspace")];
+        let node = popup(items, 0, 1);
+        let result = render_to_string(&node, 80);
+
+        let content_line = result
+            .lines()
+            .find(|line| line.contains("Open file") && line.contains("current workspace"))
+            .expect("expected popup line with label and description");
+
+        assert!(
+            content_line.matches("\x1b[48;2;").count() <= 1,
+            "popup line should have a single background style span: {content_line:?}"
+        );
     }
 
     #[test]
@@ -1019,11 +1035,14 @@ mod tests {
         // Test that embedded newlines in text content are converted to \r\n
         let node = text("line1\nline2\nline3");
         let result = render_to_string(&node, 200); // width > total char count, triggers fast path
-        
+
         // Should contain \r\n, not bare \n
-        assert!(result.contains("line1\r\nline2\r\nline3"), 
-                "Expected \\r\\n between lines, got: {:?}", result);
-        
+        assert!(
+            result.contains("line1\r\nline2\r\nline3"),
+            "Expected \\r\\n between lines, got: {:?}",
+            result
+        );
+
         // Verify no bare \n without \r
         let lines: Vec<&str> = result.split("\r\n").collect();
         assert_eq!(lines.len(), 3, "Expected 3 lines separated by \\r\\n");
