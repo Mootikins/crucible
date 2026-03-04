@@ -22,7 +22,7 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{model::CallToolResult, tool, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use walkdir::WalkDir;
 
@@ -128,6 +128,53 @@ impl NoteTools {
             note_store: Some(note_store),
         }
     }
+
+    fn resolve_note_name(&self, path: &str) -> Result<String, rmcp::ErrorData> {
+        if path.contains('/') || path.contains('\\') {
+            return Ok(path.to_string());
+        }
+
+        let kiln_path = Path::new(&self.kiln_path);
+        let resolved = self.find_note_by_name(kiln_path, path).ok_or_else(|| {
+            rmcp::ErrorData::invalid_params(format!("File not found: {path}"), None)
+        })?;
+
+        let relative = resolved.strip_prefix(kiln_path).map_err(|_| {
+            rmcp::ErrorData::invalid_params(
+                format!("Resolved path escapes kiln directory: {path}"),
+                None,
+            )
+        })?;
+
+        Ok(relative.to_string_lossy().to_string())
+    }
+
+    fn find_note_by_name(&self, kiln_path: &Path, name: &str) -> Option<PathBuf> {
+        let direct_path = kiln_path.join(name);
+        if direct_path.is_file() {
+            return Some(direct_path);
+        }
+
+        let mut stack = vec![kiln_path.to_path_buf()];
+        while let Some(dir) = stack.pop() {
+            if let Ok(entries) = std::fs::read_dir(&dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        stack.push(path);
+                    } else if path
+                        .file_name()
+                        .and_then(|file_name| file_name.to_str())
+                        .is_some_and(|file_name| file_name == name)
+                    {
+                        return Some(path);
+                    }
+                }
+            }
+        }
+
+        None
+    }
 }
 
 #[tool_router]
@@ -170,9 +217,10 @@ impl NoteTools {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
         let path = ensure_md_suffix(params.path);
+        let resolved_path = self.resolve_note_name(&path)?;
 
         // Security: Validate path to prevent traversal attacks
-        let full_path = validate_path_within_kiln(&self.kiln_path, &path)?;
+        let full_path = validate_path_within_kiln(&self.kiln_path, &resolved_path)?;
 
         if !full_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(
@@ -675,7 +723,20 @@ fn extract_content_without_frontmatter(content: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use tempfile::TempDir;
+
+    fn create_name_resolution_kiln() -> TempDir {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir_all(dir.path().join("Meta")).unwrap();
+        fs::write(
+            dir.path().join("Meta/Plugin User Stories.md"),
+            "# Plugin User Stories\n\nSubdirectory note",
+        )
+        .unwrap();
+        fs::write(dir.path().join("README.md"), "# README\n\nRoot note").unwrap();
+        dir
+    }
 
     #[test]
     fn test_note_tools_creation() {
@@ -827,6 +888,130 @@ mod tests {
                 assert_eq!(parsed["content"], "content");
             }
         }
+    }
+
+    #[tokio::test]
+    async fn test_read_note_resolves_subdirectory_note_by_name() {
+        let kiln = create_name_resolution_kiln();
+        let note_tools = NoteTools::new(kiln.path().to_string_lossy().to_string());
+
+        let result = note_tools
+            .read_note(Parameters(ReadNoteParams {
+                path: "Plugin User Stories".to_string(),
+                start_line: None,
+                end_line: None,
+            }))
+            .await;
+
+        assert!(result.is_ok());
+        let call_result = result.unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(
+            &call_result
+                .content
+                .first()
+                .unwrap()
+                .as_text()
+                .unwrap()
+                .text,
+        )
+        .unwrap();
+        assert_eq!(parsed["content"], "# Plugin User Stories\n\nSubdirectory note");
+    }
+
+    #[tokio::test]
+    async fn test_read_note_with_explicit_subdirectory_path() {
+        let kiln = create_name_resolution_kiln();
+        let note_tools = NoteTools::new(kiln.path().to_string_lossy().to_string());
+
+        let result = note_tools
+            .read_note(Parameters(ReadNoteParams {
+                path: "Meta/Plugin User Stories".to_string(),
+                start_line: None,
+                end_line: None,
+            }))
+            .await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_read_note_resolves_root_note_by_name() {
+        let kiln = create_name_resolution_kiln();
+        let note_tools = NoteTools::new(kiln.path().to_string_lossy().to_string());
+
+        let result = note_tools
+            .read_note(Parameters(ReadNoteParams {
+                path: "README".to_string(),
+                start_line: None,
+                end_line: None,
+            }))
+            .await;
+
+        assert!(result.is_ok());
+        let call_result = result.unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(
+            &call_result
+                .content
+                .first()
+                .unwrap()
+                .as_text()
+                .unwrap()
+                .text,
+        )
+        .unwrap();
+        assert_eq!(parsed["content"], "# README\n\nRoot note");
+    }
+
+    #[tokio::test]
+    async fn test_read_note_reports_clear_not_found_for_name_lookup() {
+        let kiln = create_name_resolution_kiln();
+        let note_tools = NoteTools::new(kiln.path().to_string_lossy().to_string());
+
+        let result = note_tools
+            .read_note(Parameters(ReadNoteParams {
+                path: "Nonexistent Note".to_string(),
+                start_line: None,
+                end_line: None,
+            }))
+            .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.message.contains("File not found: Nonexistent Note.md"));
+    }
+
+    #[tokio::test]
+    async fn test_read_note_rejects_parent_traversal_input() {
+        let kiln = create_name_resolution_kiln();
+        let note_tools = NoteTools::new(kiln.path().to_string_lossy().to_string());
+
+        let result = note_tools
+            .read_note(Parameters(ReadNoteParams {
+                path: "../etc/passwd".to_string(),
+                start_line: None,
+                end_line: None,
+            }))
+            .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.message.contains("Path traversal"));
+    }
+
+    #[tokio::test]
+    async fn test_read_note_resolves_subdirectory_note_by_name_with_md_suffix() {
+        let kiln = create_name_resolution_kiln();
+        let note_tools = NoteTools::new(kiln.path().to_string_lossy().to_string());
+
+        let result = note_tools
+            .read_note(Parameters(ReadNoteParams {
+                path: "Plugin User Stories.md".to_string(),
+                start_line: None,
+                end_line: None,
+            }))
+            .await;
+
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
