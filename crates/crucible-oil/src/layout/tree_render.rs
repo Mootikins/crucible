@@ -9,7 +9,7 @@
 //! The renderer uses a 2D character buffer (CellGrid) to position content
 //! at computed coordinates, then converts the buffer to an ANSI string.
 
-use crate::ansi::apply_style;
+use crate::ansi::{apply_style, visible_width};
 use crate::cell_grid::CellGrid;
 use crate::node::SPINNER_FRAMES;
 use crate::render::CursorInfo;
@@ -430,30 +430,6 @@ fn render_box_content(
     }
 }
 
-/// Calculate visible width of a string (excluding ANSI escape codes).
-fn visible_width(s: &str) -> usize {
-    let mut width = 0;
-    let mut chars = s.chars().peekable();
-
-    while let Some(c) = chars.next() {
-        if c == '\x1b' {
-            // Skip ANSI escape sequence
-            if chars.peek() == Some(&'[') {
-                chars.next();
-                while let Some(&next) = chars.peek() {
-                    chars.next();
-                    if next.is_ascii_alphabetic() {
-                        break;
-                    }
-                }
-            }
-        } else {
-            width += 1;
-        }
-    }
-
-    width
-}
 
 #[cfg(test)]
 mod tests {
