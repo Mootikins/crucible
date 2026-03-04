@@ -1,6 +1,6 @@
 use crate::ansi::visual_rows;
 use crate::graduation::{GraduatedContent, GraduationState};
-use crate::layout::{build_layout_tree, render_layout_tree_filtered};
+use crate::layout::{build_layout_tree_with_engine, render_layout_tree_filtered, LayoutEngine};
 use crate::node::{ElementKind, Node, OverlayNode};
 use crate::overlay::{extract_overlays, filter_overlays, OverlayAnchor};
 use crate::render::{render_to_string, RenderResult};
@@ -96,6 +96,7 @@ pub struct FramePlanner {
     frame_no: u64,
     graduation: GraduationState,
     last_graduated_kind: Option<ElementKind>,
+    layout_engine: LayoutEngine,
 }
 
 impl FramePlanner {
@@ -106,6 +107,7 @@ impl FramePlanner {
             frame_no: 0,
             graduation: GraduationState::new(),
             last_graduated_kind: None,
+            layout_engine: LayoutEngine::new(),
         }
     }
 
@@ -129,7 +131,12 @@ impl FramePlanner {
 
         self.graduation.commit_graduation(&graduated);
 
-        let layout_tree = build_layout_tree(&main_tree, self.width, self.height);
+        let layout_tree = build_layout_tree_with_engine(
+            &mut self.layout_engine,
+            &main_tree,
+            self.width,
+            self.height,
+        );
         let graduated_keys = self.graduation.graduated_keys();
         let (content, cursor_info) = render_layout_tree_filtered(&layout_tree, |key| {
             graduated_keys.iter().any(|k| k == key)
@@ -257,5 +264,28 @@ mod tests {
 
         assert!(snapshot.plan.viewport.cursor.visible);
         assert_eq!(snapshot.plan.viewport.cursor.col, 3);
+    }
+
+    #[test]
+    fn plan_with_layout_tree_is_stable_across_frames_for_non_graduated_content() {
+        let mut planner = FramePlanner::new(80, 24);
+        let tree = col([text("Hello"), text_input("hello", 2)]);
+
+        let first = planner.plan_with_layout_tree(&tree);
+        let second = planner.plan_with_layout_tree(&tree);
+
+        assert_eq!(first.plan.viewport.content, second.plan.viewport.content);
+        assert_eq!(
+            first.plan.viewport.cursor.visible,
+            second.plan.viewport.cursor.visible
+        );
+        assert_eq!(
+            first.plan.viewport.cursor.col,
+            second.plan.viewport.cursor.col
+        );
+        assert_eq!(
+            first.plan.viewport.cursor.row_from_end,
+            second.plan.viewport.cursor.row_from_end
+        );
     }
 }
