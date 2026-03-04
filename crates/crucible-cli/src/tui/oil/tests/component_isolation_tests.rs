@@ -163,6 +163,57 @@ mod status_bar_tests {
     }
 
     #[test]
+    fn mode_badge_colors_include_bg_fg_and_bold() {
+        let normal = render_bar_ansi(&StatusBar::new().mode(ChatMode::Normal), 80);
+        let plan = render_bar_ansi(&StatusBar::new().mode(ChatMode::Plan), 80);
+        let auto = render_bar_ansi(&StatusBar::new().mode(ChatMode::Auto), 80);
+
+        let has_green_bg = normal.contains("42") || normal.contains("48;5;10");
+        let has_blue_bg = plan.contains("44") || plan.contains("48;5;12");
+        let has_yellow_bg = auto.contains("43") || auto.contains("48;5;11");
+        let has_normal_black_fg = normal.contains("30") || normal.contains("38;5;0");
+        let has_plan_black_fg = plan.contains("30") || plan.contains("38;5;0");
+        let has_auto_black_fg = auto.contains("30") || auto.contains("38;5;0");
+
+        assert!(
+            has_green_bg,
+            "NORMAL mode should include green bg code: {normal:?}"
+        );
+        assert!(
+            has_blue_bg,
+            "PLAN mode should include blue bg code: {plan:?}"
+        );
+        assert!(
+            has_yellow_bg,
+            "AUTO mode should include yellow bg code: {auto:?}"
+        );
+        assert!(
+            has_normal_black_fg,
+            "NORMAL mode should include black fg code: {normal:?}"
+        );
+        assert!(
+            has_plan_black_fg,
+            "PLAN mode should include black fg code: {plan:?}"
+        );
+        assert!(
+            has_auto_black_fg,
+            "AUTO mode should include black fg code: {auto:?}"
+        );
+        assert!(
+            normal.contains("1"),
+            "NORMAL mode should include bold code: {normal:?}"
+        );
+        assert!(
+            plan.contains("1"),
+            "PLAN mode should include bold code: {plan:?}"
+        );
+        assert!(
+            auto.contains("1"),
+            "AUTO mode should include bold code: {auto:?}"
+        );
+    }
+
+    #[test]
     fn different_modes_have_different_colors() {
         let normal = StatusBar::new().mode(ChatMode::Normal);
         let plan = StatusBar::new().mode(ChatMode::Plan);
