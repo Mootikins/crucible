@@ -2276,6 +2276,16 @@ fn snapshot_raw_notification_no_content_above() {
         KeyCode::Char('c'),
         KeyModifiers::CONTROL,
     )));
+    let plain = crucible_oil::ansi::strip_ansi(&render_app_raw(&app));
+    let statusline = plain.lines().last().expect("statusline should exist");
+    let notification_col = statusline
+        .find("Ctrl+C")
+        .expect("notification text should be present");
+    assert!(
+        notification_col >= 30,
+        "Ctrl+C notification should be right-aligned (col >= 30), but starts at col {notification_col}. \
+         Statusline: {statusline:?}"
+    );
     assert_snapshot!(render_app_raw(&app));
 }
 
