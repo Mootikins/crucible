@@ -17,6 +17,11 @@ use genai::ModelIden;
 
 use super::adapter_mapping::ChatClient;
 
+pub(crate) const EMPTY_RESPONSE_ERROR: &str = "LLM returned empty response — no content received from provider";
+pub(crate) const STREAM_TIMEOUT_ERROR: &str = "LLM stream timed out — no response within timeout period";
+pub(crate) const STREAM_UNEXPECTED_END_ERROR: &str = "LLM stream ended unexpectedly — connection terminated without completion";
+pub(crate) const STREAM_CHUNK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
 fn is_write_tool_name(tool_name: &str) -> bool {
     if tool_name == "write_file" || tool_name == "edit_file" {
         return true;
