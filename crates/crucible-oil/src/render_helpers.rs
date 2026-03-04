@@ -6,38 +6,6 @@ use crate::ansi::{apply_style, visible_width};
 use crate::style::Style;
 use textwrap::{wrap, Options, WordSplitter};
 
-/// Wraps text to a given width and applies a style to each line.
-///
-/// This helper is used by both `render.rs` (hand-written flex pipeline) and
-/// `tree_render.rs` (Taffy pipeline) to ensure consistent text wrapping and styling.
-///
-/// # Arguments
-/// - `content`: The text to wrap and style (should not contain embedded newlines)
-/// - `style`: The style to apply to each line
-/// - `width`: The target width for wrapping (in characters)
-///
-/// # Returns
-/// A vector of styled lines. Each line is:
-/// 1. Wrapped to fit within `width` characters
-/// 2. Styled with `apply_style()`
-/// 3. NOT padded (caller is responsible for padding if needed)
-///
-/// If `content` is empty or `width` is 0, returns an empty vector.
-pub(crate) fn wrap_and_style(content: &str, style: &Style, width: usize) -> Vec<String> {
-    if content.is_empty() || width == 0 {
-        return Vec::new();
-    }
-
-    // Wrap text to the target width
-    let options = Options::new(width).word_splitter(WordSplitter::NoHyphenation);
-    let wrapped: Vec<_> = wrap(content, options);
-
-    // Style each line (no padding)
-    wrapped
-        .into_iter()
-        .map(|line| apply_style(&line, style))
-        .collect()
-}
 
 /// Wraps text to a given width, applies a style, and pads each line to fill the width.
 ///
