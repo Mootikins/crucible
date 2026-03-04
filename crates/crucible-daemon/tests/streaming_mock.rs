@@ -26,6 +26,7 @@ use tokio::time::{timeout, Duration};
 #[derive(Clone)]
 pub struct StreamingMockAgent {
     chunks: Vec<ChatChunk>,
+    hanging: bool,
 }
 
 impl StreamingMockAgent {
@@ -49,7 +50,7 @@ impl StreamingMockAgent {
             })
             .collect();
 
-        Self { chunks }
+        Self { chunks, hanging: false }
     }
 
     /// Create a mock agent with thinking/reasoning followed by response text
@@ -81,7 +82,7 @@ impl StreamingMockAgent {
             },
         ];
 
-        Self { chunks }
+        Self { chunks, hanging: false }
     }
 
     /// Create a mock agent that calls a tool, receives a result, then responds
@@ -140,7 +141,7 @@ impl StreamingMockAgent {
             },
         ];
 
-        Self { chunks }
+        Self { chunks, hanging: false }
     }
 
     /// Create a mock agent with subagent lifecycle events
@@ -172,7 +173,7 @@ impl StreamingMockAgent {
             },
         ];
 
-        Self { chunks }
+        Self { chunks, hanging: false }
     }
 
     /// Create a mock agent that yields nothing (single empty done chunk)
@@ -189,7 +190,35 @@ impl StreamingMockAgent {
             precognition_notes: None,
         }];
 
-        Self { chunks }
+        Self { chunks, hanging: false }
+    }
+
+    /// Create a mock agent that never completes (blocks forever on next())
+    ///
+    /// Simulates a stream that hangs indefinitely — useful for timeout testing.
+    pub fn hanging() -> Self {
+        let chunks: Vec<ChatChunk> = vec![];
+        Self { chunks, hanging: true }
+    }
+
+    /// Create a mock agent that yields only a done chunk with empty delta
+    ///
+    /// Simulates the Z.AI failure mode: stream "completes" immediately with no content.
+    /// Single chunk has `done=true, delta=""` with all other fields default.
+    pub fn immediate_end() -> Self {
+        let chunks = vec![ChatChunk {
+            delta: String::new(),
+            done: true,
+            tool_calls: None,
+            tool_results: None,
+            reasoning: None,
+            usage: None,
+            subagent_events: None,
+            precognition_notes_count: None,
+            precognition_notes: None,
+        }];
+
+        Self { chunks, hanging: false }
     }
 }
 
@@ -199,8 +228,12 @@ impl AgentHandle for StreamingMockAgent {
         &mut self,
         _message: String,
     ) -> BoxStream<'static, ChatResult<ChatChunk>> {
-        let chunks = self.chunks.clone();
-        stream::iter(chunks.into_iter().map(Ok)).boxed()
+        if self.hanging {
+            futures::stream::pending::<ChatResult<ChatChunk>>().boxed()
+        } else {
+            let chunks = self.chunks.clone();
+            stream::iter(chunks.into_iter().map(Ok)).boxed()
+        }
     }
 
     fn is_connected(&self) -> bool {
