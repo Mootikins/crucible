@@ -181,10 +181,29 @@ fn render_text(
     // Wrap plain text into lines that fit within width, then style each line.
     // This matches the legacy renderer's character-level wrapping.
     let wrapped = wrap_text(content, width);
-    for (row_idx, line) in wrapped.iter().enumerate() {
+
+    // If content is non-empty but textwrap produced no lines
+    // (e.g. all-whitespace input gets stripped), render one
+    // full-width line of spaces so the background color fills.
+    let lines: Vec<String> = if wrapped.is_empty() {
+        vec![" ".repeat(width)]
+    } else {
+        wrapped
+    };
+
+    for (row_idx, line) in lines.iter().enumerate() {
         let target_y = y + row_idx;
         if target_y < grid.height() {
-            let styled_line = apply_style(line, style);
+            // Right-pad each line to fill the full allocated width.
+            // textwrap::wrap() strips trailing whitespace, which causes
+            // background colors to not extend across the full cell area.
+            let visual_len = line.chars().count();
+            let padded = if visual_len < width {
+                format!("{}{}", line, " ".repeat(width - visual_len))
+            } else {
+                line.clone()
+            };
+            let styled_line = apply_style(&padded, style);
             grid.blit_line(&styled_line, x, target_y);
         }
     }
