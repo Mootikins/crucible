@@ -11,8 +11,9 @@
 
 use crate::ansi::{apply_style, visible_width};
 use crate::cell_grid::CellGrid;
-use crate::node::SPINNER_FRAMES;
+
 use crate::render::CursorInfo;
+use crate::render_helpers::{wrap_and_style_padded, select_spinner_frame};
 use crate::style::{Border, Style};
 
 use super::types::{LayoutBox, LayoutContent, LayoutTree, PopupItem};
@@ -210,43 +211,17 @@ fn render_text(
         return;
     }
 
-    // Wrap plain text into lines that fit within width, then style each line.
-    // This matches the legacy renderer's character-level wrapping.
-    let wrapped = wrap_text(content, width);
+    // Use the shared helper to wrap and style the text
+    let styled_lines = wrap_and_style_padded(content, style, width);
 
-    // If content is non-empty but textwrap produced no lines
-    // (e.g. all-whitespace input gets stripped), render one
-    // full-width line of spaces so the background color fills.
-    let lines: Vec<String> = if wrapped.is_empty() {
-        vec![" ".repeat(width)]
-    } else {
-        wrapped
-    };
-
-    for (row_idx, line) in lines.iter().enumerate() {
+    for (row_idx, line) in styled_lines.iter().enumerate() {
         let target_y = y + row_idx;
         if target_y < grid.height() {
-            // Right-pad each line to fill the full allocated width.
-            // textwrap::wrap() strips trailing whitespace, which causes
-            // background colors to not extend across the full cell area.
-            let visual_len = line.chars().count();
-            let padded = if visual_len < width {
-                format!("{}{}", line, " ".repeat(width - visual_len))
-            } else {
-                line.clone()
-            };
-            let styled_line = apply_style(&padded, style);
-            grid.blit_line(&styled_line, x, target_y);
+            grid.blit_line(line, x, target_y);
         }
     }
 }
 
-fn wrap_text(content: &str, width: usize) -> Vec<String> {
-    use textwrap::{wrap, Options, WordSplitter};
-    let options = Options::new(width).word_splitter(WordSplitter::NoHyphenation);
-    let wrapped: Vec<_> = wrap(content, options);
-    wrapped.into_iter().map(|cow| cow.into_owned()).collect()
-}
 
 /// Render an input field at the given position.
 #[allow(clippy::too_many_arguments)]
@@ -281,12 +256,7 @@ fn render_spinner(
     y: usize,
     grid: &mut CellGrid,
 ) {
-    let spinner_frames = frames.unwrap_or(SPINNER_FRAMES);
-    let frame_char = spinner_frames
-        .get(frame % spinner_frames.len())
-        .copied()
-        .unwrap_or('⠋');
-
+    let frame_char = select_spinner_frame(frame, frames);
     let mut output = apply_style(&frame_char.to_string(), style);
 
     if let Some(label_text) = label {

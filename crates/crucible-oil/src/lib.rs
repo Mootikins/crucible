@@ -31,6 +31,7 @@ pub mod output;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod proptest_strategies;
 pub mod render;
+pub mod render_helpers;
 pub mod style;
 pub mod taffy_layout;
 pub mod template;
