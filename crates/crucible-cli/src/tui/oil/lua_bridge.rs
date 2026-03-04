@@ -138,7 +138,7 @@ pub fn render_component_node(component: &StatuslineComponent, data: &StatusBarDa
                 ));
                 items.push(styled(" ".to_string(), Style::new()));
                 items.push(styled(
-                    format!(" {}", kind.label()),
+                    format!(" {} ", kind.label()),
                     Style::new().fg(kind.color()).bold().reverse(),
                 ));
             } else if !data.notification_counts.is_empty() {
@@ -526,5 +526,67 @@ mod tests {
             !node_contains_text(&node, "50% ctx"),
             "Toast should hide fallback context"
         );
+    }
+
+    #[test]
+    fn notification_badge_has_trailing_space() {
+        // Test that toast badge labels have trailing space like mode labels
+        // Mode labels: " NORMAL ", " PLAN ", " AUTO " (padded both sides)
+        // Badge labels should match: " INFO ", " WARN ", " ERROR "
+        let mut data = default_data();
+        data.notification_toast = Some(("Processing".to_string(), NotificationToastKind::Info));
+        let component = StatuslineComponent::Notification {
+            style: StyleSpec::default(),
+            fallback: None,
+        };
+        let node = render_component_node(&component, &data);
+        let rendered = crucible_oil::render::render_to_string(&node, 120);
+        // Badge should have trailing space: " INFO " not " INFO"
+        assert!(rendered.contains(" INFO "), "INFO badge should have trailing space. Got: {}", rendered);
+    }
+
+    #[test]
+    fn notification_badge_all_kinds_have_trailing_space() {
+        // Test all three badge types have trailing space
+        let component = StatuslineComponent::Notification {
+            style: StyleSpec::default(),
+            fallback: None,
+        };
+
+        // Test INFO
+        let mut data = default_data();
+        data.notification_toast = Some(("Info msg".to_string(), NotificationToastKind::Info));
+        let node = render_component_node(&component, &data);
+        let rendered = crucible_oil::render::render_to_string(&node, 120);
+        assert!(rendered.contains(" INFO "), "INFO badge missing trailing space");
+
+        // Test WARN
+        let mut data = default_data();
+        data.notification_toast = Some(("Warn msg".to_string(), NotificationToastKind::Warning));
+        let node = render_component_node(&component, &data);
+        let rendered = crucible_oil::render::render_to_string(&node, 120);
+        assert!(rendered.contains(" WARN "), "WARN badge missing trailing space");
+
+        // Test ERROR
+        let mut data = default_data();
+        data.notification_toast = Some(("Error msg".to_string(), NotificationToastKind::Error));
+        let node = render_component_node(&component, &data);
+        let rendered = crucible_oil::render::render_to_string(&node, 120);
+        assert!(rendered.contains(" ERROR "), "ERROR badge missing trailing space");
+    }
+
+    #[test]
+    fn notification_counts_badge_has_trailing_space() {
+        // Test that counts path also has trailing space (should already be correct)
+        let mut data = default_data();
+        data.notification_counts = vec![(NotificationToastKind::Info, 5)];
+        let component = StatuslineComponent::Notification {
+            style: StyleSpec::default(),
+            fallback: None,
+        };
+        let node = render_component_node(&component, &data);
+        let rendered = crucible_oil::render::render_to_string(&node, 120);
+        // Counts path should have trailing space: " INFO " not " INFO"
+        assert!(rendered.contains(" INFO "), "INFO badge in counts path should have trailing space");
     }
 }
