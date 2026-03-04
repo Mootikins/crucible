@@ -85,7 +85,7 @@ impl LayoutEngine {
                     .unwrap()
             }
 
-            Node::Box(boxnode) => self.build_box(boxnode, available_width),
+            Node::Box(boxnode) => self.build_box(boxnode, available_width, false),
 
             Node::Static(static_node) => {
                 let fragment = Node::Fragment(static_node.children.clone());
@@ -220,40 +220,12 @@ impl LayoutEngine {
                 return self.build_node(node, available_width);
             }
 
-            Node::Box(boxnode) if matches!(boxnode.size, OilSize::Flex(_)) => {
-                // Flex boxes in rows need auto() width so Taffy can distribute remaining space.
-                // build_box() always uses length(available_width) for Flex which is wrong here.
-                let weight = match boxnode.size {
-                    OilSize::Flex(w) => w as f32,
-                    _ => unreachable!(),
-                };
-                // Build children content-sized too (spacer usually has no children)
-                let child_ids: Vec<NodeId> = boxnode
-                    .children
-                    .iter()
-                    .map(|c| self.build_node_content_sized(c, available_width))
-                    .collect();
-                let node_id = self
-                    .tree
-                    .new_with_children(
-                        Style {
-                            display: Display::Flex,
-                            flex_direction: FlexDirection::Row,
-                            flex_grow: weight,
-                            size: Size {
-                                width: auto(),
-                                height: auto(),
-                            },
-                            ..Default::default()
-                        },
-                        &child_ids,
-                    )
-                    .unwrap();
+            Node::Box(boxnode) => {
+                let node_id = self.build_box(boxnode, available_width, true);
                 self.node_map.insert(id, node_id);
                 return node_id;
             }
 
-            // For all other node types, delegate to normal build
             _ => return self.build_node(node, available_width),
         };
 
@@ -261,7 +233,12 @@ impl LayoutEngine {
         node_id
     }
 
-    fn build_box(&mut self, boxnode: &BoxNode, available_width: f32) -> NodeId {
+    fn build_box(
+        &mut self,
+        boxnode: &BoxNode,
+        available_width: f32,
+        content_sized: bool,
+    ) -> NodeId {
         let padding = &boxnode.padding;
         let margin = &boxnode.margin;
         let border_width = if boxnode.border.is_some() { 1.0 } else { 0.0 };
@@ -293,6 +270,7 @@ impl LayoutEngine {
         let (width, height, flex_grow) = match boxnode.size {
             OilSize::Fixed(h) => (length(available_width), length(h as f32), 0.0),
             OilSize::Flex(weight) => (auto(), auto(), weight as f32),
+            OilSize::Content if content_sized => (auto(), auto(), 0.0),
             OilSize::Content => (length(available_width), auto(), 0.0),
         };
 
