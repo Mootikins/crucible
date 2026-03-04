@@ -4,7 +4,7 @@ use crate::planning::{FramePlanner, FrameSnapshot};
 use crate::render::{render_to_string, CursorInfo};
 #[allow(unused_imports)] // WIP: self not yet used in cursor and event modules
 use crossterm::{
-    cursor::{self, Hide, MoveDown, MoveTo, MoveToColumn, MoveUp, Show},
+    cursor::{self, Hide, MoveDown, MoveTo, MoveToColumn, MoveUp, SetCursorStyle, Show},
     event::{
         self, Event as CtEvent, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
         PushKeyboardEnhancementFlags,
@@ -24,6 +24,7 @@ pub struct Terminal {
     output: OutputBuffer,
     keyboard_enhanced: bool,
     last_cursor: Option<CursorInfo>,
+    cursor_style: SetCursorStyle,
 }
 
 impl Terminal {
@@ -42,11 +43,17 @@ impl Terminal {
             output: OutputBuffer::new(width as usize, height as usize),
             keyboard_enhanced: false,
             last_cursor: None,
+            cursor_style: SetCursorStyle::SteadyBlock,
         }
     }
 
     pub fn with_alternate_screen(mut self, use_alt: bool) -> Self {
         self.use_alternate_screen = use_alt;
+        self
+    }
+
+    pub fn cursor_style(mut self, style: SetCursorStyle) -> Self {
+        self.cursor_style = style;
         self
     }
 
@@ -68,6 +75,7 @@ impl Terminal {
         } else {
             execute!(self.stdout, Hide)?;
         }
+        let _ = execute!(self.stdout, self.cursor_style);
         Ok(())
     }
 
@@ -75,6 +83,7 @@ impl Terminal {
         if self.output.height() > 0 {
             execute!(self.stdout, MoveToColumn(0))?;
         }
+        let _ = execute!(self.stdout, SetCursorStyle::DefaultUserShape);
         execute!(self.stdout, Show)?;
         if self.use_alternate_screen {
             execute!(self.stdout, LeaveAlternateScreen)?;
@@ -218,5 +227,23 @@ impl Terminal {
 impl Drop for Terminal {
     fn drop(&mut self) {
         let _ = self.exit();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::cursor::SetCursorStyle;
+
+    #[test]
+    fn terminal_default_cursor_style_is_steady_block() {
+        let term = Terminal::with_size(80, 24);
+        assert_eq!(term.cursor_style, SetCursorStyle::SteadyBlock);
+    }
+
+    #[test]
+    fn terminal_has_cursor_style_builder() {
+        let term = Terminal::with_size(80, 24).cursor_style(SetCursorStyle::BlinkingBar);
+        assert_eq!(term.cursor_style, SetCursorStyle::BlinkingBar);
     }
 }

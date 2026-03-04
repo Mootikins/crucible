@@ -19,7 +19,7 @@ expression: render_app(&app)
 
  ● I'll update that now.
 
- ✓ Edit File(path="config.toml", content="[kiln]↵path = "~/vault"") → File updated successfully
+ ✓ Edit File(path="config.toml", content="[kiln]↵path = "~/vault"") → File updat
 
    Done! Config updated.
                                                                                 
