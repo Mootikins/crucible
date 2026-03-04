@@ -3,7 +3,7 @@
 //! This module provides the final step in the Oil rendering pipeline:
 //!
 //! ```text
-//! Node → Taffy → LayoutTree → render_layout_tree() → String
+//! Node → Taffy → LayoutTree → render_layout_tree() → (String, CursorInfo)
 //! ```
 //!
 //! The renderer uses a 2D character buffer (CellGrid) to position content
@@ -12,6 +12,7 @@
 use crate::ansi::apply_style;
 use crate::cell_grid::CellGrid;
 use crate::node::SPINNER_FRAMES;
+use crate::render::CursorInfo;
 use crate::style::{Border, Style};
 
 use super::types::{LayoutBox, LayoutContent, LayoutTree, PopupItem};
@@ -29,21 +30,24 @@ use super::types::{LayoutBox, LayoutContent, LayoutTree, PopupItem};
 ///
 /// # Returns
 ///
-/// An ANSI-formatted string representing the rendered layout.
-pub fn render_layout_tree(tree: &LayoutTree) -> String {
+/// An ANSI-formatted string and cursor information.
+pub fn render_layout_tree(tree: &LayoutTree) -> (String, CursorInfo) {
     let width = tree.root.rect.width as usize;
     let height = tree.root.rect.height as usize;
 
     if width == 0 || height == 0 {
-        return String::new();
+        return (String::new(), CursorInfo::default());
     }
 
     let mut grid = CellGrid::new(width, height);
-    render_box_filtered(&tree.root, &mut grid, &|_| false);
-    grid.to_string_joined()
+    let mut cursor_position = None;
+    render_box_filtered(&tree.root, &mut grid, &|_| false, &mut cursor_position);
+    let content = grid.to_string_joined();
+    let cursor_info = cursor_info_from_position(cursor_position, content.lines().count());
+    (content, cursor_info)
 }
 
-pub fn render_layout_tree_filtered<F>(tree: &LayoutTree, skip_key: F) -> String
+pub fn render_layout_tree_filtered<F>(tree: &LayoutTree, skip_key: F) -> (String, CursorInfo)
 where
     F: Fn(&str) -> bool,
 {
@@ -51,11 +55,12 @@ where
     let height = tree.root.rect.height as usize;
 
     if width == 0 || height == 0 {
-        return String::new();
+        return (String::new(), CursorInfo::default());
     }
 
     let mut grid = CellGrid::new(width, height);
-    render_box_filtered(&tree.root, &mut grid, &skip_key);
+    let mut cursor_position = None;
+    render_box_filtered(&tree.root, &mut grid, &skip_key, &mut cursor_position);
 
     // Trim trailing blank lines so fully-filtered trees produce empty string
     let lines = grid.to_lines();
@@ -69,12 +74,33 @@ where
         }
         v
     };
-    trimmed.join("\r\n")
+    let content = trimmed.join("\r\n");
+    let cursor_info = cursor_info_from_position(cursor_position, trimmed.len());
+    (content, cursor_info)
+}
+
+fn cursor_info_from_position(
+    cursor_position: Option<(u16, u16)>,
+    rendered_line_count: usize,
+) -> CursorInfo {
+    if let Some((col, cursor_y)) = cursor_position {
+        return CursorInfo {
+            col,
+            row_from_end: rendered_line_count.saturating_sub(cursor_y as usize + 1) as u16,
+            visible: true,
+        };
+    }
+
+    CursorInfo::default()
 }
 
 /// Recursively render a LayoutBox and its children to the grid.
-fn render_box_filtered<F>(layout_box: &LayoutBox, grid: &mut CellGrid, skip_key: &F)
-where
+fn render_box_filtered<F>(
+    layout_box: &LayoutBox,
+    grid: &mut CellGrid,
+    skip_key: &F,
+    cursor_position: &mut Option<(u16, u16)>,
+) where
     F: Fn(&str) -> bool,
 {
     if layout_box.key.as_deref().is_some_and(skip_key) {
@@ -113,6 +139,12 @@ where
                 y,
                 grid,
             );
+
+            if *focused {
+                let cursor_char_pos = (*cursor).min(value.chars().count());
+                let cursor_col = value.chars().take(cursor_char_pos).count() as u16;
+                *cursor_position = Some((layout_box.rect.x + cursor_col, layout_box.rect.y));
+            }
         }
 
         LayoutContent::Spinner {
@@ -161,7 +193,7 @@ where
 
     // Render children (later children can overwrite earlier ones for z-order)
     for child in &layout_box.children {
-        render_box_filtered(child, grid, skip_key);
+        render_box_filtered(child, grid, skip_key, cursor_position);
     }
 }
 
@@ -432,7 +464,7 @@ mod tests {
     #[test]
     fn render_empty_tree() {
         let tree = LayoutTree::empty();
-        let result = render_layout_tree(&tree);
+        let (result, _) = render_layout_tree(&tree);
         assert_eq!(result, "");
     }
 
@@ -446,7 +478,7 @@ mod tests {
             },
         ));
 
-        let result = render_layout_tree(&tree);
+        let (result, _) = render_layout_tree(&tree);
         assert!(result.contains("Hello"));
     }
 
@@ -464,7 +496,7 @@ mod tests {
             ),
         );
 
-        let result = render_layout_tree(&tree);
+        let (result, _) = render_layout_tree(&tree);
         let lines: Vec<&str> = result.lines().collect();
         assert_eq!(lines.len(), 3);
         // Text should be at x=5, y=1
@@ -481,7 +513,7 @@ mod tests {
             },
         ));
 
-        let result = render_layout_tree(&tree);
+        let (result, _) = render_layout_tree(&tree);
         // Should contain ANSI bold code
         assert!(result.contains("\x1b["));
         assert!(result.contains("Bold"));
@@ -500,7 +532,7 @@ mod tests {
             },
         ));
 
-        let result = render_layout_tree(&tree);
+        let (result, _) = render_layout_tree(&tree);
         assert!(result.contains("typed text"));
         assert!(!result.contains("placeholder"));
     }
@@ -518,8 +550,47 @@ mod tests {
             },
         ));
 
-        let result = render_layout_tree(&tree);
+        let (result, _) = render_layout_tree(&tree);
         assert!(result.contains("placeholder"));
+    }
+
+    #[test]
+    fn render_layout_tree_filtered_tracks_cursor_for_focused_input() {
+        let tree = LayoutTree::new(
+            LayoutBox::new(Rect::new(0, 0, 70, 4), LayoutContent::Empty).with_child(
+                LayoutBox::new(
+                    Rect::new(5, 2, 70, 1),
+                    LayoutContent::Input {
+                        value: "hello".to_string(),
+                        cursor: 3,
+                        placeholder: None,
+                        focused: true,
+                        style: Style::default(),
+                    },
+                ),
+            ),
+        );
+
+        let (_, cursor_info) = render_layout_tree_filtered(&tree, |_| false);
+
+        assert!(cursor_info.visible);
+        assert_eq!(cursor_info.col, 8);
+        assert_eq!(cursor_info.row_from_end, 0);
+    }
+
+    #[test]
+    fn render_layout_tree_filtered_hides_cursor_without_focused_input() {
+        let tree = LayoutTree::new(LayoutBox::new(
+            Rect::new(0, 0, 20, 1),
+            LayoutContent::Text {
+                content: "just text".to_string(),
+                style: Style::default(),
+            },
+        ));
+
+        let (_, cursor_info) = render_layout_tree_filtered(&tree, |_| false);
+
+        assert!(!cursor_info.visible);
     }
 
     #[test]
@@ -534,7 +605,7 @@ mod tests {
             },
         ));
 
-        let result = render_layout_tree(&tree);
+        let (result, _) = render_layout_tree(&tree);
         assert!(result.contains("Loading"));
         assert!(result.contains('◐'));
     }
@@ -563,7 +634,7 @@ mod tests {
                 .with_child(child2),
         );
 
-        let result = render_layout_tree(&tree);
+        let (result, _) = render_layout_tree(&tree);
         assert!(result.contains("Child1"));
         assert!(result.contains("Child2"));
     }
@@ -578,7 +649,7 @@ mod tests {
             },
         ));
 
-        let result = render_layout_tree(&tree);
+        let (result, _) = render_layout_tree(&tree);
         // Should contain border characters
         assert!(result.contains('┌'));
         assert!(result.contains('┐'));
@@ -622,7 +693,7 @@ mod tests {
             },
         ));
 
-        let result = render_layout_tree(&tree);
+        let (result, _) = render_layout_tree(&tree);
         assert!(result.contains("Item 1"));
         assert!(result.contains("Item 2"));
         assert!(result.contains("Item 3"));
@@ -656,7 +727,7 @@ mod tests {
                 .with_child(child2),
         );
 
-        let result = render_layout_tree(&tree);
+        let (result, _) = render_layout_tree(&tree);
         // Should be "ABBA" followed by spaces
         assert!(result.starts_with("ABB"));
     }
