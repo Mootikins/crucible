@@ -24,8 +24,8 @@ chat_failed="false"
 anthropic_chat_failed="false"
 zai_chat_failed="false"
 
-log_pass() { echo -e "${GREEN}✓${NC} $1"; ((passed++)); }
-log_fail() { echo -e "${RED}✗${NC} $1"; ((failed++)); }
+log_pass() { echo -e "${GREEN}✓${NC} $1"; ((passed++)) || true; }
+log_fail() { echo -e "${RED}✗${NC} $1"; ((failed++)) || true; }
 log_info() { echo -e "${YELLOW}→${NC} $1"; }
 
 check_prereqs() {
