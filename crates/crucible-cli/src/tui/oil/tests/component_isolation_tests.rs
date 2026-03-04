@@ -128,6 +128,18 @@ mod status_bar_tests {
         render_to_string(&bar.emergency_view(), width)
     }
 
+    fn render_configured_bar(bar: &StatusBar, width: usize) -> String {
+        let node =
+            bar.view_from_config(&crucible_lua::statusline::StatuslineConfig::builtin_default());
+        render_to_plain_text(&node, width)
+    }
+
+    fn render_configured_bar_ansi(bar: &StatusBar, width: usize) -> String {
+        let node =
+            bar.view_from_config(&crucible_lua::statusline::StatuslineConfig::builtin_default());
+        render_to_string(&node, width)
+    }
+
     #[test]
     fn renders_mode_label_at_start() {
         let bar = StatusBar::new().mode(ChatMode::Normal);
@@ -279,6 +291,91 @@ mod status_bar_tests {
         assert!(
             badge_pos > mode_pos,
             "Notification badge should appear after mode (on right side)"
+        );
+    }
+
+    #[test]
+    fn snapshot_statusline_ctrlc_notification_right_aligned_80() {
+        use crate::tui::oil::components::NotificationToastKind;
+
+        let bar = StatusBar::new()
+            .mode(ChatMode::Normal)
+            .model("glm-4.7-flash-iq4")
+            .toast("Ctrl+C again to quit", NotificationToastKind::Warning);
+
+        let plain = render_configured_bar(&bar, 80);
+        let toast_start = plain
+            .find("Ctrl+C again to quit")
+            .expect("toast text should render");
+        assert!(
+            toast_start >= 48,
+            "toast should be right-aligned with visible spacer at width 80: {plain:?}"
+        );
+
+        assert_snapshot!(
+            "statusline_ctrlc_notification_right_aligned_80",
+            render_configured_bar_ansi(&bar, 80)
+        );
+    }
+
+    #[test]
+    fn snapshot_statusline_ctrlc_notification_right_aligned_120() {
+        use crate::tui::oil::components::NotificationToastKind;
+
+        let bar = StatusBar::new()
+            .mode(ChatMode::Normal)
+            .model("glm-4.7-flash-iq4")
+            .toast("Ctrl+C again to quit", NotificationToastKind::Warning);
+
+        let plain = render_configured_bar(&bar, 120);
+        let toast_start = plain
+            .find("Ctrl+C again to quit")
+            .expect("toast text should render");
+        assert!(
+            toast_start >= 88,
+            "toast should be right-aligned with large spacer at width 120: {plain:?}"
+        );
+
+        assert_snapshot!(
+            "statusline_ctrlc_notification_right_aligned_120",
+            render_configured_bar_ansi(&bar, 120)
+        );
+    }
+
+    #[test]
+    fn snapshot_statusline_ctrlc_notification_narrow_width_50() {
+        use crate::tui::oil::components::NotificationToastKind;
+
+        let bar = StatusBar::new()
+            .mode(ChatMode::Normal)
+            .model("glm-4.7-flash-iq4")
+            .toast("Ctrl+C again to quit", NotificationToastKind::Warning);
+
+        let ansi = render_configured_bar_ansi(&bar, 50);
+        assert_fits_width(&ansi, 50);
+
+        assert_snapshot!("statusline_ctrlc_notification_narrow_width_50", ansi);
+    }
+
+    #[test]
+    fn snapshot_statusline_idle_context_fallback_right_aligned() {
+        let bar = StatusBar::new()
+            .mode(ChatMode::Normal)
+            .model("glm-4.7-flash-iq4")
+            .context(4096, 32768);
+
+        let plain = render_configured_bar(&bar, 80);
+        let ctx_start = plain
+            .find("13% ctx")
+            .expect("context fallback should render");
+        assert!(
+            ctx_start >= 70,
+            "context fallback should stay right-aligned when no toast is active: {plain:?}"
+        );
+
+        assert_snapshot!(
+            "statusline_idle_context_fallback_right_aligned",
+            render_configured_bar_ansi(&bar, 80)
         );
     }
 
