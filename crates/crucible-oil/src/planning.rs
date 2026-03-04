@@ -3,7 +3,7 @@ use crate::graduation::{GraduatedContent, GraduationState};
 use crate::layout::{build_layout_tree, render_layout_tree_filtered};
 use crate::node::{ElementKind, Node, OverlayNode};
 use crate::overlay::{extract_overlays, filter_overlays, OverlayAnchor};
-use crate::render::{render_to_string, CursorInfo, RenderResult};
+use crate::render::{render_to_string, RenderResult};
 
 #[derive(Debug, Clone)]
 pub struct FrameTrace {
@@ -131,13 +131,13 @@ impl FramePlanner {
 
         let layout_tree = build_layout_tree(&main_tree, self.width, self.height);
         let graduated_keys = self.graduation.graduated_keys();
-        let content = render_layout_tree_filtered(&layout_tree, |key| {
+        let (content, cursor_info) = render_layout_tree_filtered(&layout_tree, |key| {
             graduated_keys.iter().any(|k| k == key)
         });
 
         let viewport = RenderResult {
             content,
-            cursor: CursorInfo::default(),
+            cursor: cursor_info,
         };
 
         let rendered_overlays = self.render_overlays(&overlay_nodes);
@@ -159,7 +159,6 @@ impl FramePlanner {
             stdout_delta,
         }
     }
-
 
     fn render_overlays(&self, overlay_nodes: &[OverlayNode]) -> Vec<RenderedOverlay> {
         overlay_nodes
@@ -205,7 +204,7 @@ impl FramePlanner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::node::{col, scrollback, text};
+    use crate::node::{col, scrollback, text, text_input};
 
     #[test]
     fn plan_with_layout_tree_renders_text() {
@@ -249,4 +248,14 @@ mod tests {
         );
     }
 
+    #[test]
+    fn plan_with_layout_tree_tracks_cursor_for_focused_input() {
+        let mut planner = FramePlanner::new(80, 24);
+        let tree = col([text_input("hello", 3)]);
+
+        let snapshot = planner.plan_with_layout_tree(&tree);
+
+        assert!(snapshot.plan.viewport.cursor.visible);
+        assert_eq!(snapshot.plan.viewport.cursor.col, 3);
+    }
 }
