@@ -9,11 +9,11 @@
 //! The renderer uses a 2D character buffer (CellGrid) to position content
 //! at computed coordinates, then converts the buffer to an ANSI string.
 
-use crate::ansi::{apply_style, visible_width};
+use crate::ansi::apply_style;
 use crate::cell_grid::CellGrid;
 
 use crate::render::CursorInfo;
-use crate::render_helpers::{wrap_and_style_padded, select_spinner_frame};
+use crate::render_helpers::{wrap_and_style_padded, select_spinner_frame, format_popup_item_line};
 use crate::style::{Border, Style};
 
 use super::types::{LayoutBox, LayoutContent, LayoutTree, PopupItem};
@@ -306,60 +306,13 @@ fn render_popup(
         let is_selected = actual_index == selected;
         let bg = if is_selected { selected_bg } else { popup_bg };
 
-        let mut line = String::new();
-        line.push(' ');
-
-        if is_selected {
-            line.push_str("▸ ");
-        } else {
-            line.push_str("  ");
-        }
-
-        if let Some(kind) = &item.kind {
-            line.push_str(kind);
-            line.push(' ');
-        }
-
-        // Calculate available space for label
-        let prefix_width = visible_width(&line);
-        let max_label_width = width.saturating_sub(prefix_width + 2);
-        let label = if item.label.chars().count() > max_label_width && max_label_width > 4 {
-            let s: String = item.label.chars().take(max_label_width - 1).collect();
-            format!("{}…", s)
-        } else {
-            item.label.clone()
-        };
-        line.push_str(&label);
-
-        let label_width = visible_width(&line);
-
-        if let Some(desc) = &item.description {
-            let available = width.saturating_sub(label_width + 3);
-            if available > 10 {
-                let truncated = if desc.chars().count() > available {
-                    let s: String = desc.chars().take(available - 1).collect();
-                    format!("{}…", s)
-                } else {
-                    desc.clone()
-                };
-
-                line.push_str("  ");
-                line.push_str(&truncated);
-
-                let after_desc_width = label_width + 2 + visible_width(&truncated);
-                let padding = width.saturating_sub(after_desc_width);
-                line.push_str(&" ".repeat(padding));
-                line.push(' ');
-            } else {
-                let padding = width.saturating_sub(label_width);
-                line.push_str(&" ".repeat(padding));
-                line.push(' ');
-            }
-        } else {
-            let padding = width.saturating_sub(label_width);
-            line.push_str(&" ".repeat(padding));
-            line.push(' ');
-        }
+        let line = format_popup_item_line(
+            is_selected,
+            item.kind.as_deref(),
+            &item.label,
+            item.description.as_deref(),
+            width,
+        );
 
         let styled_line = apply_style(&line, &Style::new().bg(bg));
         grid.blit_line(&styled_line, x, current_y);
@@ -427,7 +380,7 @@ fn render_box_content(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ansi::strip_ansi;
+    use crate::ansi::{strip_ansi, visible_width};
     use crate::layout::Rect;
     use crate::utils::truncate_to_width;
 
