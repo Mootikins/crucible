@@ -65,8 +65,8 @@ pub use node::{
 };
 pub use overlay::{composite_overlays, Overlay, OverlayAnchor};
 pub use render::{
-    render_to_plain_text, render_to_string, render_with_cursor, CursorInfo, NoFilter, RenderFilter,
-    RenderResult,
+    render_to_plain_text, render_to_string, render_to_string_filtered, render_with_cursor,
+    render_with_cursor_filtered, CursorInfo, NoFilter, RenderFilter, RenderResult,
 };
 pub use style::{AlignItems, Border, Color, Gap, JustifyContent, Padding, Style};
 pub use planning::{FramePlan, FramePlanner, FrameSnapshot, FrameTrace, RenderedOverlay};
