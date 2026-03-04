@@ -85,7 +85,7 @@ impl CellGrid {
                             if escape == "\x1b[0m" || escape == "\x1b[m" {
                                 current_style.clear();
                             } else {
-                                current_style = escape;
+                                current_style.push_str(&escape);
                             }
                         }
                     }
@@ -223,6 +223,18 @@ mod tests {
         let line = &grid.to_lines()[0];
         assert!(line.contains("\x1b[31m"));
         assert!(line.contains("RED"));
+    }
+
+    #[test]
+    fn sequential_style_escapes_are_accumulated() {
+        let mut grid = CellGrid::new(20, 1);
+        grid.blit_line("\x1b[48;5;12m\x1b[38;5;0m\x1b[1m PLAN \x1b[0m", 0, 0);
+
+        let line = &grid.to_lines()[0];
+        assert!(line.contains("\x1b[48;5;12m"));
+        assert!(line.contains("\x1b[38;5;0m"));
+        assert!(line.contains("\x1b[1m"));
+        assert!(line.contains(" PLAN "));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use crate::tui::oil::chat_app::ChatMode;
 use crate::tui::oil::node::{row, spacer, styled, Node};
-use crate::tui::oil::style::{Color, Style};
+use crate::tui::oil::style::{AdaptiveColor, Color, Style};
 
 use crate::tui::oil::utils::truncate_to_chars;
 
@@ -79,10 +79,20 @@ impl StatusBar {
 
     fn mode_style(&self) -> Style {
         let t = crate::tui::oil::theme::active();
+        let mode_bg = |color: AdaptiveColor| if t.is_dark { color.dark } else { color.light };
         match self.mode {
-            ChatMode::Normal => Style::new().bg(t.resolve_color(t.colors.mode_normal)).fg(Color::Black).bold(),
-            ChatMode::Plan => Style::new().bg(t.resolve_color(t.colors.mode_plan)).fg(Color::Black).bold(),
-            ChatMode::Auto => Style::new().bg(t.resolve_color(t.colors.mode_auto)).fg(Color::Black).bold(),
+            ChatMode::Normal => Style::new()
+                .bg(mode_bg(t.colors.mode_normal))
+                .fg(Color::Black)
+                .bold(),
+            ChatMode::Plan => Style::new()
+                .bg(mode_bg(t.colors.mode_plan))
+                .fg(Color::Black)
+                .bold(),
+            ChatMode::Auto => Style::new()
+                .bg(mode_bg(t.colors.mode_auto))
+                .fg(Color::Black)
+                .bold(),
         }
     }
 
@@ -141,7 +151,10 @@ impl StatusBar {
             let mut nodes = Vec::new();
             for (i, component) in components.iter().enumerate() {
                 if i > 0 && !sep.is_empty() {
-                    nodes.push(styled(sep.to_string(), Style::new().fg(t.resolve_color(t.colors.text_muted))));
+                    nodes.push(styled(
+                        sep.to_string(),
+                        Style::new().fg(t.resolve_color(t.colors.text_muted)),
+                    ));
                 }
                 nodes.push(render_component_node(component, data));
             }
@@ -170,10 +183,19 @@ impl StatusBar {
         let t = crate::tui::oil::theme::active();
         row(vec![
             styled(self.mode_label().to_string(), self.mode_style()),
-            styled(" ".to_string(), Style::new().fg(t.resolve_color(t.colors.text_muted))),
-            styled(self.model_display(), Style::new().fg(t.resolve_color(t.colors.primary))),
+            styled(
+                " ".to_string(),
+                Style::new().fg(t.resolve_color(t.colors.text_muted)),
+            ),
+            styled(
+                self.model_display(),
+                Style::new().fg(t.resolve_color(t.colors.primary)),
+            ),
             spacer(),
-            styled(self.context_display(), Style::new().fg(t.resolve_color(t.colors.text_muted))),
+            styled(
+                self.context_display(),
+                Style::new().fg(t.resolve_color(t.colors.text_muted)),
+            ),
         ])
     }
 }
@@ -239,9 +261,13 @@ mod tests {
         let plain = render_to_plain_text(&bar.emergency_view(), 80);
         // The status bar should use the full 80 character width
         // Mode label + space + model + spacer + context should fill 80 chars
-        assert_eq!(plain.len(), 80, "Status bar should fill full width at 80 chars");
+        assert_eq!(
+            plain.len(),
+            80,
+            "Status bar should fill full width at 80 chars"
+        );
     }
-    
+
     #[test]
     fn emergency_view_spacer_fills_width_at_120() {
         // Test that spacer() expands correctly at different widths
@@ -250,7 +276,11 @@ mod tests {
             .model("gpt-4o")
             .context(4000, 8000);
         let plain = render_to_plain_text(&bar.emergency_view(), 120);
-        assert_eq!(plain.len(), 120, "Status bar should fill full width at 120 chars");
+        assert_eq!(
+            plain.len(),
+            120,
+            "Status bar should fill full width at 120 chars"
+        );
     }
 
     mod config_driven {

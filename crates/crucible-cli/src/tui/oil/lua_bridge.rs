@@ -1,6 +1,6 @@
 use crucible_lua::statusline::{ColorSpec, StatuslineComponent, StyleSpec};
 use crucible_oil::node::{row, spacer, styled, Node};
-use crucible_oil::style::{Color, Style};
+use crucible_oil::style::{AdaptiveColor, Color, Style};
 
 use crate::tui::oil::chat_app::ChatMode;
 use crate::tui::oil::components::status_bar::NotificationToastKind;
@@ -70,10 +70,29 @@ pub fn render_component_node(component: &StatuslineComponent, data: &StatusBarDa
     let t = theme::active();
     match component {
         StatuslineComponent::Mode { .. } => {
+            let mode_bg = |color: AdaptiveColor| if t.is_dark { color.dark } else { color.light };
             let (label, style) = match data.mode {
-                ChatMode::Normal => (" NORMAL ", Style::new().bg(t.resolve_color(t.colors.mode_normal)).fg(Color::Black).bold()),
-                ChatMode::Plan => (" PLAN ", Style::new().bg(t.resolve_color(t.colors.mode_plan)).fg(Color::Black).bold()),
-                ChatMode::Auto => (" AUTO ", Style::new().bg(t.resolve_color(t.colors.mode_auto)).fg(Color::Black).bold()),
+                ChatMode::Normal => (
+                    " NORMAL ",
+                    Style::new()
+                        .bg(mode_bg(t.colors.mode_normal))
+                        .fg(Color::Black)
+                        .bold(),
+                ),
+                ChatMode::Plan => (
+                    " PLAN ",
+                    Style::new()
+                        .bg(mode_bg(t.colors.mode_plan))
+                        .fg(Color::Black)
+                        .bold(),
+                ),
+                ChatMode::Auto => (
+                    " AUTO ",
+                    Style::new()
+                        .bg(mode_bg(t.colors.mode_auto))
+                        .fg(Color::Black)
+                        .bold(),
+                ),
             };
             styled(label.to_string(), style)
         }
@@ -100,14 +119,23 @@ pub fn render_component_node(component: &StatuslineComponent, data: &StatusBarDa
             } else {
                 "— ctx".to_string()
             };
-            styled(display, Style::new().fg(t.resolve_color(t.colors.text_muted)))
+            styled(
+                display,
+                Style::new().fg(t.resolve_color(t.colors.text_muted)),
+            )
         }
-        StatuslineComponent::Text { content, .. } => styled(content.clone(), Style::new().fg(t.resolve_color(t.colors.text_muted))),
+        StatuslineComponent::Text { content, .. } => styled(
+            content.clone(),
+            Style::new().fg(t.resolve_color(t.colors.text_muted)),
+        ),
         StatuslineComponent::Spacer => spacer(),
         StatuslineComponent::Notification { fallback, .. } => {
             let mut items = Vec::new();
             if let Some((text, kind)) = &data.notification_toast {
-                items.push(styled(text.clone(), Style::new().fg(t.resolve_color(t.colors.overlay_bright))));
+                items.push(styled(
+                    text.clone(),
+                    Style::new().fg(t.resolve_color(t.colors.overlay_bright)),
+                ));
                 items.push(styled(" ".to_string(), Style::new()));
                 items.push(styled(
                     format!(" {} ", kind.label()),
@@ -117,7 +145,7 @@ pub fn render_component_node(component: &StatuslineComponent, data: &StatusBarDa
                 for (kind, count) in &data.notification_counts {
                     items.push(styled(
                         format!(" {} ", kind.label()),
-                    Style::new().fg(kind.color()).bold().reverse(),
+                        Style::new().fg(kind.color()).bold().reverse(),
                     ));
                     items.push(styled(
                         format!(" {} ", count),
