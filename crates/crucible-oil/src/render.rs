@@ -357,7 +357,7 @@ fn render_row_children_filtered(
 
     // Phase 2: render with calculated widths
     // Use CellGrid for multi-line rows, fast path for single-line
-    if max_height > 1 {
+    if max_height > 1 || layout_result.total_used > width {
         render_row_to_grid(
             children,
             &child_infos,
