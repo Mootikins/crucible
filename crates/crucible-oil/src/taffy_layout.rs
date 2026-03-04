@@ -41,7 +41,7 @@ impl LayoutEngine {
         width: f32,
         height: f32,
     ) -> HashMap<usize, ComputedLayout> {
-        self.tree = TaffyTree::new();
+        self.tree.clear();
         self.node_map.clear();
         self.next_id = 0;
 
@@ -351,7 +351,7 @@ impl LayoutEngine {
     }
 
     pub fn compute_layout_tree(&mut self, node: &Node, width: f32, height: f32) -> LayoutTree {
-        self.tree = TaffyTree::new();
+        self.tree.clear();
         self.node_map.clear();
         self.next_id = 0;
 
@@ -512,9 +512,18 @@ impl LayoutEngine {
     }
 }
 
+pub fn build_layout_tree_with_engine(
+    engine: &mut LayoutEngine,
+    node: &Node,
+    width: u16,
+    height: u16,
+) -> LayoutTree {
+    engine.compute_layout_tree(node, width as f32, height as f32)
+}
+
 pub fn build_layout_tree(node: &Node, width: u16, height: u16) -> LayoutTree {
     let mut engine = LayoutEngine::new();
-    engine.compute_layout_tree(node, width as f32, height as f32)
+    build_layout_tree_with_engine(&mut engine, node, width, height)
 }
 
 fn convert_justify_content(justify: OilJustifyContent) -> JustifyContent {
