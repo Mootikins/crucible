@@ -55,6 +55,73 @@ fn usage_to_token_usage(usage: &genai::chat::Usage) -> TokenUsage {
     }
 }
 
+fn wrap_stream_with_guards(
+    mut stream: BoxStream<'static, ChatResult<ChatChunk>>,
+) -> BoxStream<'static, ChatResult<ChatChunk>> {
+    Box::pin(async_stream::stream! {
+        let mut received_content = false;
+        let mut received_tool_call = false;
+        let mut received_reasoning = false;
+        let mut received_done = false;
+
+        loop {
+            let next = match tokio::time::timeout(STREAM_CHUNK_TIMEOUT, stream.next()).await {
+                Ok(item) => item,
+                Err(_) => {
+                    yield Err(ChatError::Communication(STREAM_TIMEOUT_ERROR.to_string()));
+                    return;
+                }
+            };
+
+            let Some(next) = next else {
+                break;
+            };
+
+            let chunk = match next {
+                Ok(chunk) => chunk,
+                Err(err) => {
+                    yield Err(err);
+                    return;
+                }
+            };
+
+            if !chunk.delta.is_empty() {
+                received_content = true;
+            }
+            if chunk
+                .tool_calls
+                .as_ref()
+                .is_some_and(|calls| !calls.is_empty())
+            {
+                received_tool_call = true;
+            }
+            if chunk
+                .reasoning
+                .as_ref()
+                .is_some_and(|reasoning| !reasoning.is_empty())
+            {
+                received_reasoning = true;
+            }
+            if chunk.done {
+                received_done = true;
+            }
+
+            yield Ok(chunk);
+        }
+
+        if !received_content && !received_tool_call && !received_reasoning {
+            yield Err(ChatError::Communication(EMPTY_RESPONSE_ERROR.to_string()));
+            return;
+        }
+
+        if !received_done {
+            yield Err(ChatError::Communication(
+                STREAM_UNEXPECTED_END_ERROR.to_string(),
+            ));
+        }
+    })
+}
+
 pub struct GenaiAgentHandle {
     client: genai::Client,
     model: ModelIden,
@@ -373,7 +440,7 @@ impl AgentHandle for GenaiAgentHandle {
         message: String,
     ) -> BoxStream<'static, ChatResult<ChatChunk>> {
         if self.max_tool_depth == 0 {
-            return self.send_mock_contract_stream(message);
+            return wrap_stream_with_guards(self.send_mock_contract_stream(message));
         }
 
         let mode_prefix = if self.current_mode_id == "plan" && !self.mode_context_sent {
@@ -423,7 +490,7 @@ impl AgentHandle for GenaiAgentHandle {
         let model_name = self.explicit_model_name();
         let max_tool_depth = self.max_tool_depth;
 
-        Box::pin(async_stream::stream! {
+        let stream = Box::pin(async_stream::stream! {
             let stream_res = client.exec_chat_stream(&model_name, request, Some(&options)).await;
             let mut stream = match stream_res {
                 Ok(res) => res.stream,
@@ -513,7 +580,9 @@ impl AgentHandle for GenaiAgentHandle {
                     }
                 }
             }
-        })
+        });
+
+        wrap_stream_with_guards(stream)
     }
 
     fn continue_with_tool_results(
@@ -719,6 +788,65 @@ impl AgentHandle for GenaiAgentHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::StreamExt;
+
+    #[derive(Clone)]
+    struct StreamingMockAgent {
+        chunks: Vec<ChatChunk>,
+        hanging: bool,
+    }
+
+    impl StreamingMockAgent {
+        fn immediate_end() -> Self {
+            Self {
+                chunks: vec![ChatChunk {
+                    delta: String::new(),
+                    done: true,
+                    tool_calls: None,
+                    tool_results: None,
+                    reasoning: None,
+                    usage: None,
+                    subagent_events: None,
+                    precognition_notes_count: None,
+                    precognition_notes: None,
+                }],
+                hanging: false,
+            }
+        }
+
+        fn empty() -> Self {
+            Self::immediate_end()
+        }
+
+        fn hanging() -> Self {
+            Self {
+                chunks: Vec::new(),
+                hanging: true,
+            }
+        }
+    }
+
+    #[async_trait]
+    impl AgentHandle for StreamingMockAgent {
+        fn send_message_stream(
+            &mut self,
+            _message: String,
+        ) -> BoxStream<'static, ChatResult<ChatChunk>> {
+            if self.hanging {
+                futures::stream::pending::<ChatResult<ChatChunk>>().boxed()
+            } else {
+                futures::stream::iter(self.chunks.clone().into_iter().map(Ok)).boxed()
+            }
+        }
+
+        fn is_connected(&self) -> bool {
+            true
+        }
+
+        async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
+            Ok(())
+        }
+    }
 
     #[test]
     fn test_thinking_budget_stored_and_clamped() {
@@ -749,5 +877,46 @@ mod tests {
 
         assert_eq!(clamped_negative, 0);
         assert_eq!(clamped_overflow, u32::MAX);
+    }
+
+    #[tokio::test]
+    async fn test_send_message_stream_empty_response_yields_error() {
+        let mut agent = StreamingMockAgent::immediate_end();
+        let results = wrap_stream_with_guards(agent.send_message_stream("hello".to_string()))
+            .collect::<Vec<_>>()
+            .await;
+
+        assert!(results.iter().any(
+            |r| matches!(r, Err(ChatError::Communication(msg)) if msg.contains("empty response"))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_send_message_stream_empty_iterator_yields_error() {
+        let mut agent = StreamingMockAgent::empty();
+        let results = wrap_stream_with_guards(agent.send_message_stream("hello".to_string()))
+            .collect::<Vec<_>>()
+            .await;
+
+        assert!(results.iter().any(
+            |r| matches!(r, Err(ChatError::Communication(msg)) if msg.contains("empty response"))
+        ));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_send_message_stream_timeout_yields_error() {
+        let mut agent = StreamingMockAgent::hanging();
+        let task = tokio::spawn(async move {
+            wrap_stream_with_guards(agent.send_message_stream("hello".to_string()))
+                .collect::<Vec<_>>()
+                .await
+        });
+
+        tokio::time::advance(std::time::Duration::from_secs(301)).await;
+
+        let results = task.await.expect("task panicked");
+        assert!(results
+            .iter()
+            .any(|r| matches!(r, Err(ChatError::Communication(msg)) if msg.contains("timed out"))));
     }
 }
