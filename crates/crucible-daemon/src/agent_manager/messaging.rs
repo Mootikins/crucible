@@ -1012,10 +1012,21 @@ impl AgentManager {
         let mut agent_guard = agent.lock().await;
         let mut stream = agent_guard.send_message_stream(content);
         let mut tool_depth = 0usize;
+        let mut tool_calls_dispatched = false;
+        let mut terminal_chunk: Option<crucible_core::traits::chat::ChatChunk> = None;
 
         while let Some(result) = stream.next().await {
             match result {
                 Ok(chunk) => {
+                    if chunk
+                        .tool_calls
+                        .as_ref()
+                        .map(|calls| !calls.is_empty())
+                        .unwrap_or(false)
+                    {
+                        tool_calls_dispatched = true;
+                    }
+
                     Self::emit_stream_events(&stream_ctx, &chunk, accumulated_response).await;
 
                     if chunk.done {
@@ -1059,42 +1070,7 @@ impl AgentManager {
                             break;
                         }
 
-                        let injection = Self::run_reactor_handlers(
-                            &stream_ctx,
-                            &chunk,
-                            accumulated_response,
-                            is_continuation,
-                        )
-                        .await;
-
-                        if let Some((injected_content, _)) = injection {
-                            drop(stream);
-                            drop(agent_guard);
-
-                            accumulated_response.clear();
-                            let continuation_ctx = StreamContext {
-                                session_id: stream_ctx.session_id.clone(),
-                                message_id: format!("msg-{}", uuid::Uuid::new_v4()),
-                                event_tx: stream_ctx.event_tx.clone(),
-                                session_state: stream_ctx.session_state.clone(),
-                                pending_permissions: stream_ctx.pending_permissions.clone(),
-                                workspace_path: stream_ctx.workspace_path.clone(),
-                                agent_stream_config: stream_ctx.agent_stream_config.clone(),
-                                tool_dispatcher: stream_ctx.tool_dispatcher.clone(),
-                            };
-
-                            Box::pin(Self::execute_agent_stream(
-                                agent,
-                                injected_content,
-                                continuation_ctx,
-                                stream_config.clone(),
-                                accumulated_response,
-                                true,
-                                max_tool_depth,
-                            ))
-                            .await;
-                        }
-
+                        terminal_chunk = Some(chunk);
                         break;
                     }
                 }
@@ -1108,6 +1084,72 @@ impl AgentManager {
                     }
                     break;
                 }
+            }
+        }
+
+        if accumulated_response.trim().is_empty() && !tool_calls_dispatched {
+            error!(
+                session_id = %stream_ctx.session_id,
+                "LLM stream completed with no content and no tool calls"
+            );
+            if !emit_event(
+                &stream_ctx.event_tx,
+                SessionEventMessage::ended(
+                    &stream_ctx.session_id,
+                    format!("error: {}", crate::provider::genai_handle::EMPTY_RESPONSE_ERROR),
+                ),
+            ) {
+                warn!(
+                    session_id = %stream_ctx.session_id,
+                    "No subscribers for empty-response ended event"
+                );
+            }
+            return;
+        }
+
+        if terminal_chunk.is_none() {
+            warn!(
+                session_id = %stream_ctx.session_id,
+                reason = crate::provider::genai_handle::STREAM_UNEXPECTED_END_ERROR,
+                "Stream ended without terminal done chunk"
+            );
+        }
+
+        if let Some(chunk) = terminal_chunk {
+            let injection = Self::run_reactor_handlers(
+                &stream_ctx,
+                &chunk,
+                accumulated_response,
+                is_continuation,
+            )
+            .await;
+
+            if let Some((injected_content, _)) = injection {
+                drop(stream);
+                drop(agent_guard);
+
+                accumulated_response.clear();
+                let continuation_ctx = StreamContext {
+                    session_id: stream_ctx.session_id.clone(),
+                    message_id: format!("msg-{}", uuid::Uuid::new_v4()),
+                    event_tx: stream_ctx.event_tx.clone(),
+                    session_state: stream_ctx.session_state.clone(),
+                    pending_permissions: stream_ctx.pending_permissions.clone(),
+                    workspace_path: stream_ctx.workspace_path.clone(),
+                    agent_stream_config: stream_ctx.agent_stream_config.clone(),
+                    tool_dispatcher: stream_ctx.tool_dispatcher.clone(),
+                };
+
+                Box::pin(Self::execute_agent_stream(
+                    agent,
+                    injected_content,
+                    continuation_ctx,
+                    stream_config.clone(),
+                    accumulated_response,
+                    true,
+                    max_tool_depth,
+                ))
+                .await;
             }
         }
 

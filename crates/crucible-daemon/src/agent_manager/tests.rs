@@ -1547,7 +1547,7 @@ async fn send_message_emits_tool_call_and_tool_result_events() {
 }
 
 #[tokio::test]
-async fn send_message_emits_message_complete_for_empty_done_chunk() {
+async fn test_execute_agent_stream_empty_response_emits_error_event() {
     let tmp = TempDir::new().unwrap();
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));
@@ -1587,17 +1587,143 @@ async fn send_message_emits_message_complete_for_empty_done_chunk() {
     );
 
     let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    agent_manager
+        .send_message(&session.id, "test".to_string(), &event_tx)
+        .await
+        .unwrap();
+
+    let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+
+    let mut saw_message_complete = false;
+    let ended = timeout(Duration::from_secs(2), async {
+        loop {
+            match event_rx.recv().await {
+                Ok(event) if event.event == "message_complete" => saw_message_complete = true,
+                Ok(event) if event.event == "ended" => return event,
+                Ok(_) => continue,
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(err) => panic!("event channel closed while waiting for ended: {err}"),
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for ended event");
+
+    assert!(!saw_message_complete, "unexpected message_complete before error ended");
+    let ended_reason = ended.data["reason"].as_str().unwrap_or_default();
+    assert!(
+        ended_reason.starts_with("error:"),
+        "expected error ended event, got: {ended_reason}"
+    );
+}
+
+#[tokio::test]
+async fn test_execute_agent_stream_tool_call_only_is_not_error() {
+    let tmp = TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let agent_manager = create_test_agent_manager(session_manager.clone());
+    agent_manager
+        .configure_agent(&session.id, test_agent())
+        .await
+        .unwrap();
+
+    agent_manager.agent_cache.insert(
+        session.id.clone(),
+        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+            chunks: vec![
+                ChatChunk {
+                    delta: String::new(),
+                    done: false,
+                    tool_calls: Some(vec![ChatToolCall {
+                        name: "read_file".to_string(),
+                        arguments: Some(serde_json::json!({ "path": "test.md" })),
+                        id: Some("call-tool-only".to_string()),
+                    }]),
+                    tool_results: None,
+                    reasoning: None,
+                    usage: None,
+                    subagent_events: None,
+                    precognition_notes_count: None,
+                    precognition_notes: None,
+                },
+                ChatChunk {
+                    delta: String::new(),
+                    done: false,
+                    tool_calls: None,
+                    tool_results: Some(vec![ChatToolResult {
+                        name: "read_file".to_string(),
+                        result: "content".to_string(),
+                        error: None,
+                        call_id: Some("call-tool-only".to_string()),
+                    }]),
+                    reasoning: None,
+                    usage: None,
+                    subagent_events: None,
+                    precognition_notes_count: None,
+                    precognition_notes: None,
+                },
+                ChatChunk {
+                    delta: String::new(),
+                    done: true,
+                    tool_calls: None,
+                    tool_results: None,
+                    reasoning: None,
+                    usage: None,
+                    subagent_events: None,
+                    precognition_notes_count: None,
+                    precognition_notes: None,
+                },
+            ],
+        }))),
+    );
+
+    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
     let message_id = agent_manager
         .send_message(&session.id, "test".to_string(), &event_tx)
         .await
         .unwrap();
 
-    let user_message = next_event_or_skip(&mut event_rx, "user_message").await;
-    assert_eq!(user_message.data["content"], "test");
+    let _ = next_event_or_skip(&mut event_rx, "user_message").await;
 
-    let complete = next_event_or_skip(&mut event_rx, "message_complete").await;
+    let mut saw_error_ended = false;
+    let complete = timeout(Duration::from_secs(2), async {
+        loop {
+            match event_rx.recv().await {
+                Ok(event) if event.event == "ended" => {
+                    let reason = event.data["reason"].as_str().unwrap_or_default().to_string();
+                    if reason.starts_with("error:") {
+                        saw_error_ended = true;
+                    }
+                }
+                Ok(event) if event.event == "message_complete" => return event,
+                Ok(_) => continue,
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(err) => panic!("event channel closed while waiting for message_complete: {err}"),
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for message_complete");
+
     assert_eq!(complete.data["message_id"], message_id);
     assert_eq!(complete.data["full_response"], "");
+    assert!(
+        !saw_error_ended,
+        "unexpected error ended event before message_complete in tool-call-only flow"
+    );
 }
 
 mod event_dispatch {
