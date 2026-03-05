@@ -211,6 +211,19 @@ run_chat_test() {
         return 1
     fi
 
+    # Check for Phase A hard error messages in stderr
+    local stderr_content
+    stderr_content=$(cat "$stderr_file" 2>/dev/null || true)
+    if echo "$stderr_content" | grep -q "LLM returned empty response\|LLM stream timed out\|LLM stream ended unexpectedly"; then
+        local error_msg
+        error_msg=$(echo "$stderr_content" | grep -o "LLM [^'\"]*" | head -1)
+        log_fail "chat ($name): hard error from streaming pipeline: $error_msg"
+        printf -v "$status_var" '%s' "FAIL"
+        printf -v "$fail_var" '%s' "true"
+        chat_failed="true"
+        return 1
+    fi
+
     log_pass "chat ($name): got response: ${chat_response:0:80}"
     printf -v "$status_var" '%s' "PASS"
     printf -v "$fail_var" '%s' "false"
@@ -265,6 +278,7 @@ print_summary() {
     echo "Phase 5 (Debug diagnostics):  $phase5_status"
     echo ""
     echo "Results: $passed passed, $failed failed"
+    echo "Note: Phase A error detection active — hard errors surface in stderr"
     echo "========================================"
 
     [[ $failed -eq 0 ]]
