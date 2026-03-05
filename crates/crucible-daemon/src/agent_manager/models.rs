@@ -183,7 +183,10 @@ impl AgentManager {
             }
         }
 
-        if all_models.is_empty() {
+        // Only fall back to session agent's provider when no llm_config providers exist.
+        // When providers are configured but return empty (discovery failed, no available_models),
+        // that's expected — the user should configure available_models or fix their endpoint.
+        if all_models.is_empty() && self.llm_config.as_ref().map_or(true, |c| c.providers.is_empty()) {
             let (_, agent_config) = self.get_session_with_agent(session_id)?;
 
             let endpoint = agent_config
