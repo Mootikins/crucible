@@ -102,6 +102,25 @@ macro_rules! require_binary {
     };
 }
 
+/// Build a TuiTestConfig that uses the dev's LLM provider config.
+///
+/// If `CRUCIBLE_TEST_CONFIG` is set, passes `--config <path>` to `cru chat`.
+/// Otherwise falls back to default config (which auto-detects Ollama at localhost:11434).
+///
+/// Usage:
+///   CRUCIBLE_TEST_CONFIG=~/.config/crucible/config.toml cargo nextest run -- --ignored
+fn provider_test_config() -> TuiTestConfig {
+    let mut config = TuiTestConfig::new("chat")
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(15));
+
+    if let Ok(cfg_path) = std::env::var("CRUCIBLE_TEST_CONFIG") {
+        config.args = vec!["--config".to_string(), cfg_path];
+    }
+
+    config
+}
+
 // =============================================================================
 // Smoke Tests
 // =============================================================================
@@ -892,12 +911,10 @@ fn oil_explicit_mode_commands() {
 /// When models are fetched at startup (parallel with file/note indexing),
 /// the :model command should show a popup with available models.
 #[test]
-#[ignore = "requires built binary and Ollama"]
+#[ignore = "requires built binary and LLM provider (set CRUCIBLE_TEST_CONFIG)"]
 fn model_popup_shows_with_ollama() {
-    let config = TuiTestConfig::new("chat")
-        .with_args(&["--internal"])
-        .with_env("RUST_LOG", "warn")
-        .with_timeout(Duration::from_secs(15));
+    let mut config = provider_test_config();
+    config.args.push("--internal".to_string());
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
@@ -921,11 +938,9 @@ fn model_popup_shows_with_ollama() {
 /// When no models are pre-loaded (e.g., Ollama was slow to start),
 /// the :model command should trigger a fetch and show "Fetching models..."
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires built binary and LLM provider (set CRUCIBLE_TEST_CONFIG)"]
 fn model_popup_lazy_fetch_on_demand() {
-    let config = TuiTestConfig::new("chat")
-        .with_env("RUST_LOG", "crucible_cli::tui::oil=debug")
-        .with_timeout(Duration::from_secs(15));
+    let config = provider_test_config();
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
@@ -951,12 +966,10 @@ fn model_popup_lazy_fetch_on_demand() {
 ///
 /// Typing `:model lla` should filter to llama models.
 #[test]
-#[ignore = "requires built binary and Ollama"]
+#[ignore = "requires built binary and LLM provider (set CRUCIBLE_TEST_CONFIG)"]
 fn model_popup_filter_works() {
-    let config = TuiTestConfig::new("chat")
-        .with_args(&["--internal"])
-        .with_env("RUST_LOG", "warn")
-        .with_timeout(Duration::from_secs(15));
+    let mut config = provider_test_config();
+    config.args.push("--internal".to_string());
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
@@ -1013,12 +1026,10 @@ fn model_selection_updates_status() {
 
 /// Test :model popup navigation with arrow keys
 #[test]
-#[ignore = "requires built binary and Ollama"]
+#[ignore = "requires built binary and LLM provider (set CRUCIBLE_TEST_CONFIG)"]
 fn model_popup_navigation() {
-    let config = TuiTestConfig::new("chat")
-        .with_args(&["--internal"])
-        .with_env("RUST_LOG", "warn")
-        .with_timeout(Duration::from_secs(15));
+    let mut config = provider_test_config();
+    config.args.push("--internal".to_string());
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
@@ -1048,12 +1059,10 @@ fn model_popup_navigation() {
 
 /// Test :model <name> direct switch (no popup)
 #[test]
-#[ignore = "requires built binary and Ollama"]
+#[ignore = "requires built binary and LLM provider (set CRUCIBLE_TEST_CONFIG)"]
 fn model_direct_switch_command() {
-    let config = TuiTestConfig::new("chat")
-        .with_args(&["--internal"])
-        .with_env("RUST_LOG", "warn")
-        .with_timeout(Duration::from_secs(15));
+    let mut config = provider_test_config();
+    config.args.push("--internal".to_string());
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
@@ -1759,11 +1768,9 @@ fn vt100_exemplar_terminal_size_adaptation() {
 /// When Ollama is running, `:model<CR>` should transition from a loading
 /// state to showing available models within the timeout period.
 #[test]
-#[ignore = "requires built binary and Ollama"]
+#[ignore = "requires built binary and LLM provider (set CRUCIBLE_TEST_CONFIG)"]
 fn model_flow_loading_to_loaded_e2e() {
-    let config = TuiTestConfig::new("chat")
-        .with_env("RUST_LOG", "warn")
-        .with_timeout(Duration::from_secs(15));
+    let config = provider_test_config();
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
@@ -1800,11 +1807,9 @@ fn model_flow_loading_to_loaded_e2e() {
 /// Regardless of Ollama status, the model popup should resolve to either
 /// showing models or an error — not stay stuck at "please wait" forever.
 #[test]
-#[ignore = "requires built binary and Ollama"]
+#[ignore = "requires built binary and LLM provider (set CRUCIBLE_TEST_CONFIG)"]
 fn model_flow_error_shows_within_timeout_e2e() {
-    let config = TuiTestConfig::new("chat")
-        .with_env("RUST_LOG", "warn")
-        .with_timeout(Duration::from_secs(15));
+    let config = provider_test_config();
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
