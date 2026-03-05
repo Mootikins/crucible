@@ -86,7 +86,6 @@ pub struct OilChatApp {
     /// Available models fetched from the provider
     available_models: Vec<String>,
     /// Fetch-state of the model list
-    /// Fetch-state of the model list
     model_list_state: ModelListState,
     /// Flag to prevent duplicate fetch/loading messages when :model is pressed repeatedly
     model_fetch_message_shown: bool,
