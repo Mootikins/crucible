@@ -273,6 +273,16 @@ impl OilChatRunner {
         self.agent_name.is_some()
     }
 
+    fn queue_model_prefetch(&self, msg_tx: &mpsc::UnboundedSender<ChatAppMsg>) {
+        if self.is_acp_session() {
+            return;
+        }
+
+        if msg_tx.send(ChatAppMsg::FetchModels).is_err() {
+            tracing::warn!("UI channel closed, initial FetchModels dropped");
+        }
+    }
+
     pub async fn run_with_factory<F, Fut, A>(
         &mut self,
         bridge: &AgentEventBridge,
@@ -459,6 +469,8 @@ impl OilChatRunner {
                 }));
             }
         }
+
+        self.queue_model_prefetch(&msg_tx);
 
         let interaction_rx = agent.take_interaction_receiver();
         tracing::debug!(
@@ -1635,11 +1647,16 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use crucible_core::events::EventRing;
+    use crate::tui::oil::chat_app::ModelListState;
     use crucible_core::traits::chat::{ChatError, ChatResult};
     use futures::stream::{self, BoxStream};
     use std::sync::Arc;
 
     struct EmptyAgent;
+
+    struct ModelsAgent {
+        models: Vec<String>,
+    }
 
     #[async_trait]
     impl AgentHandle for EmptyAgent {
@@ -1701,6 +1718,66 @@ mod tests {
         }
     }
 
+    #[async_trait]
+    impl AgentHandle for ModelsAgent {
+        fn send_message_stream(
+            &mut self,
+            _message: String,
+        ) -> BoxStream<'static, ChatResult<ChatChunk>> {
+            Box::pin(stream::empty())
+        }
+
+        fn is_connected(&self) -> bool {
+            true
+        }
+
+        async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
+            Ok(())
+        }
+
+        fn get_mode_id(&self) -> &str {
+            "normal"
+        }
+
+        async fn cancel(&self) -> ChatResult<()> {
+            Ok(())
+        }
+
+        async fn clear_history(&mut self) {}
+
+        async fn switch_model(&mut self, _model_id: &str) -> ChatResult<()> {
+            Ok(())
+        }
+
+        async fn fetch_available_models(&mut self) -> Vec<String> {
+            self.models.clone()
+        }
+
+        async fn set_thinking_budget(&mut self, _budget: i64) -> ChatResult<()> {
+            Err(ChatError::NotSupported("set_thinking_budget".to_string()))
+        }
+
+        fn get_thinking_budget(&self) -> Option<i64> {
+            None
+        }
+
+        async fn set_temperature(&mut self, _temperature: f64) -> ChatResult<()> {
+            Ok(())
+        }
+
+        fn get_temperature(&self) -> Option<f64> {
+            None
+        }
+
+        async fn set_max_tokens(&mut self, _max_tokens: Option<u32>) -> ChatResult<()> {
+            Ok(())
+        }
+
+        fn get_max_tokens(&self) -> Option<u32> {
+            None
+        }
+    }
+
     #[test]
     fn drain_pending_messages_marks_user_turn_active() {
         let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
@@ -1733,6 +1810,68 @@ mod tests {
         assert!(
             !OilChatRunner::should_wait_for_event(DrainMessagesOutcome::Processed),
             "Processed messages should trigger immediate rerender"
+        );
+    }
+
+    #[test]
+    fn non_acp_init_prefetch_moves_model_state_out_of_not_loaded() {
+        let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
+        let mut app = OilChatApp::default();
+        let mut agent = ModelsAgent {
+            models: vec!["ollama/llama3".to_string()],
+        };
+        let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
+        let (msg_tx, mut msg_rx) = mpsc::unbounded_channel();
+        let mut active_stream = None;
+        let mut replay_deadline = None;
+
+        runner.queue_model_prefetch(&msg_tx);
+        let _ = runner.drain_pending_messages(
+            &mut app,
+            &mut agent,
+            &bridge,
+            &mut active_stream,
+            &mut msg_rx,
+            &mut replay_deadline,
+        );
+
+        assert!(
+            matches!(
+                app.model_list_state(),
+                ModelListState::Loading | ModelListState::Loaded
+            ),
+            "non-ACP init should prefetch models (state should be Loading or Loaded, got {:?})",
+            app.model_list_state()
+        );
+    }
+
+    #[test]
+    fn acp_init_prefetch_is_skipped_and_state_stays_not_loaded() {
+        let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24))
+            .with_agent_name(Some("claude".to_string()));
+        let mut app = OilChatApp::default();
+        let mut agent = ModelsAgent {
+            models: vec!["ollama/llama3".to_string()],
+        };
+        let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
+        let (msg_tx, mut msg_rx) = mpsc::unbounded_channel();
+        let mut active_stream = None;
+        let mut replay_deadline = None;
+
+        runner.queue_model_prefetch(&msg_tx);
+        let _ = runner.drain_pending_messages(
+            &mut app,
+            &mut agent,
+            &bridge,
+            &mut active_stream,
+            &mut msg_rx,
+            &mut replay_deadline,
+        );
+
+        assert_eq!(
+            app.model_list_state(),
+            &ModelListState::NotLoaded,
+            "ACP init should skip model prefetch"
         );
     }
 }

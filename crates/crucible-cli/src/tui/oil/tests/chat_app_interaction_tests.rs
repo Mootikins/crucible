@@ -1118,6 +1118,36 @@ fn model_command_opens_popup_with_available_models() {
 }
 
 #[test]
+fn model_space_with_preloaded_models_shows_popup_immediately() {
+    let mut app = OilChatApp::default();
+    app.set_available_models(vec![
+        "ollama/llama3".to_string(),
+        "anthropic/claude-3".to_string(),
+    ]);
+
+    let mut last_action = Action::Continue;
+    for c in ":model ".chars() {
+        last_action = app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+
+    assert!(
+        app.is_popup_visible(),
+        "Popup should be visible immediately"
+    );
+    assert!(
+        matches!(last_action, Action::Continue),
+        "Loaded model list should not trigger a new fetch"
+    );
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+    assert!(
+        output.contains("llama3"),
+        "Popup should include preloaded models"
+    );
+}
+
+#[test]
 fn model_command_filters_models() {
     let mut app = OilChatApp::default();
     app.set_available_models(vec![
