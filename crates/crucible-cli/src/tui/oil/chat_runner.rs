@@ -985,6 +985,9 @@ impl OilChatRunner {
                     *active_stream = Some(stream);
                 }
             }
+            ChatAppMsg::FetchModels => {
+                tracing::debug!(target: "crucible_cli::tui::oil::model_flow", "drain_pending_messages: received FetchModels");
+            }
             _ => {}
         }
         app.on_message(msg.clone())
@@ -1105,8 +1108,9 @@ impl OilChatRunner {
                             );
                             return Ok(false);
                         }
-                        tracing::info!("Fetching available models");
+                        tracing::debug!(target: "crucible_cli::tui::oil::model_flow", "process_action: FetchModels starting async fetch");
                         let models = params.agent.fetch_available_models().await;
+                        tracing::debug!(target: "crucible_cli::tui::oil::model_flow", count = models.len(), "process_action: fetch_available_models returned");
                         if models.is_empty() {
                             let _ = params.app.on_message(ChatAppMsg::ModelsFetchFailed(
                                 "No models available".to_string(),
