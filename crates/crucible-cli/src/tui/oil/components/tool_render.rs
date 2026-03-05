@@ -6,6 +6,7 @@
 use crate::tui::oil::node::{col, row, styled, Node, SpinnerNode, SpinnerStyle};
 use crate::tui::oil::style::Style;
 use crate::tui::oil::utils::{terminal_width, truncate_to_chars};
+use crucible_oil::ansi::visible_width;
 use crate::tui::oil::viewport_cache::CachedToolCall;
 use std::time::Duration;
 
@@ -44,15 +45,42 @@ fn render_tool_error(
     error: &str,
 ) -> Node {
     let t = crate::tui::oil::theme::active();
-    row([
-        styled(format!(" {} ", t.decorations.tool_error_icon), Style::new().fg(t.resolve_color(t.colors.error))),
-        styled(display_name, Style::new().fg(t.resolve_color(t.colors.text_dim))),
-        styled(format!("({}) ", args_formatted), Style::new().fg(t.resolve_color(t.colors.text_dim)).dim()),
-        styled(
-            format!("→ {}", truncate_first_line(error, 50, true)),
+    let icon = format!(" {} ", t.decorations.tool_error_icon);
+    let args_part = format!("({}) ", args_formatted);
+    // Calculate prefix width: icon + display_name + args
+    let prefix_width = visible_width(&icon)
+        + visible_width(display_name)
+        + visible_width(&args_part);
+    let term_width = terminal_width();
+    // Remaining width for inline error (after prefix + arrow prefix)
+    let remaining = term_width.saturating_sub(prefix_width + 2).max(10);
+    // Get first line of error for display
+    let error_first_line = error.lines().next().unwrap_or(error);
+    let error_visible = visible_width(error_first_line);
+    // If error fits inline, show on same line; otherwise show on second line
+    if error_visible <= remaining {
+        row([
+            styled(icon, Style::new().fg(t.resolve_color(t.colors.error))),
+            styled(display_name, Style::new().fg(t.resolve_color(t.colors.text_dim))),
+            styled(args_part, Style::new().fg(t.resolve_color(t.colors.text_dim)).dim()),
+            styled(
+                format!("\u{2192} {}", error_first_line),
+                Style::new().fg(t.resolve_color(t.colors.error)).bold(),
+            ),
+        ])
+    } else {
+        // Error is too long for inline: show on second line at full terminal width
+        let header = row([
+            styled(icon, Style::new().fg(t.resolve_color(t.colors.error))),
+            styled(display_name, Style::new().fg(t.resolve_color(t.colors.text_dim))),
+            styled(args_part, Style::new().fg(t.resolve_color(t.colors.text_dim)).dim()),
+        ]);
+        let error_node = styled(
+            format!("  \u{2192} {}", error_first_line),
             Style::new().fg(t.resolve_color(t.colors.error)).bold(),
-        ),
-    ])
+        );
+        col([header, error_node])
+    }
 }
 
 fn render_tool_complete(

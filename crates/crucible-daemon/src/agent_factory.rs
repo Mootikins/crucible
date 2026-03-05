@@ -147,6 +147,19 @@ async fn create_internal_mcp_tool_defs(
         );
     }
 
+    // Add workspace tools (bash, read_file, edit_file, write_file, glob, grep)
+    for tool in crate::tools::workspace::WorkspaceTools::tool_definitions() {
+        let tool_name = tool.name.to_string();
+        if mode == "plan" && !is_plan_mode_tool(&tool_name) {
+            continue;
+        }
+        tool_defs.push(LlmToolDefinition::new(
+            tool_name,
+            tool.description.map(|d| d.to_string()).unwrap_or_default(),
+            serde_json::Value::Object((*tool.input_schema).clone()),
+        ));
+    }
+
     let user_mcp_tools: Vec<LlmToolDefinition> = if let Some(ref gw) = mcp_gateway {
         let gw_read = gw.read().await;
         debug!(

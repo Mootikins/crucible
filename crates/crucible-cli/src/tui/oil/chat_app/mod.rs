@@ -120,6 +120,8 @@ pub struct OilChatApp {
     message_queue: MessageQueueState,
     /// Files attached as extra context for the next message
     attached_context: Vec<String>,
+    /// When true, discard incoming TextDelta events (stale events after cancel).
+    drop_stream_deltas: bool,
 
     // ─── I/O / Lifecycle (tech debt — future extraction) ──────────────
     // Callbacks, filesystem state, and registries that ideally move
@@ -253,6 +255,9 @@ impl OilChatApp {
     fn handle_stream_msg(&mut self, msg: ChatAppMsg) -> Action<ChatAppMsg> {
         match msg {
             ChatAppMsg::TextDelta(delta) => {
+                if self.drop_stream_deltas {
+                    return Action::Continue;
+                }
                 self.container_list.append_text(&delta);
                 Action::Continue
             }
@@ -322,10 +327,12 @@ impl OilChatApp {
                 Action::Continue
             }
             ChatAppMsg::StreamComplete => {
+                self.drop_stream_deltas = false;
                 self.finalize_streaming();
                 self.process_deferred_queue()
             }
             ChatAppMsg::StreamCancelled => {
+                self.drop_stream_deltas = true;
                 self.finalize_streaming();
                 self.add_notification(crucible_core::types::Notification::toast("Cancelled"));
                 self.process_deferred_queue()
