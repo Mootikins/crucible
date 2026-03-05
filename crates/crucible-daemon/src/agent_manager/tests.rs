@@ -3544,7 +3544,7 @@ async fn test_list_models_all_chat_backends_with_explicit_models() {
 }
 
 #[tokio::test]
-async fn test_list_models_effective_models_fallback() {
+async fn test_list_models_discovery_failure_returns_empty() {
     use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
@@ -3563,9 +3563,7 @@ async fn test_list_models_effective_models_fallback() {
         .await
         .unwrap();
 
-    let (ollama_endpoint, ollama_server) = start_mock_ollama_tags_server(Vec::new()).await;
-
-    // Use dead endpoints for OpenAI/ZAI/OpenRouter to force fallback to effective_models()
+    // Use dead endpoints to force discovery failure
     let dead_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let dead_addr = dead_listener.local_addr().unwrap();
     drop(dead_listener);
@@ -3573,54 +3571,26 @@ async fn test_list_models_effective_models_fallback() {
 
     let mut providers = HashMap::new();
     providers.insert(
-        "anthropic-fallback".to_string(),
+        "anthropic-dead".to_string(),
         LlmProviderConfig::builder(BackendType::Anthropic)
             .endpoint(&dead_endpoint)
             .build(),
     );
     providers.insert(
-        "openai-fallback".to_string(),
+        "openai-dead".to_string(),
         LlmProviderConfig::builder(BackendType::OpenAI)
             .endpoint(&dead_endpoint)
             .build(),
     );
     providers.insert(
-        "zai-fallback".to_string(),
+        "zai-dead".to_string(),
         LlmProviderConfig::builder(BackendType::ZAI)
             .endpoint(&dead_endpoint)
             .build(),
     );
-    providers.insert(
-        "ollama-empty".to_string(),
-        LlmProviderConfig::builder(BackendType::Ollama)
-            .endpoint(ollama_endpoint)
-            .build(),
-    );
-    providers.insert(
-        "openrouter-empty".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenRouter)
-            .endpoint(&dead_endpoint)
-            .build(),
-    );
-    providers.insert(
-        "cohere-empty".to_string(),
-        LlmProviderConfig::builder(BackendType::Cohere).build(),
-    );
-    providers.insert(
-        "custom-empty".to_string(),
-        LlmProviderConfig::builder(BackendType::Custom).build(),
-    );
-    providers.insert(
-        "cohere-empty".to_string(),
-        LlmProviderConfig::builder(BackendType::Cohere).build(),
-    );
-    providers.insert(
-        "custom-empty".to_string(),
-        LlmProviderConfig::builder(BackendType::Custom).build(),
-    );
 
     let llm_config = LlmConfig {
-        default: Some("anthropic-fallback".to_string()),
+        default: Some("anthropic-dead".to_string()),
         providers,
     };
 
@@ -3633,43 +3603,11 @@ async fn test_list_models_effective_models_fallback() {
         .unwrap();
 
     let models = agent_manager.list_models(&session.id, None).await.unwrap();
-    ollama_server.abort(); // Empty response is instant, but abort to be safe
 
-    let anthropic_count = models
-        .iter()
-        .filter(|m| m.starts_with("anthropic-fallback/"))
-        .count();
-    let openai_count = models
-        .iter()
-        .filter(|m| m.starts_with("openai-fallback/"))
-        .count();
-    let zai_count = models
-        .iter()
-        .filter(|m| m.starts_with("zai-fallback/"))
-        .count();
-
+    // Without available_models and with dead endpoints, all providers return empty
     assert!(
-        anthropic_count > 0,
-        "Anthropic should use hardcoded fallback models, got: {:?}",
-        models
-    );
-    assert!(
-        openai_count > 0,
-        "OpenAI should use hardcoded fallback models, got: {:?}",
-        models
-    );
-    assert!(
-        zai_count > 0,
-        "ZAI should use hardcoded fallback models, got: {:?}",
-        models
-    );
-
-    assert!(
-        models.iter().all(|m| !m.starts_with("ollama-empty/")
-            && !m.starts_with("openrouter-empty/")
-            && !m.starts_with("cohere-empty/")
-            && !m.starts_with("custom-empty/")),
-        "Providers without fallback models should contribute no entries, got: {:?}",
+        models.is_empty(),
+        "Failed discovery without available_models should return empty, got: {:?}",
         models
     );
 }
@@ -5383,7 +5321,7 @@ async fn test_list_models_dynamic_discovery_openrouter_succeeds() {
 }
 
 #[tokio::test]
-async fn test_list_models_dynamic_discovery_fallback_on_api_failure() {
+async fn test_list_models_dynamic_discovery_failure_returns_empty() {
     use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
@@ -5446,25 +5384,10 @@ async fn test_list_models_dynamic_discovery_fallback_on_api_failure() {
     let models = agent_manager.list_models(&session.id, None).await.unwrap();
     openai_server.await.unwrap();
 
-    // OpenAI should fall back to hardcoded models
-    let openai_models: Vec<_> = models
-        .iter()
-        .filter(|m| m.starts_with("openai-fail/"))
-        .collect();
+    // Without available_models, failed discovery returns empty (no hardcoded fallback)
     assert!(
-        !openai_models.is_empty(),
-        "OpenAI should fall back to hardcoded models on API failure, got: {:?}",
-        models
-    );
-
-    // ZAI should fall back to hardcoded models
-    let zai_models: Vec<_> = models
-        .iter()
-        .filter(|m| m.starts_with("zai-fail/"))
-        .collect();
-    assert!(
-        !zai_models.is_empty(),
-        "ZAI should fall back to hardcoded models on API failure, got: {:?}",
+        models.is_empty(),
+        "Failed API discovery without available_models should return empty, got: {:?}",
         models
     );
 }
