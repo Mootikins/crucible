@@ -160,6 +160,10 @@ impl App for OilChatApp {
             return self.render_shell_modal();
         }
 
+        tracing::debug!(target: "crucible_cli::tui::oil::model_flow", 
+            has_modal = self.interaction_modal.is_some(),
+            notification_visible = self.notification_area.is_visible(),
+            "view: layout branch selected");
         let bottom = if let Some(modal) = &self.interaction_modal {
             let term_width = ctx.terminal_size.0 as usize;
             modal.view(term_width, self.permission.permission_queue.len())
@@ -349,11 +353,13 @@ impl OilChatApp {
                 Action::Continue
             }
             ChatAppMsg::FetchModels => {
+                tracing::debug!(target: "crucible_cli::tui::oil::model_flow", "handle_config_msg: FetchModels -> state=Loading");
                 self.model_list_state = ModelListState::Loading;
                 self.status = "Fetching models...".to_string();
                 Action::Continue
             }
             ChatAppMsg::ModelsLoaded(models) => {
+                tracing::debug!(target: "crucible_cli::tui::oil::model_flow", count = models.len(), "handle_config_msg: ModelsLoaded -> state=Loaded");
                 self.available_models = models;
                 self.model_list_state = ModelListState::Loaded;
                 if self.popup.kind == AutocompleteKind::Model && self.popup.show {
@@ -362,6 +368,7 @@ impl OilChatApp {
                 Action::Continue
             }
             ChatAppMsg::ModelsFetchFailed(reason) => {
+                tracing::debug!(target: "crucible_cli::tui::oil::model_flow", error = %reason, "handle_config_msg: ModelsFetchFailed -> state=Failed");
                 self.model_list_state = ModelListState::Failed(reason.clone());
                 self.notification_area
                     .add(crucible_core::types::Notification::warning(format!(
@@ -1313,6 +1320,7 @@ impl OilChatApp {
                 Action::Continue
             }
             "model" => {
+                tracing::debug!(target: "crucible_cli::tui::oil::model_flow", state = ?self.model_list_state, "handle_repl_command: model pressed");
                 match &self.model_list_state {
                     ModelListState::NotLoaded => {
                         self.add_system_message("Fetching available models...".to_string());
