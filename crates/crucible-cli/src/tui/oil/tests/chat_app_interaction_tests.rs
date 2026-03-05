@@ -2121,3 +2121,70 @@ fn needs_turn_spinner_returns_true_after_user_message() {
         "needs_turn_spinner should return true immediately after mark_turn_active"
     );
 }
+
+#[test]
+fn model_loading_message_not_duplicated() {
+    let mut app = OilChatApp::default();
+    // Set state to Loading to simulate a fetch in progress
+    app.set_model_list_state(ModelListState::Loading);
+
+    // Press :model<CR> three times while in Loading state
+    for _ in 0..3 {
+        for c in ":model".chars() {
+            app.update(Event::Key(key(KeyCode::Char(c))));
+        }
+        app.update(Event::Key(key(KeyCode::Enter)));
+    }
+
+    // Render the chat and count occurrences of "Retrying" or "Fetching"
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+
+    // Count how many times "Retrying" appears
+    let retrying_count = output.matches("Retrying").count();
+    let fetching_count = output.matches("Fetching").count();
+    let total_fetch_messages = retrying_count + fetching_count;
+
+    assert!(
+        total_fetch_messages <= 1,
+        "Should have at most 1 fetch/retrying message, but found {} (Retrying: {}, Fetching: {})",
+        total_fetch_messages,
+        retrying_count,
+        fetching_count
+    );
+}
+
+#[test]
+fn model_fetch_message_shown_once() {
+    let mut app = OilChatApp::default();
+    // State is NotLoaded by default
+    assert_eq!(
+        *app.model_list_state(),
+        ModelListState::NotLoaded,
+        "Initial state should be NotLoaded"
+    );
+
+    // Press :model<CR> once
+    for c in ":model".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    // Render and check that a fetch message appears
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+
+    let has_fetch_message = output.contains("Fetching") || output.contains("Retrying");
+    assert!(
+        has_fetch_message,
+        "Should show a fetch message on first :model press"
+    );
+
+    // Count occurrences
+    let fetch_count = output.matches("Fetching").count() + output.matches("Retrying").count();
+    assert_eq!(
+        fetch_count, 1,
+        "Should show exactly 1 fetch message, but found {}",
+        fetch_count
+    );
+}

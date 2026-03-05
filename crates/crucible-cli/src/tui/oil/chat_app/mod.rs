@@ -86,7 +86,10 @@ pub struct OilChatApp {
     /// Available models fetched from the provider
     available_models: Vec<String>,
     /// Fetch-state of the model list
+    /// Fetch-state of the model list
     model_list_state: ModelListState,
+    /// Flag to prevent duplicate fetch/loading messages when :model is pressed repeatedly
+    model_fetch_message_shown: bool,
 
     // ─── UI Chrome (purely local state) ───────────────────────────────
     // Everything here is display-only and never round-trips to the
@@ -362,6 +365,7 @@ impl OilChatApp {
                 tracing::debug!(target: "crucible_cli::tui::oil::model_flow", count = models.len(), "handle_config_msg: ModelsLoaded -> state=Loaded");
                 self.available_models = models;
                 self.model_list_state = ModelListState::Loaded;
+                self.model_fetch_message_shown = false;
                 if self.popup.kind == AutocompleteKind::Model && self.popup.show {
                     self.popup.selected = 0;
                 }
@@ -370,6 +374,7 @@ impl OilChatApp {
             ChatAppMsg::ModelsFetchFailed(reason) => {
                 tracing::debug!(target: "crucible_cli::tui::oil::model_flow", error = %reason, "handle_config_msg: ModelsFetchFailed -> state=Failed");
                 self.model_list_state = ModelListState::Failed(reason.clone());
+                self.model_fetch_message_shown = false;
                 self.notification_area
                     .add(crucible_core::types::Notification::warning(format!(
                         "Failed to fetch models: {}",
@@ -596,6 +601,10 @@ impl OilChatApp {
 
     pub(crate) fn model_list_state(&self) -> &ModelListState {
         &self.model_list_state
+    }
+
+    pub(crate) fn set_model_list_state(&mut self, state: ModelListState) {
+        self.model_list_state = state;
     }
 
     pub(crate) fn available_models(&self) -> &[String] {
@@ -1326,12 +1335,18 @@ impl OilChatApp {
                 tracing::debug!(target: "crucible_cli::tui::oil::model_flow", state = ?self.model_list_state, "handle_repl_command: model pressed");
                 match &self.model_list_state {
                     ModelListState::NotLoaded => {
-                        self.add_system_message("Fetching available models...".to_string());
+                        if !self.model_fetch_message_shown {
+                            self.add_system_message("Fetching available models...".to_string());
+                            self.model_fetch_message_shown = true;
+                        }
                         Action::Send(ChatAppMsg::FetchModels)
                     }
                     ModelListState::Loading => {
-                        self.model_list_state = ModelListState::NotLoaded;
-                        self.add_system_message("Retrying model fetch...".to_string());
+                        if !self.model_fetch_message_shown {
+                            self.model_list_state = ModelListState::NotLoaded;
+                            self.add_system_message("Retrying model fetch...".to_string());
+                            self.model_fetch_message_shown = true;
+                        }
                         Action::Send(ChatAppMsg::FetchModels)
                     }
                     ModelListState::Loaded => {
