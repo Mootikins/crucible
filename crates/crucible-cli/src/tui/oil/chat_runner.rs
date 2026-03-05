@@ -273,6 +273,7 @@ impl OilChatRunner {
         self.agent_name.is_some()
     }
 
+    #[cfg(test)]
     fn queue_model_prefetch(&self, msg_tx: &mpsc::UnboundedSender<ChatAppMsg>) {
         if self.is_acp_session() {
             return;
@@ -469,8 +470,6 @@ impl OilChatRunner {
                 }));
             }
         }
-
-        self.queue_model_prefetch(&msg_tx);
 
         let interaction_rx = agent.take_interaction_receiver();
         tracing::debug!(

@@ -1974,55 +1974,41 @@ fn model_repl_loaded_empty_shows_not_configured() {
 }
 
 #[test]
-fn model_repl_notloaded_shows_fetching_message() {
-    // Default app state is NotLoaded
+fn model_command_in_not_loaded_state_triggers_fetch() {
     let mut app = OilChatApp::default();
 
     for c in ":model".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
     }
-    app.update(Event::Key(key(KeyCode::Enter)));
+    let action = app.update(Event::Key(key(KeyCode::Enter)));
 
     assert!(
-        !app.is_popup_visible(),
-        "Popup should NOT be open after ':model' + Enter (REPL command shows message)"
-    );
-
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
-
-    assert!(
-        output.contains("Fetching available models"),
-        "Should show 'Fetching available models' when state is NotLoaded. Got: {}",
-        output
+        matches!(action, Action::Send(ChatAppMsg::FetchModels)),
+        ":model should trigger FetchModels when state is NotLoaded, got: {:?}",
+        action
     );
 }
 
 #[test]
-fn model_repl_loading_shows_wait_message() {
-    use crate::tui::oil::chat_app::ChatAppMsg;
-
+fn model_command_in_loading_state_triggers_refetch() {
     let mut app = OilChatApp::default();
-    // FetchModels transitions to Loading state
     app.on_message(ChatAppMsg::FetchModels);
+    assert_eq!(app.model_list_state(), &ModelListState::Loading);
 
     for c in ":model".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
     }
-    app.update(Event::Key(key(KeyCode::Enter)));
+    let action = app.update(Event::Key(key(KeyCode::Enter)));
 
     assert!(
-        !app.is_popup_visible(),
-        "Popup should NOT be open after ':model' + Enter"
+        matches!(action, Action::Send(ChatAppMsg::FetchModels)),
+        ":model should re-trigger FetchModels when state is Loading, got: {:?}",
+        action
     );
-
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
-
-    assert!(
-        output.contains("Models are loading, please wait"),
-        "Should show 'Models are loading, please wait...' when state is Loading. Got: {}",
-        output
+    assert_eq!(
+        app.model_list_state(),
+        &ModelListState::NotLoaded,
+        "Loading state should reset to NotLoaded before retry"
     );
 }
 
@@ -2031,7 +2017,9 @@ fn model_repl_failed_retries_and_shows_message() {
     use crate::tui::oil::chat_app::ChatAppMsg;
 
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::ModelsFetchFailed("connection refused".to_string()));
+    app.on_message(ChatAppMsg::ModelsFetchFailed(
+        "connection refused".to_string(),
+    ));
 
     for c in ":model".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
