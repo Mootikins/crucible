@@ -1460,10 +1460,7 @@ fn model_command_no_models_shows_message() {
     // Simulate the fetch completing with empty model list
     app.on_message(ChatAppMsg::ModelsLoaded(vec![]));
 
-    // Close popup with Escape
-    app.update(Event::Key(key(KeyCode::Esc)));
-
-    // Now try :model again - should show "No models available" message
+    // Now try :model again - should show "No models configured" message
     for c in ":model".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
     }
@@ -1473,8 +1470,8 @@ fn model_command_no_models_shows_message() {
     let output = render_to_string(&tree, 80);
 
     assert!(
-        output.contains("No models available"),
-        "Should show 'No models available' when no models configured. Got: {}",
+        output.contains("No models configured"),
+        "Should show 'No models configured' when no models available. Got: {}",
         output
     );
 }
@@ -1488,50 +1485,53 @@ fn model_popup_repl_command_keeps_open_when_typing_filter() {
         "openai/gpt-4".to_string(),
     ]);
 
-    // Open popup via REPL command path (NOT autocomplete path)
+    // Open via REPL command path (NOT autocomplete path)
     for c in ":model".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
     }
     app.update(Event::Key(key(KeyCode::Enter)));
 
+    // Popup should NOT be open — REPL command shows message instead
     assert!(
-        app.is_popup_visible(),
-        "Popup should be open after ':model' + Enter"
-    );
-    assert_eq!(
-        app.input_content(),
-        ":model ",
-        "Input should be ':model ' after REPL command opens popup"
+        !app.is_popup_visible(),
+        "Popup should NOT be open after ':model' + Enter (REPL command shows message)"
     );
 
-    // Type a filter character — this is the regression: popup must NOT close
-    app.update(Event::Key(key(KeyCode::Char('o'))));
-
+    // Check that the model list message is shown
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
     assert!(
-        app.is_popup_visible(),
-        "Popup must stay open when typing filter character after ':model' + Enter (regression: was closing immediately)"
-    );
-    assert_eq!(
-        app.current_popup_filter(),
-        "o",
-        "Filter should be 'o' after typing 'o'"
+        output.contains("Available models"),
+        "Should show available models list in chat. Got: {}",
+        output
     );
 }
 
 #[test]
 fn model_popup_repl_command_not_loaded_keeps_open_after_models_arrive() {
+    use crate::tui::oil::chat_app::ChatAppMsg;
     let mut app = OilChatApp::default();
-    // State is NotLoaded by default — do NOT call set_available_models
+    // State is NotLoaded by default
 
-    // Open popup via REPL command (triggers lazy fetch)
+    // Open via REPL command (triggers lazy fetch)
     for c in ":model".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
     }
     app.update(Event::Key(key(KeyCode::Enter)));
 
+    // Popup should NOT be open — REPL command shows "Fetching..." message
     assert!(
-        app.is_popup_visible(),
-        "Popup should open immediately (showing 'Fetching...' state)"
+        !app.is_popup_visible(),
+        "Popup should NOT be open after ':model' + Enter (REPL command shows message)"
+    );
+
+    // Check that the fetching message is shown
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+    assert!(
+        output.contains("Fetching available models"),
+        "Should show 'Fetching available models' message. Got: {}",
+        output
     );
 
     // Simulate models arriving
@@ -1541,17 +1541,10 @@ fn model_popup_repl_command_not_loaded_keeps_open_after_models_arrive() {
         "anthropic/claude-3".to_string(),
     ]));
 
-    // Type a filter character
-    app.update(Event::Key(key(KeyCode::Char('l'))));
-
+    // Popup should still NOT be open
     assert!(
-        app.is_popup_visible(),
-        "Popup must stay open when typing filter after ':model' + Enter with lazy-loaded models"
-    );
-    assert_eq!(
-        app.current_popup_filter(),
-        "l",
-        "Filter should be 'l' after typing 'l'"
+        !app.is_popup_visible(),
+        "Popup should still NOT be open after models arrive"
     );
 }
 
@@ -1571,31 +1564,23 @@ fn model_popup_repl_command_multi_char_filter_narrows_results() {
     }
     app.update(Event::Key(key(KeyCode::Enter)));
 
-    // Type multi-char filter
-    for c in "lla".chars() {
-        app.update(Event::Key(key(KeyCode::Char(c))));
-    }
-
+    // Popup should NOT be open — REPL command shows message instead
     assert!(
-        app.is_popup_visible(),
-        "Popup must stay open with multi-char filter"
-    );
-    assert_eq!(
-        app.current_popup_filter(),
-        "lla",
-        "Filter should be 'lla' after typing 'lla'"
+        !app.is_popup_visible(),
+        "Popup should NOT be open after ':model' + Enter (REPL command shows message)"
     );
 
-    // Verify filtered content — llama models should show, claude/gpt should not
+    // Verify the model list is shown in chat with all models
     let tree = view_with_default_ctx(&app);
     let output = render_to_string(&tree, 80);
     assert!(
-        output.contains("llama3") || output.contains("llama2"),
-        "Filtered popup should show llama models matching 'lla'"
+        output.contains("Available models"),
+        "Should show available models list. Got: {}",
+        output
     );
     assert!(
-        !output.contains("claude") && !output.contains("gpt"),
-        "Filtered popup should NOT show non-matching models"
+        output.contains("llama3") && output.contains("claude-3") && output.contains("gpt-4"),
+        "Should show all models in the list"
     );
 }
 
