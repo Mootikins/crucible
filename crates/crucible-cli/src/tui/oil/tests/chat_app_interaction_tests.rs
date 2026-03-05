@@ -10,8 +10,6 @@ use crate::tui::oil::render::render_to_string;
 use crate::tui::oil::test_harness::AppHarness;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-
-
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }
@@ -746,8 +744,64 @@ fn ctrl_c_closes_popup_instead_of_inserting_c() {
 
     assert!(!app.is_popup_visible(), "Ctrl+C should close popup");
     assert!(
+        app.input_content().is_empty(),
+        "Ctrl+C should clear input when closing popup"
+    );
+    assert!(
         !app.input_content().contains('c'),
         "Ctrl+C should not insert 'c' character"
+    );
+}
+
+#[test]
+fn ctrl_c_with_popup_open_clears_input_and_closes_popup() {
+    let mut app = OilChatApp::default();
+    app.set_available_models(vec!["ollama/llama3".to_string()]);
+
+    for c in ":model ".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    assert!(app.is_popup_visible(), "Popup should open for :model ");
+    assert_eq!(app.input_content(), ":model ");
+
+    app.update(Event::Key(ctrl('c')));
+
+    assert!(!app.is_popup_visible(), "Ctrl+C should close popup");
+    assert!(
+        app.input_content().is_empty(),
+        "Ctrl+C should clear input while closing popup"
+    );
+}
+
+#[test]
+fn double_ctrl_c_after_popup_close_and_clear_triggers_quit_flow() {
+    let mut app = OilChatApp::default();
+    app.set_available_models(vec!["ollama/llama3".to_string()]);
+
+    for c in ":model ".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    assert!(app.is_popup_visible(), "Popup should open for :model ");
+
+    let first = app.update(Event::Key(ctrl('c')));
+    assert!(matches!(first, Action::Continue));
+    assert!(!app.is_popup_visible(), "First Ctrl+C should close popup");
+    assert!(
+        app.input_content().is_empty(),
+        "First Ctrl+C should clear input"
+    );
+
+    let second = app.update(Event::Key(ctrl('c')));
+    assert!(
+        matches!(second, Action::Continue),
+        "Second Ctrl+C should enter quit flow"
+    );
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+    assert!(
+        output.contains("Ctrl+C again to quit"),
+        "Second Ctrl+C should trigger quit notification"
     );
 }
 
@@ -1591,7 +1645,6 @@ fn rendered_status_bar(app: &OilChatApp) -> String {
     let output = render_to_string(&tree, 80);
     crate::tui::oil::ansi::strip_ansi(&output)
 }
-
 
 #[test]
 fn backtab_cycles_mode_from_default() {
