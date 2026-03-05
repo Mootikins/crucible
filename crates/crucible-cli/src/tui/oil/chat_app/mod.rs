@@ -982,7 +982,10 @@ impl OilChatApp {
 
         if let Some((kind, trigger_pos, filter)) = self.detect_trigger(content, cursor) {
             let needs_model_fetch = kind == AutocompleteKind::Model
-                && matches!(self.model_list_state, ModelListState::NotLoaded | ModelListState::Failed(_));
+                && matches!(
+                    self.model_list_state,
+                    ModelListState::NotLoaded | ModelListState::Failed(_)
+                );
 
             self.popup.kind = kind;
             self.popup.trigger_pos = trigger_pos;
@@ -1327,18 +1330,21 @@ impl OilChatApp {
                         Action::Send(ChatAppMsg::FetchModels)
                     }
                     ModelListState::Loading => {
-                        self.add_system_message("Models are loading, please wait...".to_string());
-                        Action::Continue
+                        self.model_list_state = ModelListState::NotLoaded;
+                        self.add_system_message("Retrying model fetch...".to_string());
+                        Action::Send(ChatAppMsg::FetchModels)
                     }
                     ModelListState::Loaded => {
                         if self.available_models.is_empty() {
                             self.add_system_message(
-                                "No models configured. Use :model <name> to switch manually.".to_string(),
+                                "No models configured. Use :model <name> to switch manually."
+                                    .to_string(),
                             );
                             Action::Continue
                         } else {
                             let current = &self.model;
-                            let models_list = self.available_models
+                            let models_list = self
+                                .available_models
                                 .iter()
                                 .map(|m| {
                                     if m == current {
