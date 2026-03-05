@@ -1160,6 +1160,7 @@ impl OilChatApp {
                 self.check_autocomplete_trigger();
             }
             KeyCode::Char(c) if self.is_ctrl_c(key) => {
+                self.input.handle(InputAction::Clear);
                 self.close_popup();
             }
             KeyCode::Char(c) => {
