@@ -88,35 +88,12 @@ impl LlmProviderConfig {
             .unwrap_or_else(|| self.provider_type.default_trust_level())
     }
 
-    /// Get effective models for this provider, using hardcoded fallback for Anthropic/OpenAI/ZAI
+    /// Get effective models for this provider.
+    ///
+    /// Returns `available_models` from config if set, otherwise empty vec.
+    /// Dynamic discovery (API calls) is handled at the daemon layer.
     pub fn effective_models(&self) -> Vec<String> {
-        if let Some(models) = &self.available_models {
-            return models.clone();
-        }
-
-        match self.provider_type {
-            BackendType::Anthropic => super::defaults::ANTHROPIC_MODELS
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
-            BackendType::OpenAI => super::defaults::OPENAI_HARDCODED_MODELS
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
-            BackendType::ZAI => super::defaults::ZAI_MODELS
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
-            BackendType::Ollama
-            | BackendType::GitHubCopilot
-            | BackendType::OpenRouter
-            | BackendType::Cohere
-            | BackendType::VertexAI
-            | BackendType::FastEmbed
-            | BackendType::Burn
-            | BackendType::Custom
-            | BackendType::Mock => Vec::new(),
-        }
+        self.available_models.clone().unwrap_or_default()
     }
 
     /// Create a new builder for this config type
@@ -703,9 +680,9 @@ mod tests {
     }
 
     #[test]
-    fn test_all_provider_models_with_hardcoded_fallback() {
+    fn test_all_provider_models_without_available_models_returns_empty() {
         let mut providers = HashMap::new();
-        // Anthropic without available_models should use hardcoded fallback
+        // Without available_models, effective_models returns empty (dynamic discovery at daemon layer)
         providers.insert(
             "anthropic".to_string(),
             LlmProviderConfig {
@@ -720,7 +697,6 @@ mod tests {
                 trust_level: None,
             },
         );
-        // OpenAI without available_models should use hardcoded fallback
         providers.insert(
             "openai".to_string(),
             LlmProviderConfig {
@@ -742,32 +718,9 @@ mod tests {
         };
 
         let result = config.all_provider_models();
-        assert_eq!(result.len(), 2);
-
-        // Check Anthropic hardcoded models
-        for (key, models) in &result {
-            if key == "anthropic" {
-                assert_eq!(
-                    models,
-                    &vec![
-                        "claude-sonnet-4-20250514".to_string(),
-                        "claude-3-7-sonnet-20250219".to_string(),
-                        "claude-3-5-sonnet-20241022".to_string(),
-                        "claude-3-5-haiku-20241022".to_string(),
-                        "claude-3-opus-20240229".to_string(),
-                    ]
-                );
-            } else if key == "openai" {
-                assert_eq!(
-                    models,
-                    &vec![
-                        "gpt-4o".to_string(),
-                        "gpt-4o-mini".to_string(),
-                        "o1".to_string(),
-                        "o3-mini".to_string(),
-                    ]
-                );
-            }
+        // Both providers return empty without available_models (no hardcoded fallback)
+        for (_key, models) in &result {
+            assert!(models.is_empty(), "Without available_models, effective_models should return empty");
         }
     }
 
@@ -839,7 +792,7 @@ mod tests {
     }
 
     #[test]
-    fn test_zai_effective_models_hardcoded() {
+    fn test_zai_effective_models_empty_without_config() {
         let config = LlmProviderConfig {
             provider_type: BackendType::ZAI,
             endpoint: None,
@@ -853,19 +806,7 @@ mod tests {
         };
 
         let models = config.effective_models();
-        assert_eq!(
-            models,
-            vec![
-                "GLM-5".to_string(),
-                "GLM-4.7".to_string(),
-                "GLM-4.6".to_string(),
-                "GLM-4.5".to_string(),
-                "GLM-4.5-Air".to_string(),
-                "GLM-4.5-Flash".to_string(),
-                "GLM-4.5v".to_string(),
-                "GLM-4-32b-0414-128k".to_string()
-            ]
-        );
+        assert!(models.is_empty(), "Without available_models, ZAI should return empty");
     }
 
     #[test]
@@ -1007,62 +948,16 @@ default_model = "gpt-4"
     }
 
     #[test]
-    fn effective_models_anthropic_fallback() {
-        let config = LlmProviderConfig::builder(BackendType::Anthropic).build();
-        let models = config.effective_models();
-        assert!(
-            !models.is_empty(),
-            "Anthropic should have non-empty fallback models"
-        );
-        assert_eq!(
-            models,
-            vec![
-                "claude-sonnet-4-20250514".to_string(),
-                "claude-3-7-sonnet-20250219".to_string(),
-                "claude-3-5-sonnet-20241022".to_string(),
-                "claude-3-5-haiku-20241022".to_string(),
-                "claude-3-opus-20240229".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn effective_models_openai_fallback() {
-        let config = LlmProviderConfig::builder(BackendType::OpenAI).build();
-        let models = config.effective_models();
-        assert!(
-            !models.is_empty(),
-            "OpenAI should have non-empty fallback models"
-        );
-        assert_eq!(
-            models,
-            vec![
-                "gpt-4o".to_string(),
-                "gpt-4o-mini".to_string(),
-                "o1".to_string(),
-                "o3-mini".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn effective_models_zai_fallback() {
-        let config = LlmProviderConfig::builder(BackendType::ZAI).build();
-        let models = config.effective_models();
-        assert_eq!(models.len(), 8, "ZAI should have exactly 8 fallback models");
-        assert_eq!(
-            models,
-            vec![
-                "GLM-5".to_string(),
-                "GLM-4.7".to_string(),
-                "GLM-4.6".to_string(),
-                "GLM-4.5".to_string(),
-                "GLM-4.5-Air".to_string(),
-                "GLM-4.5-Flash".to_string(),
-                "GLM-4.5v".to_string(),
-                "GLM-4-32b-0414-128k".to_string(),
-            ]
-        );
+    fn effective_models_empty_without_available_models() {
+        // All providers return empty when no available_models configured
+        for backend in [BackendType::Anthropic, BackendType::OpenAI, BackendType::ZAI, BackendType::Ollama] {
+            let config = LlmProviderConfig::builder(backend).build();
+            assert!(
+                config.effective_models().is_empty(),
+                "{:?} should return empty without available_models",
+                backend
+            );
+        }
     }
 
     #[test]
@@ -1108,10 +1003,10 @@ default_model = "gpt-4"
         assert_eq!(
             config.effective_models(),
             custom_models,
-            "Explicit available_models should override Anthropic fallback"
+            "available_models should be returned for Anthropic"
         );
 
-        // Test with OpenAI (has hardcoded fallback)
+        // Test with OpenAI
         let custom_models = vec!["gpt-5-turbo".to_string()];
         let config = LlmProviderConfig::builder(BackendType::OpenAI)
             .available_models(custom_models.clone())
@@ -1119,10 +1014,10 @@ default_model = "gpt-4"
         assert_eq!(
             config.effective_models(),
             custom_models,
-            "Explicit available_models should override OpenAI fallback"
+            "available_models should be returned for OpenAI"
         );
 
-        // Test with ZAI (has hardcoded fallback)
+        // Test with ZAI
         let custom_models = vec!["GLM-6".to_string()];
         let config = LlmProviderConfig::builder(BackendType::ZAI)
             .available_models(custom_models.clone())
@@ -1130,10 +1025,10 @@ default_model = "gpt-4"
         assert_eq!(
             config.effective_models(),
             custom_models,
-            "Explicit available_models should override ZAI fallback"
+            "available_models should be returned for ZAI"
         );
 
-        // Test with Ollama (no fallback, but should still respect override)
+        // Test with Ollama
         let custom_models = vec!["llama3.1:70b".to_string()];
         let config = LlmProviderConfig::builder(BackendType::Ollama)
             .available_models(custom_models.clone())
@@ -1141,7 +1036,7 @@ default_model = "gpt-4"
         assert_eq!(
             config.effective_models(),
             custom_models,
-            "Explicit available_models should work with Ollama"
+            "available_models should be returned for Ollama"
         );
     }
 }
