@@ -6,7 +6,7 @@
 use crate::tui::oil::node::{col, row, scrollback, styled, text, Node, BRAILLE_SPINNER_FRAMES};
 use crate::tui::oil::style::Style;
 use crate::tui::oil::theme;
-use crate::tui::oil::utils::truncate_first_line;
+use crate::tui::oil::utils::{terminal_width, truncate_first_line};
 use crate::tui::oil::viewport_cache::{CachedSubagent, SubagentStatus};
 use std::time::Duration;
 
@@ -24,7 +24,7 @@ pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize) -> Node 
         SubagentStatus::Failed => (format!(" {} ", t.decorations.tool_error_icon), Style::new().fg(t.resolve_color(t.colors.error))),
     };
 
-    let prompt_preview = truncate_first_line(&subagent.prompt, 60, true);
+    let prompt_preview = truncate_first_line(&subagent.prompt, terminal_width().saturating_sub(30).max(20), true);
 
     let label_with_target = if let Some(target) = &subagent.target_agent {
         format!("{} to {}", subagent.label, target)
@@ -40,12 +40,12 @@ pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize) -> Node 
         SubagentStatus::Completed => subagent
             .summary
             .as_ref()
-            .map(|s| format!(" → {}", truncate_first_line(s, 50, true)))
+            .map(|s| format!(" \u{2192} {}", truncate_first_line(s, terminal_width().saturating_sub(20).max(20), true)))
             .unwrap_or_default(),
         SubagentStatus::Failed => subagent
             .error
             .as_ref()
-            .map(|e| format!(" → {}", truncate_first_line(e, 50, true)))
+            .map(|e| format!(" \u{2192} {}", truncate_first_line(e, terminal_width().saturating_sub(20).max(20), true)))
             .unwrap_or_default(),
     };
 
