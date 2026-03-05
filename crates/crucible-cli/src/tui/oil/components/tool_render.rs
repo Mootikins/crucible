@@ -7,6 +7,7 @@ use crate::tui::oil::node::{col, row, styled, Node, SpinnerNode, SpinnerStyle};
 use crate::tui::oil::style::Style;
 use crate::tui::oil::utils::{terminal_width, truncate_to_chars};
 use crucible_oil::ansi::visible_width;
+use crucible_oil::truncate_to_width;
 use crate::tui::oil::viewport_cache::CachedToolCall;
 use std::time::Duration;
 
@@ -312,7 +313,7 @@ pub fn format_output_tail(output: &str, prefix: &str) -> Node {
     let hidden_count = all_lines.len().saturating_sub(3);
     let t = crate::tui::oil::theme::active();
     let bar_prefix = format!("{}{} ", prefix, t.decorations.separator_char);
-    let truncate_at = width.saturating_sub(bar_prefix.len() + 1);
+    let truncate_at = width.saturating_sub(visible_width(&bar_prefix) + 1);
     col(std::iter::once(if hidden_count > 0 {
         styled(
             format!("{}({} more lines)", bar_prefix, hidden_count),
@@ -322,8 +323,8 @@ pub fn format_output_tail(output: &str, prefix: &str) -> Node {
         Node::Empty
     })
     .chain(lines.iter().map(|line| {
-        let display = if line.len() > truncate_at {
-            format!("{}{}…", bar_prefix, &line[..truncate_at])
+        let display = if visible_width(line) > truncate_at {
+            format!("{}{}…", bar_prefix, truncate_to_width(line, truncate_at, false))
         } else {
             format!("{}{}", bar_prefix, line)
         };
