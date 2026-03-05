@@ -1869,6 +1869,231 @@ fn set_available_models_does_not_set_loaded_state_when_empty() {
     assert!(app.available_models().is_empty(), "Models should be empty");
 }
 
+// =============================================================================
+// Model REPL Command State Tests (new behavior: :model<CR> shows chat listing)
+// =============================================================================
+
+#[test]
+fn model_repl_loaded_lists_models_in_chat() {
+    use crate::tui::oil::chat_app::ChatAppMsg;
+
+    let mut app = OilChatApp::default();
+    app.set_available_models(vec![
+        "ollama/llama3".to_string(),
+        "anthropic/claude-3".to_string(),
+    ]);
+    app.on_message(ChatAppMsg::SwitchModel("ollama/llama3".to_string()));
+
+    for c in ":model".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    assert!(
+        !app.is_popup_visible(),
+        "Popup should NOT be open after ':model' + Enter (REPL command shows message)"
+    );
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+
+    assert!(
+        output.contains("Available models"),
+        "Should show 'Available models' header. Got: {}",
+        output
+    );
+    assert!(
+        output.contains("ollama/llama3"),
+        "Should list ollama/llama3. Got: {}",
+        output
+    );
+    assert!(
+        output.contains("anthropic/claude-3"),
+        "Should list anthropic/claude-3. Got: {}",
+        output
+    );
+}
+
+#[test]
+fn model_repl_loaded_marks_current_model() {
+    use crate::tui::oil::chat_app::ChatAppMsg;
+
+    let mut app = OilChatApp::default();
+    app.set_available_models(vec![
+        "ollama/llama3".to_string(),
+        "anthropic/claude-3".to_string(),
+    ]);
+    app.on_message(ChatAppMsg::SwitchModel("ollama/llama3".to_string()));
+
+    for c in ":model".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+
+    assert!(
+        output.contains("← current"),
+        "Should mark the current model with '← current'. Got: {}",
+        output
+    );
+}
+
+#[test]
+fn model_repl_loaded_empty_shows_not_configured() {
+    use crate::tui::oil::chat_app::ChatAppMsg;
+
+    let mut app = OilChatApp::default();
+    // ModelsLoaded(vec![]) transitions to Loaded state with empty models
+    app.on_message(ChatAppMsg::ModelsLoaded(vec![]));
+
+    for c in ":model".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    assert!(
+        !app.is_popup_visible(),
+        "Popup should NOT be open after ':model' + Enter"
+    );
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+
+    assert!(
+        output.contains("No models configured"),
+        "Should show 'No models configured' when Loaded state has empty list. Got: {}",
+        output
+    );
+    assert!(
+        !output.contains("No models available"),
+        "Should NOT show old broken message 'No models available'. Got: {}",
+        output
+    );
+}
+
+#[test]
+fn model_repl_notloaded_shows_fetching_message() {
+    // Default app state is NotLoaded
+    let mut app = OilChatApp::default();
+
+    for c in ":model".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    assert!(
+        !app.is_popup_visible(),
+        "Popup should NOT be open after ':model' + Enter (REPL command shows message)"
+    );
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+
+    assert!(
+        output.contains("Fetching available models"),
+        "Should show 'Fetching available models' when state is NotLoaded. Got: {}",
+        output
+    );
+}
+
+#[test]
+fn model_repl_loading_shows_wait_message() {
+    use crate::tui::oil::chat_app::ChatAppMsg;
+
+    let mut app = OilChatApp::default();
+    // FetchModels transitions to Loading state
+    app.on_message(ChatAppMsg::FetchModels);
+
+    for c in ":model".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    assert!(
+        !app.is_popup_visible(),
+        "Popup should NOT be open after ':model' + Enter"
+    );
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+
+    assert!(
+        output.contains("Models are loading, please wait"),
+        "Should show 'Models are loading, please wait...' when state is Loading. Got: {}",
+        output
+    );
+}
+
+#[test]
+fn model_repl_failed_retries_and_shows_message() {
+    use crate::tui::oil::chat_app::ChatAppMsg;
+
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::ModelsFetchFailed("connection refused".to_string()));
+
+    for c in ":model".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    assert!(
+        !app.is_popup_visible(),
+        "Popup should NOT be open after ':model' + Enter"
+    );
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+
+    assert!(
+        output.contains("Retrying"),
+        "Should show 'Retrying' message when state is Failed. Got: {}",
+        output
+    );
+    assert!(
+        output.contains("connection refused"),
+        "Should include the error reason in the message. Got: {}",
+        output
+    );
+}
+
+#[test]
+fn model_popup_failed_state_retries_fetch() {
+    use crate::tui::oil::chat_app::ChatAppMsg;
+
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::ModelsFetchFailed("timeout".to_string()));
+
+    // Type ':model ' (with space) — autocomplete popup path
+    for c in ":model ".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+
+    assert!(
+        app.is_popup_visible(),
+        "Popup should be visible when typing ':model ' in Failed state (force-shown for retry)"
+    );
+}
+
+#[test]
+fn model_popup_loading_state_forces_visible() {
+    use crate::tui::oil::chat_app::ChatAppMsg;
+
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::FetchModels);
+
+    // Type ':model ' (with space) — autocomplete popup path
+    for c in ":model ".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+
+    assert!(
+        app.is_popup_visible(),
+        "Popup should be visible when typing ':model ' in Loading state (force-shown during loading)"
+    );
+}
+
 #[test]
 fn spinner_style_uses_theme_color() {
     use crate::tui::oil::style::Style;
