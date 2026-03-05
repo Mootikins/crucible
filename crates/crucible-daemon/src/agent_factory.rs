@@ -306,6 +306,17 @@ pub async fn create_agent_from_session_config(
         .with_api_key_env_var_name()
         .build();
 
+    // Resolve the env var value — with_api_key_env_var_name() stores the env var
+    // NAME (e.g. "GLM_AUTH_TOKEN"), not the actual token. Look it up now so genai
+    // sends the real credential in the Authorization header.
+    if let Some(env_var_name) = &llm_config.api_key {
+        if let Ok(resolved) = std::env::var(env_var_name) {
+            if !resolved.is_empty() {
+                llm_config.api_key = Some(resolved);
+            }
+        }
+    }
+
     if let Some(lua) = lua {
         match get_provider_auth_hooks(lua) {
             Ok(hooks) if !hooks.is_empty() => {
