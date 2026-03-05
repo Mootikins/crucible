@@ -5,7 +5,7 @@
 
 use crate::tui::oil::node::{col, row, styled, Node, SpinnerNode, SpinnerStyle};
 use crate::tui::oil::style::Style;
-use crate::tui::oil::utils::{terminal_width, truncate_first_line, truncate_to_chars};
+use crate::tui::oil::utils::{terminal_width, truncate_to_chars};
 use crate::tui::oil::viewport_cache::CachedToolCall;
 use std::time::Duration;
 
