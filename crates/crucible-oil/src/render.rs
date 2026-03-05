@@ -5,8 +5,8 @@ use crate::layout::flex::{calculate_row_widths, ChildMeasurement, FlexLayoutInpu
 use crate::node::{
     BoxNode, Direction, InputNode, Node, PopupNode, RawNode, Size, SpinnerNode, TextNode,
 };
-use crate::style::Style;
 use crate::render_helpers::format_popup_item_line;
+use crate::style::Style;
 use textwrap::{wrap, Options, WordSplitter};
 
 pub trait RenderFilter {
@@ -163,6 +163,7 @@ fn render_node_filtered(
 
         Node::Popup(popup) => {
             render_popup(popup, width, output);
+            cursor_info.visible = false;
         }
 
         Node::Fragment(children) => {
@@ -561,6 +562,23 @@ mod tests {
     use crate::node::*;
     use crate::style::{Border, Color, Gap, Padding, Style};
 
+    fn focused_input_node() -> Node {
+        Node::Input(InputNode {
+            value: "hello".to_string(),
+            cursor: 2,
+            placeholder: None,
+            style: Style::default(),
+            focused: true,
+        })
+    }
+
+    fn focused_input_with_popup_node() -> Node {
+        fragment(vec![
+            focused_input_node(),
+            popup(vec![popup_item("Option 1")], 0, 3),
+        ])
+    }
+
     #[test]
     fn test_render_empty_node() {
         let node = Node::Empty;
@@ -935,6 +953,44 @@ mod tests {
     }
 
     #[test]
+    fn test_cursor_hidden_when_popup_visible() {
+        let result = render_with_cursor(&focused_input_with_popup_node(), 80);
+        assert!(!result.cursor.visible);
+    }
+
+    #[test]
+    fn test_cursor_reappears_after_popup_closes() {
+        assert!(
+            !render_with_cursor(&focused_input_with_popup_node(), 80)
+                .cursor
+                .visible
+        );
+        assert!(render_with_cursor(&focused_input_node(), 80).cursor.visible);
+    }
+
+    #[test]
+    fn test_cursor_toggles_correctly_across_popup_cycles() {
+        let make_tree = |show_popup: bool| {
+            if show_popup {
+                focused_input_with_popup_node()
+            } else {
+                focused_input_node()
+            }
+        };
+
+        let cycle = [false, true, false, true, false];
+        let expected = [true, false, true, false, true];
+
+        for (show_popup, expected_visible) in cycle.into_iter().zip(expected) {
+            let result = render_with_cursor(&make_tree(show_popup), 80);
+            assert_eq!(
+                result.cursor.visible, expected_visible,
+                "unexpected cursor visibility with show_popup={show_popup}"
+            );
+        }
+    }
+
+    #[test]
     fn test_cursor_tracking_input_with_padding_and_border() {
         let boxnode = BoxNode {
             children: vec![Node::Input(InputNode {
@@ -1024,7 +1080,10 @@ mod tests {
         ]);
         let output = render_to_string_filtered(&tree, 80, &SkipFirst);
         assert!(output.contains("World"), "Output should contain 'World'");
-        assert!(!output.contains("Hello"), "Output should not contain 'Hello'");
+        assert!(
+            !output.contains("Hello"),
+            "Output should not contain 'Hello'"
+        );
     }
 
     #[test]
