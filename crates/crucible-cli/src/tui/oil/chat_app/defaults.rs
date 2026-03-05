@@ -24,7 +24,9 @@ impl Default for OilChatApp {
             mcp_servers: Vec::new(),
             plugin_status: Vec::new(),
             available_models: Vec::new(),
+
             model_list_state: ModelListState::NotLoaded,
+            model_fetch_message_shown: false,
 
             // UI Chrome
             input: InputBuffer::new(),
