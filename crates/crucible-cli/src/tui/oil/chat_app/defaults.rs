@@ -40,6 +40,7 @@ impl Default for OilChatApp {
             permission: PermissionState::default(),
             message_queue: MessageQueueState::default(),
             attached_context: Vec::new(),
+            drop_stream_deltas: false,
 
             // I/O / Lifecycle
             on_submit: None,
