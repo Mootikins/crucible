@@ -1186,11 +1186,12 @@ impl OilChatApp {
                 return self.select_popup_item();
             }
             KeyCode::Backspace => {
-                if self.popup.filter.is_empty() {
+                let before_len = self.input.content().len();
+                self.input.handle(InputAction::Backspace);
+                if self.input.content().len() == before_len {
                     self.close_popup();
                     return Action::Continue;
                 }
-                self.input.handle(InputAction::Backspace);
                 self.check_autocomplete_trigger();
             }
             KeyCode::Char(c) if self.is_ctrl_c(key) => {

@@ -2,10 +2,12 @@
 //!
 //! Tests popup behavior, Ctrl+C handling, command processing, and error states.
 
+use crate::tui::oil::ansi::strip_ansi;
 use crate::tui::oil::app::{Action, App, ViewContext};
 use crate::tui::oil::chat_app::{ChatAppMsg, ModelListState, OilChatApp};
 use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
+use crate::tui::oil::planning::FramePlanner;
 use crate::tui::oil::render::render_to_string;
 use crate::tui::oil::test_harness::AppHarness;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -22,6 +24,22 @@ fn view_with_default_ctx(app: &OilChatApp) -> crate::tui::oil::node::Node {
     let focus = FocusContext::new();
     let ctx = ViewContext::new(&focus);
     app.view(&ctx)
+}
+
+fn composited_output(app: &OilChatApp) -> String {
+    let tree = view_with_default_ctx(app);
+    let mut planner = FramePlanner::new(80, 24);
+    strip_ansi(&planner.plan(&tree).viewport_with_overlays(80))
+}
+
+fn count_half_block_border_rows(rendered: &str) -> usize {
+    rendered
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            !trimmed.is_empty() && trimmed.chars().all(|ch| ch == '▄')
+        })
+        .count()
 }
 
 // =============================================================================
@@ -2186,5 +2204,72 @@ fn model_fetch_message_shown_once() {
         fetch_count, 1,
         "Should show exactly 1 fetch message, but found {}",
         fetch_count
+    );
+}
+
+#[test]
+fn model_space_backspace_renders_single_border_row() {
+    let mut app = OilChatApp::default();
+    app.set_available_models(vec![
+        "ollama/llama3".to_string(),
+        "anthropic/claude-3".to_string(),
+    ]);
+
+    for c in ":model ".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    assert!(
+        app.is_popup_visible(),
+        "Popup should be visible for :model "
+    );
+
+    app.update(Event::Key(key(KeyCode::Backspace)));
+
+    assert_eq!(
+        app.input_content(),
+        ":model",
+        "Backspace should remove the trailing space"
+    );
+    assert!(
+        app.is_popup_visible(),
+        "Popup should stay visible and switch to REPL command completion"
+    );
+
+    let rendered = composited_output(&app);
+    let border_rows = count_half_block_border_rows(&rendered);
+    assert_eq!(
+        border_rows, 1,
+        "Expected exactly one half-block border row after :model<BS>, got {}.\n{}",
+        border_rows, rendered
+    );
+}
+
+#[test]
+fn set_space_backspace_renders_single_border_row() {
+    let mut app = OilChatApp::default();
+
+    for c in ":set ".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    assert!(app.is_popup_visible(), "Popup should be visible for :set ");
+
+    app.update(Event::Key(key(KeyCode::Backspace)));
+
+    assert_eq!(
+        app.input_content(),
+        ":set",
+        "Backspace should remove the trailing space"
+    );
+    assert!(
+        app.is_popup_visible(),
+        "Popup should stay visible and switch to REPL command completion"
+    );
+
+    let rendered = composited_output(&app);
+    let border_rows = count_half_block_border_rows(&rendered);
+    assert_eq!(
+        border_rows, 1,
+        "Expected exactly one half-block border row after :set<BS>, got {}.\n{}",
+        border_rows, rendered
     );
 }
