@@ -98,10 +98,7 @@ pub enum ChatAppMsg {
     /// **Event** (daemon → TUI): User switched TUI mode (Normal/Plan/Auto).
     ModeChanged(String),
     /// **Event** (daemon → TUI): Context window usage updated.
-    ContextUsage {
-        used: usize,
-        total: usize,
-    },
+    ContextUsage { used: usize, total: usize },
     /// **Command** (TUI → daemon): Clear chat history.
     ClearHistory,
     /// **Command** (TUI → daemon): Queue a message to send to agent.
@@ -126,20 +123,11 @@ pub enum ChatAppMsg {
     SetMaxTokens(Option<u32>),
     // --- Delegation & Subagent Events (daemon → TUI) ---
     /// **Event** (daemon → TUI): Subagent spawned (background task started).
-    SubagentSpawned {
-        id: String,
-        prompt: String,
-    },
+    SubagentSpawned { id: String, prompt: String },
     /// **Event** (daemon → TUI): Subagent completed successfully.
-    SubagentCompleted {
-        id: String,
-        summary: String,
-    },
+    SubagentCompleted { id: String, summary: String },
     /// **Event** (daemon → TUI): Subagent failed with error.
-    SubagentFailed {
-        id: String,
-        error: String,
-    },
+    SubagentFailed { id: String, error: String },
     /// **Event** (daemon → TUI): Delegation spawned (cross-agent task started).
     DelegationSpawned {
         id: String,
@@ -147,15 +135,9 @@ pub enum ChatAppMsg {
         target_agent: Option<String>,
     },
     /// **Event** (daemon → TUI): Delegation completed successfully.
-    DelegationCompleted {
-        id: String,
-        summary: String,
-    },
+    DelegationCompleted { id: String, summary: String },
     /// **Event** (daemon → TUI): Delegation failed with error.
-    DelegationFailed {
-        id: String,
-        error: String,
-    },
+    DelegationFailed { id: String, error: String },
     // --- UI State & Interaction Events ---
     /// **Command** (TUI → daemon): Toggle message visibility in chat.
     ToggleMessages,
@@ -183,8 +165,5 @@ pub enum ChatAppMsg {
         notes: Vec<PrecognitionNoteInfo>,
     },
     /// **Dual-duty**: Internal enriched message ready to send (from background precognition).
-    EnrichedMessage {
-        original: String,
-        enriched: String,
-    },
+    EnrichedMessage { original: String, enriched: String },
 }

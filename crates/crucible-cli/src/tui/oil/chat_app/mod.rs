@@ -3,15 +3,16 @@ use crate::tui::oil::chat_container::ContainerList;
 use crate::tui::oil::commands::{CliValue, SetCommand};
 use crate::tui::oil::component::Component;
 #[allow(unused_imports)] // WIP: Drawer, DrawerKind not yet used
-    use crate::tui::oil::components::{
+use crate::tui::oil::components::{
     Drawer, DrawerKind, InteractionModal, InteractionModalMsg, InteractionModalOutput,
     InteractionMode, NotificationArea, PopupComponent, ShellHistoryItem, ShellModal, ShellModalMsg,
     ShellModalOutput, ShellStatus, StatusComponent,
 };
 use crate::tui::oil::config::{ConfigValue, ModSource, RuntimeConfig};
 use crate::tui::oil::event::{Event, InputAction, InputBuffer};
-#[allow(unused_imports)] // WIP: markdown_to_node_styled, markdown_to_node_with_width, Margins, RenderStyle not yet used
-    use crate::tui::oil::markdown::{
+#[allow(unused_imports)]
+// WIP: markdown_to_node_styled, markdown_to_node_with_width, Margins, RenderStyle not yet used
+use crate::tui::oil::markdown::{
     markdown_to_node_styled, markdown_to_node_with_width, Margins, RenderStyle,
 };
 use crate::tui::oil::node::*;
@@ -26,7 +27,7 @@ use crossterm::event::KeyCode;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
 #[allow(unused_imports)] // WIP: AskRequest, AskResponse, PermAction, PermRequest not yet used
-    use crucible_core::interaction::{
+use crucible_core::interaction::{
     AskRequest, AskResponse, InteractionRequest, InteractionResponse, PermAction, PermRequest,
     PermResponse, PermissionScope,
 };
