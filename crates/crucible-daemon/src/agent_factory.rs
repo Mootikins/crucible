@@ -910,4 +910,50 @@ mod tests {
             .expect("get_kiln_info tool should exist in in-process tools");
         assert!(!get_kiln_info_tool.function.description.is_empty());
     }
+
+    #[tokio::test]
+    async fn workspace_tools_in_agent_tool_defs() {
+        let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+        let kiln_path = temp_dir.path();
+
+        let knowledge_repo: Arc<dyn KnowledgeRepository> = Arc::new(EmptyKnowledgeRepository);
+        let embedding_provider: Arc<dyn EmbeddingProvider> = Arc::new(EmptyEmbeddingProvider);
+
+        let tools = create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
+            workspace: Path::new("/tmp"),
+            kiln_path: Some(kiln_path),
+            mcp_gateway: None,
+            server_names: &[],
+            knowledge_repo: Some(knowledge_repo),
+            embedding_provider: Some(embedding_provider),
+            delegation_context: None,
+            mode: "auto",
+            gateway_all_tools_override: None,
+        })
+        .await;
+
+        let tool_names: Vec<String> = tools.iter().map(|t| t.function.name.clone()).collect();
+
+        // These assertions FAIL because workspace tools are not yet included
+        assert!(tool_names.iter().any(|name| name == "bash"), "bash tool should be in agent tool defs");
+        assert!(tool_names.iter().any(|name| name == "read_file"), "read_file tool should be in agent tool defs");
+        assert!(tool_names.iter().any(|name| name == "edit_file"), "edit_file tool should be in agent tool defs");
+        assert!(tool_names.iter().any(|name| name == "write_file"), "write_file tool should be in agent tool defs");
+        assert!(tool_names.iter().any(|name| name == "glob"), "glob tool should be in agent tool defs");
+        assert!(tool_names.iter().any(|name| name == "grep"), "grep tool should be in agent tool defs");
+    }
+
+    #[test]
+    fn is_safe_classifies_workspace_tools() {
+        use crate::agent_manager::is_safe;
+
+        // These assertions test the current state of is_safe()
+        // Some may FAIL if is_safe() doesn't have these tool names yet
+        assert!(!is_safe("bash"), "bash should be unsafe (runs arbitrary commands)");
+        assert!(is_safe("read_file"), "read_file should be safe (read-only)");
+        assert!(!is_safe("write_file"), "write_file should be unsafe (modifies files)");
+        assert!(!is_safe("edit_file"), "edit_file should be unsafe (modifies files)");
+        assert!(is_safe("glob"), "glob should be safe (read-only)");
+        assert!(is_safe("grep"), "grep should be safe (read-only)");
+    }
 }

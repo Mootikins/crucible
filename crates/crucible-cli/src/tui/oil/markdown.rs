@@ -1793,4 +1793,88 @@ mod tests {
             backtick_count, output
         );
     }
+    #[test]
+    fn table_respects_terminal_width() {
+        let table = r#"| Column One | Column Two | Column Three | Column Four | Column Five |
+|------------|------------|--------------|-------------|-------------|
+| Data A     | Data B     | Data C       | Data D      | Data E      |
+| More data  | More data  | More data    | More data   | More data   |"#;
+
+        let style = RenderStyle::viewport_with_margins(60, Margins::assistant());
+        let node = markdown_to_node_styled(table, style);
+        let output = render_to_string(&node, 60);
+
+        for (i, line) in output.lines().enumerate() {
+            let width = visible_width(line);
+            assert!(
+                width <= 60,
+                "Line {} exceeds width 60: {} chars\n{:?}",
+                i + 1,
+                width,
+                line
+            );
+        }
+    }
+
+    #[test]
+    fn table_with_cjk_content_respects_width() {
+        let table = r#"| 名前 | 説明 | 値 |
+|------|------|-----|
+| テスト | これはテストです | 123 |
+| データ | サンプルデータ | 456 |"#;
+
+        let style = RenderStyle::viewport_with_margins(60, Margins::assistant());
+        let node = markdown_to_node_styled(table, style);
+        let output = render_to_string(&node, 60);
+
+        // Should not panic
+        for (i, line) in output.lines().enumerate() {
+            let width = visible_width(line);
+            assert!(
+                width <= 60,
+                "CJK table line {} exceeds width 60: {} chars\n{:?}",
+                i + 1,
+                width,
+                line
+            );
+        }
+    }
+
+    #[test]
+    fn table_at_narrow_width_has_complete_box_drawing() {
+        let table = r#"| Column A | Column B |
+|----------|----------|
+| Data 1   | Data 2   |"#;
+
+        let style = RenderStyle::viewport_with_margins(40, Margins::assistant());
+        let node = markdown_to_node_styled(table, style);
+        let output = render_to_string(&node, 40);
+
+        // Check for complete box-drawing characters
+        let has_top_left = output.contains('┌');
+        let has_top_right = output.contains('┐');
+        let has_bottom_left = output.contains('└');
+        let has_bottom_right = output.contains('┘');
+        let has_vertical = output.contains('│');
+        let has_horizontal = output.contains('─');
+
+        assert!(has_top_left, "Missing top-left corner ┌");
+        assert!(has_top_right, "Missing top-right corner ┐");
+        assert!(has_bottom_left, "Missing bottom-left corner └");
+        assert!(has_bottom_right, "Missing bottom-right corner ┘");
+        assert!(has_vertical, "Missing vertical line │");
+        assert!(has_horizontal, "Missing horizontal line ─");
+
+        // Verify all lines fit within width
+        for (i, line) in output.lines().enumerate() {
+            let width = visible_width(line);
+            assert!(
+                width <= 40,
+                "Line {} exceeds width 40: {} chars\n{:?}",
+                i + 1,
+                width,
+                line
+            );
+        }
+    }
 }

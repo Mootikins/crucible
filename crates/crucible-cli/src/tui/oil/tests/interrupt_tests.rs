@@ -318,3 +318,115 @@ fn queue_message_when_idle_shows_spinner() {
         "Should be streaming after promoted QueueMessage"
     );
 }
+
+#[test]
+fn cancel_drains_stale_events_from_old_stream() {
+    let mut app = OilChatApp::default();
+
+    // Start first message and stream some content
+    app.on_message(ChatAppMsg::UserMessage("First question".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("First response line 1\n".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("First response line 2\n".to_string()));
+
+    assert!(app.is_streaming(), "Should be streaming first message");
+
+    // Cancel the stream
+    app.on_message(ChatAppMsg::StreamCancelled);
+    assert!(!app.is_streaming(), "Should not be streaming after cancel");
+
+    // Now start a second message immediately
+    app.on_message(ChatAppMsg::UserMessage("Second question".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("Second response\n".to_string()));
+
+    // Get the rendered output
+    let focus = FocusContext::new();
+    let ctx = ViewContext::new(&focus);
+    let tree = app.view(&ctx);
+    let output = crate::tui::oil::render::render_to_string(&tree, 80);
+
+    // CRITICAL ASSERTION: output should NOT contain text from first stream
+    // This test FAILS because stale events from the cancelled stream bleed through
+    assert!(
+        !output.contains("First response line 1"),
+        "Output should not contain text from cancelled first stream. Got: {}",
+        output
+    );
+    assert!(
+        !output.contains("First response line 2"),
+        "Output should not contain text from cancelled first stream. Got: {}",
+        output
+    );
+
+    // Output SHOULD contain text from second stream
+    assert!(
+        output.contains("Second response"),
+        "Output should contain text from second stream. Got: {}",
+        output
+    );
+}
+
+#[test]
+fn cancel_prevents_stale_text_delta_after_new_message() {
+    let mut app = OilChatApp::default();
+
+    // First message with streaming
+    app.on_message(ChatAppMsg::UserMessage("First".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("Stale text".to_string()));
+
+    // Cancel
+    app.on_message(ChatAppMsg::StreamCancelled);
+
+    // Second message
+    app.on_message(ChatAppMsg::UserMessage("Second".to_string()));
+
+    // Simulate a stale TextDelta from the old stream arriving after cancel
+    // (This can happen due to async buffering in the broadcast channel)
+    app.on_message(ChatAppMsg::TextDelta("More stale text".to_string()));
+
+    let focus = FocusContext::new();
+    let ctx = ViewContext::new(&focus);
+    let tree = app.view(&ctx);
+    let output = crate::tui::oil::render::render_to_string(&tree, 80);
+
+    // CRITICAL: stale text should NOT appear
+    // This test FAILS because the stale TextDelta is processed as if it's from the new stream
+    assert!(
+        !output.contains("Stale text"),
+        "Stale text from cancelled stream should not appear. Got: {}",
+        output
+    );
+    assert!(
+        !output.contains("More stale text"),
+        "More stale text from cancelled stream should not appear. Got: {}",
+        output
+    );
+}
+
+#[test]
+fn cancel_clears_active_stream_handle() {
+    let mut app = OilChatApp::default();
+
+    // Start streaming
+    app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("Response...".to_string()));
+
+    assert!(app.is_streaming(), "Should be streaming");
+
+    // Cancel
+    app.on_message(ChatAppMsg::StreamCancelled);
+
+    // After cancel, is_streaming should be false
+    assert!(!app.is_streaming(), "Should not be streaming after cancel");
+
+    // Verify that a stale TextDelta doesn't restart streaming
+    // (This is a proxy test for the active_stream being None)
+    app.on_message(ChatAppMsg::TextDelta("Stale".to_string()));
+
+    // The app should still not be streaming because the stale event
+    // should be discarded (or at least not treated as a new stream)
+    // This test documents the expected behavior after the fix
+    assert!(
+        !app.is_streaming(),
+        "Stale TextDelta after cancel should not restart streaming"
+    );
+}
