@@ -962,4 +962,131 @@ mod tests {
             .iter()
             .any(|r| matches!(r, Err(ChatError::Communication(msg)) if msg == STREAM_TIMEOUT_ERROR)));
     }
+
+    // === Negative tests: verify no false positives on legitimate responses ===
+
+    #[tokio::test]
+    async fn test_normal_text_response_no_error() {
+        let mut agent = StreamingMockAgent {
+            chunks: vec![ChatChunk {
+                delta: "Hello world".to_string(),
+                done: true,
+                tool_calls: None,
+                tool_results: None,
+                reasoning: None,
+                usage: None,
+                subagent_events: None,
+                precognition_notes_count: None,
+                precognition_notes: None,
+            }],
+            hanging: false,
+        };
+        let results = wrap_stream_with_guards(agent.send_message_stream("test".to_string()))
+            .collect::<Vec<_>>()
+            .await;
+        assert!(
+            results.iter().all(|r| r.is_ok()),
+            "expected no errors, got: {:?}",
+            results
+        );
+    }
+
+    #[tokio::test]
+    async fn test_tool_call_only_response_no_error() {
+        let mut agent = StreamingMockAgent {
+            chunks: vec![ChatChunk {
+                delta: String::new(),
+                done: true,
+                tool_calls: Some(vec![ChatToolCall {
+                    name: "search".to_string(),
+                    arguments: None,
+                    id: Some("call_1".to_string()),
+                }]),
+                tool_results: None,
+                reasoning: None,
+                usage: None,
+                subagent_events: None,
+                precognition_notes_count: None,
+                precognition_notes: None,
+            }],
+            hanging: false,
+        };
+        let results = wrap_stream_with_guards(agent.send_message_stream("test".to_string()))
+            .collect::<Vec<_>>()
+            .await;
+        assert!(
+            results.iter().all(|r| r.is_ok()),
+            "expected no errors, got: {:?}",
+            results
+        );
+    }
+
+    #[tokio::test]
+    async fn test_thinking_only_response_no_error() {
+        let mut agent = StreamingMockAgent {
+            chunks: vec![ChatChunk {
+                delta: String::new(),
+                done: true,
+                tool_calls: None,
+                tool_results: None,
+                reasoning: Some("Let me think about this...".to_string()),
+                usage: None,
+                subagent_events: None,
+                precognition_notes_count: None,
+                precognition_notes: None,
+            }],
+            hanging: false,
+        };
+        let results = wrap_stream_with_guards(agent.send_message_stream("test".to_string()))
+            .collect::<Vec<_>>()
+            .await;
+        assert!(
+            results.iter().all(|r| r.is_ok()),
+            "expected no errors, got: {:?}",
+            results
+        );
+    }
+
+    #[tokio::test]
+    async fn test_text_plus_tool_call_response_no_error() {
+        let mut agent = StreamingMockAgent {
+            chunks: vec![
+                ChatChunk {
+                    delta: "Hello".to_string(),
+                    done: false,
+                    tool_calls: None,
+                    tool_results: None,
+                    reasoning: None,
+                    usage: None,
+                    subagent_events: None,
+                    precognition_notes_count: None,
+                    precognition_notes: None,
+                },
+                ChatChunk {
+                    delta: String::new(),
+                    done: true,
+                    tool_calls: Some(vec![ChatToolCall {
+                        name: "search".to_string(),
+                        arguments: None,
+                        id: Some("call_1".to_string()),
+                    }]),
+                    tool_results: None,
+                    reasoning: None,
+                    usage: None,
+                    subagent_events: None,
+                    precognition_notes_count: None,
+                    precognition_notes: None,
+                },
+            ],
+            hanging: false,
+        };
+        let results = wrap_stream_with_guards(agent.send_message_stream("test".to_string()))
+            .collect::<Vec<_>>()
+            .await;
+        assert!(
+            results.iter().all(|r| r.is_ok()),
+            "expected no errors, got: {:?}",
+            results
+        );
+    }
 }
