@@ -140,7 +140,10 @@ fn render_header(file_path: &str, action: &str) -> Node {
 
     row([
         styled(format!("{} ", label), label_style),
-        styled(file_path.to_string(), Style::new().fg(t.resolve_color(t.colors.primary))),
+        styled(
+            file_path.to_string(),
+            Style::new().fg(t.resolve_color(t.colors.primary)),
+        ),
     ])
 }
 
@@ -237,13 +240,10 @@ fn render_modification_diff(old: &str, new: &str, max_width: Option<usize>) -> N
         let remaining = total_lines.saturating_sub(MAX_LINES);
         col([
             diff_node,
-            styled(
-                format!("... {} more lines", remaining),
-                {
-                    let t = crate::tui::oil::theme::active();
-                    Style::new().fg(t.resolve_color(t.colors.text_muted))
-                },
-            ),
+            styled(format!("... {} more lines", remaining), {
+                let t = crate::tui::oil::theme::active();
+                Style::new().fg(t.resolve_color(t.colors.text_muted))
+            }),
         ])
     } else {
         diff_to_node_width(old, new, 3, max_width)

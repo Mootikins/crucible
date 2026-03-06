@@ -237,11 +237,9 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
 
     // cru.oil.maybe(value, fn) — if value is non-nil, call fn(value); else return Empty
     // NOTE: checks Value::Nil specifically — false, 0, "" all trigger the callback (NOT treated as nil)
-    let maybe_fn = lua.create_function(|_, (value, func): (Value, Function)| {
-        match value {
-            Value::Nil => Ok(LuaNode(Node::Empty)),
-            v => func.call::<LuaNode>(v),
-        }
+    let maybe_fn = lua.create_function(|_, (value, func): (Value, Function)| match value {
+        Value::Nil => Ok(LuaNode(Node::Empty)),
+        v => func.call::<LuaNode>(v),
     })?;
     oil.set("maybe", maybe_fn)?;
 
@@ -606,7 +604,7 @@ mod tests {
         assert!(oil.contains_key("component").unwrap());
         assert!(oil.contains_key("maybe").unwrap());
         assert!(oil.contains_key("match_state").unwrap());
-}
+    }
 
     #[test]
     fn test_oil_text() {
@@ -792,7 +790,9 @@ mod tests {
         // false is NOT nil — must trigger the callback, not return Empty
         let lua = setup_lua();
         let result: LuaNode = lua
-            .load(r#"return cru.oil.maybe(false, function(v) return cru.oil.text("got false") end)"#)
+            .load(
+                r#"return cru.oil.maybe(false, function(v) return cru.oil.text("got false") end)"#,
+            )
             .eval()
             .unwrap();
         if let Node::Text(t) = result.0 {
@@ -806,7 +806,9 @@ mod tests {
     fn test_oil_match_state_hit() {
         let lua = setup_lua();
         let result: LuaNode = lua
-            .load(r#"return cru.oil.match_state("loading", {loading = cru.oil.text("Loading...")})"#)
+            .load(
+                r#"return cru.oil.match_state("loading", {loading = cru.oil.text("Loading...")})"#,
+            )
             .eval()
             .unwrap();
         if let Node::Text(t) = result.0 {
@@ -834,7 +836,9 @@ mod tests {
     fn test_oil_match_state_miss_no_default() {
         let lua = setup_lua();
         let result: LuaNode = lua
-            .load(r#"return cru.oil.match_state("unknown", {loading = cru.oil.text("Loading...")})"#)
+            .load(
+                r#"return cru.oil.match_state("unknown", {loading = cru.oil.text("Loading...")})"#,
+            )
             .eval()
             .unwrap();
         // Missing key + no _ handler → Node::Empty

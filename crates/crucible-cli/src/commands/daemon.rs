@@ -3,9 +3,9 @@
 use crate::config::CliConfig;
 use anyhow::Result;
 use clap::Subcommand;
-use crucible_daemon::{socket_path, BindWithPluginConfigParams, Server};
 use crucible_daemon::rpc_client::lifecycle::is_daemon_running;
 use crucible_daemon::DaemonClient;
+use crucible_daemon::{socket_path, BindWithPluginConfigParams, Server};
 use std::path::PathBuf;
 use std::process::Stdio;
 use tracing::info;

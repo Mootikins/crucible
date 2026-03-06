@@ -31,10 +31,10 @@
 // Submodules for logical organization
 pub mod display;
 pub mod helpers;
+pub mod internal;
 pub mod payloads;
 pub mod tool_call;
 pub mod types;
-pub mod internal;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -1515,11 +1515,13 @@ mod tests {
         assert!(SessionEvent::AgentThinking { thought: "".into() }.is_agent_event());
 
         // Subagent events
-        assert!(SessionEvent::internal(InternalSessionEvent::SubagentSpawned {
-            id: "".into(),
-            prompt: "".into()
-        })
-        .is_subagent_event());
+        assert!(
+            SessionEvent::internal(InternalSessionEvent::SubagentSpawned {
+                id: "".into(),
+                prompt: "".into()
+            })
+            .is_subagent_event()
+        );
 
         // Streaming events
         assert!(SessionEvent::TextDelta {
@@ -1551,31 +1553,39 @@ mod tests {
         .is_note_event());
 
         // Embedding events
-        assert!(SessionEvent::internal(InternalSessionEvent::EmbeddingRequested {
-            entity_id: "".into(),
-            block_id: None,
-            priority: Priority::Normal
-        })
-        .is_embedding_event());
-        assert!(SessionEvent::internal(InternalSessionEvent::EmbeddingStored {
-            entity_id: "".into(),
-            block_id: None,
-            dimensions: 0,
-            model: "".into()
-        })
-        .is_embedding_event());
-        assert!(SessionEvent::internal(InternalSessionEvent::EmbeddingFailed {
-            entity_id: "".into(),
-            block_id: None,
-            error: "".into()
-        })
-        .is_embedding_event());
-        assert!(SessionEvent::internal(InternalSessionEvent::EmbeddingBatchComplete {
-            entity_id: "".into(),
-            count: 5,
-            duration_ms: 100
-        })
-        .is_embedding_event());
+        assert!(
+            SessionEvent::internal(InternalSessionEvent::EmbeddingRequested {
+                entity_id: "".into(),
+                block_id: None,
+                priority: Priority::Normal
+            })
+            .is_embedding_event()
+        );
+        assert!(
+            SessionEvent::internal(InternalSessionEvent::EmbeddingStored {
+                entity_id: "".into(),
+                block_id: None,
+                dimensions: 0,
+                model: "".into()
+            })
+            .is_embedding_event()
+        );
+        assert!(
+            SessionEvent::internal(InternalSessionEvent::EmbeddingFailed {
+                entity_id: "".into(),
+                block_id: None,
+                error: "".into()
+            })
+            .is_embedding_event()
+        );
+        assert!(
+            SessionEvent::internal(InternalSessionEvent::EmbeddingBatchComplete {
+                entity_id: "".into(),
+                count: 5,
+                duration_ms: 100
+            })
+            .is_embedding_event()
+        );
         // Non-embedding events
         assert!(!SessionEvent::internal(InternalSessionEvent::EntityStored {
             entity_id: "".into(),
@@ -1599,43 +1609,55 @@ mod tests {
             block_count: 0
         })
         .is_storage_event());
-        assert!(SessionEvent::internal(InternalSessionEvent::RelationStored {
-            from_id: "".into(),
-            to_id: "".into(),
-            relation_type: "".into()
-        })
-        .is_storage_event());
-        assert!(SessionEvent::internal(InternalSessionEvent::RelationDeleted {
-            from_id: "".into(),
-            to_id: "".into(),
-            relation_type: "".into()
-        })
-        .is_storage_event());
-        assert!(SessionEvent::internal(InternalSessionEvent::EmbeddingRequested {
-            entity_id: "".into(),
-            block_id: None,
-            priority: Priority::Normal
-        })
-        .is_storage_event());
-        assert!(SessionEvent::internal(InternalSessionEvent::EmbeddingStored {
-            entity_id: "".into(),
-            block_id: None,
-            dimensions: 0,
-            model: "".into()
-        })
-        .is_storage_event());
-        assert!(SessionEvent::internal(InternalSessionEvent::EmbeddingFailed {
-            entity_id: "".into(),
-            block_id: None,
-            error: "".into()
-        })
-        .is_storage_event());
-        assert!(SessionEvent::internal(InternalSessionEvent::EmbeddingBatchComplete {
-            entity_id: "".into(),
-            count: 5,
-            duration_ms: 100
-        })
-        .is_storage_event());
+        assert!(
+            SessionEvent::internal(InternalSessionEvent::RelationStored {
+                from_id: "".into(),
+                to_id: "".into(),
+                relation_type: "".into()
+            })
+            .is_storage_event()
+        );
+        assert!(
+            SessionEvent::internal(InternalSessionEvent::RelationDeleted {
+                from_id: "".into(),
+                to_id: "".into(),
+                relation_type: "".into()
+            })
+            .is_storage_event()
+        );
+        assert!(
+            SessionEvent::internal(InternalSessionEvent::EmbeddingRequested {
+                entity_id: "".into(),
+                block_id: None,
+                priority: Priority::Normal
+            })
+            .is_storage_event()
+        );
+        assert!(
+            SessionEvent::internal(InternalSessionEvent::EmbeddingStored {
+                entity_id: "".into(),
+                block_id: None,
+                dimensions: 0,
+                model: "".into()
+            })
+            .is_storage_event()
+        );
+        assert!(
+            SessionEvent::internal(InternalSessionEvent::EmbeddingFailed {
+                entity_id: "".into(),
+                block_id: None,
+                error: "".into()
+            })
+            .is_storage_event()
+        );
+        assert!(
+            SessionEvent::internal(InternalSessionEvent::EmbeddingBatchComplete {
+                entity_id: "".into(),
+                count: 5,
+                duration_ms: 100
+            })
+            .is_storage_event()
+        );
         // Storage events are not note events
         assert!(!SessionEvent::internal(InternalSessionEvent::EntityStored {
             entity_id: "".into(),
@@ -2731,24 +2753,34 @@ impl<'de> Deserialize<'de> for SessionEvent {
         D: serde::Deserializer<'de>,
     {
         use serde::de::Error;
-        
+
         // Deserialize to a raw Value first
         let value = serde_json::Value::deserialize(deserializer)?;
-        
+
         // Extract the type field
-        let type_str = value.get("type")
+        let type_str = value
+            .get("type")
             .and_then(|v| v.as_str())
             .ok_or_else(|| D::Error::missing_field("type"))?;
-        
+
         // Known SessionEvent variants (non-Internal)
         const KNOWN_VARIANTS: &[&str] = &[
-            "message_received", "agent_responded", "agent_thinking",
-            "tool_called", "tool_completed", "session_started", "session_ended",
-            "text_delta", "interaction_requested", "interaction_completed",
-            "delegation_spawned", "delegation_completed", "delegation_failed",
+            "message_received",
+            "agent_responded",
+            "agent_thinking",
+            "tool_called",
+            "tool_completed",
+            "session_started",
+            "session_ended",
+            "text_delta",
+            "interaction_requested",
+            "interaction_completed",
+            "delegation_spawned",
+            "delegation_completed",
+            "delegation_failed",
             "custom",
         ];
-        
+
         if KNOWN_VARIANTS.contains(&type_str) {
             // For known SessionEvent variants, use serde_json to deserialize
             serde_json::from_value::<SessionEventHelper>(value)
@@ -2758,7 +2790,9 @@ impl<'de> Deserialize<'de> for SessionEvent {
             // Try to deserialize as InternalSessionEvent
             let type_str_owned = type_str.to_string();
             serde_json::from_value::<InternalSessionEvent>(value)
-                .map_err(|e| D::Error::custom(format!("unknown event type '{}': {}", type_str_owned, e)))
+                .map_err(|e| {
+                    D::Error::custom(format!("unknown event type '{}': {}", type_str_owned, e))
+                })
                 .map(|inner| SessionEvent::Internal(Box::new(inner)))
         }
     }
@@ -2835,48 +2869,84 @@ enum SessionEventHelper {
 impl From<SessionEventHelper> for SessionEvent {
     fn from(helper: SessionEventHelper) -> Self {
         match helper {
-            SessionEventHelper::MessageReceived { content, participant_id } => {
-                SessionEvent::MessageReceived { content, participant_id }
-            }
-            SessionEventHelper::AgentResponded { content, tool_calls } => {
-                SessionEvent::AgentResponded { content, tool_calls }
-            }
+            SessionEventHelper::MessageReceived {
+                content,
+                participant_id,
+            } => SessionEvent::MessageReceived {
+                content,
+                participant_id,
+            },
+            SessionEventHelper::AgentResponded {
+                content,
+                tool_calls,
+            } => SessionEvent::AgentResponded {
+                content,
+                tool_calls,
+            },
             SessionEventHelper::AgentThinking { thought } => {
                 SessionEvent::AgentThinking { thought }
             }
             SessionEventHelper::ToolCalled { name, args } => {
                 SessionEvent::ToolCalled { name, args }
             }
-            SessionEventHelper::ToolCompleted { name, result, error } => {
-                SessionEvent::ToolCompleted { name, result, error }
-            }
+            SessionEventHelper::ToolCompleted {
+                name,
+                result,
+                error,
+            } => SessionEvent::ToolCompleted {
+                name,
+                result,
+                error,
+            },
             SessionEventHelper::SessionStarted { config } => {
                 SessionEvent::SessionStarted { config }
             }
-            SessionEventHelper::SessionEnded { reason } => {
-                SessionEvent::SessionEnded { reason }
-            }
-            SessionEventHelper::TextDelta { delta, seq } => {
-                SessionEvent::TextDelta { delta, seq }
-            }
-            SessionEventHelper::InteractionRequested { request_id, request } => {
-                SessionEvent::InteractionRequested { request_id, request }
-            }
-            SessionEventHelper::InteractionCompleted { request_id, response } => {
-                SessionEvent::InteractionCompleted { request_id, response }
-            }
-            SessionEventHelper::DelegationSpawned { delegation_id, prompt, parent_session_id, target_agent } => {
-                SessionEvent::DelegationSpawned { delegation_id, prompt, parent_session_id, target_agent }
-            }
-            SessionEventHelper::DelegationCompleted { delegation_id, result_summary, parent_session_id } => {
-                SessionEvent::DelegationCompleted { delegation_id, result_summary, parent_session_id }
-            }
-            SessionEventHelper::DelegationFailed { delegation_id, error, parent_session_id } => {
-                SessionEvent::DelegationFailed { delegation_id, error, parent_session_id }
-            }
-            SessionEventHelper::Custom { name, payload } => {
-                SessionEvent::Custom { name, payload }
-            }
+            SessionEventHelper::SessionEnded { reason } => SessionEvent::SessionEnded { reason },
+            SessionEventHelper::TextDelta { delta, seq } => SessionEvent::TextDelta { delta, seq },
+            SessionEventHelper::InteractionRequested {
+                request_id,
+                request,
+            } => SessionEvent::InteractionRequested {
+                request_id,
+                request,
+            },
+            SessionEventHelper::InteractionCompleted {
+                request_id,
+                response,
+            } => SessionEvent::InteractionCompleted {
+                request_id,
+                response,
+            },
+            SessionEventHelper::DelegationSpawned {
+                delegation_id,
+                prompt,
+                parent_session_id,
+                target_agent,
+            } => SessionEvent::DelegationSpawned {
+                delegation_id,
+                prompt,
+                parent_session_id,
+                target_agent,
+            },
+            SessionEventHelper::DelegationCompleted {
+                delegation_id,
+                result_summary,
+                parent_session_id,
+            } => SessionEvent::DelegationCompleted {
+                delegation_id,
+                result_summary,
+                parent_session_id,
+            },
+            SessionEventHelper::DelegationFailed {
+                delegation_id,
+                error,
+                parent_session_id,
+            } => SessionEvent::DelegationFailed {
+                delegation_id,
+                error,
+                parent_session_id,
+            },
+            SessionEventHelper::Custom { name, payload } => SessionEvent::Custom { name, payload },
         }
     }
 }

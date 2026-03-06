@@ -71,5 +71,4 @@ mod tests {
         // All threads got the same &'static reference
         assert!(addrs.windows(2).all(|w| w[0] == w[1]));
     }
-
 }

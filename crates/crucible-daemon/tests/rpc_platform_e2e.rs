@@ -374,10 +374,7 @@ async fn test_agents_resolve_profile_builtin() {
         .await
         .expect("agents.resolve_profile RPC failed");
 
-    assert!(
-        missing.is_null(),
-        "Non-existent profile should return null"
-    );
+    assert!(missing.is_null(), "Non-existent profile should return null");
 
     server.shutdown().await;
 }
@@ -396,10 +393,7 @@ async fn test_storage_cleanup_returns_status() {
         .await
         .expect("storage.cleanup RPC failed");
 
-    assert!(
-        result["status"].is_string(),
-        "Should have a status field"
-    );
+    assert!(result["status"].is_string(), "Should have a status field");
 
     server.shutdown().await;
 }

@@ -60,13 +60,12 @@ impl<'a> MessageList<'a> {
             }
             Role::System => col([
                 text(""),
-                styled(
-                    format!(" * {} ", msg.content()),
-                    {
-                        let t = crate::tui::oil::theme::active();
-                        Style::new().fg(t.resolve_color(t.colors.system_message)).italic()
-                    },
-                ),
+                styled(format!(" * {} ", msg.content()), {
+                    let t = crate::tui::oil::theme::active();
+                    Style::new()
+                        .fg(t.resolve_color(t.colors.system_message))
+                        .italic()
+                }),
             ]),
         };
         scrollback(&msg.id, [content_node])
@@ -82,8 +81,14 @@ impl Component for MessageList<'_> {
 /// Render a user prompt with styled background.
 pub fn render_user_prompt(content: &str, width: usize) -> Node {
     let t = crate::tui::oil::theme::active();
-    let top_edge = styled(t.decorations.half_block_bottom.to_string().repeat(width), Style::new().fg(t.resolve_color(t.colors.background)));
-    let bottom_edge = styled(t.decorations.half_block_top.to_string().repeat(width), Style::new().fg(t.resolve_color(t.colors.background)));
+    let top_edge = styled(
+        t.decorations.half_block_bottom.to_string().repeat(width),
+        Style::new().fg(t.resolve_color(t.colors.background)),
+    );
+    let bottom_edge = styled(
+        t.decorations.half_block_top.to_string().repeat(width),
+        Style::new().fg(t.resolve_color(t.colors.background)),
+    );
 
     let prefix = " > ";
     let continuation_prefix = "   ";
@@ -113,8 +118,13 @@ pub fn render_user_prompt(content: &str, width: usize) -> Node {
 pub fn render_thinking_block(content: &str, token_count: usize, width: usize) -> Node {
     let t = crate::tui::oil::theme::active();
     let header = styled(
-        format!("  \u{250C}{} thinking ({} tokens)", t.decorations.divider_char, token_count),
-        Style::new().fg(t.resolve_color(t.colors.text_muted)).italic(),
+        format!(
+            "  \u{250C}{} thinking ({} tokens)",
+            t.decorations.divider_char, token_count
+        ),
+        Style::new()
+            .fg(t.resolve_color(t.colors.text_muted))
+            .italic(),
     );
 
     let display_content: Cow<'_, str> = if content.len() > 1200 {

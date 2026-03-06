@@ -935,14 +935,14 @@ mod tests {
     /// - Using bare `serde_json::Value` without `#[schemars(schema_with = "...")]`
     #[test]
     fn test_tool_schemas_llama_cpp_compatible() {
+        use crate::provider::tool_bridge::sanitize_tool_schema;
+        use crate::tools::mcp_server::{
+            CancelJobParams, DelegateSessionParams, GetJobResultParams, ListJobsParams,
+        };
         use crate::tools::notes::{
             CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMetadataParams,
             ReadNoteParams, UpdateNoteParams,
         };
-        use crate::tools::mcp_server::{
-            CancelJobParams, DelegateSessionParams, GetJobResultParams, ListJobsParams,
-        };
-        use crate::provider::tool_bridge::sanitize_tool_schema;
 
         let sanitize = |raw: schemars::Schema| -> String {
             let mut v: serde_json::Value = serde_json::to_value(&raw).unwrap();

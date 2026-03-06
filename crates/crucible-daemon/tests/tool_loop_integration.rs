@@ -292,8 +292,8 @@ async fn tool_loop_stops_when_max_tool_depth_exceeded() {
 
 #[tokio::test]
 async fn tool_loop_without_tool_calls_streams_normal_response() {
-    let server = MockOpenAiServer::start(|_request_number, _body| openai_text_sse("Plain response"))
-        .await;
+    let server =
+        MockOpenAiServer::start(|_request_number, _body| openai_text_sse("Plain response")).await;
 
     let harness = TestHarness::new().await;
     harness
@@ -308,7 +308,11 @@ async fn tool_loop_without_tool_calls_streams_normal_response() {
     let (event_tx, mut event_rx) = broadcast::channel(128);
     harness
         .agent_manager
-        .send_message(&harness.session_id, "plain response please".to_string(), &event_tx)
+        .send_message(
+            &harness.session_id,
+            "plain response please".to_string(),
+            &event_tx,
+        )
         .await
         .expect("send message");
 
@@ -326,6 +330,9 @@ async fn tool_loop_without_tool_calls_streams_normal_response() {
     .await
     .is_err();
 
-    assert!(no_tool_call_seen, "unexpected tool_call event in plain response flow");
+    assert!(
+        no_tool_call_seen,
+        "unexpected tool_call event in plain response flow"
+    );
     assert_eq!(server.request_count.load(Ordering::SeqCst), 1);
 }

@@ -1,5 +1,6 @@
 use super::*;
 use crate::session_storage::FileSessionStorage;
+use crate::tools::workspace::WorkspaceTools;
 use async_trait::async_trait;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::events::handler::{Handler, HandlerContext, HandlerResult};
@@ -12,7 +13,6 @@ use crucible_core::traits::chat::{
 use crucible_core::traits::knowledge::NoteInfo;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_core::types::SearchResult;
-use crate::tools::workspace::WorkspaceTools;
 use futures::stream::BoxStream;
 use futures::StreamExt;
 use std::collections::HashMap;
@@ -62,10 +62,12 @@ impl Handler for MockHandler {
             MockHandlerBehavior::ModifyPrompt(new_prompt) => {
                 if let SessionEvent::Internal(inner) = &event {
                     if let InternalSessionEvent::PreLlmCall { model, .. } = inner.as_ref() {
-                        HandlerResult::Continue(SessionEvent::internal(InternalSessionEvent::PreLlmCall {
-                            prompt: new_prompt.clone(),
-                            model: model.clone(),
-                        }))
+                        HandlerResult::Continue(SessionEvent::internal(
+                            InternalSessionEvent::PreLlmCall {
+                                prompt: new_prompt.clone(),
+                                model: model.clone(),
+                            },
+                        ))
                     } else {
                         HandlerResult::Continue(event)
                     }
@@ -1609,7 +1611,10 @@ async fn test_execute_agent_stream_empty_response_emits_error_event() {
     .await
     .expect("timed out waiting for ended event");
 
-    assert!(!saw_message_complete, "unexpected message_complete before error ended");
+    assert!(
+        !saw_message_complete,
+        "unexpected message_complete before error ended"
+    );
     let ended_reason = ended.data["reason"].as_str().unwrap_or_default();
     assert!(
         ended_reason.starts_with("error:"),
@@ -1703,7 +1708,10 @@ async fn test_execute_agent_stream_tool_call_only_is_not_error() {
         loop {
             match event_rx.recv().await {
                 Ok(event) if event.event == "ended" => {
-                    let reason = event.data["reason"].as_str().unwrap_or_default().to_string();
+                    let reason = event.data["reason"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_string();
                     if reason.starts_with("error:") {
                         saw_error_ended = true;
                     }
@@ -1711,7 +1719,9 @@ async fn test_execute_agent_stream_tool_call_only_is_not_error() {
                 Ok(event) if event.event == "message_complete" => return event,
                 Ok(_) => continue,
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(err) => panic!("event channel closed while waiting for message_complete: {err}"),
+                Err(err) => {
+                    panic!("event channel closed while waiting for message_complete: {err}")
+                }
             }
         }
     })

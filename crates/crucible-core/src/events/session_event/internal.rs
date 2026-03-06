@@ -762,68 +762,220 @@ impl InternalSessionEvent {
     /// Get a summary of this event's content, truncated to `max_len`.
     pub fn summary(&self, max_len: usize) -> String {
         fn trunc(s: &str, max_len: usize) -> &str {
-            if s.len() <= max_len { return s; }
+            if s.len() <= max_len {
+                return s;
+            }
             let mut end = max_len;
-            while !s.is_char_boundary(end) && end > 0 { end -= 1; }
+            while !s.is_char_boundary(end) && end > 0 {
+                end -= 1;
+            }
             &s[..end]
         }
         match self {
             Self::FileChanged { path, kind } => format!("path={}, kind={:?}", path.display(), kind),
             Self::FileDeleted { path } => format!("path={}", path.display()),
             Self::FileMoved { from, to } => format!("from={}, to={}", from.display(), to.display()),
-            Self::NoteParsed { path, block_count, payload } => {
-                let ps = if payload.is_some() { ", has_payload" } else { "" };
+            Self::NoteParsed {
+                path,
+                block_count,
+                payload,
+            } => {
+                let ps = if payload.is_some() {
+                    ", has_payload"
+                } else {
+                    ""
+                };
                 format!("path={}, blocks={}{}", path.display(), block_count, ps)
             }
             Self::NoteCreated { path, title } => {
                 let t = title.as_deref().unwrap_or("(none)");
                 format!("path={}, title={}", path.display(), trunc(t, max_len))
             }
-            Self::NoteModified { path, change_type } => format!("path={}, change={:?}", path.display(), change_type),
-            Self::NoteDeleted { path, existed } => format!("path={}, existed={}", path.display(), existed),
-            Self::EntityStored { entity_id, entity_type } => format!("entity_id={}, type={:?}", entity_id, entity_type),
-            Self::EntityDeleted { entity_id, entity_type } => format!("entity_id={}, type={:?}", entity_id, entity_type),
-            Self::BlocksUpdated { entity_id, block_count } => format!("entity_id={}, blocks={}", entity_id, block_count),
-            Self::RelationStored { from_id, to_id, relation_type } => format!("from={}, to={}, type={}", from_id, to_id, relation_type),
-            Self::RelationDeleted { from_id, to_id, relation_type } => format!("from={}, to={}, type={}", from_id, to_id, relation_type),
-            Self::TagAssociated { entity_id, tag } => format!("entity_id={}, tag={}", entity_id, tag),
-            Self::EmbeddingRequested { entity_id, priority, .. } => format!("entity_id={}, priority={:?}", entity_id, priority),
-            Self::EmbeddingStored { entity_id, dimensions, .. } => format!("entity_id={}, dims={}", entity_id, dimensions),
-            Self::EmbeddingFailed { entity_id, error, .. } => format!("entity_id={}, error={}", entity_id, trunc(error, max_len)),
-            Self::EmbeddingBatchComplete { entity_id, count, duration_ms } => format!("entity_id={}, count={}, duration={}ms", entity_id, count, duration_ms),
-            Self::EmbeddingModelMismatch { kiln_path, stored_model, current_model, note_count } => format!("kiln={}, stored={}, current={}, notes={}", kiln_path, stored_model, current_model, note_count),
-            Self::PreToolCall { name, args } => format!("tool={}, args_size={}", name, args.to_string().len()),
+            Self::NoteModified { path, change_type } => {
+                format!("path={}, change={:?}", path.display(), change_type)
+            }
+            Self::NoteDeleted { path, existed } => {
+                format!("path={}, existed={}", path.display(), existed)
+            }
+            Self::EntityStored {
+                entity_id,
+                entity_type,
+            } => format!("entity_id={}, type={:?}", entity_id, entity_type),
+            Self::EntityDeleted {
+                entity_id,
+                entity_type,
+            } => format!("entity_id={}, type={:?}", entity_id, entity_type),
+            Self::BlocksUpdated {
+                entity_id,
+                block_count,
+            } => format!("entity_id={}, blocks={}", entity_id, block_count),
+            Self::RelationStored {
+                from_id,
+                to_id,
+                relation_type,
+            } => format!("from={}, to={}, type={}", from_id, to_id, relation_type),
+            Self::RelationDeleted {
+                from_id,
+                to_id,
+                relation_type,
+            } => format!("from={}, to={}, type={}", from_id, to_id, relation_type),
+            Self::TagAssociated { entity_id, tag } => {
+                format!("entity_id={}, tag={}", entity_id, tag)
+            }
+            Self::EmbeddingRequested {
+                entity_id,
+                priority,
+                ..
+            } => format!("entity_id={}, priority={:?}", entity_id, priority),
+            Self::EmbeddingStored {
+                entity_id,
+                dimensions,
+                ..
+            } => format!("entity_id={}, dims={}", entity_id, dimensions),
+            Self::EmbeddingFailed {
+                entity_id, error, ..
+            } => format!("entity_id={}, error={}", entity_id, trunc(error, max_len)),
+            Self::EmbeddingBatchComplete {
+                entity_id,
+                count,
+                duration_ms,
+            } => format!(
+                "entity_id={}, count={}, duration={}ms",
+                entity_id, count, duration_ms
+            ),
+            Self::EmbeddingModelMismatch {
+                kiln_path,
+                stored_model,
+                current_model,
+                note_count,
+            } => format!(
+                "kiln={}, stored={}, current={}, notes={}",
+                kiln_path, stored_model, current_model, note_count
+            ),
+            Self::PreToolCall { name, args } => {
+                format!("tool={}, args_size={}", name, args.to_string().len())
+            }
             Self::PreParse { path } => format!("path={}", path.display()),
-            Self::PreLlmCall { prompt, model } => format!("model={}, prompt_len={}", model, prompt.len()),
-            Self::PostLlmCall { response_summary, model, duration_ms, token_count } => {
+            Self::PreLlmCall { prompt, model } => {
+                format!("model={}, prompt_len={}", model, prompt.len())
+            }
+            Self::PostLlmCall {
+                response_summary,
+                model,
+                duration_ms,
+                token_count,
+            } => {
                 let ts = token_count.map_or("none".to_string(), |t| t.to_string());
-                format!("model={}, duration={}ms, tokens={}, summary_len={}", model, duration_ms, ts, response_summary.len())
+                format!(
+                    "model={}, duration={}ms, tokens={}, summary_len={}",
+                    model,
+                    duration_ms,
+                    ts,
+                    response_summary.len()
+                )
             }
-            Self::PrecognitionComplete { notes_count, query_summary, kilns_searched, kilns_filtered, kilns_failed } => {
-                format!("notes={}, query={}, searched={}, filtered={}, failed={}", notes_count, trunc(query_summary, max_len), kilns_searched, kilns_filtered, kilns_failed)
+            Self::PrecognitionComplete {
+                notes_count,
+                query_summary,
+                kilns_searched,
+                kilns_filtered,
+                kilns_failed,
+            } => {
+                format!(
+                    "notes={}, query={}, searched={}, filtered={}, failed={}",
+                    notes_count,
+                    trunc(query_summary, max_len),
+                    kilns_searched,
+                    kilns_filtered,
+                    kilns_failed
+                )
             }
-            Self::ClassificationRequired { kiln_path } => format!("kiln_path={}", kiln_path.display()),
-            Self::SessionCompacted { summary, new_file } => format!("summary_len={}, new_file={}", summary.len(), new_file.display()),
-            Self::SessionStateChanged { session_id, state, previous_state } => {
-                let prev = previous_state.as_ref().map(|s| format!("{:?}", s)).unwrap_or_else(|| "(none)".to_string());
+            Self::ClassificationRequired { kiln_path } => {
+                format!("kiln_path={}", kiln_path.display())
+            }
+            Self::SessionCompacted { summary, new_file } => format!(
+                "summary_len={}, new_file={}",
+                summary.len(),
+                new_file.display()
+            ),
+            Self::SessionStateChanged {
+                session_id,
+                state,
+                previous_state,
+            } => {
+                let prev = previous_state
+                    .as_ref()
+                    .map(|s| format!("{:?}", s))
+                    .unwrap_or_else(|| "(none)".to_string());
                 format!("session={}, state={:?}, prev={}", session_id, state, prev)
             }
             Self::SessionPaused { session_id } => format!("session={}", session_id),
             Self::SessionResumed { session_id } => format!("session={}", session_id),
-            Self::BashTaskSpawned { id, command } => format!("id={}, command={}", id, trunc(command, max_len)),
-            Self::BashTaskCompleted { id, output, exit_code } => format!("id={}, exit_code={}, output_len={}", id, exit_code, output.len()),
-            Self::BashTaskFailed { id, error, exit_code } => {
-                let cs = exit_code.map_or("none".to_string(), |c| c.to_string());
-                format!("id={}, exit_code={}, error={}", id, cs, trunc(error, max_len))
+            Self::BashTaskSpawned { id, command } => {
+                format!("id={}, command={}", id, trunc(command, max_len))
             }
-            Self::BackgroundTaskCompleted { id, kind, summary } => format!("id={}, kind={}, summary={}", id, kind, trunc(summary, max_len)),
-            Self::SubagentSpawned { id, prompt } => format!("id={}, prompt_len={}", id, prompt.len()),
-            Self::SubagentCompleted { id, result } => format!("id={}, result_len={}", id, result.len()),
-            Self::SubagentFailed { id, error } => format!("id={}, error={}", id, trunc(error, max_len)),
-            Self::McpAttached { server, tool_count } => format!("server={}, tools={}", server, tool_count),
-            Self::ToolDiscovered { name, source, .. } => format!("name={}, source={:?}", name, source),
-            Self::TerminalOutput { session_id, stream, content_base64 } => format!("session={}, stream={:?}, content_len={}", session_id, stream, content_base64.len()),
-            Self::AwaitingInput { input_type, context } => format!("type={}, context={}", input_type, context.as_deref().unwrap_or("(none)")),
+            Self::BashTaskCompleted {
+                id,
+                output,
+                exit_code,
+            } => format!(
+                "id={}, exit_code={}, output_len={}",
+                id,
+                exit_code,
+                output.len()
+            ),
+            Self::BashTaskFailed {
+                id,
+                error,
+                exit_code,
+            } => {
+                let cs = exit_code.map_or("none".to_string(), |c| c.to_string());
+                format!(
+                    "id={}, exit_code={}, error={}",
+                    id,
+                    cs,
+                    trunc(error, max_len)
+                )
+            }
+            Self::BackgroundTaskCompleted { id, kind, summary } => format!(
+                "id={}, kind={}, summary={}",
+                id,
+                kind,
+                trunc(summary, max_len)
+            ),
+            Self::SubagentSpawned { id, prompt } => {
+                format!("id={}, prompt_len={}", id, prompt.len())
+            }
+            Self::SubagentCompleted { id, result } => {
+                format!("id={}, result_len={}", id, result.len())
+            }
+            Self::SubagentFailed { id, error } => {
+                format!("id={}, error={}", id, trunc(error, max_len))
+            }
+            Self::McpAttached { server, tool_count } => {
+                format!("server={}, tools={}", server, tool_count)
+            }
+            Self::ToolDiscovered { name, source, .. } => {
+                format!("name={}, source={:?}", name, source)
+            }
+            Self::TerminalOutput {
+                session_id,
+                stream,
+                content_base64,
+            } => format!(
+                "session={}, stream={:?}, content_len={}",
+                session_id,
+                stream,
+                content_base64.len()
+            ),
+            Self::AwaitingInput {
+                input_type,
+                context,
+            } => format!(
+                "type={}, context={}",
+                input_type,
+                context.as_deref().unwrap_or("(none)")
+            ),
         }
     }
 
@@ -831,31 +983,98 @@ impl InternalSessionEvent {
     pub fn payload_content(&self) -> Option<String> {
         match self {
             Self::NoteParsed { path, .. } => Some(path.display().to_string()),
-            Self::NoteCreated { path, title } => Some(format!("{}: {}", path.display(), title.as_deref().unwrap_or("(none)"))),
-            Self::NoteModified { path, change_type } => Some(format!("{}: {:?}", path.display(), change_type)),
-            Self::NoteDeleted { path, existed } => Some(format!("{}: existed={}", path.display(), existed)),
+            Self::NoteCreated { path, title } => Some(format!(
+                "{}: {}",
+                path.display(),
+                title.as_deref().unwrap_or("(none)")
+            )),
+            Self::NoteModified { path, change_type } => {
+                Some(format!("{}: {:?}", path.display(), change_type))
+            }
+            Self::NoteDeleted { path, existed } => {
+                Some(format!("{}: existed={}", path.display(), existed))
+            }
             Self::FileChanged { path, kind } => Some(format!("{}: {:?}", path.display(), kind)),
             Self::FileDeleted { path } => Some(path.display().to_string()),
             Self::FileMoved { from, to } => Some(format!("{} -> {}", from.display(), to.display())),
-            Self::EntityStored { entity_id, entity_type } => Some(format!("{}: {:?}", entity_id, entity_type)),
-            Self::EntityDeleted { entity_id, entity_type } => Some(format!("{}: {:?}", entity_id, entity_type)),
-            Self::BlocksUpdated { entity_id, block_count } => Some(format!("{}: {} blocks", entity_id, block_count)),
-            Self::RelationStored { from_id, to_id, relation_type } => Some(format!("{} -> {} ({})", from_id, to_id, relation_type)),
-            Self::RelationDeleted { from_id, to_id, relation_type } => Some(format!("{} -> {} ({})", from_id, to_id, relation_type)),
+            Self::EntityStored {
+                entity_id,
+                entity_type,
+            } => Some(format!("{}: {:?}", entity_id, entity_type)),
+            Self::EntityDeleted {
+                entity_id,
+                entity_type,
+            } => Some(format!("{}: {:?}", entity_id, entity_type)),
+            Self::BlocksUpdated {
+                entity_id,
+                block_count,
+            } => Some(format!("{}: {} blocks", entity_id, block_count)),
+            Self::RelationStored {
+                from_id,
+                to_id,
+                relation_type,
+            } => Some(format!("{} -> {} ({})", from_id, to_id, relation_type)),
+            Self::RelationDeleted {
+                from_id,
+                to_id,
+                relation_type,
+            } => Some(format!("{} -> {} ({})", from_id, to_id, relation_type)),
             Self::TagAssociated { entity_id, tag } => Some(format!("{}#{}", entity_id, tag)),
-            Self::EmbeddingRequested { entity_id, priority, .. } => Some(format!("{}: {:?}", entity_id, priority)),
-            Self::EmbeddingStored { entity_id, dimensions, model, .. } => Some(format!("{}: {} dims, model={}", entity_id, dimensions, model)),
-            Self::EmbeddingFailed { entity_id, error, .. } => Some(format!("{}: {}", entity_id, error)),
-            Self::EmbeddingBatchComplete { entity_id, count, duration_ms } => Some(format!("{}: {} embeddings in {}ms", entity_id, count, duration_ms)),
-            Self::EmbeddingModelMismatch { kiln_path, stored_model, current_model, note_count } => Some(format!("kiln={}, stored={}, current={}, notes={}", kiln_path, stored_model, current_model, note_count)),
+            Self::EmbeddingRequested {
+                entity_id,
+                priority,
+                ..
+            } => Some(format!("{}: {:?}", entity_id, priority)),
+            Self::EmbeddingStored {
+                entity_id,
+                dimensions,
+                model,
+                ..
+            } => Some(format!(
+                "{}: {} dims, model={}",
+                entity_id, dimensions, model
+            )),
+            Self::EmbeddingFailed {
+                entity_id, error, ..
+            } => Some(format!("{}: {}", entity_id, error)),
+            Self::EmbeddingBatchComplete {
+                entity_id,
+                count,
+                duration_ms,
+            } => Some(format!(
+                "{}: {} embeddings in {}ms",
+                entity_id, count, duration_ms
+            )),
+            Self::EmbeddingModelMismatch {
+                kiln_path,
+                stored_model,
+                current_model,
+                note_count,
+            } => Some(format!(
+                "kiln={}, stored={}, current={}, notes={}",
+                kiln_path, stored_model, current_model, note_count
+            )),
             Self::PreToolCall { args, .. } => Some(args.to_string()),
             Self::PreParse { path } => Some(path.display().to_string()),
             Self::PreLlmCall { prompt, .. } => Some(prompt.clone()),
-            Self::PostLlmCall { response_summary, .. } => Some(response_summary.clone()),
-            Self::PrecognitionComplete { notes_count, query_summary, .. } => Some(format!("notes={}, query={}", notes_count, query_summary)),
+            Self::PostLlmCall {
+                response_summary, ..
+            } => Some(response_summary.clone()),
+            Self::PrecognitionComplete {
+                notes_count,
+                query_summary,
+                ..
+            } => Some(format!("notes={}, query={}", notes_count, query_summary)),
             Self::ClassificationRequired { kiln_path } => Some(kiln_path.display().to_string()),
             Self::SessionCompacted { summary, .. } => Some(summary.clone()),
-            Self::SessionStateChanged { session_id, state, previous_state } => Some(format!("session={}, state={:?}, previous={:?}", session_id, state, previous_state)),
+            Self::SessionStateChanged {
+                session_id,
+                state,
+                previous_state,
+            } => Some(format!(
+                "session={}, state={:?}, previous={:?}",
+                session_id, state, previous_state
+            )),
             Self::SessionPaused { session_id } => Some(format!("session={}", session_id)),
             Self::SessionResumed { session_id } => Some(format!("session={}", session_id)),
             Self::BashTaskSpawned { command, .. } => Some(command.clone()),
@@ -865,8 +1084,14 @@ impl InternalSessionEvent {
             Self::SubagentSpawned { prompt, .. } => Some(prompt.clone()),
             Self::SubagentCompleted { result, .. } => Some(result.clone()),
             Self::SubagentFailed { error, .. } => Some(error.clone()),
-            Self::McpAttached { server, tool_count } => Some(format!("{}: {} tools", server, tool_count)),
-            Self::ToolDiscovered { name, source, schema } => {
+            Self::McpAttached { server, tool_count } => {
+                Some(format!("{}: {} tools", server, tool_count))
+            }
+            Self::ToolDiscovered {
+                name,
+                source,
+                schema,
+            } => {
                 let sl = schema.as_ref().map(|s| s.to_string().len()).unwrap_or(0);
                 Some(format!("{}: {:?}, schema_len={}", name, source, sl))
             }

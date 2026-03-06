@@ -17,8 +17,8 @@ use crucible_config::{
     StorageConfig,
 };
 use crucible_core::test_support::fixtures::{create_kiln, KilnFixture};
-use crucible_daemon::Server;
 use crucible_daemon::rpc_client::lifecycle;
+use crucible_daemon::Server;
 use serial_test::serial;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -877,7 +877,9 @@ async fn test_watch_detects_file_deletion() -> Result<()> {
 // the Reactor, allowing Rune handlers to react to note changes.
 
 use async_trait::async_trait;
-use crucible_core::events::{Handler, HandlerContext, HandlerResult, InternalSessionEvent, Reactor, SessionEvent};
+use crucible_core::events::{
+    Handler, HandlerContext, HandlerResult, InternalSessionEvent, Reactor, SessionEvent,
+};
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 
 /// A test handler that counts events matching a pattern

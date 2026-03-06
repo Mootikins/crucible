@@ -7,10 +7,10 @@ use crucible_core::traits::chat::{AgentHandle, ChatChunk};
 use crucible_core::traits::ChatResult;
 use crucible_daemon::background_manager::{BackgroundJobManager, SubagentContext, SubagentFactory};
 use crucible_daemon::protocol::SessionEventMessage;
+use crucible_daemon::tools::workspace::WorkspaceTools;
 use crucible_daemon::{
     AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager,
 };
-use crucible_daemon::tools::workspace::WorkspaceTools;
 use futures::stream::{self, BoxStream};
 use futures::StreamExt;
 use std::collections::HashMap;

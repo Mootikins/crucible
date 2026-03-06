@@ -7,13 +7,13 @@ use tokio::io::AsyncReadExt;
 
 use super::block_extractor::{BlockExtractor, ExtractionConfig};
 use super::block_hasher::SimpleBlockHasher;
+use super::error::ParseErrorType;
 use super::error::{ParserError, ParserResult};
 use super::extensions::ExtensionRegistry;
 use super::traits::{MarkdownParser, ParserCapabilities};
 use super::types::{
     Callout, FootnoteMap, LatexExpression, NoteContent, ParseError, ParsedNote, ParsedNoteMetadata,
 };
-use super::error::ParseErrorType;
 
 /// Default implementation of the MarkdownParser trait
 ///

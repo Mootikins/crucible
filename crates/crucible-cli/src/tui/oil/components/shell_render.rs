@@ -19,20 +19,33 @@ pub fn render_shell_execution(shell: &CachedShellExecution) -> Node {
 
     let header = row([
         styled(" $ ", Style::new().fg(t.resolve_color(t.colors.text_muted))),
-        styled(shell.command.as_ref(), Style::new().fg(t.resolve_color(t.colors.text))),
+        styled(
+            shell.command.as_ref(),
+            Style::new().fg(t.resolve_color(t.colors.text)),
+        ),
         styled(format!("  exit {}", shell.exit_code), exit_style.dim()),
     ]);
 
     let tail_nodes: Vec<Node> = shell
         .output_tail
         .iter()
-        .map(|line| styled(format!("   {}", line), Style::new().fg(t.resolve_color(t.colors.text_dim)).dim()))
+        .map(|line| {
+            styled(
+                format!("   {}", line),
+                Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+            )
+        })
         .collect();
 
     let path_node = shell
         .output_path
         .as_ref()
-        .map(|p| styled(format!("   → {}", p.display()), Style::new().fg(t.resolve_color(t.colors.text_dim)).dim()))
+        .map(|p| {
+            styled(
+                format!("   → {}", p.display()),
+                Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+            )
+        })
         .unwrap_or(Node::Empty);
 
     let content = col(std::iter::once(header)

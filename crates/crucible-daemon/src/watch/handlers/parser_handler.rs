@@ -23,7 +23,9 @@
 //! ParserHandler runs at priority 50 (before storage handlers at 100) to ensure
 //! files are parsed before storage operations attempt to persist them.
 
-use crucible_core::events::{EventEmitter, NoOpEmitter, NotePayload, SessionEvent, InternalSessionEvent};
+use crucible_core::events::{
+    EventEmitter, InternalSessionEvent, NoOpEmitter, NotePayload, SessionEvent,
+};
 use crucible_core::parser::{CrucibleParser, MarkdownParser};
 use std::path::Path;
 use std::sync::Arc;

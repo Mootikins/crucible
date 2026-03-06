@@ -85,16 +85,12 @@ impl EmbeddingProvider for MockEmbeddingProvider {
 #[test]
 fn test_discover_tools_returns_tool_list() {
     let mut registry = ToolRegistry::new();
-    let count = discover_tools(&mut registry, "/tmp/test-kiln")
-        .expect("discover_tools should succeed");
+    let count =
+        discover_tools(&mut registry, "/tmp/test-kiln").expect("discover_tools should succeed");
 
     // discover_tools registers 10 tools: 6 note + 3 search + 1 kiln
     assert_eq!(count, 10, "Expected 10 discovered tools, got {count}");
-    assert_eq!(
-        registry.count(),
-        10,
-        "Registry should contain all 10 tools"
-    );
+    assert_eq!(registry.count(), 10, "Registry should contain all 10 tools");
 
     // Verify tool categories are present
     let tools = registry.list();
@@ -159,18 +155,9 @@ fn test_tool_dispatch_routes_to_daemon_tools() {
         dispatcher.has_tool("write_file"),
         "Dispatcher should route write_file"
     );
-    assert!(
-        dispatcher.has_tool("bash"),
-        "Dispatcher should route bash"
-    );
-    assert!(
-        dispatcher.has_tool("glob"),
-        "Dispatcher should route glob"
-    );
-    assert!(
-        dispatcher.has_tool("grep"),
-        "Dispatcher should route grep"
-    );
+    assert!(dispatcher.has_tool("bash"), "Dispatcher should route bash");
+    assert!(dispatcher.has_tool("glob"), "Dispatcher should route glob");
+    assert!(dispatcher.has_tool("grep"), "Dispatcher should route grep");
 
     // Verify unknown tools are rejected
     assert!(
@@ -225,9 +212,7 @@ async fn test_tool_dispatch_executes_read_file() {
 #[test]
 fn test_delegation_context_construction() {
     use crucible_config::DataClassification;
-    use crucible_core::background::{
-        BackgroundSpawner, JobError, JobId, JobInfo, JobResult,
-    };
+    use crucible_core::background::{BackgroundSpawner, JobError, JobId, JobInfo, JobResult};
     use std::path::PathBuf as StdPathBuf;
     use std::time::Duration;
 
@@ -354,9 +339,7 @@ async fn test_mcp_host_initializes() {
 #[tokio::test]
 async fn test_mcp_host_initializes_with_delegation_context() {
     use crucible_config::DataClassification;
-    use crucible_core::background::{
-        BackgroundSpawner, JobError, JobId, JobInfo, JobResult,
-    };
+    use crucible_core::background::{BackgroundSpawner, JobError, JobId, JobInfo, JobResult};
     use std::path::PathBuf as StdPathBuf;
     use std::time::Duration;
 
@@ -444,7 +427,10 @@ async fn test_tools_bridge_list_tools() {
     let bridge = DaemonToolsBridge::new(workspace_tools);
 
     // DaemonToolsApi::list_tools should return tool definitions as JSON
-    let tools = bridge.list_tools().await.expect("list_tools should succeed");
+    let tools = bridge
+        .list_tools()
+        .await
+        .expect("list_tools should succeed");
 
     assert!(
         !tools.is_empty(),

@@ -809,10 +809,10 @@ impl AgentManager {
             Ok(Err(e)) => (String::new(), Some(e)),
             Err(_elapsed) => (
                 String::new(),
-                Some(anyhow::anyhow!(
-                    "Tool '{}' timed out after 30 seconds",
-                    tool_call.name
-                ).to_string()),
+                Some(
+                    anyhow::anyhow!("Tool '{}' timed out after 30 seconds", tool_call.name)
+                        .to_string(),
+                ),
             ),
         };
 
@@ -1036,7 +1036,8 @@ impl AgentManager {
                                 let mut tool_results = Vec::new();
                                 for tool_call in &tool_calls {
                                     if let Some(result) =
-                                        Self::handle_tool_call_in_stream(&stream_ctx, tool_call).await
+                                        Self::handle_tool_call_in_stream(&stream_ctx, tool_call)
+                                            .await
                                     {
                                         tool_results.push(result);
                                     }
@@ -1045,8 +1046,8 @@ impl AgentManager {
                                 drop(stream);
                                 drop(agent_guard);
                                 agent_guard = agent.lock().await;
-                                stream =
-                                    agent_guard.continue_with_tool_results(tool_calls, tool_results);
+                                stream = agent_guard
+                                    .continue_with_tool_results(tool_calls, tool_results);
                                 continue;
                             }
 
@@ -1096,7 +1097,10 @@ impl AgentManager {
                 &stream_ctx.event_tx,
                 SessionEventMessage::ended(
                     &stream_ctx.session_id,
-                    format!("error: {}", crate::provider::genai_handle::EMPTY_RESPONSE_ERROR),
+                    format!(
+                        "error: {}",
+                        crate::provider::genai_handle::EMPTY_RESPONSE_ERROR
+                    ),
                 ),
             ) {
                 warn!(

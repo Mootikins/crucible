@@ -13,7 +13,7 @@ use crate::ansi::apply_style;
 use crate::cell_grid::CellGrid;
 
 use crate::render::CursorInfo;
-use crate::render_helpers::{wrap_and_style_padded, select_spinner_frame, format_popup_item_line};
+use crate::render_helpers::{format_popup_item_line, select_spinner_frame, wrap_and_style_padded};
 use crate::style::{Border, Style};
 
 use super::types::{LayoutBox, LayoutContent, LayoutTree, PopupItem};
@@ -221,7 +221,6 @@ fn render_text(
         }
     }
 }
-
 
 /// Render an input field at the given position.
 #[allow(clippy::too_many_arguments)]

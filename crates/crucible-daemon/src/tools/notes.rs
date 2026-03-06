@@ -905,17 +905,13 @@ mod tests {
 
         assert!(result.is_ok());
         let call_result = result.unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(
-            &call_result
-                .content
-                .first()
-                .unwrap()
-                .as_text()
-                .unwrap()
-                .text,
-        )
-        .unwrap();
-        assert_eq!(parsed["content"], "# Plugin User Stories\n\nSubdirectory note");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&call_result.content.first().unwrap().as_text().unwrap().text)
+                .unwrap();
+        assert_eq!(
+            parsed["content"],
+            "# Plugin User Stories\n\nSubdirectory note"
+        );
     }
 
     #[tokio::test]
@@ -949,16 +945,9 @@ mod tests {
 
         assert!(result.is_ok());
         let call_result = result.unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(
-            &call_result
-                .content
-                .first()
-                .unwrap()
-                .as_text()
-                .unwrap()
-                .text,
-        )
-        .unwrap();
+        let parsed: serde_json::Value =
+            serde_json::from_str(&call_result.content.first().unwrap().as_text().unwrap().text)
+                .unwrap();
         assert_eq!(parsed["content"], "# README\n\nRoot note");
     }
 

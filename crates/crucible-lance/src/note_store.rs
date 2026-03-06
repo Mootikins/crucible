@@ -648,10 +648,12 @@ impl NoteStore for LanceNoteStore {
             Some(t) => t,
             None => {
                 // Table doesn't exist, nothing to delete
-                return Ok(SessionEvent::internal(crucible_core::events::InternalSessionEvent::NoteDeleted {
-                    path: path.into(),
-                    existed: false,
-                }));
+                return Ok(SessionEvent::internal(
+                    crucible_core::events::InternalSessionEvent::NoteDeleted {
+                        path: path.into(),
+                        existed: false,
+                    },
+                ));
             }
         };
 
@@ -666,10 +668,12 @@ impl NoteStore for LanceNoteStore {
 
         debug!("Deleted note: {}", path);
 
-        Ok(SessionEvent::internal(crucible_core::events::InternalSessionEvent::NoteDeleted {
-            path: path.into(),
-            existed,
-        }))
+        Ok(SessionEvent::internal(
+            crucible_core::events::InternalSessionEvent::NoteDeleted {
+                path: path.into(),
+                existed,
+            },
+        ))
     }
 
     async fn list(&self) -> StorageResult<Vec<NoteRecord>> {

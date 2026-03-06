@@ -13,8 +13,6 @@ pub fn view_with_default_ctx(app: &OilChatApp) -> Node {
     app.view(&ctx)
 }
 
-
-
 pub fn combined_output(runtime: &TestRuntime) -> String {
     let stdout = strip_ansi(runtime.stdout_content());
     let viewport = strip_ansi(runtime.viewport_content());

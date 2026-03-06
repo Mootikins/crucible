@@ -196,7 +196,6 @@ pub struct EnrichmentMetadata {
     pub computed_at: DateTime<Utc>,
 }
 
-
 impl Default for EnrichmentMetadata {
     fn default() -> Self {
         Self::new()

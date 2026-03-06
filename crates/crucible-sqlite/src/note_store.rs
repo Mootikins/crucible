@@ -506,10 +506,11 @@ impl NoteStore for SqliteNoteStore {
         .await??;
 
         // Return NoteDeleted event
-        let event = SessionEvent::internal(crucible_core::events::InternalSessionEvent::NoteDeleted {
-            path: path_for_event.into(),
-            existed,
-        });
+        let event =
+            SessionEvent::internal(crucible_core::events::InternalSessionEvent::NoteDeleted {
+                path: path_for_event.into(),
+                existed,
+            });
         Ok(event)
     }
 

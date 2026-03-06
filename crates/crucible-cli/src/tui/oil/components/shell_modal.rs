@@ -519,7 +519,11 @@ impl ShellModal {
         let status_str = match &self.status {
             ShellStatus::Running => format!("{} running", t.decorations.tool_pending_icon),
             ShellStatus::Completed { exit_code } if *exit_code == 0 => {
-                format!("{} exit 0 {:.1?}", t.decorations.tool_success_icon, self.duration.unwrap_or_default())
+                format!(
+                    "{} exit 0 {:.1?}",
+                    t.decorations.tool_success_icon,
+                    self.duration.unwrap_or_default()
+                )
             }
             ShellStatus::Completed { exit_code } => {
                 format!(
@@ -541,7 +545,10 @@ impl ShellModal {
         if self.is_running() {
             format!("Ctrl+C cancel  {}", line_info)
         } else {
-            format!("i insert {} t truncated {} e edit {} q quit  {}", sep, sep, sep, line_info)
+            format!(
+                "i insert {} t truncated {} e edit {} q quit  {}",
+                sep, sep, sep, line_info
+            )
         }
     }
 }

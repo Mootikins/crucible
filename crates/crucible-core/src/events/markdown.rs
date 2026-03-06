@@ -155,13 +155,21 @@ impl SessionEvent {
                         id, command
                     )
                 }
-                InternalSessionEvent::BashTaskCompleted { id, output, exit_code } => {
+                InternalSessionEvent::BashTaskCompleted {
+                    id,
+                    output,
+                    exit_code,
+                } => {
                     format!(
                         "**Task ID:** `{}`\n**Exit Code:** {}\n**Output:**\n```\n{}\n```\n",
                         id, exit_code, output
                     )
                 }
-                InternalSessionEvent::BashTaskFailed { id, error, exit_code } => {
+                InternalSessionEvent::BashTaskFailed {
+                    id,
+                    error,
+                    exit_code,
+                } => {
                     let exit_code_str = match exit_code {
                         Some(code) => code.to_string(),
                         None => "none".to_string(),
@@ -178,36 +186,29 @@ impl SessionEvent {
                     )
                 }
                 InternalSessionEvent::SubagentSpawned { id, prompt } => {
-                    format!(
-                        "**Subagent ID:** `{}`\n**Prompt:**\n> {}\n",
-                        id, prompt
-                    )
+                    format!("**Subagent ID:** `{}`\n**Prompt:**\n> {}\n", id, prompt)
                 }
                 InternalSessionEvent::SubagentCompleted { id, result } => {
-                    format!(
-                        "**Subagent ID:** `{}`\n**Result:**\n> {}\n",
-                        id, result
-                    )
+                    format!("**Subagent ID:** `{}`\n**Result:**\n> {}\n", id, result)
                 }
                 InternalSessionEvent::SubagentFailed { id, error } => {
-                    format!(
-                        "**Subagent ID:** `{}`\n**Error:** {}\n",
-                        id, error
-                    )
+                    format!("**Subagent ID:** `{}`\n**Error:** {}\n", id, error)
                 }
                 InternalSessionEvent::SessionCompacted { summary, new_file } => {
                     format!(
                         "**New File:** `{}`\n**Summary:**\n{}\n",
-                        new_file.display(), summary
+                        new_file.display(),
+                        summary
                     )
                 }
                 _ => {
-                format!("**Internal Event:** {}\n{}\n",
+                    format!(
+                        "**Internal Event:** {}\n{}\n",
                         inner.type_name(),
                         inner.summary(200)
                     )
                 }
-            }
+            },
         };
 
         format!("{}{}\n---\n", header, body)
@@ -754,7 +755,9 @@ fn parse_session_compacted(body: &str) -> MarkdownParseResult<SessionEvent> {
         String::new()
     };
 
-    Ok(SessionEvent::internal(InternalSessionEvent::SessionCompacted { summary, new_file }))
+    Ok(SessionEvent::internal(
+        InternalSessionEvent::SessionCompacted { summary, new_file },
+    ))
 }
 
 /// Parse SessionEnded event from body.
@@ -775,7 +778,9 @@ fn parse_subagent_spawned(body: &str) -> MarkdownParseResult<SessionEvent> {
         String::new()
     };
 
-    Ok(SessionEvent::internal(InternalSessionEvent::SubagentSpawned { id, prompt }))
+    Ok(SessionEvent::internal(
+        InternalSessionEvent::SubagentSpawned { id, prompt },
+    ))
 }
 
 /// Parse SubagentCompleted event from body.
@@ -790,7 +795,9 @@ fn parse_subagent_completed(body: &str) -> MarkdownParseResult<SessionEvent> {
         String::new()
     };
 
-    Ok(SessionEvent::internal(InternalSessionEvent::SubagentCompleted { id, result }))
+    Ok(SessionEvent::internal(
+        InternalSessionEvent::SubagentCompleted { id, result },
+    ))
 }
 
 /// Parse SubagentFailed event from body.
@@ -798,14 +805,18 @@ fn parse_subagent_failed(body: &str) -> MarkdownParseResult<SessionEvent> {
     let id = extract_inline_code_field(body, "**Subagent ID:**")?;
     let error = extract_field(body, "**Error:**")?;
 
-    Ok(SessionEvent::internal(InternalSessionEvent::SubagentFailed { id, error }))
+    Ok(SessionEvent::internal(
+        InternalSessionEvent::SubagentFailed { id, error },
+    ))
 }
 
 fn parse_bash_task_spawned(body: &str) -> MarkdownParseResult<SessionEvent> {
     let id = extract_inline_code_field(body, "**Task ID:**")?;
     let command = extract_code_block(body, "**Command:**")?;
 
-    Ok(SessionEvent::internal(InternalSessionEvent::BashTaskSpawned { id, command }))
+    Ok(SessionEvent::internal(
+        InternalSessionEvent::BashTaskSpawned { id, command },
+    ))
 }
 
 fn parse_bash_task_completed(body: &str) -> MarkdownParseResult<SessionEvent> {
@@ -820,11 +831,13 @@ fn parse_bash_task_completed(body: &str) -> MarkdownParseResult<SessionEvent> {
             })?;
     let output = extract_code_block(body, "**Output:**").unwrap_or_default();
 
-    Ok(SessionEvent::internal(InternalSessionEvent::BashTaskCompleted {
-        id,
-        output,
-        exit_code,
-    }))
+    Ok(SessionEvent::internal(
+        InternalSessionEvent::BashTaskCompleted {
+            id,
+            output,
+            exit_code,
+        },
+    ))
 }
 
 fn parse_bash_task_failed(body: &str) -> MarkdownParseResult<SessionEvent> {
@@ -844,11 +857,13 @@ fn parse_bash_task_failed(body: &str) -> MarkdownParseResult<SessionEvent> {
     };
     let error = extract_field(body, "**Error:**")?;
 
-    Ok(SessionEvent::internal(InternalSessionEvent::BashTaskFailed {
-        id,
-        error,
-        exit_code,
-    }))
+    Ok(SessionEvent::internal(
+        InternalSessionEvent::BashTaskFailed {
+            id,
+            error,
+            exit_code,
+        },
+    ))
 }
 
 fn parse_background_task_completed(body: &str) -> MarkdownParseResult<SessionEvent> {
@@ -861,7 +876,9 @@ fn parse_background_task_completed(body: &str) -> MarkdownParseResult<SessionEve
         String::new()
     };
 
-    Ok(SessionEvent::internal(InternalSessionEvent::BackgroundTaskCompleted { id, kind, summary }))
+    Ok(SessionEvent::internal(
+        InternalSessionEvent::BackgroundTaskCompleted { id, kind, summary },
+    ))
 }
 
 /// Parse Custom event from body.
@@ -1086,8 +1103,8 @@ mod tests {
     use serde_json::json;
     use std::path::PathBuf;
 
-    use crate::events::SessionEventConfig;
     use crate::events::InternalSessionEvent;
+    use crate::events::SessionEventConfig;
 
     /// Cross-platform test path helper
     fn test_path(name: &str) -> PathBuf {

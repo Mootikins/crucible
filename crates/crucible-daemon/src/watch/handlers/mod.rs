@@ -92,6 +92,5 @@ pub fn create_default_handlers() -> Result<HandlerRegistry> {
     //     registry.register(Arc::new(IndexingHandler::new()?));
     // }
 
-
     Ok(registry)
 }

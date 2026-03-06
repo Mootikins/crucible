@@ -3,7 +3,7 @@
 //! These tests verify that the IndexingHandler correctly emits SessionEvent::FileChanged
 //! events when processing file events.
 
-use crucible_core::events::{InternalSessionEvent, FileChangeKind, SessionEvent};
+use crucible_core::events::{FileChangeKind, InternalSessionEvent, SessionEvent};
 use crucible_core::test_support::mocks::MockEventEmitter;
 use crucible_daemon::watch::handlers::IndexingHandler;
 use crucible_daemon::watch::traits::EventHandler;
@@ -44,13 +44,13 @@ async fn test_file_changed_emission_on_created() {
     match &emitted_events[0] {
         SessionEvent::Internal(inner) => {
             if let InternalSessionEvent::FileChanged { path, kind } = inner.as_ref() {
-            assert_eq!(path, &test_file, "Path mismatch");
-            assert_eq!(
-                *kind,
-                FileChangeKind::Created,
-                "Expected Created kind, got: {:?}",
-                kind
-            );
+                assert_eq!(path, &test_file, "Path mismatch");
+                assert_eq!(
+                    *kind,
+                    FileChangeKind::Created,
+                    "Expected Created kind, got: {:?}",
+                    kind
+                );
             }
         }
         other => panic!("Expected FileChanged event, got: {:?}", other),
@@ -77,8 +77,8 @@ async fn test_file_changed_emission_on_modified() {
     match &emitted_events[0] {
         SessionEvent::Internal(inner) => {
             if let InternalSessionEvent::FileChanged { path, kind } = inner.as_ref() {
-            assert_eq!(path, &test_file);
-            assert_eq!(*kind, FileChangeKind::Modified);
+                assert_eq!(path, &test_file);
+                assert_eq!(*kind, FileChangeKind::Modified);
             }
         }
         other => panic!("Expected FileChanged event, got: {:?}", other),
@@ -109,7 +109,7 @@ async fn test_file_deleted_emission() {
     match &emitted_events[0] {
         SessionEvent::Internal(inner) => {
             if let InternalSessionEvent::FileDeleted { path } = inner.as_ref() {
-            assert_eq!(path, &deleted_path);
+                assert_eq!(path, &deleted_path);
             }
         }
         other => panic!("Expected FileDeleted event, got: {:?}", other),
@@ -145,8 +145,8 @@ async fn test_file_moved_emission() {
     match &emitted_events[0] {
         SessionEvent::Internal(inner) => {
             if let InternalSessionEvent::FileMoved { from, to } = inner.as_ref() {
-            assert_eq!(from, &from_path);
-            assert_eq!(to, &to_path);
+                assert_eq!(from, &from_path);
+                assert_eq!(to, &to_path);
             }
         }
         other => panic!("Expected FileMoved event, got: {:?}", other),
@@ -174,8 +174,8 @@ async fn test_file_changed_emission_for_supported_extension() {
     match &emitted_events[0] {
         SessionEvent::Internal(inner) => {
             if let InternalSessionEvent::FileChanged { path, kind } = inner.as_ref() {
-            assert_eq!(path, &txt_file);
-            assert_eq!(*kind, FileChangeKind::Created);
+                assert_eq!(path, &txt_file);
+                assert_eq!(*kind, FileChangeKind::Created);
             }
         }
         other => panic!("Expected FileChanged event, got: {:?}", other),
@@ -270,8 +270,8 @@ async fn test_multiple_file_events_emit_multiple_session_events() {
     match &emitted_events[0] {
         SessionEvent::Internal(inner) => {
             if let InternalSessionEvent::FileChanged { path, kind } = inner.as_ref() {
-            assert_eq!(path, &file1);
-            assert_eq!(*kind, FileChangeKind::Created);
+                assert_eq!(path, &file1);
+                assert_eq!(*kind, FileChangeKind::Created);
             }
         }
         other => panic!("Expected FileChanged for file1, got: {:?}", other),
@@ -281,8 +281,8 @@ async fn test_multiple_file_events_emit_multiple_session_events() {
     match &emitted_events[1] {
         SessionEvent::Internal(inner) => {
             if let InternalSessionEvent::FileChanged { path, kind } = inner.as_ref() {
-            assert_eq!(path, &file2);
-            assert_eq!(*kind, FileChangeKind::Modified);
+                assert_eq!(path, &file2);
+                assert_eq!(*kind, FileChangeKind::Modified);
             }
         }
         other => panic!("Expected FileChanged for file2, got: {:?}", other),

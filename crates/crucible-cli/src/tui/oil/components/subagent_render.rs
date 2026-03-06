@@ -18,13 +18,26 @@ pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize) -> Node 
     let (icon, icon_style) = match subagent.status {
         SubagentStatus::Running => {
             let frame = BRAILLE_SPINNER_FRAMES[spinner_frame % BRAILLE_SPINNER_FRAMES.len()];
-            (format!(" {} ", frame), Style::new().fg(t.resolve_color(t.colors.primary)))
+            (
+                format!(" {} ", frame),
+                Style::new().fg(t.resolve_color(t.colors.primary)),
+            )
         }
-        SubagentStatus::Completed => (format!(" {} ", t.decorations.tool_success_icon), Style::new().fg(t.resolve_color(t.colors.success))),
-        SubagentStatus::Failed => (format!(" {} ", t.decorations.tool_error_icon), Style::new().fg(t.resolve_color(t.colors.error))),
+        SubagentStatus::Completed => (
+            format!(" {} ", t.decorations.tool_success_icon),
+            Style::new().fg(t.resolve_color(t.colors.success)),
+        ),
+        SubagentStatus::Failed => (
+            format!(" {} ", t.decorations.tool_error_icon),
+            Style::new().fg(t.resolve_color(t.colors.error)),
+        ),
     };
 
-    let prompt_preview = truncate_first_line(&subagent.prompt, terminal_width().saturating_sub(30).max(20), true);
+    let prompt_preview = truncate_first_line(
+        &subagent.prompt,
+        terminal_width().saturating_sub(30).max(20),
+        true,
+    );
 
     let label_with_target = if let Some(target) = &subagent.target_agent {
         format!("{} to {}", subagent.label, target)
@@ -40,12 +53,22 @@ pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize) -> Node 
         SubagentStatus::Completed => subagent
             .summary
             .as_ref()
-            .map(|s| format!(" \u{2192} {}", truncate_first_line(s, terminal_width().saturating_sub(20).max(20), true)))
+            .map(|s| {
+                format!(
+                    " \u{2192} {}",
+                    truncate_first_line(s, terminal_width().saturating_sub(20).max(20), true)
+                )
+            })
             .unwrap_or_default(),
         SubagentStatus::Failed => subagent
             .error
             .as_ref()
-            .map(|e| format!(" \u{2192} {}", truncate_first_line(e, terminal_width().saturating_sub(20).max(20), true)))
+            .map(|e| {
+                format!(
+                    " \u{2192} {}",
+                    truncate_first_line(e, terminal_width().saturating_sub(20).max(20), true)
+                )
+            })
             .unwrap_or_default(),
     };
 
@@ -57,8 +80,14 @@ pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize) -> Node 
 
     let header = row([
         styled(icon, icon_style),
-        styled(label_with_target, Style::new().fg(t.resolve_color(t.colors.text))),
-        styled(format!(" {}", prompt_preview), Style::new().fg(t.resolve_color(t.colors.text_muted))),
+        styled(
+            label_with_target,
+            Style::new().fg(t.resolve_color(t.colors.text)),
+        ),
+        styled(
+            format!(" {}", prompt_preview),
+            Style::new().fg(t.resolve_color(t.colors.text_muted)),
+        ),
         styled(status_text, status_style),
     ]);
 

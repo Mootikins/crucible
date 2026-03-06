@@ -347,8 +347,7 @@ impl OilChatRunner {
         }
 
         let terminal_size = self.terminal.size();
-        let ctx =
-            ViewContext::with_terminal_size(&self.focus, theme::active(), terminal_size);
+        let ctx = ViewContext::with_terminal_size(&self.focus, theme::active(), terminal_size);
         let tree = app.view(&ctx);
         let _ = self.terminal.render(&tree)?;
 
@@ -620,8 +619,7 @@ impl OilChatRunner {
         }
 
         let terminal_size = self.terminal.size();
-        let ctx =
-            ViewContext::with_terminal_size(&self.focus, theme::active(), terminal_size);
+        let ctx = ViewContext::with_terminal_size(&self.focus, theme::active(), terminal_size);
         let tree = app.view(&ctx);
 
         let graduated_keys = if app.has_shell_modal() {
@@ -1648,9 +1646,9 @@ async fn replay_event_consumer(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::oil::chat_app::ModelListState;
     use async_trait::async_trait;
     use crucible_core::events::EventRing;
-    use crate::tui::oil::chat_app::ModelListState;
     use crucible_core::traits::chat::{ChatError, ChatResult};
     use futures::stream::{self, BoxStream};
     use std::sync::Arc;

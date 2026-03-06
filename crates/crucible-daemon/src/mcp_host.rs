@@ -22,10 +22,10 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
+use crate::tools::{CrucibleMcpServer, DelegationContext};
 use crucible_acp::{ClientError, Result as AcpResult};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
-use crate::tools::{CrucibleMcpServer, DelegationContext};
 
 async fn ensure_streamable_accept(
     mut request: axum::http::Request<axum::body::Body>,

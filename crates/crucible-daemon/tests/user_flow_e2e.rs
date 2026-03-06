@@ -94,10 +94,7 @@ fn mock_agent_config() -> SessionAgent {
 
 /// Helper: assert a JSON result's "state" field contains the expected substring.
 fn assert_state(result: &serde_json::Value, expected: &str, context: &str) {
-    let state = result
-        .get("state")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let state = result.get("state").and_then(|v| v.as_str()).unwrap_or("");
     assert!(
         state.to_lowercase().contains(&expected.to_lowercase()),
         "{context}: expected state to contain '{expected}', got '{state}'"
@@ -330,10 +327,7 @@ async fn test_complete_user_flow() {
 
     // Verify kiln is no longer listed
     let kilns = client.kiln_list().await.expect("kiln.list after close");
-    assert!(
-        kilns.is_empty(),
-        "Kiln list should be empty after close"
-    );
+    assert!(kilns.is_empty(), "Kiln list should be empty after close");
 
     // ── Cleanup ───────────────────────────────────────────────────────────
     server.shutdown().await;
@@ -370,7 +364,9 @@ async fn test_user_flow_session_list_reflects_state() {
         .as_array()
         .expect("sessions should be array");
     assert!(
-        sessions.iter().any(|s| s["session_id"].as_str() == Some(&session_id)),
+        sessions
+            .iter()
+            .any(|s| s["session_id"].as_str() == Some(&session_id)),
         "Active session should appear in list"
     );
 
@@ -397,10 +393,7 @@ async fn test_user_flow_session_list_reflects_state() {
     assert_state(&session, "active", "List after resume");
 
     // End → verify via the end response itself
-    let end_result = client
-        .session_end(&session_id)
-        .await
-        .expect("end failed");
+    let end_result = client.session_end(&session_id).await.expect("end failed");
     assert_state(&end_result, "ended", "After end");
 
     // After end, the session is removed from the in-memory store.

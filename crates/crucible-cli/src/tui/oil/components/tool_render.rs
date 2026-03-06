@@ -6,9 +6,9 @@
 use crate::tui::oil::node::{col, row, styled, Node, SpinnerNode, SpinnerStyle};
 use crate::tui::oil::style::Style;
 use crate::tui::oil::utils::{terminal_width, truncate_to_chars};
+use crate::tui::oil::viewport_cache::CachedToolCall;
 use crucible_oil::ansi::visible_width;
 use crucible_oil::truncate_to_width;
-use crate::tui::oil::viewport_cache::CachedToolCall;
 use std::time::Duration;
 
 /// Render a tool call with default spinner frame (0).
@@ -49,9 +49,8 @@ fn render_tool_error(
     let icon = format!(" {} ", t.decorations.tool_error_icon);
     let args_part = format!("({}) ", args_formatted);
     // Calculate prefix width: icon + display_name + args
-    let prefix_width = visible_width(&icon)
-        + visible_width(display_name)
-        + visible_width(&args_part);
+    let prefix_width =
+        visible_width(&icon) + visible_width(display_name) + visible_width(&args_part);
     let term_width = terminal_width();
     // Remaining width for inline error (after prefix + arrow prefix)
     let remaining = term_width.saturating_sub(prefix_width + 2).max(10);
@@ -62,8 +61,14 @@ fn render_tool_error(
     if error_visible <= remaining {
         row([
             styled(icon, Style::new().fg(t.resolve_color(t.colors.error))),
-            styled(display_name, Style::new().fg(t.resolve_color(t.colors.text_dim))),
-            styled(args_part, Style::new().fg(t.resolve_color(t.colors.text_dim)).dim()),
+            styled(
+                display_name,
+                Style::new().fg(t.resolve_color(t.colors.text_dim)),
+            ),
+            styled(
+                args_part,
+                Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+            ),
             styled(
                 format!("\u{2192} {}", error_first_line),
                 Style::new().fg(t.resolve_color(t.colors.error)).bold(),
@@ -73,8 +78,14 @@ fn render_tool_error(
         // Error is too long for inline: show on second line at full terminal width
         let header = row([
             styled(icon, Style::new().fg(t.resolve_color(t.colors.error))),
-            styled(display_name, Style::new().fg(t.resolve_color(t.colors.text_dim))),
-            styled(args_part, Style::new().fg(t.resolve_color(t.colors.text_dim)).dim()),
+            styled(
+                display_name,
+                Style::new().fg(t.resolve_color(t.colors.text_dim)),
+            ),
+            styled(
+                args_part,
+                Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+            ),
         ]);
         let error_node = styled(
             format!("  \u{2192} {}", error_first_line),
@@ -101,22 +112,40 @@ fn render_tool_complete(
 
     let t = crate::tui::oil::theme::active();
     let arrow_suffix = if let Some(ref path) = tool.output_path {
-        styled(format!("→ {}", path.display()), Style::new().fg(t.resolve_color(t.colors.text_muted)))
+        styled(
+            format!("→ {}", path.display()),
+            Style::new().fg(t.resolve_color(t.colors.text_muted)),
+        )
     } else if let Some(ref s) = collapsed {
-        styled(format!("→ {}", s), Style::new().fg(t.resolve_color(t.colors.text_muted)))
+        styled(
+            format!("→ {}", s),
+            Style::new().fg(t.resolve_color(t.colors.text_muted)),
+        )
     } else {
         Node::Empty
     };
 
     let header = row([
-        styled(format!(" {} ", t.decorations.tool_success_icon), Style::new().fg(t.resolve_color(t.colors.success))),
-        styled(display_name, Style::new().fg(t.resolve_color(t.colors.text_dim))),
+        styled(
+            format!(" {} ", t.decorations.tool_success_icon),
+            Style::new().fg(t.resolve_color(t.colors.success)),
+        ),
+        styled(
+            display_name,
+            Style::new().fg(t.resolve_color(t.colors.text_dim)),
+        ),
         if args_formatted.is_empty() {
             Node::Empty
         } else if has_arrow_suffix {
-            styled(format!("({}) ", args_formatted), Style::new().fg(t.resolve_color(t.colors.text_dim)).dim())
+            styled(
+                format!("({}) ", args_formatted),
+                Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+            )
         } else {
-            styled(format!("({})", args_formatted), Style::new().fg(t.resolve_color(t.colors.text_dim)).dim())
+            styled(
+                format!("({})", args_formatted),
+                Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+            )
         },
         arrow_suffix,
     ]);
@@ -154,10 +183,19 @@ fn render_tool_running(
         styled(" ", Style::new()),
         spinner,
         styled(" ", Style::new()),
-        styled(display_name, Style::new().fg(t.resolve_color(t.colors.text_dim))),
-        styled(format!("({})", args_formatted), Style::new().fg(t.resolve_color(t.colors.text_dim)).dim()),
+        styled(
+            display_name,
+            Style::new().fg(t.resolve_color(t.colors.text_dim)),
+        ),
+        styled(
+            format!("({})", args_formatted),
+            Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+        ),
         if show_elapsed {
-            styled(format!("  {}", format_elapsed(elapsed)), Style::new().fg(t.resolve_color(t.colors.text_dim)).dim())
+            styled(
+                format!("  {}", format_elapsed(elapsed)),
+                Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+            )
         } else {
             Node::Empty
         },
@@ -324,7 +362,11 @@ pub fn format_output_tail(output: &str, prefix: &str) -> Node {
     })
     .chain(lines.iter().map(|line| {
         let display = if visible_width(line) > truncate_at {
-            format!("{}{}…", bar_prefix, truncate_to_width(line, truncate_at, false))
+            format!(
+                "{}{}…",
+                bar_prefix,
+                truncate_to_width(line, truncate_at, false)
+            )
         } else {
             format!("{}{}", bar_prefix, line)
         };
@@ -667,11 +709,11 @@ mod tests {
         let mut tool = test_tool("mcp_bash", r#"{"command": "test"}"#, false);
         let long_error = "a".repeat(120); // 120-char error message
         tool.set_error(long_error.clone());
-        
+
         // Render at width=120 (wide terminal)
         let node = render_tool_call(&tool);
         let plain = render_to_plain_text(&node, 120);
-        
+
         // The full error should be visible at width=120
         // With the bug (hardcoded 50), the error is truncated to 50 chars + ellipsis
         // With the fix, it should use the terminal width (120) and show the full error
@@ -689,11 +731,11 @@ mod tests {
         let mut tool = test_tool("mcp_bash", r#"{"command": "test"}"#, false);
         let long_error = "Connection failed: ".to_string() + &"x".repeat(100);
         tool.set_error(long_error.clone());
-        
+
         // Render at width=80
         let node = render_tool_call(&tool);
         let plain = render_to_plain_text(&node, 80);
-        
+
         // The error should NOT be truncated to hardcoded 50 chars
         // At width=80, we have room for more than 50 chars
         // So the error should show more than 50 chars (or the full error if it fits)
@@ -710,13 +752,14 @@ mod tests {
     fn error_with_cjk_no_panic() {
         // Test that CJK error messages don't panic and are not truncated to hardcoded 50
         let mut tool = test_tool("mcp_bash", r#"{"command": "test"}"#, false);
-        let cjk_error = "错误：连接超时，请检查网络设置并重试操作。这是一个很长的错误消息用于测试。";
+        let cjk_error =
+            "错误：连接超时，请检查网络设置并重试操作。这是一个很长的错误消息用于测试。";
         tool.set_error(cjk_error.to_string());
-        
+
         // Render at width=80 — should not panic
         let node = render_tool_call(&tool);
         let plain = render_to_plain_text(&node, 80);
-        
+
         // Verify every line fits within width
         for line in plain.lines() {
             let width = crucible_oil::ansi::visible_width(line);
@@ -727,7 +770,7 @@ mod tests {
                 line
             );
         }
-        
+
         // Verify the full CJK error is visible (not truncated to hardcoded 50)
         // Extract the error portion (after the arrow) and check it's longer than 50 chars
         let error_line = plain.lines().find(|l: &&str| l.contains("→")).unwrap_or("");
@@ -748,11 +791,11 @@ mod tests {
         // This error is 80+ chars, so it will be truncated to 50 with the bug
         let error = "Connection refused: port 8080 is already in use by another process running on this machine";
         tool.set_error(error.to_string());
-        
+
         // Render at width=120 (wide terminal)
         let node = render_tool_call(&tool);
         let plain = render_to_plain_text(&node, 120);
-        
+
         // The full error should be visible (not truncated to hardcoded 50)
         // With the bug, it's truncated to 50 chars, so the last part is missing
         // With the fix, it should be fully visible

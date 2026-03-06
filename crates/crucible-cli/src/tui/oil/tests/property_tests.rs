@@ -470,7 +470,6 @@ mod composer_stability_properties {
     use crate::tui::ViewContext;
     use proptest::prelude::*;
 
-
     fn extract_input_region(output: &str) -> Vec<&str> {
         let lines: Vec<&str> = output.split("\r\n").collect();
         let mut in_input = false;
@@ -865,31 +864,31 @@ mod cli_invariants {
     }
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
+            #![proptest_config(ProptestConfig::with_cases(100))]
 
-        /// Text in the input buffer survives mode changes.
-        #[test]
-        fn prop_input_text_preserved_through_mode_switch(
-            text in arb_short_text(),
-            mode in arb_chat_mode(),
-        ) {
-            let mut app = OilChatApp::default();
-            app.set_input_content(&text);
+            /// Text in the input buffer survives mode changes.
+            #[test]
+            fn prop_input_text_preserved_through_mode_switch(
+                text in arb_short_text(),
+                mode in arb_chat_mode(),
+            ) {
+                let mut app = OilChatApp::default();
+                app.set_input_content(&text);
 
-            // Verify text is set
-            let before = app.input_content().to_string();
-            prop_assert_eq!(&before, &text, "Input should match before mode switch");
+                // Verify text is set
+                let before = app.input_content().to_string();
+                prop_assert_eq!(&before, &text, "Input should match before mode switch");
 
-            // Switch mode
-            app.set_mode(mode);
+                // Switch mode
+                app.set_mode(mode);
 
-            // Verify text preserved
-            let after = app.input_content().to_string();
-            prop_assert_eq!(
-                before, after,
-                "Input text '{}' should survive switching to {:?}",
-                text, mode
-            );
-        }
-}
+                // Verify text preserved
+                let after = app.input_content().to_string();
+                prop_assert_eq!(
+                    before, after,
+                    "Input text '{}' should survive switching to {:?}",
+                    text, mode
+                );
+            }
+    }
 }

@@ -145,9 +145,9 @@ mod ansi_with_codes_tests {
 
 #[cfg(test)]
 mod styled_render_tests {
+    use super::*;
     use crucible_oil::proptest_strategies::arb_style;
     use crucible_oil::{render_to_string, text};
-    use super::*;
 
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]

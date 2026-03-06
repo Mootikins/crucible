@@ -15,8 +15,6 @@
 //! - `entities`: `id`, `type`, `data` (JSON with title, path, etc.)
 //! - `relations`: `from_entity_id`, `to_entity_id`, `relation_type`
 
-use async_trait::async_trait;
-use crucible_core::traits::graph_query::{GraphQueryError, GraphQueryExecutor, GraphQueryResult};
 use crate::query::{
     ir::{EdgeDirection, GraphIR, PatternElement, QuerySource},
     syntax::{
@@ -24,6 +22,8 @@ use crate::query::{
     },
     transform::{QueryTransform, ValidateTransform},
 };
+use async_trait::async_trait;
+use crucible_core::traits::graph_query::{GraphQueryError, GraphQueryExecutor, GraphQueryResult};
 use rusqlite::Connection;
 use serde_json::Value;
 use std::sync::Arc;

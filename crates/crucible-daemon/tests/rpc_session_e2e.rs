@@ -209,10 +209,7 @@ async fn test_session_resume_changes_state() {
         .await
         .expect("session_resume failed");
 
-    let state = resume_result["state"]
-        .as_str()
-        .unwrap_or("")
-        .to_lowercase();
+    let state = resume_result["state"].as_str().unwrap_or("").to_lowercase();
     assert!(
         state.contains("active"),
         "Resumed session should be active, got: {state}"
@@ -319,10 +316,7 @@ async fn test_session_full_lifecycle() {
         .session_get(&session_id)
         .await
         .expect("session_get after pause failed");
-    let state = session["state"]
-        .as_str()
-        .unwrap_or("")
-        .to_lowercase();
+    let state = session["state"].as_str().unwrap_or("").to_lowercase();
     assert!(state.contains("pause"), "Expected paused, got: {state}");
 
     // 4. Resume

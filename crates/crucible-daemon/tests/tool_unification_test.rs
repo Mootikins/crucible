@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use crucible_daemon::InProcessMcpHost;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
+use crucible_daemon::InProcessMcpHost;
 use tempfile::TempDir;
 
 const EXPECTED_TOOL_NAMES: &[&str] = &[

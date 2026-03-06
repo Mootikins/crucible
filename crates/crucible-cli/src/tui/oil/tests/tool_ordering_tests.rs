@@ -12,7 +12,6 @@ fn render_app(app: &OilChatApp) -> String {
     strip_ansi(&render_to_string(&tree, 120))
 }
 
-
 fn assert_order(output: &str, first: &str, second: &str) {
     let pos_first = output.find(first);
     let pos_second = output.find(second);

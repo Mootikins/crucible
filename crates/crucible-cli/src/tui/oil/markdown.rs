@@ -343,13 +343,10 @@ fn render_node(node: &markdown_it::Node, ctx: &mut RenderContext) {
             let show_bullet = margins.show_bullet && ctx.is_first_paragraph;
 
             let prefix = if show_bullet {
-                styled(
-                    ASSISTANT_BULLET,
-                    {
-                        let t = theme::active();
-                        Style::new().fg(t.resolve_color(t.colors.bullet_prefix))
-                    },
-                )
+                styled(ASSISTANT_BULLET, {
+                    let t = theme::active();
+                    Style::new().fg(t.resolve_color(t.colors.bullet_prefix))
+                })
             } else {
                 text(" ".repeat(margins.left))
             };
@@ -448,13 +445,10 @@ fn render_node(node: &markdown_it::Node, ctx: &mut RenderContext) {
 
     if node.cast::<CodeInline>().is_some() {
         let code_text = extract_all_text(node);
-        ctx.current_spans.push((
-            format!("`{}`", code_text),
-            {
-                let t = theme::active();
-                Style::new().fg(t.resolve_color(t.colors.code_inline))
-            },
-        ));
+        ctx.current_spans.push((format!("`{}`", code_text), {
+            let t = theme::active();
+            Style::new().fg(t.resolve_color(t.colors.code_inline))
+        }));
         return;
     }
 
@@ -498,13 +492,10 @@ fn render_paragraph(node: &markdown_it::Node, ctx: &mut RenderContext) {
 
     for (i, line) in wrapped.iter().enumerate() {
         let prefix = if i == 0 && show_bullet {
-            styled(
-                ASSISTANT_BULLET,
-                {
-                    let t = theme::active();
-                    Style::new().fg(t.resolve_color(t.colors.bullet_prefix))
-                },
-            )
+            styled(ASSISTANT_BULLET, {
+                let t = theme::active();
+                Style::new().fg(t.resolve_color(t.colors.bullet_prefix))
+            })
         } else {
             text(&indent)
         };
@@ -539,11 +530,7 @@ fn render_code_block(node: &markdown_it::Node, ctx: &mut RenderContext) {
 
     let t = theme::active();
     let fence_style = Style::new().fg(t.resolve_color(t.colors.fence_marker));
-    push_indented_block(
-        ctx,
-        styled(&fence_marker, fence_style),
-        &indent,
-    );
+    push_indented_block(ctx, styled(&fence_marker, fence_style), &indent);
     render_highlighted_code(&content, lang_str, ctx, &indent);
     push_indented_block(ctx, styled("```", fence_style), &indent);
 
@@ -699,7 +686,9 @@ fn render_blockquote(node: &markdown_it::Node, ctx: &mut RenderContext) {
                 }),
                 styled(line, {
                     let t = theme::active();
-                    Style::new().fg(t.resolve_color(t.colors.blockquote_text)).italic()
+                    Style::new()
+                        .fg(t.resolve_color(t.colors.blockquote_text))
+                        .italic()
                 }),
             ]);
             if margins.left > 0 {
@@ -1009,11 +998,10 @@ fn render_link(node: &markdown_it::Node, link: &Link, ctx: &mut RenderContext) {
     } else {
         link_text
     };
-    ctx.current_spans
-        .push((display, {
-            let t = theme::active();
-            Style::new().fg(t.resolve_color(t.colors.link)).underline()
-        }));
+    ctx.current_spans.push((display, {
+        let t = theme::active();
+        Style::new().fg(t.resolve_color(t.colors.link)).underline()
+    }));
 }
 
 fn heading_style(level: u8) -> Style {
