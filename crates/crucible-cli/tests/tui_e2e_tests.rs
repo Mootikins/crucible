@@ -1778,7 +1778,7 @@ fn model_flow_loading_to_loaded_e2e() {
     // Wait for TUI to initialize
     session
         .wait_for_text("NORMAL", Duration::from_secs(5))
-        .ok();
+        .expect("TUI should initialize to NORMAL mode within 5s");
 
     session.send(":model\r").expect("Failed to send :model");
 
@@ -1787,7 +1787,11 @@ fn model_flow_loading_to_loaded_e2e() {
         .wait_until(
             |s| {
                 let c = s.contents();
-                c.contains('/')           // model names contain / (e.g. ollama/llama)
+                (c.contains('/')
+                    && (c.contains("model")
+                        || c.contains("llama")
+                        || c.contains("gpt")
+                        || c.contains("claude")))
                     || c.contains("Available models")
                     || c.contains("No models")
                     || c.contains("Retrying model fetch")
@@ -1827,7 +1831,7 @@ fn model_flow_error_shows_within_timeout_e2e() {
 
     session
         .wait_for_text("NORMAL", Duration::from_secs(5))
-        .ok();
+        .expect("TUI should initialize to NORMAL mode within 5s");
 
     session.send(":model\r").expect("Failed to send :model");
 
@@ -1836,8 +1840,15 @@ fn model_flow_error_shows_within_timeout_e2e() {
         .wait_until(
             |s| {
                 let c = s.contents();
-                c.contains('/') || c.contains("error") || c.contains("Error")
-                    || c.contains("No models") || c.contains("Available")
+                (c.contains('/')
+                    && (c.contains("model")
+                        || c.contains("llama")
+                        || c.contains("gpt")
+                        || c.contains("claude")))
+                    || c.contains("error")
+                    || c.contains("Error")
+                    || c.contains("No models")
+                    || c.contains("Available")
             },
             Duration::from_secs(15),
         )
@@ -1875,7 +1886,7 @@ fn model_backspace_no_double_borders_e2e() {
 
     session
         .wait_for_text("NORMAL", Duration::from_secs(5))
-        .ok();
+        .expect("TUI should initialize to NORMAL mode within 5s");
 
     // Type `:model ` — trailing space triggers model popup
     session.send(":model ").expect("Failed to send :model ");
@@ -1883,7 +1894,7 @@ fn model_backspace_no_double_borders_e2e() {
     // Wait for popup to render
     session
         .wait_for_text("model", Duration::from_secs(3))
-        .ok();
+        .expect("model popup should appear within 3s after sending ':model '");
 
     // Backspace removes the space, transitioning back to command popup
     session.send_key(Key::Backspace).expect("Backspace failed");
@@ -1891,7 +1902,7 @@ fn model_backspace_no_double_borders_e2e() {
     // Wait for screen to stabilize after transition
     session
         .wait_for_text(":", Duration::from_secs(2))
-        .ok();
+        .expect("command popup should reappear within 2s after Backspace");
     session.refresh_screen();
 
     // Count rows in the bottom 10 lines that are entirely `▄` characters
@@ -1937,7 +1948,7 @@ fn model_loading_no_duplicate_messages_e2e() {
 
     session
         .wait_for_text("NORMAL", Duration::from_secs(5))
-        .ok();
+        .expect("TUI should initialize to NORMAL mode within 5s");
 
     // Send :model 3 times in quick succession
     session.send(":model\r").expect("Failed to send :model 1");
@@ -1947,7 +1958,7 @@ fn model_loading_no_duplicate_messages_e2e() {
     // Wait for rendering to settle
     session
         .wait_for_text("model", Duration::from_secs(3))
-        .ok();
+        .expect("model popup should appear within 3s after sending ':model'");
     session.refresh_screen();
 
     // Count loading-related messages (case-insensitive)
@@ -1986,32 +1997,38 @@ fn model_retry_after_failure_e2e() {
 
     session
         .wait_for_text("NORMAL", Duration::from_secs(5))
-        .ok();
+        .expect("TUI should initialize to NORMAL mode within 5s");
 
     // First :model press
-    session.send(":model\r").expect("Failed to send first :model");
+    session
+        .send(":model\r")
+        .expect("Failed to send first :model");
 
     // Wait for initial state to render
     session
         .wait_for_text("model", Duration::from_secs(3))
-        .ok();
+        .expect("model popup should appear within 3s after first ':model'");
 
     // Dismiss with Escape
     session.send_key(Key::Escape).expect("Escape failed");
     session
         .wait_for_text("NORMAL", Duration::from_secs(2))
-        .ok();
+        .expect("TUI should return to NORMAL mode within 2s after Escape");
 
     // Second :model press — should trigger retry/refetch
-    session.send(":model\r").expect("Failed to send second :model");
+    session
+        .send(":model\r")
+        .expect("Failed to send second :model");
 
     // Wait for the retry state — should show fetching or model content
     let has_retry_indicator = session
         .wait_until(
             |s| {
                 let c = s.contents().to_lowercase();
-                c.contains("fetching") || c.contains("retrying")
-                    || c.contains("model") || c.contains("/")
+                c.contains("fetching")
+                    || c.contains("retrying")
+                    || c.contains("model")
+                    || (c.contains('/') && c.contains("model"))
             },
             Duration::from_secs(5),
         )
