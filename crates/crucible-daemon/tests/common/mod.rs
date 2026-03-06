@@ -183,3 +183,6 @@ mod tests {
         // This is best-effort cleanup test
     }
 }
+
+// Re-export canonical test mocks for integration tests
+pub use crucible_daemon::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
