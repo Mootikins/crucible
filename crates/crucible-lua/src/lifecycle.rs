@@ -2768,4 +2768,86 @@ return {
             .unwrap_or(0);
         assert_eq!(count, 1, "on_unload hook should fire exactly once during reload()");
     }
+
+    /// Set up a PluginManager with the full Lua stdlib loaded (needed for emitter tests).
+    fn setup_emitter_manager() -> PluginManager {
+        let manager = PluginManager::new();
+        // The spec sandbox stubs cru as a metatable. Override with a real
+        // table and load the stdlib so cru.emitter is available.
+        manager
+            .lua
+            .load(
+                r#"
+        cru = {}
+        cru.log = function(level, msg) end
+        cru.timer = { sleep = function(secs) end }
+    "#,
+            )
+            .exec()
+            .unwrap();
+        crate::lua_stdlib::register_lua_stdlib(&manager.lua).unwrap();
+        manager
+    }
+
+    #[test]
+    fn test_emitter_owner_registration() {
+        let manager = setup_emitter_manager();
+        let count = manager
+            .eval_runtime::<i64>(
+                r#"
+        local e = cru.emitter.global()
+        local fired = 0
+        e:on("test_event", function() fired = fired + 1 end, "plugin-a")
+        e:emit("test_event")
+        return fired
+    "#,
+            )
+            .unwrap();
+        assert_eq!(count, 1, "owned listener should fire");
+    }
+
+    #[test]
+    fn test_emitter_unregister_owner() {
+        let manager = setup_emitter_manager();
+        let result = manager
+            .eval_runtime::<i64>(
+                r#"
+        local e = cru.emitter.new()
+        local fired_a = 0
+        local fired_b = 0
+        e:on("ev", function() fired_a = fired_a + 1 end, "owner-a")
+        e:on("ev", function() fired_a = fired_a + 1 end, "owner-a")
+        e:on("ev", function() fired_b = fired_b + 1 end, "owner-b")
+        e:unregister_owner("owner-a")
+        e:emit("ev")
+        return fired_b
+    "#,
+            )
+            .unwrap();
+        assert_eq!(
+            result, 1,
+            "only owner-b listener should fire after owner-a unregistered"
+        );
+    }
+
+    #[test]
+    fn test_emitter_backward_compat_no_owner() {
+        let manager = setup_emitter_manager();
+        let count = manager
+            .eval_runtime::<i64>(
+                r#"
+        local e = cru.emitter.new()
+        local fired = 0
+        e:on("ev", function() fired = fired + 1 end)
+        e:on("ev", function() fired = fired + 1 end)
+        e:emit("ev")
+        return fired
+    "#,
+            )
+            .unwrap();
+        assert_eq!(
+            count, 2,
+            "backward compat: listeners without owner should still fire"
+        );
+    }
 }
