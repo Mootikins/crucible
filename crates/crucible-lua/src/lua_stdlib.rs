@@ -736,26 +736,37 @@ do
     local Emitter = {}
     Emitter.__index = Emitter
 
+    local function get_fn(entry)
+        if type(entry) == 'table' then
+            return entry.fn
+        end
+        return entry
+    end
+
     function Emitter.new()
         return setmetatable({ _listeners = {} }, Emitter)
     end
 
-    function Emitter:on(event, fn)
+    function Emitter:on(event, fn, owner)
         if not self._listeners[event] then
             self._listeners[event] = {}
         end
         local list = self._listeners[event]
         local id = #list + 1
-        list[id] = fn
+        if owner ~= nil then
+            list[id] = { fn = fn, owner = owner }
+        else
+            list[id] = fn
+        end
         return id
     end
 
-    function Emitter:once(event, fn)
+    function Emitter:once(event, fn, owner)
         local id
         id = self:on(event, function(...)
             self:off(event, id)
             fn(...)
-        end)
+        end, owner)
         return id
     end
 
@@ -769,11 +780,53 @@ do
         local listeners = self._listeners[event]
         if not listeners then return end
         for i = 1, #listeners do
-            local fn = listeners[i]
-            if fn then
-                local ok, err = pcall(fn, ...)
-                if not ok then
-                    cru.log("warn", "emitter handler error on '" .. event .. "': " .. tostring(err))
+            local entry = listeners[i]
+            if entry then
+                local fn = get_fn(entry)
+                if fn then
+                    local ok, err = pcall(fn, ...)
+                    if not ok then
+                        cru.log("warn", "emitter handler error on '" .. event .. "': " .. tostring(err))
+                    end
+                end
+            end
+        end
+    end
+
+    -- Fire-and-forget emit: returns immediately, errors are silently swallowed.
+    -- Semantically "async" — callers must not depend on handler completion or
+    -- error propagation.  In pure Lua this still executes synchronously.
+    function Emitter:emit_async(event, ...)
+        local listeners = self._listeners[event]
+        if not listeners then return end
+        for i = 1, #listeners do
+            local entry = listeners[i]
+            if entry then
+                local fn = get_fn(entry)
+                if fn then
+                    pcall(fn, ...)
+                end
+            end
+        end
+    end
+
+    -- Count active listeners for an event (excludes removed ones)
+    function Emitter:count(event)
+        local listeners = self._listeners[event]
+        if not listeners then return 0 end
+        local n = 0
+        for i = 1, #listeners do
+            if listeners[i] then n = n + 1 end
+        end
+        return n
+    end
+
+    function Emitter:unregister_owner(owner)
+        for _, listeners in pairs(self._listeners) do
+            for i = 1, #listeners do
+                local entry = listeners[i]
+                if type(entry) == 'table' and entry.owner == owner then
+                    listeners[i] = false
                 end
             end
         end
@@ -787,7 +840,16 @@ do
         end
     end
 
-    cru.emitter = { new = Emitter.new }
+    -- Global shared emitter singleton (stored in closure scope)
+    local _global_emitter = nil
+    local function get_global()
+        if not _global_emitter then
+            _global_emitter = Emitter.new()
+        end
+        return _global_emitter
+    end
+
+    cru.emitter = { new = Emitter.new, global = get_global }
 end
 
 -- ============================================================================
@@ -1326,6 +1388,9 @@ mod tests {
         let cru: Table = lua.globals().get("cru").unwrap();
 
         assert!(cru.get::<Table>("emitter").is_ok());
+        let emitter: Table = cru.get("emitter").unwrap();
+        assert!(emitter.get::<mlua::Function>("new").is_ok());
+        assert!(emitter.get::<mlua::Function>("global").is_ok());
         assert!(cru.get::<Table>("check").is_ok());
         assert!(cru.get::<mlua::Function>("retry").is_ok());
         assert!(cru.get::<Table>("health").is_ok());
@@ -1349,6 +1414,163 @@ mod tests {
             .eval()
             .unwrap();
         assert_eq!(result, "abc");
+    }
+
+    #[test]
+    fn test_emitter_count() {
+        let lua = setup_lua();
+        let result: (i32, i32, i32) = lua
+            .load(
+                r#"
+                local em = cru.emitter.new()
+                -- no listeners yet
+                local c0 = em:count("test")
+                em:on("test", function() end)
+                em:on("test", function() end)
+                local c2 = em:count("test")
+                -- unknown event
+                local c_none = em:count("unknown")
+                return c0, c2, c_none
+                "#,
+            )
+            .eval()
+            .unwrap();
+        assert_eq!(result.0, 0);
+        assert_eq!(result.1, 2);
+        assert_eq!(result.2, 0);
+    }
+
+    #[test]
+    fn test_emitter_count_excludes_removed() {
+        let lua = setup_lua();
+        let result: i32 = lua
+            .load(
+                r#"
+                local em = cru.emitter.new()
+                local id1 = em:on("test", function() end)
+                em:on("test", function() end)
+                em:off("test", id1)
+                return em:count("test")
+                "#,
+            )
+            .eval()
+            .unwrap();
+        assert_eq!(result, 1);
+    }
+
+    #[test]
+    fn test_emitter_emit_async_fires_listeners() {
+        let lua = setup_lua();
+        let result: i32 = lua
+            .load(
+                r#"
+                local em = cru.emitter.new()
+                local got = 0
+                em:on("test", function(v) got = v end)
+                em:emit_async("test", 99)
+                return got
+                "#,
+            )
+            .eval()
+            .unwrap();
+        assert_eq!(result, 99);
+    }
+
+    #[test]
+    fn test_emitter_emit_async_swallows_errors() {
+        let lua = setup_lua();
+        // emit_async should not propagate handler errors
+        let result: i32 = lua
+            .load(
+                r#"
+                local em = cru.emitter.new()
+                local got = 0
+                em:on("test", function() error("boom") end)
+                em:on("test", function() got = 1 end)
+                em:emit_async("test")
+                return got
+                "#,
+            )
+            .eval()
+            .unwrap();
+        assert_eq!(result, 1);
+    }
+
+    #[test]
+    fn test_emitter_global_returns_same_instance() {
+        let lua = setup_lua();
+        let result: bool = lua
+            .load(
+                r#"
+                local g1 = cru.emitter.global()
+                local g2 = cru.emitter.global()
+                return g1 == g2
+                "#,
+            )
+            .eval()
+            .unwrap();
+        assert!(result);
+    }
+
+    #[test]
+    fn test_emitter_global_is_functional() {
+        let lua = setup_lua();
+        let result: i32 = lua
+            .load(
+                r#"
+                local g = cru.emitter.global()
+                local got = 0
+                g:on("evt", function(v) got = v end)
+                -- Access via a second global() call to prove shared state
+                cru.emitter.global():emit("evt", 77)
+                return got
+                "#,
+            )
+            .eval()
+            .unwrap();
+        assert_eq!(result, 77);
+    }
+
+    #[test]
+    fn test_emitter_global_independent_from_new() {
+        let lua = setup_lua();
+        let result: (i32, i32) = lua
+            .load(
+                r#"
+                local g = cru.emitter.global()
+                local e = cru.emitter.new()
+                local g_got = 0
+                local e_got = 0
+                g:on("test", function() g_got = g_got + 1 end)
+                e:on("test", function() e_got = e_got + 1 end)
+                g:emit("test")
+                return g_got, e_got
+                "#,
+            )
+            .eval()
+            .unwrap();
+        assert_eq!(result.0, 1);
+        assert_eq!(result.1, 0);
+    }
+
+    #[test]
+    fn test_emitter_count_after_once_fires() {
+        let lua = setup_lua();
+        let result: (i32, i32) = lua
+            .load(
+                r#"
+                local em = cru.emitter.new()
+                em:once("test", function() end)
+                local before = em:count("test")
+                em:emit("test")
+                local after = em:count("test")
+                return before, after
+                "#,
+            )
+            .eval()
+            .unwrap();
+        assert_eq!(result.0, 1);
+        assert_eq!(result.1, 0);
     }
 
     #[tokio::test]
