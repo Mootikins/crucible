@@ -634,7 +634,7 @@ mod tests {
 
     #[test]
     fn sessions_module_registers_in_namespace() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_sessions().build();
 
         let cru: Table = lua.globals().get("cru").expect("cru should exist");
         let sessions: Table = cru.get("sessions").expect("cru.sessions should exist");
@@ -666,7 +666,7 @@ mod tests {
 
     #[tokio::test]
     async fn sessions_stub_create_returns_nil() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_sessions().build();
 
         let result: (Value, Value) = lua
             .load(r#"return cru.sessions.create({ type = "chat", kiln = "/tmp/kiln" })"#)
@@ -684,7 +684,7 @@ mod tests {
 
     #[tokio::test]
     async fn sessions_stub_list_returns_nil() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_sessions().build();
 
         let result: (Value, Value) = lua
             .load(r#"return cru.sessions.list()"#)
@@ -697,7 +697,7 @@ mod tests {
 
     #[tokio::test]
     async fn sessions_stub_get_returns_nil() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_sessions().build();
 
         let result: (Value, Value) = lua
             .load(r#"return cru.sessions.get("some-id")"#)
@@ -914,7 +914,7 @@ mod api_tests {
     #[tokio::test]
     async fn sessions_with_mock_api_create_returns_id() {
         let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
-        let lua = setup_lua_with_api(api);
+        let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
         let result: Table = lua
             .load(
@@ -941,7 +941,7 @@ mod api_tests {
     #[tokio::test]
     async fn sessions_with_mock_api_create_no_kiln_uses_default() {
         let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
-        let lua = setup_lua_with_api(api);
+        let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
         let result: Table = lua
             .load(
@@ -964,7 +964,7 @@ mod api_tests {
     #[tokio::test]
     async fn sessions_with_mock_api_create_with_kilns() {
         let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
-        let lua = setup_lua_with_api(api);
+        let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
         let result: Table = lua
             .load(
@@ -990,7 +990,7 @@ mod api_tests {
     #[tokio::test]
     async fn sessions_create_with_invalid_arg_returns_error() {
         let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
-        let lua = setup_lua_with_api(api);
+        let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
         let result: (Value, Value) = lua
             .load(r#"return cru.sessions.create(42)"#)
@@ -1008,7 +1008,7 @@ mod api_tests {
     #[tokio::test]
     async fn sessions_with_mock_api_list_returns_array() {
         let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
-        let lua = setup_lua_with_api(api);
+        let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
         let result: Table = lua
             .load(
@@ -1035,7 +1035,7 @@ mod api_tests {
     #[tokio::test]
     async fn sessions_with_mock_api_get_existing() {
         let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
-        let lua = setup_lua_with_api(api);
+        let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
         let result: Table = lua
             .load(
@@ -1055,7 +1055,7 @@ mod api_tests {
     #[tokio::test]
     async fn sessions_with_mock_api_get_missing_returns_nil() {
         let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
-        let lua = setup_lua_with_api(api);
+        let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
         let result: (Value, Value) = lua
             .load(r#"return cru.sessions.get("nonexistent")"#)
@@ -1071,7 +1071,7 @@ mod api_tests {
     #[tokio::test]
     async fn sessions_subscribe_returns_iterator() {
         let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
-        let lua = setup_lua_with_api(api);
+        let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
         // Subscribe and read events
         let result: Table = lua
@@ -1109,7 +1109,7 @@ mod api_tests {
     #[tokio::test]
     async fn sessions_send_message_returns_response_id() {
         let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
-        let lua = setup_lua_with_api(api);
+        let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
         let result: String = lua
             .load(
@@ -1129,7 +1129,7 @@ mod api_tests {
     #[tokio::test]
     async fn sessions_cancel_returns_bool() {
         let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
-        let lua = setup_lua_with_api(api);
+        let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
         let result: bool = lua
             .load(
@@ -1149,7 +1149,7 @@ mod api_tests {
     #[tokio::test]
     async fn sessions_end_session_succeeds() {
         let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
-        let lua = setup_lua_with_api(api);
+        let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
         let result: bool = lua
             .load(
@@ -1327,7 +1327,7 @@ mod api_tests {
         let api = Arc::new(AsyncMockDaemonApi::new());
         let barrier = Arc::clone(&api.subscribe_barrier);
 
-        let lua = setup_lua_with_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>);
+        let lua = TestLuaBuilder::new().with_sessions_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>).build();
 
         // Spawn a Rust task that waits for subscribe, then sends events
         let api_clone = Arc::clone(&api);
@@ -1393,7 +1393,7 @@ mod api_tests {
         let api = Arc::new(AsyncMockDaemonApi::new());
         let barrier = Arc::clone(&api.subscribe_barrier);
 
-        let lua = setup_lua_with_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>);
+        let lua = TestLuaBuilder::new().with_sessions_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>).build();
 
         // Spawn a Rust task that sends events after subscribe + send_message
         let api_clone = Arc::clone(&api);
@@ -1469,7 +1469,7 @@ mod api_tests {
         let api = Arc::new(AsyncMockDaemonApi::new());
         let barrier = Arc::clone(&api.subscribe_barrier);
 
-        let lua = setup_lua_with_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>);
+        let lua = TestLuaBuilder::new().with_sessions_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>).build();
         crate::timer::register_timer_module(&lua).unwrap();
 
         let api_clone = Arc::clone(&api);
@@ -1525,7 +1525,7 @@ mod api_tests {
         let api = Arc::new(AsyncMockDaemonApi::new());
         let barrier = Arc::clone(&api.subscribe_barrier);
 
-        let lua = setup_lua_with_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>);
+        let lua = TestLuaBuilder::new().with_sessions_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>).build();
         crate::timer::register_timer_module(&lua).unwrap();
 
         let api_clone = Arc::clone(&api);
@@ -1594,7 +1594,7 @@ mod api_tests {
         let api = Arc::new(AsyncMockDaemonApi::new());
         let barrier = Arc::clone(&api.subscribe_barrier);
 
-        let lua = setup_lua_with_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>);
+        let lua = TestLuaBuilder::new().with_sessions_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>).build();
         crate::timer::register_timer_module(&lua).unwrap();
 
         // Spawn a Rust task that sends events after subscribe is called
@@ -1680,7 +1680,7 @@ mod api_tests {
         let api = Arc::new(AsyncMockDaemonApi::new());
         let barrier = Arc::clone(&api.subscribe_barrier);
 
-        let lua = setup_lua_with_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>);
+        let lua = TestLuaBuilder::new().with_sessions_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>).build();
         crate::timer::register_timer_module(&lua).unwrap();
 
         let api_clone = Arc::clone(&api);

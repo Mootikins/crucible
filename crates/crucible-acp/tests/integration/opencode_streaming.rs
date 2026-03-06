@@ -346,64 +346,11 @@ async fn test_opencode_line_sequence() {
 async fn test_opencode_with_sse_mcp() {
     use crucible_core::enrichment::EmbeddingProvider;
     use crucible_core::traits::KnowledgeRepository;
+    use crucible_daemon::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
     use crucible_daemon::InProcessMcpHost;
     use std::sync::Arc;
     use tempfile::TempDir;
 
-    // Mock implementations for testing
-    struct MockKnowledgeRepository;
-    struct MockEmbeddingProvider;
-
-    #[async_trait::async_trait]
-    impl KnowledgeRepository for MockKnowledgeRepository {
-        async fn get_note_by_name(
-            &self,
-            _name: &str,
-        ) -> crucible_core::Result<Option<crucible_core::parser::ParsedNote>> {
-            Ok(None)
-        }
-
-        async fn list_notes(
-            &self,
-            _path: Option<&str>,
-        ) -> crucible_core::Result<Vec<crucible_core::traits::knowledge::NoteInfo>> {
-            Ok(vec![])
-        }
-
-        async fn search_vectors(
-            &self,
-            _vector: Vec<f32>,
-        ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
-            Ok(vec![])
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl EmbeddingProvider for MockEmbeddingProvider {
-        async fn embed(&self, _text: &str) -> anyhow::Result<Vec<f32>> {
-            Ok(vec![0.1; 384])
-        }
-
-        async fn embed_batch(&self, texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
-            Ok(vec![vec![0.1; 384]; texts.len()])
-        }
-
-        fn model_name(&self) -> &str {
-            "mock-model"
-        }
-
-        fn dimensions(&self) -> usize {
-            384
-        }
-
-        fn provider_name(&self) -> &str {
-            "mock"
-        }
-
-        async fn list_models(&self) -> anyhow::Result<Vec<String>> {
-            Ok(vec!["mock-model".to_string()])
-        }
-    }
 
     // Skip if opencode not installed
     let opencode_path = match opencode_available() {
@@ -699,59 +646,13 @@ async fn test_opencode_no_mcp() {
 async fn test_opencode_raw_sse_mcp() {
     use crucible_core::enrichment::EmbeddingProvider;
     use crucible_core::traits::KnowledgeRepository;
+    use crucible_daemon::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
     use crucible_daemon::InProcessMcpHost;
     use std::io::{BufRead, BufReader, Write};
     use std::process::{Command, Stdio};
     use std::sync::Arc;
     use tempfile::TempDir;
 
-    // Mock implementations
-    struct MockKnowledgeRepository;
-    struct MockEmbeddingProvider;
-
-    #[async_trait::async_trait]
-    impl KnowledgeRepository for MockKnowledgeRepository {
-        async fn get_note_by_name(
-            &self,
-            _name: &str,
-        ) -> crucible_core::Result<Option<crucible_core::parser::ParsedNote>> {
-            Ok(None)
-        }
-        async fn list_notes(
-            &self,
-            _path: Option<&str>,
-        ) -> crucible_core::Result<Vec<crucible_core::traits::knowledge::NoteInfo>> {
-            Ok(vec![])
-        }
-        async fn search_vectors(
-            &self,
-            _vector: Vec<f32>,
-        ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
-            Ok(vec![])
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl EmbeddingProvider for MockEmbeddingProvider {
-        async fn embed(&self, _text: &str) -> anyhow::Result<Vec<f32>> {
-            Ok(vec![0.1; 384])
-        }
-        async fn embed_batch(&self, texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
-            Ok(vec![vec![0.1; 384]; texts.len()])
-        }
-        fn model_name(&self) -> &str {
-            "mock-model"
-        }
-        fn dimensions(&self) -> usize {
-            384
-        }
-        fn provider_name(&self) -> &str {
-            "mock"
-        }
-        async fn list_models(&self) -> anyhow::Result<Vec<String>> {
-            Ok(vec!["mock-model".to_string()])
-        }
-    }
 
     let opencode_path = match opencode_available() {
         Some(path) => {

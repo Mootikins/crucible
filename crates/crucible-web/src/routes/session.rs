@@ -535,6 +535,7 @@ async fn fetch_openai_models(client: &reqwest::Client) -> Vec<String> {
 mod tests {
     use super::*;
     use serial_test::serial;
+    use crucible_core::test_support::EnvVarGuard;
 
     #[test]
     fn test_format_provider_name_ollama() {
@@ -592,32 +593,32 @@ mod tests {
     #[test]
     #[serial]
     fn test_ollama_endpoint_from_env_default() {
-        std::env::remove_var("OLLAMA_HOST");
+        let _guard = EnvVarGuard::remove("OLLAMA_HOST");
         assert_eq!(ollama_endpoint_from_env(), "http://localhost:11434");
     }
 
     #[test]
     #[serial]
     fn test_ollama_endpoint_from_env_host_port() {
-        std::env::set_var("OLLAMA_HOST", "myhost:11435");
+        let _guard = EnvVarGuard::set("OLLAMA_HOST", "myhost:11435".to_string());
         assert_eq!(ollama_endpoint_from_env(), "http://myhost:11435");
-        std::env::remove_var("OLLAMA_HOST");
+
     }
 
     #[test]
     #[serial]
     fn test_ollama_endpoint_from_env_full_url() {
-        std::env::set_var("OLLAMA_HOST", "http://custom.local:8080");
+        let _guard = EnvVarGuard::set("OLLAMA_HOST", "http://custom.local:8080".to_string());
         assert_eq!(ollama_endpoint_from_env(), "http://custom.local:8080");
-        std::env::remove_var("OLLAMA_HOST");
+
     }
 
     #[test]
     #[serial]
     fn test_ollama_endpoint_from_env_https() {
-        std::env::set_var("OLLAMA_HOST", "https://secure.ollama.io");
+        let _guard = EnvVarGuard::set("OLLAMA_HOST", "https://secure.ollama.io".to_string());
         assert_eq!(ollama_endpoint_from_env(), "https://secure.ollama.io");
-        std::env::remove_var("OLLAMA_HOST");
+
     }
 
     #[test]

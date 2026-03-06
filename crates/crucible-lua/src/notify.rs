@@ -304,7 +304,7 @@ mod tests {
 
     #[test]
     fn notify_queues_toast() {
-        let (lua, _) = setup_lua();
+        let (lua, _) = TestLuaBuilder::new().build_with_notify();
 
         lua.load(r#"crucible.notify("Hello world")"#)
             .exec()
@@ -318,7 +318,7 @@ mod tests {
 
     #[test]
     fn notify_with_level_creates_warning() {
-        let (lua, _) = setup_lua();
+        let (lua, _) = TestLuaBuilder::new().build_with_notify();
 
         lua.load(r#"crucible.notify("Danger!", crucible.log.levels.WARN)"#)
             .exec()
@@ -331,7 +331,7 @@ mod tests {
 
     #[test]
     fn notify_with_progress() {
-        let (lua, _) = setup_lua();
+        let (lua, _) = TestLuaBuilder::new().build_with_notify();
 
         lua.load(
             r#"crucible.notify("Indexing...", crucible.log.levels.INFO, { progress = { current = 45, total = 100 } })"#,
@@ -352,7 +352,7 @@ mod tests {
 
     #[test]
     fn notify_once_deduplicates() {
-        let (lua, _) = setup_lua();
+        let (lua, _) = TestLuaBuilder::new().build_with_notify();
 
         lua.load(
             r#"
@@ -370,7 +370,7 @@ mod tests {
 
     #[test]
     fn notify_once_returns_boolean() {
-        let (lua, _) = setup_lua();
+        let (lua, _) = TestLuaBuilder::new().build_with_notify();
 
         let first: bool = lua
             .load(r#"return crucible.notify_once("Test")"#)
@@ -387,7 +387,7 @@ mod tests {
 
     #[test]
     fn log_levels_available() {
-        let (lua, _) = setup_lua();
+        let (lua, _) = TestLuaBuilder::new().build_with_notify();
 
         let info: i32 = lua
             .load(r#"return crucible.log.levels.INFO"#)
@@ -409,7 +409,7 @@ mod tests {
 
     #[test]
     fn messages_toggle() {
-        let (lua, _) = setup_lua();
+        let (lua, _) = TestLuaBuilder::new().build_with_notify();
 
         lua.load(r#"crucible.messages.toggle()"#).exec().unwrap();
 
@@ -422,7 +422,7 @@ mod tests {
 
     #[test]
     fn messages_show_hide_clear() {
-        let (lua, _) = setup_lua();
+        let (lua, _) = TestLuaBuilder::new().build_with_notify();
 
         lua.load(r#"crucible.messages.show()"#).exec().unwrap();
         assert_eq!(get_messages_action(&lua).unwrap(), Some("show".to_string()));
@@ -439,7 +439,7 @@ mod tests {
 
     #[test]
     fn pending_notifications_cleared_after_retrieval() {
-        let (lua, _) = setup_lua();
+        let (lua, _) = TestLuaBuilder::new().build_with_notify();
 
         lua.load(r#"crucible.notify("First")"#).exec().unwrap();
         lua.load(r#"crucible.notify("Second")"#).exec().unwrap();

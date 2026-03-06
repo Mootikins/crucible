@@ -32,6 +32,10 @@ pub mod provider;
 /// Mock provider for testing
 pub mod mock;
 
+/// Test helpers for embedding provider tests
+#[cfg(test)]
+pub(crate) mod test_helpers;
+
 pub use config::{BackendType, EmbeddingConfig, ProviderType};
 pub use crucible_core::enrichment::EmbeddingProvider;
 pub use error::{EmbeddingError, EmbeddingResult};

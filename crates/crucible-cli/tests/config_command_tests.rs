@@ -17,6 +17,7 @@ use serial_test::serial;
 use std::env;
 use std::fs;
 use tempfile::TempDir;
+use crucible_core::test_support::EnvVarGuard;
 
 // ============================================================================
 // Config Init Command Tests
@@ -125,9 +126,8 @@ fn test_config_init_creates_parent_directories() {
 #[serial]
 fn test_config_init_uses_default_path() {
     // Temporarily override HOME and CRUCIBLE_CONFIG_DIR to use a test directory
-    let original_home = env::var("HOME").ok();
     let temp = TempDir::new().unwrap();
-    env::set_var("HOME", temp.path());
+    let _guard = EnvVarGuard::set("HOME", temp.path().to_string_lossy().to_string());
 
     // On Windows, setting HOME isn't enough, we need CRUCIBLE_CONFIG_DIR to isolate
     let mut cmd = Command::cargo_bin("cru").unwrap();
@@ -140,12 +140,7 @@ fn test_config_init_uses_default_path() {
         .success()
         .stdout(predicate::str::contains("Created config file at"));
 
-    // Restore HOME
-    if let Some(home) = original_home {
-        env::set_var("HOME", home);
-    } else {
-        env::remove_var("HOME");
-    }
+
 }
 
 // ============================================================================
@@ -217,13 +212,12 @@ streaming = false
     .unwrap();
 
     // Set the config file path via environment
-    let original_home = env::var("HOME").ok();
     let config_dir = temp.path().join("config");
     fs::create_dir_all(&config_dir).unwrap();
     let default_config_path = config_dir.join("crucible").join("config.toml");
     fs::create_dir_all(default_config_path.parent().unwrap()).unwrap();
     fs::copy(&config_path, &default_config_path).unwrap();
-    env::set_var("HOME", temp.path());
+    let _guard = EnvVarGuard::set("HOME", temp.path().to_string_lossy().to_string());
 
     let mut cmd = Command::cargo_bin("cru").unwrap();
     // On Windows, set CRUCIBLE_CONFIG_DIR explicitly to the directory containing config.toml
@@ -240,12 +234,7 @@ streaming = false
         .stdout(predicate::str::contains("[acp]"))
         .stdout(predicate::str::contains("[chat]"));
 
-    // Cleanup
-    if let Some(home) = original_home {
-        env::set_var("HOME", home);
-    } else {
-        env::remove_var("HOME");
-    }
+
 }
 
 // ============================================================================
@@ -395,7 +384,7 @@ fn test_config_show_with_invalid_config_file() {
     // Write invalid TOML
     fs::write(&config_path, "this is not valid toml [[[").unwrap();
 
-    env::set_var("HOME", temp.path());
+    let _guard = EnvVarGuard::set("HOME", temp.path().to_string_lossy().to_string());
 
     let mut cmd = Command::cargo_bin("cru").unwrap();
     // Set CRUCIBLE_CONFIG_DIR explicitly
@@ -410,7 +399,7 @@ fn test_config_show_with_invalid_config_file() {
         .failure()
         .stderr(predicate::str::contains("Failed to parse config file"));
 
-    env::remove_var("HOME");
+
 }
 
 #[test]
@@ -437,7 +426,7 @@ default_agent = "partial-agent"
     fs::create_dir_all(default_config_path.parent().unwrap()).unwrap();
     fs::copy(&config_path, &default_config_path).unwrap();
 
-    env::set_var("HOME", temp.path());
+    let _guard = EnvVarGuard::set("HOME", temp.path().to_string_lossy().to_string());
 
     let mut cmd = Command::cargo_bin("cru").unwrap();
     // Set CRUCIBLE_CONFIG_DIR explicitly
@@ -452,7 +441,7 @@ default_agent = "partial-agent"
         .stdout(predicate::str::contains("[acp]"))
         .stdout(predicate::str::contains("[chat]"));
 
-    env::remove_var("HOME");
+
 }
 
 #[test]
@@ -534,7 +523,7 @@ fn test_config_show_performance() {
     // Ensure config lookup is isolated from the developer machine.
     //
     // `crucible-config` uses `dirs::config_dir()` which respects XDG_CONFIG_HOME on Unix.
-    env::set_var("XDG_CONFIG_HOME", &config_dir);
+    let _guard = EnvVarGuard::set("XDG_CONFIG_HOME", config_dir.to_string_lossy().to_string());
     let default_config_path = config_dir.join("crucible").join("config.toml");
     std::fs::create_dir_all(default_config_path.parent().unwrap()).unwrap();
     let kiln_path = temp.path().join("test-kiln");
@@ -559,7 +548,7 @@ fn test_config_show_performance() {
     // Config show should be fast (< 5 seconds for debug build)
     assert!(duration.as_millis() < 5000);
 
-    env::remove_var("XDG_CONFIG_HOME");
+
 }
 
 #[test]
@@ -604,7 +593,7 @@ kiln_path = "/vault{}"
 
     let config_dir = temp.path().join("config");
     fs::create_dir_all(&config_dir).unwrap();
-    env::set_var("XDG_CONFIG_HOME", &config_dir);
+    let _guard = EnvVarGuard::set("XDG_CONFIG_HOME", config_dir.to_string_lossy().to_string());
     let default_config_path = config_dir.join("crucible").join("config.toml");
     fs::create_dir_all(default_config_path.parent().unwrap()).unwrap();
     fs::copy(&config_path, &default_config_path).unwrap();
@@ -619,5 +608,5 @@ kiln_path = "/vault{}"
     // Should still be reasonably fast even with large config (debug build)
     assert!(duration.as_millis() < 5000);
 
-    env::remove_var("XDG_CONFIG_HOME");
+
 }

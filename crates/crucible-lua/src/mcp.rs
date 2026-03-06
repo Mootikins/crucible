@@ -370,6 +370,7 @@ pub fn register_mcp_module_stub(lua: &Lua) -> Result<(), LuaError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::TestLuaBuilder;
     use std::collections::HashMap;
     use std::sync::RwLock;
 
@@ -425,13 +426,9 @@ mod tests {
         }
     }
 
-    fn setup_lua() -> Lua {
-        Lua::new()
-    }
-
     #[test]
     fn test_register_mcp_module() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().build();
         let client = Arc::new(MockMcpClient::new());
 
         let result = register_mcp_module(&lua, client);
@@ -446,7 +443,7 @@ mod tests {
 
     #[test]
     fn test_list_tools_empty() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().build();
         let client = Arc::new(MockMcpClient::new());
         register_mcp_module(&lua, client).unwrap();
 
@@ -461,7 +458,7 @@ mod tests {
 
     #[test]
     fn test_list_tools_with_tools() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().build();
         let client = Arc::new(MockMcpClient::new());
 
         client.add_tool(
@@ -507,7 +504,7 @@ mod tests {
 
     #[test]
     fn test_call_tool_success() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().build();
         let client = Arc::new(MockMcpClient::new());
 
         client.add_tool(
@@ -534,7 +531,7 @@ mod tests {
 
     #[test]
     fn test_call_tool_error() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().build();
         let client = Arc::new(MockMcpClient::new());
 
         client.add_tool(
@@ -564,7 +561,7 @@ mod tests {
 
     #[test]
     fn test_call_tool_unknown() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().build();
         let client = Arc::new(MockMcpClient::new());
         register_mcp_module(&lua, client).unwrap();
 
@@ -579,7 +576,7 @@ mod tests {
 
     #[test]
     fn test_servers() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().build();
         let client = Arc::new(MockMcpClient::new());
 
         client.add_tool(
@@ -610,7 +607,7 @@ mod tests {
 
     #[test]
     fn test_has_tool() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().build();
         let client = Arc::new(MockMcpClient::new());
 
         client.add_tool(
@@ -639,7 +636,7 @@ mod tests {
 
     #[test]
     fn test_call_json() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().build();
         let client = Arc::new(MockMcpClient::new());
 
         client.add_tool(
@@ -666,7 +663,7 @@ mod tests {
 
     #[test]
     fn test_mcp_stub() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().build();
         register_mcp_module_stub(&lua).unwrap();
 
         // All operations should work but return empty/error results
@@ -692,7 +689,7 @@ mod tests {
 
     #[test]
     fn test_lua_integration_script() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().build();
         let client = Arc::new(MockMcpClient::new());
 
         client.add_tool(

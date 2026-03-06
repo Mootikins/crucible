@@ -267,13 +267,12 @@ impl OpenAIProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::test_helpers::create_test_embedding_config;
 
     fn create_test_config() -> EmbeddingConfig {
-        EmbeddingConfig::openai(
-            "sk-test-api-key-for-testing-only".to_string(),
-            Some("text-embedding-3-small".to_string()),
-        )
+        create_test_embedding_config()
     }
+
 
     #[test]
     fn test_provider_creation() {

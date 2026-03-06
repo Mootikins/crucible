@@ -448,7 +448,7 @@ mod tests {
 
     #[test]
     fn test_mode_component() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_statusline().build();
         let result: Table = lua
             .load(
                 r#"
@@ -467,7 +467,7 @@ mod tests {
 
     #[test]
     fn test_model_component() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_statusline().build();
         let result: Table = lua
             .load(
                 r#"
@@ -484,7 +484,7 @@ mod tests {
 
     #[test]
     fn test_context_component() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_statusline().build();
         let result: Table = lua
             .load(
                 r#"
@@ -500,7 +500,7 @@ mod tests {
 
     #[test]
     fn test_text_component() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_statusline().build();
         let result: Table = lua
             .load(
                 r#"
@@ -516,7 +516,7 @@ mod tests {
 
     #[test]
     fn test_spacer_component() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_statusline().build();
         let result: Table = lua.load("return statusline.spacer()").eval().unwrap();
 
         assert_eq!(result.get::<String>("type").unwrap(), "spacer");
@@ -524,7 +524,7 @@ mod tests {
 
     #[test]
     fn test_full_config() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_statusline().build();
         let config: Table = lua
             .load(
                 r#"
@@ -558,7 +558,7 @@ mod tests {
 
     #[test]
     fn test_default_statusline_config() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_statusline().build();
         let config: Table = lua
             .load(
                 r#"

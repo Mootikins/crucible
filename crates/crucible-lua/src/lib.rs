@@ -87,6 +87,9 @@ mod vault;
 mod views;
 mod ws;
 
+#[cfg(test)]
+pub(crate) mod test_support;
+
 pub mod config;
 pub mod theme;
 

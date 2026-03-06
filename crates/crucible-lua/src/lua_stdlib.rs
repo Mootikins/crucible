@@ -1255,7 +1255,7 @@ mod tests {
 
     #[test]
     fn test_emitter_on_emit() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         let result: i32 = lua
             .load(
                 r#"
@@ -1273,7 +1273,7 @@ mod tests {
 
     #[test]
     fn test_emitter_once() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         let result: i32 = lua
             .load(
                 r#"
@@ -1292,7 +1292,7 @@ mod tests {
 
     #[test]
     fn test_emitter_off() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         let result: i32 = lua
             .load(
                 r#"
@@ -1312,7 +1312,7 @@ mod tests {
 
     #[test]
     fn test_emitter_error_handling() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         // Handler errors should not propagate
         let result: i32 = lua
             .load(
@@ -1332,7 +1332,7 @@ mod tests {
 
     #[test]
     fn test_retry_succeeds() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         let result: (String, i32) = lua
             .load(
                 r#"
@@ -1353,7 +1353,7 @@ mod tests {
 
     #[test]
     fn test_retry_exhausted() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         let result = lua
             .load(
                 r#"
@@ -1368,7 +1368,7 @@ mod tests {
 
     #[test]
     fn test_retry_non_retryable() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         let result: i32 = lua
             .load(
                 r#"
@@ -1391,7 +1391,7 @@ mod tests {
 
     #[test]
     fn test_check_string() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         // Valid
         lua.load(r#"cru.check.string("hello", "name")"#)
             .exec()
@@ -1411,7 +1411,7 @@ mod tests {
 
     #[test]
     fn test_check_number_with_range() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         lua.load(r#"cru.check.number(5, "count", { min = 1, max = 10 })"#)
             .exec()
             .unwrap();
@@ -1427,7 +1427,7 @@ mod tests {
 
     #[test]
     fn test_check_one_of() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         lua.load(r#"cru.check.one_of("json", {"json", "text"}, "format")"#)
             .exec()
             .unwrap();
@@ -1439,7 +1439,7 @@ mod tests {
 
     #[test]
     fn test_check_table() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         lua.load(r#"cru.check.table({}, "opts")"#).exec().unwrap();
         assert!(lua
             .load(r#"cru.check.table("string", "opts")"#)
@@ -1449,7 +1449,7 @@ mod tests {
 
     #[test]
     fn test_check_modules_exist() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         let cru: Table = lua.globals().get("cru").unwrap();
 
         assert!(cru.get::<Table>("emitter").is_ok());
@@ -1463,7 +1463,7 @@ mod tests {
 
     #[test]
     fn test_emitter_preserves_registration_order() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         let result: String = lua
             .load(
                 r#"
@@ -1483,7 +1483,7 @@ mod tests {
 
     #[test]
     fn test_emitter_count() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         let result: (i32, i32, i32) = lua
             .load(
                 r#"
@@ -1507,7 +1507,7 @@ mod tests {
 
     #[test]
     fn test_emitter_count_excludes_removed() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         let result: i32 = lua
             .load(
                 r#"
@@ -1525,7 +1525,7 @@ mod tests {
 
     #[test]
     fn test_emitter_emit_async_fires_listeners() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         let result: i32 = lua
             .load(
                 r#"
@@ -1543,7 +1543,7 @@ mod tests {
 
     #[test]
     fn test_emitter_emit_async_swallows_errors() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         // emit_async should not propagate handler errors
         let result: i32 = lua
             .load(
@@ -1563,7 +1563,7 @@ mod tests {
 
     #[test]
     fn test_emitter_global_returns_same_instance() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         let result: bool = lua
             .load(
                 r#"
@@ -1579,7 +1579,7 @@ mod tests {
 
     #[test]
     fn test_emitter_global_is_functional() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         let result: i32 = lua
             .load(
                 r#"
@@ -1598,7 +1598,7 @@ mod tests {
 
     #[test]
     fn test_emitter_global_independent_from_new() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         let result: (i32, i32) = lua
             .load(
                 r#"
@@ -1620,7 +1620,7 @@ mod tests {
 
     #[test]
     fn test_emitter_count_after_once_fires() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         let result: (i32, i32) = lua
             .load(
                 r#"
@@ -1671,7 +1671,7 @@ mod tests {
 
     #[test]
     fn test_service_define_returns_descriptor() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         let result: (String, bool) = lua
             .load(
                 r#"
@@ -1692,7 +1692,7 @@ mod tests {
 
     #[test]
     fn test_service_define_validates_required_fields() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         // Missing start fn
         assert!(lua
             .load(r#"cru.service.define({ name = "x", desc = "x" })"#)
@@ -1707,7 +1707,7 @@ mod tests {
 
     #[test]
     fn test_service_list_and_status() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         let (count, name, running): (i32, String, bool) = lua
             .load(
                 r#"
@@ -1731,7 +1731,7 @@ mod tests {
 
     #[test]
     fn test_service_stop() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         let stopped: bool = lua
             .load(
                 r#"
@@ -1753,7 +1753,7 @@ mod tests {
 
     #[test]
     fn test_service_config_resolution() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_stdlib().build();
         // Mock crucible.config.get to return nil (no config file)
         lua.load(
             r#"

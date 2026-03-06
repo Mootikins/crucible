@@ -639,6 +639,7 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+    use crucible_core::test_support::EnvVarGuard;
 
     #[test]
     fn test_include_config_empty() {
@@ -1087,7 +1088,7 @@ api_key = "{file:~/.secrets/test.key}"
         let temp = TempDir::new().unwrap();
 
         // Set an env var for testing
-        std::env::set_var("CRUCIBLE_TEST_API_KEY", "sk-test-key-12345");
+        let _guard = EnvVarGuard::set("CRUCIBLE_TEST_API_KEY", "sk-test-key-12345".to_string());
 
         let config_content = r#"
 [embedding]
@@ -1106,7 +1107,7 @@ api_key = "{env:CRUCIBLE_TEST_API_KEY}"
         );
 
         // Cleanup
-        std::env::remove_var("CRUCIBLE_TEST_API_KEY");
+
     }
 
     #[test]
@@ -1133,8 +1134,8 @@ api_key = "{env:CRUCIBLE_NONEXISTENT_VAR_12345}"
     fn test_env_ref_in_array() {
         let temp = TempDir::new().unwrap();
 
-        std::env::set_var("CRUCIBLE_TEST_PATH1", "/opt/tools");
-        std::env::set_var("CRUCIBLE_TEST_PATH2", "/usr/local/tools");
+        let _guard1 = EnvVarGuard::set("CRUCIBLE_TEST_PATH1", "/opt/tools".to_string());
+        let _guard2 = EnvVarGuard::set("CRUCIBLE_TEST_PATH2", "/usr/local/tools".to_string());
 
         let config_content = r#"
 extra_paths = ["{env:CRUCIBLE_TEST_PATH1}", "{env:CRUCIBLE_TEST_PATH2}", "/static/path"]
@@ -1150,8 +1151,7 @@ extra_paths = ["{env:CRUCIBLE_TEST_PATH1}", "{env:CRUCIBLE_TEST_PATH2}", "/stati
         assert_eq!(paths[2].as_str().unwrap(), "/static/path");
 
         // Cleanup
-        std::env::remove_var("CRUCIBLE_TEST_PATH1");
-        std::env::remove_var("CRUCIBLE_TEST_PATH2");
+
     }
 
     #[test]
@@ -1162,7 +1162,7 @@ extra_paths = ["{env:CRUCIBLE_TEST_PATH1}", "{env:CRUCIBLE_TEST_PATH2}", "/stati
         fs::write(temp.path().join("model.txt"), "gpt-4").unwrap();
 
         // Set an env var
-        std::env::set_var("CRUCIBLE_TEST_MIXED_KEY", "sk-mixed-key");
+        let _guard = EnvVarGuard::set("CRUCIBLE_TEST_MIXED_KEY", "sk-mixed-key".to_string());
 
         let config_content = r#"
 [embedding]
@@ -1183,7 +1183,7 @@ model = "{file:model.txt}"
         assert_eq!(embedding.get("model").unwrap().as_str().unwrap(), "gpt-4");
 
         // Cleanup
-        std::env::remove_var("CRUCIBLE_TEST_MIXED_KEY");
+
     }
 
     // ========================================================================
@@ -1378,7 +1378,7 @@ settings = "{dir:nonexistent.d}"
         let temp = TempDir::new().unwrap();
 
         // Set up env var for nested ref
-        std::env::set_var("CRUCIBLE_TEST_DIR_KEY", "nested-secret");
+        let _guard = EnvVarGuard::set("CRUCIBLE_TEST_DIR_KEY", "nested-secret".to_string());
 
         let conf_dir = temp.path().join("conf.d");
         fs::create_dir(&conf_dir).unwrap();
@@ -1406,7 +1406,7 @@ settings = "{dir:conf.d}"
             Some("nested-secret")
         );
 
-        std::env::remove_var("CRUCIBLE_TEST_DIR_KEY");
+
     }
 
     #[test]

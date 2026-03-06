@@ -443,7 +443,7 @@ mod tests {
 
     #[test]
     fn test_oq_parse_json() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: Table = lua
             .load(r#"return oq.parse('{"name": "Alice", "age": 30}')"#)
             .eval()
@@ -455,7 +455,7 @@ mod tests {
 
     #[test]
     fn test_oq_parse_array() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: Table = lua.load(r#"return oq.parse('[1, 2, 3]')"#).eval().unwrap();
 
         assert_eq!(result.get::<i64>(1).unwrap(), 1);
@@ -465,7 +465,7 @@ mod tests {
 
     #[test]
     fn test_oq_json_encoding() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: String = lua
             .load(r#"return oq.json({ name = "Bob", age = 25 })"#)
             .eval()
@@ -478,7 +478,7 @@ mod tests {
 
     #[test]
     fn test_oq_json_pretty() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: String = lua
             .load(r#"return oq.json_pretty({ name = "Alice" })"#)
             .eval()
@@ -490,7 +490,7 @@ mod tests {
 
     #[test]
     fn test_oq_roundtrip() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: bool = lua
             .load(
                 r#"
@@ -508,7 +508,7 @@ mod tests {
 
     #[test]
     fn test_oq_parse_toon() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: Table = lua
             .load(
                 r#"return oq.parse([[
@@ -525,7 +525,7 @@ age: 30
 
     #[test]
     fn test_oq_toon_encoding() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: String = lua
             .load(r#"return oq.toon({ name = "Bob", age = 25 })"#)
             .eval()
@@ -537,7 +537,7 @@ age: 30
 
     #[test]
     fn test_oq_query_single() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: String = lua
             .load(
                 r#"
@@ -553,7 +553,7 @@ age: 30
 
     #[test]
     fn test_oq_query_array_access() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: i64 = lua
             .load(
                 r#"
@@ -569,7 +569,7 @@ age: 30
 
     #[test]
     fn test_oq_query_iterate() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: Table = lua
             .load(
                 r#"
@@ -589,7 +589,7 @@ age: 30
 
     #[test]
     fn test_oq_query_nested() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: i64 = lua
             .load(
                 r#"
@@ -605,7 +605,7 @@ age: 30
 
     #[test]
     fn test_oq_format() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: String = lua
             .load(
                 r#"
@@ -622,7 +622,7 @@ age: 30
 
     #[test]
     fn test_oq_format_with_tool_type() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: String = lua
             .load(
                 r#"
@@ -638,7 +638,7 @@ age: 30
 
     #[test]
     fn test_oq_null() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: String = lua
             .load(r#"return oq.json({ value = oq.null })"#)
             .eval()
@@ -654,7 +654,7 @@ age: 30
 
     #[test]
     fn test_oq_parse_yaml() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: Table = lua
             .load(
                 r#"return oq.parse_as([[
@@ -671,7 +671,7 @@ age: 30
 
     #[test]
     fn test_oq_parse_yaml_with_list() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: Table = lua
             .load(
                 r#"return oq.parse_as([[
@@ -692,7 +692,7 @@ items:
 
     #[test]
     fn test_oq_yaml_encoding() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: String = lua
             .load(r#"return oq.yaml({ name = "Bob", age = 25 })"#)
             .eval()
@@ -706,7 +706,7 @@ items:
 
     #[test]
     fn test_oq_yaml_nested() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: Table = lua
             .load(
                 r#"return oq.parse_as([[
@@ -731,7 +731,7 @@ user:
 
     #[test]
     fn test_oq_parse_toml() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: Table = lua
             .load(
                 r#"return oq.parse_as([[
@@ -748,7 +748,7 @@ age = 30
 
     #[test]
     fn test_oq_parse_toml_with_section() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: Table = lua
             .load(
                 r#"return oq.parse_as([[
@@ -773,7 +773,7 @@ serde = "1.0"
 
     #[test]
     fn test_oq_toml_encoding() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: String = lua
             .load(r#"return oq.toml({ name = "Bob", age = 25 })"#)
             .eval()
@@ -816,7 +816,7 @@ serde = "1.0"
 
     #[test]
     fn test_oq_detect_function() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
 
         let json: String = lua.load(r#"return oq.detect('{"x": 1}')"#).eval().unwrap();
         assert_eq!(json, "json");
@@ -839,7 +839,7 @@ name = "test"
 
     #[test]
     fn test_oq_convert_to_yaml() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: String = lua
             .load(
                 r#"
@@ -856,7 +856,7 @@ name = "test"
 
     #[test]
     fn test_oq_convert_to_toml() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: String = lua
             .load(
                 r#"
@@ -873,7 +873,7 @@ name = "test"
 
     #[test]
     fn test_oq_roundtrip_yaml() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: bool = lua
             .load(
                 r#"
@@ -891,7 +891,7 @@ name = "test"
 
     #[test]
     fn test_oq_roundtrip_toml() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: bool = lua
             .load(
                 r#"
@@ -909,7 +909,7 @@ name = "test"
 
     #[test]
     fn test_oq_cross_format_conversion() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_json_query().build();
         let result: bool = lua
             .load(
                 r#"

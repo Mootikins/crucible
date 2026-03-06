@@ -99,6 +99,7 @@ fn from_env_var() -> Option<PathBuf> {
 mod tests {
     use super::*;
     use serial_test::serial;
+    use crucible_core::test_support::EnvVarGuard;
     use tempfile::TempDir;
 
     fn make_kiln(dir: &Path) {
@@ -135,9 +136,9 @@ mod tests {
         let kiln_path = tmp.path().join("env-kiln");
         make_kiln(&kiln_path);
 
-        std::env::set_var(CRUCIBLE_KILN_ENV, kiln_path.to_str().unwrap());
+        let _guard = EnvVarGuard::set(CRUCIBLE_KILN_ENV, kiln_path.to_str().unwrap().to_string());
         let result = from_env_var();
-        std::env::remove_var(CRUCIBLE_KILN_ENV);
+
 
         assert_eq!(result, Some(kiln_path));
     }
@@ -149,9 +150,9 @@ mod tests {
         let kiln_path = tmp.path().join("no-crucible");
         std::fs::create_dir_all(&kiln_path).unwrap();
 
-        std::env::set_var(CRUCIBLE_KILN_ENV, kiln_path.to_str().unwrap());
+        let _guard = EnvVarGuard::set(CRUCIBLE_KILN_ENV, kiln_path.to_str().unwrap().to_string());
         let result = from_env_var();
-        std::env::remove_var(CRUCIBLE_KILN_ENV);
+
 
         assert!(result.is_none());
     }
@@ -166,7 +167,7 @@ mod tests {
         // Move CWD to a dir without .crucible so ancestor walk won't match
         let original_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path().join("config-kiln")).unwrap();
-        std::env::remove_var(CRUCIBLE_KILN_ENV);
+        let _guard = EnvVarGuard::remove(CRUCIBLE_KILN_ENV);
 
         let result = discover_kiln(None, Some(&kiln_path));
 
@@ -192,7 +193,7 @@ mod tests {
 
         let original_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(&bare_cwd).unwrap();
-        std::env::remove_var(CRUCIBLE_KILN_ENV);
+        let _guard = EnvVarGuard::remove(CRUCIBLE_KILN_ENV);
 
         let result = discover_kiln(None, Some(&kiln_path));
 
@@ -215,7 +216,7 @@ mod tests {
 
         let original_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(&bare_cwd).unwrap();
-        std::env::remove_var(CRUCIBLE_KILN_ENV);
+        let _guard = EnvVarGuard::remove(CRUCIBLE_KILN_ENV);
 
         let result = discover_kiln(None, Some(&kiln_path));
 
@@ -227,7 +228,7 @@ mod tests {
     #[test]
     #[serial]
     fn returns_none_when_nothing_found() {
-        std::env::remove_var(CRUCIBLE_KILN_ENV);
+        let _guard = EnvVarGuard::remove(CRUCIBLE_KILN_ENV);
         let result = discover_kiln(None, None);
         // May or may not find something depending on test environment (CWD may have .crucible)
         // Just verify it doesn't panic
