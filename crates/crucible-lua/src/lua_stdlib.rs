@@ -810,7 +810,14 @@ do
             if entry then
                 local fn = get_fn(entry)
                 if fn then
-                    pcall(fn, ...)
+                    local ok, err = pcall(fn, ...)
+                    if not ok then
+                        cru.log("warn", "emitter handler error on '" .. event .. "': " .. tostring(err))
+                        if cru.errors and cru.errors._capture then
+                            local owner = (type(entry) == 'table' and entry.owner) or "unknown"
+                            cru.errors._capture(owner, tostring(err), "emitter:emit_async('" .. tostring(event) .. "')")
+                        end
+                    end
                 end
             end
         end

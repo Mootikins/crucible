@@ -498,6 +498,7 @@ impl PluginManager {
             r#"local _e = cru.emitter.global(); if _e.unregister_owner then _e:unregister_owner({name:?}) end"#
         )).exec() {
             warn!("Failed to clean up global emitter for {}: {}", name, e);
+            self.capture_plugin_error(name, &e, "unload:emitter_cleanup");
         }
 
         let dir_prefix = plugin_dir.to_string_lossy();
@@ -515,7 +516,6 @@ impl PluginManager {
             .get_mut(name)
             .ok_or_else(|| LifecycleError::NotFound(name.to_string()))?;
         plugin.state = PluginState::Discovered;
-        plugin.state = PluginState::Discovered;
         self.on_load_hooks.remove(name);
         info!("Unloaded plugin: {}", name);
 
@@ -527,7 +527,6 @@ impl PluginManager {
     }
 
     pub fn reload_plugin(&mut self, name: &str) -> LifecycleResult<()> {
-        self.call_on_unload_hook(name);
         self.unload(name)?;
         self.clear_plugin_modules(name)?;
 
