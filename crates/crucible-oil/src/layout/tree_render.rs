@@ -10,6 +10,7 @@
 //! at computed coordinates, then converts the buffer to an ANSI string.
 
 use crate::ansi::apply_style;
+use crate::utils::visible_width;
 use crate::cell_grid::CellGrid;
 
 use crate::render::CursorInfo;
@@ -132,9 +133,7 @@ fn render_box_filtered<F>(
         } => {
             render_input(
                 value,
-                *cursor,
                 placeholder.as_deref(),
-                *focused,
                 style,
                 x,
                 y,
@@ -143,7 +142,8 @@ fn render_box_filtered<F>(
 
             if *focused {
                 let cursor_char_pos = (*cursor).min(value.chars().count());
-                let cursor_col = value.chars().take(cursor_char_pos).count() as u16;
+                let cursor_col = visible_width(&value[..value.char_indices().nth(cursor_char_pos).map(|(i, _)| i).unwrap_or(value.len())]) as u16;
+
                 *cursor_position = Some((layout_box.rect.x + cursor_col, layout_box.rect.y));
             }
         }
@@ -226,9 +226,7 @@ fn render_text(
 #[allow(clippy::too_many_arguments)]
 fn render_input(
     value: &str,
-    _cursor: usize,
     placeholder: Option<&str>,
-    _focused: bool,
     style: &Style,
     x: usize,
     y: usize,
