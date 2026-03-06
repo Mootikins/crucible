@@ -525,18 +525,24 @@ mod tests {
 
     struct EnvGuard {
         key: &'static str,
+        old: Option<String>,
     }
 
     impl EnvGuard {
         fn new(key: &'static str, value: &str) -> Self {
+            let old = std::env::var(key).ok();
             std::env::set_var(key, value);
-            EnvGuard { key }
+            EnvGuard { key, old }
         }
     }
 
     impl Drop for EnvGuard {
         fn drop(&mut self) {
-            std::env::remove_var(self.key);
+            if let Some(old) = self.old.clone() {
+                std::env::set_var(self.key, old);
+            } else {
+                std::env::remove_var(self.key);
+            }
         }
     }
 
