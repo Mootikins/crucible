@@ -75,9 +75,7 @@ pub use config::{
 pub use error::{Error, Result};
 pub use events::{EventFilter, EventMetadata, FileEvent, FileEventKind};
 pub use file_scanner::{FileScanner, ScanStatistics, WatchConfig, WatchResult};
-pub use handlers::{
-    CompositeHandler, HandlerRegistry, IndexingHandler, ParserHandler,
-};
+pub use handlers::{CompositeHandler, HandlerRegistry, IndexingHandler, ParserHandler};
 pub use manager::WatchManager;
 
 pub use traits::{

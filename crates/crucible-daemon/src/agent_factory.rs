@@ -9,6 +9,8 @@ use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
 use crate::protocol::SessionEventMessage;
 use crate::provider::adapter_mapping::ChatClient;
 use crate::provider::genai_handle::GenaiAgentHandle;
+use crate::tools::mcp_server::CrucibleMcpServer;
+use crate::tools::DelegationContext;
 use crucible_acp::client::PermissionRequestHandler;
 use crucible_config::credentials::resolve_copilot_oauth_token;
 use crucible_config::{BackendType, DataClassification, LlmProviderConfig};
@@ -21,8 +23,6 @@ use crucible_core::traits::llm::LlmToolDefinition;
 use crucible_core::traits::mcp::McpToolInfo;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_lua::auth_plugin::{fire_provider_auth_hooks, get_provider_auth_hooks};
-use crate::tools::mcp_server::CrucibleMcpServer;
-use crate::tools::DelegationContext;
 use mlua::Lua;
 use std::path::Path;
 use std::sync::Arc;
@@ -34,8 +34,7 @@ use tracing::{debug, info, warn};
 pub struct CreateInternalMcpToolDefsParams<'a> {
     pub workspace: &'a Path,
     pub kiln_path: Option<&'a Path>,
-    pub mcp_gateway:
-        Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
+    pub mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     pub server_names: &'a [String],
     pub knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
     pub embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
@@ -53,8 +52,7 @@ pub struct CreateAgentFromSessionConfigParams<'a> {
     pub parent_session_id: Option<&'a str>,
     pub background_spawner: Option<Arc<dyn BackgroundSpawner>>,
     pub event_tx: &'a broadcast::Sender<SessionEventMessage>,
-    pub mcp_gateway:
-        Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
+    pub mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     pub acp_permission_handler: Option<PermissionRequestHandler>,
     pub acp_config: Option<&'a crucible_config::components::acp::AcpConfig>,
     pub knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
@@ -948,12 +946,30 @@ mod tests {
         let tool_names: Vec<String> = tools.iter().map(|t| t.function.name.clone()).collect();
 
         // These assertions FAIL because workspace tools are not yet included
-        assert!(tool_names.iter().any(|name| name == "bash"), "bash tool should be in agent tool defs");
-        assert!(tool_names.iter().any(|name| name == "read_file"), "read_file tool should be in agent tool defs");
-        assert!(tool_names.iter().any(|name| name == "edit_file"), "edit_file tool should be in agent tool defs");
-        assert!(tool_names.iter().any(|name| name == "write_file"), "write_file tool should be in agent tool defs");
-        assert!(tool_names.iter().any(|name| name == "glob"), "glob tool should be in agent tool defs");
-        assert!(tool_names.iter().any(|name| name == "grep"), "grep tool should be in agent tool defs");
+        assert!(
+            tool_names.iter().any(|name| name == "bash"),
+            "bash tool should be in agent tool defs"
+        );
+        assert!(
+            tool_names.iter().any(|name| name == "read_file"),
+            "read_file tool should be in agent tool defs"
+        );
+        assert!(
+            tool_names.iter().any(|name| name == "edit_file"),
+            "edit_file tool should be in agent tool defs"
+        );
+        assert!(
+            tool_names.iter().any(|name| name == "write_file"),
+            "write_file tool should be in agent tool defs"
+        );
+        assert!(
+            tool_names.iter().any(|name| name == "glob"),
+            "glob tool should be in agent tool defs"
+        );
+        assert!(
+            tool_names.iter().any(|name| name == "grep"),
+            "grep tool should be in agent tool defs"
+        );
     }
 
     #[test]
@@ -962,10 +978,19 @@ mod tests {
 
         // These assertions test the current state of is_safe()
         // Some may FAIL if is_safe() doesn't have these tool names yet
-        assert!(!is_safe("bash"), "bash should be unsafe (runs arbitrary commands)");
+        assert!(
+            !is_safe("bash"),
+            "bash should be unsafe (runs arbitrary commands)"
+        );
         assert!(is_safe("read_file"), "read_file should be safe (read-only)");
-        assert!(!is_safe("write_file"), "write_file should be unsafe (modifies files)");
-        assert!(!is_safe("edit_file"), "edit_file should be unsafe (modifies files)");
+        assert!(
+            !is_safe("write_file"),
+            "write_file should be unsafe (modifies files)"
+        );
+        assert!(
+            !is_safe("edit_file"),
+            "edit_file should be unsafe (modifies files)"
+        );
         assert!(is_safe("glob"), "glob should be safe (read-only)");
         assert!(is_safe("grep"), "grep should be safe (read-only)");
     }

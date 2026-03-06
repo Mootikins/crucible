@@ -287,21 +287,19 @@ fn render_assistant_blocks_with_graduation(
             // Thinking is visible, show plain spinner below it
             row([
                 text(" "),
-                spinner(None, render_state.spinner_frame)
-                    .with_style({
-                        let t = crate::tui::oil::theme::active();
-                        Style::new().fg(t.resolve_color(t.colors.text))
-                    }),
+                spinner(None, render_state.spinner_frame).with_style({
+                    let t = crate::tui::oil::theme::active();
+                    Style::new().fg(t.resolve_color(t.colors.text))
+                }),
             ])
         } else {
             // No content at all yet — show spinner as the only indicator
             row([
                 text(" "),
-                spinner(None, render_state.spinner_frame)
-                    .with_style({
-                        let t = crate::tui::oil::theme::active();
-                        Style::new().fg(t.resolve_color(t.colors.text))
-                    }),
+                spinner(None, render_state.spinner_frame).with_style({
+                    let t = crate::tui::oil::theme::active();
+                    Style::new().fg(t.resolve_color(t.colors.text))
+                }),
             ])
         };
         nodes.push(spinner_node.with_margin(Padding {
@@ -354,11 +352,10 @@ fn render_assistant_blocks_with_graduation(
     if !params.complete && !params.blocks.is_empty() {
         nodes.push(row([
             text(" "),
-            spinner(None, render_state.spinner_frame)
-                .with_style({
-                    let t = crate::tui::oil::theme::active();
-                    Style::new().fg(t.resolve_color(t.colors.text))
-                }),
+            spinner(None, render_state.spinner_frame).with_style({
+                let t = crate::tui::oil::theme::active();
+                Style::new().fg(t.resolve_color(t.colors.text))
+            }),
         ]))
     }
 
@@ -388,7 +385,9 @@ fn render_system_message(content: &str) -> Node {
 
     styled(
         format!(" * {} ", content),
-        Style::new().fg(t.resolve_color(t.colors.system_message)).italic(),
+        Style::new()
+            .fg(t.resolve_color(t.colors.system_message))
+            .italic(),
     )
     .with_margin(Padding {
         top: 1,

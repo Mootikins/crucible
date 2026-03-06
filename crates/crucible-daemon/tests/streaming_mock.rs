@@ -11,10 +11,10 @@ use crucible_core::traits::chat::{
 use crucible_core::traits::ChatResult;
 use crucible_daemon::background_manager::BackgroundJobManager;
 use crucible_daemon::protocol::SessionEventMessage;
+use crucible_daemon::tools::workspace::WorkspaceTools;
 use crucible_daemon::{
     AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager,
 };
-use crucible_daemon::tools::workspace::WorkspaceTools;
 use futures::stream::{self, BoxStream};
 use futures::StreamExt;
 use std::sync::Arc;
@@ -50,7 +50,10 @@ impl StreamingMockAgent {
             })
             .collect();
 
-        Self { chunks, hanging: false }
+        Self {
+            chunks,
+            hanging: false,
+        }
     }
 
     /// Create a mock agent with thinking/reasoning followed by response text
@@ -82,7 +85,10 @@ impl StreamingMockAgent {
             },
         ];
 
-        Self { chunks, hanging: false }
+        Self {
+            chunks,
+            hanging: false,
+        }
     }
 
     /// Create a mock agent that calls a tool, receives a result, then responds
@@ -141,7 +147,10 @@ impl StreamingMockAgent {
             },
         ];
 
-        Self { chunks, hanging: false }
+        Self {
+            chunks,
+            hanging: false,
+        }
     }
 
     /// Create a mock agent with subagent lifecycle events
@@ -173,7 +182,10 @@ impl StreamingMockAgent {
             },
         ];
 
-        Self { chunks, hanging: false }
+        Self {
+            chunks,
+            hanging: false,
+        }
     }
 
     /// Create a mock agent that yields nothing (single empty done chunk)
@@ -190,7 +202,10 @@ impl StreamingMockAgent {
             precognition_notes: None,
         }];
 
-        Self { chunks, hanging: false }
+        Self {
+            chunks,
+            hanging: false,
+        }
     }
 
     /// Create a mock agent that never completes (blocks forever on next())
@@ -198,7 +213,10 @@ impl StreamingMockAgent {
     /// Simulates a stream that hangs indefinitely — useful for timeout testing.
     pub fn hanging() -> Self {
         let chunks: Vec<ChatChunk> = vec![];
-        Self { chunks, hanging: true }
+        Self {
+            chunks,
+            hanging: true,
+        }
     }
 
     /// Create a mock agent that yields only a done chunk with empty delta
@@ -218,7 +236,10 @@ impl StreamingMockAgent {
             precognition_notes: None,
         }];
 
-        Self { chunks, hanging: false }
+        Self {
+            chunks,
+            hanging: false,
+        }
     }
 }
 

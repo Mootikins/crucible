@@ -76,8 +76,14 @@ impl InputArea {
         let prompt = style.prompt();
         let bg = style.bg_color();
 
-        let top_edge = styled(self.border_top.to_string().repeat(self.width), Style::new().fg(bg));
-        let bottom_edge = styled(self.border_bottom.to_string().repeat(self.width), Style::new().fg(bg));
+        let top_edge = styled(
+            self.border_top.to_string().repeat(self.width),
+            Style::new().fg(bg),
+        );
+        let bottom_edge = styled(
+            self.border_bottom.to_string().repeat(self.width),
+            Style::new().fg(bg),
+        );
 
         let display_content = style.display_content(&self.content);
         let display_cursor = style.display_cursor(self.cursor);

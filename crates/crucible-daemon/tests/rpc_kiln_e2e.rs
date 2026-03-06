@@ -209,7 +209,10 @@ async fn test_list_notes_returns_seeded_notes() {
 
     assert_eq!(notes.len(), 3, "Should return all 3 seeded notes");
 
-    let names: Vec<&str> = notes.iter().map(|(name, _, _, _, _)| name.as_str()).collect();
+    let names: Vec<&str> = notes
+        .iter()
+        .map(|(name, _, _, _, _)| name.as_str())
+        .collect();
     assert!(names.contains(&"daily"), "Should contain 'daily' note");
     assert!(
         names.contains(&"rust-project"),
@@ -292,7 +295,10 @@ async fn test_kiln_lifecycle_open_query_close() {
         .await
         .expect("list_notes with filter failed");
     assert_eq!(notes.len(), 1, "Filter should match one note");
-    assert_eq!(notes[0].0, "rust-project", "Filtered note should be rust-project");
+    assert_eq!(
+        notes[0].0, "rust-project",
+        "Filtered note should be rust-project"
+    );
 
     // get_note_by_name for the found note
     let note = client

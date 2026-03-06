@@ -720,7 +720,10 @@ mod tests {
         let result = config.all_provider_models();
         // Both providers return empty without available_models (no hardcoded fallback)
         for (_key, models) in &result {
-            assert!(models.is_empty(), "Without available_models, effective_models should return empty");
+            assert!(
+                models.is_empty(),
+                "Without available_models, effective_models should return empty"
+            );
         }
     }
 
@@ -806,7 +809,10 @@ mod tests {
         };
 
         let models = config.effective_models();
-        assert!(models.is_empty(), "Without available_models, ZAI should return empty");
+        assert!(
+            models.is_empty(),
+            "Without available_models, ZAI should return empty"
+        );
     }
 
     #[test]
@@ -950,7 +956,12 @@ default_model = "gpt-4"
     #[test]
     fn effective_models_empty_without_available_models() {
         // All providers return empty when no available_models configured
-        for backend in [BackendType::Anthropic, BackendType::OpenAI, BackendType::ZAI, BackendType::Ollama] {
+        for backend in [
+            BackendType::Anthropic,
+            BackendType::OpenAI,
+            BackendType::ZAI,
+            BackendType::Ollama,
+        ] {
             let config = LlmProviderConfig::builder(backend).build();
             assert!(
                 config.effective_models().is_empty(),

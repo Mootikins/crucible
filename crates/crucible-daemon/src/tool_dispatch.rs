@@ -59,7 +59,9 @@ impl McpToolExecutor {
         Self { server }
     }
 
-    fn convert_call_tool_result(result: rmcp::model::CallToolResult) -> ToolResult<serde_json::Value> {
+    fn convert_call_tool_result(
+        result: rmcp::model::CallToolResult,
+    ) -> ToolResult<serde_json::Value> {
         let mut values = Vec::new();
         let mut text_parts = Vec::new();
 
@@ -112,8 +114,16 @@ impl ToolExecutor for McpToolExecutor {
         _context: &ExecutionContext,
     ) -> ToolResult<serde_json::Value> {
         let result = match name {
-            "create_note" => self.server.create_note(Self::parse_params::<CreateNoteParams>(params)?).await,
-            "read_note" => self.server.read_note(Self::parse_params::<ReadNoteParams>(params)?).await,
+            "create_note" => {
+                self.server
+                    .create_note(Self::parse_params::<CreateNoteParams>(params)?)
+                    .await
+            }
+            "read_note" => {
+                self.server
+                    .read_note(Self::parse_params::<ReadNoteParams>(params)?)
+                    .await
+            }
             "read_metadata" => {
                 self.server
                     .read_metadata(Self::parse_params::<ReadMetadataParams>(params)?)
@@ -155,7 +165,11 @@ impl ToolExecutor for McpToolExecutor {
                     .delegate_session(Self::parse_params::<DelegateSessionParams>(params)?)
                     .await
             }
-            "list_jobs" => self.server.list_jobs(Self::parse_params::<ListJobsParams>(params)?).await,
+            "list_jobs" => {
+                self.server
+                    .list_jobs(Self::parse_params::<ListJobsParams>(params)?)
+                    .await
+            }
             "get_job_result" => {
                 self.server
                     .get_job_result(Self::parse_params::<GetJobResultParams>(params)?)
@@ -236,7 +250,8 @@ mod tests {
 
     fn test_dispatcher_with_mcp() -> (TempDir, DaemonToolDispatcher) {
         let temp = TempDir::new().expect("tempdir");
-        std::fs::write(temp.path().join("test.md"), "hello world\nsearch test\n").expect("seed note");
+        std::fs::write(temp.path().join("test.md"), "hello world\nsearch test\n")
+            .expect("seed note");
 
         let mcp_server = Arc::new(CrucibleMcpServer::new(
             temp.path().display().to_string(),
@@ -340,7 +355,10 @@ mod tests {
             .dispatch_tool("glob", json!({ "pattern": "**/*.md" }))
             .await;
 
-        assert!(result.is_ok(), "workspace tool should still dispatch: {result:?}");
+        assert!(
+            result.is_ok(),
+            "workspace tool should still dispatch: {result:?}"
+        );
     }
 
     #[tokio::test]
@@ -358,8 +376,8 @@ mod tests {
         let ctx = ExecutionContext::default();
 
         // Get all tools from list_tools()
-        let tools = futures::executor::block_on(executor.list_tools())
-            .expect("list_tools should succeed");
+        let tools =
+            futures::executor::block_on(executor.list_tools()).expect("list_tools should succeed");
 
         // For each tool, verify it has a match arm in execute_tool()
         for tool in tools {

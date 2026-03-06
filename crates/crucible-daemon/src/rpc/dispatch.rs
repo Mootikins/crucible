@@ -133,19 +133,37 @@ impl RpcDispatcher {
             "session.set_title" => to_response(id, self.handle_set_title(&req).await),
 
             // Config get/set handlers
-            "session.set_thinking_budget" => to_response(id, self.handle_session_set_thinking_budget(&req).await),
-            "session.get_thinking_budget" => to_response(id, self.handle_session_get_thinking_budget(&req).await),
-            "session.set_temperature" => to_response(id, self.handle_session_set_temperature(&req).await),
-            "session.get_temperature" => to_response(id, self.handle_session_get_temperature(&req).await),
-            "session.set_max_tokens" => to_response(id, self.handle_session_set_max_tokens(&req).await),
-            "session.get_max_tokens" => to_response(id, self.handle_session_get_max_tokens(&req).await),
-            "session.set_precognition" => to_response(id, self.handle_session_set_precognition(&req).await),
-            "session.get_precognition" => to_response(id, self.handle_session_get_precognition(&req).await),
+            "session.set_thinking_budget" => {
+                to_response(id, self.handle_session_set_thinking_budget(&req).await)
+            }
+            "session.get_thinking_budget" => {
+                to_response(id, self.handle_session_get_thinking_budget(&req).await)
+            }
+            "session.set_temperature" => {
+                to_response(id, self.handle_session_set_temperature(&req).await)
+            }
+            "session.get_temperature" => {
+                to_response(id, self.handle_session_get_temperature(&req).await)
+            }
+            "session.set_max_tokens" => {
+                to_response(id, self.handle_session_set_max_tokens(&req).await)
+            }
+            "session.get_max_tokens" => {
+                to_response(id, self.handle_session_get_max_tokens(&req).await)
+            }
+            "session.set_precognition" => {
+                to_response(id, self.handle_session_set_precognition(&req).await)
+            }
+            "session.get_precognition" => {
+                to_response(id, self.handle_session_get_precognition(&req).await)
+            }
             // Kiln CRUD handlers
             "kiln.open" => to_response(id, self.handle_kiln_open(&req).await),
             "kiln.close" => to_response(id, self.handle_kiln_close(&req).await),
             "kiln.list" => to_response(id, self.handle_kiln_list(&req).await),
-            "kiln.set_classification" => to_response(id, self.handle_kiln_set_classification(&req).await),
+            "kiln.set_classification" => {
+                to_response(id, self.handle_kiln_set_classification(&req).await)
+            }
 
             // Note search and retrieval handlers
             "search_vectors" => to_response(id, self.handle_search_vectors(&req).await),
@@ -171,30 +189,50 @@ impl RpcDispatcher {
             "session.get" => to_response(id, self.handle_session_get(&req).await),
             "session.pause" => to_response(id, self.handle_session_pause(&req).await),
             "session.resume" => to_response(id, self.handle_session_resume(&req).await),
-            "session.resume_from_storage" => to_response(id, self.handle_session_resume_from_storage(&req).await),
+            "session.resume_from_storage" => {
+                to_response(id, self.handle_session_resume_from_storage(&req).await)
+            }
             "session.end" => to_response(id, self.handle_session_end(&req).await),
             "session.compact" => to_response(id, self.handle_session_compact(&req).await),
 
             // Session utility handlers
             "session.search" => to_response(id, self.handle_session_search(&req).await),
             "session.load_events" => to_response(id, self.handle_session_load_events(&req).await),
-            "session.list_persisted" => to_response(id, self.handle_session_list_persisted(&req).await),
-            "session.render_markdown" => to_response(id, self.handle_session_render_markdown(&req).await),
-            "session.export_to_file" => to_response(id, self.handle_session_export_to_file(&req).await),
+            "session.list_persisted" => {
+                to_response(id, self.handle_session_list_persisted(&req).await)
+            }
+            "session.render_markdown" => {
+                to_response(id, self.handle_session_render_markdown(&req).await)
+            }
+            "session.export_to_file" => {
+                to_response(id, self.handle_session_export_to_file(&req).await)
+            }
             "session.cleanup" => to_response(id, self.handle_session_cleanup(&req).await),
             "session.reindex" => to_response(id, self.handle_session_reindex(&req).await),
 
             // Agent operation handlers
-            "session.configure_agent" => to_response(id, self.handle_session_configure_agent(&req).await),
+            "session.configure_agent" => {
+                to_response(id, self.handle_session_configure_agent(&req).await)
+            }
             "session.send_message" => to_response(id, self.handle_session_send_message(&req).await),
             "session.cancel" => to_response(id, self.handle_session_cancel(&req).await),
-            "session.interaction_respond" => to_response(id, self.handle_session_interaction_respond(&req).await),
+            "session.interaction_respond" => {
+                to_response(id, self.handle_session_interaction_respond(&req).await)
+            }
             "session.switch_model" => to_response(id, self.handle_session_switch_model(&req).await),
             "session.list_models" => to_response(id, self.handle_session_list_models(&req).await),
-            "session.add_notification" => to_response(id, self.handle_session_add_notification(&req).await),
-            "session.list_notifications" => to_response(id, self.handle_session_list_notifications(&req).await),
-            "session.dismiss_notification" => to_response(id, self.handle_session_dismiss_notification(&req).await),
-            "session.test_interaction" => to_response(id, self.handle_session_test_interaction(&req).await),
+            "session.add_notification" => {
+                to_response(id, self.handle_session_add_notification(&req).await)
+            }
+            "session.list_notifications" => {
+                to_response(id, self.handle_session_list_notifications(&req).await)
+            }
+            "session.dismiss_notification" => {
+                to_response(id, self.handle_session_dismiss_notification(&req).await)
+            }
+            "session.test_interaction" => {
+                to_response(id, self.handle_session_test_interaction(&req).await)
+            }
             "session.replay" => to_response(id, self.handle_session_replay(&req).await),
 
             // Lua RPC handlers
@@ -206,7 +244,9 @@ impl RpcDispatcher {
             "lua.plugin_health" => to_response(id, self.handle_lua_plugin_health(&req).await),
             "lua.generate_stubs" => to_response(id, self.handle_lua_generate_stubs(&req).await),
             "lua.run_plugin_tests" => to_response(id, self.handle_lua_run_plugin_tests(&req).await),
-            "lua.register_commands" => to_response(id, self.handle_lua_register_commands(&req).await),
+            "lua.register_commands" => {
+                to_response(id, self.handle_lua_register_commands(&req).await)
+            }
 
             // Plugin RPC handlers
             "plugin.reload" => to_response(id, self.handle_plugin_reload(&req).await),
@@ -236,7 +276,9 @@ impl RpcDispatcher {
 
             // Agents RPC handlers
             "agents.list_profiles" => to_response(id, self.handle_agents_list_profiles(&req).await),
-            "agents.resolve_profile" => to_response(id, self.handle_agents_resolve_profile(&req).await),
+            "agents.resolve_profile" => {
+                to_response(id, self.handle_agents_resolve_profile(&req).await)
+            }
 
             // For other methods, we return METHOD_NOT_FOUND here.
             // In production, server.rs will handle these until we migrate them.
@@ -351,7 +393,10 @@ impl RpcDispatcher {
         }))
     }
 
-    async fn handle_session_set_thinking_budget(&self, req: &Request) -> RpcResult<serde_json::Value> {
+    async fn handle_session_set_thinking_budget(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
         let resp = crate::server::session::handle_session_set_thinking_budget(
             req.clone(),
             &self.ctx.agents,
@@ -365,7 +410,10 @@ impl RpcDispatcher {
         }
     }
 
-    async fn handle_session_get_thinking_budget(&self, req: &Request) -> RpcResult<serde_json::Value> {
+    async fn handle_session_get_thinking_budget(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
         let resp = crate::server::session::handle_session_get_thinking_budget(
             req.clone(),
             &self.ctx.agents,
@@ -393,11 +441,9 @@ impl RpcDispatcher {
     }
 
     async fn handle_session_get_temperature(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_get_temperature(
-            req.clone(),
-            &self.ctx.agents,
-        )
-        .await;
+        let resp =
+            crate::server::session::handle_session_get_temperature(req.clone(), &self.ctx.agents)
+                .await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -420,11 +466,9 @@ impl RpcDispatcher {
     }
 
     async fn handle_session_get_max_tokens(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_get_max_tokens(
-            req.clone(),
-            &self.ctx.agents,
-        )
-        .await;
+        let resp =
+            crate::server::session::handle_session_get_max_tokens(req.clone(), &self.ctx.agents)
+                .await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -447,11 +491,9 @@ impl RpcDispatcher {
     }
 
     async fn handle_session_get_precognition(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_get_precognition(
-            req.clone(),
-            &self.ctx.agents,
-        )
-        .await;
+        let resp =
+            crate::server::session::handle_session_get_precognition(req.clone(), &self.ctx.agents)
+                .await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -475,11 +517,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_kiln_close(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_kiln_close(
-            req.clone(),
-            &self.ctx.kiln,
-        )
-        .await;
+        let resp = crate::server::kiln::handle_kiln_close(req.clone(), &self.ctx.kiln).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -488,11 +526,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_kiln_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_kiln_list(
-            req.clone(),
-            &self.ctx.kiln,
-        )
-        .await;
+        let resp = crate::server::kiln::handle_kiln_list(req.clone(), &self.ctx.kiln).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -501,11 +535,8 @@ impl RpcDispatcher {
     }
 
     async fn handle_kiln_set_classification(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_kiln_set_classification(
-            req.clone(),
-            &self.ctx.kiln,
-        )
-        .await;
+        let resp =
+            crate::server::kiln::handle_kiln_set_classification(req.clone(), &self.ctx.kiln).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -514,11 +545,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_search_vectors(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_search_vectors(
-            req.clone(),
-            &self.ctx.kiln,
-        )
-        .await;
+        let resp = crate::server::kiln::handle_search_vectors(req.clone(), &self.ctx.kiln).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -527,11 +554,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_list_notes(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_list_notes(
-            req.clone(),
-            &self.ctx.kiln,
-        )
-        .await;
+        let resp = crate::server::kiln::handle_list_notes(req.clone(), &self.ctx.kiln).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -540,11 +563,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_get_note_by_name(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_get_note_by_name(
-            req.clone(),
-            &self.ctx.kiln,
-        )
-        .await;
+        let resp = crate::server::kiln::handle_get_note_by_name(req.clone(), &self.ctx.kiln).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -553,11 +572,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_note_upsert(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_note_upsert(
-            req.clone(),
-            &self.ctx.kiln,
-        )
-        .await;
+        let resp = crate::server::kiln::handle_note_upsert(req.clone(), &self.ctx.kiln).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -566,11 +581,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_note_get(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_note_get(
-            req.clone(),
-            &self.ctx.kiln,
-        )
-        .await;
+        let resp = crate::server::kiln::handle_note_get(req.clone(), &self.ctx.kiln).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -579,11 +590,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_note_delete(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_note_delete(
-            req.clone(),
-            &self.ctx.kiln,
-        )
-        .await;
+        let resp = crate::server::kiln::handle_note_delete(req.clone(), &self.ctx.kiln).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -592,11 +599,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_note_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_note_list(
-            req.clone(),
-            &self.ctx.kiln,
-        )
-        .await;
+        let resp = crate::server::kiln::handle_note_list(req.clone(), &self.ctx.kiln).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -605,11 +608,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_process_file(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_process_file(
-            req.clone(),
-            &self.ctx.kiln,
-        )
-        .await;
+        let resp = crate::server::kiln::handle_process_file(req.clone(), &self.ctx.kiln).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -632,11 +631,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_models_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_models_list(
-            req.clone(),
-            &self.ctx.agents,
-        )
-        .await;
+        let resp = crate::server::session::handle_models_list(req.clone(), &self.ctx.agents).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -662,11 +657,8 @@ impl RpcDispatcher {
     }
 
     async fn handle_session_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_list(
-            req.clone(),
-            &self.ctx.sessions,
-        )
-        .await;
+        let resp =
+            crate::server::session::handle_session_list(req.clone(), &self.ctx.sessions).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -675,11 +667,8 @@ impl RpcDispatcher {
     }
 
     async fn handle_session_get(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_get(
-            req.clone(),
-            &self.ctx.sessions,
-        )
-        .await;
+        let resp =
+            crate::server::session::handle_session_get(req.clone(), &self.ctx.sessions).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -688,11 +677,8 @@ impl RpcDispatcher {
     }
 
     async fn handle_session_pause(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_pause(
-            req.clone(),
-            &self.ctx.sessions,
-        )
-        .await;
+        let resp =
+            crate::server::session::handle_session_pause(req.clone(), &self.ctx.sessions).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -701,11 +687,8 @@ impl RpcDispatcher {
     }
 
     async fn handle_session_resume(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_resume(
-            req.clone(),
-            &self.ctx.sessions,
-        )
-        .await;
+        let resp =
+            crate::server::session::handle_session_resume(req.clone(), &self.ctx.sessions).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -713,7 +696,10 @@ impl RpcDispatcher {
         }
     }
 
-    async fn handle_session_resume_from_storage(&self, req: &Request) -> RpcResult<serde_json::Value> {
+    async fn handle_session_resume_from_storage(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
         let resp = crate::server::session::handle_session_resume_from_storage(
             req.clone(),
             &self.ctx.sessions,
@@ -741,11 +727,8 @@ impl RpcDispatcher {
     }
 
     async fn handle_session_compact(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_compact(
-            req.clone(),
-            &self.ctx.sessions,
-        )
-        .await;
+        let resp =
+            crate::server::session::handle_session_compact(req.clone(), &self.ctx.sessions).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -756,11 +739,8 @@ impl RpcDispatcher {
     // ── Session utility wrappers ─────────────────────────────────────────────
 
     async fn handle_session_search(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_search(
-            req.clone(),
-            &self.ctx.sessions,
-        )
-        .await;
+        let resp =
+            crate::server::session::handle_session_search(req.clone(), &self.ctx.sessions).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -769,10 +749,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_session_load_events(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::observe::handle_session_load_events(
-            req.clone(),
-        )
-        .await;
+        let resp = crate::server::observe::handle_session_load_events(req.clone()).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -781,10 +758,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_session_list_persisted(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::observe::handle_session_list_persisted(
-            req.clone(),
-        )
-        .await;
+        let resp = crate::server::observe::handle_session_list_persisted(req.clone()).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -793,10 +767,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_session_render_markdown(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::observe::handle_session_render_markdown(
-            req.clone(),
-        )
-        .await;
+        let resp = crate::server::observe::handle_session_render_markdown(req.clone()).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -805,10 +776,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_session_export_to_file(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::observe::handle_session_export_to_file(
-            req.clone(),
-        )
-        .await;
+        let resp = crate::server::observe::handle_session_export_to_file(req.clone()).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -817,10 +785,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_session_cleanup(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::observe::handle_session_cleanup(
-            req.clone(),
-        )
-        .await;
+        let resp = crate::server::observe::handle_session_cleanup(req.clone()).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -829,11 +794,8 @@ impl RpcDispatcher {
     }
 
     async fn handle_session_reindex(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::observe::handle_session_reindex(
-            req.clone(),
-            &self.ctx.kiln,
-        )
-        .await;
+        let resp =
+            crate::server::observe::handle_session_reindex(req.clone(), &self.ctx.kiln).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -844,11 +806,9 @@ impl RpcDispatcher {
     // ── Agent operation wrappers ─────────────────────────────────────────────
 
     async fn handle_session_configure_agent(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_configure_agent(
-            req.clone(),
-            &self.ctx.agents,
-        )
-        .await;
+        let resp =
+            crate::server::session::handle_session_configure_agent(req.clone(), &self.ctx.agents)
+                .await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -871,11 +831,8 @@ impl RpcDispatcher {
     }
 
     async fn handle_session_cancel(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_cancel(
-            req.clone(),
-            &self.ctx.agents,
-        )
-        .await;
+        let resp =
+            crate::server::session::handle_session_cancel(req.clone(), &self.ctx.agents).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -883,7 +840,10 @@ impl RpcDispatcher {
         }
     }
 
-    async fn handle_session_interaction_respond(&self, req: &Request) -> RpcResult<serde_json::Value> {
+    async fn handle_session_interaction_respond(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
         let resp = crate::server::session::handle_session_interaction_respond(
             req.clone(),
             &self.ctx.agents,
@@ -912,11 +872,8 @@ impl RpcDispatcher {
     }
 
     async fn handle_session_list_models(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_list_models(
-            req.clone(),
-            &self.ctx.agents,
-        )
-        .await;
+        let resp =
+            crate::server::session::handle_session_list_models(req.clone(), &self.ctx.agents).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -938,7 +895,10 @@ impl RpcDispatcher {
         }
     }
 
-    async fn handle_session_list_notifications(&self, req: &Request) -> RpcResult<serde_json::Value> {
+    async fn handle_session_list_notifications(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
         let resp = crate::server::session::handle_session_list_notifications(
             req.clone(),
             &self.ctx.agents,
@@ -951,7 +911,10 @@ impl RpcDispatcher {
         }
     }
 
-    async fn handle_session_dismiss_notification(&self, req: &Request) -> RpcResult<serde_json::Value> {
+    async fn handle_session_dismiss_notification(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
         let resp = crate::server::session::handle_session_dismiss_notification(
             req.clone(),
             &self.ctx.agents,
@@ -995,11 +958,8 @@ impl RpcDispatcher {
     // ── Lua RPC wrappers ─────────────────────────────────────────────────
 
     async fn handle_lua_init_session(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::lua::handle_lua_init_session(
-            req.clone(),
-            &self.ctx.lua_sessions,
-        )
-        .await;
+        let resp =
+            crate::server::lua::handle_lua_init_session(req.clone(), &self.ctx.lua_sessions).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1008,11 +968,9 @@ impl RpcDispatcher {
     }
 
     async fn handle_lua_register_hooks(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::lua::handle_lua_register_hooks(
-            req.clone(),
-            &self.ctx.lua_sessions,
-        )
-        .await;
+        let resp =
+            crate::server::lua::handle_lua_register_hooks(req.clone(), &self.ctx.lua_sessions)
+                .await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1021,11 +979,8 @@ impl RpcDispatcher {
     }
 
     async fn handle_lua_execute_hook(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::lua::handle_lua_execute_hook(
-            req.clone(),
-            &self.ctx.lua_sessions,
-        )
-        .await;
+        let resp =
+            crate::server::lua::handle_lua_execute_hook(req.clone(), &self.ctx.lua_sessions).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1034,11 +989,9 @@ impl RpcDispatcher {
     }
 
     async fn handle_lua_shutdown_session(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::lua::handle_lua_shutdown_session(
-            req.clone(),
-            &self.ctx.lua_sessions,
-        )
-        .await;
+        let resp =
+            crate::server::lua::handle_lua_shutdown_session(req.clone(), &self.ctx.lua_sessions)
+                .await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1047,10 +1000,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_lua_discover_plugins(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::lua::handle_lua_discover_plugins(
-            req.clone(),
-        )
-        .await;
+        let resp = crate::server::lua::handle_lua_discover_plugins(req.clone()).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1059,10 +1009,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_lua_plugin_health(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::lua::handle_lua_plugin_health(
-            req.clone(),
-        )
-        .await;
+        let resp = crate::server::lua::handle_lua_plugin_health(req.clone()).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1071,10 +1018,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_lua_generate_stubs(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::lua::handle_lua_generate_stubs(
-            req.clone(),
-        )
-        .await;
+        let resp = crate::server::lua::handle_lua_generate_stubs(req.clone()).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1083,10 +1027,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_lua_run_plugin_tests(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::lua::handle_lua_run_plugin_tests(
-            req.clone(),
-        )
-        .await;
+        let resp = crate::server::lua::handle_lua_run_plugin_tests(req.clone()).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1095,11 +1036,9 @@ impl RpcDispatcher {
     }
 
     async fn handle_lua_register_commands(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::lua::handle_lua_register_commands(
-            req.clone(),
-            &self.ctx.lua_sessions,
-        )
-        .await;
+        let resp =
+            crate::server::lua::handle_lua_register_commands(req.clone(), &self.ctx.lua_sessions)
+                .await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1110,11 +1049,9 @@ impl RpcDispatcher {
     // ── Plugin RPC wrappers ──────────────────────────────────────────────
 
     async fn handle_plugin_reload(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::plugins::handle_plugin_reload(
-            req.clone(),
-            &self.ctx.plugin_loader,
-        )
-        .await;
+        let resp =
+            crate::server::plugins::handle_plugin_reload(req.clone(), &self.ctx.plugin_loader)
+                .await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1123,11 +1060,8 @@ impl RpcDispatcher {
     }
 
     async fn handle_plugin_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::plugins::handle_plugin_list(
-            req.clone(),
-            &self.ctx.plugin_loader,
-        )
-        .await;
+        let resp =
+            crate::server::plugins::handle_plugin_list(req.clone(), &self.ctx.plugin_loader).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1138,11 +1072,9 @@ impl RpcDispatcher {
     // ── Project RPC wrappers ────────────────────────────────────────────
 
     async fn handle_project_register(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::plugins::handle_project_register(
-            req.clone(),
-            &self.ctx.project_manager,
-        )
-        .await;
+        let resp =
+            crate::server::plugins::handle_project_register(req.clone(), &self.ctx.project_manager)
+                .await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1164,11 +1096,9 @@ impl RpcDispatcher {
     }
 
     async fn handle_project_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::plugins::handle_project_list(
-            req.clone(),
-            &self.ctx.project_manager,
-        )
-        .await;
+        let resp =
+            crate::server::plugins::handle_project_list(req.clone(), &self.ctx.project_manager)
+                .await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1177,11 +1107,9 @@ impl RpcDispatcher {
     }
 
     async fn handle_project_get(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::plugins::handle_project_get(
-            req.clone(),
-            &self.ctx.project_manager,
-        )
-        .await;
+        let resp =
+            crate::server::plugins::handle_project_get(req.clone(), &self.ctx.project_manager)
+                .await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1192,10 +1120,7 @@ impl RpcDispatcher {
     // ── Storage RPC wrappers ────────────────────────────────────────────
 
     async fn handle_storage_verify(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::storage::handle_storage_verify(
-            req.clone(),
-        )
-        .await;
+        let resp = crate::server::storage::handle_storage_verify(req.clone()).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1204,10 +1129,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_storage_cleanup(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::storage::handle_storage_cleanup(
-            req.clone(),
-        )
-        .await;
+        let resp = crate::server::storage::handle_storage_cleanup(req.clone()).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1216,10 +1138,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_storage_backup(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::storage::handle_storage_backup(
-            req.clone(),
-        )
-        .await;
+        let resp = crate::server::storage::handle_storage_backup(req.clone()).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1228,10 +1147,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_storage_restore(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::storage::handle_storage_restore(
-            req.clone(),
-        )
-        .await;
+        let resp = crate::server::storage::handle_storage_restore(req.clone()).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1256,11 +1172,9 @@ impl RpcDispatcher {
     }
 
     async fn handle_mcp_stop(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::platform::handle_mcp_stop(
-            req.clone(),
-            &self.ctx.mcp_server_manager,
-        )
-        .await;
+        let resp =
+            crate::server::platform::handle_mcp_stop(req.clone(), &self.ctx.mcp_server_manager)
+                .await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1269,11 +1183,9 @@ impl RpcDispatcher {
     }
 
     async fn handle_mcp_status(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::platform::handle_mcp_status(
-            req.clone(),
-            &self.ctx.mcp_server_manager,
-        )
-        .await;
+        let resp =
+            crate::server::platform::handle_mcp_status(req.clone(), &self.ctx.mcp_server_manager)
+                .await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1284,10 +1196,7 @@ impl RpcDispatcher {
     // ── Skills RPC wrappers ─────────────────────────────────────────────
 
     async fn handle_skills_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::platform::handle_skills_list(
-            req.clone(),
-        )
-        .await;
+        let resp = crate::server::platform::handle_skills_list(req.clone()).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1296,10 +1205,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_skills_get(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::platform::handle_skills_get(
-            req.clone(),
-        )
-        .await;
+        let resp = crate::server::platform::handle_skills_get(req.clone()).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1308,10 +1214,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_skills_search(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::platform::handle_skills_search(
-            req.clone(),
-        )
-        .await;
+        let resp = crate::server::platform::handle_skills_search(req.clone()).await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1322,11 +1225,9 @@ impl RpcDispatcher {
     // ── Agents RPC wrappers ─────────────────────────────────────────────
 
     async fn handle_agents_list_profiles(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::platform::handle_agents_list_profiles(
-            req.clone(),
-            &self.ctx.agents,
-        )
-        .await;
+        let resp =
+            crate::server::platform::handle_agents_list_profiles(req.clone(), &self.ctx.agents)
+                .await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1335,11 +1236,9 @@ impl RpcDispatcher {
     }
 
     async fn handle_agents_resolve_profile(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::platform::handle_agents_resolve_profile(
-            req.clone(),
-            &self.ctx.agents,
-        )
-        .await;
+        let resp =
+            crate::server::platform::handle_agents_resolve_profile(req.clone(), &self.ctx.agents)
+                .await;
         if let Some(err) = resp.error {
             Err(err)
         } else {
@@ -1401,7 +1300,9 @@ mod tests {
             Arc::new(SubscriptionManager::new()),
             event_tx,
             shutdown_tx,
-            Arc::new(ProjectManager::new(std::path::PathBuf::from("/tmp/projects.json"))),
+            Arc::new(ProjectManager::new(std::path::PathBuf::from(
+                "/tmp/projects.json",
+            ))),
             Arc::new(DashMap::new()),
             Arc::new(tokio::sync::Mutex::new(None)),
             None,

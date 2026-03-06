@@ -591,12 +591,12 @@ mod tests {
         assert!(!detect_dark_terminal());
     }
 
-#[test]
-fn test_detect_dark_terminal_not_set() {
-// Default to dark if not set
-std::env::remove_var("COLORFGBG");
-assert!(detect_dark_terminal());
-}
+    #[test]
+    fn test_detect_dark_terminal_not_set() {
+        // Default to dark if not set
+        std::env::remove_var("COLORFGBG");
+        assert!(detect_dark_terminal());
+    }
 
     #[test]
     fn test_detect_dark_terminal_invalid_format() {

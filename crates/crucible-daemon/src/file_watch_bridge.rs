@@ -5,7 +5,9 @@
 //! `WatchManager` to push file change events to all subscribed clients.
 
 use async_trait::async_trait;
-use crucible_core::events::{EmitOutcome, EmitResult, EventEmitter, SessionEvent, InternalSessionEvent};
+use crucible_core::events::{
+    EmitOutcome, EmitResult, EventEmitter, InternalSessionEvent, SessionEvent,
+};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::debug;
@@ -35,34 +37,32 @@ impl EventEmitter for DaemonEventBridge {
 
     async fn emit(&self, event: Self::Event) -> EmitResult<EmitOutcome<Self::Event>> {
         let msg = match &event {
-            SessionEvent::Internal(inner) => {
-                match inner.as_ref() {
-                    InternalSessionEvent::FileChanged { path, kind } => Some(SessionEventMessage::new(
-                        "system",
-                        "file_changed",
-                        serde_json::json!({
-                            "path": path.display().to_string(),
-                            "kind": format!("{}", kind),
-                        }),
-                    )),
-                    InternalSessionEvent::FileDeleted { path } => Some(SessionEventMessage::new(
-                        "system",
-                        "file_deleted",
-                        serde_json::json!({
-                            "path": path.display().to_string(),
-                        }),
-                    )),
-                    InternalSessionEvent::FileMoved { from, to } => Some(SessionEventMessage::new(
-                        "system",
-                        "file_moved",
-                        serde_json::json!({
-                            "from": from.display().to_string(),
-                            "to": to.display().to_string(),
-                        }),
-                    )),
-                    _ => None,
-                }
-            }
+            SessionEvent::Internal(inner) => match inner.as_ref() {
+                InternalSessionEvent::FileChanged { path, kind } => Some(SessionEventMessage::new(
+                    "system",
+                    "file_changed",
+                    serde_json::json!({
+                        "path": path.display().to_string(),
+                        "kind": format!("{}", kind),
+                    }),
+                )),
+                InternalSessionEvent::FileDeleted { path } => Some(SessionEventMessage::new(
+                    "system",
+                    "file_deleted",
+                    serde_json::json!({
+                        "path": path.display().to_string(),
+                    }),
+                )),
+                InternalSessionEvent::FileMoved { from, to } => Some(SessionEventMessage::new(
+                    "system",
+                    "file_moved",
+                    serde_json::json!({
+                        "from": from.display().to_string(),
+                        "to": to.display().to_string(),
+                    }),
+                )),
+                _ => None,
+            },
             _ => None,
         };
 

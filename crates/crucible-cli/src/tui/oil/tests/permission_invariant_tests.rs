@@ -13,9 +13,7 @@ use crate::tui::oil::app::{Action, App};
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::event::Event;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use crucible_core::interaction::{
-    InteractionRequest, InteractionResponse, PermRequest,
-};
+use crucible_core::interaction::{InteractionRequest, InteractionResponse, PermRequest};
 use proptest::prelude::*;
 
 // ============================================================================

@@ -24,19 +24,19 @@ pub mod focus;
 pub mod graduation;
 pub mod layout;
 pub mod node;
+pub mod output;
 pub mod overlay;
 pub mod planning;
-pub mod runtime;
-pub mod output;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod proptest_strategies;
 pub mod render;
 pub mod render_helpers;
+pub mod runtime;
 pub mod style;
 pub mod taffy_layout;
 pub mod template;
-pub mod viewport;
 pub mod terminal;
+pub mod viewport;
 
 pub use cell_grid::{CellGrid, StyledCell};
 pub use components::{
@@ -59,23 +59,21 @@ pub use node::{
     badge, bullet_list, col, divider, error_boundary, fixed, flex, focusable, focusable_auto,
     fragment, horizontal_rule, if_else, key_value, maybe, numbered_list, overlay_from_bottom,
     overlay_from_bottom_right, popup, progress_bar, raw, row, scrollback, scrollback_continuation,
-    scrollback_with_kind, spacer, show, spinner, styled, text, text_input, when,
-    BoxNode, Direction, ElementKind, ErrorBoundaryNode, FocusableNode, InputNode, Node,
-    OverlayNode, PopupItemNode, PopupNode, RawNode, Size, SpinnerNode, StaticNode, TextNode,
-    DEFAULT_POPUP_BG, DEFAULT_POPUP_SELECTED_BG,
+    scrollback_with_kind, show, spacer, spinner, styled, text, text_input, when, BoxNode,
+    Direction, ElementKind, ErrorBoundaryNode, FocusableNode, InputNode, Node, OverlayNode,
+    PopupItemNode, PopupNode, RawNode, Size, SpinnerNode, StaticNode, TextNode, DEFAULT_POPUP_BG,
+    DEFAULT_POPUP_SELECTED_BG,
 };
+pub use output::OutputBuffer;
 pub use overlay::{composite_overlays, Overlay, OverlayAnchor};
+pub use planning::{FramePlan, FramePlanner, FrameSnapshot, FrameTrace, RenderedOverlay};
 pub use render::{
     render_to_plain_text, render_to_string, render_to_string_filtered, render_with_cursor,
     render_with_cursor_filtered, CursorInfo, NoFilter, RenderFilter, RenderResult,
 };
-pub use style::{AlignItems, Border, Color, Gap, JustifyContent, Padding, Style};
-pub use planning::{FramePlan, FramePlanner, FrameSnapshot, FrameTrace, RenderedOverlay};
 pub use runtime::TestRuntime;
-pub use output::OutputBuffer;
+pub use style::{AlignItems, Border, Color, Gap, JustifyContent, Padding, Style};
 pub use terminal::Terminal;
-
-
 
 pub mod utils;
 

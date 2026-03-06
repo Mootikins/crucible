@@ -50,13 +50,11 @@ pub fn arb_markdown_content() -> impl Strategy<Value = String> {
     ]
 }
 
-
 #[derive(Debug, Clone)]
 pub enum TextStreamEvent {
     TextDelta(String),
     ThinkingDelta(String),
 }
-
 
 #[derive(Debug, Clone)]
 pub enum StreamEvent {

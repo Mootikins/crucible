@@ -13,6 +13,7 @@ use crate::protocol::SessionEventMessage;
 use crate::provider::model_listing;
 use crate::session_manager::{SessionError, SessionManager};
 use crate::tool_dispatch::{DaemonToolDispatcher, ToolDispatcher};
+use crate::tools::workspace::WorkspaceTools;
 use crate::trust_resolution::resolve_provider_trust;
 use crucible_acp::discovery::default_agent_profiles;
 use crucible_config::components::permissions::PermissionConfig;
@@ -20,7 +21,9 @@ use crucible_config::{
     AcpConfig, AgentProfile, BackendType, DataClassification, LlmProviderConfig, PatternStore,
 };
 use crucible_core::discovery::DiscoveryPaths;
-use crucible_core::events::{Reactor, ReactorEmitResult as EmitResult, SessionEvent, InternalSessionEvent};
+use crucible_core::events::{
+    InternalSessionEvent, Reactor, ReactorEmitResult as EmitResult, SessionEvent,
+};
 use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, PermissionScope};
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
@@ -30,7 +33,6 @@ use crucible_lua::{
     execute_permission_hooks, register_crucible_on_api, register_permission_hook_api,
     LuaScriptHandlerRegistry, PermissionHook, PermissionHookResult, PermissionRequest,
 };
-use crate::tools::workspace::WorkspaceTools;
 use dashmap::DashMap;
 use futures::StreamExt;
 use mlua::Lua;
@@ -405,8 +407,7 @@ pub struct AgentManagerParams {
     pub kiln_manager: Arc<KilnManager>,
     pub session_manager: Arc<SessionManager>,
     pub background_manager: Arc<BackgroundJobManager>,
-    pub mcp_gateway:
-        Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
+    pub mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     pub llm_config: Option<crucible_config::LlmConfig>,
     pub acp_config: Option<AcpConfig>,
     pub permission_config: Option<PermissionConfig>,
@@ -478,20 +479,23 @@ impl AgentManager {
         self.model_cache.clear();
     }
 
-    pub fn get_or_create_session_dispatcher(&self, session: &crucible_core::session::Session) -> Arc<dyn ToolDispatcher> {
+    pub fn get_or_create_session_dispatcher(
+        &self,
+        session: &crucible_core::session::Session,
+    ) -> Arc<dyn ToolDispatcher> {
         let session_id = &session.id;
-        
+
         // Return cached dispatcher if it exists
         if let Some(dispatcher) = self.session_dispatchers.get(session_id) {
             return dispatcher.clone();
         }
-        
+
         // Build new dispatcher for this session
         let dispatcher = if !session.workspace.as_os_str().is_empty() {
-            use crate::tools::mcp_server::CrucibleMcpServer;
+            use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
             use crate::tool_dispatch::McpToolExecutor;
-            use crate::empty_providers::{EmptyKnowledgeRepository, EmptyEmbeddingProvider};
-            
+            use crate::tools::mcp_server::CrucibleMcpServer;
+
             let mcp = Arc::new(CrucibleMcpServer::new(
                 session.workspace.to_string_lossy().to_string(),
                 Arc::new(EmptyKnowledgeRepository),
@@ -504,9 +508,10 @@ impl AgentManager {
         } else {
             self.tool_dispatcher.clone()
         };
-        
+
         // Cache and return
-        self.session_dispatchers.insert(session_id.clone(), dispatcher.clone());
+        self.session_dispatchers
+            .insert(session_id.clone(), dispatcher.clone());
         dispatcher
     }
 

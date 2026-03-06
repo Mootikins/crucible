@@ -149,12 +149,7 @@ async fn try_ollama_api_show(
         model: model_id.to_string(),
     };
 
-    let resp = client
-        .post(&url)
-        .json(&req_body)
-        .send()
-        .await
-        .ok()?;
+    let resp = client.post(&url).json(&req_body).send().await.ok()?;
 
     if !resp.status().is_success() {
         return None;
@@ -492,8 +487,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_model_context_length_ollama_api_show_context_length() {
-        use wiremock::{Mock, MockServer, ResponseTemplate};
         use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let mock_server = MockServer::start().await;
 
@@ -524,8 +519,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_model_context_length_ollama_api_show_num_ctx_in_parameters() {
-        use wiremock::{Mock, MockServer, ResponseTemplate};
         use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let mock_server = MockServer::start().await;
 
@@ -554,8 +549,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_model_context_length_ollama_api_show_generic_context_length_key() {
-        use wiremock::{Mock, MockServer, ResponseTemplate};
         use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let mock_server = MockServer::start().await;
 
@@ -585,8 +580,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_model_context_length_ollama_api_show_fallback_on_empty_model_info() {
-        use wiremock::{Mock, MockServer, ResponseTemplate};
         use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let mock_server = MockServer::start().await;
 
@@ -614,8 +609,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_model_context_length_ollama_api_show_strips_v1_suffix() {
-        use wiremock::{Mock, MockServer, ResponseTemplate};
         use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let mock_server = MockServer::start().await;
 
