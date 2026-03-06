@@ -6,7 +6,6 @@
 
 use crate::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
 use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
-use crate::protocol::SessionEventMessage;
 use crate::provider::adapter_mapping::ChatClient;
 use crate::provider::genai_handle::GenaiAgentHandle;
 use crate::tools::mcp_server::CrucibleMcpServer;
@@ -27,7 +26,6 @@ use mlua::Lua;
 use std::path::Path;
 use std::sync::Arc;
 use thiserror::Error;
-use tokio::sync::broadcast;
 use tracing::{debug, info, warn};
 
 /// Parameters for creating internal MCP tool definitions.
@@ -51,7 +49,6 @@ pub struct CreateAgentFromSessionConfigParams<'a> {
     pub kiln_path: Option<&'a Path>,
     pub parent_session_id: Option<&'a str>,
     pub background_spawner: Option<Arc<dyn BackgroundSpawner>>,
-    pub event_tx: &'a broadcast::Sender<SessionEventMessage>,
     pub mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     pub acp_permission_handler: Option<PermissionRequestHandler>,
     pub acp_config: Option<&'a crucible_config::components::acp::AcpConfig>,
@@ -272,15 +269,12 @@ pub async fn create_agent_from_session_config(
         kiln_path,
         parent_session_id,
         background_spawner,
-        event_tx,
         mcp_gateway,
         acp_permission_handler,
         acp_config,
         knowledge_repo,
         embedding_provider,
     } = params;
-    // TODO: Wire event_tx for real-time session event broadcasting (streaming progress, tool call notifications)
-    let _ = event_tx;
     if agent_config.agent_type == "acp" {
         let handle = AcpAgentHandle::new(AcpAgentHandleParams {
             agent_config,
@@ -321,9 +315,15 @@ pub async fn create_agent_from_session_config(
     // NAME (e.g. "GLM_AUTH_TOKEN"), not the actual token. Look it up now so genai
     // sends the real credential in the Authorization header.
     if let Some(env_var_name) = &llm_config.api_key {
-        if let Ok(resolved) = std::env::var(env_var_name) {
-            if !resolved.is_empty() {
-                llm_config.api_key = Some(resolved);
+        match std::env::var(env_var_name) {
+            Ok(resolved) => {
+                if !resolved.is_empty() {
+                    llm_config.api_key = Some(resolved);
+                }
+            }
+            Err(e) => {
+                warn!("Failed to resolve API key env var '{}': {} — clearing api_key", env_var_name, e);
+                llm_config.api_key = None;
             }
         }
     }
@@ -503,7 +503,6 @@ mod tests {
         config.agent_type = "unknown".to_string();
 
         let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
-            let (event_tx, _) = broadcast::channel(16);
             create_agent_from_session_config(CreateAgentFromSessionConfigParams {
                 agent_config: &config,
                 lua: None,
@@ -511,7 +510,6 @@ mod tests {
                 kiln_path: None,
                 parent_session_id: None,
                 background_spawner: None,
-                event_tx: &event_tx,
                 mcp_gateway: None,
                 acp_permission_handler: None,
                 acp_config: None,
@@ -590,7 +588,6 @@ mod tests {
     #[ignore = "Requires Ollama to be running"]
     async fn test_create_ollama_agent() {
         let config = test_agent_config();
-        let (event_tx, _) = broadcast::channel(16);
         let result = create_agent_from_session_config(CreateAgentFromSessionConfigParams {
             agent_config: &config,
             lua: None,
@@ -598,7 +595,6 @@ mod tests {
             kiln_path: None,
             parent_session_id: None,
             background_spawner: None,
-            event_tx: &event_tx,
             mcp_gateway: None,
             acp_permission_handler: None,
             acp_config: None,
@@ -756,7 +752,6 @@ mod tests {
         let config = test_agent_config();
         assert_eq!(config.agent_type, "internal");
 
-        let (event_tx, _) = broadcast::channel(16);
         let result = create_agent_from_session_config(CreateAgentFromSessionConfigParams {
             agent_config: &config,
             lua: None,
@@ -764,7 +759,6 @@ mod tests {
             kiln_path: None,
             parent_session_id: None,
             background_spawner: None,
-            event_tx: &event_tx,
             mcp_gateway: None,
             acp_permission_handler: None,
             acp_config: None,
@@ -785,7 +779,6 @@ mod tests {
         let mut config = test_agent_config();
         config.agent_type = "acp".to_string();
 
-        let (event_tx, _) = broadcast::channel(16);
         let result = create_agent_from_session_config(CreateAgentFromSessionConfigParams {
             agent_config: &config,
             lua: None,
@@ -793,7 +786,6 @@ mod tests {
             kiln_path: None,
             parent_session_id: None,
             background_spawner: None,
-            event_tx: &event_tx,
             mcp_gateway: None,
             acp_permission_handler: None,
             acp_config: None,
