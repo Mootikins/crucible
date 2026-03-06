@@ -9,6 +9,7 @@ use mlua::{Function, Lua, RegistryKey, Value};
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 use thiserror::Error;
 use tracing::{debug, info, warn};
 
@@ -145,7 +146,7 @@ pub struct PluginManager {
     lua: Lua,
     on_unload_hooks: HashMap<String, RegistryKey>,
     on_load_hooks: HashMap<String, RegistryKey>,
-    error_log: PluginErrorLog,
+    error_log: Arc<Mutex<PluginErrorLog>>,
 }
 
 impl Default for PluginManager {
@@ -165,7 +166,10 @@ impl std::fmt::Debug for PluginManager {
             .field("handlers_count", &self.handlers.len())
             .field("on_unload_hooks_count", &self.on_unload_hooks.len())
             .field("on_load_hooks_count", &self.on_load_hooks.len())
-            .field("error_log_len", &self.error_log.len())
+            .field(
+                "error_log_len",
+                &self.error_log.lock().map(|guard| guard.len()).unwrap_or(0),
+            )
             .finish()
     }
 }
@@ -173,6 +177,8 @@ impl std::fmt::Debug for PluginManager {
 impl PluginManager {
     pub fn new() -> Self {
         let lua = Lua::new();
+        let error_log = Arc::new(Mutex::new(PluginErrorLog::new(100)));
+        lua.set_app_data(Arc::clone(&error_log));
         if let Err(error) = setup_spec_sandbox(&lua) {
             warn!("Failed to set up plugin runtime sandbox: {}", error);
         }
@@ -187,18 +193,30 @@ impl PluginManager {
             lua,
             on_unload_hooks: HashMap::new(),
             on_load_hooks: HashMap::new(),
-            error_log: PluginErrorLog::new(100),
+            error_log,
         }
     }
 
     /// Access the error log for this plugin manager.
-    pub fn error_log(&self) -> &PluginErrorLog {
-        &self.error_log
+    pub fn error_log(&self) -> MutexGuard<'_, PluginErrorLog> {
+        self.error_log.lock().expect("error_log: poisoned")
     }
 
     /// Access the error log mutably (for wiring in error capture).
-    pub fn error_log_mut(&mut self) -> &mut PluginErrorLog {
-        &mut self.error_log
+    pub fn error_log_mut(&mut self) -> MutexGuard<'_, PluginErrorLog> {
+        self.error_log.lock().expect("error_log: poisoned")
+    }
+
+    fn capture_plugin_error(&self, plugin: &str, error: impl ToString, context: impl Into<String>) {
+        match self.error_log.lock() {
+            Ok(mut log) => log.push(PluginErrorEntry {
+                plugin: plugin.to_string(),
+                error: error.to_string(),
+                context: context.into(),
+                timestamp: std::time::Instant::now(),
+            }),
+            Err(_) => warn!("Failed to capture plugin error due to poisoned error log"),
+        }
     }
 
     pub fn with_standard_paths(kiln_path: Option<&Path>) -> Self {
@@ -843,6 +861,11 @@ end
             Ok(on_load) => {
                 if let Err(error) = on_load.call::<()>(()) {
                     warn!("on_load hook failed for {}: {}", plugin_name, error);
+                    self.capture_plugin_error(
+                        plugin_name,
+                        &error,
+                        format!("handler:on_load:{}", plugin_name),
+                    );
                 }
             }
             Err(error) => {
@@ -863,6 +886,11 @@ end
             Ok(on_unload) => {
                 if let Err(error) = on_unload.call::<()>(()) {
                     warn!("on_unload hook failed for {}: {}", plugin_name, error);
+                    self.capture_plugin_error(
+                        plugin_name,
+                        &error,
+                        format!("handler:on_unload:{}", plugin_name),
+                    );
                 }
             }
             Err(error) => {
@@ -3173,20 +3201,14 @@ return {
         let count_before = manager
             .eval_runtime::<i64>("return cru.emitter.global():count('test_cleanup_event')")
             .unwrap_or(0);
-        assert_eq!(
-            count_before, 1,
-            "listener should be registered after load"
-        );
+        assert_eq!(count_before, 1, "listener should be registered after load");
 
         manager.unload("emitter-cleanup-test").unwrap();
 
         let count_after = manager
             .eval_runtime::<i64>("return cru.emitter.global():count('test_cleanup_event')")
             .unwrap_or(-1);
-        assert_eq!(
-            count_after, 0,
-            "listener should be removed after unload"
-        );
+        assert_eq!(count_after, 0, "listener should be removed after unload");
     }
 
     #[test]
@@ -3259,11 +3281,8 @@ return {
         let count_after = manager
             .eval_runtime::<i64>("return cru.emitter.global():count('shared_event')")
             .unwrap_or(0);
-        assert_eq!(
-            count_after, 1,
-            "only plugin-b's listener should survive"
-        );
-}
+        assert_eq!(count_after, 1, "only plugin-b's listener should survive");
+    }
 
     #[test]
     fn test_error_log_push_and_recent() {
@@ -3298,7 +3317,10 @@ return {
         assert_eq!(log.len(), 100, "ring buffer should be capped at capacity");
         // Oldest entries (error-0..error-4) should be evicted
         let oldest = log.recent(100)[0].error.clone();
-        assert_eq!(oldest, "error-5", "oldest surviving entry should be error-5");
+        assert_eq!(
+            oldest, "error-5",
+            "oldest surviving entry should be error-5"
+        );
     }
 
     #[test]
@@ -3318,4 +3340,77 @@ return {
         assert!(log.is_empty());
     }
 
+    #[test]
+    fn test_cru_errors_recent_returns_entries() {
+        let manager = setup_emitter_manager();
+        {
+            let mut log = manager.error_log();
+            log.push(PluginErrorEntry {
+                plugin: "test-plugin".to_string(),
+                error: "test error".to_string(),
+                context: "test context".to_string(),
+                timestamp: std::time::Instant::now(),
+            });
+        }
+
+        let recent = manager
+            .lua
+            .load("return cru.errors.recent(1)")
+            .eval::<mlua::Table>()
+            .unwrap();
+        assert_eq!(recent.len().unwrap(), 1);
+
+        let entry = recent.get::<mlua::Table>(1).unwrap();
+        assert_eq!(entry.get::<String>("plugin").unwrap(), "test-plugin");
+        assert_eq!(entry.get::<String>("error").unwrap(), "test error");
+        assert_eq!(entry.get::<String>("context").unwrap(), "test context");
+        assert!(entry.get::<f64>("age_secs").unwrap() >= 0.0);
+    }
+
+    #[test]
+    fn test_emitter_error_captured_in_log() {
+        let manager = setup_emitter_manager();
+        manager
+            .lua
+            .load(
+                r#"
+        cru.emitter.global():on("test_event", function()
+            error("intentional error")
+        end, "test-plugin")
+        cru.emitter.global():emit("test_event")
+    "#,
+            )
+            .exec()
+            .unwrap();
+
+        let log = manager.error_log();
+        assert_eq!(log.len(), 1);
+        let recent = log.recent(1);
+        assert_eq!(recent[0].plugin, "test-plugin");
+        assert!(recent[0].error.contains("intentional error"));
+        assert!(recent[0].context.contains("test_event"));
+    }
+
+    #[test]
+    fn test_error_log_attributes_to_plugin() {
+        let manager = setup_emitter_manager();
+        manager
+            .lua
+            .load(
+                r#"
+        cru.emitter.global():on("msg", function()
+            error("boom")
+        end, "my-plugin")
+        cru.emitter.global():emit("msg")
+    "#,
+            )
+            .exec()
+            .unwrap();
+
+        let log = manager.error_log();
+        assert!(!log.is_empty());
+        let recent = log.recent(1);
+        assert_eq!(recent[0].plugin, "my-plugin");
+        assert!(recent[0].context.contains("msg"));
+    }
 }
