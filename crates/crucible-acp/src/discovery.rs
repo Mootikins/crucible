@@ -330,9 +330,10 @@ pub async fn discover_agent(preferred: Option<&str>, acp_config: &AcpConfig) -> 
     ))
 }
 
-/// Clear the agent cache (useful for testing or when agent availability changes)
-#[allow(dead_code)]
-pub fn clear_agent_cache() {
+/// Clear the agent cache to prevent state bleeding across tests.
+/// Call this in test teardown to reset the global AGENT_CACHE.
+#[cfg(any(test, feature = "test-utils"))]
+pub fn reset_agent_cache() {
     *AGENT_CACHE
         .lock()
         .expect("AGENT_CACHE: poisoned while clearing agent cache") = None;
@@ -573,7 +574,7 @@ mod tests {
     #[tokio::test]
     async fn test_agent_cache_operations() {
         // Clear cache first
-        clear_agent_cache();
+        reset_agent_cache();
         assert!(AGENT_CACHE.lock().unwrap().is_none());
 
         // Manually populate cache
@@ -590,7 +591,7 @@ mod tests {
         assert_eq!(cached.unwrap().name, "test");
 
         // Clear and verify
-        clear_agent_cache();
+        reset_agent_cache();
         assert!(AGENT_CACHE.lock().unwrap().is_none());
     }
 
@@ -629,13 +630,13 @@ mod tests {
         // Either way, we got a valid agent - test passes
 
         // Clean up
-        clear_agent_cache();
+        reset_agent_cache();
     }
 
     #[tokio::test]
     async fn test_discover_agent_parallel_probe_is_fast() {
         // Clear cache to force fresh probe
-        clear_agent_cache();
+        reset_agent_cache();
 
         // Parallel probe should complete quickly even with multiple agents
         // because non-existent commands fail fast via `which`
@@ -654,7 +655,7 @@ mod tests {
         );
 
         // Clean up
-        clear_agent_cache();
+        reset_agent_cache();
     }
 
     #[test]
@@ -906,7 +907,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_discover_agent_preferred_uses_merged_profile_command() {
-        clear_agent_cache();
+        reset_agent_cache();
 
         let mut agents = HashMap::new();
         agents.insert(
@@ -938,7 +939,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_discover_agent_without_preferred_can_use_config_only_profile() {
-        clear_agent_cache();
+        reset_agent_cache();
 
         let mut agents = HashMap::new();
         agents.insert(

@@ -35,3 +35,12 @@ pub(crate) fn emit_event(
         .send(stamp_event(event, seq_counter.as_ref()))
         .is_ok()
 }
+
+#[cfg(test)]
+pub fn reset_seq_counters() {
+    /// Clear all session sequence counters to prevent state bleeding across tests.
+    /// Call this in test teardown to reset the global SESSION_SEQ_COUNTERS DashMap.
+    if let Some(map) = SESSION_SEQ_COUNTERS.get() {
+        map.clear();
+    }
+}
