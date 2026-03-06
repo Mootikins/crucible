@@ -629,7 +629,7 @@ mod tests {
             _workdir: Option<PathBuf>,
             _timeout: Option<Duration>,
         ) -> Result<JobId, JobError> {
-            unimplemented!()
+            panic!("MockSpawner::spawn_bash not expected in this test context")
         }
 
         async fn spawn_subagent(
@@ -638,7 +638,7 @@ mod tests {
             _prompt: String,
             _context: Option<String>,
         ) -> Result<JobId, JobError> {
-            unimplemented!()
+            panic!("MockSpawner::spawn_subagent not expected in this test context")
         }
 
         fn list_jobs(&self, _session_id: &str) -> Vec<JobInfo> {
