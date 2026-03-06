@@ -349,7 +349,7 @@ fn render_row_children_filtered(
                 render_node_filtered(child, width, filter, &mut temp, &mut temp_cursor);
                 let line_count = temp.lines().count().max(1);
                 max_height = max_height.max(line_count);
-                let content_width = temp.lines().next().map(visible_width).unwrap_or(0);
+                let content_width = temp.lines().map(visible_width).max().unwrap_or(0);
                 measurements.push(ChildMeasurement::Content(content_width));
                 child_infos.push(RowChildInfo::Content(temp, temp_cursor));
             }
