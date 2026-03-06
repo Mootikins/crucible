@@ -270,16 +270,7 @@ pub fn register_tools_module_with_api(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn setup_lua() -> Lua {
-        let lua = Lua::new();
-        let cru = lua.create_table().unwrap();
-        lua.globals().set("cru", cru).unwrap();
-        let crucible = lua.create_table().unwrap();
-        lua.globals().set("crucible", crucible).unwrap();
-        register_tools_module(&lua).expect("Should register tools module");
-        lua
-    }
+    use crate::test_support::TestLuaBuilder;
 
     #[test]
     fn tools_module_registers_in_namespace() {
@@ -352,6 +343,7 @@ mod tests {
 #[cfg(test)]
 mod api_tests {
     use super::*;
+    use crate::test_support::TestLuaBuilder;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// Mock implementation of DaemonToolsApi for testing.
@@ -422,16 +414,6 @@ mod api_tests {
                 ])
             })
         }
-    }
-
-    fn setup_lua_with_api(api: Arc<dyn DaemonToolsApi>) -> Lua {
-        let lua = Lua::new();
-        let cru = lua.create_table().unwrap();
-        lua.globals().set("cru", cru).unwrap();
-        let crucible = lua.create_table().unwrap();
-        lua.globals().set("crucible", crucible).unwrap();
-        register_tools_module_with_api(&lua, api).expect("Should register tools with API");
-        lua
     }
 
     #[tokio::test]

@@ -429,13 +429,8 @@ pub fn lua_to_json(_lua: &Lua, value: Value) -> Result<JsonValue, LuaError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::TestLuaBuilder;
     use mlua::Table;
-
-    fn setup_lua() -> Lua {
-        let lua = Lua::new();
-        register_oq_module(&lua).unwrap();
-        lua
-    }
 
     // =========================================================================
     // oq module tests

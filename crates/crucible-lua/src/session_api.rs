@@ -387,6 +387,7 @@ pub fn register_session_module(lua: &Lua) -> Result<SessionManager, LuaError> {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::test_support::TestLuaBuilder;
 
     pub struct MockRpc {
         temperature: std::sync::RwLock<Option<f64>>,
@@ -423,18 +424,6 @@ pub mod tests {
         fn get_mode(&self) -> String {
             "act".to_string()
         }
-    }
-
-    fn setup_lua() -> (Lua, SessionManager) {
-        let lua = Lua::new();
-        lua.globals()
-            .set("crucible", lua.create_table().unwrap())
-            .unwrap();
-        lua.globals()
-            .set("cru", lua.create_table().unwrap())
-            .unwrap();
-        let mgr = register_session_module(&lua).unwrap();
-        (lua, mgr)
     }
 
     #[test]
