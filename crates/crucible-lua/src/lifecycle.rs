@@ -1802,6 +1802,18 @@ return {{
         plugin_dir
     }
 
+    fn create_test_plugin_with_source(dir: &Path, name: &str, version: &str, lua_source: &str) {
+        let plugin_dir = dir.join(name);
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+
+        let manifest = format!(
+            "name: {}\nversion: {}\ndescription: Test plugin\nauthor: Test\n",
+            name, version
+        );
+        std::fs::write(plugin_dir.join("plugin.yaml"), manifest).unwrap();
+        std::fs::write(plugin_dir.join("init.lua"), lua_source).unwrap();
+    }
+
     fn create_plugin_with_deps(dir: &Path, name: &str, deps: &[&str]) -> PathBuf {
         let plugin_dir = dir.join(name);
         std::fs::create_dir_all(&plugin_dir).unwrap();
@@ -3104,6 +3116,250 @@ return {
             .unwrap();
         crate::lua_stdlib::register_lua_stdlib(&manager.lua).unwrap();
         manager
+    }
+
+    fn setup_emitter_manager_with_paths(paths: Vec<PathBuf>) -> PluginManager {
+        let manager = PluginManager::new().with_search_paths(paths);
+        manager
+            .lua
+            .load(
+                r#"
+        cru = {}
+        cru.log = function(level, msg) end
+        cru.timer = { sleep = function(secs) end }
+    "#,
+            )
+            .exec()
+            .unwrap();
+        crate::lua_stdlib::register_lua_stdlib(&manager.lua).unwrap();
+        manager
+    }
+
+    #[test]
+    fn test_full_lifecycle_with_hooks_and_cleanup() {
+        let temp = TempDir::new().unwrap();
+        create_test_plugin_with_source(
+            temp.path(),
+            "full-plugin",
+            "1.0.0",
+            r#"
+        return {
+            on_load = function()
+                _G.on_load_fired = true
+                cru.emitter.global():on("test_event", function() end, "full-plugin")
+            end,
+            on_unload = function()
+                _G.on_unload_fired = true
+            end,
+        }
+    "#,
+        );
+
+        let mut manager = setup_emitter_manager_with_paths(vec![temp.path().to_path_buf()]);
+        manager.discover().unwrap();
+        manager.load("full-plugin").unwrap();
+
+        let on_load_fired = manager
+            .eval_runtime::<bool>("return _G.on_load_fired == true")
+            .unwrap();
+        assert!(on_load_fired, "on_load should have fired");
+
+        let count = manager
+            .eval_runtime::<i64>("return cru.emitter.global():count('test_event')")
+            .unwrap();
+        assert_eq!(count, 1, "emitter listener should be registered");
+
+        manager.unload("full-plugin").unwrap();
+
+        let on_unload_fired = manager
+            .eval_runtime::<bool>("return _G.on_unload_fired == true")
+            .unwrap();
+        assert!(on_unload_fired, "on_unload should have fired");
+
+        let count_after = manager
+            .eval_runtime::<i64>("return cru.emitter.global():count('test_event')")
+            .unwrap();
+        assert_eq!(
+            count_after, 0,
+            "emitter listener should be cleaned up after unload"
+        );
+
+        let plugin = manager.get("full-plugin").unwrap();
+        assert_eq!(plugin.state, PluginState::Discovered);
+    }
+
+    #[test]
+    fn test_reload_full_cycle() {
+        let temp = TempDir::new().unwrap();
+        create_test_plugin_with_source(
+            temp.path(),
+            "reload-plugin",
+            "1.0.0",
+            r#"
+        _G.load_count = (_G.load_count or 0)
+        _G.unload_count = (_G.unload_count or 0)
+        return {
+            on_load = function()
+                _G.load_count = _G.load_count + 1
+                cru.emitter.global():on("reload_event", function() end, "reload-plugin")
+            end,
+            on_unload = function()
+                _G.unload_count = _G.unload_count + 1
+            end,
+        }
+    "#,
+        );
+
+        let mut manager = setup_emitter_manager_with_paths(vec![temp.path().to_path_buf()]);
+        manager.discover().unwrap();
+        manager.load("reload-plugin").unwrap();
+
+        let count = manager
+            .eval_runtime::<i64>("return cru.emitter.global():count('reload_event')")
+            .unwrap();
+        assert_eq!(count, 1);
+
+        manager.reload("reload-plugin").unwrap();
+
+        let unload_count = manager
+            .eval_runtime::<i64>("return _G.unload_count")
+            .unwrap();
+        assert_eq!(
+            unload_count, 1,
+            "on_unload should fire exactly once during reload"
+        );
+
+        let load_count = manager.eval_runtime::<i64>("return _G.load_count").unwrap();
+        assert_eq!(
+            load_count, 2,
+            "on_load should fire once per successful load"
+        );
+
+        let count_after = manager
+            .eval_runtime::<i64>("return cru.emitter.global():count('reload_event')")
+            .unwrap();
+        assert_eq!(
+            count_after, 1,
+            "emitter should have exactly 1 listener after reload"
+        );
+    }
+
+    #[test]
+    fn test_error_during_emitter_emit_captured() {
+        let temp = TempDir::new().unwrap();
+        create_test_plugin_with_source(
+            temp.path(),
+            "error-plugin",
+            "1.0.0",
+            r#"
+        return {
+            on_load = function()
+                cru.emitter.global():on("error_event", function()
+                    error("intentional test error")
+                end, "error-plugin")
+            end,
+        }
+    "#,
+        );
+
+        let mut manager = setup_emitter_manager_with_paths(vec![temp.path().to_path_buf()]);
+        manager.discover().unwrap();
+        manager.load("error-plugin").unwrap();
+
+        manager
+            .lua
+            .load("cru.emitter.global():emit('error_event')")
+            .exec()
+            .unwrap();
+
+        let log = manager.error_log();
+        assert!(!log.is_empty(), "error should be captured in error_log");
+        let entry = &log.recent(1)[0];
+        assert_eq!(
+            entry.plugin, "error-plugin",
+            "error should be attributed to correct plugin"
+        );
+        assert!(
+            entry.context.contains("error_event"),
+            "context should mention the event name"
+        );
+    }
+
+    #[test]
+    fn test_multiple_plugins_isolated() {
+        let temp = TempDir::new().unwrap();
+        create_test_plugin_with_source(
+            temp.path(),
+            "plugin-a",
+            "1.0.0",
+            r#"
+        return {
+            on_load = function()
+                cru.emitter.global():on("shared_event", function() end, "plugin-a")
+            end,
+        }
+    "#,
+        );
+        create_test_plugin_with_source(
+            temp.path(),
+            "plugin-b",
+            "1.0.0",
+            r#"
+        return {
+            on_load = function()
+                cru.emitter.global():on("shared_event", function() end, "plugin-b")
+            end,
+        }
+    "#,
+        );
+
+        let mut manager = setup_emitter_manager_with_paths(vec![temp.path().to_path_buf()]);
+        manager.discover().unwrap();
+        manager.load("plugin-a").unwrap();
+        manager.load("plugin-b").unwrap();
+
+        let count = manager
+            .eval_runtime::<i64>("return cru.emitter.global():count('shared_event')")
+            .unwrap();
+        assert_eq!(count, 2, "both plugins should have listeners");
+
+        manager.unload("plugin-a").unwrap();
+
+        let count_after = manager
+            .eval_runtime::<i64>("return cru.emitter.global():count('shared_event')")
+            .unwrap();
+        assert_eq!(
+            count_after, 1,
+            "only plugin-b's listener should remain after plugin-a unload"
+        );
+    }
+
+    #[test]
+    fn test_backward_compat_no_hooks() {
+        let temp = TempDir::new().unwrap();
+        create_test_plugin_with_source(
+            temp.path(),
+            "legacy-plugin",
+            "1.0.0",
+            r#"
+        return {}
+    "#,
+        );
+
+        let mut manager = setup_emitter_manager_with_paths(vec![temp.path().to_path_buf()]);
+        manager.discover().unwrap();
+
+        manager.load("legacy-plugin").unwrap();
+
+        let plugin = manager.get("legacy-plugin").unwrap();
+        assert_eq!(plugin.state, PluginState::Active, "plugin should be Active");
+
+        manager.unload("legacy-plugin").unwrap();
+
+        assert!(
+            manager.error_log().is_empty(),
+            "no errors should be logged for clean plugin"
+        );
     }
 
     #[test]
