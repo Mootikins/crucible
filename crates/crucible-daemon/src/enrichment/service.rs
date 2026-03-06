@@ -757,8 +757,8 @@ mod tests {
             .await
             .unwrap();
 
-        // BUG: Currently returns 0 because section IDs don't match block IDs
-        // After fix: Should return 2 (all blocks embedded when IDs are section-style)
+        // Section-style IDs (modified_section_*, added_section_*) trigger embed-all behavior
+        // per extract_block_texts() lines 238-243, so all blocks get embedded
         assert_eq!(
             embeddings.len(),
             2,
