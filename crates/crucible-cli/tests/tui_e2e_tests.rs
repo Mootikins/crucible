@@ -171,11 +171,11 @@ fn chat_startup_shows_prompt() {
 
     // Should see mode indicator or prompt area
     // The exact text depends on TUI design, adjust as needed
-    session.wait(Duration::from_secs(2));
+    session.wait_for_ready().expect("TUI ready");
 
     // Try to exit cleanly
     session.send_control('c').expect("Failed to send Ctrl+C");
-    session.wait(Duration::from_millis(500));
+    session.settle();
 }
 
 /// Test that double Ctrl+C exits the TUI
@@ -188,10 +188,10 @@ fn chat_ctrl_c_exits() {
         .spawn()
         .expect("Failed to spawn chat");
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
     // Double Ctrl+C within 300ms triggers quit
     session.send_control('c').expect("Failed to send Ctrl+C");
-    session.wait(Duration::from_millis(100));
+    session.settle();
     session
         .send_control('c')
         .expect("Failed to send second Ctrl+C");
@@ -214,11 +214,11 @@ fn chat_input_typing() {
         .spawn()
         .expect("Failed to spawn chat");
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
 
     // Type some text
     session.send("Hello world").expect("Failed to send text");
-    session.wait(Duration::from_millis(200));
+    session.settle();
 
     // The input should be visible (TUI renders it)
     // We can't easily assert on exact screen content with expectrl alone,
@@ -238,18 +238,18 @@ fn chat_input_backspace() {
         .spawn()
         .expect("Failed to spawn chat");
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
 
     // Type and then delete
     session.send("Hello").expect("Failed to send text");
-    session.wait(Duration::from_millis(100));
+    session.settle();
     session
         .send_key(Key::Backspace)
         .expect("Failed to send backspace");
     session
         .send_key(Key::Backspace)
         .expect("Failed to send backspace");
-    session.wait(Duration::from_millis(100));
+    session.settle();
 
     // Clean exit
     session.send_control('c').expect("Failed to send Ctrl+C");
@@ -265,20 +265,20 @@ fn chat_backspace_preserves_scrollback() {
         .spawn()
         .expect("Failed to spawn chat");
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
 
     session.send("Hello").expect("Failed to send text");
-    session.wait(Duration::from_millis(200));
+    session.settle();
 
     for _ in 0..5 {
         session
             .send_key(Key::Backspace)
             .expect("Failed to send backspace");
-        session.wait(Duration::from_millis(100));
+        session.settle();
     }
 
     session.send("Done").expect("Failed to send text");
-    session.wait(Duration::from_millis(200));
+    session.settle();
 
     session.send_control('c').expect("Failed to send Ctrl+C");
 }
@@ -297,11 +297,11 @@ fn chat_slash_shows_popup() {
         .spawn()
         .expect("Failed to spawn chat");
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
 
     // Type slash to trigger command popup
     session.send("/").expect("Failed to send /");
-    session.wait(Duration::from_millis(300));
+    session.settle();
 
     // Popup should appear with commands
     // The TUI should render command options
@@ -310,7 +310,7 @@ fn chat_slash_shows_popup() {
     session
         .send_key(Key::Escape)
         .expect("Failed to send Escape");
-    session.wait(Duration::from_millis(100));
+    session.settle();
     session.send_control('c').expect("Failed to send Ctrl+C");
 }
 
@@ -324,11 +324,11 @@ fn chat_help_command() {
         .spawn()
         .expect("Failed to spawn chat");
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
 
     // Type /help and press Enter
     session.send_line("/help").expect("Failed to send /help");
-    session.wait(Duration::from_millis(500));
+    session.settle();
 
     // Should show help information (dialog or inline)
 
@@ -350,27 +350,27 @@ fn chat_popup_navigation() {
         .spawn()
         .expect("Failed to spawn chat");
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
 
     // Open command popup
     session.send("/").expect("Failed to send /");
-    session.wait(Duration::from_millis(200));
+    session.settle();
 
     // Navigate down
     session.send_key(Key::Down).expect("Failed to send Down");
-    session.wait(Duration::from_millis(100));
+    session.settle();
     session.send_key(Key::Down).expect("Failed to send Down");
-    session.wait(Duration::from_millis(100));
+    session.settle();
 
     // Navigate up
     session.send_key(Key::Up).expect("Failed to send Up");
-    session.wait(Duration::from_millis(100));
+    session.settle();
 
     // Escape to close popup
     session
         .send_key(Key::Escape)
         .expect("Failed to send Escape");
-    session.wait(Duration::from_millis(100));
+    session.settle();
 
     // Clean exit
     session.send_control('c').expect("Failed to send Ctrl+C");
@@ -386,15 +386,15 @@ fn chat_tab_completion() {
         .spawn()
         .expect("Failed to spawn chat");
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
 
     // Type partial command
     session.send("/hel").expect("Failed to send /hel");
-    session.wait(Duration::from_millis(200));
+    session.settle();
 
     // Tab to complete
     session.send_key(Key::Tab).expect("Failed to send Tab");
-    session.wait(Duration::from_millis(200));
+    session.settle();
 
     // Clean exit
     session.send_control('c').expect("Failed to send Ctrl+C");
@@ -417,7 +417,7 @@ fn chat_multiturn_basic() {
         .spawn()
         .expect("Failed to spawn chat");
 
-    session.wait(Duration::from_secs(2));
+    session.wait_for_ready().expect("TUI ready");
 
     // Turn 1: Send a simple message
     session
@@ -452,19 +452,19 @@ fn chat_mode_switching() {
         .spawn()
         .expect("Failed to spawn chat");
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
 
     // Try /mode command if it exists
     session
         .send_line("/mode act")
         .expect("Failed to send /mode");
-    session.wait(Duration::from_millis(500));
+    session.settle();
 
     // Switch to plan mode
     session
         .send_line("/mode plan")
         .expect("Failed to send /mode");
-    session.wait(Duration::from_millis(500));
+    session.settle();
 
     // Clean exit
     session.send_control('c').expect("Failed to send Ctrl+C");
@@ -484,11 +484,11 @@ fn chat_empty_message() {
         .spawn()
         .expect("Failed to spawn chat");
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
 
     // Send empty line (just Enter)
     session.send_key(Key::Enter).expect("Failed to send Enter");
-    session.wait(Duration::from_millis(200));
+    session.settle();
 
     // Should not crash, TUI should still be responsive
     session.send("test").expect("Should still accept input");
@@ -511,13 +511,13 @@ fn chat_rapid_input() {
         .spawn()
         .expect("Failed to spawn chat");
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
 
     // Send rapid keystrokes
     for _ in 0..50 {
         session.send("x").expect("Failed to send");
     }
-    session.wait(Duration::from_millis(200));
+    session.settle();
 
     // Clear with backspaces
     for _ in 0..50 {
@@ -525,7 +525,7 @@ fn chat_rapid_input() {
             .send_key(Key::Backspace)
             .expect("Failed to backspace");
     }
-    session.wait(Duration::from_millis(200));
+    session.settle();
 
     // Should still be responsive
     session.send("still works").expect("Should still work");
@@ -550,18 +550,18 @@ fn oil_runner_does_not_freeze() {
 
     let start = std::time::Instant::now();
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
 
     for i in 0..20 {
         if session.send("x").is_err() {
             panic!("Send failed at iteration {}", i);
         }
-        session.wait(Duration::from_millis(300));
+        session.settle();
 
         if session.send_key(Key::Backspace).is_err() {
             panic!("Backspace failed at iteration {}", i);
         }
-        session.wait(Duration::from_millis(300));
+        session.settle();
     }
 
     eprintln!("Input test passed after {:?}", start.elapsed());
@@ -582,10 +582,10 @@ fn oil_quit_with_repl_command() {
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn chat");
 
     // Wait for TUI to initialize and show Ready status
-    session.wait(Duration::from_secs(2));
+    session.wait_for_ready().expect("TUI ready");
 
     session.send(":quit\r").expect("Failed to send :quit");
-    session.wait(Duration::from_secs(1));
+    session.settle();
 
     match session.expect_eof() {
         Ok(_) => eprintln!(":quit worked - test passed"),
@@ -607,7 +607,7 @@ fn oil_verify_pty_works() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn chat");
 
-    session.wait(Duration::from_secs(2));
+    session.wait_for_ready().expect("TUI ready");
 
     eprintln!("Checking for initial prompt...");
     let screen = session.capture_screen().unwrap_or_default();
@@ -615,14 +615,14 @@ fn oil_verify_pty_works() {
 
     eprintln!("Typing hello...");
     session.send("hello").expect("Failed to send hello");
-    session.wait(Duration::from_secs(1));
+    session.settle();
 
     let screen2 = session.capture_screen().unwrap_or_default();
     eprintln!("Screen after 'hello': {:?}", screen2);
 
     eprintln!("Sending Enter...");
     session.send("\r").expect("Failed to send Enter");
-    session.wait(Duration::from_secs(2));
+    session.settle();
 
     let screen3 = session.capture_screen().unwrap_or_default();
     eprintln!("Screen after Enter: {:?}", screen3);
@@ -640,7 +640,7 @@ fn oil_runner_stays_responsive_10s() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn chat");
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
 
     let start = std::time::Instant::now();
     let mut last_responsive = start;
@@ -654,14 +654,14 @@ fn oil_runner_stays_responsive_10s() {
             )
         });
 
-        session.wait(Duration::from_millis(200));
+        session.settle();
 
         session
             .send_key(Key::Backspace)
             .unwrap_or_else(|_| panic!("Backspace failed after {:?}", start.elapsed()));
 
         last_responsive = std::time::Instant::now();
-        session.wait(Duration::from_millis(300));
+        session.settle();
     }
 
     session
@@ -684,12 +684,13 @@ fn oil_streaming_response_renders() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session.wait(Duration::from_secs(2));
+    session.wait_for_ready().expect("TUI ready");
 
     session
         .send_line("Say exactly: 'Hello World' and nothing else")
         .expect("Failed to send");
 
+    // Wait for LLM streaming response (needs Ollama)
     session.wait(Duration::from_secs(5));
 
     let screen = session.capture_screen().unwrap_or_default();
@@ -711,7 +712,7 @@ fn oil_streaming_with_markdown_table() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session.wait(Duration::from_secs(2));
+    session.wait_for_ready().expect("TUI ready");
 
     session
         .send_line(
@@ -721,6 +722,7 @@ fn oil_streaming_with_markdown_table() {
 
     let start = std::time::Instant::now();
     while start.elapsed() < Duration::from_secs(30) {
+        // Poll with settle instead of fixed 2s sleep inside loop
         session.wait(Duration::from_secs(2));
         let screen = session.capture_screen().unwrap_or_default();
         eprintln!(
@@ -753,28 +755,29 @@ fn oil_ctrl_c_during_streaming() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session.wait(Duration::from_secs(2));
+    session.wait_for_ready().expect("TUI ready");
 
     session
         .send_line("Write a very long story about a dragon, at least 500 words")
         .expect("Failed to send");
 
+    // Wait for streaming to start (needs Ollama)
     session.wait(Duration::from_secs(3));
 
     eprintln!("Sending Ctrl+C during streaming...");
     session.send_control('c').expect("Ctrl+C failed");
 
-    session.wait(Duration::from_millis(500));
+    session.settle();
 
     let screen = session.capture_screen().unwrap_or_default();
     eprintln!("Screen after Ctrl+C: {}", safe_truncate(&screen, 300));
 
-    session.wait(Duration::from_secs(1));
+    session.settle();
 
     session
         .send("test input after cancel")
         .expect("Should still accept input");
-    session.wait(Duration::from_millis(500));
+    session.settle();
 
     session.send_control('c').expect("Second Ctrl+C failed");
 }
@@ -790,16 +793,17 @@ fn oil_double_ctrl_c_exits_during_streaming() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session.wait(Duration::from_secs(2));
+    session.wait_for_ready().expect("TUI ready");
 
     session
         .send("Write an extremely long essay about the history of computing\r")
         .expect("Failed to send");
 
+    // Wait for streaming to start (needs Ollama)
     session.wait(Duration::from_secs(2));
 
     session.send_control('c').expect("First Ctrl+C failed");
-    session.wait(Duration::from_millis(300));
+    session.settle();
 
     session.send_control('c').expect("Second Ctrl+C failed");
 
@@ -822,21 +826,21 @@ fn oil_ctrl_c_empty_input_notification() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
 
     session.send_control('c').expect("First Ctrl+C failed");
-    session.wait(Duration::from_millis(500));
+    session.settle();
 
     let screen = session.capture_screen().unwrap_or_default();
     eprintln!("Screen after first Ctrl+C: {}", screen);
 
     session.send("a").expect("Should still accept input");
-    session.wait(Duration::from_millis(200));
+    session.settle();
     session.send_key(Key::Backspace).expect("Backspace failed");
-    session.wait(Duration::from_millis(200));
+    session.settle();
 
     session.send_control('c').expect("Second Ctrl+C failed");
-    session.wait(Duration::from_millis(100));
+    session.settle();
     session.send_control('c').expect("Third Ctrl+C failed");
 
     session
@@ -858,15 +862,13 @@ fn oil_mode_cycle() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session.wait(Duration::from_secs(1));
-
     session
         .wait_for_text("NORMAL", Duration::from_secs(3))
         .expect("Initial mode should be NORMAL");
 
     for _ in 0..3 {
         session.send("/mode\r").expect("Failed to send /mode");
-        session.wait(Duration::from_millis(300));
+        session.settle();
     }
 
     session.send(":quit\r").ok();
@@ -882,7 +884,7 @@ fn oil_explicit_mode_commands() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
 
     session.send("/auto\r").expect("Failed to send /auto");
     session
@@ -918,16 +920,16 @@ fn model_popup_shows_with_ollama() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session.wait(Duration::from_secs(3));
+    session.wait_for_ready().expect("TUI ready");
 
     session.send(":model\r").expect("Failed to send :model");
-    session.wait(Duration::from_millis(500));
+    session.settle();
 
     let screen = session.capture_screen().unwrap_or_default();
     eprintln!("Screen after :model: {}", safe_truncate(&screen, 500));
 
     session.send_key(Key::Escape).expect("Escape failed");
-    session.wait(Duration::from_millis(200));
+    session.settle();
 
     session.send_control('c').ok();
     session.send_control('c').ok();
@@ -944,10 +946,10 @@ fn model_popup_lazy_fetch_on_demand() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
 
     session.send(":model\r").expect("Failed to send :model");
-    session.wait(Duration::from_secs(2));
+    session.settle();
 
     let screen = session.capture_screen().unwrap_or_default();
     eprintln!(
@@ -956,7 +958,7 @@ fn model_popup_lazy_fetch_on_demand() {
     );
 
     session.send_key(Key::Escape).expect("Escape failed");
-    session.wait(Duration::from_millis(200));
+    session.settle();
 
     session.send_control('c').ok();
     session.send_control('c').ok();
@@ -973,18 +975,18 @@ fn model_popup_filter_works() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session.wait(Duration::from_secs(3));
+    session.wait_for_ready().expect("TUI ready");
 
     session
         .send(":model lla")
         .expect("Failed to send :model lla");
-    session.wait(Duration::from_millis(500));
+    session.settle();
 
     let screen = session.capture_screen().unwrap_or_default();
     eprintln!("Screen with filter 'lla': {}", safe_truncate(&screen, 500));
 
     session.send_key(Key::Escape).expect("Escape failed");
-    session.wait(Duration::from_millis(200));
+    session.settle();
 
     session.send_control('c').ok();
     session.send_control('c').ok();
@@ -1003,16 +1005,16 @@ fn model_selection_updates_status() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session.wait(Duration::from_secs(3));
+    session.wait_for_ready().expect("TUI ready");
 
     session.send(":model\r").expect("Failed to send :model");
-    session.wait(Duration::from_millis(500));
+    session.settle();
 
     session.send_key(Key::Down).expect("Down failed");
-    session.wait(Duration::from_millis(100));
+    session.settle();
 
     session.send_key(Key::Enter).expect("Enter failed");
-    session.wait(Duration::from_millis(500));
+    session.settle();
 
     let screen = session.capture_screen().unwrap_or_default();
     eprintln!(
@@ -1033,25 +1035,25 @@ fn model_popup_navigation() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session.wait(Duration::from_secs(3));
+    session.wait_for_ready().expect("TUI ready");
 
     session.send(":model\r").expect("Failed to send :model");
-    session.wait(Duration::from_millis(500));
+    session.settle();
 
     for i in 0..3 {
         session.send_key(Key::Down).expect("Down failed");
-        session.wait(Duration::from_millis(100));
+        session.settle();
         eprintln!("Down {}", i + 1);
     }
 
     for i in 0..2 {
         session.send_key(Key::Up).expect("Up failed");
-        session.wait(Duration::from_millis(100));
+        session.settle();
         eprintln!("Up {}", i + 1);
     }
 
     session.send_key(Key::Escape).expect("Escape failed");
-    session.wait(Duration::from_millis(200));
+    session.settle();
 
     session.send_control('c').ok();
     session.send_control('c').ok();
@@ -1066,12 +1068,12 @@ fn model_direct_switch_command() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session.wait(Duration::from_secs(2));
+    session.wait_for_ready().expect("TUI ready");
 
     session
         .send(":model llama3.2\r")
         .expect("Failed to send :model llama3.2");
-    session.wait(Duration::from_millis(500));
+    session.settle();
 
     let screen = session.capture_screen().unwrap_or_default();
     eprintln!(
@@ -1094,10 +1096,10 @@ fn model_popup_no_models_message() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session.wait(Duration::from_secs(2));
+    session.wait_for_ready().expect("TUI ready");
 
     session.send(":model\r").expect("Failed to send :model");
-    session.wait(Duration::from_secs(3));
+    session.settle();
 
     let screen = session.capture_screen().unwrap_or_default();
     eprintln!("Screen with no Ollama: {}", safe_truncate(&screen, 500));
@@ -1116,16 +1118,16 @@ fn oil_f1_popup_toggle() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
 
     session.send_key(Key::F(1)).expect("F1 failed");
-    session.wait(Duration::from_millis(500));
+    session.settle();
 
     let screen_open = session.capture_screen().unwrap_or_default();
     eprintln!("After F1 (should show popup): {}", screen_open);
 
     session.send_key(Key::F(1)).expect("Second F1 failed");
-    session.wait(Duration::from_millis(500));
+    session.settle();
 
     let screen_closed = session.capture_screen().unwrap_or_default();
     eprintln!("After second F1 (should close popup): {}", screen_closed);
@@ -1144,25 +1146,25 @@ fn oil_popup_arrow_navigation() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
 
     session.send_key(Key::F(1)).expect("F1 failed");
-    session.wait(Duration::from_millis(300));
+    session.settle();
 
     for i in 0..5 {
         session.send_key(Key::Down).expect("Down failed");
-        session.wait(Duration::from_millis(100));
+        session.settle();
         eprintln!("Down {}", i + 1);
     }
 
     for i in 0..3 {
         session.send_key(Key::Up).expect("Up failed");
-        session.wait(Duration::from_millis(100));
+        session.settle();
         eprintln!("Up {}", i + 1);
     }
 
     session.send_key(Key::Escape).expect("Escape failed");
-    session.wait(Duration::from_millis(300));
+    session.settle();
 
     session.send_control('c').ok();
     session.send_control('c').ok();
@@ -1182,14 +1184,14 @@ fn oil_rapid_typing_stress() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
 
     let test_string = "The quick brown fox jumps over the lazy dog 1234567890";
     for c in test_string.chars() {
         session.send(&c.to_string()).expect("Send char failed");
     }
 
-    session.wait(Duration::from_millis(500));
+    session.settle();
 
     let screen = session.capture_screen().unwrap_or_default();
     eprintln!("Screen after rapid typing: {}", screen);
@@ -1198,12 +1200,12 @@ fn oil_rapid_typing_stress() {
         session.send_key(Key::Backspace).expect("Backspace failed");
     }
 
-    session.wait(Duration::from_millis(300));
+    session.settle();
 
     session
         .send("still works")
         .expect("Should still accept input");
-    session.wait(Duration::from_millis(200));
+    session.settle();
 
     session.send_control('c').ok();
     session.send_control('c').ok();
@@ -1219,23 +1221,23 @@ fn oil_alternating_input_commands() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
 
     for i in 0..5 {
         session
             .send(&format!("message {}", i))
             .expect("Send failed");
-        session.wait(Duration::from_millis(100));
+        session.settle();
 
         for _ in 0..10 {
             session.send_key(Key::Backspace).expect("Backspace failed");
         }
 
         session.send_line("/help").expect("Help failed");
-        session.wait(Duration::from_millis(300));
+        session.settle();
 
         session.send_line("/mode").expect("Mode failed");
-        session.wait(Duration::from_millis(200));
+        session.settle();
     }
 
     session.send_control('c').ok();
@@ -1256,12 +1258,12 @@ fn oil_unknown_command_error() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
 
     session
         .send_line("/nonexistent_command")
         .expect("Failed to send");
-    session.wait(Duration::from_millis(500));
+    session.settle();
 
     let screen = session.capture_screen().unwrap_or_default();
     eprintln!("Screen after unknown command: {}", screen);
@@ -1284,16 +1286,16 @@ fn oil_clear_command() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
 
     session.send("/help\r").expect("Help failed");
-    session.wait(Duration::from_millis(500));
+    session.settle();
 
     let screen_before = session.capture_screen().unwrap_or_default();
     eprintln!("Before clear: {}", safe_truncate(&screen_before, 200));
 
     session.send(":clear\r").expect("Clear failed");
-    session.wait(Duration::from_millis(500));
+    session.settle();
 
     let screen_after = session.capture_screen().unwrap_or_default();
     eprintln!("After clear: {}", safe_truncate(&screen_after, 200));
@@ -1318,8 +1320,6 @@ fn oil_narrow_terminal_60_cols() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session.wait(Duration::from_secs(1));
-
     session
         .wait_for_text("NORMAL", Duration::from_secs(3))
         .expect("Should show mode indicator at 60 cols");
@@ -1338,10 +1338,10 @@ fn ink_very_narrow_terminal_40_cols() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
 
     session.send("test input\r").expect("Input failed");
-    session.wait(Duration::from_millis(500));
+    session.settle();
 
     session.send(":quit\r").ok();
 }
@@ -1356,8 +1356,6 @@ fn oil_wide_terminal_120_cols() {
         .with_timeout(Duration::from_secs(10));
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
-
-    session.wait(Duration::from_secs(1));
 
     session
         .wait_for_text("NORMAL", Duration::from_secs(3))
@@ -1388,10 +1386,10 @@ fn oil_short_terminal_10_rows() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session.wait(Duration::from_secs(1));
+    session.wait_for_ready().expect("TUI ready");
 
     session.send("test\r").expect("Input failed");
-    session.wait(Duration::from_millis(500));
+    session.settle();
 
     session.send(":quit\r").ok();
 }
@@ -1684,7 +1682,7 @@ fn vt100_exemplar_popup_lifecycle() {
         .expect("Command palette popup should appear");
 
     session.send_key(Key::Escape).expect("Escape failed");
-    session.wait(Duration::from_millis(300));
+    session.settle();
     session.refresh_screen();
 
     // After dismissing, the help popup title should be gone.

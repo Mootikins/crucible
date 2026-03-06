@@ -432,6 +432,20 @@ impl TuiTestSession {
         self.wait_until(move |s| s.contents().contains(&owned), timeout)
     }
 
+    /// Wait for the TUI to initialize and show the NORMAL mode indicator.
+    /// Standard way to wait for TUI readiness after spawn.
+    pub fn wait_for_ready(&mut self) -> Result<(), String> {
+        self.wait_for_text("NORMAL", Duration::from_secs(5))
+    }
+
+    /// Brief pause to let the PTY process pending input/output, then drain.
+    /// Use between rapid keystrokes where no specific content is expected.
+    /// Prefer `wait_for_text()` or `wait_until()` when waiting for specific content.
+    pub fn settle(&mut self) {
+        std::thread::sleep(Duration::from_millis(50));
+        self.refresh_screen();
+    }
+
     /// Get the underlying session for advanced operations
     pub fn inner(&mut self) -> &mut OsSession {
         &mut self.session
