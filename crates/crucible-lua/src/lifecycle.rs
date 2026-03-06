@@ -202,10 +202,6 @@ impl PluginManager {
         self.error_log.lock().expect("error_log: poisoned")
     }
 
-    /// Access the error log mutably (for wiring in error capture).
-    pub fn error_log_mut(&mut self) -> MutexGuard<'_, PluginErrorLog> {
-        self.error_log.lock().expect("error_log: poisoned")
-    }
 
     fn capture_plugin_error(&self, plugin: &str, error: impl ToString, context: impl Into<String>) {
         match self.error_log.lock() {
@@ -676,8 +672,7 @@ impl PluginManager {
                     }
 
                     // Register all exports from spec
-                    let source_path = main_path.to_string_lossy().to_string();
-                    self.register_spec_exports(spec, &source_path, name);
+                    self.register_spec_exports(spec, name);
 
                     return Ok(());
                 }
@@ -931,52 +926,31 @@ end
         })
     }
 
-    fn register_spec_exports(&mut self, spec: PluginSpec, source_path: &str, owner: &str) {
-        for tool in spec.tools {
-            if !self.tools.iter().any(|t| t.item.name == tool.name) {
-                debug!("Registered tool from spec: {}", tool.name);
-                self.tools.push(RegisteredItem {
-                    item: tool,
-                    handle: RegistrationHandle::new(),
-                    owner: Some(owner.to_string()),
-                });
+    fn register_spec_exports(&mut self, spec: PluginSpec, owner: &str) {
+        fn push_unique<T>(
+            existing: &mut Vec<RegisteredItem<T>>,
+            items: Vec<T>,
+            kind: &str,
+            owner: &str,
+            get_name: impl Fn(&T) -> &str,
+        ) {
+            for item in items {
+                let name = get_name(&item);
+                if !existing.iter().any(|e| get_name(&e.item) == name) {
+                    debug!("Registered {} from spec: {}", kind, name);
+                    existing.push(RegisteredItem {
+                        item,
+                        handle: RegistrationHandle::new(),
+                        owner: Some(owner.to_string()),
+                    });
+                }
             }
         }
 
-        for cmd in spec.commands {
-            if !self.commands.iter().any(|c| c.item.name == cmd.name) {
-                debug!("Registered command from spec: {}", cmd.name);
-                self.commands.push(RegisteredItem {
-                    item: cmd,
-                    handle: RegistrationHandle::new(),
-                    owner: Some(owner.to_string()),
-                });
-            }
-        }
-
-        for handler in spec.handlers {
-            if !self.handlers.iter().any(|h| h.item.name == handler.name) {
-                debug!("Registered handler from spec: {}", handler.name);
-                self.handlers.push(RegisteredItem {
-                    item: handler,
-                    handle: RegistrationHandle::new(),
-                    owner: Some(owner.to_string()),
-                });
-            }
-        }
-
-        for view in spec.views {
-            if !self.views.iter().any(|v| v.item.name == view.name) {
-                debug!("Registered view from spec: {}", view.name);
-                self.views.push(RegisteredItem {
-                    item: view,
-                    handle: RegistrationHandle::new(),
-                    owner: Some(owner.to_string()),
-                });
-            }
-        }
-
-        let _ = source_path; // used for debug context
+        push_unique(&mut self.tools, spec.tools, "tool", owner, |t| &t.name);
+        push_unique(&mut self.commands, spec.commands, "command", owner, |c| &c.name);
+        push_unique(&mut self.handlers, spec.handlers, "handler", owner, |h| &h.name);
+        push_unique(&mut self.views, spec.views, "view", owner, |v| &v.name);
     }
 
     pub fn get(&self, name: &str) -> Option<&LoadedPlugin> {
@@ -1487,6 +1461,26 @@ pub fn load_plugin_spec(init_path: &Path) -> LifecycleResult<Option<PluginSpec>>
     load_plugin_spec_from_source(&source, init_path)
 }
 
+/// Extract `DiscoveredParam` entries from a Lua params table.
+fn extract_params_from_table(def: &mlua::Table) -> Vec<DiscoveredParam> {
+    let mut params = Vec::new();
+    if let Ok(Value::Table(params_table)) = def.get::<Value>("params") {
+        for i in 1..=params_table.raw_len() {
+            if let Ok(Value::Table(param_def)) = params_table.get::<Value>(i) {
+                params.push(DiscoveredParam {
+                    name: param_def.get::<String>("name").unwrap_or_default(),
+                    param_type: param_def
+                        .get::<String>("type")
+                        .unwrap_or_else(|_| "string".to_string()),
+                    description: param_def.get::<String>("desc").unwrap_or_default(),
+                    optional: param_def.get::<bool>("optional").unwrap_or(false),
+                });
+            }
+        }
+    }
+    params
+}
+
 /// Extract a PluginSpec from Lua source code. Exposed for testing.
 pub fn load_plugin_spec_from_source(
     source: &str,
@@ -1531,9 +1525,9 @@ pub fn load_plugin_spec_from_source(
     }
 
     let mut spec = PluginSpec {
-        name: table.get::<Option<String>>("name").unwrap_or(None),
-        version: table.get::<Option<String>>("version").unwrap_or(None),
-        description: table.get::<Option<String>>("description").unwrap_or(None),
+        name: table.get::<String>("name").ok(),
+        version: table.get::<String>("version").ok(),
+        description: table.get::<String>("description").ok(),
         ..Default::default()
     };
 
@@ -1551,40 +1545,10 @@ pub fn load_plugin_spec_from_source(
         for pair in tools_table.pairs::<String, Value>() {
             if let Ok((tool_name, Value::Table(tool_def))) = pair {
                 let desc = tool_def
-                    .get::<Option<String>>("desc")
-                    .unwrap_or(None)
+                    .get::<String>("desc")
                     .unwrap_or_default();
 
-                let mut params = Vec::new();
-                if let Ok(Value::Table(params_table)) = tool_def.get::<Value>("params") {
-                    for i in 1..=params_table.raw_len() {
-                        if let Ok(Value::Table(param_def)) = params_table.get::<Value>(i) {
-                            let pname = param_def
-                                .get::<Option<String>>("name")
-                                .unwrap_or(None)
-                                .unwrap_or_default();
-                            let ptype = param_def
-                                .get::<Option<String>>("type")
-                                .unwrap_or(None)
-                                .unwrap_or_else(|| "string".to_string());
-                            let pdesc = param_def
-                                .get::<Option<String>>("desc")
-                                .unwrap_or(None)
-                                .unwrap_or_default();
-                            let optional = param_def
-                                .get::<Option<bool>>("optional")
-                                .unwrap_or(None)
-                                .unwrap_or(false);
-
-                            params.push(DiscoveredParam {
-                                name: pname,
-                                param_type: ptype,
-                                description: pdesc,
-                                optional,
-                            });
-                        }
-                    }
-                }
+                let params = extract_params_from_table(&tool_def);
 
                 spec.tools.push(DiscoveredTool {
                     name: tool_name,
@@ -1603,42 +1567,12 @@ pub fn load_plugin_spec_from_source(
         for pair in cmds_table.pairs::<String, Value>() {
             if let Ok((cmd_name, Value::Table(cmd_def))) = pair {
                 let desc = cmd_def
-                    .get::<Option<String>>("desc")
-                    .unwrap_or(None)
+                    .get::<String>("desc")
                     .unwrap_or_default();
-                let hint = cmd_def.get::<Option<String>>("hint").unwrap_or(None);
+                let hint = cmd_def.get::<String>("hint").ok();
 
                 // Extract params if present
-                let mut params = Vec::new();
-                if let Ok(Value::Table(params_table)) = cmd_def.get::<Value>("params") {
-                    for i in 1..=params_table.raw_len() {
-                        if let Ok(Value::Table(param_def)) = params_table.get::<Value>(i) {
-                            let pname = param_def
-                                .get::<Option<String>>("name")
-                                .unwrap_or(None)
-                                .unwrap_or_default();
-                            let ptype = param_def
-                                .get::<Option<String>>("type")
-                                .unwrap_or(None)
-                                .unwrap_or_else(|| "string".to_string());
-                            let pdesc = param_def
-                                .get::<Option<String>>("desc")
-                                .unwrap_or(None)
-                                .unwrap_or_default();
-                            let optional = param_def
-                                .get::<Option<bool>>("optional")
-                                .unwrap_or(None)
-                                .unwrap_or(false);
-
-                            params.push(DiscoveredParam {
-                                name: pname,
-                                param_type: ptype,
-                                description: pdesc,
-                                optional,
-                            });
-                        }
-                    }
-                }
+                let params = extract_params_from_table(&cmd_def);
 
                 spec.commands.push(DiscoveredCommand {
                     name: cmd_name.clone(),
@@ -1658,24 +1592,19 @@ pub fn load_plugin_spec_from_source(
         for i in 1..=handlers_table.raw_len() {
             if let Ok(Value::Table(handler_def)) = handlers_table.get::<Value>(i) {
                 let event = handler_def
-                    .get::<Option<String>>("event")
-                    .unwrap_or(None)
+                    .get::<String>("event")
                     .unwrap_or_default();
                 let priority = handler_def
-                    .get::<Option<i64>>("priority")
-                    .unwrap_or(None)
+                    .get::<i64>("priority")
                     .unwrap_or(100);
                 let pattern = handler_def
-                    .get::<Option<String>>("pattern")
-                    .unwrap_or(None)
-                    .unwrap_or_else(|| "*".to_string());
+                    .get::<String>("pattern")
+                    .unwrap_or_else(|_| "*".to_string());
                 let name = handler_def
-                    .get::<Option<String>>("name")
-                    .unwrap_or(None)
-                    .unwrap_or_else(|| format!("handler_{}", i));
+                    .get::<String>("name")
+                    .unwrap_or_else(|_| format!("handler_{}", i));
                 let desc = handler_def
-                    .get::<Option<String>>("desc")
-                    .unwrap_or(None)
+                    .get::<String>("desc")
                     .unwrap_or_default();
 
                 if !event.is_empty() {
@@ -1699,8 +1628,7 @@ pub fn load_plugin_spec_from_source(
         for pair in views_table.pairs::<String, Value>() {
             if let Ok((view_name, Value::Table(view_def))) = pair {
                 let desc = view_def
-                    .get::<Option<String>>("desc")
-                    .unwrap_or(None)
+                    .get::<String>("desc")
                     .unwrap_or_default();
                 // Check if handler fn is present (it's a Lua function, so we just check for non-nil)
                 let has_handler =
@@ -1727,8 +1655,7 @@ pub fn load_plugin_spec_from_source(
         for pair in services_table.pairs::<String, Value>() {
             if let Ok((service_name, Value::Table(service_def))) = pair {
                 let desc = service_def
-                    .get::<Option<String>>("desc")
-                    .unwrap_or(None)
+                    .get::<String>("desc")
                     .unwrap_or_default();
                 let has_fn = matches!(service_def.get::<Value>("fn"), Ok(Value::Function(_)));
                 if has_fn {
@@ -1755,18 +1682,6 @@ mod tests {
     use tempfile::TempDir;
 
     fn create_test_plugin(dir: &Path, name: &str, version: &str) -> PathBuf {
-        let plugin_dir = dir.join(name);
-        std::fs::create_dir_all(&plugin_dir).unwrap();
-
-        let manifest = format!(
-            r#"
-name: {name}
-version: "{version}"
-main: init.lua
-"#
-        );
-        std::fs::write(plugin_dir.join("plugin.yaml"), manifest).unwrap();
-
         let lua = format!(
             r#"
 local M = {{}}
@@ -1785,9 +1700,7 @@ return {{
 }}
 "#
         );
-        std::fs::write(plugin_dir.join("init.lua"), lua).unwrap();
-
-        plugin_dir
+        create_plugin_with_lua(dir, name, version, &lua)
     }
 
     fn create_plugin_with_lua(dir: &Path, name: &str, version: &str, lua_source: &str) -> PathBuf {
@@ -1802,15 +1715,7 @@ return {{
     }
 
     fn create_test_plugin_with_source(dir: &Path, name: &str, version: &str, lua_source: &str) {
-        let plugin_dir = dir.join(name);
-        std::fs::create_dir_all(&plugin_dir).unwrap();
-
-        let manifest = format!(
-            "name: {}\nversion: {}\ndescription: Test plugin\nauthor: Test\n",
-            name, version
-        );
-        std::fs::write(plugin_dir.join("plugin.yaml"), manifest).unwrap();
-        std::fs::write(plugin_dir.join("init.lua"), lua_source).unwrap();
+        create_plugin_with_lua(dir, name, version, lua_source);
     }
 
     fn create_plugin_with_deps(dir: &Path, name: &str, deps: &[&str]) -> PathBuf {
@@ -3099,22 +3004,7 @@ return {
 
     /// Set up a PluginManager with the full Lua stdlib loaded (needed for emitter tests).
     fn setup_emitter_manager() -> PluginManager {
-        let manager = PluginManager::new();
-        // The spec sandbox stubs cru as a metatable. Override with a real
-        // table and load the stdlib so cru.emitter is available.
-        manager
-            .lua
-            .load(
-                r#"
-        cru = {}
-        cru.log = function(level, msg) end
-        cru.timer = { sleep = function(secs) end }
-    "#,
-            )
-            .exec()
-            .unwrap();
-        crate::lua_stdlib::register_lua_stdlib(&manager.lua).unwrap();
-        manager
+        setup_emitter_manager_with_paths(vec![])
     }
 
     fn setup_emitter_manager_with_paths(paths: Vec<PathBuf>) -> PluginManager {
