@@ -74,13 +74,10 @@ impl<'a> StatusComponent<'a> {
 impl Component for StatusComponent<'_> {
     fn view(&self, _ctx: &ViewContext<'_>) -> Node {
         let error_node = if let Some(err) = self.error {
-            styled(
-                format!("Error: {}", err),
-                {
-                    let t = theme::active();
-                    Style::new().fg(t.resolve_color(t.colors.error)).bold()
-                },
-            )
+            styled(format!("Error: {}", err), {
+                let t = theme::active();
+                Style::new().fg(t.resolve_color(t.colors.error)).bold()
+            })
         } else {
             Node::Empty
         };

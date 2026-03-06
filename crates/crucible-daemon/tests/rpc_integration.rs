@@ -6,8 +6,8 @@
 use anyhow::Result;
 use crucible_config::BackendType;
 use crucible_core::traits::chat::AgentHandle;
-use crucible_daemon::Server;
 use crucible_daemon::DaemonClient;
+use crucible_daemon::Server;
 use std::path::PathBuf;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -1126,7 +1126,8 @@ async fn test_tui_daemon_agent_full_flow() {
         .await
         .expect("configure_agent failed");
 
-    let handle = crucible_daemon::DaemonAgentHandle::new(client.clone(), session_id.clone(), event_rx);
+    let handle =
+        crucible_daemon::DaemonAgentHandle::new(client.clone(), session_id.clone(), event_rx);
 
     assert_eq!(handle.session_id(), session_id);
     assert!(handle.is_connected());

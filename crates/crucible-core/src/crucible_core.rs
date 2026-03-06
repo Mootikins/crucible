@@ -32,7 +32,6 @@ use crate::traits::Storage;
 pub struct CrucibleCore {
     /// Storage abstraction (database operations)
     storage: Arc<dyn Storage>,
-
 }
 
 impl CrucibleCore {
@@ -128,9 +127,7 @@ pub struct CrucibleCoreBuilder {
 impl CrucibleCoreBuilder {
     /// Create a new builder
     pub fn new() -> Self {
-        Self {
-            storage: None,
-        }
+        Self { storage: None }
     }
 
     /// Set the storage implementation (required)
@@ -138,7 +135,6 @@ impl CrucibleCoreBuilder {
         self.storage = Some(Arc::new(storage));
         self
     }
-
 
     /// Build the CrucibleCore instance
     ///
@@ -149,9 +145,7 @@ impl CrucibleCoreBuilder {
             .storage
             .ok_or_else(|| "Storage implementation is required".to_string())?;
 
-        Ok(CrucibleCore {
-            storage,
-        })
+        Ok(CrucibleCore { storage })
     }
 }
 

@@ -4,21 +4,21 @@
 //! Supports SQLite backend via feature flags.
 
 use anyhow::Result;
+use crucible_core::events::InternalSessionEvent;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{broadcast, RwLock};
 use tracing::{info, warn};
-use crucible_core::events::InternalSessionEvent;
 
 use crate::pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
+use crate::watch::{EventFilter, WatchManager, WatchManagerConfig};
 use crucible_core::processing::InMemoryChangeDetectionStore;
 use crucible_core::storage::note_store::NoteRecord;
 use crucible_core::storage::StorageError;
 use crucible_core::traits::{KnowledgeRepository, NoteInfo};
 use crucible_core::EXCLUDED_DIRS;
-use crate::watch::{EventFilter, WatchManager, WatchManagerConfig};
 
 use crate::embedding::get_or_create_embedding_provider;
 use crate::file_watch_bridge::create_event_bridge;
@@ -638,12 +638,10 @@ impl KilnManager {
                 f.exclude_dir(kiln_path.join(dir))
             });
 
-        let watch_config = crate::watch::traits::WatchConfig::new(format!(
-            "kiln-{}",
-            kiln_path.display()
-        ))
-        .with_filter(filter)
-        .with_debounce(crate::watch::traits::DebounceConfig::new(500));
+        let watch_config =
+            crate::watch::traits::WatchConfig::new(format!("kiln-{}", kiln_path.display()))
+                .with_filter(filter)
+                .with_debounce(crate::watch::traits::DebounceConfig::new(500));
 
         if let Err(e) = wm.add_watch(kiln_path.to_path_buf(), watch_config).await {
             warn!("Failed to add watch for {:?}: {}", kiln_path, e);

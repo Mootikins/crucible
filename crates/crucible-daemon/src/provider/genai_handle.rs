@@ -17,9 +17,12 @@ use genai::ModelIden;
 
 use super::adapter_mapping::ChatClient;
 
-pub(crate) const EMPTY_RESPONSE_ERROR: &str = "LLM returned empty response — no content received from provider";
-pub(crate) const STREAM_TIMEOUT_ERROR: &str = "LLM stream timed out — no response within timeout period";
-pub(crate) const STREAM_UNEXPECTED_END_ERROR: &str = "LLM stream ended unexpectedly — connection terminated without completion";
+pub(crate) const EMPTY_RESPONSE_ERROR: &str =
+    "LLM returned empty response — no content received from provider";
+pub(crate) const STREAM_TIMEOUT_ERROR: &str =
+    "LLM stream timed out — no response within timeout period";
+pub(crate) const STREAM_UNEXPECTED_END_ERROR: &str =
+    "LLM stream ended unexpectedly — connection terminated without completion";
 pub(crate) const STREAM_CHUNK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
 fn is_write_tool_name(tool_name: &str) -> bool {
@@ -635,7 +638,7 @@ impl AgentHandle for GenaiAgentHandle {
             .with_capture_reasoning_content(true);
         let options = if let Some(budget) = self.thinking_budget {
             options.with_reasoning_effort(ReasoningEffort::Budget(
-                budget.clamp(0, u32::MAX as i64) as u32,
+                budget.clamp(0, u32::MAX as i64) as u32
             ))
         } else {
             options
@@ -941,9 +944,9 @@ mod tests {
             .collect::<Vec<_>>()
             .await;
 
-        assert!(results
-            .iter()
-            .any(|r| matches!(r, Err(ChatError::Communication(msg)) if msg == EMPTY_RESPONSE_ERROR)));
+        assert!(results.iter().any(
+            |r| matches!(r, Err(ChatError::Communication(msg)) if msg == EMPTY_RESPONSE_ERROR)
+        ));
     }
 
     #[tokio::test(start_paused = true)]
@@ -958,9 +961,9 @@ mod tests {
         tokio::time::advance(std::time::Duration::from_secs(301)).await;
 
         let results = task.await.expect("task panicked");
-        assert!(results
-            .iter()
-            .any(|r| matches!(r, Err(ChatError::Communication(msg)) if msg == STREAM_TIMEOUT_ERROR)));
+        assert!(results.iter().any(
+            |r| matches!(r, Err(ChatError::Communication(msg)) if msg == STREAM_TIMEOUT_ERROR)
+        ));
     }
 
     // === Negative tests: verify no false positives on legitimate responses ===

@@ -41,7 +41,6 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-
 /// Result type for ACP operations
 pub type AcpResult<T> = Result<T, AcpError>;
 

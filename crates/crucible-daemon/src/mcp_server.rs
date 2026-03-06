@@ -6,9 +6,9 @@
 
 use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
 use crate::kiln_manager::KilnManager;
+use crate::tools::{ExtendedMcpServer, ExtendedMcpService};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
-use crate::tools::{ExtendedMcpServer, ExtendedMcpService};
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;

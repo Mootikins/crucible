@@ -542,7 +542,11 @@ mod tests {
         let node = render_component_node(&component, &data);
         let rendered = crucible_oil::render::render_to_string(&node, 120);
         // Badge should have trailing space: " INFO " not " INFO"
-        assert!(rendered.contains(" INFO "), "INFO badge should have trailing space. Got: {}", rendered);
+        assert!(
+            rendered.contains(" INFO "),
+            "INFO badge should have trailing space. Got: {}",
+            rendered
+        );
     }
 
     #[test]
@@ -558,21 +562,30 @@ mod tests {
         data.notification_toast = Some(("Info msg".to_string(), NotificationToastKind::Info));
         let node = render_component_node(&component, &data);
         let rendered = crucible_oil::render::render_to_string(&node, 120);
-        assert!(rendered.contains(" INFO "), "INFO badge missing trailing space");
+        assert!(
+            rendered.contains(" INFO "),
+            "INFO badge missing trailing space"
+        );
 
         // Test WARN
         let mut data = default_data();
         data.notification_toast = Some(("Warn msg".to_string(), NotificationToastKind::Warning));
         let node = render_component_node(&component, &data);
         let rendered = crucible_oil::render::render_to_string(&node, 120);
-        assert!(rendered.contains(" WARN "), "WARN badge missing trailing space");
+        assert!(
+            rendered.contains(" WARN "),
+            "WARN badge missing trailing space"
+        );
 
         // Test ERROR
         let mut data = default_data();
         data.notification_toast = Some(("Error msg".to_string(), NotificationToastKind::Error));
         let node = render_component_node(&component, &data);
         let rendered = crucible_oil::render::render_to_string(&node, 120);
-        assert!(rendered.contains(" ERROR "), "ERROR badge missing trailing space");
+        assert!(
+            rendered.contains(" ERROR "),
+            "ERROR badge missing trailing space"
+        );
     }
 
     #[test]
@@ -587,6 +600,9 @@ mod tests {
         let node = render_component_node(&component, &data);
         let rendered = crucible_oil::render::render_to_string(&node, 120);
         // Counts path should have trailing space: " INFO " not " INFO"
-        assert!(rendered.contains(" INFO "), "INFO badge in counts path should have trailing space");
+        assert!(
+            rendered.contains(" INFO "),
+            "INFO badge in counts path should have trailing space"
+        );
     }
 }

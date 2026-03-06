@@ -31,14 +31,14 @@ use crate::protocol::SessionEventMessage;
 use async_trait::async_trait;
 use crucible_config::AgentProfile;
 
+use crate::observe::events::LogEvent;
+use crate::observe::session::SessionWriter;
 use crucible_core::background::{
     truncate, BackgroundSpawner, JobError, JobId, JobInfo, JobKind, JobResult,
     SubagentBlockingConfig,
 };
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
-use crate::observe::events::LogEvent;
-use crate::observe::session::SessionWriter;
 use dashmap::DashMap;
 use futures::StreamExt;
 use std::collections::HashMap;

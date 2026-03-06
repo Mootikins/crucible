@@ -51,9 +51,7 @@ impl TestServer {
 
 /// Helper: create a session and configure an agent with known defaults.
 /// Returns (session_id, client).
-async fn setup_session_with_agent(
-    server: &TestServer,
-) -> (String, DaemonClient) {
+async fn setup_session_with_agent(server: &TestServer) -> (String, DaemonClient) {
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
     let client = DaemonClient::connect_to(&server.socket_path)
@@ -123,7 +121,11 @@ async fn test_thinking_budget_round_trip() {
         .await
         .expect("get_thinking_budget failed");
 
-    assert_eq!(budget, Some(1024), "Thinking budget should round-trip to 1024");
+    assert_eq!(
+        budget,
+        Some(1024),
+        "Thinking budget should round-trip to 1024"
+    );
 
     // Update to unlimited (-1)
     client
@@ -136,7 +138,11 @@ async fn test_thinking_budget_round_trip() {
         .await
         .expect("get_thinking_budget failed");
 
-    assert_eq!(budget, Some(-1), "Thinking budget should round-trip to -1 (unlimited)");
+    assert_eq!(
+        budget,
+        Some(-1),
+        "Thinking budget should round-trip to -1 (unlimited)"
+    );
 
     server.shutdown().await;
 }
@@ -337,9 +343,7 @@ async fn test_configure_agent_sets_agent() {
         .expect("model should be string");
     assert_eq!(model, "gpt-4o", "Agent model should be gpt-4o");
 
-    let provider = session["agent"]["provider"]
-        .as_str()
-        .unwrap_or("");
+    let provider = session["agent"]["provider"].as_str().unwrap_or("");
     assert!(
         provider.to_lowercase().contains("openai") || provider == "OpenAi",
         "Agent provider should be OpenAi, got: {}",

@@ -80,25 +80,25 @@ pub use chat_runner::OilChatRunner;
 pub use component::{Component, ComponentHarness};
 pub use components::{InputArea, InputMode, StatusBar, INPUT_MAX_CONTENT_LINES};
 pub use composer::{pad_popup_region, ComposerConfig};
+pub use crucible_oil::decrypt::{decrypt_text, DecryptConfig, CIPHER_CHARS};
 pub use event::{Event, InputAction, InputBuffer};
 pub use focus::*;
 pub use graduation::{GraduatedContent, GraduationState};
 pub use layout::*;
 pub use lua_view::{LuaView, ViewAction};
 pub use node::*;
+pub use output::OutputBuffer;
 pub use overlay::{composite_overlays, Overlay, OverlayAnchor};
 pub use planning::{FramePlan, FramePlanner, FrameSnapshot, FrameTrace};
 pub use render::*;
 pub use render_state::RenderState;
 pub use runner::{run_sync, OilRunner};
 pub use runtime::TestRuntime;
-pub use output::OutputBuffer;
 pub use style::*;
 pub use terminal::Terminal;
 pub use test_harness::AppHarness;
 pub use viewport::{clamp_lines_bottom, clamp_lines_top, ensure_min_height, pad_lines_to};
 pub use viewport_cache::CachedMessage;
-pub use crucible_oil::decrypt::{decrypt_text, DecryptConfig, CIPHER_CHARS};
 
 #[cfg(test)]
 mod tests;

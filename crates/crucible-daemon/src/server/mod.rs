@@ -10,8 +10,7 @@ use crate::kiln_manager::KilnManager;
 use crate::mcp_server::McpServerManager;
 use crate::project_manager::ProjectManager;
 use crate::protocol::{
-    Request, Response, SessionEventMessage, INTERNAL_ERROR, INVALID_PARAMS,
-    PARSE_ERROR,
+    Request, Response, SessionEventMessage, INTERNAL_ERROR, INVALID_PARAMS, PARSE_ERROR,
 };
 use crate::recording::RecordingWriter;
 use crate::replay::ReplaySession;
@@ -19,6 +18,8 @@ use crate::rpc::{RpcContext, RpcDispatcher};
 use crate::rpc_helpers::{optional_param, require_param};
 use crate::session_manager::SessionManager;
 use crate::session_storage::{FileSessionStorage, SessionStorage};
+use crate::skills::discovery::{default_discovery_paths, FolderDiscovery};
+use crate::tools::workspace::WorkspaceTools;
 use anyhow::Result;
 use crucible_config::{DataClassification, LlmConfig, TrustLevel};
 use crucible_core::events::SessionEvent;
@@ -28,8 +29,6 @@ use crucible_lua::{
     register_crucible_on_api, LuaExecutor, LuaScriptHandlerRegistry, PluginManager,
     ScriptHandlerResult, Session as LuaSession, SessionConfigRpc,
 };
-use crate::skills::discovery::{default_discovery_paths, FolderDiscovery};
-use crate::tools::workspace::WorkspaceTools;
 use dashmap::DashMap;
 
 use crate::protocol::RequestId;
@@ -268,10 +267,9 @@ impl Server {
                     warn!("Failed to upgrade Lua sessions module: {}", e);
                 }
 
-                let tools_api: Arc<dyn crucible_lua::DaemonToolsApi> =
-                    Arc::new(crate::tools_bridge::DaemonToolsBridge::new(Arc::clone(
-                        &self.workspace_tools,
-                    )));
+                let tools_api: Arc<dyn crucible_lua::DaemonToolsApi> = Arc::new(
+                    crate::tools_bridge::DaemonToolsBridge::new(Arc::clone(&self.workspace_tools)),
+                );
                 if let Err(e) = loader.upgrade_with_tools(tools_api) {
                     warn!("Failed to upgrade Lua tools module: {}", e);
                 }
@@ -540,16 +538,16 @@ struct ServerContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session_storage::FileSessionStorage;
     use lua::*;
     use observe::*;
     use platform::*;
-    use session::*;
-    use storage::*;
-    use crate::session_storage::FileSessionStorage;
     use serde_json::json;
     use serde_json::Value;
+    use session::*;
     use std::collections::HashMap;
     use std::sync::Arc;
+    use storage::*;
     use tempfile::TempDir;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::UnixStream;

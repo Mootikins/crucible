@@ -11,7 +11,9 @@
 //! Priority: 30 (lowest, fallback)
 
 use crate::query::error::ParseError;
-use crate::query::ir::{EdgeDirection, EdgePattern, GraphIR, GraphPattern, PatternElement, QuerySource};
+use crate::query::ir::{
+    EdgeDirection, EdgePattern, GraphIR, GraphPattern, PatternElement, QuerySource,
+};
 use crate::query::syntax::QuerySyntax;
 use once_cell::sync::Lazy;
 use regex::Regex;

@@ -1,6 +1,6 @@
+use crate::tools::workspace::WorkspaceTools;
 use crucible_core::traits::tools::{ExecutionContext, ToolExecutor};
 use crucible_lua::DaemonToolsApi;
-use crate::tools::workspace::WorkspaceTools;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;

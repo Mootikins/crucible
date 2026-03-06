@@ -22,7 +22,7 @@
 //! service with appropriate parameters.
 
 use crucible_core::enrichment::EnrichmentService;
-use crucible_core::events::{SessionEvent, InternalSessionEvent};
+use crucible_core::events::{InternalSessionEvent, SessionEvent};
 use crucible_core::ParsedNote;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};

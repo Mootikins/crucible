@@ -2,10 +2,8 @@
 
 use crate::ansi::{apply_style, visible_width};
 
-
 use crate::style::Style;
 use textwrap::{wrap, Options, WordSplitter};
-
 
 /// Wraps text to a given width, applies a style, and pads each line to fill the width.
 ///
