@@ -256,7 +256,7 @@ mod tests {
 
     #[test]
     fn test_register_kiln_module() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_vault().build();
 
         let cru: Table = lua.globals().get("cru").expect("cru should exist");
         let kiln: Table = cru.get("kiln").expect("cru.kiln should exist");
@@ -271,7 +271,7 @@ mod tests {
 
     #[test]
     fn test_kiln_also_registered_as_crucible() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_vault().build();
 
         let crucible: Table = lua
             .globals()
@@ -284,7 +284,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_kiln_list_stub_returns_empty() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_vault().build();
 
         let result: Table = lua
             .load(r#"return cru.kiln.list()"#)
@@ -297,7 +297,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_kiln_get_stub_returns_nil() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_vault().build();
 
         let result: Value = lua
             .load(r#"return cru.kiln.get("test.md")"#)
@@ -310,7 +310,7 @@ mod tests {
 
     #[test]
     fn test_kiln_outlinks_stub_returns_empty() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_vault().build();
 
         let result: Table = lua
             .load(r#"return cru.kiln.outlinks("test.md")"#)
@@ -322,7 +322,7 @@ mod tests {
 
     #[test]
     fn test_kiln_backlinks_stub_returns_empty() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_vault().build();
 
         let result: Table = lua
             .load(r#"return cru.kiln.backlinks("test.md")"#)
@@ -334,7 +334,7 @@ mod tests {
 
     #[test]
     fn test_kiln_neighbors_stub_returns_empty() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_vault().build();
 
         let result: Table = lua
             .load(r#"return cru.kiln.neighbors("test.md", 2)"#)
@@ -450,7 +450,7 @@ mod store_tests {
             sample_note("b.md", "Note B"),
             sample_note("c.md", "Note C"),
         ]));
-        let lua = setup_lua_with_store(store);
+        let lua = TestLuaBuilder::new().with_vault_store(store).build();
 
         let result: Table = lua
             .load(r#"return cru.kiln.list()"#)
@@ -468,7 +468,7 @@ mod store_tests {
             sample_note("b.md", "Note B"),
             sample_note("c.md", "Note C"),
         ]));
-        let lua = setup_lua_with_store(store);
+        let lua = TestLuaBuilder::new().with_vault_store(store).build();
 
         let result: Table = lua
             .load(r#"return cru.kiln.list(2)"#)
@@ -485,7 +485,7 @@ mod store_tests {
             "test.md",
             "Test Note",
         )]));
-        let lua = setup_lua_with_store(store);
+        let lua = TestLuaBuilder::new().with_vault_store(store).build();
 
         let result: Table = lua
             .load(r#"return cru.kiln.get("test.md")"#)
@@ -501,7 +501,7 @@ mod store_tests {
     #[tokio::test]
     async fn test_vault_get_returns_nil_for_missing() {
         let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::new());
-        let lua = setup_lua_with_store(store);
+        let lua = TestLuaBuilder::new().with_vault_store(store).build();
 
         let result: Value = lua
             .load(r#"return cru.kiln.get("nonexistent.md")"#)
@@ -517,7 +517,7 @@ mod store_tests {
         let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::with_notes(vec![sample_note(
             "test.md", "Test",
         )]));
-        let lua = setup_lua_with_store(store);
+        let lua = TestLuaBuilder::new().with_vault_store(store).build();
 
         let result: Table = lua
             .load(
@@ -540,7 +540,7 @@ mod store_tests {
         let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::with_notes(vec![sample_note(
             "test.md", "Test",
         )]));
-        let lua = setup_lua_with_store(store);
+        let lua = TestLuaBuilder::new().with_vault_store(store).build();
 
         let result: Table = lua
             .load(
@@ -562,7 +562,7 @@ mod store_tests {
         let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::with_notes(vec![sample_note(
             "test.md", "Test",
         )]));
-        let lua = setup_lua_with_store(store);
+        let lua = TestLuaBuilder::new().with_vault_store(store).build();
 
         let result: Table = lua
             .load(
@@ -666,7 +666,7 @@ mod graph_tests {
     #[test]
     fn test_vault_outlinks_returns_paths() {
         let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new());
-        let lua = setup_lua_with_graph(view);
+        let lua = TestLuaBuilder::new().with_vault_graph(view).build();
 
         let result: Table = lua
             .load(r#"return cru.kiln.outlinks("test.md")"#)
@@ -681,7 +681,7 @@ mod graph_tests {
     #[test]
     fn test_vault_outlinks_empty() {
         let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new().with_outlinks(vec![]));
-        let lua = setup_lua_with_graph(view);
+        let lua = TestLuaBuilder::new().with_vault_graph(view).build();
 
         let result: Table = lua
             .load(r#"return cru.kiln.outlinks("orphan.md")"#)
@@ -694,7 +694,7 @@ mod graph_tests {
     #[test]
     fn test_vault_backlinks_returns_paths() {
         let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new());
-        let lua = setup_lua_with_graph(view);
+        let lua = TestLuaBuilder::new().with_vault_graph(view).build();
 
         let result: Table = lua
             .load(r#"return cru.kiln.backlinks("test.md")"#)
@@ -708,7 +708,7 @@ mod graph_tests {
     #[test]
     fn test_vault_backlinks_empty() {
         let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new().with_backlinks(vec![]));
-        let lua = setup_lua_with_graph(view);
+        let lua = TestLuaBuilder::new().with_vault_graph(view).build();
 
         let result: Table = lua
             .load(r#"return cru.kiln.backlinks("orphan.md")"#)
@@ -721,7 +721,7 @@ mod graph_tests {
     #[test]
     fn test_vault_neighbors_returns_paths() {
         let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new());
-        let lua = setup_lua_with_graph(view);
+        let lua = TestLuaBuilder::new().with_vault_graph(view).build();
 
         let result: Table = lua
             .load(r#"return cru.kiln.neighbors("test.md")"#)
@@ -734,7 +734,7 @@ mod graph_tests {
     #[test]
     fn test_vault_neighbors_with_depth() {
         let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new());
-        let lua = setup_lua_with_graph(view);
+        let lua = TestLuaBuilder::new().with_vault_graph(view).build();
 
         let result: Table = lua
             .load(r#"return cru.kiln.neighbors("test.md", 3)"#)
@@ -747,7 +747,7 @@ mod graph_tests {
     #[test]
     fn test_vault_neighbors_empty() {
         let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new().with_neighbors(vec![]));
-        let lua = setup_lua_with_graph(view);
+        let lua = TestLuaBuilder::new().with_vault_graph(view).build();
 
         let result: Table = lua
             .load(r#"return cru.kiln.neighbors("isolated.md", 2)"#)

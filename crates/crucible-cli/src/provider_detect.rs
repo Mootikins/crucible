@@ -331,6 +331,7 @@ pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
 mod tests {
     use super::*;
     use serial_test::serial;
+    use crucible_core::test_support::EnvVarGuard;
 
     #[test]
     fn test_detect_ollama_from_default_config() {
@@ -344,7 +345,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_detect_ollama_from_env() {
-        std::env::set_var("OLLAMA_HOST", "http://myhost:11434");
+        let _guard = EnvVarGuard::set("OLLAMA_HOST", "http://myhost:11434".to_string());
         let config = ChatConfig::default();
         let detected = detect_providers(&config);
         assert!(!detected.is_empty());
@@ -353,24 +354,24 @@ mod tests {
             .find(|p| p.provider_type == "ollama")
             .unwrap();
         assert!(ollama.reason.contains("OLLAMA_HOST"));
-        std::env::remove_var("OLLAMA_HOST");
+
     }
 
     #[test]
     #[serial]
     fn test_detect_openai_from_config_with_key() {
-        std::env::set_var("OPENAI_API_KEY", "sk-test");
+        let _guard = EnvVarGuard::set("OPENAI_API_KEY", "sk-test".to_string());
         let config = ChatConfig::default();
         let detected = detect_providers(&config);
         assert!(detected.iter().any(|p| p.provider_type == "openai"));
-        std::env::remove_var("OPENAI_API_KEY");
+
     }
 
     #[test]
     #[serial]
     fn test_detect_openai_from_config_without_key_is_empty() {
-        std::env::remove_var("OPENAI_API_KEY");
-        std::env::remove_var("ANTHROPIC_API_KEY");
+        let _guard1 = EnvVarGuard::remove("OPENAI_API_KEY");
+        let _guard2 = EnvVarGuard::remove("ANTHROPIC_API_KEY");
         let config = ChatConfig::default();
         let detected = detect_providers(&config);
         // No API key = no provider detected for cloud providers
@@ -380,29 +381,29 @@ mod tests {
     #[test]
     #[serial]
     fn test_detect_extra_providers_from_env() {
-        std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-test");
+        let _guard = EnvVarGuard::set("ANTHROPIC_API_KEY", "sk-ant-test".to_string());
         let config = ChatConfig::default(); // ollama config
         let detected = detect_providers(&config);
         // Should have ollama from config + anthropic from env
         assert!(detected.iter().any(|p| p.provider_type == "ollama"));
         assert!(detected.iter().any(|p| p.provider_type == "anthropic"));
-        std::env::remove_var("ANTHROPIC_API_KEY");
+
     }
 
     #[test]
     #[serial]
     fn test_has_api_key_openai() {
-        std::env::set_var("OPENAI_API_KEY", "sk-test");
+        let _guard = EnvVarGuard::set("OPENAI_API_KEY", "sk-test".to_string());
         assert!(has_api_key("openai"));
-        std::env::remove_var("OPENAI_API_KEY");
+
     }
 
     #[test]
     #[serial]
     fn test_has_api_key_anthropic() {
-        std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-test");
+        let _guard = EnvVarGuard::set("ANTHROPIC_API_KEY", "sk-ant-test".to_string());
         assert!(has_api_key("anthropic"));
-        std::env::remove_var("ANTHROPIC_API_KEY");
+
     }
 
     #[test]
@@ -414,18 +415,18 @@ mod tests {
     #[test]
     #[serial]
     fn test_has_api_key_case_insensitive() {
-        std::env::set_var("OPENAI_API_KEY", "sk-test");
+        let _guard = EnvVarGuard::set("OPENAI_API_KEY", "sk-test".to_string());
         assert!(has_api_key("OpenAI"));
         assert!(has_api_key("OPENAI"));
         assert!(has_api_key("openai"));
-        std::env::remove_var("OPENAI_API_KEY");
+
     }
 
     #[test]
     #[serial]
     fn test_has_api_key_missing() {
-        std::env::remove_var("OPENAI_API_KEY");
-        std::env::remove_var("ANTHROPIC_API_KEY");
+        let _guard1 = EnvVarGuard::remove("OPENAI_API_KEY");
+        let _guard2 = EnvVarGuard::remove("ANTHROPIC_API_KEY");
         assert!(!has_api_key("openai"));
         assert!(!has_api_key("anthropic"));
     }
@@ -451,32 +452,32 @@ mod tests {
     #[test]
     #[serial]
     fn test_ollama_endpoint_default() {
-        std::env::remove_var("OLLAMA_HOST");
+        let _guard = EnvVarGuard::remove("OLLAMA_HOST");
         assert_eq!(ollama_endpoint(), "http://localhost:11434");
     }
 
     #[test]
     #[serial]
     fn test_ollama_endpoint_custom_host_port() {
-        std::env::set_var("OLLAMA_HOST", "myhost:11435");
+        let _guard = EnvVarGuard::set("OLLAMA_HOST", "myhost:11435".to_string());
         assert_eq!(ollama_endpoint(), "http://myhost:11435");
-        std::env::remove_var("OLLAMA_HOST");
+
     }
 
     #[test]
     #[serial]
     fn test_ollama_endpoint_full_url() {
-        std::env::set_var("OLLAMA_HOST", "http://custom-ollama.local:8080");
+        let _guard = EnvVarGuard::set("OLLAMA_HOST", "http://custom-ollama.local:8080".to_string());
         assert_eq!(ollama_endpoint(), "http://custom-ollama.local:8080");
-        std::env::remove_var("OLLAMA_HOST");
+
     }
 
     #[test]
     #[serial]
     fn test_ollama_endpoint_https() {
-        std::env::set_var("OLLAMA_HOST", "https://secure-ollama.example.com");
+        let _guard = EnvVarGuard::set("OLLAMA_HOST", "https://secure-ollama.example.com".to_string());
         assert_eq!(ollama_endpoint(), "https://secure-ollama.example.com");
-        std::env::remove_var("OLLAMA_HOST");
+
     }
 
     #[tokio::test]

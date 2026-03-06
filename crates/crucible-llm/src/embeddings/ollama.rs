@@ -442,13 +442,12 @@ impl EmbeddingProvider for OllamaProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::test_helpers::create_test_ollama_config;
 
     fn create_test_config() -> EmbeddingConfig {
-        EmbeddingConfig::ollama(
-            Some("https://llama.krohnos.io".to_string()),
-            Some("nomic-embed-text-v1.5-q8_0".to_string()),
-        )
+        create_test_ollama_config()
     }
+
 
     #[test]
     fn test_provider_creation() {

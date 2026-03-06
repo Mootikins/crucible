@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream};
 use tokio::sync::{oneshot, Barrier, Mutex};
+use crucible_core::test_support::EnvVarGuard;
 
 const MAX_SUBAGENT_OUTPUT: usize = 10 * 1024 * 1024;
 static AGENT_CACHE_TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
@@ -91,29 +92,7 @@ fn final_response(request_id: u64) -> serde_json::Value {
     })
 }
 
-#[derive(Debug, Clone)]
-struct EnvVarGuard {
-    key: &'static str,
-    old: Option<String>,
-}
-
-impl EnvVarGuard {
-    fn set(key: &'static str, value: String) -> Self {
-        let old = std::env::var(key).ok();
-        std::env::set_var(key, value);
-        Self { key, old }
-    }
-}
-
-impl Drop for EnvVarGuard {
-    fn drop(&mut self) {
-        if let Some(old) = self.old.clone() {
-            std::env::set_var(self.key, old);
-        } else {
-            std::env::remove_var(self.key);
-        }
-    }
-}
+// Uses crucible_core::test_support::EnvVarGuard for env var isolation
 
 fn serialize_chunk(chunk: &StreamingChunk) -> serde_json::Value {
     match chunk {

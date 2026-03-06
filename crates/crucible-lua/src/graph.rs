@@ -505,7 +505,7 @@ mod tests {
 
     #[test]
     fn test_graph_find_existing_note() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_graph().build();
         let result: Table = lua
             .load(
                 r#"
@@ -527,7 +527,7 @@ mod tests {
 
     #[test]
     fn test_graph_find_missing_note_returns_nil() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_graph().build();
         let result: Value = lua
             .load(
                 r#"
@@ -543,7 +543,7 @@ mod tests {
 
     #[test]
     fn test_graph_outlinks_returns_linked_notes() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_graph().build();
         let result: Table = lua
             .load(
                 r#"
@@ -577,7 +577,7 @@ mod tests {
 
     #[test]
     fn test_graph_outlinks_empty_when_no_links() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_graph().build();
         let result: Table = lua
             .load(
                 r#"
@@ -597,7 +597,7 @@ mod tests {
 
     #[test]
     fn test_graph_inlinks_returns_notes_linking_to_target() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_graph().build();
         let result: Table = lua
             .load(
                 r#"
@@ -623,7 +623,7 @@ mod tests {
 
     #[test]
     fn test_graph_inlinks_empty_when_no_backlinks() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_graph().build();
         let result: Table = lua
             .load(
                 r#"
@@ -644,7 +644,7 @@ mod tests {
 
     #[test]
     fn test_graph_inlinks_multiple_backlinks() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_graph().build();
         let result: Table = lua
             .load(
                 r#"
@@ -668,7 +668,7 @@ mod tests {
 
     #[test]
     fn test_graph_chained_traversal() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_graph().build();
         // Two-hop: Index -> Project A -> Index (back)
         let result: bool = lua
             .load(

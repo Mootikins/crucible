@@ -571,22 +571,12 @@ fn create_box_node(direction: Direction, opts: Option<Table>, children: Vec<Node
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::TestLuaBuilder;
     use crucible_oil::{Color, Size};
-
-    fn setup_lua() -> Lua {
-        let lua = Lua::new();
-
-        // Create crucible table first (mimics executor setup)
-        let crucible = lua.create_table().unwrap();
-        lua.globals().set("crucible", crucible).unwrap();
-
-        register_oil_module(&lua).expect("Should register oil module");
-        lua
-    }
 
     #[test]
     fn test_register_oil_module() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let cru: Table = lua.globals().get("cru").expect("cru should exist");
         let oil: Table = cru.get("oil").expect("cru.oil should exist");
@@ -608,7 +598,7 @@ mod tests {
 
     #[test]
     fn test_oil_text() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result: LuaNode = lua.load(r#"return cru.oil.text("hello")"#).eval().unwrap();
 
@@ -621,7 +611,7 @@ mod tests {
 
     #[test]
     fn test_oil_text_with_style() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result: LuaNode = lua
             .load(r#"return cru.oil.text("styled", {bold = true, fg = "red"})"#)
@@ -639,7 +629,7 @@ mod tests {
 
     #[test]
     fn test_oil_col_with_children() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result: LuaNode = lua
             .load(
@@ -664,7 +654,7 @@ mod tests {
 
     #[test]
     fn test_oil_row_with_children() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result: LuaNode = lua
             .load(
@@ -689,7 +679,7 @@ mod tests {
 
     #[test]
     fn test_oil_when_true() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result: LuaNode = lua
             .load(r#"return cru.oil.when(true, cru.oil.text("visible"))"#)
@@ -701,7 +691,7 @@ mod tests {
 
     #[test]
     fn test_oil_when_false() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result: LuaNode = lua
             .load(r#"return cru.oil.when(false, cru.oil.text("hidden"))"#)
@@ -713,7 +703,7 @@ mod tests {
 
     #[test]
     fn test_oil_either() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result_true: LuaNode = lua
             .load(r#"return cru.oil.either(true, cru.oil.text("yes"), cru.oil.text("no"))"#)
@@ -740,7 +730,7 @@ mod tests {
 
     #[test]
     fn test_oil_each() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result: LuaNode = lua
             .load(
@@ -763,7 +753,7 @@ mod tests {
 
     #[test]
     fn test_oil_maybe_with_value() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
         let result: LuaNode = lua
             .load(r#"return cru.oil.maybe("hello", function(v) return cru.oil.text(v) end)"#)
             .eval()
@@ -777,7 +767,7 @@ mod tests {
 
     #[test]
     fn test_oil_maybe_with_nil() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
         let result: LuaNode = lua
             .load(r#"return cru.oil.maybe(nil, function(v) return cru.oil.text("oops") end)"#)
             .eval()
@@ -788,7 +778,7 @@ mod tests {
     #[test]
     fn test_oil_maybe_with_false() {
         // false is NOT nil — must trigger the callback, not return Empty
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
         let result: LuaNode = lua
             .load(
                 r#"return cru.oil.maybe(false, function(v) return cru.oil.text("got false") end)"#,
@@ -804,7 +794,7 @@ mod tests {
 
     #[test]
     fn test_oil_match_state_hit() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
         let result: LuaNode = lua
             .load(
                 r#"return cru.oil.match_state("loading", {loading = cru.oil.text("Loading...")})"#,
@@ -820,7 +810,7 @@ mod tests {
 
     #[test]
     fn test_oil_match_state_miss_with_default() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
         let result: LuaNode = lua
             .load(r#"return cru.oil.match_state("unknown", {_ = cru.oil.text("default")})"#)
             .eval()
@@ -834,7 +824,7 @@ mod tests {
 
     #[test]
     fn test_oil_match_state_miss_no_default() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
         let result: LuaNode = lua
             .load(
                 r#"return cru.oil.match_state("unknown", {loading = cru.oil.text("Loading...")})"#,
@@ -847,7 +837,7 @@ mod tests {
 
     #[test]
     fn test_oil_match_state_function_handler() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
         let result: LuaNode = lua
             .load(r#"return cru.oil.match_state("ready", {ready = function() return cru.oil.text("Ready!") end})"#)
             .eval()
@@ -861,7 +851,7 @@ mod tests {
 
     #[test]
     fn test_oil_spacer() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result: LuaNode = lua.load(r#"return cru.oil.spacer()"#).eval().unwrap();
 
@@ -874,7 +864,7 @@ mod tests {
 
     #[test]
     fn test_oil_spinner() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result: LuaNode = lua
             .load(r#"return cru.oil.spinner("Loading...")"#)
@@ -890,7 +880,7 @@ mod tests {
 
     #[test]
     fn test_oil_progress() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result: LuaNode = lua
             .load(r#"return cru.oil.progress(0.5, 10)"#)
@@ -902,7 +892,7 @@ mod tests {
 
     #[test]
     fn test_oil_divider() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result: LuaNode = lua
             .load(r#"return cru.oil.divider("-", 5)"#)
@@ -918,7 +908,7 @@ mod tests {
 
     #[test]
     fn test_oil_bullet_list() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result: LuaNode = lua
             .load(r#"return cru.oil.bullet_list({"item 1", "item 2"})"#)
@@ -934,7 +924,7 @@ mod tests {
 
     #[test]
     fn test_oil_kv() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result: LuaNode = lua
             .load(r#"return cru.oil.kv("Name", "Value")"#)
@@ -950,7 +940,7 @@ mod tests {
 
     #[test]
     fn test_oil_node_chaining() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result: LuaNode = lua
             .load(
@@ -972,7 +962,7 @@ mod tests {
 
     #[test]
     fn test_oil_input() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result: LuaNode = lua
             .load(
@@ -998,7 +988,7 @@ mod tests {
 
     #[test]
     fn test_oil_popup() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result: LuaNode = lua
             .load(
@@ -1025,7 +1015,7 @@ mod tests {
 
     #[test]
     fn test_oil_markup() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result: LuaNode = lua
             .load(r#"return cru.oil.markup('<div gap="2"><p>Hello</p><p>World</p></div>')"#)
@@ -1043,7 +1033,7 @@ mod tests {
 
     #[test]
     fn test_oil_if_else_alias() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result_true: LuaNode = lua
             .load(r#"return cru.oil.if_else(true, cru.oil.text("yes"), cru.oil.text("no"))"#)
@@ -1070,7 +1060,7 @@ mod tests {
 
     #[test]
     fn test_oil_component_with_defaults() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result: LuaNode = lua
             .load(
@@ -1094,7 +1084,7 @@ mod tests {
 
     #[test]
     fn test_oil_component_without_user_props() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result: LuaNode = lua
             .load(
@@ -1117,7 +1107,7 @@ mod tests {
 
     #[test]
     fn test_oil_error_invalid_color() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result = lua
             .load(r#"return cru.oil.text("hello", {fg = "invalid_color"})"#)
@@ -1139,7 +1129,7 @@ mod tests {
 
     #[test]
     fn test_oil_error_primitive_child() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result = lua.load(r#"return cru.oil.col(42)"#).eval::<LuaNode>();
 
@@ -1154,7 +1144,7 @@ mod tests {
 
     #[test]
     fn test_oil_error_function_child() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         let result = lua
             .load(r#"return cru.oil.col(function() end)"#)
@@ -1176,7 +1166,7 @@ mod tests {
 
     #[test]
     fn test_oil_decrypt() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         // Basic usage - partial reveal
         let result: LuaNode = lua
@@ -1190,7 +1180,7 @@ mod tests {
 
     #[test]
     fn test_oil_decrypt_fully_revealed() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         // Fully revealed - should return plain text
         let result: LuaNode = lua
@@ -1207,7 +1197,7 @@ mod tests {
 
     #[test]
     fn test_oil_decrypt_default_frame() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_oil().build();
 
         // Frame parameter is optional, defaults to 0
         let result: LuaNode = lua
@@ -1222,16 +1212,9 @@ mod tests {
 #[cfg(test)]
 mod proptest_tests {
     use super::*;
+    use crate::test_support::TestLuaBuilder;
     use crucible_oil::render_to_string;
     use proptest::prelude::*;
-
-    fn setup_lua() -> Lua {
-        let lua = Lua::new();
-        let crucible = lua.create_table().unwrap();
-        lua.globals().set("crucible", crucible).unwrap();
-        register_oil_module(&lua).expect("Should register oil module");
-        lua
-    }
 
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]

@@ -8,6 +8,7 @@ use serial_test::serial;
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
+use crucible_core::test_support::EnvVarGuard;
 
 /// Cross-platform test path helper
 fn test_path(name: &str) -> PathBuf {
@@ -162,7 +163,7 @@ fn test_config_with_custom_kiln_path() {
 #[serial]
 fn test_database_path_unique_per_process() {
     // Set test mode to enable PID suffix for database name
-    std::env::set_var("CRUCIBLE_TEST_MODE", "1");
+    let _guard = EnvVarGuard::set("CRUCIBLE_TEST_MODE", "1".to_string());
 
     let temp = TempDir::new().unwrap();
     let kiln_path = temp.path().join("kiln");
@@ -182,15 +183,14 @@ fn test_database_path_unique_per_process() {
     assert!(filename.starts_with("crucible-"));
     assert!(filename.ends_with(".db"));
 
-    // Cleanup
-    std::env::remove_var("CRUCIBLE_TEST_MODE");
+
 }
 
 #[test]
 #[serial]
 fn test_database_path_derivation() {
     // Ensure test mode is off so we get the standard (non-PID) name
-    std::env::remove_var("CRUCIBLE_TEST_MODE");
+    let _guard = EnvVarGuard::remove("CRUCIBLE_TEST_MODE");
 
     let temp = TempDir::new().unwrap();
     let kiln_path = temp.path().join("kiln");
@@ -293,23 +293,23 @@ endpoint = "https://api.openai.com/v1"
 #[test]
 #[serial]
 fn test_openai_api_key_from_env() {
-    std::env::set_var("OPENAI_API_KEY", "env-key");
+    let _guard = EnvVarGuard::set("OPENAI_API_KEY", "env-key".to_string());
 
     let config = CliConfig::default();
     assert_eq!(config.openai_api_key(), Some("env-key".to_string()));
 
-    std::env::remove_var("OPENAI_API_KEY");
+
 }
 
 #[test]
 #[serial]
 fn test_anthropic_api_key_from_env() {
-    std::env::set_var("ANTHROPIC_API_KEY", "env-key");
+    let _guard = EnvVarGuard::set("ANTHROPIC_API_KEY", "env-key".to_string());
 
     let config = CliConfig::default();
     assert_eq!(config.anthropic_api_key(), Some("env-key".to_string()));
 
-    std::env::remove_var("ANTHROPIC_API_KEY");
+
 }
 
 // ============================================================================

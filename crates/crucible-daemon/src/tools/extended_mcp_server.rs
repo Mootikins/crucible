@@ -737,62 +737,8 @@ fn handle_discovery_tool(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
-    use tempfile::TempDir;
+    use crate::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
 
-    struct MockKnowledgeRepository;
-    struct MockEmbeddingProvider;
-
-    #[async_trait]
-    impl KnowledgeRepository for MockKnowledgeRepository {
-        async fn get_note_by_name(
-            &self,
-            _name: &str,
-        ) -> crucible_core::Result<Option<crucible_core::parser::ParsedNote>> {
-            Ok(None)
-        }
-
-        async fn list_notes(
-            &self,
-            _path: Option<&str>,
-        ) -> crucible_core::Result<Vec<crucible_core::traits::knowledge::NoteInfo>> {
-            Ok(vec![])
-        }
-
-        async fn search_vectors(
-            &self,
-            _vector: Vec<f32>,
-        ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
-            Ok(vec![])
-        }
-    }
-
-    #[async_trait]
-    impl EmbeddingProvider for MockEmbeddingProvider {
-        async fn embed(&self, _text: &str) -> anyhow::Result<Vec<f32>> {
-            Ok(vec![0.1; 384])
-        }
-
-        async fn embed_batch(&self, texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
-            Ok(vec![vec![0.1; 384]; texts.len()])
-        }
-
-        fn model_name(&self) -> &'static str {
-            "mock-model"
-        }
-
-        fn dimensions(&self) -> usize {
-            384
-        }
-
-        fn provider_name(&self) -> &str {
-            "mock"
-        }
-
-        async fn list_models(&self) -> anyhow::Result<Vec<String>> {
-            Ok(vec!["mock-model".to_string()])
-        }
-    }
 
     #[test]
     fn test_kiln_only_server_creation() {
