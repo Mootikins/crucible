@@ -6,7 +6,7 @@ use crate::annotations::{
 };
 use crate::manifest::{Capability, LoadedPlugin, ManifestError, PluginManifest, PluginState};
 use mlua::{Function, Lua, RegistryKey, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
@@ -76,6 +76,65 @@ struct RegisteredItem<T> {
     owner: Option<String>,
 }
 
+/// A single captured error entry from plugin execution.
+#[derive(Debug, Clone)]
+pub struct PluginErrorEntry {
+    /// Plugin that generated this error.
+    pub plugin: String,
+    /// Error message string.
+    pub error: String,
+    /// Context where the error occurred (e.g. "emitter:emit('on_message')" or "handler:my_handler").
+    pub context: String,
+    /// When the error was captured.
+    pub timestamp: std::time::Instant,
+}
+
+/// Bounded ring buffer of recent plugin errors. Stored per-PluginManager for test isolation.
+#[derive(Debug)]
+pub struct PluginErrorLog {
+    entries: VecDeque<PluginErrorEntry>,
+    capacity: usize,
+}
+
+impl PluginErrorLog {
+    /// Create a new error log with given capacity.
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            entries: VecDeque::with_capacity(capacity),
+            capacity,
+        }
+    }
+
+    /// Push a new error entry. Evicts oldest if over capacity.
+    pub fn push(&mut self, entry: PluginErrorEntry) {
+        if self.entries.len() >= self.capacity {
+            self.entries.pop_front();
+        }
+        self.entries.push_back(entry);
+    }
+
+    /// Return the `n` most recent entries. If n > len, returns all.
+    pub fn recent(&self, n: usize) -> Vec<&PluginErrorEntry> {
+        let start = self.entries.len().saturating_sub(n);
+        self.entries.iter().skip(start).collect()
+    }
+
+    /// Number of entries currently stored.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Returns true if no entries.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Clear all entries.
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+}
+
 pub struct PluginManager {
     plugins: HashMap<String, LoadedPlugin>,
     search_paths: Vec<PathBuf>,
@@ -86,6 +145,7 @@ pub struct PluginManager {
     lua: Lua,
     on_unload_hooks: HashMap<String, RegistryKey>,
     on_load_hooks: HashMap<String, RegistryKey>,
+    error_log: PluginErrorLog,
 }
 
 impl Default for PluginManager {
@@ -105,6 +165,7 @@ impl std::fmt::Debug for PluginManager {
             .field("handlers_count", &self.handlers.len())
             .field("on_unload_hooks_count", &self.on_unload_hooks.len())
             .field("on_load_hooks_count", &self.on_load_hooks.len())
+            .field("error_log_len", &self.error_log.len())
             .finish()
     }
 }
@@ -126,7 +187,18 @@ impl PluginManager {
             lua,
             on_unload_hooks: HashMap::new(),
             on_load_hooks: HashMap::new(),
+            error_log: PluginErrorLog::new(100),
         }
+    }
+
+    /// Access the error log for this plugin manager.
+    pub fn error_log(&self) -> &PluginErrorLog {
+        &self.error_log
+    }
+
+    /// Access the error log mutably (for wiring in error capture).
+    pub fn error_log_mut(&mut self) -> &mut PluginErrorLog {
+        &mut self.error_log
     }
 
     pub fn with_standard_paths(kiln_path: Option<&Path>) -> Self {
@@ -3192,4 +3264,58 @@ return {
             "only plugin-b's listener should survive"
         );
 }
+
+    #[test]
+    fn test_error_log_push_and_recent() {
+        let mut log = PluginErrorLog::new(10);
+        for i in 0..5u32 {
+            log.push(PluginErrorEntry {
+                plugin: "test-plugin".to_string(),
+                error: format!("error-{}", i),
+                context: "test".to_string(),
+                timestamp: std::time::Instant::now(),
+            });
+        }
+        assert_eq!(log.len(), 5);
+        let recent = log.recent(3);
+        assert_eq!(recent.len(), 3);
+        assert_eq!(recent[0].error, "error-2");
+        assert_eq!(recent[1].error, "error-3");
+        assert_eq!(recent[2].error, "error-4");
+    }
+
+    #[test]
+    fn test_error_log_ring_buffer_bounded() {
+        let mut log = PluginErrorLog::new(100);
+        for i in 0..105u32 {
+            log.push(PluginErrorEntry {
+                plugin: "test-plugin".to_string(),
+                error: format!("error-{}", i),
+                context: "test".to_string(),
+                timestamp: std::time::Instant::now(),
+            });
+        }
+        assert_eq!(log.len(), 100, "ring buffer should be capped at capacity");
+        // Oldest entries (error-0..error-4) should be evicted
+        let oldest = log.recent(100)[0].error.clone();
+        assert_eq!(oldest, "error-5", "oldest surviving entry should be error-5");
+    }
+
+    #[test]
+    fn test_error_log_clear() {
+        let mut log = PluginErrorLog::new(10);
+        for i in 0..5u32 {
+            log.push(PluginErrorEntry {
+                plugin: "test-plugin".to_string(),
+                error: format!("error-{}", i),
+                context: "test".to_string(),
+                timestamp: std::time::Instant::now(),
+            });
+        }
+        assert_eq!(log.len(), 5);
+        log.clear();
+        assert_eq!(log.len(), 0);
+        assert!(log.is_empty());
+    }
+
 }
