@@ -703,7 +703,7 @@ mod tests {
 
         assert!(result.is_ok());
         let result = result.unwrap();
-        assert!(!result.is_error.unwrap_or(false));
+        assert!(!result.is_error.expect("is_error field should be present in tool result"));
 
         // Check content contains line numbers
         let content = format!("{:?}", result.content);
