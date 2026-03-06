@@ -235,6 +235,38 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
     })?;
     oil.set("each", each_fn)?;
 
+    // cru.oil.maybe(value, fn) — if value is non-nil, call fn(value); else return Empty
+    // NOTE: checks Value::Nil specifically — false, 0, "" all trigger the callback (NOT treated as nil)
+    let maybe_fn = lua.create_function(|_, (value, func): (Value, Function)| {
+        match value {
+            Value::Nil => Ok(LuaNode(Node::Empty)),
+            v => func.call::<LuaNode>(v),
+        }
+    })?;
+    oil.set("maybe", maybe_fn)?;
+
+    // cru.oil.match_state(state, handlers) — table-driven state dispatch
+    // handlers: { state_key = LuaNode|Function|string, _ = default }
+    // Missing key + no _ handler → Node::Empty (safe default)
+    let match_state_fn = lua.create_function(|ctx, (state, handlers): (Value, Table)| {
+        // Try to get handler for the state key
+        let handler: Value = handlers.get(state.clone()).unwrap_or(Value::Nil);
+        match handler {
+            Value::Nil => {
+                // No handler for this key — try _ default
+                let default: Value = handlers.get("_").unwrap_or(Value::Nil);
+                match default {
+                    Value::Function(f) => f.call::<LuaNode>(()),
+                    Value::Nil => Ok(LuaNode(Node::Empty)),
+                    v => LuaNode::from_lua(v, ctx),
+                }
+            }
+            Value::Function(f) => f.call::<LuaNode>(()),
+            v => LuaNode::from_lua(v, ctx),
+        }
+    })?;
+    oil.set("match_state", match_state_fn)?;
+
     // cru.oil.input(opts)
     let input_fn = lua.create_function(|_, opts: Option<Table>| {
         let mut value = String::new();
@@ -572,7 +604,9 @@ mod tests {
         assert!(oil.contains_key("each").unwrap());
         assert!(oil.contains_key("markup").unwrap());
         assert!(oil.contains_key("component").unwrap());
-    }
+        assert!(oil.contains_key("maybe").unwrap());
+        assert!(oil.contains_key("match_state").unwrap());
+}
 
     #[test]
     fn test_oil_text() {
@@ -726,6 +760,98 @@ mod tests {
             assert_eq!(children.len(), 3);
         } else {
             panic!("Expected Fragment node");
+        }
+    }
+
+    #[test]
+    fn test_oil_maybe_with_value() {
+        let lua = setup_lua();
+        let result: LuaNode = lua
+            .load(r#"return cru.oil.maybe("hello", function(v) return cru.oil.text(v) end)"#)
+            .eval()
+            .unwrap();
+        if let Node::Text(t) = result.0 {
+            assert_eq!(t.content, "hello");
+        } else {
+            panic!("Expected Text node");
+        }
+    }
+
+    #[test]
+    fn test_oil_maybe_with_nil() {
+        let lua = setup_lua();
+        let result: LuaNode = lua
+            .load(r#"return cru.oil.maybe(nil, function(v) return cru.oil.text("oops") end)"#)
+            .eval()
+            .unwrap();
+        assert!(matches!(result.0, Node::Empty));
+    }
+
+    #[test]
+    fn test_oil_maybe_with_false() {
+        // false is NOT nil — must trigger the callback, not return Empty
+        let lua = setup_lua();
+        let result: LuaNode = lua
+            .load(r#"return cru.oil.maybe(false, function(v) return cru.oil.text("got false") end)"#)
+            .eval()
+            .unwrap();
+        if let Node::Text(t) = result.0 {
+            assert_eq!(t.content, "got false");
+        } else {
+            panic!("Expected Text node — false must trigger callback, not return Empty");
+        }
+    }
+
+    #[test]
+    fn test_oil_match_state_hit() {
+        let lua = setup_lua();
+        let result: LuaNode = lua
+            .load(r#"return cru.oil.match_state("loading", {loading = cru.oil.text("Loading...")})"#)
+            .eval()
+            .unwrap();
+        if let Node::Text(t) = result.0 {
+            assert_eq!(t.content, "Loading...");
+        } else {
+            panic!("Expected Text node");
+        }
+    }
+
+    #[test]
+    fn test_oil_match_state_miss_with_default() {
+        let lua = setup_lua();
+        let result: LuaNode = lua
+            .load(r#"return cru.oil.match_state("unknown", {_ = cru.oil.text("default")})"#)
+            .eval()
+            .unwrap();
+        if let Node::Text(t) = result.0 {
+            assert_eq!(t.content, "default");
+        } else {
+            panic!("Expected default Text node");
+        }
+    }
+
+    #[test]
+    fn test_oil_match_state_miss_no_default() {
+        let lua = setup_lua();
+        let result: LuaNode = lua
+            .load(r#"return cru.oil.match_state("unknown", {loading = cru.oil.text("Loading...")})"#)
+            .eval()
+            .unwrap();
+        // Missing key + no _ handler → Node::Empty
+        assert!(matches!(result.0, Node::Empty));
+    }
+
+    #[test]
+    fn test_oil_match_state_function_handler() {
+        let lua = setup_lua();
+        let result: LuaNode = lua
+            .load(r#"return cru.oil.match_state("ready", {ready = function() return cru.oil.text("Ready!") end})"#)
+            .eval()
+            .unwrap();
+        if let Node::Text(t) = result.0 {
+            assert_eq!(t.content, "Ready!");
+        } else {
+            panic!("Expected Text node from function handler");
         }
     }
 
