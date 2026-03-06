@@ -738,6 +738,7 @@ fn handle_discovery_tool(
 mod tests {
     use super::*;
     use crate::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
+    use tempfile::TempDir;
 
 
     #[test]

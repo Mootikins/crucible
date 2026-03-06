@@ -107,6 +107,7 @@ impl TestServer {
             _server_handle: server_handle,
             _shutdown_handle: shutdown_handle,
         })
+    }
 }
 
 #[tokio::test]
