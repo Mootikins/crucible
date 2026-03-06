@@ -139,15 +139,7 @@ impl RenderStyle {
     }
 
     fn blockquote_width(&self) -> usize {
-        match self {
-            RenderStyle::Viewport { width, margins } => {
-                width.saturating_sub(margins.left + margins.right)
-            }
-            RenderStyle::Natural {
-                terminal_width,
-                margins,
-            } => terminal_width.saturating_sub(margins.left + margins.right),
-        }
+        self.table_width()
     }
 }
 
@@ -163,40 +155,25 @@ pub fn markdown_to_node_with_width(markdown: &str, width: usize) -> Node {
 
 /// Convert markdown with explicit render style
 pub fn markdown_to_node_styled(markdown: &str, style: RenderStyle) -> Node {
-    use std::panic::{catch_unwind, AssertUnwindSafe};
-
-    let result = catch_unwind(AssertUnwindSafe(|| {
-        let md = create_parser();
-        let ast = md.parse(markdown);
-
-        let mut ctx = RenderContext::new(
-            style.text_width(),
-            style.table_width(),
-            style.blockquote_width(),
-            style.margins(),
-        );
-        render_node(&ast, &mut ctx);
-        ctx.into_node()
-    }));
-
-    result.unwrap_or_else(|_| text(markdown))
+    parse_and_render_internal(
+        markdown,
+        style.text_width(),
+        style.table_width(),
+        style.blockquote_width(),
+        style.margins(),
+    )
 }
 
 /// Convert markdown text to an oil Node tree with separate widths for text and tables.
 /// Prefer `markdown_to_node_styled` for clearer intent.
 pub fn markdown_to_node_with_widths(markdown: &str, text_width: usize, table_width: usize) -> Node {
-    use std::panic::{catch_unwind, AssertUnwindSafe};
-
-    let result = catch_unwind(AssertUnwindSafe(|| {
-        let md = create_parser();
-        let ast = md.parse(markdown);
-
-        let mut ctx = RenderContext::new(text_width, table_width, table_width, Margins::default());
-        render_node(&ast, &mut ctx);
-        ctx.into_node()
-    }));
-
-    result.unwrap_or_else(|_| text(markdown))
+    parse_and_render_internal(
+        markdown,
+        text_width,
+        table_width,
+        table_width,
+        Margins::default(),
+    )
 }
 
 fn create_parser() -> MarkdownIt {
@@ -204,6 +181,27 @@ fn create_parser() -> MarkdownIt {
     markdown_it::plugins::cmark::add(&mut md);
     markdown_it::plugins::extra::tables::add(&mut md);
     md
+}
+
+fn parse_and_render_internal(
+    markdown: &str,
+    text_width: usize,
+    table_width: usize,
+    blockquote_width: usize,
+    margins: Margins,
+) -> Node {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let md = create_parser();
+        let ast = md.parse(markdown);
+
+        let mut ctx = RenderContext::new(text_width, table_width, blockquote_width, margins);
+        render_node(&ast, &mut ctx);
+        ctx.into_node()
+    }));
+
+    result.unwrap_or_else(|_| text(markdown))
 }
 
 struct RenderContext {
