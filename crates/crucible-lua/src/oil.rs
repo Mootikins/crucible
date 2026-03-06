@@ -1225,7 +1225,7 @@ mod proptest_tests {
             bold in any::<bool>(),
             width in 20usize..120,
         ) {
-            let lua = setup_lua();
+            let lua = TestLuaBuilder::new().with_oil().build();
             let bold_str = if bold { "true" } else { "false" };
             let script = format!(
                 r#"return cru.oil.text("{}", {{bold = {}}})"#,
@@ -1244,7 +1244,7 @@ mod proptest_tests {
             gap in 0u16..4,
             width in 20usize..120,
         ) {
-            let lua = setup_lua();
+            let lua = TestLuaBuilder::new().with_oil().build();
             let children: Vec<String> = texts
                 .iter()
                 .map(|t| format!(r#"cru.oil.text("{}")"#, t))
@@ -1266,7 +1266,7 @@ mod proptest_tests {
             right in "[a-zA-Z]{0,10}",
             width in 20usize..120,
         ) {
-            let lua = setup_lua();
+            let lua = TestLuaBuilder::new().with_oil().build();
             let script = format!(
                 r#"return cru.oil.row(cru.oil.text("{}"), cru.oil.spacer(), cru.oil.text("{}"))"#,
                 left, right
@@ -1282,7 +1282,7 @@ mod proptest_tests {
             depth in 1usize..4,
             width in 40usize..120,
         ) {
-            let lua = setup_lua();
+            let lua = TestLuaBuilder::new().with_oil().build();
 
             let mut script = String::from(r#"cru.oil.text("leaf")"#);
             for i in 0..depth {
@@ -1302,7 +1302,7 @@ mod proptest_tests {
             text in "[a-zA-Z]{0,20}",
             width in 20usize..80,
         ) {
-            let lua = setup_lua();
+            let lua = TestLuaBuilder::new().with_oil().build();
             let script = format!(
                 r#"return cru.oil.when({}, cru.oil.text("{}"))"#,
                 condition, text

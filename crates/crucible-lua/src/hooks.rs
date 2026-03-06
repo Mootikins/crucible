@@ -204,14 +204,7 @@ pub fn fire_tools_registered_hooks(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn setup_lua() -> (Lua, Table) {
-        let lua = Lua::new();
-        let crucible = lua.create_table().unwrap();
-        lua.globals().set("crucible", crucible.clone()).unwrap();
-        register_hooks_module(&lua, &crucible).unwrap();
-        (lua, crucible)
-    }
+    use crate::test_support::TestLuaBuilder;
 
     #[test]
     fn test_register_hooks_module() {

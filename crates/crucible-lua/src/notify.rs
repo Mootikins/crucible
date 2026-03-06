@@ -288,19 +288,7 @@ fn table_to_notification(entry: &Table) -> LuaResult<Notification> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn setup_lua() -> (Lua, Table) {
-        let lua = Lua::new();
-        let crucible = lua.create_table().unwrap();
-
-        let log_table = lua.create_table().unwrap();
-        crucible.set("log", log_table).unwrap();
-
-        register_notify_module(&lua, &crucible).unwrap();
-        lua.globals().set("crucible", crucible.clone()).unwrap();
-
-        (lua, crucible)
-    }
+    use crate::test_support::TestLuaBuilder;
 
     #[test]
     fn notify_queues_toast() {
