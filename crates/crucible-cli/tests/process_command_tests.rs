@@ -25,6 +25,7 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, Duration};
+use crucible_core::test_support::EnvVarGuard;
 
 /// Helper to create a test kiln with sample markdown files
 fn create_test_kiln() -> Result<TempDir> {
@@ -47,7 +48,7 @@ fn create_test_kiln() -> Result<TempDir> {
 }
 
 /// Helper to create test CLI config
-fn create_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfig {
+fn create_process_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfig {
     let mut llm_config = LlmConfig::default();
     llm_config.default = Some("local".to_string());
     llm_config.providers.insert(
@@ -83,6 +84,7 @@ fn create_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfig {
 /// Test fixture: starts an in-process daemon so process::execute() can connect.
 /// Sets XDG_RUNTIME_DIR so DaemonClient::connect_or_start() finds the socket.
 struct TestServer {
+    _env_guard: EnvVarGuard,
     _temp_dir: TempDir,
     _server_handle: JoinHandle<()>,
     _shutdown_handle: tokio::sync::broadcast::Sender<()>,
@@ -91,7 +93,7 @@ struct TestServer {
 impl TestServer {
     async fn start() -> Result<Self> {
         let temp_dir = tempfile::tempdir()?;
-        std::env::set_var("XDG_RUNTIME_DIR", temp_dir.path().to_str().unwrap());
+        let _env_guard = EnvVarGuard::set("XDG_RUNTIME_DIR", temp_dir.path().to_str().unwrap().to_string());
         let socket_path = lifecycle::default_socket_path();
         let server = Server::bind(&socket_path, None).await?;
         let shutdown_handle = server.shutdown_handle();
@@ -100,11 +102,11 @@ impl TestServer {
         });
         tokio::time::sleep(Duration::from_millis(50)).await;
         Ok(Self {
+            _env_guard,
             _temp_dir: temp_dir,
             _server_handle: server_handle,
             _shutdown_handle: shutdown_handle,
         })
-    }
 }
 
 #[tokio::test]
@@ -118,7 +120,7 @@ async fn test_process_executes_pipeline() -> Result<()> {
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
 
-    let config = create_test_config(kiln_path.clone(), db_path.clone());
+    let config = create_process_test_config(kiln_path.clone(), db_path.clone());
 
     // When: Running the process command
     let result = process::execute(config, None, false, false, false, false, None).await;
@@ -148,7 +150,7 @@ async fn test_storage_persists_across_runs() -> Result<()> {
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
 
-    let config = create_test_config(kiln_path.clone(), db_path.clone());
+    let config = create_process_test_config(kiln_path.clone(), db_path.clone());
 
     // When: Running process command the first time
     process::execute(config.clone(), None, false, false, false, false, None).await?;
@@ -157,7 +159,7 @@ async fn test_storage_persists_across_runs() -> Result<()> {
     sleep(Duration::from_millis(100)).await;
 
     // And: Running process command a second time (same database)
-    let config2 = create_test_config(kiln_path, db_path);
+    let config2 = create_process_test_config(kiln_path, db_path);
     let result = process::execute(config2, None, false, false, false, false, None).await;
 
     // Then: Second run should succeed
@@ -182,7 +184,7 @@ async fn test_change_detection_skips_unchanged_files() -> Result<()> {
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
 
-    let config = create_test_config(kiln_path.clone(), db_path.clone());
+    let config = create_process_test_config(kiln_path.clone(), db_path.clone());
 
     // When: Processing files initially
     process::execute(config.clone(), None, false, false, false, false, None).await?;
@@ -191,7 +193,7 @@ async fn test_change_detection_skips_unchanged_files() -> Result<()> {
     sleep(Duration::from_millis(100)).await;
 
     // And: Processing again without any file changes
-    let config2 = create_test_config(kiln_path.clone(), db_path.clone());
+    let config2 = create_process_test_config(kiln_path.clone(), db_path.clone());
     let result = process::execute(config2, None, false, false, false, false, None).await;
 
     assert!(result.is_ok());
@@ -211,7 +213,7 @@ async fn test_change_detection_skips_unchanged_files() -> Result<()> {
     )?;
 
     // And: Processing again
-    let config3 = create_test_config(kiln_path, db_path);
+    let config3 = create_process_test_config(kiln_path, db_path);
     let result2 = process::execute(config3, None, false, false, false, false, None).await;
 
     assert!(result2.is_ok());
@@ -235,7 +237,7 @@ async fn test_force_flag_overrides_change_detection() -> Result<()> {
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
 
-    let config = create_test_config(kiln_path.clone(), db_path.clone());
+    let config = create_process_test_config(kiln_path.clone(), db_path.clone());
 
     // When: Processing initially
     process::execute(config.clone(), None, false, false, false, false, None).await?;
@@ -244,7 +246,7 @@ async fn test_force_flag_overrides_change_detection() -> Result<()> {
     sleep(Duration::from_millis(100)).await;
 
     // And: Processing again with --force flag
-    let config_force = create_test_config(kiln_path, db_path);
+    let config_force = create_process_test_config(kiln_path, db_path);
     let result = process::execute(config_force, None, true, false, false, false, None).await;
 
     // Then: Should reprocess all files despite no changes
@@ -270,7 +272,7 @@ async fn test_process_single_file() -> Result<()> {
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
 
-    let config = create_test_config(kiln_path, db_path);
+    let config = create_process_test_config(kiln_path, db_path);
 
     // When: Processing only a specific file
     let result = process::execute(
@@ -306,7 +308,7 @@ async fn test_all_pipeline_phases_execute() -> Result<()> {
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
 
-    let config = create_test_config(kiln_path, db_path);
+    let config = create_process_test_config(kiln_path, db_path);
 
     // When: Processing files
     let result = process::execute(config, None, false, false, false, false, None).await;
@@ -360,7 +362,7 @@ async fn test_verbose_without_flag_is_quiet() -> Result<()> {
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
 
-    let config = create_test_config(kiln_path, db_path);
+    let config = create_process_test_config(kiln_path, db_path);
 
     // WHEN: Processing without --verbose
     let result = process::execute(config, None, false, false, false, false, None).await;
@@ -387,7 +389,7 @@ async fn test_verbose_shows_phase_timings() -> Result<()> {
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
 
-    let config = create_test_config(kiln_path, db_path);
+    let config = create_process_test_config(kiln_path, db_path);
 
     // WHEN: Processing with --verbose
     let result = process::execute(config, None, false, false, true, false, None).await;
@@ -417,7 +419,7 @@ async fn test_verbose_shows_detailed_parse_info() -> Result<()> {
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
 
-    let config = create_test_config(kiln_path, db_path);
+    let config = create_process_test_config(kiln_path, db_path);
 
     // WHEN: Processing with --verbose
     let result = process::execute(config, None, false, false, true, false, None).await;
@@ -445,7 +447,7 @@ async fn test_verbose_shows_merkle_diff_details() -> Result<()> {
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
 
-    let config = create_test_config(kiln_path.clone(), db_path.clone());
+    let config = create_process_test_config(kiln_path.clone(), db_path.clone());
 
     // Process initially
     process::execute(config.clone(), None, false, false, false, false, None).await?;
@@ -459,7 +461,7 @@ async fn test_verbose_shows_merkle_diff_details() -> Result<()> {
     )?;
 
     // WHEN: Reprocessing with --verbose
-    let config2 = create_test_config(kiln_path, db_path);
+    let config2 = create_process_test_config(kiln_path, db_path);
     let result = process::execute(config2, None, false, false, true, false, None).await;
 
     // THEN: Should show Merkle diff details
@@ -485,7 +487,7 @@ async fn test_verbose_shows_enrichment_progress() -> Result<()> {
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
 
-    let config = create_test_config(kiln_path, db_path);
+    let config = create_process_test_config(kiln_path, db_path);
 
     // WHEN: Processing with --verbose
     let result = process::execute(config, None, false, false, true, false, None).await;
@@ -513,7 +515,7 @@ async fn test_verbose_shows_storage_operations() -> Result<()> {
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
 
-    let config = create_test_config(kiln_path, db_path);
+    let config = create_process_test_config(kiln_path, db_path);
 
     // WHEN: Running with --verbose
     let result = process::execute(config, None, false, false, true, false, None).await;
@@ -545,7 +547,7 @@ async fn test_dry_run_discovers_files_without_processing() -> Result<()> {
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
 
-    let config = create_test_config(kiln_path, db_path.clone());
+    let config = create_process_test_config(kiln_path, db_path.clone());
 
     // WHEN: Running process command with --dry-run
     let result = process::execute(config, None, false, false, false, true, None).await;
@@ -576,7 +578,7 @@ async fn test_dry_run_respects_change_detection() -> Result<()> {
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
 
-    let config = create_test_config(kiln_path.clone(), db_path.clone());
+    let config = create_process_test_config(kiln_path.clone(), db_path.clone());
 
     // Process initially
     process::execute(config.clone(), None, false, false, false, false, None).await?;
@@ -584,7 +586,7 @@ async fn test_dry_run_respects_change_detection() -> Result<()> {
     sleep(Duration::from_millis(100)).await;
 
     // WHEN: Running dry-run without changes
-    let config_dry = create_test_config(kiln_path, db_path);
+    let config_dry = create_process_test_config(kiln_path, db_path);
     let result = process::execute(config_dry, None, false, false, false, true, None).await;
 
     // THEN: Should show which files would be skipped
@@ -609,7 +611,7 @@ async fn test_dry_run_with_force_shows_all_files() -> Result<()> {
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
 
-    let config = create_test_config(kiln_path.clone(), db_path.clone());
+    let config = create_process_test_config(kiln_path.clone(), db_path.clone());
 
     // Process initially
     process::execute(config.clone(), None, false, false, false, false, None).await?;
@@ -617,7 +619,7 @@ async fn test_dry_run_with_force_shows_all_files() -> Result<()> {
     sleep(Duration::from_millis(100)).await;
 
     // WHEN: Running dry-run with --force (bypass change detection)
-    let config_dry_force = create_test_config(kiln_path, db_path);
+    let config_dry_force = create_process_test_config(kiln_path, db_path);
     let result = process::execute(config_dry_force, None, true, false, false, true, None).await;
 
     // THEN: Should show all files would be processed
@@ -642,7 +644,7 @@ async fn test_dry_run_shows_detailed_preview() -> Result<()> {
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
 
-    let config = create_test_config(kiln_path, db_path);
+    let config = create_process_test_config(kiln_path, db_path);
 
     // WHEN: Running with --dry-run
     let result = process::execute(config, None, false, false, false, true, None).await;
@@ -670,7 +672,7 @@ async fn test_dry_run_with_verbose() -> Result<()> {
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
 
-    let config = create_test_config(kiln_path, db_path);
+    let config = create_process_test_config(kiln_path, db_path);
 
     // WHEN: Running with both --dry-run and --verbose
     let result = process::execute(config, None, false, false, true, true, None).await;
@@ -707,7 +709,7 @@ async fn test_watch_mode_starts_and_runs() -> Result<()> {
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
 
-    let config = create_test_config(kiln_path, db_path);
+    let config = create_process_test_config(kiln_path, db_path);
 
     // WHEN: Running watch mode with a timeout
     // Watch mode runs indefinitely, so timeout = success (it was running)
@@ -737,13 +739,13 @@ async fn test_watch_detects_file_modification() -> Result<()> {
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
 
-    let config = create_test_config(kiln_path.clone(), db_path.clone());
+    let config = create_process_test_config(kiln_path.clone(), db_path.clone());
 
     // Initial processing to populate database
     process::execute(config.clone(), None, false, false, false, false, None).await?;
 
     // WHEN: Start watch mode in background
-    let watch_config = create_test_config(kiln_path.clone(), db_path);
+    let watch_config = create_process_test_config(kiln_path.clone(), db_path);
     let watch_handle = tokio::spawn(async move {
         process::execute(watch_config, None, false, true, true, false, None).await
     });
@@ -783,7 +785,7 @@ async fn test_watch_detects_new_file_creation() -> Result<()> {
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
 
-    let config = create_test_config(kiln_path.clone(), db_path);
+    let config = create_process_test_config(kiln_path.clone(), db_path);
 
     // Start watch mode in background
     let watch_handle = tokio::spawn(async move {
@@ -825,13 +827,13 @@ async fn test_watch_detects_file_deletion() -> Result<()> {
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
 
-    let config = create_test_config(kiln_path.clone(), db_path.clone());
+    let config = create_process_test_config(kiln_path.clone(), db_path.clone());
 
     // Initial processing
     process::execute(config.clone(), None, false, false, false, false, None).await?;
 
     // Start watch mode in background
-    let watch_config = create_test_config(kiln_path.clone(), db_path);
+    let watch_config = create_process_test_config(kiln_path.clone(), db_path);
     let watch_handle = tokio::spawn(async move {
         process::execute(watch_config, None, false, true, true, false, None).await
     });
@@ -952,7 +954,7 @@ end
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
 
-    let config = create_test_config(kiln_path, db_path);
+    let config = create_process_test_config(kiln_path, db_path);
 
     // WHEN: Processing files
     let result = process::execute(config, None, false, false, false, false, None).await;

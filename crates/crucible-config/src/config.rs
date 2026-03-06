@@ -1701,6 +1701,7 @@ mod tests {
     use std::io::Write;
     use std::path::PathBuf;
     use tempfile::NamedTempFile;
+    use crucible_core::test_support::EnvVarGuard;
 
     /// Cross-platform test path helper
     fn test_path(name: &str) -> PathBuf {
@@ -1711,11 +1712,11 @@ mod tests {
     fn test_crucible_home_and_is_crucible_home() {
         // Test env override
         let tmp = std::env::temp_dir().join("crucible_test_home_combined");
-        std::env::set_var("CRUCIBLE_HOME", &tmp);
+        let _guard = EnvVarGuard::set("CRUCIBLE_HOME", tmp.to_string_lossy().to_string());
         assert_eq!(crucible_home(), tmp);
         assert!(is_crucible_home(&tmp));
         assert!(!is_crucible_home(std::path::Path::new("/some/other/path")));
-        std::env::remove_var("CRUCIBLE_HOME");
+
     }
 
     #[test]

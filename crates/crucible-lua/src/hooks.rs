@@ -226,7 +226,7 @@ mod tests {
 
     #[test]
     fn test_on_session_start_stores_function() {
-        let (lua, _) = setup_lua();
+        let (lua, _) = TestLuaBuilder::new().build_with_hooks();
 
         lua.load(r#"crucible.on_session_start(function(s) end)"#)
             .exec()
@@ -239,7 +239,7 @@ mod tests {
 
     #[test]
     fn test_multiple_hooks_append() {
-        let (lua, _) = setup_lua();
+        let (lua, _) = TestLuaBuilder::new().build_with_hooks();
 
         lua.load(
             r#"
@@ -258,7 +258,7 @@ mod tests {
 
     #[test]
     fn test_on_tools_registered_stores_function() {
-        let (lua, _) = setup_lua();
+        let (lua, _) = TestLuaBuilder::new().build_with_hooks();
 
         lua.load(r#"crucible.on_tools_registered(function(event) end)"#)
             .exec()
@@ -270,7 +270,7 @@ mod tests {
 
     #[test]
     fn test_on_tools_registered_multiple_hooks() {
-        let (lua, _) = setup_lua();
+        let (lua, _) = TestLuaBuilder::new().build_with_hooks();
 
         lua.load(
             r#"
@@ -319,7 +319,7 @@ mod tests {
 
     #[test]
     fn test_fire_tools_registered_hooks_modifies_display_name() {
-        let (lua, _) = setup_lua();
+        let (lua, _) = TestLuaBuilder::new().build_with_hooks();
 
         lua.load(
             r#"
@@ -359,7 +359,7 @@ mod tests {
 
     #[test]
     fn test_fire_tools_registered_hooks_receives_server_name() {
-        let (lua, _) = setup_lua();
+        let (lua, _) = TestLuaBuilder::new().build_with_hooks();
 
         lua.load(
             r#"
@@ -391,7 +391,7 @@ mod tests {
 
     #[test]
     fn test_fire_tools_registered_hooks_error_isolation() {
-        let (lua, _) = setup_lua();
+        let (lua, _) = TestLuaBuilder::new().build_with_hooks();
 
         lua.load(
             r#"
@@ -420,7 +420,7 @@ mod tests {
 
     #[test]
     fn test_hooks_independent_of_each_other() {
-        let (lua, _) = setup_lua();
+        let (lua, _) = TestLuaBuilder::new().build_with_hooks();
 
         lua.load(
             r#"

@@ -12,7 +12,7 @@ use crucible_config::{BackendType, CliAppConfig, LlmConfig, LlmProviderConfig};
 use std::collections::HashMap;
 
 /// Helper to create a minimal CliAppConfig for testing
-fn create_test_config() -> CliAppConfig {
+fn create_agent_factory_test_config() -> CliAppConfig {
     CliAppConfig {
         kiln_path: std::env::temp_dir().join("crucible_test_kiln"),
         ..Default::default()
@@ -21,7 +21,7 @@ fn create_test_config() -> CliAppConfig {
 
 /// Helper to create CliAppConfig with custom chat provider
 fn create_config_with_provider(provider: BackendType, model: Option<String>) -> CliAppConfig {
-    let mut config = create_test_config();
+    let mut config = create_agent_factory_test_config();
     config.chat.model = model;
     config.llm.default = Some("default".to_string());
     config.llm.providers.insert(
@@ -36,7 +36,7 @@ fn create_config_with_named_providers(
     default_key: Option<String>,
     providers: HashMap<String, LlmProviderConfig>,
 ) -> CliAppConfig {
-    let mut config = create_test_config();
+    let mut config = create_agent_factory_test_config();
     config.llm = LlmConfig {
         default: default_key,
         providers,
@@ -50,7 +50,7 @@ fn create_config_with_named_providers(
 
 #[test]
 fn test_default_config_has_sensible_values() {
-    let config = create_test_config();
+    let config = create_agent_factory_test_config();
 
     // Chat config should have defaults
     assert_eq!(config.ollama_endpoint(), "http://localhost:11434");
@@ -61,7 +61,7 @@ fn test_default_config_has_sensible_values() {
 
 #[test]
 fn test_custom_chat_config_values() {
-    let mut config = create_test_config();
+    let mut config = create_agent_factory_test_config();
     config.chat.model = Some("custom-model".to_string());
     config.chat.endpoint = Some("http://custom:8080".to_string());
     config.chat.temperature = Some(0.9);
@@ -394,7 +394,7 @@ fn test_llm_provider_type_variants() {
 
 #[test]
 fn test_config_temperature_boundary_values() {
-    let mut config = create_test_config();
+    let mut config = create_agent_factory_test_config();
 
     // Min temperature (0.0)
     config.chat.temperature = Some(0.0);
@@ -411,7 +411,7 @@ fn test_config_temperature_boundary_values() {
 
 #[test]
 fn test_config_max_tokens_boundary_values() {
-    let mut config = create_test_config();
+    let mut config = create_agent_factory_test_config();
 
     // Small value
     config.chat.max_tokens = Some(1);
@@ -428,7 +428,7 @@ fn test_config_max_tokens_boundary_values() {
 
 #[test]
 fn test_config_timeout_boundary_values() {
-    let mut config = create_test_config();
+    let mut config = create_agent_factory_test_config();
 
     // Short timeout
     config.chat.timeout_secs = Some(1);

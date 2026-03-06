@@ -523,7 +523,7 @@ mod tests {
         let runtime_dir = tmp.path();
         std::fs::create_dir(runtime_dir.join("plugins")).unwrap();
 
-        std::env::set_var(
+        let _guard = crucible_core::test_support::EnvVarGuard::set(
             "CRUCIBLE_RUNTIME",
             runtime_dir.to_string_lossy().to_string(),
         );
@@ -534,7 +534,7 @@ mod tests {
             .iter()
             .any(|p| p.ends_with("plugins") && p.starts_with(runtime_dir));
 
-        std::env::remove_var("CRUCIBLE_RUNTIME");
+
 
         assert!(has_runtime, "Expected runtime plugin path in {:?}", paths);
     }
@@ -542,7 +542,7 @@ mod tests {
     #[test]
     fn test_runtime_path_resolved_from_exe() {
         // Ensure CRUCIBLE_RUNTIME is not set
-        std::env::remove_var("CRUCIBLE_RUNTIME");
+        let _guard = crucible_core::test_support::EnvVarGuard::remove("CRUCIBLE_RUNTIME");
 
         let paths = default_daemon_plugin_paths();
 

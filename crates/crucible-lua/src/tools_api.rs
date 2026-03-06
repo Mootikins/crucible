@@ -283,7 +283,7 @@ mod tests {
 
     #[test]
     fn tools_module_registers_in_namespace() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_tools().build();
 
         let cru: Table = lua.globals().get("cru").expect("cru should exist");
         let tools: Table = cru.get("tools").expect("cru.tools should exist");
@@ -303,7 +303,7 @@ mod tests {
 
     #[tokio::test]
     async fn tools_stub_call_returns_nil() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_tools().build();
 
         let result: (Value, Value) = lua
             .load(r#"return cru.tools.call("read_file", { path = "test.txt" })"#)
@@ -320,7 +320,7 @@ mod tests {
 
     #[tokio::test]
     async fn tools_stub_list_returns_nil() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_tools().build();
 
         let result: (Value, Value) = lua
             .load(r#"return cru.tools.list()"#)
@@ -333,7 +333,7 @@ mod tests {
 
     #[tokio::test]
     async fn tools_stub_batch_returns_nil() {
-        let lua = setup_lua();
+        let lua = TestLuaBuilder::new().with_tools().build();
 
         let result: (Value, Value) = lua
             .load(
@@ -437,7 +437,7 @@ mod api_tests {
     #[tokio::test]
     async fn tools_call_returns_result() {
         let api: Arc<dyn DaemonToolsApi> = Arc::new(MockToolsApi::new());
-        let lua = setup_lua_with_api(api);
+        let lua = TestLuaBuilder::new().with_tools_api(api).build();
 
         let result: Table = lua
             .load(
@@ -458,7 +458,7 @@ mod api_tests {
     #[tokio::test]
     async fn tools_call_unknown_tool_returns_error() {
         let api: Arc<dyn DaemonToolsApi> = Arc::new(MockToolsApi::new());
-        let lua = setup_lua_with_api(api);
+        let lua = TestLuaBuilder::new().with_tools_api(api).build();
 
         let result: (Value, Value) = lua
             .load(r#"return cru.tools.call("nonexistent", {})"#)
@@ -476,7 +476,7 @@ mod api_tests {
     #[tokio::test]
     async fn tools_call_with_nil_args() {
         let api: Arc<dyn DaemonToolsApi> = Arc::new(MockToolsApi::new());
-        let lua = setup_lua_with_api(api);
+        let lua = TestLuaBuilder::new().with_tools_api(api).build();
 
         let result: Table = lua
             .load(
@@ -497,7 +497,7 @@ mod api_tests {
     #[tokio::test]
     async fn tools_list_returns_definitions() {
         let api: Arc<dyn DaemonToolsApi> = Arc::new(MockToolsApi::new());
-        let lua = setup_lua_with_api(api);
+        let lua = TestLuaBuilder::new().with_tools_api(api).build();
 
         let result: Table = lua
             .load(
@@ -520,7 +520,7 @@ mod api_tests {
     #[tokio::test]
     async fn tools_batch_returns_all_results() {
         let api: Arc<dyn DaemonToolsApi> = Arc::new(MockToolsApi::new());
-        let lua = setup_lua_with_api(api);
+        let lua = TestLuaBuilder::new().with_tools_api(api).build();
 
         let result: Table = lua
             .load(
@@ -553,7 +553,7 @@ mod api_tests {
     #[tokio::test]
     async fn tools_batch_handles_mixed_success_and_error() {
         let api: Arc<dyn DaemonToolsApi> = Arc::new(MockToolsApi::new());
-        let lua = setup_lua_with_api(api);
+        let lua = TestLuaBuilder::new().with_tools_api(api).build();
 
         let result: Table = lua
             .load(
@@ -585,7 +585,7 @@ mod api_tests {
     #[tokio::test]
     async fn tools_batch_empty_array_returns_empty() {
         let api: Arc<dyn DaemonToolsApi> = Arc::new(MockToolsApi::new());
-        let lua = setup_lua_with_api(api);
+        let lua = TestLuaBuilder::new().with_tools_api(api).build();
 
         let result: Table = lua
             .load(

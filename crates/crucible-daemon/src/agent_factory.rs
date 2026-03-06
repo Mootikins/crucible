@@ -818,7 +818,7 @@ mod tests {
         let _env_lock = OPENAI_API_KEY_LOCK
             .lock()
             .expect("OPENAI_API_KEY_LOCK should not be poisoned");
-        std::env::set_var("OPENAI_API_KEY", "config-key");
+        let _guard = crucible_core::test_support::EnvVarGuard::set("OPENAI_API_KEY", "config-key".to_string());
 
         let lua = Lua::new();
         let globals = lua.globals();
@@ -851,7 +851,7 @@ mod tests {
 
         assert_eq!(selected, "lua-key");
 
-        std::env::remove_var("OPENAI_API_KEY");
+
     }
 
     #[test]
@@ -859,7 +859,7 @@ mod tests {
         let _env_lock = OPENAI_API_KEY_LOCK
             .lock()
             .expect("OPENAI_API_KEY_LOCK should not be poisoned");
-        std::env::set_var("OPENAI_API_KEY", "config-key");
+        let _guard = crucible_core::test_support::EnvVarGuard::set("OPENAI_API_KEY", "config-key".to_string());
 
         let lua = Lua::new();
         let globals = lua.globals();
@@ -883,7 +883,7 @@ mod tests {
         let fallback_key = std::env::var("OPENAI_API_KEY").unwrap();
         assert_eq!(fallback_key, "config-key");
 
-        std::env::remove_var("OPENAI_API_KEY");
+
     }
 
     #[tokio::test]

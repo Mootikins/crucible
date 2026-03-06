@@ -534,6 +534,12 @@ mod tests {
             std::env::set_var(key, value);
             EnvGuard { key, old }
         }
+
+        fn remove(key: &'static str) -> Self {
+            let old = std::env::var(key).ok();
+            std::env::remove_var(key);
+            EnvGuard { key, old }
+        }
     }
 
     impl Drop for EnvGuard {
@@ -600,7 +606,7 @@ mod tests {
     #[test]
     fn test_detect_dark_terminal_not_set() {
         // Default to dark if not set
-        std::env::remove_var("COLORFGBG");
+        let _guard = EnvGuard::remove("COLORFGBG");
         assert!(detect_dark_terminal());
     }
 

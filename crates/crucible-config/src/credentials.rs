@@ -574,6 +574,7 @@ pub fn resolve_api_key(
 mod tests {
     use super::*;
     use serial_test::serial;
+    use crucible_core::test_support::EnvVarGuard;
     use tempfile::TempDir;
 
     /// Helper to create a SecretsFile in a temp directory
@@ -726,7 +727,7 @@ mod tests {
         let (mut store, _dir) = temp_store();
         store.set("openai", "store-key").expect("set");
 
-        std::env::set_var("OPENAI_API_KEY", "env-key");
+        let _guard = EnvVarGuard::set("OPENAI_API_KEY", "env-key".to_string());
 
         let result = resolve_api_key("openai", &store, Some("config-key"));
         assert_eq!(
@@ -734,7 +735,7 @@ mod tests {
             Some(("env-key".to_string(), CredentialSource::EnvVar))
         );
 
-        std::env::remove_var("OPENAI_API_KEY");
+
     }
 
     // =========================================================================
@@ -747,7 +748,7 @@ mod tests {
         let (mut store, _dir) = temp_store();
         store.set("openai", "store-key").expect("set");
 
-        std::env::remove_var("OPENAI_API_KEY");
+        let _guard = EnvVarGuard::remove("OPENAI_API_KEY");
 
         let result = resolve_api_key("openai", &store, Some("config-key"));
         assert_eq!(
@@ -764,7 +765,7 @@ mod tests {
     #[serial]
     fn resolve_api_key_falls_back_to_config() {
         let (store, _dir) = temp_store();
-        std::env::remove_var("OPENAI_API_KEY");
+        let _guard = EnvVarGuard::remove("OPENAI_API_KEY");
 
         let result = resolve_api_key("openai", &store, Some("config-key"));
         assert_eq!(
@@ -781,7 +782,7 @@ mod tests {
     #[serial]
     fn resolve_api_key_returns_none_when_nothing_configured() {
         let (store, _dir) = temp_store();
-        std::env::remove_var("OPENAI_API_KEY");
+        let _guard = EnvVarGuard::remove("OPENAI_API_KEY");
 
         let result = resolve_api_key("openai", &store, None);
         assert_eq!(result, None);

@@ -20,7 +20,7 @@ fn create_test_kiln_with_init_lua(init_lua_content: &str) -> TempDir {
 }
 
 /// Helper to create a minimal config file
-fn create_test_config(kiln_path: &Path) -> PathBuf {
+fn create_lua_hook_test_config(kiln_path: &Path) -> PathBuf {
     let temp = TempDir::new().unwrap();
     let config_path = temp.path().join("test-config.toml");
 
@@ -60,7 +60,7 @@ end)
     let kiln_path = kiln_temp.path().to_path_buf();
 
     // Create a test config pointing to the kiln
-    let _config_path = create_test_config(&kiln_path);
+    let _config_path = create_lua_hook_test_config(&kiln_path);
 
     // For now, we'll just verify that the hook infrastructure is in place
     // A full integration test would require:

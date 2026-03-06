@@ -16,12 +16,14 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::task::JoinHandle;
+use crucible_core::test_support::EnvVarGuard;
 
 /// Test fixture that starts a real daemon server for integration testing.
 ///
 /// Important: This sets XDG_RUNTIME_DIR to ensure `lifecycle::default_socket_path()`
 /// returns the correct path. This must happen before calling `get_storage`.
 struct TestServer {
+    _env_guard: EnvVarGuard,
     _temp_dir: TempDir,
     _server_handle: JoinHandle<()>,
     shutdown_handle: tokio::sync::broadcast::Sender<()>,
@@ -36,7 +38,7 @@ impl TestServer {
 
         // Set XDG_RUNTIME_DIR BEFORE computing socket path
         // This ensures lifecycle::default_socket_path() returns the right path
-        std::env::set_var("XDG_RUNTIME_DIR", temp_dir.path().to_str().unwrap());
+        let _env_guard = EnvVarGuard::set("XDG_RUNTIME_DIR", temp_dir.path().to_str().unwrap().to_string());
 
         // Now get the path that get_storage will look for
         let socket_path = lifecycle::default_socket_path();
@@ -52,6 +54,7 @@ impl TestServer {
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         Ok(Self {
+            _env_guard,
             _temp_dir: temp_dir,
             _server_handle: server_handle,
             shutdown_handle,
@@ -148,7 +151,7 @@ async fn test_storage_handle_mode_detection() {
 async fn test_get_storage_fails_when_no_daemon() {
     // Set up a temp dir with no daemon running
     let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
-    std::env::set_var("XDG_RUNTIME_DIR", temp_dir.path().to_str().unwrap());
+    let _guard = EnvVarGuard::set("XDG_RUNTIME_DIR", temp_dir.path().to_str().unwrap().to_string());
 
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
     let mut config = CliConfig {
