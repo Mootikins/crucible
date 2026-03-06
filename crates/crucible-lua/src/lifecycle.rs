@@ -396,6 +396,8 @@ impl PluginManager {
             }
         }
 
+        self.call_on_unload_hook(name);
+
         let dir_prefix = plugin_dir.to_string_lossy();
         self.tools
             .retain(|t| !t.item.source_path.starts_with(dir_prefix.as_ref()));
@@ -411,7 +413,7 @@ impl PluginManager {
             .get_mut(name)
             .ok_or_else(|| LifecycleError::NotFound(name.to_string()))?;
         plugin.state = PluginState::Discovered;
-        self.on_unload_hooks.remove(name);
+        plugin.state = PluginState::Discovered;
         info!("Unloaded plugin: {}", name);
 
         Ok(())
@@ -709,12 +711,12 @@ end
         Ok(())
     }
 
-    fn call_on_unload_hook(&self, plugin_name: &str) {
-        let Some(hook_key) = self.on_unload_hooks.get(plugin_name) else {
+    fn call_on_unload_hook(&mut self, plugin_name: &str) {
+        let Some(hook_key) = self.on_unload_hooks.remove(plugin_name) else {
             return;
         };
 
-        match self.lua.registry_value::<Function>(hook_key) {
+        match self.lua.registry_value::<Function>(&hook_key) {
             Ok(on_unload) => {
                 if let Err(error) = on_unload.call::<()>(()) {
                     warn!("on_unload hook failed for {}: {}", plugin_name, error);
@@ -2657,5 +2659,113 @@ return {{
         let gw = spec.services.iter().find(|s| s.name == "gateway").unwrap();
         assert_eq!(gw.description, "WebSocket gateway");
         assert_eq!(gw.service_fn, "gateway");
+    }
+
+    #[test]
+    fn test_on_unload_fires_during_unload() {
+        let temp = TempDir::new().unwrap();
+        let plugin_dir = temp.path().join("unload-hook-test");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+
+        let manifest = r#"
+name: unload-hook-test
+version: "1.0.0"
+main: init.lua
+"#;
+        std::fs::write(plugin_dir.join("plugin.yaml"), manifest).unwrap();
+
+        let lua = r#"
+return {
+    name = "unload-hook-test",
+    version = "1.0.0",
+    on_unload = function()
+        _G._unload_fired = true
+    end,
+}
+"#;
+        std::fs::write(plugin_dir.join("init.lua"), lua).unwrap();
+
+        let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+        manager.discover().unwrap();
+        manager.load("unload-hook-test").unwrap();
+
+        manager.unload("unload-hook-test").unwrap();
+
+        let fired = manager
+            .eval_runtime::<bool>("return _G._unload_fired == true")
+            .unwrap_or(false);
+        assert!(fired, "on_unload hook should have fired during unload()");
+    }
+
+    #[test]
+    fn test_on_unload_fires_during_disable() {
+        let temp = TempDir::new().unwrap();
+        let plugin_dir = temp.path().join("disable-hook-test");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+
+        let manifest = r#"
+name: disable-hook-test
+version: "1.0.0"
+main: init.lua
+"#;
+        std::fs::write(plugin_dir.join("plugin.yaml"), manifest).unwrap();
+
+        let lua = r#"
+return {
+    name = "disable-hook-test",
+    version = "1.0.0",
+    on_unload = function()
+        _G._unload_fired = true
+    end,
+}
+"#;
+        std::fs::write(plugin_dir.join("init.lua"), lua).unwrap();
+
+        let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+        manager.discover().unwrap();
+        manager.load("disable-hook-test").unwrap();
+
+        manager.disable("disable-hook-test").unwrap();
+
+        let fired = manager
+            .eval_runtime::<bool>("return _G._unload_fired == true")
+            .unwrap_or(false);
+        assert!(fired, "on_unload hook should have fired during disable()");
+    }
+
+    #[test]
+    fn test_on_unload_fires_once_during_reload() {
+        let temp = TempDir::new().unwrap();
+        let plugin_dir = temp.path().join("reload-hook-test");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+
+        let manifest = r#"
+name: reload-hook-test
+version: "1.0.0"
+main: init.lua
+"#;
+        std::fs::write(plugin_dir.join("plugin.yaml"), manifest).unwrap();
+
+        let lua = r#"
+return {
+    name = "reload-hook-test",
+    version = "1.0.0",
+    on_unload = function()
+        _G._unload_count = (_G._unload_count or 0) + 1
+    end,
+}
+"#;
+        std::fs::write(plugin_dir.join("init.lua"), lua).unwrap();
+
+        let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+        manager.discover().unwrap();
+        manager.load("reload-hook-test").unwrap();
+
+        manager.reload("reload-hook-test").unwrap();
+
+        let count = manager
+            .eval_runtime::<i32>("return _G._unload_count or 0")
+            .unwrap_or(0);
+        assert_eq!(count, 1, "on_unload hook should fire exactly once during reload()");
     }
 }
