@@ -916,13 +916,7 @@ impl OilChatApp {
             .modifiers
             .contains(crossterm::event::KeyModifiers::CONTROL);
         if key.code == KeyCode::Char('t') && ctrl {
-            self.show_thinking = !self.show_thinking;
-            let state = if self.show_thinking { "on" } else { "off" };
-            self.notification_area
-                .add(crucible_core::types::Notification::toast(format!(
-                    "Thinking display: {}",
-                    state
-                )));
+            self.toggle_thinking_with_toast();
             return Action::Continue;
         }
 
@@ -944,6 +938,16 @@ impl OilChatApp {
             && key
                 .modifiers
                 .contains(crossterm::event::KeyModifiers::CONTROL)
+    }
+
+    fn toggle_thinking_with_toast(&mut self) {
+        self.show_thinking = !self.show_thinking;
+        let state = if self.show_thinking { "on" } else { "off" };
+        self.notification_area
+            .add(crucible_core::types::Notification::toast(format!(
+                "Thinking display: {}",
+                state
+            )));
     }
 
     fn handle_ctrl_c(&mut self) -> Action<ChatAppMsg> {
@@ -1127,13 +1131,7 @@ impl OilChatApp {
                 Action::Send(ChatAppMsg::StreamCancelled)
             }
             KeyCode::Char('t') if ctrl => {
-                self.show_thinking = !self.show_thinking;
-                let state = if self.show_thinking { "on" } else { "off" };
-                self.notification_area
-                    .add(crucible_core::types::Notification::toast(format!(
-                        "Thinking display: {}",
-                        state
-                    )));
+                self.toggle_thinking_with_toast();
                 Action::Continue
             }
             KeyCode::BackTab => self.set_mode_with_status(self.mode.cycle()),
