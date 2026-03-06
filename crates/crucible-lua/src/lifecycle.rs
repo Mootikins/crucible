@@ -403,6 +403,13 @@ impl PluginManager {
 
         self.call_on_unload_hook(name);
 
+        // Clean up global emitter listeners registered by this plugin
+        if let Err(e) = self.lua.load(format!(
+            r#"local _e = cru.emitter.global(); if _e.unregister_owner then _e:unregister_owner({name:?}) end"#
+        )).exec() {
+            warn!("Failed to clean up global emitter for {}: {}", name, e);
+        }
+
         let dir_prefix = plugin_dir.to_string_lossy();
         self.tools
             .retain(|t| !t.item.source_path.starts_with(dir_prefix.as_ref()));
@@ -3060,4 +3067,129 @@ return {
             "backward compat: listeners without owner should still fire"
         );
     }
+
+    #[test]
+    fn test_unload_cleans_global_emitter() {
+        let mut manager = setup_emitter_manager();
+        let temp = TempDir::new().unwrap();
+        let plugin_dir = temp.path().join("emitter-cleanup-test");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join("plugin.yaml"),
+            "name: emitter-cleanup-test\nversion: \"1.0.0\"\nmain: init.lua\n",
+        )
+        .unwrap();
+        std::fs::write(
+            plugin_dir.join("init.lua"),
+            r#"
+return {
+    name = "emitter-cleanup-test",
+    version = "1.0.0",
+    on_load = function()
+        cru.emitter.global():on("test_cleanup_event", function() end, "emitter-cleanup-test")
+    end,
+}
+"#,
+        )
+        .unwrap();
+
+        manager.add_search_path(temp.path().to_path_buf());
+        manager.discover().unwrap();
+        manager.load("emitter-cleanup-test").unwrap();
+
+        // Verify listener was registered
+        let count_before = manager
+            .eval_runtime::<i64>("return cru.emitter.global():count('test_cleanup_event')")
+            .unwrap_or(0);
+        assert_eq!(
+            count_before, 1,
+            "listener should be registered after load"
+        );
+
+        manager.unload("emitter-cleanup-test").unwrap();
+
+        let count_after = manager
+            .eval_runtime::<i64>("return cru.emitter.global():count('test_cleanup_event')")
+            .unwrap_or(-1);
+        assert_eq!(
+            count_after, 0,
+            "listener should be removed after unload"
+        );
+    }
+
+    #[test]
+    fn test_unload_preserves_other_plugin_listeners() {
+        let mut manager = setup_emitter_manager();
+        let temp = TempDir::new().unwrap();
+
+        // Plugin A
+        let plugin_a_dir = temp.path().join("plugin-a");
+        std::fs::create_dir_all(&plugin_a_dir).unwrap();
+        std::fs::write(
+            plugin_a_dir.join("plugin.yaml"),
+            "name: plugin-a\nversion: \"1.0.0\"\nmain: init.lua\n",
+        )
+        .unwrap();
+        std::fs::write(
+            plugin_a_dir.join("init.lua"),
+            r#"
+return {
+    name = "plugin-a",
+    version = "1.0.0",
+    on_load = function()
+        cru.emitter.global():on("shared_event", function() end, "plugin-a")
+    end,
+}
+"#,
+        )
+        .unwrap();
+
+        // Plugin B
+        let plugin_b_dir = temp.path().join("plugin-b");
+        std::fs::create_dir_all(&plugin_b_dir).unwrap();
+        std::fs::write(
+            plugin_b_dir.join("plugin.yaml"),
+            "name: plugin-b\nversion: \"1.0.0\"\nmain: init.lua\n",
+        )
+        .unwrap();
+        std::fs::write(
+            plugin_b_dir.join("init.lua"),
+            r#"
+return {
+    name = "plugin-b",
+    version = "1.0.0",
+    on_load = function()
+        cru.emitter.global():on("shared_event", function() end, "plugin-b")
+    end,
+}
+"#,
+        )
+        .unwrap();
+
+        manager.add_search_path(temp.path().to_path_buf());
+        manager.discover().unwrap();
+        manager.load("plugin-a").unwrap();
+        manager.load("plugin-b").unwrap();
+
+        // Both registered
+        let count_both = manager
+            .eval_runtime::<i64>("return cru.emitter.global():count('shared_event')")
+            .unwrap_or(0);
+        assert_eq!(
+            count_both, 2,
+            "both plugins should have registered listeners"
+        );
+
+        // Unload plugin-a
+        manager.unload("plugin-a").unwrap();
+
+        // Only plugin-b's listener remains
+        let count_after = manager
+            .eval_runtime::<i64>("return cru.emitter.global():count('shared_event')")
+            .unwrap_or(0);
+        assert_eq!(
+            count_after, 1,
+            "only plugin-b's listener should survive"
+        );
+}
 }
