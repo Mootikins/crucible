@@ -14,7 +14,6 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
 use serial_test::serial;
-use std::env;
 use std::fs;
 use tempfile::TempDir;
 use crucible_core::test_support::EnvVarGuard;

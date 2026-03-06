@@ -41,6 +41,16 @@ impl EnvVarGuard {
         std::env::set_var(key, value);
         Self { key, old }
     }
+
+    /// Remove an environment variable and return a guard that restores it on drop.
+    ///
+    /// If the variable was set before, it will be restored to its previous value on drop.
+    /// If it wasn't set, it remains unset after drop.
+    pub fn remove(key: &'static str) -> Self {
+        let old = std::env::var(key).ok();
+        std::env::remove_var(key);
+        Self { key, old }
+    }
 }
 
 impl Drop for EnvVarGuard {
