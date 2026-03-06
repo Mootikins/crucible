@@ -136,16 +136,13 @@ pub(crate) fn format_popup_item_line(
             let after_desc_width = label_width + 2 + visible_width(&truncated);
             let padding = width.saturating_sub(after_desc_width);
             line.push_str(&" ".repeat(padding));
-            line.push(' ');
         } else {
             let padding = width.saturating_sub(label_width);
             line.push_str(&" ".repeat(padding));
-            line.push(' ');
         }
     } else {
         let padding = width.saturating_sub(label_width);
-        line.push_str(&" ".repeat(padding));
-        line.push(' ');
+            line.push_str(&" ".repeat(padding));
     }
 
     line

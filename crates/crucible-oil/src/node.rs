@@ -290,7 +290,7 @@ impl PopupNode {
     /// Create a new popup builder with items, selected index, and max visible.
     pub fn new(items: Vec<PopupItemNode>, selected: usize, max_visible: usize) -> Self {
         let viewport_offset = if selected >= max_visible {
-            selected.saturating_sub(max_visible - 1)
+            selected.saturating_sub(max_visible.saturating_sub(1))
         } else {
             0
         };
@@ -304,6 +304,7 @@ impl PopupNode {
             unselected_style: Style::new().bg(DEFAULT_POPUP_BG),
         }
     }
+
 
     /// Set background color.
     pub fn bg_color(mut self, color: Color) -> Self {
@@ -332,6 +333,7 @@ impl PopupNode {
         self
     }
 }
+
 
 impl PopupItemNode {
     pub fn desc(mut self, desc: impl Into<String>) -> Self {
@@ -888,6 +890,33 @@ mod tests {
         } else {
             panic!("Expected Text");
         }
+    }
+
+    #[test]
+    fn test_popup_zero_max_visible() {
+        let items = vec![];
+        let node = PopupNode::new(items, 0, 0);
+        assert_eq!(node.viewport_offset, 0);
+        assert_eq!(node.max_visible, 0);
+    }
+
+    #[test]
+    fn test_popup_zero_max_visible_with_items() {
+        let items = vec![
+            PopupItemNode {
+                label: "item1".to_string(),
+                kind: None,
+                description: None,
+            },
+            PopupItemNode {
+                label: "item2".to_string(),
+                kind: None,
+                description: None,
+            },
+        ];
+        let node = PopupNode::new(items, 0, 0);
+        assert_eq!(node.viewport_offset, 0);
+        assert_eq!(node.max_visible, 0);
     }
 }
 
