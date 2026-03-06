@@ -30,9 +30,11 @@ pub mod mock_agent;
 pub use acp_client::{CrucibleClient, WriteInfo};
 pub use client::CrucibleAcpClient;
 pub use discovery::{
-    clear_agent_cache, discover_agent, get_agent_help, get_known_agents, is_agent_available,
+    discover_agent, get_agent_help, get_known_agents, is_agent_available,
     probe_all_agents, AgentInfo, KnownAgent,
 };
+#[cfg(any(test, feature = "test-utils"))]
+pub use discovery::reset_agent_cache;
 pub use filesystem::FileSystemHandler;
 pub use protocol::MessageHandler;
 pub use session::{AcpSession, TransportConfig};

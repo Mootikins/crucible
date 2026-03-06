@@ -9,6 +9,13 @@ use super::config::ThemeConfig;
 
 static ACTIVE_THEME: OnceLock<ThemeConfig> = OnceLock::new();
 
+// NOTE: ACTIVE_THEME uses OnceLock and cannot be safely reset between tests.
+// OnceLock only allows initialization once per process — the first call to set() or
+// get_or_init() wins, and subsequent calls are no-ops. This means tests that run in
+// parallel or sequentially in the same process will see the theme set by the first test.
+// Tests requiring specific themes should use a test-local theme mechanism (e.g., passing
+// ThemeConfig as a parameter) rather than relying on the global singleton.
+
 /// Returns the active theme configuration.
 ///
 /// Initializes with [`ThemeConfig::default_dark()`] on first call if

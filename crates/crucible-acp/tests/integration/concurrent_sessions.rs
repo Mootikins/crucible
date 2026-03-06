@@ -1,7 +1,7 @@
 use crate::support::{MockStdioAgentConfig, ThreadedMockAgent};
 use agent_client_protocol::PromptRequest;
 use crucible_acp::client::{ClientConfig, CrucibleAcpClient};
-use crucible_acp::discovery::{clear_agent_cache, discover_agent};
+use crucible_acp::discovery::{reset_agent_cache, discover_agent};
 use crucible_acp::{StreamConfig, StreamHandler, StreamingChunk};
 use crucible_config::AcpConfig;
 use once_cell::sync::Lazy;
@@ -218,7 +218,7 @@ async fn concurrent_dual_sessions_isolated_no_cross_contamination() {
 #[tokio::test]
 async fn concurrent_agent_cache_isolation_with_clear_boundaries() {
     let _guard = AGENT_CACHE_TEST_LOCK.lock().await;
-    clear_agent_cache();
+    reset_agent_cache();
 
     let temp = TempDir::new().expect("temp dir");
     let fake_agent_path = temp.path().join("opencode");
@@ -247,13 +247,13 @@ async fn concurrent_agent_cache_isolation_with_clear_boundaries() {
     assert_eq!(discovered.name, "opencode");
     assert_eq!(discovered.command, "opencode");
 
-    clear_agent_cache();
+    reset_agent_cache();
     let discovered_again = discover_agent(None, &config)
         .await
         .expect("discover should still succeed after clear");
     assert_eq!(discovered_again.name, "opencode");
 
-    clear_agent_cache();
+    reset_agent_cache();
 }
 
 #[tokio::test]

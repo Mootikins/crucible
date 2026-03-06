@@ -28,10 +28,12 @@
 //! # }
 //! ```
 
+pub mod env_guard;
 pub mod fixtures;
 pub mod mocks;
 
-// Re-export common fixture types for convenience
+// Re-export common fixture types and utilities for convenience
+pub use env_guard::EnvVarGuard;
 pub use fixtures::{create_kiln, KilnFixture};
 
 use anyhow::{Context, Result};
