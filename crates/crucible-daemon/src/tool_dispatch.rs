@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use futures::FutureExt;
 use crucible_core::traits::tools::{
     ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult,
 };
@@ -6,7 +7,9 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::RawContent;
 use serde::de::DeserializeOwned;
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::RwLock;
 
 use crate::tools::mcp_server::CrucibleMcpServer;
 use crate::tools::mcp_server::{
@@ -30,22 +33,85 @@ pub trait ToolDispatcher: Send + Sync {
 
 pub struct DaemonToolDispatcher {
     providers: Vec<Arc<dyn ToolExecutor>>,
-    tool_names: HashSet<String>,
+    tool_names: RwLock<HashSet<String>>,
+    tool_names_hydrated: AtomicBool,
 }
 
 impl DaemonToolDispatcher {
     pub fn new(providers: Vec<Arc<dyn ToolExecutor>>) -> Self {
         let mut tool_names = HashSet::new();
         for provider in &providers {
-            if let Ok(defs) = futures::executor::block_on(provider.list_tools()) {
+            if let Some(Ok(defs)) = provider.list_tools().now_or_never() {
                 tool_names.extend(defs.into_iter().map(|def| def.name));
             }
         }
 
         Self {
             providers,
-            tool_names,
+            tool_names: RwLock::new(tool_names),
+            tool_names_hydrated: AtomicBool::new(false),
         }
+    }
+
+    async fn hydrate_tool_names(&self) {
+        if self.tool_names_hydrated.load(Ordering::Acquire) {
+            return;
+        }
+
+        let mut discovered_names = HashSet::new();
+        for provider in &self.providers {
+            if let Ok(defs) = provider.list_tools().await {
+                discovered_names.extend(defs.into_iter().map(|def| def.name));
+            }
+        }
+
+        if discovered_names.is_empty() {
+            self.tool_names_hydrated.store(true, Ordering::Release);
+            return;
+        }
+
+        self.tool_names
+            .write()
+            .expect("tool_names lock poisoned")
+            .extend(discovered_names);
+        self.tool_names_hydrated.store(true, Ordering::Release);
+    }
+
+    fn hydrate_tool_names_blocking(&self) {
+        if self.tool_names_hydrated.load(Ordering::Acquire) {
+            return;
+        }
+
+        let providers = self.providers.clone();
+        let discovered_names = std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build();
+            let mut names = HashSet::new();
+
+            if let Ok(runtime) = runtime {
+                runtime.block_on(async {
+                    for provider in &providers {
+                        if let Ok(defs) = provider.list_tools().await {
+                            names.extend(defs.into_iter().map(|def| def.name));
+                        }
+                    }
+                });
+            }
+
+            names
+        })
+        .join()
+        .unwrap_or_default();
+
+        if !discovered_names.is_empty() {
+            self.tool_names
+                .write()
+                .expect("tool_names lock poisoned")
+                .extend(discovered_names);
+        }
+
+        self.tool_names_hydrated.store(true, Ordering::Release);
     }
 }
 
@@ -213,6 +279,8 @@ impl ToolDispatcher for DaemonToolDispatcher {
         name: &str,
         args: serde_json::Value,
     ) -> Result<serde_json::Value, String> {
+        self.hydrate_tool_names().await;
+
         let ctx = ExecutionContext::default();
 
         for provider in &self.providers {
@@ -227,7 +295,14 @@ impl ToolDispatcher for DaemonToolDispatcher {
     }
 
     fn has_tool(&self, name: &str) -> bool {
-        self.tool_names.contains(name)
+        if !self.tool_names_hydrated.load(Ordering::Acquire) {
+            self.hydrate_tool_names_blocking();
+        }
+
+        self.tool_names
+            .read()
+            .expect("tool_names lock poisoned")
+            .contains(name)
     }
 }
 

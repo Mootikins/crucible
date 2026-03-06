@@ -89,6 +89,7 @@ pub const METHODS: &[&str] = &[
     "agents.list_profiles",
     "agents.resolve_profile",
 ];
+// TODO: METHODS array is incomplete - add missing methods handled by dispatch.
 
 fn to_response(id: Option<RequestId>, result: RpcResult<serde_json::Value>) -> Response {
     match result {
@@ -99,6 +100,13 @@ fn to_response(id: Option<RequestId>, result: RpcResult<serde_json::Value>) -> R
             result: None,
             error: Some(e),
         },
+    }
+}
+
+fn map_server_resp(resp: Response) -> RpcResult<serde_json::Value> {
+    match resp.error {
+        Some(err) => Err(err),
+        None => Ok(resp.result.unwrap_or(serde_json::Value::Null)),
     }
 }
 
@@ -280,13 +288,10 @@ impl RpcDispatcher {
                 to_response(id, self.handle_agents_resolve_profile(&req).await)
             }
 
-            // For other methods, we return METHOD_NOT_FOUND here.
-            // In production, server.rs will handle these until we migrate them.
-            // This allows incremental migration.
             _ => Response::error(
                 id,
                 METHOD_NOT_FOUND,
-                format!("Method '{}' not yet migrated to new dispatcher", req.method),
+                format!("Method not found: '{}'", req.method),
             ),
         }
     }
@@ -403,11 +408,7 @@ impl RpcDispatcher {
             &self.ctx.event_tx,
         )
         .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_get_thinking_budget(
@@ -419,11 +420,7 @@ impl RpcDispatcher {
             &self.ctx.agents,
         )
         .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_set_temperature(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -433,22 +430,14 @@ impl RpcDispatcher {
             &self.ctx.event_tx,
         )
         .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_get_temperature(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::session::handle_session_get_temperature(req.clone(), &self.ctx.agents)
                 .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_set_max_tokens(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -458,22 +447,14 @@ impl RpcDispatcher {
             &self.ctx.event_tx,
         )
         .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_get_max_tokens(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::session::handle_session_get_max_tokens(req.clone(), &self.ctx.agents)
                 .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_set_precognition(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -483,22 +464,14 @@ impl RpcDispatcher {
             &self.ctx.event_tx,
         )
         .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_get_precognition(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::session::handle_session_get_precognition(req.clone(), &self.ctx.agents)
                 .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_kiln_open(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -509,111 +482,63 @@ impl RpcDispatcher {
             &self.ctx.event_tx,
         )
         .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_kiln_close(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::kiln::handle_kiln_close(req.clone(), &self.ctx.kiln).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_kiln_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::kiln::handle_kiln_list(req.clone(), &self.ctx.kiln).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_kiln_set_classification(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::kiln::handle_kiln_set_classification(req.clone(), &self.ctx.kiln).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_search_vectors(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::kiln::handle_search_vectors(req.clone(), &self.ctx.kiln).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_list_notes(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::kiln::handle_list_notes(req.clone(), &self.ctx.kiln).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_get_note_by_name(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::kiln::handle_get_note_by_name(req.clone(), &self.ctx.kiln).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_note_upsert(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::kiln::handle_note_upsert(req.clone(), &self.ctx.kiln).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_note_get(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::kiln::handle_note_get(req.clone(), &self.ctx.kiln).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_note_delete(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::kiln::handle_note_delete(req.clone(), &self.ctx.kiln).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_note_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::kiln::handle_note_list(req.clone(), &self.ctx.kiln).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_process_file(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::kiln::handle_process_file(req.clone(), &self.ctx.kiln).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_process_batch(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -623,20 +548,12 @@ impl RpcDispatcher {
             &self.ctx.event_tx,
         )
         .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_models_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::session::handle_models_list(req.clone(), &self.ctx.agents).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     // ── Session lifecycle wrappers ────────────────────────────────────────────
@@ -649,51 +566,31 @@ impl RpcDispatcher {
             &self.ctx.llm_config,
         )
         .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::session::handle_session_list(req.clone(), &self.ctx.sessions).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_get(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::session::handle_session_get(req.clone(), &self.ctx.sessions).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_pause(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::session::handle_session_pause(req.clone(), &self.ctx.sessions).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_resume(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::session::handle_session_resume(req.clone(), &self.ctx.sessions).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_resume_from_storage(
@@ -705,11 +602,7 @@ impl RpcDispatcher {
             &self.ctx.sessions,
         )
         .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_end(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -719,21 +612,13 @@ impl RpcDispatcher {
             &self.ctx.agents,
         )
         .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_compact(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::session::handle_session_compact(req.clone(), &self.ctx.sessions).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     // ── Session utility wrappers ─────────────────────────────────────────────
@@ -741,66 +626,38 @@ impl RpcDispatcher {
     async fn handle_session_search(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::session::handle_session_search(req.clone(), &self.ctx.sessions).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_load_events(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::observe::handle_session_load_events(req.clone()).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_list_persisted(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::observe::handle_session_list_persisted(req.clone()).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_render_markdown(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::observe::handle_session_render_markdown(req.clone()).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_export_to_file(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::observe::handle_session_export_to_file(req.clone()).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_cleanup(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::observe::handle_session_cleanup(req.clone()).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_reindex(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::observe::handle_session_reindex(req.clone(), &self.ctx.kiln).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     // ── Agent operation wrappers ─────────────────────────────────────────────
@@ -809,11 +666,7 @@ impl RpcDispatcher {
         let resp =
             crate::server::session::handle_session_configure_agent(req.clone(), &self.ctx.agents)
                 .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_send_message(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -823,21 +676,13 @@ impl RpcDispatcher {
             &self.ctx.event_tx,
         )
         .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_cancel(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::session::handle_session_cancel(req.clone(), &self.ctx.agents).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_interaction_respond(
@@ -850,11 +695,7 @@ impl RpcDispatcher {
             &self.ctx.event_tx,
         )
         .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_switch_model(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -864,21 +705,13 @@ impl RpcDispatcher {
             &self.ctx.event_tx,
         )
         .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_list_models(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::session::handle_session_list_models(req.clone(), &self.ctx.agents).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_add_notification(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -888,11 +721,7 @@ impl RpcDispatcher {
             &self.ctx.event_tx,
         )
         .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_list_notifications(
@@ -904,11 +733,7 @@ impl RpcDispatcher {
             &self.ctx.agents,
         )
         .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_dismiss_notification(
@@ -921,11 +746,7 @@ impl RpcDispatcher {
             &self.ctx.event_tx,
         )
         .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_test_interaction(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -934,11 +755,7 @@ impl RpcDispatcher {
             &self.ctx.event_tx,
         )
         .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_session_replay(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -948,11 +765,7 @@ impl RpcDispatcher {
             &self.ctx.event_tx,
         )
         .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     // ── Lua RPC wrappers ─────────────────────────────────────────────────
@@ -960,90 +773,54 @@ impl RpcDispatcher {
     async fn handle_lua_init_session(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::lua::handle_lua_init_session(req.clone(), &self.ctx.lua_sessions).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_lua_register_hooks(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::lua::handle_lua_register_hooks(req.clone(), &self.ctx.lua_sessions)
                 .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_lua_execute_hook(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::lua::handle_lua_execute_hook(req.clone(), &self.ctx.lua_sessions).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_lua_shutdown_session(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::lua::handle_lua_shutdown_session(req.clone(), &self.ctx.lua_sessions)
                 .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_lua_discover_plugins(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::lua::handle_lua_discover_plugins(req.clone()).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_lua_plugin_health(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::lua::handle_lua_plugin_health(req.clone()).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_lua_generate_stubs(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::lua::handle_lua_generate_stubs(req.clone()).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_lua_run_plugin_tests(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::lua::handle_lua_run_plugin_tests(req.clone()).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_lua_register_commands(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::lua::handle_lua_register_commands(req.clone(), &self.ctx.lua_sessions)
                 .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     // ── Plugin RPC wrappers ──────────────────────────────────────────────
@@ -1052,21 +829,13 @@ impl RpcDispatcher {
         let resp =
             crate::server::plugins::handle_plugin_reload(req.clone(), &self.ctx.plugin_loader)
                 .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_plugin_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::plugins::handle_plugin_list(req.clone(), &self.ctx.plugin_loader).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     // ── Project RPC wrappers ────────────────────────────────────────────
@@ -1075,11 +844,7 @@ impl RpcDispatcher {
         let resp =
             crate::server::plugins::handle_project_register(req.clone(), &self.ctx.project_manager)
                 .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_project_unregister(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -1088,71 +853,43 @@ impl RpcDispatcher {
             &self.ctx.project_manager,
         )
         .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_project_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::plugins::handle_project_list(req.clone(), &self.ctx.project_manager)
                 .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_project_get(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::plugins::handle_project_get(req.clone(), &self.ctx.project_manager)
                 .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     // ── Storage RPC wrappers ────────────────────────────────────────────
 
     async fn handle_storage_verify(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::storage::handle_storage_verify(req.clone()).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_storage_cleanup(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::storage::handle_storage_cleanup(req.clone()).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_storage_backup(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::storage::handle_storage_backup(req.clone()).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_storage_restore(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::storage::handle_storage_restore(req.clone()).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     // ── MCP RPC wrappers ────────────────────────────────────────────────
@@ -1164,62 +901,38 @@ impl RpcDispatcher {
             &self.ctx.mcp_server_manager,
         )
         .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_mcp_stop(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::platform::handle_mcp_stop(req.clone(), &self.ctx.mcp_server_manager)
                 .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_mcp_status(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::platform::handle_mcp_status(req.clone(), &self.ctx.mcp_server_manager)
                 .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     // ── Skills RPC wrappers ─────────────────────────────────────────────
 
     async fn handle_skills_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::platform::handle_skills_list(req.clone()).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_skills_get(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::platform::handle_skills_get(req.clone()).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_skills_search(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::platform::handle_skills_search(req.clone()).await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     // ── Agents RPC wrappers ─────────────────────────────────────────────
@@ -1228,22 +941,14 @@ impl RpcDispatcher {
         let resp =
             crate::server::platform::handle_agents_list_profiles(req.clone(), &self.ctx.agents)
                 .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 
     async fn handle_agents_resolve_profile(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::platform::handle_agents_resolve_profile(req.clone(), &self.ctx.agents)
                 .await;
-        if let Some(err) = resp.error {
-            Err(err)
-        } else {
-            Ok(resp.result.unwrap_or(serde_json::Value::Null))
-        }
+        map_server_resp(resp)
     }
 }
 
