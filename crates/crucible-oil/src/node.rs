@@ -443,6 +443,16 @@ pub fn maybe<T>(value: Option<T>, f: impl FnOnce(T) -> Node) -> Node {
     }
 }
 
+/// Returns `f(v)` if `value` is `Some(v)`, otherwise returns `fallback`.
+///
+/// Like [`maybe`], but with an explicit fallback node instead of [`Node::Empty`].
+pub fn show<T>(value: Option<T>, fallback: Node, f: impl FnOnce(T) -> Node) -> Node {
+    match value {
+        Some(v) => f(v),
+        None => fallback,
+    }
+}
+
 pub fn progress_bar(progress: f32, width: u16) -> Node {
     let progress = progress.clamp(0.0, 1.0);
     let filled = (progress * width as f32).round() as usize;
@@ -594,6 +604,15 @@ impl Node {
     }
 }
 
+impl From<Option<Node>> for Node {
+    fn from(opt: Option<Node>) -> Self {
+        match opt {
+            Some(node) => node,
+            None => Node::Empty,
+        }
+    }
+}
+
 impl TextNode {
     pub fn fg(mut self, color: Color) -> Self {
         self.style = self.style.fg(color);
@@ -736,6 +755,33 @@ mod tests {
     fn test_maybe_returns_empty_on_none() {
         let node: Node = maybe(None::<&str>, text);
         assert!(matches!(node, Node::Empty));
+    }
+
+    #[test]
+    fn test_from_option_node_some() {
+        let node: Node = Some(text("hi")).into();
+        assert!(matches!(node, Node::Text(_)));
+    }
+
+    #[test]
+    fn test_from_option_node_none() {
+        let node: Node = None::<Node>.into();
+        assert!(matches!(node, Node::Empty));
+    }
+
+    #[test]
+    fn test_show_some() {
+        let node = show(Some("x"), Node::Empty, text);
+        assert!(matches!(node, Node::Text(_)));
+    }
+
+    #[test]
+    fn test_show_none() {
+        let node = show(None::<&str>, text("fallback"), text);
+        match node {
+            Node::Text(t) => assert_eq!(t.content, "fallback"),
+            _ => panic!("Expected fallback text node"),
+        }
     }
 
     #[test]
