@@ -621,16 +621,7 @@ pub fn register_sessions_module_with_api(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn setup_lua() -> Lua {
-        let lua = Lua::new();
-        let cru = lua.create_table().unwrap();
-        lua.globals().set("cru", cru).unwrap();
-        let crucible = lua.create_table().unwrap();
-        lua.globals().set("crucible", crucible).unwrap();
-        register_sessions_module(&lua).expect("Should register sessions module");
-        lua
-    }
+    use crate::test_support::TestLuaBuilder;
 
     #[test]
     fn sessions_module_registers_in_namespace() {
@@ -712,6 +703,7 @@ mod tests {
 #[cfg(test)]
 mod api_tests {
     use super::*;
+    use crate::test_support::TestLuaBuilder;
     use std::sync::atomic::{AtomicBool, Ordering};
 
     /// Mock implementation of DaemonSessionApi for testing.
@@ -899,16 +891,6 @@ mod api_tests {
                 Ok(rx)
             })
         }
-    }
-
-    fn setup_lua_with_api(api: Arc<dyn DaemonSessionApi>) -> Lua {
-        let lua = Lua::new();
-        let cru = lua.create_table().unwrap();
-        lua.globals().set("cru", cru).unwrap();
-        let crucible = lua.create_table().unwrap();
-        lua.globals().set("crucible", crucible).unwrap();
-        register_sessions_module_with_api(&lua, api).expect("Should register sessions with API");
-        lua
     }
 
     #[tokio::test]

@@ -492,12 +492,7 @@ fn json_array_to_lua_table(lua: &Lua, values: &[serde_json::Value]) -> Result<Va
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn setup_lua() -> Lua {
-        let lua = Lua::new();
-        register_graph_module(&lua).unwrap();
-        lua
-    }
+    use crate::test_support::TestLuaBuilder;
 
     // =========================================================================
     // RED: Write failing tests first

@@ -1227,31 +1227,8 @@ pub fn register_lua_stdlib(lua: &Lua) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::TestLuaBuilder;
     use mlua::Table;
-
-    fn setup_lua() -> Lua {
-        let lua = Lua::new();
-        // Create cru namespace
-        lua.load("cru = cru or {}").exec().unwrap();
-        // Need a mock cru.log for emitter error handling
-        lua.load(
-            r#"
-            cru.log = function(level, msg) end
-        "#,
-        )
-        .exec()
-        .unwrap();
-        // Need cru.timer.sleep for retry (mock it for fast tests)
-        lua.load(
-            r#"
-            cru.timer = { sleep = function(secs) end }
-        "#,
-        )
-        .exec()
-        .unwrap();
-        register_lua_stdlib(&lua).unwrap();
-        lua
-    }
 
     #[test]
     fn test_emitter_on_emit() {

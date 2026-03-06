@@ -438,13 +438,7 @@ pub fn parse_statusline_config(config: &Table) -> LuaResult<StatuslineConfig> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mlua::Lua;
-
-    fn setup_lua() -> Lua {
-        let lua = Lua::new();
-        register_statusline_module(&lua).expect("Should register statusline module");
-        lua
-    }
+    use crate::test_support::TestLuaBuilder;
 
     #[test]
     fn test_mode_component() {

@@ -243,16 +243,7 @@ fn string_vec_to_lua_table(lua: &Lua, values: &[String]) -> Result<Value, mlua::
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn setup_lua() -> Lua {
-        let lua = Lua::new();
-        let cru = lua.create_table().unwrap();
-        lua.globals().set("cru", cru).unwrap();
-        let crucible = lua.create_table().unwrap();
-        lua.globals().set("crucible", crucible).unwrap();
-        register_vault_module(&lua).expect("Should register vault module");
-        lua
-    }
+    use crate::test_support::TestLuaBuilder;
 
     #[test]
     fn test_register_kiln_module() {
@@ -348,6 +339,7 @@ mod tests {
 #[cfg(test)]
 mod store_tests {
     use super::*;
+    use crate::test_support::TestLuaBuilder;
     use async_trait::async_trait;
     use crucible_core::events::{InternalSessionEvent, SessionEvent};
     use crucible_core::parser::BlockHash;
@@ -431,16 +423,6 @@ mod store_tests {
             .with_title(title)
             .with_tags(vec!["rust".to_string(), "test".to_string()])
             .with_links(vec!["other/note.md".to_string()])
-    }
-
-    fn setup_lua_with_store(store: Arc<dyn NoteStore>) -> Lua {
-        let lua = Lua::new();
-        let cru = lua.create_table().unwrap();
-        lua.globals().set("cru", cru).unwrap();
-        let crucible = lua.create_table().unwrap();
-        lua.globals().set("crucible", crucible).unwrap();
-        register_vault_module_with_store(&lua, store).expect("Should register vault module");
-        lua
     }
 
     #[tokio::test]
@@ -598,6 +580,7 @@ mod store_tests {
 #[cfg(test)]
 mod graph_tests {
     use super::*;
+    use crate::test_support::TestLuaBuilder;
     use crucible_core::storage::{GraphView, NoteRecord};
 
     /// Mock GraphView for testing
@@ -650,17 +633,6 @@ mod graph_tests {
         }
 
         fn rebuild(&mut self, _notes: &[NoteRecord]) {}
-    }
-
-    fn setup_lua_with_graph(view: Arc<dyn GraphView>) -> Lua {
-        let lua = Lua::new();
-        let cru = lua.create_table().unwrap();
-        lua.globals().set("cru", cru).unwrap();
-        let crucible = lua.create_table().unwrap();
-        lua.globals().set("crucible", crucible).unwrap();
-        register_vault_module(&lua).expect("Should register vault module");
-        register_vault_module_with_graph(&lua, view).expect("Should register graph functions");
-        lua
     }
 
     #[test]
