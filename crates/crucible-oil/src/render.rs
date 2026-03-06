@@ -183,7 +183,7 @@ fn render_node_filtered(
                 render_node_filtered(
                     &boundary.child,
                     width,
-                    &NoFilter,
+                    filter,
                     &mut child_output,
                     &mut child_cursor,
                 );
@@ -465,7 +465,7 @@ fn render_raw(raw: &RawNode, width: usize, output: &mut String) {
 fn render_text(text: &TextNode, width: usize, output: &mut String) {
     let styled_content = apply_style(&text.content, &text.style);
 
-    if width == 0 || text.content.chars().count() <= width {
+    if width == 0 || visible_width(&text.content) <= width {
         // Fast path: content fits on one line (or no width constraint)
         // But handle embedded newlines by converting them to \r\n
         if text.content.contains('\n') {

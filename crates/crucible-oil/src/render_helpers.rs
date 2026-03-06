@@ -40,7 +40,7 @@ pub(crate) fn wrap_and_style_padded(content: &str, style: &Style, width: usize) 
     wrapped
         .into_iter()
         .map(|line| {
-            let visual_len = line.chars().count();
+            let visual_len = visible_width(&line);
             let padded = if visual_len < width {
                 format!("{}{}", line, " ".repeat(width - visual_len))
             } else {
@@ -65,6 +65,9 @@ pub(crate) fn wrap_and_style_padded(content: &str, style: &Style, width: usize) 
 pub(crate) fn select_spinner_frame(frame: usize, frames: Option<&'static [char]>) -> char {
     use crate::node::SPINNER_FRAMES;
     let spinner_frames = frames.unwrap_or(SPINNER_FRAMES);
+    if spinner_frames.is_empty() {
+        return '⠋';
+    }
     spinner_frames
         .get(frame % spinner_frames.len())
         .copied()
