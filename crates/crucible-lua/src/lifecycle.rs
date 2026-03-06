@@ -85,6 +85,7 @@ pub struct PluginManager {
     handlers: Vec<RegisteredItem<DiscoveredHandler>>,
     lua: Lua,
     on_unload_hooks: HashMap<String, RegistryKey>,
+    on_load_hooks: HashMap<String, RegistryKey>,
 }
 
 impl Default for PluginManager {
@@ -103,6 +104,7 @@ impl std::fmt::Debug for PluginManager {
             .field("views_count", &self.views.len())
             .field("handlers_count", &self.handlers.len())
             .field("on_unload_hooks_count", &self.on_unload_hooks.len())
+            .field("on_load_hooks_count", &self.on_load_hooks.len())
             .finish()
     }
 }
@@ -123,6 +125,7 @@ impl PluginManager {
             handlers: Vec::new(),
             lua,
             on_unload_hooks: HashMap::new(),
+            on_load_hooks: HashMap::new(),
         }
     }
 
@@ -342,6 +345,8 @@ impl PluginManager {
         plugin.last_error = None;
         info!("Loaded plugin: {} v{}", name, plugin.version());
 
+        self.call_on_load_hook(name);
+
         Ok(())
     }
 
@@ -414,6 +419,7 @@ impl PluginManager {
             .ok_or_else(|| LifecycleError::NotFound(name.to_string()))?;
         plugin.state = PluginState::Discovered;
         plugin.state = PluginState::Discovered;
+        self.on_load_hooks.remove(name);
         info!("Unloaded plugin: {}", name);
 
         Ok(())
@@ -605,63 +611,81 @@ impl PluginManager {
 
         self.configure_plugin_package_path(&plugin_dir)?;
 
-        let source = std::fs::read_to_string(&main_path).map_err(LifecycleError::Io)?;
-        let is_fennel = main_path.extension().is_some_and(|ext| ext == "fnl");
-
-        let lua_source = if is_fennel {
-            #[cfg(feature = "fennel")]
-            {
-                crate::fennel::compile_fennel(&source).map_err(|e| {
-                    LifecycleError::LoadError(format!(
-                        "Fennel compilation failed for {}: {}",
-                        main_path.display(),
-                        e
-                    ))
-                })?
-            }
-            #[cfg(not(feature = "fennel"))]
-            {
-                return Err(LifecycleError::LoadError(format!(
-                    "Fennel file {} requires the 'fennel' feature",
-                    main_path.display()
-                )));
-            }
-        } else {
-            source
-        };
-
-        let chunk_name = main_path.to_string_lossy().to_string();
-        let result: Value = self
+        if let Err(error) = self
             .lua
-            .load(&lua_source)
-            .set_name(chunk_name.as_str())
-            .eval()
-            .map_err(|e| {
-                LifecycleError::LoadError(format!("Lua error in {}: {}", chunk_name, e))
-            })?;
-
-        match result {
-            Value::Table(spec_table) => {
-                self.capture_on_unload_hook(name, &spec_table)?;
-                let package: mlua::Table = self.lua.globals().get("package").map_err(|e| {
-                    LifecycleError::LoadError(format!("Failed to access package table: {}", e))
-                })?;
-                let loaded: mlua::Table = package.get("loaded").map_err(|e| {
-                    LifecycleError::LoadError(format!("Failed to access package.loaded: {}", e))
-                })?;
-                loaded.set(name, spec_table).map_err(|e| {
-                    LifecycleError::LoadError(format!(
-                        "Failed to cache plugin module {}: {}",
-                        name, e
-                    ))
-                })?;
-            }
-            _ => {
-                self.on_unload_hooks.remove(name);
-            }
+            .load(format!("cru._current_plugin = {:?}", name))
+            .exec()
+        {
+            warn!("Failed to set cru._current_plugin for {}: {}", name, error);
         }
 
-        Ok(())
+        let load_result = (|| -> LifecycleResult<()> {
+            let source = std::fs::read_to_string(&main_path).map_err(LifecycleError::Io)?;
+            let is_fennel = main_path.extension().is_some_and(|ext| ext == "fnl");
+
+            let lua_source = if is_fennel {
+                #[cfg(feature = "fennel")]
+                {
+                    crate::fennel::compile_fennel(&source).map_err(|e| {
+                        LifecycleError::LoadError(format!(
+                            "Fennel compilation failed for {}: {}",
+                            main_path.display(),
+                            e
+                        ))
+                    })?
+                }
+                #[cfg(not(feature = "fennel"))]
+                {
+                    return Err(LifecycleError::LoadError(format!(
+                        "Fennel file {} requires the 'fennel' feature",
+                        main_path.display()
+                    )));
+                }
+            } else {
+                source
+            };
+
+            let chunk_name = main_path.to_string_lossy().to_string();
+            let result: Value = self
+                .lua
+                .load(&lua_source)
+                .set_name(chunk_name.as_str())
+                .eval()
+                .map_err(|e| {
+                    LifecycleError::LoadError(format!("Lua error in {}: {}", chunk_name, e))
+                })?;
+
+            match result {
+                Value::Table(spec_table) => {
+                    self.capture_on_unload_hook(name, &spec_table)?;
+                    self.capture_on_load_hook(name, &spec_table)?;
+                    let package: mlua::Table = self.lua.globals().get("package").map_err(|e| {
+                        LifecycleError::LoadError(format!("Failed to access package table: {}", e))
+                    })?;
+                    let loaded: mlua::Table = package.get("loaded").map_err(|e| {
+                        LifecycleError::LoadError(format!("Failed to access package.loaded: {}", e))
+                    })?;
+                    loaded.set(name, spec_table).map_err(|e| {
+                        LifecycleError::LoadError(format!(
+                            "Failed to cache plugin module {}: {}",
+                            name, e
+                        ))
+                    })?;
+                }
+                _ => {
+                    self.on_unload_hooks.remove(name);
+                    self.on_load_hooks.remove(name);
+                }
+            }
+
+            Ok(())
+        })();
+
+        if let Err(error) = self.lua.load("cru._current_plugin = nil").exec() {
+            warn!("Failed to clear cru._current_plugin: {}", error);
+        }
+
+        load_result
     }
 
     fn configure_plugin_package_path(&self, plugin_dir: &Path) -> LifecycleResult<()> {
@@ -709,6 +733,46 @@ end
         }
 
         Ok(())
+    }
+
+    fn capture_on_load_hook(
+        &mut self,
+        plugin_name: &str,
+        plugin_spec: &mlua::Table,
+    ) -> LifecycleResult<()> {
+        self.on_load_hooks.remove(plugin_name);
+
+        if let Ok(Value::Function(on_load)) = plugin_spec.get::<Value>("on_load") {
+            let key = self.lua.create_registry_value(on_load).map_err(|e| {
+                LifecycleError::LoadError(format!(
+                    "Failed to store on_load hook for {}: {}",
+                    plugin_name, e
+                ))
+            })?;
+            self.on_load_hooks.insert(plugin_name.to_string(), key);
+        }
+
+        Ok(())
+    }
+
+    fn call_on_load_hook(&self, plugin_name: &str) {
+        let Some(hook_key) = self.on_load_hooks.get(plugin_name) else {
+            return;
+        };
+
+        match self.lua.registry_value::<Function>(hook_key) {
+            Ok(on_load) => {
+                if let Err(error) = on_load.call::<()>(()) {
+                    warn!("on_load hook failed for {}: {}", plugin_name, error);
+                }
+            }
+            Err(error) => {
+                warn!(
+                    "Failed to retrieve on_load hook for {}: {}",
+                    plugin_name, error
+                );
+            }
+        }
     }
 
     fn call_on_unload_hook(&mut self, plugin_name: &str) {
@@ -1616,6 +1680,17 @@ return {{
 "#
         );
         std::fs::write(plugin_dir.join("init.lua"), lua).unwrap();
+
+        plugin_dir
+    }
+
+    fn create_plugin_with_lua(dir: &Path, name: &str, version: &str, lua_source: &str) -> PathBuf {
+        let plugin_dir = dir.join(name);
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+
+        let manifest = format!("name: {name}\nversion: \"{version}\"\nmain: init.lua\n");
+        std::fs::write(plugin_dir.join("plugin.yaml"), manifest).unwrap();
+        std::fs::write(plugin_dir.join("init.lua"), lua_source).unwrap();
 
         plugin_dir
     }
@@ -2766,7 +2841,142 @@ return {
         let count = manager
             .eval_runtime::<i32>("return _G._unload_count or 0")
             .unwrap_or(0);
-        assert_eq!(count, 1, "on_unload hook should fire exactly once during reload()");
+        assert_eq!(
+            count, 1,
+            "on_unload hook should fire exactly once during reload()"
+        );
+    }
+
+    #[test]
+    fn test_on_load_fires_after_load() {
+        let temp = TempDir::new().unwrap();
+        create_plugin_with_lua(
+            temp.path(),
+            "load-hook-test",
+            "1.0.0",
+            r#"
+return {
+    name = "load-hook-test",
+    version = "1.0.0",
+    on_load = function()
+        _G._load_fired = true
+    end,
+}
+"#,
+        );
+        let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+        manager.discover().unwrap();
+        manager.load("load-hook-test").unwrap();
+
+        let fired = manager
+            .eval_runtime::<bool>("return _G._load_fired == true")
+            .unwrap_or(false);
+        assert!(fired, "on_load hook should fire after load()");
+
+        let plugin = manager.get("load-hook-test").unwrap();
+        assert_eq!(
+            plugin.state,
+            PluginState::Active,
+            "plugin should be Active even after on_load fires"
+        );
+    }
+
+    #[test]
+    fn test_on_load_and_on_unload_order_on_reload() {
+        let temp = TempDir::new().unwrap();
+        create_plugin_with_lua(
+            temp.path(),
+            "order-test",
+            "1.0.0",
+            r#"
+_G._events = _G._events or {}
+return {
+    name = "order-test",
+    version = "1.0.0",
+    on_load = function()
+        table.insert(_G._events, "load")
+    end,
+    on_unload = function()
+        table.insert(_G._events, "unload")
+    end,
+}
+"#,
+        );
+        let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+        manager.discover().unwrap();
+        manager.load("order-test").unwrap();
+        manager.reload("order-test").unwrap();
+
+        let events_str = manager
+            .eval_runtime::<String>(
+                r#"
+        return table.concat(_G._events, ",")
+    "#,
+            )
+            .unwrap_or_default();
+        assert_eq!(
+            events_str, "load,unload,load",
+            "expected load → unload → load order"
+        );
+    }
+
+    #[test]
+    fn test_on_load_failure_is_nonfatal() {
+        let temp = TempDir::new().unwrap();
+        create_plugin_with_lua(
+            temp.path(),
+            "failing-load-test",
+            "1.0.0",
+            r#"
+return {
+    name = "failing-load-test",
+    version = "1.0.0",
+    on_load = function()
+        error("intentional on_load failure")
+    end,
+}
+"#,
+        );
+        let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+        manager.discover().unwrap();
+        let result = manager.load("failing-load-test");
+        assert!(
+            result.is_ok(),
+            "load() should succeed even if on_load fails"
+        );
+
+        let plugin = manager.get("failing-load-test").unwrap();
+        assert_eq!(
+            plugin.state,
+            PluginState::Active,
+            "plugin should be Active despite on_load error"
+        );
+    }
+
+    #[test]
+    fn test_missing_on_load_still_loads() {
+        let temp = TempDir::new().unwrap();
+        create_plugin_with_lua(
+            temp.path(),
+            "no-hooks-test",
+            "1.0.0",
+            r#"
+return {
+    name = "no-hooks-test",
+    version = "1.0.0",
+}
+"#,
+        );
+        let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+        manager.discover().unwrap();
+        let result = manager.load("no-hooks-test");
+        assert!(
+            result.is_ok(),
+            "load() should succeed without on_load defined"
+        );
+
+        let plugin = manager.get("no-hooks-test").unwrap();
+        assert_eq!(plugin.state, PluginState::Active);
     }
 
     /// Set up a PluginManager with the full Lua stdlib loaded (needed for emitter tests).
