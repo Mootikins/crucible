@@ -332,7 +332,8 @@ pub async fn discover_agent(preferred: Option<&str>, acp_config: &AcpConfig) -> 
 
 /// Clear the agent cache to prevent state bleeding across tests.
 /// Call this in test teardown to reset the global AGENT_CACHE.
-#[cfg(any(test, feature = "test-utils"))]
+/// This function is only intended for use in tests.
+#[allow(dead_code)]
 pub fn reset_agent_cache() {
     *AGENT_CACHE
         .lock()
