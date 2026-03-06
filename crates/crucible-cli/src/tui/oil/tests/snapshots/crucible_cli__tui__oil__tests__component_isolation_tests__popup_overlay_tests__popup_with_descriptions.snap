@@ -1,5 +1,6 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/component_isolation_tests.rs
+assertion_line: 849
 expression: "render_plain(&popup, 80)"
 ---
 
@@ -9,6 +10,6 @@ expression: "render_plain(&popup, 80)"
 
 
 
-   model  Switch AI model                                                      
- ▸ theme  Change color theme                                                   
+   model  Switch AI model                                                     
+ ▸ theme  Change color theme                                                  
    verbose  Toggle verbose output
