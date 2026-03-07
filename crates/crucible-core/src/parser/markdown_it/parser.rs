@@ -179,6 +179,7 @@ impl MarkdownParser for MarkdownItParser {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use tempfile::TempDir;
 
     #[tokio::test]
     async fn test_parse_simple_content() {
@@ -231,5 +232,63 @@ mod tests {
 
         let result = parser.parse_content(&content, &path).await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_file_size_limit_allows_exact_boundary() {
+        let parser = MarkdownItParser::new().with_max_file_size(100);
+        let content = "a".repeat(100);
+        let path = PathBuf::from("test.md");
+
+        let result = parser.parse_content(&content, &path).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_unclosed_frontmatter_is_treated_as_body() {
+        let parser = MarkdownItParser::new();
+        let content = "---\ntitle: Missing end\n# Heading stays in body";
+        let path = PathBuf::from("test.md");
+
+        let result = parser.parse_content(content, &path).await;
+        assert!(result.is_ok());
+
+        let note = result.unwrap();
+        assert!(note.frontmatter.is_none());
+        assert_eq!(note.content.headings.len(), 1);
+        assert_eq!(note.content.headings[0].text, "Heading stays in body");
+    }
+
+    #[tokio::test]
+    async fn test_parse_file_missing_path_returns_io_error() {
+        let parser = MarkdownItParser::new();
+        let temp = TempDir::new().unwrap();
+        let missing = temp.path().join("does-not-exist.md");
+
+        let result = parser.parse_file(&missing).await;
+        assert!(matches!(result, Err(ParserError::Io(_))));
+    }
+
+    #[tokio::test]
+    async fn test_parse_file_size_limit_error_contains_actual_size() {
+        let parser = MarkdownItParser::new().with_max_file_size(8);
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("big.md");
+        tokio::fs::write(&path, "0123456789").await.unwrap();
+
+        let result = parser.parse_file(&path).await;
+        match result {
+            Err(ParserError::FileTooLarge { size, max }) => {
+                assert_eq!(size, 10);
+                assert_eq!(max, 8);
+            }
+            other => panic!("expected FileTooLarge error, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_can_parse_rejects_uppercase_markdown_extension() {
+        let parser = MarkdownItParser::new();
+        assert!(!parser.can_parse(std::path::Path::new("NOTE.MD")));
     }
 }
