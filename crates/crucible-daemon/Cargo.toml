@@ -7,10 +7,6 @@ description = "Crucible session daemon"
 [package.metadata.dist]
 dist = false
 
-[package.metadata.binstall]
-pkg-url = "{ repo }/releases/download/v{ version }/crucible-v{ version }-{ target }.tar.gz"
-bin-dir = "crucible-v{ version }-{ target }/{ bin }{ binary-ext }"
-pkg-fmt = "tgz"
 
 [dependencies]
 tokio = { workspace = true }
