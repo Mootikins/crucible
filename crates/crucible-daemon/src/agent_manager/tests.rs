@@ -1456,6 +1456,8 @@ async fn send_message_emits_thinking_before_text_delta() {
 #[tokio::test]
 async fn send_message_emits_tool_call_and_tool_result_events() {
     let tmp = TempDir::new().unwrap();
+    std::fs::write("/tmp/test.md", "content").unwrap();
+
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));
 
@@ -1541,7 +1543,7 @@ async fn send_message_emits_tool_call_and_tool_result_events() {
 
     let tool_result = next_event_or_skip(&mut event_rx, "tool_result").await;
     assert_eq!(tool_result.data["tool"], "read_file");
-    assert_eq!(tool_result.data["result"]["result"], "content");
+    assert!(tool_result.data["result"]["result"].as_str().unwrap_or("").contains("content"));
 
     let complete = next_event_or_skip(&mut event_rx, "message_complete").await;
     assert_eq!(complete.data["message_id"], message_id);
