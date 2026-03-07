@@ -51,16 +51,16 @@ crucible-config = { path = "../crucible-config", features = ["toml"] }
 
 # Burn ML framework dependency for GPU-accelerated embeddings
 # Main burn crate with optional features (pinned to 0.19.1 for consistency)
-burn = { version = "0.19.1", optional = true }
-burn-tensor = { version = "0.19.1", optional = true }
-burn-ndarray = { version = "0.19.1", optional = true }  # For CPU fallback
+burn = { version = "0.20.1", optional = true }
+burn-tensor = { version = "0.20.1", optional = true }
+burn-ndarray = { version = "0.20.1", optional = true }  # For CPU fallback
 
 # GPU backends (each optional, selected via features)
-burn-wgpu = { version = "0.19.1", optional = true }   # Vulkan/Metal/WebGPU via wgpu
+burn-wgpu = { version = "0.20.1", optional = true }   # Vulkan/Metal/WebGPU via wgpu
 burn-hip = { version = "0.16", optional = true }    # AMD ROCm/HIP backend (0.16 is latest stable)
 
 # Import safetensors directly into Burn models
-burn-import = { version = "0.19.1", optional = true }
+burn-import = { version = "0.20.1", optional = true }
 
 # HuggingFace tokenizers for text tokenization
 # Note: We disable default features to exclude esaxx_fast, which has a hardcoded
@@ -107,7 +107,7 @@ tracing = { workspace = true }
 # FastEmbed for local embeddings and reranking (optional, feature-gated)
 # Use default-features=false to avoid native-tls (OpenSSL) dependency;
 # we manually enable rustls-based TLS via hf-hub-rustls-tls + ort features below
-fastembed = { version = "5.8", optional = true, default-features = false, features = ["hf-hub-rustls-tls", "image-models"] }
+fastembed = { version = "5.12", optional = true, default-features = false, features = ["hf-hub-rustls-tls", "image-models"] }
 
 # ORT runtime binary downloads use rustls instead of native-tls (avoids OpenSSL)
 ort = { version = "=2.0.0-rc.11", default-features = false, features = ["std", "ndarray", "download-binaries", "tls-rustls", "copy-dylibs"], optional = true }
