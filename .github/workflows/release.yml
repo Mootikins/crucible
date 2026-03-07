@@ -178,6 +178,21 @@ jobs:
           trap 'rm -rf "$TMPDIR"' EXIT
 
           curl -fsSL "$URL" -o "$TMPDIR/$ARCHIVE"
+
+          # Download and verify checksum
+          CHECKSUM_URL="${URL}.sha256"
+          curl -fsSL "$CHECKSUM_URL" -o "$TMPDIR/${ARCHIVE}.sha256"
+
+          # Verify archive integrity
+          cd "$TMPDIR"
+          if command -v sha256sum >/dev/null 2>&1; then
+            # Linux: use sha256sum
+            sha256sum -c "${ARCHIVE}.sha256" || { echo "ERROR: Checksum verification failed for $ARCHIVE"; exit 1; }
+          else
+            # macOS: use shasum
+            shasum -a 256 -c "${ARCHIVE}.sha256" || { echo "ERROR: Checksum verification failed for $ARCHIVE"; exit 1; }
+          fi
+
           tar xzf "$TMPDIR/$ARCHIVE" -C "$TMPDIR"
           cp "$TMPDIR/crucible-${CRUCIBLE_VERSION}-${TARGET}/cru" "$INSTALL_DIR/"
           chmod +x "$INSTALL_DIR/cru"
