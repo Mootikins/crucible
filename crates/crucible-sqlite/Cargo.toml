@@ -1,6 +1,6 @@
 [package]
 name = "crucible-sqlite"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "SQLite storage backend for Crucible"
 license = "MIT OR Apache-2.0"
