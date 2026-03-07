@@ -1,14 +1,11 @@
 use super::*;
 use crate::session_storage::FileSessionStorage;
-use lua::*;
 use observe::*;
-use platform::*;
 use serde_json::json;
 use serde_json::Value;
 use session::*;
 use std::collections::HashMap;
 use std::sync::Arc;
-use storage::*;
 use tempfile::TempDir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
@@ -2591,12 +2588,12 @@ fn truncation_multibyte_2byte_boundary() {
 #[test]
 fn truncation_cjk_3byte_boundary() {
     // Each CJK char ('中') is 3 bytes. 33 chars = 99 bytes. 34 chars = 102 bytes.
-    let line: String = std::iter::repeat('中').take(34).collect();
+    let line: String = "中".repeat(34);
     assert_eq!(line.len(), 102);
     let result = truncate_utf8_safe(&line, 100);
     // GOLDEN: captures current behavior — floor rounds 100 down to 99
     // (byte 99 is mid-char), keeping 33 CJK chars (99 bytes).
-    let expected_prefix: String = std::iter::repeat('中').take(33).collect();
+    let expected_prefix: String = "中".repeat(33);
     assert!(result.starts_with(&expected_prefix));
     assert!(result.ends_with("..."));
     assert_eq!(result.len(), 99 + 3);
@@ -2630,7 +2627,7 @@ fn create_test_session_dir(tmp: &TempDir) -> PathBuf {
     let session_dir = tmp.path().join("chat-20260101-1200-abcd");
     std::fs::create_dir_all(&session_dir).unwrap();
     let jsonl = session_dir.join("session.jsonl");
-    let events = vec![
+    let events = [
         "{\"type\":\"init\",\"ts\":\"2026-01-01T12:00:00Z\",\"session_id\":\"chat-20260101-1200-abcd\"}",
         "{\"type\":\"user\",\"ts\":\"2026-01-01T12:00:01Z\",\"content\":\"Hello world\"}",
         "{\"type\":\"assistant\",\"ts\":\"2026-01-01T12:00:02Z\",\"content\":\"Hi there!\"}",

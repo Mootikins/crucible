@@ -7,7 +7,9 @@ use crate::tui::oil::components::{
     ShellModalOutput, ShellStatus, StatusComponent,
 };
 use crate::tui::oil::config::RuntimeConfig;
-use crate::tui::oil::event::{Event, InputAction, InputBuffer};
+use crate::tui::oil::event::{Event, InputBuffer};
+#[cfg(test)]
+use crate::tui::oil::event::InputAction;
 use crate::tui::oil::node::*;
 use crate::tui::oil::style::Gap;
 #[allow(unused_imports)] // WIP: KeyCode not yet used
@@ -48,7 +50,9 @@ pub mod state;
 pub use messages::ChatAppMsg;
 pub use model_state::{McpServerDisplay, ModelListState, PluginStatusEntry};
 use popup_state::{PermissionState, PopupState, PrecognitionState, ShellHistoryState};
-use state::{AutocompleteKind, MessageQueueState};
+use state::MessageQueueState;
+#[cfg(test)]
+use state::AutocompleteKind;
 pub use state::{ChatItem, ChatMode, InputMode, Role};
 
 // ─── Main Struct ─────────────────────────────────────────────────────────────
@@ -99,7 +103,6 @@ pub struct OilChatApp {
     /// Force a full terminal redraw on next tick
     needs_full_redraw: bool,
     /// Whether to render LLM thinking/reasoning blocks
-    /// Whether to render LLM thinking/reasoning blocks
     show_thinking: bool,
     /// Precognition state (auto-RAG settings)
     precognition: PrecognitionState,
@@ -108,7 +111,6 @@ pub struct OilChatApp {
 
     /// Permission request state
     permission: PermissionState,
-    /// Messages deferred until the current stream completes
     /// Message queue state (deferred messages, counter, Ctrl-C tracking)
     message_queue: MessageQueueState,
     /// Files attached as extra context for the next message
@@ -124,10 +126,8 @@ pub struct OilChatApp {
     on_submit: Option<Box<dyn Fn(String) + Send + Sync>>,
     /// Filesystem path for saving session transcripts
     session_dir: Option<PathBuf>,
-    /// Recent shell commands (for !-history recall)
     /// Shell command history state
     shell_history: ShellHistoryState,
-    /// Current index into shell_history during recall
     /// Runtime configuration (`:set` overrides)
     runtime_config: RuntimeConfig,
     /// Workspace file paths (for @-file autocomplete)

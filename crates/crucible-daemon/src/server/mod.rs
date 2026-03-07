@@ -52,7 +52,6 @@ pub mod session;
 pub mod storage;
 
 use core::*;
-// use kiln::*;  // kiln handlers are now called via crate::server::kiln::
 use plugins::*;
 
 /// Daemon server that listens on a Unix socket
