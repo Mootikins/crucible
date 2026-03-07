@@ -561,6 +561,7 @@ mod tests {
     use super::*;
     use crate::node::*;
     use crate::style::{Border, Color, Gap, Padding, Style};
+    use insta::assert_snapshot;
 
     fn focused_input_node() -> Node {
         Node::Input(InputNode {
@@ -1095,5 +1096,62 @@ mod tests {
         let output = render_to_string_filtered(&tree, 80, &NoFilter);
         assert!(output.contains("Hello"), "Output should contain 'Hello'");
         assert!(output.contains("World"), "Output should contain 'World'");
+    }
+
+    #[test]
+    fn snapshot_core_text_wrapping() {
+        let node = text("rendering primitives should wrap this line without hyphenation");
+        let output = render_to_string(&node, 18);
+        assert_snapshot!(output);
+    }
+
+    #[test]
+    fn snapshot_core_styled_text_ansi() {
+        let node = styled(
+            "Styled",
+            Style::new()
+                .bold()
+                .underline()
+                .fg(Color::Cyan)
+                .bg(Color::DarkGray),
+        );
+        let output = render_to_string(&node, 80);
+        assert_snapshot!(output.escape_debug().to_string());
+    }
+
+    #[test]
+    fn snapshot_core_row_mixed_sizes() {
+        let node = row(vec![
+            text("alpha beta"),
+            text("gamma delta"),
+            text("epsilon"),
+        ]);
+        let output = render_to_plain_text(&node, 14);
+        assert_snapshot!(output);
+    }
+
+    #[test]
+    fn snapshot_core_popup_truncation() {
+        let node = popup(
+            vec![
+                popup_item("Open file")
+                    .kind("CMD")
+                    .desc("Open a file from the kiln"),
+                popup_item("Long command label that truncates")
+                    .kind("TOOL")
+                    .desc("Description should also truncate when width is tight"),
+            ],
+            1,
+            2,
+        );
+        let output = render_to_plain_text(&node, 36);
+        assert_snapshot!(output);
+    }
+
+    #[test]
+    fn snapshot_core_raw_padding() {
+        let node = raw("[img]", 5, 1);
+        let output = render_to_string(&node, 12);
+        assert_snapshot!(format!("{output:?}"));
     }
 }
