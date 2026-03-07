@@ -1,0 +1,9 @@
+---
+source: crates/crucible-oil/src/render.rs
+expression: output
+---
+rendering
+primitives
+should wrap this
+line without
+hyphenation

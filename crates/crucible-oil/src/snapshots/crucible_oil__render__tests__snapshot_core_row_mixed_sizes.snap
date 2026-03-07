@@ -1,0 +1,5 @@
+---
+source: crates/crucible-oil/src/render.rs
+expression: output
+---
+alpha betagamm
