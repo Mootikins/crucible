@@ -20,7 +20,7 @@ pub struct EventBroker {
 }
 
 impl EventBroker {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             sessions: RwLock::new(HashMap::new()),
         }
