@@ -7,7 +7,13 @@
 
 use async_trait::async_trait;
 use crucible_core::enrichment::EmbeddingProvider;
+use crucible_core::traits::completion_backend::{
+    BackendCompletionChunk, BackendCompletionRequest, BackendError, BackendResult, CompletionBackend,
+};
 use crucible_core::traits::KnowledgeRepository;
+use futures::stream::BoxStream;
+use std::collections::VecDeque;
+use std::sync::Mutex;
 
 /// Canonical mock implementation of KnowledgeRepository for testing
 ///
@@ -70,5 +76,74 @@ impl EmbeddingProvider for MockEmbeddingProvider {
 
     async fn list_models(&self) -> anyhow::Result<Vec<String>> {
         Ok(vec!["mock-model".to_string()])
+    }
+}
+
+#[derive(Default)]
+pub struct MockCompletionBackend {
+    queued_responses: Mutex<VecDeque<Vec<BackendResult<BackendCompletionChunk>>>>,
+    requests: Mutex<Vec<BackendCompletionRequest>>,
+}
+
+impl MockCompletionBackend {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn push_response_chunks(&self, chunks: Vec<BackendResult<BackendCompletionChunk>>) {
+        self.queued_responses
+            .lock()
+            .expect("queue lock")
+            .push_back(chunks);
+    }
+
+    pub fn push_text_response(&self, text: impl Into<String>) {
+        self.push_response_chunks(vec![
+            Ok(BackendCompletionChunk::text(text.into())),
+            Ok(BackendCompletionChunk::finished(None)),
+        ]);
+    }
+
+    pub fn request_count(&self) -> usize {
+        self.requests.lock().expect("requests lock").len()
+    }
+
+    pub fn requests(&self) -> Vec<BackendCompletionRequest> {
+        self.requests.lock().expect("requests lock").clone()
+    }
+}
+
+#[async_trait]
+impl CompletionBackend for MockCompletionBackend {
+    fn complete_stream(
+        &self,
+        request: BackendCompletionRequest,
+    ) -> BoxStream<'static, BackendResult<BackendCompletionChunk>> {
+        self.requests.lock().expect("requests lock").push(request);
+
+        let chunks = self
+            .queued_responses
+            .lock()
+            .expect("queue lock")
+            .pop_front()
+            .unwrap_or_else(|| {
+                vec![Err(BackendError::Internal(
+                    "MockCompletionBackend response queue was empty".to_string(),
+                ))]
+            });
+
+        Box::pin(futures::stream::iter(chunks))
+    }
+
+    fn provider_name(&self) -> &str {
+        "mock"
+    }
+
+    fn model_name(&self) -> &str {
+        "mock-model"
+    }
+
+    async fn health_check(&self) -> BackendResult<bool> {
+        Ok(true)
     }
 }
