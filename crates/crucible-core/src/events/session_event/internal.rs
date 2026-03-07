@@ -686,7 +686,7 @@ impl InternalSessionEvent {
 
     /// Check if this is a tool-related event.
     pub fn is_tool_event(&self) -> bool {
-        matches!(self, Self::ToolDiscovered { .. } | Self::PreToolCall { .. })
+        matches!(self, Self::ToolDiscovered { .. })
     }
 
     /// Check if this is a streaming event.
