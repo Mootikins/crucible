@@ -2,7 +2,7 @@
 
 use crate::components::{
     AcpConfig, ChatConfig, CliConfig, ContextConfig, DiscoveryPathsConfig, GatewayConfig,
-    HandlersConfig, LlmConfig, McpConfig, PermissionConfig, StorageConfig,
+    HandlersConfig, LlmConfig, McpConfig, PermissionConfig,
 };
 use crate::includes::IncludeConfig;
 use crate::{EnrichmentConfig, ProfileConfig};

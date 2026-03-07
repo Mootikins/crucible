@@ -12,7 +12,6 @@ use crate::tui::oil::render_state::RenderState;
 use crate::tui::oil::style::{Padding, Style};
 use crate::tui::oil::utils::wrap_chars;
 
-use super::state::InputMode;
 use super::{OilChatApp, FOCUS_INPUT, INPUT_MAX_CONTENT_LINES, POPUP_HEIGHT};
 
 impl OilChatApp {
@@ -153,16 +152,6 @@ impl OilChatApp {
         comp.view(&ctx)
     }
 
-    pub(super) fn detect_input_mode(&self) -> InputMode {
-        let content = self.input.content();
-        if content.starts_with(':') {
-            InputMode::Command
-        } else if content.starts_with('!') {
-            InputMode::Shell
-        } else {
-            InputMode::Normal
-        }
-    }
 
     pub(super) fn render_input(&self, ctx: &ViewContext<'_>) -> Node {
         use crate::tui::oil::components::{InputComponent, InputMode as ComponentInputMode};
