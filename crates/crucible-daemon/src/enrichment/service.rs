@@ -580,12 +580,16 @@ impl crucible_core::enrichment::EnrichmentService for DefaultEnrichmentService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_core::events::{EmitOutcome, EventEmitter};
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// Mock embedding provider for testing
     struct MockEmbeddingProvider {
         model: String,
         dimensions: usize,
+        embed_batch_calls: AtomicUsize,
+        fail_on_batch_call: Option<usize>,
     }
 
     impl MockEmbeddingProvider {
@@ -593,7 +597,22 @@ mod tests {
             Self {
                 model: "mock-model".to_string(),
                 dimensions: 3,
+                embed_batch_calls: AtomicUsize::new(0),
+                fail_on_batch_call: None,
             }
+        }
+
+        fn with_failure_on_batch_call(fail_on_batch_call: usize) -> Self {
+            Self {
+                model: "mock-model".to_string(),
+                dimensions: 3,
+                embed_batch_calls: AtomicUsize::new(0),
+                fail_on_batch_call: Some(fail_on_batch_call),
+            }
+        }
+
+        fn batch_calls(&self) -> usize {
+            self.embed_batch_calls.load(Ordering::SeqCst)
         }
     }
 
@@ -604,6 +623,10 @@ mod tests {
         }
 
         async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+            let call_idx = self.embed_batch_calls.fetch_add(1, Ordering::SeqCst) + 1;
+            if self.fail_on_batch_call == Some(call_idx) {
+                anyhow::bail!("forced embed_batch failure on call {call_idx}");
+            }
             Ok(texts.iter().map(|_| vec![0.1, 0.2, 0.3]).collect())
         }
 
@@ -717,6 +740,40 @@ mod tests {
         note
     }
 
+    fn create_test_parsed_note_with_three_paragraphs() -> ParsedNote {
+        use crucible_core::parser::{Paragraph, ParsedNoteBuilder};
+
+        let mut note = ParsedNoteBuilder::new(PathBuf::from("/test/note.md")).build();
+        note.content.paragraphs.push(Paragraph::new(
+            "Paragraph one has more than five words for embedding".to_string(),
+            0,
+        ));
+        note.content.paragraphs.push(Paragraph::new(
+            "Paragraph two also has enough words for embedding".to_string(),
+            10,
+        ));
+        note.content.paragraphs.push(Paragraph::new(
+            "Paragraph three has enough words too for embedding".to_string(),
+            20,
+        ));
+        note
+    }
+
+    #[derive(Default)]
+    struct RecordingEmitter {
+        emitted: std::sync::Mutex<Vec<SessionEvent>>,
+    }
+
+    #[async_trait::async_trait]
+    impl EventEmitter for RecordingEmitter {
+        type Event = SessionEvent;
+
+        async fn emit(&self, event: Self::Event) -> crucible_core::events::EmitResult<EmitOutcome<Self::Event>> {
+            self.emitted.lock().unwrap().push(event.clone());
+            Ok(EmitOutcome::new(event))
+        }
+    }
+
     /// Test that embeddings are generated when changed_blocks is empty (embed all)
     #[tokio::test]
     async fn test_generate_embeddings_with_empty_changed_blocks() {
@@ -790,6 +847,53 @@ mod tests {
 
         assert_eq!(enriched.embeddings.len(), 2);
         assert_eq!(enriched.embeddings[0].model, "mock-model");
+    }
+
+    #[tokio::test]
+    async fn test_generate_embeddings_batches_by_max_batch_size() {
+        let provider = Arc::new(MockEmbeddingProvider::new());
+        let service = DefaultEnrichmentService::new(provider.clone()).with_max_batch_size(1);
+        let parsed = create_test_parsed_note_with_content();
+
+        let embeddings = service.generate_embeddings(&parsed, &[]).await.unwrap();
+
+        assert_eq!(embeddings.len(), 2);
+        assert_eq!(provider.batch_calls(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_generate_embeddings_propagates_mid_batch_failure() {
+        let provider = Arc::new(MockEmbeddingProvider::with_failure_on_batch_call(2));
+        let service = DefaultEnrichmentService::new(provider).with_max_batch_size(1);
+        let parsed = create_test_parsed_note_with_three_paragraphs();
+
+        let result = service.generate_embeddings(&parsed, &[]).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_enrich_internal_with_emitter_keeps_enrichment_successful() {
+        let provider = Arc::new(MockEmbeddingProvider::new());
+        let recording_emitter = Arc::new(RecordingEmitter::default());
+        let service = DefaultEnrichmentService::new(provider)
+            .with_emitter(recording_emitter.clone() as Arc<dyn EventEmitter<Event = SessionEvent>>);
+        let parsed = create_test_parsed_note_with_content();
+
+        let enriched = service.enrich_internal(parsed, vec![]).await.unwrap();
+        assert_eq!(enriched.embeddings.len(), 2);
+        assert!(recording_emitter.emitted.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_enrich_internal_skips_emitter_when_no_embeddings() {
+        let recording_emitter = Arc::new(RecordingEmitter::default());
+        let service = DefaultEnrichmentService::without_embeddings()
+            .with_emitter(recording_emitter.clone() as Arc<dyn EventEmitter<Event = SessionEvent>>);
+        let parsed = create_test_parsed_note_with_content();
+
+        let enriched = service.enrich_internal(parsed, vec![]).await.unwrap();
+        assert!(enriched.embeddings.is_empty());
+        assert!(recording_emitter.emitted.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
