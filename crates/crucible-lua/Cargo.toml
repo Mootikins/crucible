@@ -1,6 +1,6 @@
 [package]
 name = "crucible-lua"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Lua 5.4 scripting runtime for Crucible with Fennel support"
 license = "MIT"
