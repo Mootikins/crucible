@@ -41,50 +41,45 @@ async fn start_mock_daemon() -> (MockDaemon, DaemonClient) {
 
     // Spawn mock daemon server
     tokio::spawn(async move {
-        loop {
-            match listener.accept().await {
-                Ok((stream, _)) => {
-                    tokio::spawn(async move {
-                        let (read, mut write) = stream.into_split();
-                        let mut reader = BufReader::new(read);
-                        let mut line = String::new();
+        while let Ok((stream, _)) = listener.accept().await {
+            tokio::spawn(async move {
+                let (read, mut write) = stream.into_split();
+                let mut reader = BufReader::new(read);
+                let mut line = String::new();
 
-                        loop {
-                            line.clear();
-                            match reader.read_line(&mut line).await {
-                                Ok(0) => break, // EOF
-                                Ok(_) => {
-                                    let msg: Value = match serde_json::from_str(&line) {
-                                        Ok(m) => m,
-                                        Err(_) => continue,
-                                    };
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line).await {
+                        Ok(0) => break, // EOF
+                        Ok(_) => {
+                            let msg: Value = match serde_json::from_str(&line) {
+                                Ok(m) => m,
+                                Err(_) => continue,
+                            };
 
-                                    let id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
-                                    let method =
-                                        msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
+                            let id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+                            let method =
+                                msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
 
-                                    let result = mock_rpc_response(method, &msg);
+                            let result = mock_rpc_response(method, &msg);
 
-                                    let response = json!({
-                                        "jsonrpc": "2.0",
-                                        "id": id,
-                                        "result": result
-                                    });
+                            let response = json!({
+                                "jsonrpc": "2.0",
+                                "id": id,
+                                "result": result
+                            });
 
-                                    let mut resp_str = serde_json::to_string(&response).unwrap();
-                                    resp_str.push('\n');
+                            let mut resp_str = serde_json::to_string(&response).unwrap();
+                            resp_str.push('\n');
 
-                                    if write.write_all(resp_str.as_bytes()).await.is_err() {
-                                        break;
-                                    }
-                                }
-                                Err(_) => break,
+                            if write.write_all(resp_str.as_bytes()).await.is_err() {
+                                break;
                             }
                         }
-                    });
+                        Err(_) => break,
+                    }
                 }
-                Err(_) => break,
-            }
+            });
         }
     });
 
