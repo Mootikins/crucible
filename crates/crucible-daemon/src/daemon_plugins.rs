@@ -534,8 +534,6 @@ mod tests {
             .iter()
             .any(|p| p.ends_with("plugins") && p.starts_with(runtime_dir));
 
-
-
         assert!(has_runtime, "Expected runtime plugin path in {:?}", paths);
     }
 

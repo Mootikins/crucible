@@ -37,8 +37,6 @@ async fn start_mcp_host(
     }
 }
 
-
-
 /// Test that the in-process MCP host starts and provides a valid URL
 #[tokio::test]
 async fn test_in_process_mcp_host_provides_valid_sse_url() {

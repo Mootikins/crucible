@@ -322,7 +322,10 @@ pub async fn create_agent_from_session_config(
                 }
             }
             Err(e) => {
-                warn!("Failed to resolve API key env var '{}': {} — clearing api_key", env_var_name, e);
+                warn!(
+                    "Failed to resolve API key env var '{}': {} — clearing api_key",
+                    env_var_name, e
+                );
                 llm_config.api_key = None;
             }
         }
@@ -818,7 +821,10 @@ mod tests {
         let _env_lock = OPENAI_API_KEY_LOCK
             .lock()
             .expect("OPENAI_API_KEY_LOCK should not be poisoned");
-        let _guard = crucible_core::test_support::EnvVarGuard::set("OPENAI_API_KEY", "config-key".to_string());
+        let _guard = crucible_core::test_support::EnvVarGuard::set(
+            "OPENAI_API_KEY",
+            "config-key".to_string(),
+        );
 
         let lua = Lua::new();
         let globals = lua.globals();
@@ -850,8 +856,6 @@ mod tests {
         let selected = from_lua.strip_prefix("Bearer ").unwrap_or(from_lua);
 
         assert_eq!(selected, "lua-key");
-
-
     }
 
     #[test]
@@ -859,7 +863,10 @@ mod tests {
         let _env_lock = OPENAI_API_KEY_LOCK
             .lock()
             .expect("OPENAI_API_KEY_LOCK should not be poisoned");
-        let _guard = crucible_core::test_support::EnvVarGuard::set("OPENAI_API_KEY", "config-key".to_string());
+        let _guard = crucible_core::test_support::EnvVarGuard::set(
+            "OPENAI_API_KEY",
+            "config-key".to_string(),
+        );
 
         let lua = Lua::new();
         let globals = lua.globals();
@@ -882,8 +889,6 @@ mod tests {
         assert!(auth_headers.is_none());
         let fallback_key = std::env::var("OPENAI_API_KEY").unwrap();
         assert_eq!(fallback_key, "config-key");
-
-
     }
 
     #[tokio::test]

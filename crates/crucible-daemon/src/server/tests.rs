@@ -10,10 +10,7 @@ use tempfile::TempDir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
-fn build_llm_config(
-    default_key: &str,
-    provider_type: crucible_config::BackendType,
-) -> LlmConfig {
+fn build_llm_config(default_key: &str, provider_type: crucible_config::BackendType) -> LlmConfig {
     build_llm_config_with_trust(default_key, provider_type, None)
 }
 
@@ -1124,9 +1121,7 @@ async fn test_method_not_found() {
 
     let mut client = UnixStream::connect(&sock_path).await.unwrap();
     client
-        .write_all(
-            b"{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"unknown.method\",\"params\":{}}\n",
-        )
+        .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"unknown.method\",\"params\":{}}\n")
         .await
         .unwrap();
 
@@ -1485,7 +1480,9 @@ async fn test_session_unsubscribe_missing_session_ids() {
 
     let mut client = UnixStream::connect(&sock_path).await.unwrap();
     client
-        .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.unsubscribe\",\"params\":{}}\n")
+        .write_all(
+            b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.unsubscribe\",\"params\":{}}\n",
+        )
         .await
         .unwrap();
 

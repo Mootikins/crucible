@@ -244,7 +244,10 @@ async fn send_message_emits_tool_call_and_tool_result_events() {
 
     let tool_result = next_event_or_skip(&mut event_rx, "tool_result").await;
     assert_eq!(tool_result.data["tool"], "read_file");
-    assert!(tool_result.data["result"]["result"].as_str().unwrap_or("").contains("content"));
+    assert!(tool_result.data["result"]["result"]
+        .as_str()
+        .unwrap_or("")
+        .contains("content"));
 
     let complete = next_event_or_skip(&mut event_rx, "message_complete").await;
     assert_eq!(complete.data["message_id"], message_id);
@@ -438,7 +441,6 @@ async fn test_execute_agent_stream_tool_call_only_is_not_error() {
         "unexpected error ended event before message_complete in tool-call-only flow"
     );
 }
-
 
 // RED → GREEN: Bug 2 — tool dispatch timeout
 struct HangingToolDispatcher;

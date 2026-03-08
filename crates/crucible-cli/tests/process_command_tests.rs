@@ -17,6 +17,7 @@ use crucible_config::{
     StorageConfig,
 };
 use crucible_core::test_support::fixtures::{create_kiln, KilnFixture};
+use crucible_core::test_support::EnvVarGuard;
 use crucible_daemon::rpc_client::lifecycle;
 use crucible_daemon::Server;
 use serial_test::serial;
@@ -25,7 +26,6 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, Duration};
-use crucible_core::test_support::EnvVarGuard;
 
 /// Helper to create a test kiln with sample markdown files
 fn create_test_kiln() -> Result<TempDir> {
@@ -93,7 +93,10 @@ struct TestServer {
 impl TestServer {
     async fn start() -> Result<Self> {
         let temp_dir = tempfile::tempdir()?;
-        let _env_guard = EnvVarGuard::set("XDG_RUNTIME_DIR", temp_dir.path().to_str().unwrap().to_string());
+        let _env_guard = EnvVarGuard::set(
+            "XDG_RUNTIME_DIR",
+            temp_dir.path().to_str().unwrap().to_string(),
+        );
         let socket_path = lifecycle::default_socket_path();
         let server = Server::bind(&socket_path, None).await?;
         let shutdown_handle = server.shutdown_handle();

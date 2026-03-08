@@ -441,13 +441,12 @@ impl EmbeddingProvider for OllamaProvider {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::test_helpers::create_test_ollama_config;
+    use super::*;
 
     fn create_test_config() -> EmbeddingConfig {
         create_test_ollama_config()
     }
-
 
     #[test]
     fn test_provider_creation() {

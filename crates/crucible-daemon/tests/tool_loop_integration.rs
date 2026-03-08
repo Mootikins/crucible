@@ -1,7 +1,5 @@
 use crucible_core::protocol::SessionEventMessage;
-use crucible_core::traits::completion_backend::{
-    BackendCompletionRequest, CompletionBackend,
-};
+use crucible_core::traits::completion_backend::{BackendCompletionRequest, CompletionBackend};
 use crucible_core::traits::context_ops::ContextMessage;
 use crucible_core::traits::llm::ToolCall;
 use crucible_daemon::test_support::MockCompletionBackend;
@@ -82,9 +80,8 @@ async fn execute_mock_tool_loop(
                     args.clone(),
                 ));
 
-                let result_text = execute_workspace_tool(&tool_name, &args).unwrap_or_else(|e| {
-                    format!("tool error: {e}")
-                });
+                let result_text = execute_workspace_tool(&tool_name, &args)
+                    .unwrap_or_else(|e| format!("tool error: {e}"));
 
                 let _ = event_tx.send(SessionEventMessage::tool_result(
                     SESSION_ID,
@@ -132,9 +129,11 @@ async fn tool_loop_single_call_executes_tool_and_continues() {
 
     let backend = MockCompletionBackend::new();
     backend.push_response_chunks(vec![
-        Ok(crucible_core::traits::completion_backend::BackendCompletionChunk::tool_call(
-            make_tool_call("call_1", "/tmp/test.txt"),
-        )),
+        Ok(
+            crucible_core::traits::completion_backend::BackendCompletionChunk::tool_call(
+                make_tool_call("call_1", "/tmp/test.txt"),
+            ),
+        ),
         Ok(crucible_core::traits::completion_backend::BackendCompletionChunk::finished(None)),
     ]);
     backend.push_text_response("I read the file");
@@ -169,9 +168,11 @@ async fn tool_loop_stops_when_max_tool_depth_exceeded() {
     let backend = MockCompletionBackend::new();
     for idx in 0..11 {
         backend.push_response_chunks(vec![
-            Ok(crucible_core::traits::completion_backend::BackendCompletionChunk::tool_call(
-                make_tool_call(&format!("call_{idx}"), "/tmp/test.txt"),
-            )),
+            Ok(
+                crucible_core::traits::completion_backend::BackendCompletionChunk::tool_call(
+                    make_tool_call(&format!("call_{idx}"), "/tmp/test.txt"),
+                ),
+            ),
             Ok(crucible_core::traits::completion_backend::BackendCompletionChunk::finished(None)),
         ]);
     }

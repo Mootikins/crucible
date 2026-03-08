@@ -34,9 +34,7 @@ fn test_user_message() {
     app.add_user_message("Hello".to_string());
 
     assert_eq!(app.container_list().len(), 1);
-    if let ChatContainer::UserMessage { content, .. } =
-        &app.container_list().all_containers()[0]
-    {
+    if let ChatContainer::UserMessage { content, .. } = &app.container_list().all_containers()[0] {
         assert_eq!(content, "Hello");
     } else {
         panic!("Expected UserMessage");
@@ -461,8 +459,7 @@ fn test_perm_request_bash_renders() {
     use crucible_core::interaction::PermRequest;
 
     let mut app = OilChatApp::init();
-    let request =
-        InteractionRequest::Permission(PermRequest::bash(["npm", "install", "lodash"]));
+    let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install", "lodash"]));
     app.open_interaction("perm-1".to_string(), request);
 
     let focus = FocusContext::new();
@@ -587,8 +584,7 @@ fn test_perm_request_h_toggles_diff_collapsed() {
     use crucible_core::interaction::PermRequest;
 
     let mut app = OilChatApp::init();
-    let request =
-        InteractionRequest::Permission(PermRequest::write(["home", "user", "file.txt"]));
+    let request = InteractionRequest::Permission(PermRequest::write(["home", "user", "file.txt"]));
     app.open_interaction("perm-6".to_string(), request);
 
     assert!(app.interaction_visible(), "Modal should be visible");

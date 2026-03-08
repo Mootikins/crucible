@@ -69,8 +69,7 @@ fn snapshot_ask_modal_free_text_only() {
 #[test]
 fn snapshot_perm_modal_bash_command() {
     let mut app = OilChatApp::default();
-    let request =
-        InteractionRequest::Permission(PermRequest::bash(["npm", "install", "lodash"]));
+    let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install", "lodash"]));
     app.open_interaction("perm-bash".to_string(), request);
 
     assert_snapshot!(render_app(&app));

@@ -305,7 +305,6 @@ impl PopupNode {
         }
     }
 
-
     /// Set background color.
     pub fn bg_color(mut self, color: Color) -> Self {
         let bg_style = Style::new().bg(color);
@@ -333,7 +332,6 @@ impl PopupNode {
         self
     }
 }
-
 
 impl PopupItemNode {
     pub fn desc(mut self, desc: impl Into<String>) -> Self {

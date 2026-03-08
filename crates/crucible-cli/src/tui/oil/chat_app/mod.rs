@@ -7,9 +7,9 @@ use crate::tui::oil::components::{
     ShellModalOutput, ShellStatus, StatusComponent,
 };
 use crate::tui::oil::config::RuntimeConfig;
-use crate::tui::oil::event::{Event, InputBuffer};
 #[cfg(test)]
 use crate::tui::oil::event::InputAction;
+use crate::tui::oil::event::{Event, InputBuffer};
 use crate::tui::oil::node::*;
 use crate::tui::oil::style::Gap;
 #[allow(unused_imports)] // WIP: KeyCode not yet used
@@ -50,9 +50,9 @@ pub mod state;
 pub use messages::ChatAppMsg;
 pub use model_state::{McpServerDisplay, ModelListState, PluginStatusEntry};
 use popup_state::{PermissionState, PopupState, PrecognitionState, ShellHistoryState};
-use state::MessageQueueState;
 #[cfg(test)]
 use state::AutocompleteKind;
+use state::MessageQueueState;
 pub use state::{ChatItem, ChatMode, InputMode, Role};
 
 // ─── Main Struct ─────────────────────────────────────────────────────────────

@@ -8,7 +8,8 @@
 use async_trait::async_trait;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::completion_backend::{
-    BackendCompletionChunk, BackendCompletionRequest, BackendError, BackendResult, CompletionBackend,
+    BackendCompletionChunk, BackendCompletionRequest, BackendError, BackendResult,
+    CompletionBackend,
 };
 use crucible_core::traits::KnowledgeRepository;
 use futures::stream::BoxStream;

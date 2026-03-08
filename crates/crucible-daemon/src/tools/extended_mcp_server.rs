@@ -740,7 +740,6 @@ mod tests {
     use crate::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
     use tempfile::TempDir;
 
-
     #[test]
     fn test_kiln_only_server_creation() {
         let temp = TempDir::new().unwrap();

@@ -58,8 +58,7 @@ async fn start_mock_daemon() -> (MockDaemon, DaemonClient) {
                             };
 
                             let id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
-                            let method =
-                                msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
+                            let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
 
                             let result = mock_rpc_response(method, &msg);
 
@@ -309,7 +308,10 @@ async fn web_error_body_contains_error_code_and_message() {
     let json: Value = serde_json::from_slice(&body).unwrap();
 
     // Contract: error responses have { "error": { "code": N, "message": "..." } }
-    assert!(json.get("error").is_some(), "Response must have 'error' key");
+    assert!(
+        json.get("error").is_some(),
+        "Response must have 'error' key"
+    );
     assert_eq!(json["error"]["code"], 400);
     assert_eq!(json["error"]["message"], "test error message");
 }
@@ -646,10 +648,7 @@ async fn list_kilns_returns_200_with_array() {
         .await
         .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
-    assert!(
-        json["kilns"].is_array(),
-        "Response must have 'kilns' array"
-    );
+    assert!(json["kilns"].is_array(), "Response must have 'kilns' array");
 }
 
 #[tokio::test]
@@ -699,10 +698,7 @@ async fn list_notes_with_kiln_returns_200() {
         .await
         .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
-    assert!(
-        json["notes"].is_array(),
-        "Response must have 'notes' array"
-    );
+    assert!(json["notes"].is_array(), "Response must have 'notes' array");
 }
 
 #[tokio::test]
@@ -783,9 +779,7 @@ async fn register_project_returns_200_with_project() {
                 .method("POST")
                 .uri("/api/project/register")
                 .header("content-type", "application/json")
-                .body(Body::from(
-                    json!({"path": "/tmp/test-project"}).to_string(),
-                ))
+                .body(Body::from(json!({"path": "/tmp/test-project"}).to_string()))
                 .unwrap(),
         )
         .await
@@ -813,9 +807,7 @@ async fn unregister_project_returns_200() {
                 .method("POST")
                 .uri("/api/project/unregister")
                 .header("content-type", "application/json")
-                .body(Body::from(
-                    json!({"path": "/tmp/test-project"}).to_string(),
-                ))
+                .body(Body::from(json!({"path": "/tmp/test-project"}).to_string()))
                 .unwrap(),
         )
         .await
@@ -994,9 +986,7 @@ async fn switch_model_returns_200() {
                 .method("POST")
                 .uri("/api/session/test-session-001/model")
                 .header("content-type", "application/json")
-                .body(Body::from(
-                    json!({"model_id": "mistral"}).to_string(),
-                ))
+                .body(Body::from(json!({"model_id": "mistral"}).to_string()))
                 .unwrap(),
         )
         .await
@@ -1017,9 +1007,7 @@ async fn set_session_title_returns_200() {
                 .method("PUT")
                 .uri("/api/session/test-session-001/title")
                 .header("content-type", "application/json")
-                .body(Body::from(
-                    json!({"title": "My Chat Session"}).to_string(),
-                ))
+                .body(Body::from(json!({"title": "My Chat Session"}).to_string()))
                 .unwrap(),
         )
         .await

@@ -131,8 +131,12 @@ fn popup_navigates_down() {
     let output_after = render_to_string(&tree_after, 80);
 
     // The selection indicator should have moved
-    let indicator_pos_before = output.find('▸').expect("should find ▸ selection marker in output_before");
-    let indicator_pos_after = output_after.find('▸').expect("should find ▸ selection marker in output_after");
+    let indicator_pos_before = output
+        .find('▸')
+        .expect("should find ▸ selection marker in output_before");
+    let indicator_pos_after = output_after
+        .find('▸')
+        .expect("should find ▸ selection marker in output_after");
 
     assert_ne!(
         indicator_pos_before, indicator_pos_after,
@@ -158,8 +162,12 @@ fn popup_navigates_up() {
     let tree_after = view_with_default_ctx(&app);
     let output_after = render_to_string(&tree_after, 80);
 
-    let indicator_pos_before = output_before.find('▸').expect("should find ▸ selection marker in output_before");
-    let indicator_pos_after = output_after.find('▸').expect("should find ▸ selection marker in output_after");
+    let indicator_pos_before = output_before
+        .find('▸')
+        .expect("should find ▸ selection marker in output_before");
+    let indicator_pos_after = output_after
+        .find('▸')
+        .expect("should find ▸ selection marker in output_after");
 
     assert_ne!(
         indicator_pos_before, indicator_pos_after,
@@ -183,8 +191,12 @@ fn popup_up_at_top_stays_at_top() {
     let tree_after = view_with_default_ctx(&app);
     let output_after = render_to_string(&tree_after, 80);
 
-    let indicator_pos_before = output_before.find('▸').expect("expected '▸' marker in output_before");
-    let indicator_pos_after = output_after.find('▸').expect("expected '▸' marker in output_after");
+    let indicator_pos_before = output_before
+        .find('▸')
+        .expect("expected '▸' marker in output_before");
+    let indicator_pos_after = output_after
+        .find('▸')
+        .expect("expected '▸' marker in output_after");
 
     assert_eq!(
         indicator_pos_before, indicator_pos_after,
@@ -213,8 +225,12 @@ fn popup_down_at_bottom_stays_at_bottom() {
     let tree_after = view_with_default_ctx(&app);
     let output_after = render_to_string(&tree_after, 80);
 
-    let indicator_pos_before = output_before.find('▸').expect("should find ▸ selection marker in output_before");
-    let indicator_pos_after = output_after.find('▸').expect("should find ▸ selection marker in output_after");
+    let indicator_pos_before = output_before
+        .find('▸')
+        .expect("should find ▸ selection marker in output_before");
+    let indicator_pos_after = output_after
+        .find('▸')
+        .expect("should find ▸ selection marker in output_after");
 
     assert_eq!(
         indicator_pos_before, indicator_pos_after,
@@ -1102,6 +1118,5 @@ fn shell_modal_render_shows_first_line_in_small_viewport() {
             .join("\n")
     );
 }
-
 
 mod models;

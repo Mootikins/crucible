@@ -1,16 +1,16 @@
 use crate::support::{MockStdioAgentConfig, ThreadedMockAgent};
 use agent_client_protocol::PromptRequest;
 use crucible_acp::client::{ClientConfig, CrucibleAcpClient};
-use crucible_acp::discovery::{reset_agent_cache, discover_agent};
+use crucible_acp::discovery::{discover_agent, reset_agent_cache};
 use crucible_acp::{StreamConfig, StreamHandler, StreamingChunk};
 use crucible_config::AcpConfig;
+use crucible_core::test_support::EnvVarGuard;
 use once_cell::sync::Lazy;
 use serde_json::json;
 use std::path::PathBuf;
 use tempfile::TempDir;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream};
 use tokio::sync::{oneshot, Barrier, Mutex};
-use crucible_core::test_support::EnvVarGuard;
 
 const MAX_SUBAGENT_OUTPUT: usize = 10 * 1024 * 1024;
 static AGENT_CACHE_TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));

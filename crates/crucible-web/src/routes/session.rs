@@ -534,8 +534,8 @@ async fn fetch_openai_models(client: &reqwest::Client) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
     use crucible_core::test_support::EnvVarGuard;
+    use serial_test::serial;
 
     #[test]
     fn test_format_provider_name_ollama() {
@@ -602,7 +602,6 @@ mod tests {
     fn test_ollama_endpoint_from_env_host_port() {
         let _guard = EnvVarGuard::set("OLLAMA_HOST", "myhost:11435".to_string());
         assert_eq!(ollama_endpoint_from_env(), "http://myhost:11435");
-
     }
 
     #[test]
@@ -610,7 +609,6 @@ mod tests {
     fn test_ollama_endpoint_from_env_full_url() {
         let _guard = EnvVarGuard::set("OLLAMA_HOST", "http://custom.local:8080".to_string());
         assert_eq!(ollama_endpoint_from_env(), "http://custom.local:8080");
-
     }
 
     #[test]
@@ -618,7 +616,6 @@ mod tests {
     fn test_ollama_endpoint_from_env_https() {
         let _guard = EnvVarGuard::set("OLLAMA_HOST", "https://secure.ollama.io".to_string());
         assert_eq!(ollama_endpoint_from_env(), "https://secure.ollama.io");
-
     }
 
     #[test]

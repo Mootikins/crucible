@@ -790,4 +790,3 @@ mod permission_channel_tests {
         );
     }
 }
-

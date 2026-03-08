@@ -22,4 +22,3 @@ pub(crate) fn create_test_ollama_config() -> EmbeddingConfig {
 pub(crate) fn create_test_embedding_config() -> EmbeddingConfig {
     create_test_openai_config()
 }
-

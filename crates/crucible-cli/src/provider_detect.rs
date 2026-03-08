@@ -330,8 +330,8 @@ pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
     use crucible_core::test_support::EnvVarGuard;
+    use serial_test::serial;
 
     #[test]
     fn test_detect_ollama_from_default_config() {
@@ -354,7 +354,6 @@ mod tests {
             .find(|p| p.provider_type == "ollama")
             .unwrap();
         assert!(ollama.reason.contains("OLLAMA_HOST"));
-
     }
 
     #[test]
@@ -364,7 +363,6 @@ mod tests {
         let config = ChatConfig::default();
         let detected = detect_providers(&config);
         assert!(detected.iter().any(|p| p.provider_type == "openai"));
-
     }
 
     #[test]
@@ -387,7 +385,6 @@ mod tests {
         // Should have ollama from config + anthropic from env
         assert!(detected.iter().any(|p| p.provider_type == "ollama"));
         assert!(detected.iter().any(|p| p.provider_type == "anthropic"));
-
     }
 
     #[test]
@@ -395,7 +392,6 @@ mod tests {
     fn test_has_api_key_openai() {
         let _guard = EnvVarGuard::set("OPENAI_API_KEY", "sk-test".to_string());
         assert!(has_api_key("openai"));
-
     }
 
     #[test]
@@ -403,7 +399,6 @@ mod tests {
     fn test_has_api_key_anthropic() {
         let _guard = EnvVarGuard::set("ANTHROPIC_API_KEY", "sk-ant-test".to_string());
         assert!(has_api_key("anthropic"));
-
     }
 
     #[test]
@@ -419,7 +414,6 @@ mod tests {
         assert!(has_api_key("OpenAI"));
         assert!(has_api_key("OPENAI"));
         assert!(has_api_key("openai"));
-
     }
 
     #[test]
@@ -461,7 +455,6 @@ mod tests {
     fn test_ollama_endpoint_custom_host_port() {
         let _guard = EnvVarGuard::set("OLLAMA_HOST", "myhost:11435".to_string());
         assert_eq!(ollama_endpoint(), "http://myhost:11435");
-
     }
 
     #[test]
@@ -469,15 +462,16 @@ mod tests {
     fn test_ollama_endpoint_full_url() {
         let _guard = EnvVarGuard::set("OLLAMA_HOST", "http://custom-ollama.local:8080".to_string());
         assert_eq!(ollama_endpoint(), "http://custom-ollama.local:8080");
-
     }
 
     #[test]
     #[serial]
     fn test_ollama_endpoint_https() {
-        let _guard = EnvVarGuard::set("OLLAMA_HOST", "https://secure-ollama.example.com".to_string());
+        let _guard = EnvVarGuard::set(
+            "OLLAMA_HOST",
+            "https://secure-ollama.example.com".to_string(),
+        );
         assert_eq!(ollama_endpoint(), "https://secure-ollama.example.com");
-
     }
 
     #[tokio::test]

@@ -351,7 +351,6 @@ async fn test_opencode_with_sse_mcp() {
     use std::sync::Arc;
     use tempfile::TempDir;
 
-
     // Skip if opencode not installed
     let opencode_path = match opencode_available() {
         Some(path) => {
@@ -652,7 +651,6 @@ async fn test_opencode_raw_sse_mcp() {
     use std::process::{Command, Stdio};
     use std::sync::Arc;
     use tempfile::TempDir;
-
 
     let opencode_path = match opencode_available() {
         Some(path) => {

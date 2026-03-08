@@ -9,6 +9,7 @@ use anyhow::Result;
 use crucible_cli::config::CliConfig;
 use crucible_cli::factories::get_storage;
 use crucible_config::StorageConfig;
+use crucible_core::test_support::EnvVarGuard;
 use crucible_daemon::rpc_client::lifecycle;
 use crucible_daemon::Server;
 use serial_test::serial;
@@ -16,7 +17,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::task::JoinHandle;
-use crucible_core::test_support::EnvVarGuard;
 
 /// Test fixture that starts a real daemon server for integration testing.
 ///
@@ -38,7 +38,10 @@ impl TestServer {
 
         // Set XDG_RUNTIME_DIR BEFORE computing socket path
         // This ensures lifecycle::default_socket_path() returns the right path
-        let _env_guard = EnvVarGuard::set("XDG_RUNTIME_DIR", temp_dir.path().to_str().unwrap().to_string());
+        let _env_guard = EnvVarGuard::set(
+            "XDG_RUNTIME_DIR",
+            temp_dir.path().to_str().unwrap().to_string(),
+        );
 
         // Now get the path that get_storage will look for
         let socket_path = lifecycle::default_socket_path();
@@ -151,7 +154,10 @@ async fn test_storage_handle_mode_detection() {
 async fn test_get_storage_fails_when_no_daemon() {
     // Set up a temp dir with no daemon running
     let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let _guard = EnvVarGuard::set("XDG_RUNTIME_DIR", temp_dir.path().to_str().unwrap().to_string());
+    let _guard = EnvVarGuard::set(
+        "XDG_RUNTIME_DIR",
+        temp_dir.path().to_str().unwrap().to_string(),
+    );
 
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
     let mut config = CliConfig {

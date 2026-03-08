@@ -5,9 +5,7 @@ use std::process::Command;
 
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
-use crucible_core::interaction::{
-    InteractionRequest, InteractionResponse, PermissionScope,
-};
+use crucible_core::interaction::{InteractionRequest, InteractionResponse, PermissionScope};
 
 use crate::tui::oil::app::Action;
 use crate::tui::oil::components::{

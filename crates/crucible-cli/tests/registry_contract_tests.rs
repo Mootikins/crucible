@@ -47,7 +47,11 @@ fn contract_iter_and_len_match_registered_entries() {
 
     let iter_count = registry.iter().count();
 
-    assert_eq!(iter_count, registry.len(), "iter() must enumerate len() entries");
+    assert_eq!(
+        iter_count,
+        registry.len(),
+        "iter() must enumerate len() entries"
+    );
 }
 
 #[test]

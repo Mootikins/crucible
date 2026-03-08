@@ -1309,7 +1309,9 @@ mod api_tests {
         let api = Arc::new(AsyncMockDaemonApi::new());
         let barrier = Arc::clone(&api.subscribe_barrier);
 
-        let lua = TestLuaBuilder::new().with_sessions_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>).build();
+        let lua = TestLuaBuilder::new()
+            .with_sessions_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>)
+            .build();
 
         // Spawn a Rust task that waits for subscribe, then sends events
         let api_clone = Arc::clone(&api);
@@ -1375,7 +1377,9 @@ mod api_tests {
         let api = Arc::new(AsyncMockDaemonApi::new());
         let barrier = Arc::clone(&api.subscribe_barrier);
 
-        let lua = TestLuaBuilder::new().with_sessions_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>).build();
+        let lua = TestLuaBuilder::new()
+            .with_sessions_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>)
+            .build();
 
         // Spawn a Rust task that sends events after subscribe + send_message
         let api_clone = Arc::clone(&api);
@@ -1451,7 +1455,9 @@ mod api_tests {
         let api = Arc::new(AsyncMockDaemonApi::new());
         let barrier = Arc::clone(&api.subscribe_barrier);
 
-        let lua = TestLuaBuilder::new().with_sessions_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>).build();
+        let lua = TestLuaBuilder::new()
+            .with_sessions_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>)
+            .build();
         crate::timer::register_timer_module(&lua).unwrap();
 
         let api_clone = Arc::clone(&api);
@@ -1507,7 +1513,9 @@ mod api_tests {
         let api = Arc::new(AsyncMockDaemonApi::new());
         let barrier = Arc::clone(&api.subscribe_barrier);
 
-        let lua = TestLuaBuilder::new().with_sessions_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>).build();
+        let lua = TestLuaBuilder::new()
+            .with_sessions_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>)
+            .build();
         crate::timer::register_timer_module(&lua).unwrap();
 
         let api_clone = Arc::clone(&api);
@@ -1576,7 +1584,9 @@ mod api_tests {
         let api = Arc::new(AsyncMockDaemonApi::new());
         let barrier = Arc::clone(&api.subscribe_barrier);
 
-        let lua = TestLuaBuilder::new().with_sessions_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>).build();
+        let lua = TestLuaBuilder::new()
+            .with_sessions_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>)
+            .build();
         crate::timer::register_timer_module(&lua).unwrap();
 
         // Spawn a Rust task that sends events after subscribe is called
@@ -1662,7 +1672,9 @@ mod api_tests {
         let api = Arc::new(AsyncMockDaemonApi::new());
         let barrier = Arc::clone(&api.subscribe_barrier);
 
-        let lua = TestLuaBuilder::new().with_sessions_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>).build();
+        let lua = TestLuaBuilder::new()
+            .with_sessions_api(Arc::clone(&api) as Arc<dyn DaemonSessionApi>)
+            .build();
         crate::timer::register_timer_module(&lua).unwrap();
 
         let api_clone = Arc::clone(&api);

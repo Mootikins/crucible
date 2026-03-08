@@ -474,7 +474,6 @@ mod tests {
 
     use crate::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
 
-
     fn create_search_tools(kiln_path: String) -> SearchTools {
         let knowledge_repo = Arc::new(MockKnowledgeRepository);
         let embedding_provider = Arc::new(MockEmbeddingProvider);
@@ -1015,7 +1014,6 @@ mod note_store_tests {
     use tempfile::TempDir;
 
     use crate::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
-
 
     /// Mock NoteStore for testing the NoteStore integration path
     struct MockNoteStore {

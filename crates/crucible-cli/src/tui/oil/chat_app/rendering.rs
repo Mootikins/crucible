@@ -152,7 +152,6 @@ impl OilChatApp {
         comp.view(&ctx)
     }
 
-
     pub(super) fn render_input(&self, ctx: &ViewContext<'_>) -> Node {
         use crate::tui::oil::components::{InputComponent, InputMode as ComponentInputMode};
 

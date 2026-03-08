@@ -1,8 +1,8 @@
 use async_trait::async_trait;
-use futures::FutureExt;
 use crucible_core::traits::tools::{
     ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult,
 };
+use futures::FutureExt;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::RawContent;
 use serde::de::DeserializeOwned;

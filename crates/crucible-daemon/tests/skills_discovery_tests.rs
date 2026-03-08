@@ -1,9 +1,9 @@
+use crucible_core::test_support::EnvVarGuard;
 use crucible_daemon::skills::discovery::{default_discovery_paths, FolderDiscovery, SearchPath};
 use crucible_daemon::SkillScope;
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
-use crucible_core::test_support::EnvVarGuard;
 
 fn create_test_skill(dir: &std::path::Path, name: &str) {
     let skill_dir = dir.join(name);
@@ -74,7 +74,10 @@ fn test_runtime_skill_discovered() {
         .join("../../runtime")
         .canonicalize()
         .expect("runtime/ directory should exist at repo root");
-    let _guard = EnvVarGuard::set("CRUCIBLE_RUNTIME", runtime_dir.to_string_lossy().to_string());
+    let _guard = EnvVarGuard::set(
+        "CRUCIBLE_RUNTIME",
+        runtime_dir.to_string_lossy().to_string(),
+    );
 
     // When: default_discovery_paths() builds search paths
     let paths = default_discovery_paths(None, None);
@@ -109,6 +112,4 @@ fn test_runtime_skill_discovered() {
         SkillScope::Kiln,
         "runtime skills should have Kiln scope"
     );
-
-
 }

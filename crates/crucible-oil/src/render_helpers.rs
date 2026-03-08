@@ -145,7 +145,7 @@ pub(crate) fn format_popup_item_line(
         }
     } else {
         let padding = width.saturating_sub(label_width);
-            line.push_str(&" ".repeat(padding));
+        line.push_str(&" ".repeat(padding));
     }
 
     line
