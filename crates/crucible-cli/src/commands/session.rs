@@ -5,6 +5,7 @@
 use crate::cli::SessionCommands;
 use crate::common::daemon_client;
 use crate::config::CliConfig;
+use crate::output;
 use anyhow::{anyhow, Result};
 use crucible_config::BackendType;
 use crucible_core::session::SessionAgent;
@@ -637,7 +638,8 @@ async fn show(config: CliConfig, id: String, format: String) -> Result<()> {
     let session_dir = sessions_path.join(session_id.as_str());
 
     if !session_dir.exists() {
-        return Err(anyhow!("Session not found: {}", id));
+        output::hint("Try: `cru session list` to see available sessions");
+        anyhow::bail!("Session not found: {}", id);
     }
 
     // Try daemon RPC for persisted session data
@@ -709,7 +711,8 @@ async fn resume(config: CliConfig, id: String) -> Result<()> {
     let session_dir = sessions_path.join(session_id.as_str());
 
     if !session_dir.exists() {
-        return Err(anyhow!("Session not found: {}", id));
+        output::hint("Try: `cru session list` to see available sessions");
+        anyhow::bail!("Session not found: {}", id);
     }
 
     crate::commands::chat::execute(crate::commands::chat::ExecuteParams {
@@ -744,7 +747,8 @@ async fn export(
     let session_dir = sessions_path.join(session_id.as_str());
 
     if !session_dir.exists() {
-        return Err(anyhow!("Session not found: {}", id));
+        output::hint("Try: `cru session list` to see available sessions");
+        anyhow::bail!("Session not found: {}", id);
     }
 
     // Try daemon RPC first

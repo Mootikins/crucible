@@ -19,6 +19,7 @@ use crate::context_enricher::ContextEnricher;
 use crate::core_facade::KilnContext;
 use crate::factories;
 use crate::kiln_discover::{discover_kiln, DiscoverySource};
+use crate::output;
 use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
 use crate::provider_detect::{detect_providers, fetch_model_context_length};
 use crate::tui::oil::{McpServerDisplay, PluginStatusEntry};
@@ -379,14 +380,14 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
         for input in &set_overrides {
             match validate_set_for_cli(input) {
                 Err(e) => {
-                    eprintln!("error: invalid --set '{}': {}", input, e);
+                    output::error(&format!("invalid --set '{}': {}", input, e));
                     std::process::exit(1);
                 }
                 Ok(SetEffect::DaemonRpc(_)) if agent_name.is_some() => {
-                    eprintln!(
-                        "error: invalid --set '{}': cannot set daemon RPC keys on ACP agent sessions",
+                    output::error(&format!(
+                        "invalid --set '{}': cannot set daemon RPC keys on ACP agent sessions",
                         input
-                    );
+                    ));
                     std::process::exit(1);
                 }
                 Ok(effect) => parsed.push(effect),
@@ -704,7 +705,8 @@ async fn run_oneshot_chat(params: RunOneshotChatParams) -> Result<()> {
                     }
                 }
                 Err(e) => {
-                    eprintln!("\nError: {}", e);
+                    eprintln!();
+                    output::error(&format!("{}", e));
                     return Err(e.into());
                 }
             }
@@ -729,7 +731,7 @@ async fn apply_oneshot_set_overrides(
         let effect = match validate_set_for_cli(input) {
             Ok(effect) => effect,
             Err(err) => {
-                eprintln!("error: invalid --set '{}': {}", input, err);
+                output::error(&format!("invalid --set '{}': {}", input, err));
                 std::process::exit(1);
             }
         };
@@ -737,14 +739,14 @@ async fn apply_oneshot_set_overrides(
         match effect {
             SetEffect::DaemonRpc(action) => {
                 if is_acp {
-                    eprintln!(
-                        "error: --set '{}' cannot be used with ACP agents (daemon RPC not available)",
+                    output::error(&format!(
+                        "--set '{}' cannot be used with ACP agents (daemon RPC not available)",
                         input
-                    );
+                    ));
                     std::process::exit(1);
                 }
                 if let Err(e) = apply_rpc_action(handle, action).await {
-                    eprintln!("error: --set '{}' failed: {}", input, e);
+                    output::error(&format!("--set '{}' failed: {}", input, e));
                     std::process::exit(1);
                 }
             }
