@@ -70,7 +70,7 @@ impl LayoutEngine {
                     display: Display::None,
                     ..Default::default()
                 })
-                .unwrap(),
+                .expect("failed to create taffy leaf node"),
 
             Node::Text(text) => {
                 let lines = measure_text_lines(&text.content, available_width as usize);
@@ -82,7 +82,7 @@ impl LayoutEngine {
                         },
                         ..Default::default()
                     })
-                    .unwrap()
+                    .expect("taffy operation failed")
             }
 
             Node::Box(boxnode) => self.build_box(boxnode, available_width, false),
@@ -101,7 +101,7 @@ impl LayoutEngine {
                     },
                     ..Default::default()
                 })
-                .unwrap(),
+                .expect("taffy operation failed"),
 
             Node::Spinner(_) => self
                 .tree
@@ -112,7 +112,7 @@ impl LayoutEngine {
                     },
                     ..Default::default()
                 })
-                .unwrap(),
+                .expect("taffy operation failed"),
 
             Node::Popup(popup) => {
                 let height = popup.max_visible.min(popup.items.len()) as f32;
@@ -124,7 +124,7 @@ impl LayoutEngine {
                         },
                         ..Default::default()
                     })
-                    .unwrap()
+                    .expect("taffy operation failed")
             }
 
             Node::Fragment(children) => {
@@ -146,7 +146,7 @@ impl LayoutEngine {
                         },
                         &child_ids,
                     )
-                    .unwrap()
+                    .expect("taffy operation failed")
             }
 
             Node::Focusable(focusable) => {
@@ -157,7 +157,7 @@ impl LayoutEngine {
                 return self.build_node(&boundary.child, available_width);
             }
 
-            Node::Overlay(_) => self.tree.new_leaf(taffy::style::Style::default()).unwrap(),
+            Node::Overlay(_) => self.tree.new_leaf(taffy::style::Style::default()).expect("failed to create taffy leaf node"),
 
             Node::Raw(raw) => self
                 .tree
@@ -168,7 +168,7 @@ impl LayoutEngine {
                     },
                     ..Default::default()
                 })
-                .unwrap(),
+                .expect("taffy operation failed"),
         };
 
         self.node_map.insert(id, node_id);
@@ -194,7 +194,7 @@ impl LayoutEngine {
                         },
                         ..Default::default()
                     })
-                    .unwrap()
+                    .expect("taffy operation failed")
             }
 
             Node::Spinner(spinner) => {
@@ -212,7 +212,7 @@ impl LayoutEngine {
                         },
                         ..Default::default()
                     })
-                    .unwrap()
+                    .expect("taffy operation failed")
             }
 
             Node::Input(_) => {
@@ -309,7 +309,7 @@ impl LayoutEngine {
                 },
                 &child_ids,
             )
-            .unwrap()
+            .expect("taffy operation failed")
     }
 
     fn collect_layouts(
@@ -319,7 +319,7 @@ impl LayoutEngine {
         offset_y: f32,
         layouts: &mut HashMap<usize, ComputedLayout>,
     ) {
-        let layout = self.tree.layout(node_id).unwrap();
+        let layout = self.tree.layout(node_id).expect("failed to get taffy layout");
         let x = offset_x + layout.location.x;
         let y = offset_y + layout.location.y;
 
@@ -340,7 +340,7 @@ impl LayoutEngine {
             );
         }
 
-        for &child_id in self.tree.children(node_id).unwrap().iter() {
+        for &child_id in self.tree.children(node_id).expect("failed to get taffy children").iter() {
             self.collect_layouts(child_id, x, y, layouts);
         }
     }
@@ -374,7 +374,7 @@ impl LayoutEngine {
         offset_x: f32,
         offset_y: f32,
     ) -> LayoutBox {
-        let layout = self.tree.layout(taffy_id).unwrap();
+        let layout = self.tree.layout(taffy_id).expect("failed to get taffy layout");
         let x = offset_x + layout.location.x;
         let y = offset_y + layout.location.y;
 
@@ -397,7 +397,7 @@ impl LayoutEngine {
             ),
 
             Node::Box(boxnode) => {
-                let taffy_children = self.tree.children(taffy_id).unwrap();
+                let taffy_children = self.tree.children(taffy_id).expect("failed to get taffy children");
                 let children: Vec<LayoutBox> = boxnode
                     .children
                     .iter()
@@ -472,7 +472,7 @@ impl LayoutEngine {
             ),
 
             Node::Fragment(children) => {
-                let taffy_children = self.tree.children(taffy_id).unwrap();
+                let taffy_children = self.tree.children(taffy_id).expect("failed to get taffy children");
                 let child_boxes: Vec<LayoutBox> = children
                     .iter()
                     .zip(taffy_children.iter())
