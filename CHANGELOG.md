@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-03-08
+
 ### Added
 - **Error handling**: `BackendError::is_retryable()` and `retry_delay_secs()` for typed transient failure classification
 - **Daemon retry**: `DaemonClient::call_with_retry()` with exponential backoff on timeout errors for idempotent RPC methods
