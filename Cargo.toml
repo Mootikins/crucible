@@ -146,6 +146,21 @@ oq = "0.1"
 # test-fixtures: Tests using docs/ kiln or examples/test-kiln
 # test-slow: Performance benchmarks and timing-sensitive tests
 
+[workspace.metadata.dist]
+cargo-dist-version = "0.31.0"
+ci = ["github"]
+installers = ["shell"]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
+hosting = ["github"]
+checksum = "sha256"
+features = ["storage-sqlite"]
+default-features = false
+
 # The profile that 'cargo dist' will build with
 [profile.dist]
 inherits = "release"

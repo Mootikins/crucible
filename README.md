@@ -42,7 +42,7 @@ Most AI chat tools treat conversations as disposable. Crucible treats them as kn
 **Pre-built binaries** (Linux x86_64/aarch64, macOS Apple Silicon):
 
 ```bash
-curl -fsSL https://github.com/Mootikins/crucible/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/Mootikins/crucible/releases/latest/download/crucible-cli-installer.sh | sh
 ```
 
 **From source:**
