@@ -98,8 +98,8 @@ fn from_env_var() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
     use crucible_core::test_support::EnvVarGuard;
+    use serial_test::serial;
     use tempfile::TempDir;
 
     fn make_kiln(dir: &Path) {
@@ -139,7 +139,6 @@ mod tests {
         let _guard = EnvVarGuard::set(CRUCIBLE_KILN_ENV, kiln_path.to_str().unwrap().to_string());
         let result = from_env_var();
 
-
         assert_eq!(result, Some(kiln_path));
     }
 
@@ -152,7 +151,6 @@ mod tests {
 
         let _guard = EnvVarGuard::set(CRUCIBLE_KILN_ENV, kiln_path.to_str().unwrap().to_string());
         let result = from_env_var();
-
 
         assert!(result.is_none());
     }

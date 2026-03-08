@@ -522,7 +522,6 @@ mod tests {
 
     use crate::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
 
-
     struct MockBackgroundSpawner {
         spawn_calls: AtomicUsize,
     }

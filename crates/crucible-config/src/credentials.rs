@@ -573,8 +573,8 @@ pub fn resolve_api_key(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
     use crucible_core::test_support::EnvVarGuard;
+    use serial_test::serial;
     use tempfile::TempDir;
 
     /// Helper to create a SecretsFile in a temp directory
@@ -734,8 +734,6 @@ mod tests {
             result,
             Some(("env-key".to_string(), CredentialSource::EnvVar))
         );
-
-
     }
 
     // =========================================================================

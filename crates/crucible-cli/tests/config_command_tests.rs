@@ -12,11 +12,11 @@
 //! (file, environment, CLI, or default)
 
 use assert_cmd::Command;
+use crucible_core::test_support::EnvVarGuard;
 use predicates::prelude::*;
 use serial_test::serial;
 use std::fs;
 use tempfile::TempDir;
-use crucible_core::test_support::EnvVarGuard;
 
 // ============================================================================
 // Config Init Command Tests
@@ -138,8 +138,6 @@ fn test_config_init_uses_default_path() {
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("Created config file at"));
-
-
 }
 
 // ============================================================================
@@ -232,8 +230,6 @@ streaming = false
         .stdout(predicate::str::contains("provider"))
         .stdout(predicate::str::contains("[acp]"))
         .stdout(predicate::str::contains("[chat]"));
-
-
 }
 
 // ============================================================================
@@ -397,8 +393,6 @@ fn test_config_show_with_invalid_config_file() {
     cmd.assert()
         .failure()
         .stderr(predicate::str::contains("Failed to parse config file"));
-
-
 }
 
 #[test]
@@ -439,8 +433,6 @@ default_agent = "partial-agent"
         .stdout(predicate::str::contains("kiln_path"))
         .stdout(predicate::str::contains("[acp]"))
         .stdout(predicate::str::contains("[chat]"));
-
-
 }
 
 #[test]
@@ -546,8 +538,6 @@ fn test_config_show_performance() {
     let duration = start.elapsed();
     // Config show should be fast (< 5 seconds for debug build)
     assert!(duration.as_millis() < 5000);
-
-
 }
 
 #[test]
@@ -606,6 +596,4 @@ kiln_path = "/vault{}"
     let duration = start.elapsed();
     // Should still be reasonably fast even with large config (debug build)
     assert!(duration.as_millis() < 5000);
-
-
 }

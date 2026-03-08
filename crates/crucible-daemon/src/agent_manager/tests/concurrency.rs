@@ -1,6 +1,5 @@
 use super::*;
 
-
 /// A mock agent whose stream never yields — blocks forever until cancelled.
 struct PendingMockAgent;
 
@@ -154,4 +153,3 @@ async fn empty_stream_without_done_cleans_up_request_state() {
         "request_state should be cleaned up after empty stream completes"
     );
 }
-

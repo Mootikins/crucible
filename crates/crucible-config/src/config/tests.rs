@@ -1,9 +1,7 @@
 //! Tests for configuration types.
 
 use super::*;
-use crate::components::{
-    ChatConfig, DiscoveryPathsConfig, GatewayConfig, HandlersConfig,
-};
+use crate::components::{ChatConfig, DiscoveryPathsConfig, GatewayConfig, HandlersConfig};
 use crucible_core::test_support::EnvVarGuard;
 use std::io::Write;
 use std::path::PathBuf;

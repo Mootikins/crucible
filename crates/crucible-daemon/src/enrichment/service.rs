@@ -768,7 +768,10 @@ mod tests {
     impl EventEmitter for RecordingEmitter {
         type Event = SessionEvent;
 
-        async fn emit(&self, event: Self::Event) -> crucible_core::events::EmitResult<EmitOutcome<Self::Event>> {
+        async fn emit(
+            &self,
+            event: Self::Event,
+        ) -> crucible_core::events::EmitResult<EmitOutcome<Self::Event>> {
             self.emitted.lock().unwrap().push(event.clone());
             Ok(EmitOutcome::new(event))
         }

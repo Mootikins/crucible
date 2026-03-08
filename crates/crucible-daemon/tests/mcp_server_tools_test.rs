@@ -11,8 +11,6 @@ use rmcp::ServerHandler;
 use std::sync::Arc;
 use tempfile::TempDir;
 
-
-
 /// Expected tool names that should be exposed by CrucibleMcpServer
 const EXPECTED_TOOLS: &[&str] = &[
     // Note tools (6)

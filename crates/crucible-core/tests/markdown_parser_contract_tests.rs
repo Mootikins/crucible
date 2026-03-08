@@ -21,7 +21,10 @@ async fn assert_markdown_parser_contract(parser: &dyn MarkdownParser) {
 
     assert_eq!(parsed.path, source_path);
     // word_count > 0 is a universal contract (all parsers must count words)
-    assert!(parsed.content.word_count > 0, "parsed note should report words");
+    assert!(
+        parsed.content.word_count > 0,
+        "parsed note should report words"
+    );
 
     let dir = tempdir().expect("tempdir should be created");
     let file_path = dir.path().join("from_file.md");

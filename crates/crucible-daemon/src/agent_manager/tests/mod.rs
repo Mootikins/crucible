@@ -423,7 +423,6 @@ fn create_test_agent_manager_with_enrichment(
     })
 }
 
-
 fn create_test_agent_manager_with_llm_config(
     session_manager: Arc<SessionManager>,
     llm_config: crucible_config::LlmConfig,
@@ -542,7 +541,6 @@ fn create_test_agent_manager_with_both(
         workspace_tools: Arc::new(WorkspaceTools::new(&std::path::PathBuf::from("/tmp"))),
     })
 }
-
 
 mod concurrency;
 mod dispatch;
