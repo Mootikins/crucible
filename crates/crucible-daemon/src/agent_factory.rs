@@ -427,10 +427,22 @@ pub async fn create_agent_from_session_config(
         ))
     })?;
     let genai_client = chat_client.inner().clone();
+    
+    // Construct enriched prompt with workspace/kiln context (ephemeral, not mutating agent_config)
+    let mut enriched_prompt = String::new();
+    enriched_prompt.push_str(&format!("Workspace: {}\n", workspace.display()));
+    if let Some(kiln) = kiln_path {
+        enriched_prompt.push_str(&format!("Kiln: {}\n", kiln.display()));
+    }
+    if !agent_config.system_prompt.is_empty() {
+        enriched_prompt.push('\n');
+        enriched_prompt.push_str(&agent_config.system_prompt);
+    }
+    
     let handle = GenaiAgentHandle::new(
         genai_client,
         model_iden,
-        &agent_config.system_prompt,
+        &enriched_prompt,
         tool_defs,
         agent_config.thinking_budget,
     );
