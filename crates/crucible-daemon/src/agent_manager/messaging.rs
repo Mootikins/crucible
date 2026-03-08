@@ -279,7 +279,7 @@ impl AgentManager {
                     SubagentContext {
                         agent: resolved_config.clone(),
                         available_agents,
-                        workspace: session.kiln.clone(),
+                        workspace: session.workspace.clone(),
                         parent_session_id,
                         parent_session_dir: Some(session.storage_path()),
                         delegator_agent_name: resolved_config.agent_name.clone(),
