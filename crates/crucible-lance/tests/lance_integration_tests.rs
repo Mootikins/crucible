@@ -122,7 +122,10 @@ async fn search_returns_nearest_neighbors() {
     assert_eq!(results[0].note.path, "a.md");
     // Scores descending
     for w in results.windows(2) {
-        assert!(w[0].score >= w[1].score, "results should be sorted by score desc");
+        assert!(
+            w[0].score >= w[1].score,
+            "results should be sorted by score desc"
+        );
     }
 }
 
@@ -272,7 +275,10 @@ async fn search_with_tag_filter() {
     store.upsert(python_note).await.unwrap();
 
     let filter = Filter::Tag("rust".to_string());
-    let results = store.search(&embedding(1.0), 10, Some(filter)).await.unwrap();
+    let results = store
+        .search(&embedding(1.0), 10, Some(filter))
+        .await
+        .unwrap();
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].note.path, "rust.md");
@@ -294,7 +300,10 @@ async fn get_by_hash_round_trip() {
     assert_eq!(found.path, "hashed.md");
 
     // Non-existent hash returns None
-    let missing = store.get_by_hash(&BlockHash::new([99u8; 32])).await.unwrap();
+    let missing = store
+        .get_by_hash(&BlockHash::new([99u8; 32]))
+        .await
+        .unwrap();
     assert!(missing.is_none());
 }
 

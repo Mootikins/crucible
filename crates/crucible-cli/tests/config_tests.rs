@@ -4,11 +4,11 @@
 
 use crucible_cli::config::CliConfig;
 use crucible_config::BackendType;
+use crucible_core::test_support::EnvVarGuard;
 use serial_test::serial;
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
-use crucible_core::test_support::EnvVarGuard;
 
 /// Cross-platform test path helper
 fn test_path(name: &str) -> PathBuf {
@@ -182,8 +182,6 @@ fn test_database_path_unique_per_process() {
     let filename = db_path.file_name().unwrap().to_str().unwrap();
     assert!(filename.starts_with("crucible-"));
     assert!(filename.ends_with(".db"));
-
-
 }
 
 #[test]
@@ -297,8 +295,6 @@ fn test_openai_api_key_from_env() {
 
     let config = CliConfig::default();
     assert_eq!(config.openai_api_key(), Some("env-key".to_string()));
-
-
 }
 
 #[test]
@@ -308,8 +304,6 @@ fn test_anthropic_api_key_from_env() {
 
     let config = CliConfig::default();
     assert_eq!(config.anthropic_api_key(), Some("env-key".to_string()));
-
-
 }
 
 // ============================================================================

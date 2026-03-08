@@ -216,4 +216,3 @@ async fn test_precognition_complete_event_emitted_when_enrichment_runs() {
 
     crate::embedding::clear_embedding_provider_cache();
 }
-

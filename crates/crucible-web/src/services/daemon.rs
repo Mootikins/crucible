@@ -19,6 +19,12 @@ pub struct EventBroker {
     sessions: RwLock<HashMap<String, broadcast::Sender<SessionEvent>>>,
 }
 
+impl Default for EventBroker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EventBroker {
     pub fn new() -> Self {
         Self {

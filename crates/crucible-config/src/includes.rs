@@ -637,9 +637,9 @@ pub enum IncludeError {
 #[cfg(all(test, feature = "toml"))]
 mod tests {
     use super::*;
+    use crucible_core::test_support::EnvVarGuard;
     use std::fs;
     use tempfile::TempDir;
-    use crucible_core::test_support::EnvVarGuard;
 
     #[test]
     fn test_include_config_empty() {
@@ -1107,7 +1107,6 @@ api_key = "{env:CRUCIBLE_TEST_API_KEY}"
         );
 
         // Cleanup
-
     }
 
     #[test]
@@ -1151,7 +1150,6 @@ extra_paths = ["{env:CRUCIBLE_TEST_PATH1}", "{env:CRUCIBLE_TEST_PATH2}", "/stati
         assert_eq!(paths[2].as_str().unwrap(), "/static/path");
 
         // Cleanup
-
     }
 
     #[test]
@@ -1183,7 +1181,6 @@ model = "{file:model.txt}"
         assert_eq!(embedding.get("model").unwrap().as_str().unwrap(), "gpt-4");
 
         // Cleanup
-
     }
 
     // ========================================================================
@@ -1405,8 +1402,6 @@ settings = "{dir:conf.d}"
             settings.get("api_key").unwrap().as_str(),
             Some("nested-secret")
         );
-
-
     }
 
     #[test]

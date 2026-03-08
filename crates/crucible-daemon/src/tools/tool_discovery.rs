@@ -211,7 +211,9 @@ mod tests {
         let result = discovery
             .discover_tools(&DiscoverToolsParams::default())
             .unwrap();
-        assert!(!result.is_error.expect("is_error field should be present in tool result"));
+        assert!(!result
+            .is_error
+            .expect("is_error field should be present in tool result"));
     }
 
     #[test]
@@ -229,7 +231,9 @@ mod tests {
                 ..Default::default()
             })
             .unwrap();
-        assert!(!result.is_error.expect("is_error field should be present in tool result"));
+        assert!(!result
+            .is_error
+            .expect("is_error field should be present in tool result"));
     }
 
     #[test]
@@ -242,7 +246,9 @@ mod tests {
                 name: "read_note".to_string(),
             })
             .unwrap();
-        assert!(!result.is_error.expect("is_error field should be present in tool result"));
+        assert!(!result
+            .is_error
+            .expect("is_error field should be present in tool result"));
     }
 
     #[test]

@@ -21,8 +21,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;
 
-
-
 // ============================================================================
 // Test 1: Tool discovery via crucible-acp ToolRegistry
 // ============================================================================

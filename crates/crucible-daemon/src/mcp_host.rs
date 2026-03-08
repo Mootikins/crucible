@@ -173,7 +173,6 @@ mod tests {
 
     use crate::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
 
-
     #[tokio::test]
     async fn test_mcp_host_starts_and_binds() {
         let temp = TempDir::new().unwrap();

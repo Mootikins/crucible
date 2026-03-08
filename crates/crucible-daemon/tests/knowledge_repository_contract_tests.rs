@@ -29,7 +29,10 @@ async fn contract_list_notes_returns_empty_when_repository_has_no_notes() {
         .await
         .expect("listing by path filter should succeed");
 
-    assert!(all_notes.is_empty(), "empty repositories should list no notes");
+    assert!(
+        all_notes.is_empty(),
+        "empty repositories should list no notes"
+    );
     assert!(
         filtered_notes.is_empty(),
         "path filters should not invent notes when none exist"

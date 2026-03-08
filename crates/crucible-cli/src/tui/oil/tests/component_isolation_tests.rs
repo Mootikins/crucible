@@ -38,8 +38,7 @@ fn has_ansi_codes(s: &str) -> bool {
 fn extract_ansi_bg_color(s: &str) -> Option<(i32, i32, i32)> {
     // Look for pattern: \x1b[48;2;R;G;Bm
     for part in s.split("\x1b[") {
-        if part.starts_with("48;2;") {
-            let rest = &part[5..]; // Skip "48;2;"
+        if let Some(rest) = part.strip_prefix("48;2;") {
             let end = rest.find('m')?;
             let color_str = &rest[..end];
             let parts: Vec<&str> = color_str.split(';').collect();
@@ -58,8 +57,7 @@ fn extract_ansi_bg_color(s: &str) -> Option<(i32, i32, i32)> {
 fn extract_ansi_fg_color(s: &str) -> Option<(u8, u8, u8)> {
     // Look for pattern: \x1b[38;2;R;G;Bm
     for part in s.split("\x1b[") {
-        if part.starts_with("38;2;") {
-            let rest = &part[5..]; // Skip "38;2;"
+        if let Some(rest) = part.strip_prefix("38;2;") {
             let end = rest.find('m')?;
             let color_str = &rest[..end];
             let parts: Vec<&str> = color_str.split(';').collect();

@@ -24,8 +24,6 @@ const EXPECTED_TOOL_NAMES: &[&str] = &[
     "cancel_job",
 ];
 
-
-
 fn to_set(names: &[&str]) -> HashSet<String> {
     names.iter().map(|name| (*name).to_string()).collect()
 }

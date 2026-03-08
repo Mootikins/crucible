@@ -817,7 +817,6 @@ async fn test_openai_compatible_connection_failure_returns_error() {
     assert!(result.is_err());
 }
 
-
 #[tokio::test]
 async fn test_parse_provider_model_llm_config_found() {
     use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};

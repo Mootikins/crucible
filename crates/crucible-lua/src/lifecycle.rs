@@ -202,7 +202,6 @@ impl PluginManager {
         self.error_log.lock().expect("error_log: poisoned")
     }
 
-
     fn capture_plugin_error(&self, plugin: &str, error: impl ToString, context: impl Into<String>) {
         match self.error_log.lock() {
             Ok(mut log) => log.push(PluginErrorEntry {
@@ -948,8 +947,12 @@ end
         }
 
         push_unique(&mut self.tools, spec.tools, "tool", owner, |t| &t.name);
-        push_unique(&mut self.commands, spec.commands, "command", owner, |c| &c.name);
-        push_unique(&mut self.handlers, spec.handlers, "handler", owner, |h| &h.name);
+        push_unique(&mut self.commands, spec.commands, "command", owner, |c| {
+            &c.name
+        });
+        push_unique(&mut self.handlers, spec.handlers, "handler", owner, |h| {
+            &h.name
+        });
         push_unique(&mut self.views, spec.views, "view", owner, |v| &v.name);
     }
 
@@ -1544,9 +1547,7 @@ pub fn load_plugin_spec_from_source(
     if let Ok(Value::Table(tools_table)) = table.get::<Value>("tools") {
         for pair in tools_table.pairs::<String, Value>() {
             if let Ok((tool_name, Value::Table(tool_def))) = pair {
-                let desc = tool_def
-                    .get::<String>("desc")
-                    .unwrap_or_default();
+                let desc = tool_def.get::<String>("desc").unwrap_or_default();
 
                 let params = extract_params_from_table(&tool_def);
 
@@ -1566,9 +1567,7 @@ pub fn load_plugin_spec_from_source(
     if let Ok(Value::Table(cmds_table)) = table.get::<Value>("commands") {
         for pair in cmds_table.pairs::<String, Value>() {
             if let Ok((cmd_name, Value::Table(cmd_def))) = pair {
-                let desc = cmd_def
-                    .get::<String>("desc")
-                    .unwrap_or_default();
+                let desc = cmd_def.get::<String>("desc").unwrap_or_default();
                 let hint = cmd_def.get::<String>("hint").ok();
 
                 // Extract params if present
@@ -1591,21 +1590,15 @@ pub fn load_plugin_spec_from_source(
     if let Ok(Value::Table(handlers_table)) = table.get::<Value>("handlers") {
         for i in 1..=handlers_table.raw_len() {
             if let Ok(Value::Table(handler_def)) = handlers_table.get::<Value>(i) {
-                let event = handler_def
-                    .get::<String>("event")
-                    .unwrap_or_default();
-                let priority = handler_def
-                    .get::<i64>("priority")
-                    .unwrap_or(100);
+                let event = handler_def.get::<String>("event").unwrap_or_default();
+                let priority = handler_def.get::<i64>("priority").unwrap_or(100);
                 let pattern = handler_def
                     .get::<String>("pattern")
                     .unwrap_or_else(|_| "*".to_string());
                 let name = handler_def
                     .get::<String>("name")
                     .unwrap_or_else(|_| format!("handler_{}", i));
-                let desc = handler_def
-                    .get::<String>("desc")
-                    .unwrap_or_default();
+                let desc = handler_def.get::<String>("desc").unwrap_or_default();
 
                 if !event.is_empty() {
                     spec.handlers.push(DiscoveredHandler {
@@ -1627,9 +1620,7 @@ pub fn load_plugin_spec_from_source(
     if let Ok(Value::Table(views_table)) = table.get::<Value>("views") {
         for pair in views_table.pairs::<String, Value>() {
             if let Ok((view_name, Value::Table(view_def))) = pair {
-                let desc = view_def
-                    .get::<String>("desc")
-                    .unwrap_or_default();
+                let desc = view_def.get::<String>("desc").unwrap_or_default();
                 // Check if handler fn is present (it's a Lua function, so we just check for non-nil)
                 let has_handler =
                     matches!(view_def.get::<Value>("handler"), Ok(Value::Function(_)));
@@ -1654,9 +1645,7 @@ pub fn load_plugin_spec_from_source(
     if let Ok(Value::Table(services_table)) = table.get::<Value>("services") {
         for pair in services_table.pairs::<String, Value>() {
             if let Ok((service_name, Value::Table(service_def))) = pair {
-                let desc = service_def
-                    .get::<String>("desc")
-                    .unwrap_or_default();
+                let desc = service_def.get::<String>("desc").unwrap_or_default();
                 let has_fn = matches!(service_def.get::<Value>("fn"), Ok(Value::Function(_)));
                 if has_fn {
                     spec.services.push(DiscoveredService {

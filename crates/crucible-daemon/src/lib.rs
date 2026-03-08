@@ -54,12 +54,12 @@ pub mod session_manager;
 pub mod session_storage;
 pub mod skills;
 pub mod subscription;
+pub mod test_support;
 pub mod tool_dispatch;
 pub mod tools;
 pub mod tools_bridge;
 pub mod trust_resolution;
 pub mod watch;
-pub mod test_support;
 
 pub use acp_handle::{AcpAgentHandle, AcpHandleError};
 pub use agent_factory::{create_agent_from_session_config, AgentFactoryError};
