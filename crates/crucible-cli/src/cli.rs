@@ -243,6 +243,18 @@ pub enum Commands {
         recent: bool,
     },
 
+    #[command(long_about = "Run bounded installation diagnostics for Crucible.
+
+Performs exactly five checks: daemon reachability, config validity, provider connectivity, kiln accessibility, and embedding backend availability.
+
+Examples:
+  # Run all doctor checks
+  cru doctor
+
+  # Show help for diagnostics
+  cru doctor --help")]
+    Doctor,
+
     /// Manage storage operations (migration, verification, backup, cleanup)
     #[command(
         subcommand,

@@ -3,6 +3,7 @@ pub mod agents;
 pub mod auth;
 pub mod chat;
 pub mod daemon;
+pub mod doctor;
 pub mod init;
 pub mod mcp;
 pub mod models;

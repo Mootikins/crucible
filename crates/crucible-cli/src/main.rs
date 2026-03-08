@@ -60,11 +60,22 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
     // Both ring and aws-lc-rs are compiled (via lancedb), so rustls can't auto-detect.
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    let config = config::CliConfig::load(
+    let config_result = config::CliConfig::load(
         cli.config.clone(),
         cli.embedding_url.clone(),
         cli.embedding_model.clone(),
-    )?;
+    );
+
+    let config = match (&cli.command, config_result) {
+        (Some(Commands::Doctor), Err(err)) => {
+            tracing::warn!(
+                "doctor proceeding with default config after load error: {}",
+                err
+            );
+            config::CliConfig::default()
+        }
+        (_, result) => result?,
+    };
 
     // Standalone mode: start the in-process daemon on the pre-configured socket.
     let _standalone_guard = if let Some(sock) = standalone_sock {
@@ -269,6 +280,8 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             detailed,
             recent,
         }) => commands::status::execute(config, path, format, detailed, recent).await?,
+
+        Some(Commands::Doctor) => commands::doctor::execute(cli_config_path).await?,
 
         Some(Commands::Storage(cmd)) => commands::storage::execute(config, cmd).await?,
 
