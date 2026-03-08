@@ -99,6 +99,7 @@ impl WorkspaceTools {
                     },
                     "required": ["path"]
                 })
+                // SAFETY: json!() macro with object literal always produces a JSON object
                 .as_object()
                 .unwrap()
                 .clone(),
@@ -140,6 +141,7 @@ impl WorkspaceTools {
                     },
                     "required": ["path", "old_string", "new_string"]
                 })
+                // SAFETY: json!() macro with object literal always produces a JSON object
                 .as_object()
                 .unwrap()
                 .clone(),
@@ -173,6 +175,7 @@ impl WorkspaceTools {
                     },
                     "required": ["path", "content"]
                 })
+                // SAFETY: json!() macro with object literal always produces a JSON object
                 .as_object()
                 .unwrap()
                 .clone(),
@@ -210,6 +213,7 @@ impl WorkspaceTools {
                     },
                     "required": ["command"]
                 })
+                // SAFETY: json!() macro with object literal always produces a JSON object
                 .as_object()
                 .unwrap()
                 .clone(),
@@ -247,6 +251,7 @@ impl WorkspaceTools {
                     },
                     "required": ["pattern"]
                 })
+                // SAFETY: json!() macro with object literal always produces a JSON object
                 .as_object()
                 .unwrap()
                 .clone(),
@@ -288,6 +293,7 @@ impl WorkspaceTools {
                     },
                     "required": ["pattern"]
                 })
+                // SAFETY: json!() macro with object literal always produces a JSON object
                 .as_object()
                 .unwrap()
                 .clone(),
