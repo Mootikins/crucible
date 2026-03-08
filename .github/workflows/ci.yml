@@ -66,6 +66,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Create web asset placeholder
+        run: mkdir -p crates/crucible-web/web/dist && echo "<html></html>" > crates/crucible-web/web/dist/index.html
+      - name: Build cru binary for e2e tests
+        run: cargo build -p crucible-cli --bin cru
       - name: Build mock ACP agent for smoke tests
         run: cargo build -p crucible-acp --features test-utils --bin mock-acp-agent
       - name: Run SQLite-specific tests
