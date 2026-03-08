@@ -398,6 +398,7 @@ pub struct AgentManager {
     acp_config: Option<AcpConfig>,
     permission_config: Option<PermissionConfig>,
     plugin_loader: Option<Arc<Mutex<Option<DaemonPluginLoader>>>>,
+    #[allow(dead_code)]
     workspace_tools: Arc<WorkspaceTools>,
     tool_dispatcher: Arc<dyn ToolDispatcher>,
 }
@@ -497,12 +498,12 @@ impl AgentManager {
             use crate::tools::mcp_server::CrucibleMcpServer;
 
             let mcp = Arc::new(CrucibleMcpServer::new(
-                session.workspace.to_string_lossy().to_string(),
+                session.kiln.to_string_lossy().to_string(),
                 Arc::new(EmptyKnowledgeRepository),
                 Arc::new(EmptyEmbeddingProvider),
             ));
             Arc::new(DaemonToolDispatcher::new(vec![
-                self.workspace_tools.clone() as Arc<dyn ToolExecutor>,
+                Arc::new(WorkspaceTools::new(&session.workspace)) as Arc<dyn ToolExecutor>,
                 Arc::new(McpToolExecutor::new(mcp)),
             ]))
         } else {
