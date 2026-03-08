@@ -551,3 +551,4 @@ mod models_discovery;
 mod permissions;
 mod precognition;
 mod reactor;
+mod workspace;

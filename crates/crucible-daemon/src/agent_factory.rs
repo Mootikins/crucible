@@ -240,6 +240,19 @@ pub enum AgentFactoryError {
     UnsupportedAgentType(String),
 }
 
+fn build_enriched_prompt(workspace: &Path, kiln_path: Option<&Path>, base_prompt: &str) -> String {
+    let mut enriched_prompt = String::new();
+    enriched_prompt.push_str(&format!("Workspace: {}\n", workspace.display()));
+    if let Some(kiln) = kiln_path {
+        enriched_prompt.push_str(&format!("Kiln: {}\n", kiln.display()));
+    }
+    if !base_prompt.is_empty() {
+        enriched_prompt.push('\n');
+        enriched_prompt.push_str(base_prompt);
+    }
+    enriched_prompt
+}
+
 /// Create an agent handle from session configuration.
 ///
 /// This takes the fully-resolved `SessionAgent` and creates a ready-to-use
@@ -428,16 +441,7 @@ pub async fn create_agent_from_session_config(
     })?;
     let genai_client = chat_client.inner().clone();
     
-    // Construct enriched prompt with workspace/kiln context (ephemeral, not mutating agent_config)
-    let mut enriched_prompt = String::new();
-    enriched_prompt.push_str(&format!("Workspace: {}\n", workspace.display()));
-    if let Some(kiln) = kiln_path {
-        enriched_prompt.push_str(&format!("Kiln: {}\n", kiln.display()));
-    }
-    if !agent_config.system_prompt.is_empty() {
-        enriched_prompt.push('\n');
-        enriched_prompt.push_str(&agent_config.system_prompt);
-    }
+    let enriched_prompt = build_enriched_prompt(workspace, kiln_path, &agent_config.system_prompt);
     
     let handle = GenaiAgentHandle::new(
         genai_client,
@@ -510,6 +514,63 @@ mod tests {
             delegation_config: None,
             precognition_enabled: false,
         }
+    }
+
+    #[test]
+    fn enrichment_includes_workspace_path() {
+        let workspace = Path::new("/workspace/test");
+        let enriched = build_enriched_prompt(workspace, None, "");
+
+        assert!(enriched.contains("/workspace/test"));
+    }
+
+    #[test]
+    fn enrichment_includes_kiln_path_when_provided() {
+        let workspace = Path::new("/workspace/test");
+        let kiln = Path::new("/workspace/test/docs");
+        let enriched = build_enriched_prompt(workspace, Some(kiln), "");
+
+        assert!(enriched.contains("Kiln: /workspace/test/docs"));
+    }
+
+    #[test]
+    fn enrichment_without_kiln_excludes_kiln_line() {
+        let workspace = Path::new("/workspace/test");
+        let enriched = build_enriched_prompt(workspace, None, "");
+
+        assert!(enriched.contains("Workspace: /workspace/test"));
+        assert!(!enriched.contains("Kiln:"));
+    }
+
+    #[test]
+    fn enrichment_prepends_context_to_base_prompt() {
+        let workspace = Path::new("/workspace/test");
+        let kiln = Path::new("/workspace/test/docs");
+        let base_prompt = "You are a helpful assistant.";
+        let enriched = build_enriched_prompt(workspace, Some(kiln), base_prompt);
+
+        let workspace_pos = enriched.find("Workspace:").unwrap();
+        let base_pos = enriched.find(base_prompt).unwrap();
+        assert!(workspace_pos < base_pos);
+        assert!(enriched.contains("Kiln: /workspace/test/docs"));
+    }
+
+    #[test]
+    fn enrichment_with_empty_base_prompt_has_no_trailing_double_blank_line() {
+        let workspace = Path::new("/workspace/test");
+        let enriched = build_enriched_prompt(workspace, None, "");
+
+        assert!(enriched.contains("Workspace: /workspace/test"));
+        assert!(!enriched.ends_with("\n\n"));
+    }
+
+    #[test]
+    fn enrichment_does_not_mutate_base_prompt_input() {
+        let workspace = Path::new("/workspace/test");
+        let base_prompt = String::from("Keep this unchanged.");
+        let _ = build_enriched_prompt(workspace, None, &base_prompt);
+
+        assert_eq!(base_prompt, "Keep this unchanged.");
     }
 
     #[test]

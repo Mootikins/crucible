@@ -266,7 +266,7 @@ impl AgentManager {
     ///
     /// If the agent has delegation configuration, registers a subagent context
     /// with the background manager for cross-agent delegation support.
-    fn setup_permission_handlers(&self, session_id: &str, resolved_config: &SessionAgent) {
+    pub(crate) fn setup_permission_handlers(&self, session_id: &str, resolved_config: &SessionAgent) {
         if resolved_config.delegation_config.is_some() {
             if let Some(session) = self.session_manager.get_session(session_id) {
                 let parent_session_id = session
