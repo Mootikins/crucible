@@ -160,6 +160,11 @@ pub fn warning(message: &str) {
     println!("{} {}", "⚠".yellow(), message);
 }
 
+/// Print a hint/suggestion message
+pub fn hint(message: &str) {
+    eprintln!("  {} {}", "→".cyan(), message);
+}
+
 /// Show a warning about degraded functionality in lightweight storage mode
 ///
 /// Displays a yellow warning message to stderr that clearly indicates the feature

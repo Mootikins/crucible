@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use crate::cli::ConfigCommands;
 use crate::config::CliConfig;
+use crate::output;
 
 /// Execute config subcommand
 pub async fn execute(cmd: ConfigCommands) -> Result<()> {
@@ -20,12 +21,14 @@ async fn init(path: Option<PathBuf>, force: bool) -> Result<()> {
 
     // Check if file already exists
     if config_path.exists() && !force {
-        println!(
-            "{} Config file already exists at: {}",
-            "Error:".red().bold(),
+        output::warning(&format!(
+            "Config file already exists at: {}",
             config_path.display()
+        ));
+        println!(
+            "  {} Try: `cru config init --force` to overwrite",
+            "→".cyan()
         );
-        println!("Use {} to overwrite", "--force".yellow());
         return Ok(());
     }
 
