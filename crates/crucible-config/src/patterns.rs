@@ -391,6 +391,7 @@ impl PatternStore {
 
     /// Get the path to the whitelists.d directory
     pub fn whitelists_dir() -> PathBuf {
+        // SAFETY: dirs::config_dir() fallback ensures we always have a valid path
         dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from(".config"))
             .join("crucible")
