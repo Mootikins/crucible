@@ -417,8 +417,8 @@ pub struct AgentManagerParams {
 impl AgentManager {
     pub fn new(params: AgentManagerParams) -> Self {
         let tool_dispatcher: Arc<dyn ToolDispatcher> = Arc::new(DaemonToolDispatcher::new(vec![
-    params.workspace_tools as Arc<dyn ToolExecutor>,
-]));
+            params.workspace_tools as Arc<dyn ToolExecutor>,
+        ]));
         Self {
             request_state: Arc::new(DashMap::new()),
             agent_cache: AgentCache::new(),

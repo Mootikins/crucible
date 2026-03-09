@@ -29,8 +29,10 @@ async fn session_workspace_used_for_workspace_tools() {
 
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));
-    let agent_manager =
-        create_test_agent_manager_with_workspace_root(session_manager.clone(), workspace_dir.path());
+    let agent_manager = create_test_agent_manager_with_workspace_root(
+        session_manager.clone(),
+        workspace_dir.path(),
+    );
 
     let session = session_manager
         .create_session(
@@ -56,8 +58,14 @@ async fn session_workspace_used_for_workspace_tools() {
 
     let workspace_path = workspace_dir.path().to_string_lossy().to_string();
     let kiln_path = kiln_dir.path().to_string_lossy().to_string();
-    assert!(pwd.contains(&workspace_path), "pwd should run in workspace: {pwd}");
-    assert!(!pwd.contains(&kiln_path), "pwd should not run in kiln: {pwd}");
+    assert!(
+        pwd.contains(&workspace_path),
+        "pwd should run in workspace: {pwd}"
+    );
+    assert!(
+        !pwd.contains(&kiln_path),
+        "pwd should not run in kiln: {pwd}"
+    );
 }
 
 #[tokio::test]
@@ -66,12 +74,18 @@ async fn session_kiln_used_for_crucible_mcp_server() {
     let workspace_dir = TempDir::new().unwrap();
 
     std::fs::write(kiln_dir.path().join("kiln-note.md"), "# kiln\n").unwrap();
-    std::fs::write(workspace_dir.path().join("workspace-note.md"), "# workspace\n").unwrap();
+    std::fs::write(
+        workspace_dir.path().join("workspace-note.md"),
+        "# workspace\n",
+    )
+    .unwrap();
 
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));
-    let agent_manager =
-        create_test_agent_manager_with_workspace_root(session_manager.clone(), workspace_dir.path());
+    let agent_manager = create_test_agent_manager_with_workspace_root(
+        session_manager.clone(),
+        workspace_dir.path(),
+    );
 
     let session = session_manager
         .create_session(
@@ -85,7 +99,10 @@ async fn session_kiln_used_for_crucible_mcp_server() {
         .unwrap();
 
     let dispatcher = agent_manager.get_or_create_session_dispatcher(&session);
-    let result = dispatcher.dispatch_tool("list_notes", json!({})).await.unwrap();
+    let result = dispatcher
+        .dispatch_tool("list_notes", json!({}))
+        .await
+        .unwrap();
     let notes = result
         .get("notes")
         .and_then(serde_json::Value::as_array)
@@ -102,7 +119,10 @@ async fn session_kiln_used_for_crucible_mcp_server() {
             .is_some_and(|path| path.ends_with("workspace-note.md"))
     });
 
-    assert!(has_kiln_note, "list_notes should include kiln note: {result}");
+    assert!(
+        has_kiln_note,
+        "list_notes should include kiln note: {result}"
+    );
     assert!(
         !has_workspace_note,
         "list_notes should not include workspace-only note: {result}"
@@ -141,9 +161,15 @@ async fn regression_workspace_equals_kiln_tools_still_work() {
         .and_then(serde_json::Value::as_str)
         .unwrap();
     let shared_path = shared_dir.path().to_string_lossy().to_string();
-    assert!(pwd.contains(&shared_path), "pwd should run in shared dir: {pwd}");
+    assert!(
+        pwd.contains(&shared_path),
+        "pwd should run in shared dir: {pwd}"
+    );
 
-    let notes_result = dispatcher.dispatch_tool("list_notes", json!({})).await.unwrap();
+    let notes_result = dispatcher
+        .dispatch_tool("list_notes", json!({}))
+        .await
+        .unwrap();
     let notes = notes_result
         .get("notes")
         .and_then(serde_json::Value::as_array)

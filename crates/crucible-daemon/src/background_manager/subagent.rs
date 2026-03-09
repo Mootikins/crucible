@@ -6,7 +6,6 @@ impl BackgroundJobManager {
             .insert(session_id.to_string(), config);
     }
 
-
     pub async fn spawn_subagent(
         &self,
         session_id: &str,

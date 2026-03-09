@@ -440,9 +440,9 @@ pub async fn create_agent_from_session_config(
         ))
     })?;
     let genai_client = chat_client.inner().clone();
-    
+
     let enriched_prompt = build_enriched_prompt(workspace, kiln_path, &agent_config.system_prompt);
-    
+
     let handle = GenaiAgentHandle::new(
         genai_client,
         model_iden,
