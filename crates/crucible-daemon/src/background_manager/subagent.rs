@@ -6,9 +6,6 @@ impl BackgroundJobManager {
             .insert(session_id.to_string(), config);
     }
 
-    pub fn get_subagent_context(&self, session_id: &str) -> Option<SubagentContext> {
-        self.subagent_contexts.get(session_id).map(|entry| entry.clone())
-    }
 
     pub async fn spawn_subagent(
         &self,
