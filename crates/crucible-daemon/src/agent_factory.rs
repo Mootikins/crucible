@@ -517,60 +517,27 @@ mod tests {
     }
 
     #[test]
-    fn enrichment_includes_workspace_path() {
-        let workspace = Path::new("/workspace/test");
-        let enriched = build_enriched_prompt(workspace, None, "");
+    fn enriched_prompt_prepends_workspace_and_kiln_context() {
+        let ws = Path::new("/repo");
+        let kiln = Path::new("/repo/docs");
 
-        assert!(enriched.contains("/workspace/test"));
-    }
+        // With kiln + base prompt: both paths present, workspace before base
+        let enriched = build_enriched_prompt(ws, Some(kiln), "You are helpful.");
+        assert!(enriched.contains("Workspace: /repo"));
+        assert!(enriched.contains("Kiln: /repo/docs"));
+        assert!(enriched.contains("You are helpful."));
+        assert!(enriched.find("Workspace:").unwrap() < enriched.find("You are helpful.").unwrap());
 
-    #[test]
-    fn enrichment_includes_kiln_path_when_provided() {
-        let workspace = Path::new("/workspace/test");
-        let kiln = Path::new("/workspace/test/docs");
-        let enriched = build_enriched_prompt(workspace, Some(kiln), "");
+        // Without kiln: no Kiln line
+        let no_kiln = build_enriched_prompt(ws, None, "Base.");
+        assert!(no_kiln.contains("Workspace: /repo"));
+        assert!(!no_kiln.contains("Kiln:"));
+        assert!(no_kiln.contains("Base."));
 
-        assert!(enriched.contains("Kiln: /workspace/test/docs"));
-    }
-
-    #[test]
-    fn enrichment_without_kiln_excludes_kiln_line() {
-        let workspace = Path::new("/workspace/test");
-        let enriched = build_enriched_prompt(workspace, None, "");
-
-        assert!(enriched.contains("Workspace: /workspace/test"));
-        assert!(!enriched.contains("Kiln:"));
-    }
-
-    #[test]
-    fn enrichment_prepends_context_to_base_prompt() {
-        let workspace = Path::new("/workspace/test");
-        let kiln = Path::new("/workspace/test/docs");
-        let base_prompt = "You are a helpful assistant.";
-        let enriched = build_enriched_prompt(workspace, Some(kiln), base_prompt);
-
-        let workspace_pos = enriched.find("Workspace:").unwrap();
-        let base_pos = enriched.find(base_prompt).unwrap();
-        assert!(workspace_pos < base_pos);
-        assert!(enriched.contains("Kiln: /workspace/test/docs"));
-    }
-
-    #[test]
-    fn enrichment_with_empty_base_prompt_has_no_trailing_double_blank_line() {
-        let workspace = Path::new("/workspace/test");
-        let enriched = build_enriched_prompt(workspace, None, "");
-
-        assert!(enriched.contains("Workspace: /workspace/test"));
-        assert!(!enriched.ends_with("\n\n"));
-    }
-
-    #[test]
-    fn enrichment_does_not_mutate_base_prompt_input() {
-        let workspace = Path::new("/workspace/test");
-        let base_prompt = String::from("Keep this unchanged.");
-        let _ = build_enriched_prompt(workspace, None, &base_prompt);
-
-        assert_eq!(base_prompt, "Keep this unchanged.");
+        // Empty base prompt: just context lines, no double blank
+        let empty_base = build_enriched_prompt(ws, None, "");
+        assert!(empty_base.contains("Workspace: /repo"));
+        assert!(!empty_base.ends_with("\n\n"));
     }
 
     #[test]
