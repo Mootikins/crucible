@@ -45,7 +45,6 @@ pub(super) struct RunningJob {
     pub(crate) task_handle: JoinHandle<()>,
 }
 
-#[derive(Clone)]
 pub struct SubagentContext {
     pub agent: SessionAgent,
     pub available_agents: HashMap<String, AgentProfile>,
