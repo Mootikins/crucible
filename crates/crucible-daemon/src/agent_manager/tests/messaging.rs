@@ -157,7 +157,7 @@ async fn send_message_emits_thinking_before_text_delta() {
 #[tokio::test]
 async fn send_message_emits_tool_call_and_tool_result_events() {
     let tmp = TempDir::new().unwrap();
-    std::fs::write("/tmp/test.md", "content").unwrap();
+    std::fs::write(tmp.path().join("test.md"), "content").unwrap();
 
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));
