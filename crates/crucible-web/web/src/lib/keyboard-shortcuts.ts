@@ -11,9 +11,28 @@ export const DEFAULT_SHORTCUTS: ShortcutAction[] = [
   { key: '\\', modifiers: ['ctrl'], action: 'splitVertical', description: 'Split pane vertically' },
   { key: 'b', modifiers: ['ctrl'], action: 'toggleLeftPanel', description: 'Toggle left panel' },
   { key: 'Tab', modifiers: ['shift'], action: 'cycleMode', description: 'Cycle chat mode (Normal → Plan → Auto)' },
+  // Command palette — Ctrl+P / Cmd+P (browser print intercepted with preventDefault)
+  { key: 'p', modifiers: ['ctrl'], action: 'openCommandPalette', description: 'Open command palette' },
+  // Chat focus — Ctrl+/ focuses chat input
+  { key: '/', modifiers: ['ctrl'], action: 'focusChatInput', description: 'Focus chat input' },
+  // Overlay management — Escape closes active overlay
+  { key: 'Escape', modifiers: [], action: 'closeOverlay', description: 'Close active overlay' },
+  // Session management
+  { key: 'n', modifiers: ['ctrl', 'shift'], action: 'newSession', description: 'New chat session' },
+  // Panel toggles
+  { key: 'e', modifiers: ['ctrl', 'shift'], action: 'toggleRightPanel', description: 'Toggle right panel' },
+  { key: 'b', modifiers: ['ctrl', 'shift'], action: 'toggleBottomPanel', description: 'Toggle bottom panel' },
+  // Chat actions
+  { key: 'k', modifiers: ['ctrl'], action: 'clearChat', description: 'Clear chat' },
+  // Thinking display toggle — Ctrl+T / Cmd+T
+  { key: 't', modifiers: ['ctrl'], action: 'toggleThinking', description: 'Toggle thinking display visibility' },
 ];
 
-// Note: Ctrl+W may be intercepted by browser. Works in PWA/Electron contexts.
+// Browser conflicts:
+// - Ctrl+W: Close tab (browser default) — works in PWA/Electron, blocked in regular browser
+// - Ctrl+P: Print dialog (browser default) — preventDefault() in handler blocks it
+// - Ctrl+T: New tab (browser default) — preventDefault() in handler blocks it
+// - Escape: May close fullscreen or cancel operations — handled per context
 
 export function matchShortcut(e: KeyboardEvent, shortcuts: ShortcutAction[] = DEFAULT_SHORTCUTS): string | null {
   for (const shortcut of shortcuts) {

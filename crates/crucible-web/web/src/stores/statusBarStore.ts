@@ -10,12 +10,14 @@ const [chatMode, setChatMode] = createSignal<ChatMode>('normal');
 const [contextUsage, setContextUsage] = createSignal<ContextUsage | null>(null);
 const [activeModel, setActiveModel] = createSignal<string | null>(null);
 const [notificationCount, setNotificationCount] = createSignal(0);
+const [showThinking, setShowThinking] = createSignal(true);  // Toggle visibility of thinking blocks
 
 export const statusBarStore = {
   chatMode,
   contextUsage,
   activeModel,
   notificationCount,
+  showThinking,
 } as const;
 
 export const statusBarActions = {
@@ -23,4 +25,5 @@ export const statusBarActions = {
   setContextUsage,
   setActiveModel,
   setNotificationCount,
+  setShowThinking,
 } as const;
