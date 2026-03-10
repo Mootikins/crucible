@@ -438,6 +438,23 @@ export async function setPrecognition(sessionId: string, enabled: boolean): Prom
 }
 
 // =============================================================================
+// Session Export
+// =============================================================================
+
+/** Export a session to markdown. Returns the raw markdown string. */
+export async function exportSession(sessionId: string): Promise<string> {
+  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/export`, {
+    method: 'POST',
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to export session: HTTP ${res.status}`);
+  }
+
+  return await res.text();
+}
+
+// =============================================================================
 // Plugin Endpoints
 // =============================================================================
 

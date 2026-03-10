@@ -43,6 +43,7 @@ pub fn session_routes() -> Router<AppState> {
             "/api/session/{id}/config/precognition",
             put(set_precognition).get(get_precognition),
         )
+        .route("/api/session/{id}/export", post(export_session))
 }
 #[derive(Debug, Deserialize)]
 struct CreateSessionRequest {
@@ -456,6 +457,74 @@ async fn get_precognition(
         .daemon_err()?;
 
     Ok(Json(serde_json::json!({ "precognition_enabled": enabled })))
+}
+
+async fn export_session(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<([(axum::http::header::HeaderName, axum::http::header::HeaderValue); 1], String), WebError> {
+    // Get session metadata to find kiln path
+    let session = state.daemon.session_get(&id).await.daemon_err()?;
+    let kiln_str = session
+        .get("kiln")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    if kiln_str.is_empty() {
+        return Err(WebError::Validation(
+            "Session has no kiln path, cannot export".to_string(),
+        ));
+    }
+
+    let kiln = std::path::Path::new(kiln_str);
+
+    // Build session directory path (mirrors FileSessionStorage::session_dir_by_id)
+    let session_dir = if crucible_config::is_crucible_home(kiln) {
+        kiln.join("sessions").join(&id)
+    } else {
+        kiln.join(".crucible").join("sessions").join(&id)
+    };
+
+    // Try to render markdown from persisted session events
+    let markdown = match state
+        .daemon
+        .session_render_markdown(&session_dir, Some(true), None, Some(true), None)
+        .await
+    {
+        Ok(md) => md,
+        Err(_) => {
+            // Fallback: construct basic markdown from session metadata
+            let title = session
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Untitled Session");
+            let started_at = session
+                .get("started_at")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let model = session
+                .get("agent_model")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let state_str = session
+                .get("state")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+
+            format!(
+                "# {}\n\n- **Date**: {}\n- **Model**: {}\n- **State**: {}\n\n---\n\n*Session events are not yet persisted. Export will be available after the session is paused or ended.*\n",
+                title, started_at, model, state_str
+            )
+        }
+    };
+
+    Ok((
+        [(
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::HeaderValue::from_static("text/markdown; charset=utf-8"),
+        )],
+        markdown,
+    ))
 }
 
 #[derive(Debug, Serialize)]

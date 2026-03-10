@@ -8,6 +8,7 @@ import { matchShortcut } from '@/lib/keyboard-shortcuts';
 import { statusBarActions, statusBarStore } from '@/stores/statusBarStore';
 import { windowActions } from '@/stores/windowStore';
 import { NotificationToast } from '@/components/NotificationToast';
+import { ExportDialog } from '@/components/ExportDialog';
 
 function focusChatInput(): void {
   const candidate = document.querySelector<HTMLTextAreaElement | HTMLInputElement | HTMLElement>(
@@ -29,6 +30,7 @@ function openFilesPanel(): void {
 
 const App: Component = () => {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = createSignal(false);
+  const [isExportDialogOpen, setIsExportDialogOpen] = createSignal(false);
 
   const paletteCommands: PaletteCommand[] = [
     {
@@ -73,7 +75,7 @@ const App: Component = () => {
       description: 'Export current session to markdown.',
       category: 'Session',
       keywords: ['export', 'session', 'markdown'],
-      action: () => window.dispatchEvent(new CustomEvent('crucible:export-session')),
+      action: () => setIsExportDialogOpen(true),
     },
     {
       id: 'session-switch-model',
@@ -149,13 +151,27 @@ const App: Component = () => {
     };
 
     document.addEventListener('keydown', onGlobalKeyDown, true);
-    onCleanup(() => document.removeEventListener('keydown', onGlobalKeyDown, true));
+
+    // Listen for export-session custom event (dispatched from command palette or other sources)
+    const onExportSession = () => setIsExportDialogOpen(true);
+    window.addEventListener('crucible:export-session', onExportSession);
+
+    onCleanup(() => {
+      document.removeEventListener('keydown', onGlobalKeyDown, true);
+      window.removeEventListener('crucible:export-session', onExportSession);
+    });
   });
 
   return (
     <SettingsProvider>
       <WindowManager />
       <NotificationToast />
+      <ExportDialog
+        open={isExportDialogOpen()}
+        sessionId={statusBarStore.activeSessionId()}
+        sessionTitle={statusBarStore.activeSessionTitle()}
+        onClose={() => setIsExportDialogOpen(false)}
+      />
       <CommandPalette
         open={isCommandPaletteOpen()}
         commands={paletteCommands}
