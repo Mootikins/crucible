@@ -2010,7 +2010,7 @@ dependencies = [
 
 [[package]]
 name = "crucible-acp"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -2042,7 +2042,7 @@ dependencies = [
 
 [[package]]
 name = "crucible-cli"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2107,7 +2107,7 @@ dependencies = [
 
 [[package]]
 name = "crucible-config"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "crucible-core",
@@ -2130,7 +2130,7 @@ dependencies = [
 
 [[package]]
 name = "crucible-core"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "agent-client-protocol-schema",
  "anyhow",
@@ -2170,7 +2170,7 @@ dependencies = [
 
 [[package]]
 name = "crucible-daemon"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -2235,7 +2235,7 @@ dependencies = [
 
 [[package]]
 name = "crucible-lance"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "arrow-array",
@@ -2255,7 +2255,7 @@ dependencies = [
 
 [[package]]
 name = "crucible-llm"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -2294,7 +2294,7 @@ dependencies = [
 
 [[package]]
 name = "crucible-lua"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2324,7 +2324,7 @@ dependencies = [
 
 [[package]]
 name = "crucible-oil"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "crossterm 0.29.0",
  "html_parser",
@@ -2341,7 +2341,7 @@ dependencies = [
 
 [[package]]
 name = "crucible-sqlite"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2365,7 +2365,7 @@ dependencies = [
 
 [[package]]
 name = "crucible-web"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "axum",
