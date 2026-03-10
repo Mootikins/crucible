@@ -15,7 +15,7 @@ export const ChatContent: Component = () => {
   const hasSubagentEvents = () => chatCtx.subagentEvents().length > 0;
 
   return (
-    <div class="h-full flex flex-col overflow-hidden">
+    <div class="h-full flex flex-col overflow-hidden" data-message-renderer="markdown-it">
       <div class="flex-1 min-h-0 flex flex-col">
         <MessageList />
       </div>
