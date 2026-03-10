@@ -82,6 +82,23 @@ function clearAll() {
   recalcCount();
 }
 
+function markAllRead() {
+  // Cancel all pending timers
+  for (const timer of dismissTimers.values()) {
+    clearTimeout(timer);
+  }
+  dismissTimers.clear();
+
+  setNotifications(
+    produce((list) => {
+      for (const n of list) {
+        n.dismissed = true;
+      }
+    }),
+  );
+  recalcCount();
+}
+
 export const notificationStore = {
   notifications,
   notificationCount,
@@ -91,4 +108,5 @@ export const notificationActions = {
   addNotification,
   dismiss,
   clearAll,
+  markAllRead,
 } as const;
