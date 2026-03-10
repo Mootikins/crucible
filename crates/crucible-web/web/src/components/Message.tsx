@@ -2,7 +2,8 @@ import { Component, Show, For, createMemo } from 'solid-js';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { ToolCard } from './ToolCard';
-import type { Message as MessageType } from '@/lib/types';
+import { ThinkingBlock } from './ThinkingBlock';
+import type { Message as MessageType, ToolCallDisplay } from '@/lib/types';
 
 marked.setOptions({
   breaks: true,
@@ -18,6 +19,7 @@ export const Message: Component<MessageProps> = (props) => {
   const isUser = () => props.message.role === 'user';
   const isEmpty = () => !props.message.content || props.message.content.length === 0;
   const hasToolCalls = () => props.message.toolCalls && props.message.toolCalls.length > 0;
+  const hasThinking = () => !!props.message.thinking && props.message.thinking.content.length > 0;
 
   const renderedContent = createMemo(() => {
     if (isEmpty()) return '';
@@ -60,10 +62,18 @@ export const Message: Component<MessageProps> = (props) => {
             </span>
           }
         >
+          <Show when={hasThinking()}>
+            <ThinkingBlock
+              content={props.message.thinking!.content}
+              isStreaming={props.message.thinking!.isStreaming}
+              tokenCount={props.message.thinking!.tokenCount}
+            />
+          </Show>
+
           <Show when={hasToolCalls()}>
             <div class="mb-2">
               <For each={props.message.toolCalls}>
-                {(tool) => <ToolCard tool={tool} />}
+                {(tool) => <ToolCard toolCall={{ id: tool.id, name: tool.title, args: '', status: 'complete' } satisfies ToolCallDisplay} />}
               </For>
             </div>
           </Show>
