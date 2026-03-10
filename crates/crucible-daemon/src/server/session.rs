@@ -828,6 +828,12 @@ pub(crate) async fn handle_models_list(req: Request, am: &Arc<AgentManager>) -> 
     }
 }
 
+/// List all available providers without requiring an active session.
+pub(crate) async fn handle_providers_list(req: Request, am: &Arc<AgentManager>) -> Response {
+    let providers = am.list_providers().await;
+    Response::success(req.id, serde_json::json!({ "providers": providers }))
+}
+
 pub(crate) async fn handle_session_set_thinking_budget(
     req: Request,
     am: &Arc<AgentManager>,
