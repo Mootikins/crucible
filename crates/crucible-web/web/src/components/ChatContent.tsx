@@ -2,6 +2,8 @@ import { Component, Show, For } from 'solid-js';
 import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
 import { ToolCard } from './ToolCard';
+import { SubagentCard } from './SubagentCard';
+import { DelegationCard } from './DelegationCard';
 import { InteractionHandler } from './interactions';
 import { useChatSafe } from '@/contexts/ChatContext';
 
@@ -10,6 +12,7 @@ export const ChatContent: Component = () => {
   const { pendingInteraction, respondToInteraction } = chatCtx;
 
   const hasActiveTools = () => chatCtx.activeTools().length > 0;
+  const hasSubagentEvents = () => chatCtx.subagentEvents().length > 0;
 
   return (
     <div class="h-full flex flex-col overflow-hidden">
@@ -22,6 +25,18 @@ export const ChatContent: Component = () => {
         <div class="px-4 py-2 border-t border-neutral-800/50 max-h-64 overflow-y-auto">
           <For each={chatCtx.activeTools()}>
             {(tool) => <ToolCard toolCall={tool} />}
+          </For>
+        </div>
+      </Show>
+
+      <Show when={hasSubagentEvents()}>
+        <div class="px-4 py-2 border-t border-neutral-800/50 max-h-64 overflow-y-auto">
+          <For each={chatCtx.subagentEvents()}>
+            {(evt) => (
+              <Show when={evt.targetAgent} fallback={<SubagentCard event={evt} />}>
+                <DelegationCard event={evt} />
+              </Show>
+            )}
           </For>
         </div>
       </Show>
