@@ -2,7 +2,7 @@ use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{extract::State, routing::get, Json, Router};
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio::fs;
 
 pub fn kiln_routes() -> Router<AppState> {
@@ -176,7 +176,7 @@ fn validate_no_traversal(path: &str) -> Result<(), WebError> {
 }
 
 /// Find the open kiln that contains `file_path`.
-async fn find_enclosing_kiln(state: &AppState, file_path: &PathBuf) -> Result<PathBuf, WebError> {
+async fn find_enclosing_kiln(state: &AppState, file_path: &Path) -> Result<PathBuf, WebError> {
     let kilns = state.daemon.kiln_list().await.daemon_err()?;
 
     for kiln_value in &kilns {

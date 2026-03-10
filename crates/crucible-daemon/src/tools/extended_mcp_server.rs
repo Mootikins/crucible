@@ -23,7 +23,7 @@
 //! Lua plugins use `@tool` doc comments to register tools.
 //! Lua handlers use `@handler` doc comments to register event handlers.
 
-use super::helpers::{text_success, McpResultExt};
+use super::helpers::{make_server_info, text_success, McpResultExt};
 use super::mcp_gateway::McpGatewayManager;
 use super::toon_response::toon_success_smart;
 use super::CrucibleMcpServer;
@@ -617,14 +617,10 @@ impl ExtendedMcpService {
 
 impl ServerHandler for ExtendedMcpService {
     fn get_info(&self) -> rmcp::model::ServerInfo {
-        let mut capabilities = rmcp::model::ServerCapabilities::default();
-        capabilities.tools = Some(rmcp::model::ToolsCapability { list_changed: None });
-        let server_info =
-            rmcp::model::Implementation::new("crucible-mcp-server", env!("CARGO_PKG_VERSION"))
-                .with_title("Crucible MCP Server");
-        rmcp::model::InitializeResult::new(capabilities)
-            .with_server_info(server_info)
-            .with_instructions("Crucible MCP server exposing kiln tools (notes, search, metadata) and Lua plugins for knowledge management.".to_string())
+        make_server_info(
+            "Crucible MCP server exposing kiln tools (notes, search, metadata) \
+            and Lua plugins for knowledge management.",
+        )
     }
 
     async fn list_tools(

@@ -211,13 +211,13 @@ mod tool_serde {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::borrow::Cow;
+    use std::sync::Arc;
 
     fn make_test_tool(name: &str, desc: &str) -> Tool {
         Tool::new(
             name.to_string(),
             desc.to_string(),
-            std::sync::Arc::new(Default::default()),
+            Arc::default(),
         )
     }
 

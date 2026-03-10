@@ -168,7 +168,6 @@ impl ToolDiscovery {
 mod tests {
     use super::*;
     use serde_json::Map;
-    use std::borrow::Cow;
     use std::sync::Arc;
 
     fn make_tool(name: &str, desc: &str) -> Tool {
