@@ -26,6 +26,7 @@ import {
 } from './icons';
 import { matchShortcut } from '@/lib/keyboard-shortcuts';
 import { smallestIntersecting } from '@/lib/collision-detector';
+import { statusBarStore, statusBarActions } from '@/stores/statusBarStore';
 
 function HeaderBar() {
   const edgePanels = () => windowStore.edgePanels;
@@ -217,6 +218,27 @@ function InnerManager() {
       }
     } else if (action === 'toggleLeftPanel') {
       windowActions.toggleEdgePanel('left');
+    } else if (action === 'openCommandPalette') {
+      // TODO: Implement command palette (Task 16)
+      console.log('Command palette not yet implemented');
+    } else if (action === 'focusChatInput') {
+      // TODO: Focus chat input field (Task 16)
+      console.log('Focus chat input not yet implemented');
+    } else if (action === 'closeOverlay') {
+      windowActions.closeFlyout();
+    } else if (action === 'newSession') {
+      // TODO: Create new chat session (Task 16)
+      console.log('New session not yet implemented');
+    } else if (action === 'toggleRightPanel') {
+      windowActions.toggleEdgePanel('right');
+    } else if (action === 'toggleBottomPanel') {
+      windowActions.toggleEdgePanel('bottom');
+    } else if (action === 'clearChat') {
+      // TODO: Clear chat history (Task 16)
+      console.log('Clear chat not yet implemented');
+    } else if (action === 'toggleThinking') {
+      const current = statusBarStore.showThinking();
+      statusBarActions.setShowThinking(!current);
     }
   };
 
