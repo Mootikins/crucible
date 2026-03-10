@@ -6,7 +6,7 @@ use std::path::PathBuf;
 pub type JobId = String;
 
 pub fn generate_job_id() -> JobId {
-    use rand::Rng;
+    use rand::RngExt;
     let timestamp = Utc::now().format("%Y%m%d-%H%M");
     let mut rng = rand::rng();
     let random: String = (0..6)
