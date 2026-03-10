@@ -2,8 +2,10 @@ import { Component, createSignal, Show, For, createEffect, onCleanup } from 'sol
 import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useMediaRecorder } from '@/hooks/useMediaRecorder';
+import { useAutocomplete } from '@/hooks/useAutocomplete';
 import { MicButton } from './MicButton';
 import { ChatModeControl, nextChatMode } from './ChatModeControl';
+import { AutocompletePopup } from './AutocompletePopup';
 
 export const ChatInput: Component = () => {
   const { sendMessage, isLoading, isStreaming, cancelStream, error, chatMode, setChatMode } = useChatSafe();
@@ -12,12 +14,20 @@ export const ChatInput: Component = () => {
   const [isModelPickerOpen, setIsModelPickerOpen] = createSignal(false);
   const { isRecording, audioLevel, startRecording, stopRecording } = useMediaRecorder();
   let modelPickerRef: HTMLDivElement | undefined;
+  let textareaRef: HTMLTextAreaElement | undefined;
 
   const session = () => currentSession();
   const canSend = () => {
     const s = session();
     return s && s.state === 'active' && !isLoading() && input().trim().length > 0;
   };
+
+  const autocomplete = useAutocomplete({
+    input,
+    setInput,
+    kilnPath: () => currentSession()?.kiln,
+    textareaRef: () => textareaRef,
+  });
 
   const handleSubmit = async (e: Event) => {
     e.preventDefault();
@@ -29,6 +39,9 @@ export const ChatInput: Component = () => {
   };
 
   const handleKeyDown = (e: KeyboardEvent) => {
+    autocomplete.onKeyDown(e);
+    if (e.defaultPrevented) return;
+
     // Shift+Tab cycles chat mode (Normal → Plan → Auto)
     if (e.key === 'Tab' && e.shiftKey) {
       e.preventDefault();
@@ -137,16 +150,26 @@ export const ChatInput: Component = () => {
         class="relative flex flex-col gap-2 bg-surface-base rounded-xl p-2 border-2 border-transparent transition-[border-color]"
         style={containerStyle()}
       >
-        <textarea
-          value={input()}
-          onInput={(e) => setInput(e.currentTarget.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={session() ? "Type a message..." : "Select a session first..."}
-          disabled={!session() || isLoading()}
-          rows={1}
-          class="flex-1 bg-transparent text-neutral-100 placeholder-neutral-500 resize-none outline-none px-2 py-1 max-h-32 min-h-[2.5rem] disabled:opacity-50"
-          data-testid="chat-input"
-        />
+        <div class="relative">
+          <textarea
+            ref={textareaRef}
+            value={input()}
+            onInput={(e) => void autocomplete.onInput(e)}
+            onKeyDown={handleKeyDown}
+            placeholder={session() ? "Type a message..." : "Select a session first..."}
+            disabled={!session() || isLoading()}
+            rows={1}
+            class="flex-1 w-full bg-transparent text-neutral-100 placeholder-neutral-500 resize-none outline-none px-2 py-1 max-h-32 min-h-[2.5rem] disabled:opacity-50"
+            data-testid="chat-input"
+          />
+          <Show when={autocomplete.isOpen()}>
+            <AutocompletePopup
+              items={autocomplete.items()}
+              selectedIndex={autocomplete.selectedIndex()}
+              onSelect={(index) => autocomplete.complete(index)}
+            />
+          </Show>
+        </div>
 
         <div class="flex items-center gap-2">
           <div ref={modelPickerRef} class="relative">
