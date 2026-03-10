@@ -410,6 +410,8 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         const session = await getSession(newSessionId);
         setSessionTitle(session.title);
         statusBarActions.setActiveModel(session.agent_model ?? null);
+        statusBarActions.setActiveSessionId(session.id);
+        statusBarActions.setActiveSessionTitle(session.title);
         await loadHistory(session.id, session.kiln);
       } catch (err) {
         console.error('Failed to load session metadata:', err);
