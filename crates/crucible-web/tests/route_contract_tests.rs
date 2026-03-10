@@ -1134,10 +1134,19 @@ async fn command_help_returns_help_text() {
     assert_eq!(json["type"], "success");
     let result = json["result"].as_str().unwrap();
     assert!(result.contains("/help"), "Help text should mention /help");
-    assert!(result.contains("/search"), "Help text should mention /search");
-    assert!(result.contains("/models"), "Help text should mention /models");
+    assert!(
+        result.contains("/search"),
+        "Help text should mention /search"
+    );
+    assert!(
+        result.contains("/models"),
+        "Help text should mention /models"
+    );
     assert!(result.contains("/clear"), "Help text should mention /clear");
-    assert!(result.contains("/export"), "Help text should mention /export");
+    assert!(
+        result.contains("/export"),
+        "Help text should mention /export"
+    );
     assert!(result.contains("/model"), "Help text should mention /model");
 }
 
@@ -1567,9 +1576,7 @@ async fn set_thinking_budget_returns_200() {
                 .method("PUT")
                 .uri("/api/session/test-session-001/config/thinking-budget")
                 .header("content-type", "application/json")
-                .body(Body::from(
-                    json!({"thinking_budget": 1024}).to_string(),
-                ))
+                .body(Body::from(json!({"thinking_budget": 1024}).to_string()))
                 .unwrap(),
         )
         .await
@@ -1812,10 +1819,7 @@ async fn export_session_returns_markdown_content_type() {
         .await
         .unwrap();
     let text = String::from_utf8(body.to_vec()).unwrap();
-    assert!(
-        !text.is_empty(),
-        "Exported markdown should not be empty"
-    );
+    assert!(!text.is_empty(), "Exported markdown should not be empty");
 }
 
 #[tokio::test]

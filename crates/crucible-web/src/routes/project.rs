@@ -65,7 +65,9 @@ async fn get_project(
     axum::extract::Query(query): axum::extract::Query<GetProjectQuery>,
 ) -> Result<Json<serde_json::Value>, WebError> {
     match state.daemon.project_get(&query.path).await {
-        Ok(Some(project)) => Ok(Json(serde_json::to_value(project).expect("Project serializes to JSON"))),
+        Ok(Some(project)) => Ok(Json(
+            serde_json::to_value(project).expect("Project serializes to JSON"),
+        )),
         Ok(None) => Err(WebError::NotFound(format!(
             "Project not found: {}",
             query.path.display()

@@ -90,13 +90,16 @@ mod tests {
 
     #[tokio::test]
     async fn localhost_connect_info_is_allowed() {
-        let app = Router::new().route("/shell/run", get(|| async { "ok" })).layer(middleware::from_fn(localhost_only_shell_auth));
+        let app = Router::new()
+            .route("/shell/run", get(|| async { "ok" }))
+            .layer(middleware::from_fn(localhost_only_shell_auth));
 
         let mut req = Request::builder()
             .uri("/shell/run")
             .body(Body::empty())
             .unwrap();
-        req.extensions_mut().insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 5000))));
+        req.extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 5000))));
 
         let response = app.oneshot(req).await.unwrap();
 
@@ -105,13 +108,16 @@ mod tests {
 
     #[tokio::test]
     async fn non_localhost_connect_info_is_forbidden() {
-        let app = Router::new().route("/shell/run", get(|| async { "ok" })).layer(middleware::from_fn(localhost_only_shell_auth));
+        let app = Router::new()
+            .route("/shell/run", get(|| async { "ok" }))
+            .layer(middleware::from_fn(localhost_only_shell_auth));
 
         let mut req = Request::builder()
             .uri("/shell/run")
             .body(Body::empty())
             .unwrap();
-        req.extensions_mut().insert(ConnectInfo(SocketAddr::from(([10, 0, 0, 8], 5000))));
+        req.extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from(([10, 0, 0, 8], 5000))));
 
         let response = app.oneshot(req).await.unwrap();
 
@@ -120,14 +126,17 @@ mod tests {
 
     #[tokio::test]
     async fn non_localhost_forwarded_for_is_forbidden_even_with_local_connect_info() {
-        let app = Router::new().route("/shell/run", get(|| async { "ok" })).layer(middleware::from_fn(localhost_only_shell_auth));
+        let app = Router::new()
+            .route("/shell/run", get(|| async { "ok" }))
+            .layer(middleware::from_fn(localhost_only_shell_auth));
 
         let mut req = Request::builder()
             .uri("/shell/run")
             .header("x-forwarded-for", "203.0.113.10")
             .body(Body::empty())
             .unwrap();
-        req.extensions_mut().insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 5000))));
+        req.extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 5000))));
 
         let response = app.oneshot(req).await.unwrap();
 
