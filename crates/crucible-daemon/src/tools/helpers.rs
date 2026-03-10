@@ -62,3 +62,18 @@ impl<T, E: std::fmt::Display> McpResultExt<T> for Result<T, E> {
         self.map_err(|e| rmcp::ErrorData::invalid_params(format!("{context}: {e}"), None))
     }
 }
+
+/// Create standard Crucible MCP server info with the given instructions.
+///
+/// Shared between `CrucibleMcpServer` and `ExtendedMcpService` to avoid
+/// duplicating the server info construction.
+pub(crate) fn make_server_info(instructions: &str) -> rmcp::model::ServerInfo {
+    let mut capabilities = rmcp::model::ServerCapabilities::default();
+    capabilities.tools = Some(rmcp::model::ToolsCapability { list_changed: None });
+    let server_info =
+        rmcp::model::Implementation::new("crucible-mcp-server", env!("CARGO_PKG_VERSION"))
+            .with_title("Crucible MCP Server");
+    rmcp::model::InitializeResult::new(capabilities)
+        .with_server_info(server_info)
+        .with_instructions(instructions.to_string())
+}
