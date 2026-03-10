@@ -127,6 +127,8 @@ jobs:
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             echo "$HOME/.cargo/bin" >> $GITHUB_PATH
           fi
+      - name: "Create web asset placeholder"
+        run: "mkdir -p crates/crucible-web/web/dist && echo \"<html></html>\" > crates/crucible-web/web/dist/index.html"
       - name: Install dist
         run: ${{ matrix.install_dist.run }}
       # Get the dist-manifest
