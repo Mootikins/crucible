@@ -346,6 +346,144 @@ export async function listProviders(): Promise<ProviderInfo[]> {
 }
 
 // =============================================================================
+// Session Config Endpoints
+// =============================================================================
+
+/** Get the thinking budget for a session. */
+export async function getThinkingBudget(sessionId: string): Promise<number | null> {
+  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/config/thinking-budget`);
+  if (!res.ok) {
+    throw new Error(`Failed to get thinking budget: HTTP ${res.status}`);
+  }
+  const data = (await res.json()) as { thinking_budget: number | null };
+  return data.thinking_budget;
+}
+
+/** Set the thinking budget for a session. */
+export async function setThinkingBudget(sessionId: string, budget: number | null): Promise<void> {
+  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/config/thinking-budget`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ thinking_budget: budget }),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to set thinking budget: HTTP ${res.status}`);
+  }
+}
+
+/** Get the temperature for a session. */
+export async function getTemperature(sessionId: string): Promise<number | null> {
+  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/config/temperature`);
+  if (!res.ok) {
+    throw new Error(`Failed to get temperature: HTTP ${res.status}`);
+  }
+  const data = (await res.json()) as { temperature: number | null };
+  return data.temperature;
+}
+
+/** Set the temperature for a session. */
+export async function setTemperature(sessionId: string, temperature: number): Promise<void> {
+  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/config/temperature`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ temperature }),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to set temperature: HTTP ${res.status}`);
+  }
+}
+
+/** Get the max tokens for a session. */
+export async function getMaxTokens(sessionId: string): Promise<number | null> {
+  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/config/max-tokens`);
+  if (!res.ok) {
+    throw new Error(`Failed to get max tokens: HTTP ${res.status}`);
+  }
+  const data = (await res.json()) as { max_tokens: number | null };
+  return data.max_tokens;
+}
+
+/** Set the max tokens for a session (null = unlimited). */
+export async function setMaxTokens(sessionId: string, maxTokens: number | null): Promise<void> {
+  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/config/max-tokens`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ max_tokens: maxTokens }),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to set max tokens: HTTP ${res.status}`);
+  }
+}
+
+/** Get the precognition state for a session. */
+export async function getPrecognition(sessionId: string): Promise<boolean> {
+  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/config/precognition`);
+  if (!res.ok) {
+    throw new Error(`Failed to get precognition: HTTP ${res.status}`);
+  }
+  const data = (await res.json()) as { precognition_enabled: boolean };
+  return data.precognition_enabled;
+}
+
+/** Set the precognition state for a session. */
+export async function setPrecognition(sessionId: string, enabled: boolean): Promise<void> {
+  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/config/precognition`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to set precognition: HTTP ${res.status}`);
+  }
+}
+
+// =============================================================================
+// Plugin Endpoints
+// =============================================================================
+
+export interface PluginInfo {
+  name: string;
+  path: string;
+  plugin_type: string;
+  healthy?: boolean;
+}
+
+/** List discovered plugins for a kiln. */
+export async function getPlugins(kiln: string): Promise<PluginInfo[]> {
+  const params = new URLSearchParams({ kiln });
+  const res = await fetch(`/api/plugins?${params.toString()}`);
+  if (!res.ok) {
+    throw new Error(`Failed to list plugins: HTTP ${res.status}`);
+  }
+  const data = (await res.json()) as { plugins: PluginInfo[] };
+  return data.plugins;
+}
+
+/** Reload a plugin by name. */
+export async function reloadPlugin(name: string): Promise<{ healthy: boolean; message?: string }> {
+  const res = await fetch(`/api/plugins/${encodeURIComponent(name)}/reload`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to reload plugin: HTTP ${res.status}`);
+  }
+  return (await res.json()) as { healthy: boolean; message?: string };
+}
+
+// =============================================================================
+// MCP Endpoints
+// =============================================================================
+
+/** Get MCP server status. */
+export async function getMcpStatus(): Promise<Record<string, unknown>> {
+  const res = await fetch('/api/mcp/status');
+  if (!res.ok) {
+    throw new Error(`Failed to get MCP status: HTTP ${res.status}`);
+  }
+  return (await res.json()) as Record<string, unknown>;
+}
+
+// =============================================================================
 // Search Endpoints
 // =============================================================================
 
