@@ -160,3 +160,146 @@ fn ollama_endpoint_from_env() -> Option<String> {
         }
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::background_manager::BackgroundJobManager;
+    use crate::kiln_manager::KilnManager;
+    use crate::session_manager::SessionManager;
+    use crate::session_storage::FileSessionStorage;
+    use crate::tools::workspace::WorkspaceTools;
+    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::test_support::EnvVarGuard;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+    use std::sync::{Arc, LazyLock, Mutex};
+    use tokio::sync::broadcast;
+
+    static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+    fn clear_provider_env() -> Vec<EnvVarGuard> {
+        vec![
+            EnvVarGuard::remove("OLLAMA_HOST"),
+            EnvVarGuard::remove("OPENAI_API_KEY"),
+            EnvVarGuard::remove("ANTHROPIC_API_KEY"),
+            EnvVarGuard::remove("COHERE_API_KEY"),
+            EnvVarGuard::remove("GOOGLE_API_KEY"),
+            EnvVarGuard::remove("OPENROUTER_API_KEY"),
+            EnvVarGuard::remove("GLM_AUTH_TOKEN"),
+        ]
+    }
+
+    fn make_agent_manager_with_config(config: Option<LlmConfig>) -> AgentManager {
+        let (event_tx, _) = broadcast::channel(16);
+        let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
+
+        AgentManager::new(AgentManagerParams {
+            kiln_manager: Arc::new(KilnManager::new()),
+            session_manager: Arc::new(SessionManager::with_storage(Arc::new(FileSessionStorage::new()))),
+            background_manager,
+            mcp_gateway: None,
+            llm_config: config,
+            acp_config: None,
+            permission_config: None,
+            plugin_loader: None,
+            workspace_tools: Arc::new(WorkspaceTools::new(&PathBuf::from("/tmp"))),
+        })
+    }
+
+    #[tokio::test]
+    async fn test_list_providers_empty_config() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+        let _env_guards = clear_provider_env();
+        let manager = make_agent_manager_with_config(Some(LlmConfig::default()));
+
+        let providers = manager.list_providers().await;
+
+        assert!(providers.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_list_providers_with_configured_provider() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+        let _env_guards = clear_provider_env();
+        let config = LlmConfig {
+            providers: HashMap::from([(
+                "openai".to_string(),
+                LlmProviderConfig {
+                    provider_type: BackendType::OpenAI,
+                    endpoint: None,
+                    default_model: Some("gpt-4o".to_string()),
+                    temperature: None,
+                    max_tokens: None,
+                    timeout_secs: None,
+                    api_key: Some("sk-test".to_string()),
+                    available_models: Some(vec!["gpt-4o".to_string()]),
+                    trust_level: None,
+                },
+            )]),
+            ..Default::default()
+        };
+        let manager = make_agent_manager_with_config(Some(config));
+
+        let providers = manager.list_providers().await;
+
+        assert_eq!(providers.len(), 1);
+        assert_eq!(providers[0].provider_type, "openai");
+        assert_eq!(providers[0].name, "OpenAI");
+        assert!(providers[0].available);
+        assert_eq!(providers[0].reason.as_deref(), Some("config"));
+    }
+
+    #[tokio::test]
+    async fn test_list_providers_filters_non_chat_providers() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+        let _env_guards = clear_provider_env();
+        let config = LlmConfig {
+            providers: HashMap::from([(
+                "fastembed".to_string(),
+                LlmProviderConfig {
+                    provider_type: BackendType::FastEmbed,
+                    endpoint: None,
+                    default_model: None,
+                    temperature: None,
+                    max_tokens: None,
+                    timeout_secs: None,
+                    api_key: None,
+                    available_models: Some(vec!["BAAI/bge-small-en-v1.5".to_string()]),
+                    trust_level: None,
+                },
+            )]),
+            ..Default::default()
+        };
+        let manager = make_agent_manager_with_config(Some(config));
+
+        let providers = manager.list_providers().await;
+
+        assert!(!providers.iter().any(|provider| provider.provider_type == "fastembed"));
+        assert!(providers.is_empty());
+    }
+
+    #[test]
+    fn test_provider_info_serialization() {
+        let info = ProviderInfo {
+            name: "OpenAI".to_string(),
+            provider_type: "openai".to_string(),
+            available: true,
+            default_model: Some("gpt-4o".to_string()),
+            models: vec!["gpt-4o".to_string()],
+            endpoint: Some("https://api.openai.com/v1".to_string()),
+            reason: None,
+            is_local: false,
+        };
+
+        let json = serde_json::to_value(info).expect("provider info should serialize");
+
+        assert_eq!(json["name"], "OpenAI");
+        assert_eq!(json["provider_type"], "openai");
+        assert_eq!(json["available"], true);
+        assert_eq!(json["models"], serde_json::json!(["gpt-4o"]));
+        assert_eq!(json["is_local"], false);
+        assert!(json.get("reason").is_some());
+        assert!(json["reason"].is_null());
+    }
+}
