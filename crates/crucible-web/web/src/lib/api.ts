@@ -494,6 +494,96 @@ export async function executeCommand(sessionId: string, command: string): Promis
 }
 
 // =============================================================================
+// Shell Execution Endpoints
+// =============================================================================
+
+export interface ShellEvent {
+  type: 'stdout' | 'stderr' | 'exit' | 'error';
+  data?: string;
+  code?: number;
+  message?: string;
+}
+
+/**
+ * Execute a shell command and stream SSE events.
+ * Uses fetch + ReadableStream since POST SSE can't use EventSource (GET-only).
+ * Returns an AbortController to cancel the request.
+ */
+export function executeShell(
+  command: string,
+  onEvent: (event: ShellEvent) => void,
+  onDone?: () => void,
+  cwd?: string,
+  timeoutSecs?: number,
+): AbortController {
+  const controller = new AbortController();
+
+  const body: Record<string, unknown> = { command };
+  if (cwd) body.cwd = cwd;
+  if (timeoutSecs !== undefined) body.timeout_secs = timeoutSecs;
+
+  fetch('/api/shell/exec', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: controller.signal,
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        onEvent({ type: 'error', message: `HTTP ${res.status}: ${res.statusText}` });
+        onDone?.();
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        onEvent({ type: 'error', message: 'No response body' });
+        onDone?.();
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Parse SSE lines: "data: {...}\n\n"
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith(':')) continue;
+          if (trimmed.startsWith('data: ')) {
+            try {
+              const parsed = JSON.parse(trimmed.slice(6)) as ShellEvent;
+              onEvent(parsed);
+            } catch {
+              // Ignore malformed SSE data
+            }
+          }
+        }
+      }
+
+      onDone?.();
+    })
+    .catch((err) => {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        // User cancelled — not an error
+        onDone?.();
+        return;
+      }
+      onEvent({ type: 'error', message: String(err) });
+      onDone?.();
+    });
+
+  return controller;
+}
+// =============================================================================
 // Plugin Endpoints
 // =============================================================================
 
