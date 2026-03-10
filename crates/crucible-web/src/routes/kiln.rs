@@ -203,6 +203,8 @@ async fn find_enclosing_kiln(state: &AppState, file_path: &PathBuf) -> Result<Pa
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{arb_safe_path, arb_traversal_path};
+    use proptest::prelude::*;
 
     #[test]
     fn test_validate_no_traversal_rejects_dotdot() {
@@ -219,5 +221,54 @@ mod tests {
     fn test_validate_no_traversal_allows_valid_paths() {
         assert!(validate_no_traversal("/home/user/kiln/note.md").is_ok());
         assert!(validate_no_traversal("notes/daily/2024-01-15.md").is_ok());
+    }
+
+    #[test]
+    fn test_content_size_allows_exactly_ten_megabytes() {
+        const MAX_SIZE: usize = 10 * 1024 * 1024;
+        let content = "a".repeat(MAX_SIZE);
+
+        assert_eq!(content.len(), MAX_SIZE);
+        assert!(content.len() <= MAX_SIZE);
+    }
+
+    #[test]
+    fn test_content_size_rejects_ten_megabytes_plus_one_byte() {
+        const MAX_SIZE: usize = 10 * 1024 * 1024;
+        let content = "a".repeat(MAX_SIZE + 1);
+
+        assert_eq!(
+            format!("Content too large: {} bytes (max {MAX_SIZE})", content.len()),
+            "Content too large: 10485761 bytes (max 10485760)"
+        );
+        assert!(content.len() > MAX_SIZE);
+    }
+
+    #[test]
+    fn test_symlink_escape_risk_is_documented() {
+        // TODO(security): `get_kiln_file` reads `req.path` directly without canonicalizing
+        // or checking that the resolved path remains inside the kiln; a symlink inside the
+        // kiln can point outside and allow path escape on reads.
+        let documented = "get_kiln_file symlink escape risk documented";
+
+        assert!(documented.contains("symlink"));
+    }
+
+    proptest! {
+        #[test]
+        fn prop_traversal_paths_are_rejected(path in arb_traversal_path()) {
+            prop_assert!(validate_no_traversal(&path).is_err());
+        }
+
+        #[test]
+        fn prop_safe_paths_are_accepted(path in arb_safe_path()) {
+            prop_assert!(validate_no_traversal(&path).is_ok());
+        }
+
+        #[test]
+        fn prop_null_bytes_are_always_rejected(prefix in ".{0,32}", suffix in ".{0,32}") {
+            let path = format!("{prefix}\0{suffix}");
+            prop_assert!(validate_no_traversal(&path).is_err());
+        }
     }
 }

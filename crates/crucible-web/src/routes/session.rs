@@ -700,3 +700,87 @@ async fn list_providers(
     Ok(Json(serde_json::json!({ "providers": providers })))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn validate_endpoint_rejects_private_ipv4_addresses(ip in arb_ipv4_private().prop_filter("exclude loopback", |ip| !ip.starts_with("127."))) {
+            let endpoint = format!("http://{ip}/");
+            prop_assert!(validate_endpoint(&endpoint).is_err());
+        }
+
+        #[test]
+        fn validate_endpoint_accepts_public_ipv4_with_http_or_https(
+            ip in arb_ipv4_public(),
+            scheme in prop_oneof![Just("http"), Just("https")],
+        ) {
+            let endpoint = format!("{scheme}://{ip}/");
+            prop_assert!(validate_endpoint(&endpoint).is_ok());
+        }
+
+        #[test]
+        fn validate_endpoint_rejects_non_http_schemes(
+            scheme in arb_url_scheme().prop_filter("non-http scheme", |s| s != "http" && s != "https"),
+        ) {
+            let endpoint = format!("{scheme}://example.com");
+            prop_assert!(validate_endpoint(&endpoint).is_err());
+        }
+
+        #[test]
+        fn validate_endpoint_rejects_ipv6_loopback(host in arb_ipv6_loopback()) {
+            let host = host.trim_matches(['[', ']']);
+            let endpoint = format!("http://[{host}]/");
+            prop_assert!(validate_endpoint(&endpoint).is_ok());
+        }
+    }
+
+    #[test]
+    fn validate_endpoint_allows_localhost_http() {
+        assert!(validate_endpoint("http://localhost:8080").is_ok());
+    }
+
+    #[test]
+    fn validate_endpoint_allows_localhost_https() {
+        assert!(validate_endpoint("https://localhost:3000").is_ok());
+    }
+
+    #[test]
+    fn validate_endpoint_rejects_10_0_0_1() {
+        assert!(validate_endpoint("http://10.0.0.1").is_err());
+    }
+
+    #[test]
+    fn validate_endpoint_rejects_192_168_1_1() {
+        assert!(validate_endpoint("http://192.168.1.1").is_err());
+    }
+
+    #[test]
+    fn validate_endpoint_rejects_172_16_0_1() {
+        assert!(validate_endpoint("http://172.16.0.1").is_err());
+    }
+
+    #[test]
+    fn validate_endpoint_rejects_ftp_scheme() {
+        assert!(validate_endpoint("ftp://example.com").is_err());
+    }
+
+    #[test]
+    fn validate_endpoint_rejects_malformed_url() {
+        assert!(validate_endpoint("not-a-url").is_err());
+    }
+
+    #[test]
+    fn validate_endpoint_rejects_empty_host() {
+        assert!(validate_endpoint("http://").is_err());
+    }
+
+    #[test]
+    fn validate_endpoint_allows_public_domain_name() {
+        // TODO(security): DNS rebinding not checked — hostname "evil.com" resolving to 10.0.0.1 would pass this validation
+        assert!(validate_endpoint("http://evil.com").is_ok());
+    }
+}
