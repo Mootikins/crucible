@@ -160,6 +160,13 @@ hosting = ["github"]
 checksum = "sha256"
 features = ["storage-sqlite"]
 default-features = false
+github-build-setup = "../build-setup.yml"
+
+[workspace.metadata.dist.dependencies.apt]
+protobuf-compiler = { stage = ["build"] }
+
+[workspace.metadata.dist.dependencies.homebrew]
+protobuf = { stage = ["build"] }
 
 # The profile that 'cargo dist' will build with
 [profile.dist]

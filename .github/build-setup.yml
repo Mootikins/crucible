@@ -1,0 +1,2 @@
+- name: Create web asset placeholder
+  run: mkdir -p crates/crucible-web/web/dist && echo "<html></html>" > crates/crucible-web/web/dist/index.html
