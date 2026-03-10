@@ -6,9 +6,9 @@ import { useAutocomplete } from '@/hooks/useAutocomplete';
 import { MicButton } from './MicButton';
 import { ChatModeControl, nextChatMode } from './ChatModeControl';
 import { AutocompletePopup } from './AutocompletePopup';
-
+import { executeCommand } from '@/lib/api';
 export const ChatInput: Component = () => {
-  const { sendMessage, isLoading, isStreaming, cancelStream, error, chatMode, setChatMode } = useChatSafe();
+  const { sendMessage, isLoading, isStreaming, cancelStream, error, chatMode, setChatMode, addSystemMessage, clearMessages } = useChatSafe();
   const { currentSession, cancelCurrentOperation, availableModels, switchModel, refreshModels, selectedProvider } = useSessionSafe();
   const [input, setInput] = createSignal('');
   const [isModelPickerOpen, setIsModelPickerOpen] = createSignal(false);
@@ -35,6 +35,26 @@ export const ChatInput: Component = () => {
     if (!message || !canSend()) return;
 
     setInput('');
+
+    // Slash command detection: route to command endpoint
+    if (message.startsWith('/')) {
+      const s = session();
+      if (!s) return;
+
+      try {
+        const result = await executeCommand(s.id, message);
+        // Special handling for /clear
+        if (message.startsWith('/clear')) {
+          clearMessages();
+        }
+        addSystemMessage(result.result);
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Command failed';
+        addSystemMessage(`Error: ${errorMsg}`);
+      }
+      return;
+    }
+
     await sendMessage(message);
   };
 

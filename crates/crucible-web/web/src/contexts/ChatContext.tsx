@@ -45,6 +45,7 @@ export interface ChatContextValue {
   respondToInteraction: (response: InteractionResponse) => Promise<void>;
   clearMessages: () => void;
   cancelStream: () => Promise<void>;
+  addSystemMessage: (content: string) => void;
 }
 
 interface ChatProviderProps {
@@ -106,6 +107,15 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
      currentStreamingMessageId = null;
      firstUserMessage = null;
      hasReceivedFirstResponse = false;
+   };
+
+   const addSystemMessage = (content: string) => {
+     addMessage({
+       id: generateMessageId(),
+       role: 'system',
+       content,
+       timestamp: Date.now(),
+     });
    };
 
    const handleEvent = (event: ChatEvent) => {
@@ -541,6 +551,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     respondToInteraction,
     clearMessages,
     cancelStream,
+    addSystemMessage,
   };
 
   return (
@@ -575,6 +586,7 @@ const fallbackChatContext: ChatContextValue = {
   respondToInteraction: noopAsync,
   clearMessages: () => {},
   cancelStream: noopAsync,
+  addSystemMessage: () => {},
 };
 
 export function useChatSafe(): ChatContextValue {
