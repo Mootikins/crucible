@@ -90,6 +90,76 @@ export interface Project {
 }
 
 // =============================================================================
+// TUI Feature Types (for web port)
+// =============================================================================
+
+/** Thinking block with streaming state */
+export interface ThinkingBlock {
+  content: string;
+  isStreaming: boolean;
+  tokenCount?: number;
+}
+
+/** Tool call display with execution status */
+export interface ToolCallDisplay {
+  id: string;
+  name: string;
+  args: string;
+  result?: string;
+  status: 'running' | 'complete' | 'error';
+  callId?: string;
+}
+
+/** Subagent event (background task) */
+export interface SubagentEvent {
+  id: string;
+  prompt: string;
+  status: 'spawned' | 'completed' | 'failed';
+  summary?: string;
+  error?: string;
+  targetAgent?: string;
+}
+
+/** Chat mode type */
+export type ChatMode = 'normal' | 'plan' | 'auto';
+
+/** Context window usage */
+export interface ContextUsage {
+  used: number;
+  total: number;
+}
+
+/** Notification type */
+export type NotificationType = 'info' | 'warning' | 'error' | 'success';
+
+/** Notification message */
+export interface Notification {
+  id: string;
+  type: NotificationType;
+  message: string;
+  timestamp: number;
+  dismissed: boolean;
+}
+
+/** Precognition result (auto-injected context) */
+export interface PrecognitionResult {
+  notesCount: number;
+  notes: { name: string; relevance: number }[];
+}
+
+/** Session configuration */
+export interface SessionConfig {
+  thinkingBudget?: number;
+  temperature?: number;
+  maxTokens?: number | null;
+  precognition?: boolean;
+}
+
+/** Panel identifier */
+export type PanelId = 'chat' | 'files' | 'editor' | 'sessions' | 'settings' | 'activity' | 'notifications';
+
+
+// =============================================================================
 // SSE Event Types (from Rust backend events.rs)
 // =============================================================================
 
@@ -99,12 +169,32 @@ export interface TokenEvent {
   content: string;
 }
 
-/** A tool call is being made */
-export interface ToolCallEvent {
-  type: 'tool_call';
+/** Tool call is starting */
+export interface ToolCallStartEvent {
+  type: 'tool_call_start';
   id: string;
-  title: string;
+  name: string;
   arguments?: unknown;
+}
+
+/** Tool call result streaming delta */
+export interface ToolResultDeltaEvent {
+  type: 'tool_result_delta';
+  id: string;
+  delta: string;
+}
+
+/** Tool call result streaming complete */
+export interface ToolResultCompleteEvent {
+  type: 'tool_result_complete';
+  id: string;
+}
+
+/** Tool call result error */
+export interface ToolResultErrorEvent {
+  type: 'tool_result_error';
+  id: string;
+  error: string;
 }
 
 /** Tool call result */
@@ -114,10 +204,73 @@ export interface ToolResultEvent {
   result?: string;
 }
 
+/** Subagent spawned event */
+export interface SubagentSpawnedEvent {
+  type: 'subagent_spawned';
+  id: string;
+  prompt: string;
+}
+
+/** Subagent completed event */
+export interface SubagentCompletedEvent {
+  type: 'subagent_completed';
+  id: string;
+  summary: string;
+}
+
+/** Subagent failed event */
+export interface SubagentFailedEvent {
+  type: 'subagent_failed';
+  id: string;
+  error: string;
+}
+
+/** Delegation spawned event */
+export interface DelegationSpawnedEvent {
+  type: 'delegation_spawned';
+  id: string;
+  prompt: string;
+  targetAgent?: string;
+}
+
+/** Delegation completed event */
+export interface DelegationCompletedEvent {
+  type: 'delegation_completed';
+  id: string;
+  summary: string;
+}
+
+/** Delegation failed event */
+export interface DelegationFailedEvent {
+  type: 'delegation_failed';
+  id: string;
+  error: string;
+}
+
 /** Agent is thinking/reasoning */
 export interface ThinkingEvent {
   type: 'thinking';
   content: string;
+}
+
+/** Context usage event */
+export interface ContextUsageEvent {
+  type: 'context_usage';
+  used: number;
+  total: number;
+}
+
+/** Precognition result event */
+export interface PrecognitionResultEvent {
+  type: 'precognition_result';
+  notesCount: number;
+  notes: { name: string; relevance: number }[];
+}
+
+/** Mode changed event */
+export interface ModeChangedEvent {
+  type: 'mode_changed';
+  mode: 'normal' | 'plan' | 'auto';
 }
 
 /** Message is complete */
@@ -152,13 +305,26 @@ export interface SessionEventData {
 /** Union of all SSE event types */
 export type ChatEvent =
   | TokenEvent
+  | ToolCallStartEvent
   | ToolCallEvent
   | ToolResultEvent
+  | ToolResultDeltaEvent
+  | ToolResultCompleteEvent
+  | ToolResultErrorEvent
   | ThinkingEvent
   | MessageCompleteEvent
   | ErrorEvent
   | InteractionRequestedEvent
-  | SessionEventData;
+  | SessionEventData
+  | SubagentSpawnedEvent
+  | SubagentCompletedEvent
+  | SubagentFailedEvent
+  | DelegationSpawnedEvent
+  | DelegationCompletedEvent
+  | DelegationFailedEvent
+  | ContextUsageEvent
+  | PrecognitionResultEvent
+  | ModeChangedEvent;
 
 /** SSE event type discriminator */
 export type ChatEventType = ChatEvent['type'];
