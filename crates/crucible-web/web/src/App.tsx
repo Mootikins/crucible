@@ -1,10 +1,14 @@
 import { Component, createSignal, onCleanup, onMount } from 'solid-js';
 import { SettingsProvider } from '@/contexts/SettingsContext';
+import { ProjectProvider } from '@/contexts/ProjectContext';
+import { SessionProvider } from '@/contexts/SessionContext';
 import { WindowManager } from '@/components/windowing/WindowManager';
 import { CommandPalette, type PaletteCommand } from '@/components/CommandPalette';
 import { registerPanels } from '@/lib/register-panels';
+import { getConfig } from '@/lib/api';
 import { setupLayoutAutoSave, loadLayoutOnStartup } from '@/lib/layout-persistence';
 import { matchShortcut } from '@/lib/keyboard-shortcuts';
+import { openSessionInChat } from '@/lib/session-actions';
 import { statusBarActions, statusBarStore } from '@/stores/statusBarStore';
 import { windowActions } from '@/stores/windowStore';
 import { NotificationToast } from '@/components/NotificationToast';
@@ -25,12 +29,14 @@ function openSettingsPanel(): void {
 
 function openFilesPanel(): void {
   windowActions.setEdgePanelCollapsed('left', false);
-  windowActions.setEdgePanelActiveTab('left', 'explorer-tab');
+  windowActions.setEdgePanelActiveTab('left', 'sessions-tab');
 }
 
 const App: Component = () => {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = createSignal(false);
   const [isExportDialogOpen, setIsExportDialogOpen] = createSignal(false);
+  const [kilnPath, setKilnPath] = createSignal<string | undefined>(undefined);
+
 
   const paletteCommands: PaletteCommand[] = [
     {
@@ -142,7 +148,11 @@ const App: Component = () => {
   ];
 
   onMount(() => {
+    getConfig()
+      .then((cfg) => setKilnPath(cfg.kiln_path))
+      .catch(() => {});
     registerPanels();
+
     loadLayoutOnStartup();
     setupLayoutAutoSave();
 
@@ -167,30 +177,41 @@ const App: Component = () => {
     // Listen for export-session custom event (dispatched from command palette or other sources)
     const onExportSession = () => setIsExportDialogOpen(true);
     window.addEventListener('crucible:export-session', onExportSession);
+    const onOpenSession = (e: Event) => {
+      const { sessionId, title } = (e as CustomEvent<{ sessionId: string; title: string }>).detail;
+      openSessionInChat(sessionId, title);
+    };
+    window.addEventListener('crucible:open-session', onOpenSession);
 
     onCleanup(() => {
       document.removeEventListener('keydown', onGlobalKeyDown, true);
       window.removeEventListener('crucible:export-session', onExportSession);
+      window.removeEventListener('crucible:open-session', onOpenSession);
     });
   });
 
   return (
     <SettingsProvider>
-      <WindowManager />
-      <NotificationToast />
-      <ExportDialog
-        open={isExportDialogOpen()}
-        sessionId={statusBarStore.activeSessionId()}
-        sessionTitle={statusBarStore.activeSessionTitle()}
-        onClose={() => setIsExportDialogOpen(false)}
-      />
-      <CommandPalette
-        open={isCommandPaletteOpen()}
-        commands={paletteCommands}
-        onOpenChange={setIsCommandPaletteOpen}
-      />
+      <ProjectProvider>
+        <SessionProvider initialKiln={kilnPath()}>
+          <WindowManager />
+          <NotificationToast />
+          <ExportDialog
+            open={isExportDialogOpen()}
+            sessionId={statusBarStore.activeSessionId()}
+            sessionTitle={statusBarStore.activeSessionTitle()}
+            onClose={() => setIsExportDialogOpen(false)}
+          />
+          <CommandPalette
+            open={isCommandPaletteOpen()}
+            commands={paletteCommands}
+            onOpenChange={setIsCommandPaletteOpen}
+          />
+        </SessionProvider>
+      </ProjectProvider>
     </SettingsProvider>
   );
+
 };
 
 export default App;

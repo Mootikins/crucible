@@ -88,6 +88,9 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
       const session = await apiCreateSession(params);
       setSessions(produce((s) => s.unshift(session)));
       setCurrentSession(session);
+      window.dispatchEvent(new CustomEvent('crucible:open-session', {
+        detail: { sessionId: session.id, title: session.title || 'New Session' },
+      }));
       await refreshModels(session);
       return session;
     } catch (err) {
@@ -103,6 +106,9 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     const existing = sessions.find((s) => s.id === id);
     if (existing) {
       setCurrentSession(existing);
+      window.dispatchEvent(new CustomEvent('crucible:open-session', {
+        detail: { sessionId: id, title: existing.title || `Session ${id.slice(0, 8)}` },
+      }));
       await refreshModels(existing);
       return;
     }
@@ -113,6 +119,9 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     try {
       const session = await apiGetSession(id);
       setCurrentSession(session);
+      window.dispatchEvent(new CustomEvent('crucible:open-session', {
+        detail: { sessionId: id, title: session.title || `Session ${id.slice(0, 8)}` },
+      }));
       await refreshModels(session);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load session';
