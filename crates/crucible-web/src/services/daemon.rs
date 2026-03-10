@@ -60,6 +60,14 @@ pub async fn init_daemon(config: CliAppConfig) -> Result<AppState> {
     let daemon = Arc::new(daemon);
     let broker = Arc::new(EventBroker::new());
 
+    // Auto-register the configured kiln so the frontend has a project on startup
+    let kiln_path = config.kiln_path_str().unwrap_or_default();
+    if !kiln_path.is_empty() {
+        if let Err(e) = daemon.project_register(std::path::Path::new(&kiln_path)).await {
+            tracing::warn!("Failed to auto-register kiln {kiln_path}: {e}");
+        }
+    }
+
     spawn_event_router(event_rx, broker.clone());
 
     let http_client = reqwest::Client::builder()

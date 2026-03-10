@@ -1,4 +1,5 @@
 mod chat;
+mod config;
 mod health;
 mod kiln;
 mod mcp;
@@ -9,6 +10,7 @@ mod session;
 mod shell;
 
 pub use chat::chat_routes;
+pub use config::config_routes;
 pub use health::health_routes;
 pub use kiln::kiln_routes;
 pub use mcp::mcp_routes;

@@ -9,6 +9,10 @@ import type {
   ProviderInfo,
 } from './types';
 
+export interface Config {
+  kiln_path: string;
+}
+
 // =============================================================================
 // Chat Endpoints
 // =============================================================================
@@ -142,6 +146,19 @@ export async function respondToInteraction(
   if (!res.ok) {
     throw new Error(`Failed to respond: HTTP ${res.status}`);
   }
+}
+
+// =============================================================================
+// Config Endpoints
+// =============================================================================
+
+/** Get server configuration including the configured kiln path. */
+export async function getConfig(): Promise<Config> {
+  const res = await fetch('/api/config');
+  if (!res.ok) {
+    throw new Error(`Failed to get config: HTTP ${res.status}`);
+  }
+  return res.json() as Promise<Config>;
 }
 
 // =============================================================================
