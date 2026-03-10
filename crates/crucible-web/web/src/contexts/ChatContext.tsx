@@ -348,7 +348,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
          break;
 
        case 'session_event':
-         console.log('[SessionEvent]', event.event_type, event.data);
+         // Session-level event (state change, etc.) — no client-side action needed
          break;
      }
    };
