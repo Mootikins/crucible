@@ -452,6 +452,10 @@ pub struct ListAllModelsRequest {
     pub kiln_path: Option<String>,
 }
 
+/// Request for `providers.list` (no active session required).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ListProvidersRequest {}
+
 /// Request for `session.load_events`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionLoadEventsRequest {
@@ -1798,6 +1802,22 @@ impl DaemonClient {
             .await?;
 
         Ok(extract_string_array(&result, "models"))
+    }
+
+    /// List all available providers without requiring an active session.
+    pub async fn list_providers(&self) -> Result<Vec<crate::agent_manager::providers::ProviderInfo>> {
+        let result: serde_json::Value = self
+            .typed_call_with_retry("providers.list", ListProvidersRequest {})
+            .await?;
+        let providers = result["providers"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(providers)
     }
 
     /// Set the thinking budget for a session's agent.

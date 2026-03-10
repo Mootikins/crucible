@@ -705,6 +705,7 @@ impl AgentManager {
 mod messaging;
 mod models;
 mod precognition;
+pub mod providers;
 
 #[cfg(test)]
 mod tests;

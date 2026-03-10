@@ -230,7 +230,7 @@ impl AgentManager {
     ///
     /// Always returns a model list (never fails). Falls back to
     /// `effective_models()` from config when discovery errors or returns empty.
-    async fn discover_models(
+    pub(super) async fn discover_models(
         &self,
         provider_key: &str,
         provider_config: &LlmProviderConfig,
