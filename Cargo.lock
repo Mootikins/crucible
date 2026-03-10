@@ -2376,6 +2376,7 @@ dependencies = [
  "futures",
  "futures-util",
  "mime_guess",
+ "proptest",
  "reqwest 0.12.28",
  "rust-embed",
  "serde",
