@@ -1,10 +1,11 @@
-//! Provider detection for interactive setup
+//! Local-only provider detection for `cru init`.
 //!
-//! Detects available LLM providers by checking:
-//! - Config file: chat.provider setting
-//! - Ollama: OLLAMA_HOST env var or config endpoint
-//! - OpenAI: OPENAI_API_KEY env var or credential store
-//! - Anthropic: ANTHROPIC_API_KEY env var or credential store
+//! This module exists because `cru init` runs before the daemon is started,
+//! so it cannot use the `providers.list` RPC. It performs env-var and
+//! credential-store checks only — no HTTP probing.
+//!
+//! For runtime provider discovery (after daemon is running), use
+//! `DaemonClient::list_providers()` instead.
 
 use crucible_config::credentials::{CredentialSource, CredentialStore, SecretsFile};
 use crucible_config::{BackendType, ChatConfig, DEFAULT_OLLAMA_ENDPOINT};
