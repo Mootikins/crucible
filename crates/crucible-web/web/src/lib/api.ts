@@ -455,6 +455,30 @@ export async function exportSession(sessionId: string): Promise<string> {
 }
 
 // =============================================================================
+// Slash Command Execution
+// =============================================================================
+
+export interface CommandResult {
+  result: string;
+  type: string;
+}
+
+/** Execute a slash command in a session. */
+export async function executeCommand(sessionId: string, command: string): Promise<CommandResult> {
+  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/command`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ command }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to execute command: HTTP ${res.status}`);
+  }
+
+  return (await res.json()) as CommandResult;
+}
+
+// =============================================================================
 // Plugin Endpoints
 // =============================================================================
 
