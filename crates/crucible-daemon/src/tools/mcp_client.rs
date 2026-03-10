@@ -25,7 +25,7 @@ use crucible_core::traits::mcp::{
     ContentBlock, McpError, McpServerInfo, McpToolInfo, ToolCallResult,
 };
 use rmcp::model::{
-    CallToolRequestParam, Content, InitializeResult, ListToolsResult, RawContent, Tool as RmcpTool,
+    CallToolRequestParams, Content, InitializeResult, ListToolsResult, RawContent, Tool as RmcpTool,
 };
 use rmcp::service::{RunningService, ServiceExt};
 use rmcp::transport::{ConfigureCommandExt, TokioChildProcess};
@@ -125,10 +125,12 @@ impl RmcpExecutor {
 
         let result = self
             .service
-            .call_tool(CallToolRequestParam {
-                name: tool_name_owned.into(),
-                arguments: arguments.as_object().cloned(),
-                task: None,
+            .call_tool({
+                let mut req = CallToolRequestParams::new(tool_name_owned);
+                if let Some(args) = arguments.as_object().cloned() {
+                    req = req.with_arguments(args);
+                }
+                req
             })
             .await
             .map_err(|e| McpError::Execution(e.to_string()))?;

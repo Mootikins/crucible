@@ -171,7 +171,7 @@ impl NotificationQueue {
 
 /// Generate a unique notification ID.
 fn generate_notification_id() -> String {
-    use rand::Rng;
+    use rand::RngExt;
     let mut rng = rand::rng();
     let random: String = (0..8)
         .map(|_| {
