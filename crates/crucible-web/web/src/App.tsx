@@ -7,6 +7,7 @@ import { setupLayoutAutoSave, loadLayoutOnStartup } from '@/lib/layout-persisten
 import { matchShortcut } from '@/lib/keyboard-shortcuts';
 import { statusBarActions, statusBarStore } from '@/stores/statusBarStore';
 import { windowActions } from '@/stores/windowStore';
+import { NotificationToast } from '@/components/NotificationToast';
 
 function focusChatInput(): void {
   const candidate = document.querySelector<HTMLTextAreaElement | HTMLInputElement | HTMLElement>(
@@ -154,6 +155,7 @@ const App: Component = () => {
   return (
     <SettingsProvider>
       <WindowManager />
+      <NotificationToast />
       <CommandPalette
         open={isCommandPaletteOpen()}
         commands={paletteCommands}
