@@ -16,11 +16,31 @@ Add to `~/.config/crucible/config.toml`:
 
 ```toml
 [llm]
-provider = "ollama"
-model = "llama3.2"
+default = "local"
+
+[llm.providers.local]
+type = "ollama"
+default_model = "llama3.2"
 endpoint = "http://localhost:11434"
-temperature = 0.7
 ```
+
+The `[llm]` section has one field:
+
+- `default` — name of the provider to use by default
+
+Each provider lives under `[llm.providers.NAME]` where `NAME` is whatever label you choose.
+
+## Provider Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | string | yes | Provider backend (see below) |
+| `default_model` | string | no | Model to use (falls back to provider default) |
+| `endpoint` | string | no | API endpoint (falls back to provider default) |
+| `api_key` | string | no | API key, or `{env:VAR_NAME}` to read from environment |
+| `temperature` | float | no | Randomness 0.0–2.0 (default: 0.7) |
+| `max_tokens` | integer | no | Max response tokens (default: 4096) |
+| `timeout_secs` | integer | no | Request timeout in seconds (default: 120) |
 
 ## Providers
 
@@ -30,16 +50,15 @@ Run models locally with Ollama:
 
 ```toml
 [llm]
-provider = "ollama"
-model = "llama3.2"
+default = "local"
+
+[llm.providers.local]
+type = "ollama"
+default_model = "llama3.2"
 endpoint = "http://localhost:11434"
 ```
 
-**Available models:**
-- `llama3.2` - Llama 3.2 (8B)
-- `qwen2.5` - Qwen 2.5
-- `mistral` - Mistral 7B
-- `codellama` - Code Llama
+All fields except `type` are optional. Ollama defaults to `llama3.2` on `http://localhost:11434`.
 
 **Setup:**
 ```bash
@@ -55,64 +74,70 @@ ollama list
 
 ### OpenAI
 
-Use OpenAI's API:
-
 ```toml
 [llm]
-provider = "openai"
-model = "gpt-4o"
+default = "openai"
+
+[llm.providers.openai]
+type = "openai"
+default_model = "gpt-4o"
+api_key = "{env:OPENAI_API_KEY}"
 ```
+
+Defaults to `gpt-4o` on `https://api.openai.com/v1` if not specified.
 
 **Environment variable:**
 ```bash
 export OPENAI_API_KEY=your-api-key
 ```
 
-**Available models:**
-- `gpt-4o` - GPT-4o (recommended)
-- `gpt-4o-mini` - Smaller, faster
-- `gpt-4-turbo` - GPT-4 Turbo
-
 ### Anthropic
-
-Use Anthropic's Claude models:
 
 ```toml
 [llm]
-provider = "anthropic"
-model = "claude-sonnet-4-5-20250929"
+default = "anthropic"
+
+[llm.providers.anthropic]
+type = "anthropic"
+default_model = "claude-3-5-sonnet-20241022"
+api_key = "{env:ANTHROPIC_API_KEY}"
 ```
+
+Defaults to `claude-3-5-sonnet-20241022` on `https://api.anthropic.com/v1` if not specified. Available models depend on your account. Run `cru models` to see the current list.
 
 **Environment variable:**
 ```bash
 export ANTHROPIC_API_KEY=your-api-key
 ```
 
-**Available models:**
-- `claude-sonnet-4-5-20250929` - Claude Sonnet 4.5
-- `claude-haiku-4-5-20251001` - Fast, efficient
+### Other Providers
+
+Additional provider types are supported: `openrouter`, `zai`, `github-copilot`, `vertex-ai`, `cohere`, and `custom`. They follow the same `[llm.providers.NAME]` format. Run `cru models` to see all available models across your configured providers.
 
 ## Parameters
 
 ### temperature
 
-Controls randomness in responses (0.0 - 2.0):
+Controls randomness in responses (0.0–2.0):
 
 ```toml
-[llm]
+[llm.providers.local]
+type = "ollama"
 temperature = 0.7
 ```
 
-- `0.0` - Deterministic, focused
-- `0.7` - Balanced (default)
-- `1.0+` - More creative, varied
+- `0.0` — Deterministic, focused
+- `0.7` — Balanced (default)
+- `1.0+` — More creative, varied
 
 ### max_tokens
 
 Maximum tokens in response:
 
 ```toml
-[llm]
+[llm.providers.openai]
+type = "openai"
+default_model = "gpt-4o"
 max_tokens = 4096
 ```
 
@@ -121,39 +146,45 @@ max_tokens = 4096
 Custom API endpoint:
 
 ```toml
-[llm]
-endpoint = "http://localhost:11434"  # Ollama
-# endpoint = "https://api.openai.com/v1"  # OpenAI
+[llm.providers.local]
+type = "ollama"
+endpoint = "http://192.168.1.100:11434"
+```
+
+### api_key
+
+Set directly or reference an environment variable with `{env:VAR_NAME}`:
+
+```toml
+[llm.providers.openai]
+type = "openai"
+api_key = "{env:OPENAI_API_KEY}"
 ```
 
 ## Multiple Providers
 
-Configure different providers for different uses:
+You can configure several providers and switch between them:
 
 ```toml
-# Default for chat
 [llm]
-provider = "ollama"
-model = "llama3.2"
+default = "local"
 
-# Override via command line
-# cru chat --provider openai --model gpt-4o
+[llm.providers.local]
+type = "ollama"
+default_model = "llama3.2"
+
+[llm.providers.cloud]
+type = "openai"
+default_model = "gpt-4o"
+api_key = "{env:OPENAI_API_KEY}"
+
+[llm.providers.claude]
+type = "anthropic"
+default_model = "claude-3-5-sonnet-20241022"
+api_key = "{env:ANTHROPIC_API_KEY}"
 ```
 
-## CLI Override
-
-Override configuration from command line:
-
-```bash
-# Use different provider
-cru chat --internal --provider openai
-
-# Use different model
-cru chat --internal --provider ollama --model codellama
-
-# Combine options
-cru chat --internal --provider openai --model gpt-4o "Explain this code"
-```
+Change the active provider by setting `default` under `[llm]`, or switch at runtime with the `:model` command in the TUI.
 
 ## Environment Variables
 
@@ -169,8 +200,11 @@ cru chat --internal --provider openai --model gpt-4o "Explain this code"
 
 ```toml
 [llm]
-provider = "ollama"
-model = "llama3.2"
+default = "local"
+
+[llm.providers.local]
+type = "ollama"
+default_model = "llama3.2"
 temperature = 0.7
 ```
 
@@ -178,8 +212,12 @@ temperature = 0.7
 
 ```toml
 [llm]
-provider = "openai"
-model = "gpt-4o"
+default = "openai"
+
+[llm.providers.openai]
+type = "openai"
+default_model = "gpt-4o"
+api_key = "{env:OPENAI_API_KEY}"
 max_tokens = 4096
 ```
 
@@ -187,10 +225,14 @@ max_tokens = 4096
 
 ```toml
 [llm]
-provider = "openai"
-model = "gpt-4o-mini"  # Cheaper
-temperature = 0.5       # More focused
-max_tokens = 2048       # Limit response length
+default = "openai-mini"
+
+[llm.providers.openai-mini]
+type = "openai"
+default_model = "gpt-4o-mini"
+api_key = "{env:OPENAI_API_KEY}"
+temperature = 0.5
+max_tokens = 2048
 ```
 
 ## Troubleshooting
@@ -221,14 +263,14 @@ For Ollama, pull the model first:
 ollama pull llama3.2
 ```
 
+For cloud providers, check that the model name is correct. Run `cru models` to list available models.
+
 ## Implementation
 
-**Source code:** `crates/crucible-llm/src/`
-
-**Configuration parsing:** `crates/crucible-cli/src/config.rs`
+**Source code:** `crates/crucible-config/src/components/llm.rs`
 
 ## See Also
 
-- `:h config.embedding` - Embedding configuration
-- `:h chat` - Chat command reference
-- [[Help/CLI/chat]] - Chat usage guide
+- `:h config.embedding` — Embedding configuration
+- `:h chat` — Chat command reference
+- [[Help/CLI/chat]] — Chat usage guide
