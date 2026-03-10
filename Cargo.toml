@@ -160,6 +160,7 @@ hosting = ["github"]
 checksum = "sha256"
 features = ["storage-sqlite"]
 default-features = false
+github-build-setup = "build-setup.yml"
 
 [workspace.metadata.dist.dependencies.apt]
 protobuf-compiler = { stage = ["build"] }
