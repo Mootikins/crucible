@@ -1,8 +1,9 @@
-import { Component, For, Show, createSignal, createEffect } from 'solid-js';
+import { Component, For, Show, createSignal, createEffect, onCleanup } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import type { Session, Project } from '@/lib/types';
-import { RefreshCw, Plus } from '@/lib/icons';
+import { RefreshCw, Plus, Search, X } from '@/lib/icons';
+import { searchSessions } from '@/lib/api';
 
 const KilnSelector: Component<{
   kilns: string[];
@@ -116,6 +117,58 @@ export const SessionPanel: Component = () => {
   const [showNewProject, setShowNewProject] = createSignal(false);
   const [newProjectPath, setNewProjectPath] = createSignal('');
   const [selectedKiln, setSelectedKiln] = createSignal<string>('');
+  const [searchQuery, setSearchQuery] = createSignal('');
+  const [searchResults, setSearchResults] = createSignal<Session[]>([]);
+  const [isSearching, setIsSearching] = createSignal(false);
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  let searchInputRef: HTMLInputElement | undefined;
+
+  const performSearch = async (query: string) => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+    setIsSearching(true);
+    try {
+      const results = await searchSessions(query, selectedKiln() || undefined, 20);
+      setSearchResults(results);
+    } catch (err) {
+      console.error('Session search failed:', err);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleSearchInput = (value: string) => {
+    setSearchQuery(value);
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => performSearch(value), 300);
+  };
+
+  const clearSearch = () => {
+    setSearchQuery('');
+    setSearchResults([]);
+    setIsSearching(false);
+    if (searchTimer) clearTimeout(searchTimer);
+  };
+
+  /** Focus the search input (called from command palette). */
+  const focusSearchInput = () => {
+    searchInputRef?.focus();
+  };
+
+  // Expose focus method via custom event for command palette wiring
+  const onFocusSearch = () => focusSearchInput();
+  window.addEventListener('crucible:focus-session-search', onFocusSearch);
+
+  onCleanup(() => {
+    if (searchTimer) clearTimeout(searchTimer);
+    window.removeEventListener('crucible:focus-session-search', onFocusSearch);
+  });
+
+  const displayedSessions = () => searchQuery().trim() ? searchResults() : sessions();
 
   createEffect(() => {
     const project = currentProject();
@@ -228,12 +281,38 @@ export const SessionPanel: Component = () => {
               onSelect={handleKilnSelect}
             />
 
-            <div class="p-3">
+            <div class="p-3 flex items-center justify-between">
               <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wide">Sessions</h2>
             </div>
 
+            <div class="px-3 pb-2">
+              <div class="relative">
+                <Search class="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-500" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery()}
+                  onInput={(e) => handleSearchInput(e.currentTarget.value)}
+                  placeholder="Search sessions..."
+                  class="w-full bg-neutral-800 text-neutral-200 text-sm pl-8 pr-7 py-1.5 rounded border border-neutral-700 focus:border-primary focus:outline-none placeholder:text-neutral-500"
+                />
+                <Show when={searchQuery()}>
+                  <button
+                    onClick={clearSearch}
+                    class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-neutral-500 hover:text-neutral-300 rounded"
+                  >
+                    <X class="w-3 h-3" />
+                  </button>
+                </Show>
+              </div>
+            </div>
+
             <div class="p-2">
-              <For each={sessions()}>
+              <Show when={isSearching()}>
+                <p class="text-neutral-500 text-sm text-center py-2">Searching...</p>
+              </Show>
+
+              <For each={displayedSessions()}>
                 {(s) => (
                   <SessionItem
                     session={s}
@@ -243,8 +322,13 @@ export const SessionPanel: Component = () => {
                 )}
               </For>
 
-              <Show when={sessions().length === 0}>
-                <p class="text-neutral-500 text-sm text-center py-4">No sessions</p>
+              <Show when={!isSearching() && displayedSessions().length === 0}>
+                <Show
+                  when={searchQuery().trim()}
+                  fallback={<p class="text-neutral-500 text-sm text-center py-4">No sessions</p>}
+                >
+                  <p class="text-neutral-500 text-sm text-center py-4">No sessions match "{searchQuery()}"</p>
+                </Show>
               </Show>
 
               <button

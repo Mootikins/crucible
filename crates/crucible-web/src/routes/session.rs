@@ -17,6 +17,7 @@ pub fn session_routes() -> Router<AppState> {
     Router::new()
         .route("/api/session", post(create_session))
         .route("/api/session/list", get(list_sessions))
+        .route("/api/sessions/search", get(search_sessions))
         .route("/api/session/{id}", get(get_session))
         .route("/api/session/{id}/history", get(get_session_history))
         .route("/api/session/{id}/pause", post(pause_session))
@@ -204,6 +205,26 @@ async fn list_sessions(
         .daemon_err()?;
 
     Ok(Json(result))
+}
+
+#[derive(Debug, Deserialize)]
+struct SearchSessionsQuery {
+    q: String,
+    kiln: Option<PathBuf>,
+    limit: Option<usize>,
+}
+
+async fn search_sessions(
+    State(state): State<AppState>,
+    axum::extract::Query(query): axum::extract::Query<SearchSessionsQuery>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let results = state
+        .daemon
+        .session_search(&query.q, query.kiln.as_deref(), query.limit.or(Some(20)))
+        .await
+        .daemon_err()?;
+
+    Ok(Json(results))
 }
 
 async fn get_session(
