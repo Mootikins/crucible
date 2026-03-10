@@ -161,6 +161,12 @@ checksum = "sha256"
 features = ["storage-sqlite"]
 default-features = false
 
+[workspace.metadata.dist.dependencies.apt]
+protobuf-compiler = { stage = ["build"] }
+
+[workspace.metadata.dist.dependencies.homebrew]
+protobuf = { stage = ["build"] }
+
 # The profile that 'cargo dist' will build with
 [profile.dist]
 inherits = "release"
