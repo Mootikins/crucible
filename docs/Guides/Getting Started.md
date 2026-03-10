@@ -64,30 +64,41 @@ sudo ln -s /path/to/crucible/target/release/cru /usr/local/bin/cru
 
 ### Set Your Kiln Path
 
-Crucible stores notes in a "kiln" - your markdown directory.
+Crucible stores notes in a "kiln", your markdown directory. The easiest way to get started is with `cru init`, which walks you through creating a config file interactively.
 
-**Option 1: Environment Variable**
 ```bash
-export CRUCIBLE_KILN_PATH="/path/to/your/notes"
+cru init
 ```
 
-**Option 2: Configuration File**
+This creates `~/.config/crucible/config.toml` with your kiln path and provider settings.
+
+You can also set it up manually:
+
+**Option 1: Configuration File**
 
 Create `~/.config/crucible/config.toml`:
 
 ```toml
 kiln_path = "/home/user/Documents/my-kiln"
 
-[embedding]
-provider = "fastembed"
+[llm]
+default = "local"
+
+[llm.providers.local]
+type = "ollama"
+default_model = "llama3.2"
+endpoint = "http://localhost:11434"
+
+[enrichment.provider]
+type = "fastembed"
 
 [cli]
 show_progress = true
 ```
 
-**Option 3: CLI Flag**
+**Option 2: Environment Variable**
 ```bash
-cru --kiln /path/to/notes stats
+export CRUCIBLE_KILN_PATH="/path/to/your/notes"
 ```
 
 ## Your First Commands
@@ -133,7 +144,7 @@ This parses all markdown files, extracts metadata, wikilinks, tags, and blocks, 
 cru chat
 ```
 
-On first run, a setup wizard guides you through kiln path, provider, and model configuration. After setup, you enter an interactive chat session with your knowledge base.
+The first time you run `cru chat`, Crucible automatically starts a background daemon (`cru daemon serve`) if one isn't already running. You don't need to start it manually. The daemon handles session state, file watching, and multi-session support over a Unix socket.
 
 **Chat modes** (cycle with `BackTab`):
 - **Normal** (default): Full access, agent can read and modify files
@@ -180,7 +191,7 @@ Reduce parallel workers: `cru process --parallel 1`
 
 ### Chat doesn't respond
 
-Test with internal agent: `cru chat --internal --provider ollama`
+Make sure your LLM provider is running and configured. For Ollama: `cru chat --provider ollama`. For other providers, check your `config.toml` settings.
 
 ## See Also
 

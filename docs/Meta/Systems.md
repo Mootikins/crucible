@@ -16,15 +16,15 @@ This document defines the orthogonal systems that make up Crucible. Each system 
 | System | Scope | Crates |
 |--------|-------|--------|
 | **parser** | Markdown → structured data (extensions, frontmatter, blocks) | `crucible-core/parser` |
-| **storage** | Persistence: SQLite (default) | `crucible-sqlite` |
+| **storage** | Persistence: SQLite (default), LanceDB (vector) | `crucible-sqlite`, `crucible-lance` |
 | **sync** | Merkle-CRDT sync across devices, collaborators, and federated agents | `crucible-sync` (future) |
 | **agents** | Agent cards, handles, LLM providers, tool registry | `crucible-core/agents`, `crucible-llm`, `crucible-daemon/tools`, `crucible-acp` |
 | **workflows** | Definitions (markup) + sessions (logging, resumption) | `crucible-core/workflow` (future) |
 | **plugins** | Extension points, hooks, scripting (Lua) | `crucible-lua` |
 | **apis** | HTTP REST, WebSocket, events | `crucible-web` |
-| **cli** | Commands, REPL, TUI, configuration | `crucible-cli`, `crucible-config` |
-| **daemon** | Multi-session server, RPC, agent management | `crucible-daemon`, `crucible-rpc` |
-| **observe** | Session logging, event streams, observability | `crucible-observe` |
+| **cli** | Commands, REPL, TUI, configuration | `crucible-cli`, `crucible-oil`, `crucible-config` |
+| **daemon** | Multi-session server, RPC, agent management | `crucible-daemon` |
+
 
 ## System Descriptions
 
