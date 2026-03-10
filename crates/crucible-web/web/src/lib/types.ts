@@ -1,11 +1,13 @@
 /** Message in the chat */
 export interface Message {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: number;
   /** Tool calls made during this message */
   toolCalls?: ToolCallSummary[];
+  /** Message subtype (e.g., 'precognition' for auto-injected context) */
+  type?: string;
 }
 
 /** Summary of a tool call */
@@ -177,6 +179,14 @@ export interface ToolCallStartEvent {
   arguments?: unknown;
 }
 
+/** Tool call event (from daemon tool_call event) */
+export interface ToolCallEvent {
+  type: 'tool_call';
+  id: string;
+  title: string;
+  arguments?: unknown;
+}
+
 /** Tool call result streaming delta */
 export interface ToolResultDeltaEvent {
   type: 'tool_result_delta';
@@ -230,7 +240,7 @@ export interface DelegationSpawnedEvent {
   type: 'delegation_spawned';
   id: string;
   prompt: string;
-  targetAgent?: string;
+  target_agent?: string;
 }
 
 /** Delegation completed event */
@@ -263,7 +273,7 @@ export interface ContextUsageEvent {
 /** Precognition result event */
 export interface PrecognitionResultEvent {
   type: 'precognition_result';
-  notesCount: number;
+  notes_count: number;
   notes: { name: string; relevance: number }[];
 }
 

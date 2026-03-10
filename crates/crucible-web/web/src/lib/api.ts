@@ -56,12 +56,25 @@ export function subscribeToEvents(
   const eventTypes = [
     'token',
     'tool_call',
+    'tool_call_start',
     'tool_result',
+    'tool_result_delta',
+    'tool_result_complete',
+    'tool_result_error',
     'thinking',
     'message_complete',
     'error',
     'interaction_requested',
     'session_event',
+    'subagent_spawned',
+    'subagent_completed',
+    'subagent_failed',
+    'delegation_spawned',
+    'delegation_completed',
+    'delegation_failed',
+    'context_usage',
+    'precognition_result',
+    'mode_changed',
   ] as const;
 
   function connect() {
