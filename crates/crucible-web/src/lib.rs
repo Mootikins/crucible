@@ -1,6 +1,8 @@
 pub mod routes;
 pub mod server;
 pub mod services;
+#[cfg(test)]
+pub mod test_support;
 
 mod assets;
 mod error;
