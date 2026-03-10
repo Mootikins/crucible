@@ -131,7 +131,7 @@ impl SessionAgent {
 /// Format: `{type}-{YYYY-MM-DDTHHMM}-{random6}`
 /// Example: `chat-2025-01-08T1530-a1b2c3`
 fn generate_session_id(type_prefix: &str) -> String {
-    use rand::Rng;
+    use rand::RngExt;
     let timestamp = Utc::now().format("%Y-%m-%dT%H%M");
     let mut rng = rand::rng();
     let random: String = (0..6)
