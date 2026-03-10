@@ -1,5 +1,7 @@
-import { Component, Show, createSignal } from 'solid-js';
+import { Component, Show, createSignal, createResource } from 'solid-js';
 import type { PermRequest, PermResponse, PermissionScope } from '@/lib/types';
+import { getFileContent } from '@/lib/api';
+import { DiffViewer } from '@/components/DiffViewer';
 
 interface Props {
   request: PermRequest;
@@ -13,12 +15,57 @@ const ACTION_LABELS: Record<string, { label: string; color: string }> = {
   tool: { label: 'Tool', color: 'bg-purple-600' },
 };
 
+/** Extract file path from a write permission request's tokens */
+function extractFilePath(request: PermRequest): string | null {
+  if (request.action_type !== 'write') return null;
+  // tokens[0] is typically the file path for write operations
+  return request.tokens[0] ?? null;
+}
+
+/** Extract new content from tool_args if available */
+function extractNewContent(request: PermRequest): string | null {
+  if (!request.tool_args || typeof request.tool_args !== 'object') return null;
+  const args = request.tool_args as Record<string, unknown>;
+  // Common field names for file content in tool args
+  if (typeof args.content === 'string') return args.content;
+  if (typeof args.new_content === 'string') return args.new_content;
+  if (typeof args.text === 'string') return args.text;
+  return null;
+}
+
 export const PermissionInteraction: Component<Props> = (props) => {
   const [scope, setScope] = createSignal<PermissionScope>('once');
   const [showScopes, setShowScopes] = createSignal(false);
+  const [showDiff, setShowDiff] = createSignal(true);
 
   const actionInfo = () => ACTION_LABELS[props.request.action_type] || ACTION_LABELS.tool;
   const commandText = () => props.request.tokens.join(' ');
+
+  const filePath = () => extractFilePath(props.request);
+  const newContent = () => extractNewContent(props.request);
+
+  // Fetch old content when we have a write action with a file path
+  const [oldContent] = createResource(
+    () => {
+      const path = filePath();
+      const content = newContent();
+      if (path && content !== null) return path;
+      return false;
+    },
+    async (path) => {
+      if (typeof path !== 'string') return '';
+      try {
+        return await getFileContent(path);
+      } catch {
+        // File may not exist yet (new file creation) — treat as empty
+        return '';
+      }
+    },
+  );
+
+  const hasDiff = () => {
+    return props.request.action_type === 'write' && newContent() !== null && oldContent() !== undefined;
+  };
 
   const handleAllow = () => {
     props.onRespond({
@@ -50,9 +97,52 @@ export const PermissionInteraction: Component<Props> = (props) => {
         </p>
       </Show>
 
-      <div class="bg-neutral-900 rounded-md p-3 mb-4 font-mono text-sm text-neutral-100 overflow-x-auto">
-        {commandText() || '(no arguments)'}
-      </div>
+      {/* File path display for write actions */}
+      <Show when={props.request.action_type === 'write' && filePath()}>
+        <p class="text-neutral-300 mb-2 text-sm">
+          File: <span class="text-neutral-100 font-mono">{filePath()}</span>
+        </p>
+      </Show>
+
+      {/* Diff preview for file write permissions */}
+      <Show when={hasDiff() && !oldContent.loading}>
+        <div class="mb-4">
+          <button
+            onClick={() => setShowDiff(!showDiff())}
+            class="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 mb-2 transition-colors"
+          >
+            <span
+              class="inline-block transition-transform duration-200"
+              classList={{ 'rotate-90': showDiff() }}
+            >
+              ▶
+            </span>
+            {showDiff() ? 'Hide changes' : 'Show changes'}
+          </button>
+          <Show when={showDiff()}>
+            <DiffViewer
+              oldContent={oldContent() ?? ''}
+              newContent={newContent()!}
+              fileName={filePath() ?? undefined}
+            />
+          </Show>
+        </div>
+      </Show>
+
+      {/* Loading state while fetching old content */}
+      <Show when={hasDiff() && oldContent.loading}>
+        <div class="mb-4 text-xs text-zinc-500 flex items-center gap-2">
+          <span class="inline-block w-3 h-3 border border-zinc-500 border-t-transparent rounded-full animate-spin" />
+          Loading file for diff...
+        </div>
+      </Show>
+
+      {/* Fallback: show raw command text when no diff available */}
+      <Show when={!hasDiff()}>
+        <div class="bg-neutral-900 rounded-md p-3 mb-4 font-mono text-sm text-neutral-100 overflow-x-auto">
+          {commandText() || '(no arguments)'}
+        </div>
+      </Show>
 
       <div class="flex items-center gap-2 flex-wrap">
         <button
