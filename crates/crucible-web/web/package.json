@@ -27,7 +27,9 @@
     "@thisbeyond/solid-dnd": "^0.7.5",
     "dompurify": "^3.3.1",
     "lucide-solid": "^0.563.0",
+    "markdown-it": "^14.1.1",
     "marked": "^17.0.1",
+    "shiki": "^4.0.2",
     "solid-js": "^1.9.3"
   },
   "devDependencies": {
@@ -36,6 +38,7 @@
     "@tailwindcss/typography": "^0.5.19",
     "@testing-library/jest-dom": "^6.6.3",
     "@types/dompurify": "^3.2.0",
+    "@types/markdown-it": "^14.1.2",
     "autoprefixer": "^10.4.20",
     "jsdom": "^25.0.1",
     "postcss": "^8.4.49",
