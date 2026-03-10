@@ -89,7 +89,8 @@ export const Pane: Component<{ paneId: string }> = (props) => {
     }
     const panel = getGlobalRegistry().get(tab.contentType);
     if (panel) {
-      return <Dynamic component={panel.component} />;
+      const panelProps = (tab.metadata ?? {}) as Record<string, unknown>;
+      return <Dynamic component={panel.component} {...panelProps} />;
     }
     switch (tab.contentType) {
       case 'file':
