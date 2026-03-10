@@ -1,4 +1,4 @@
-import { Component, For, Show, createEffect } from 'solid-js';
+import { Component, For, Show, createEffect, createMemo } from 'solid-js';
 import { Message } from './Message';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
@@ -25,12 +25,24 @@ export const MessageList: Component = () => {
       data-testid="message-list"
     >
       <For each={messages()}>
-        {(message, index) => (
-          <Message
-            message={message}
-            isStreaming={isStreaming() && index() === messages().length - 1 && message.role === 'assistant'}
-          />
-        )}
+        {(message, index) => {
+          const isLastAssistant = createMemo(() => {
+            const msgs = messages();
+            for (let i = msgs.length - 1; i >= 0; i--) {
+              if (msgs[i].role === 'assistant') {
+                return msgs[i].id === message.id;
+              }
+            }
+            return false;
+          });
+          return (
+            <Message
+              message={message}
+              isStreaming={isStreaming() && index() === messages().length - 1 && message.role === 'assistant'}
+              isLast={isLastAssistant()}
+            />
+          );
+        }}
       </For>
       <div ref={bottomRef} class="h-px" />
 

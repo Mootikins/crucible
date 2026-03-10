@@ -1,6 +1,8 @@
 import { Component, Show, For, createMemo, createSignal, createEffect, onCleanup } from 'solid-js';
+import { Copy, Check, Pencil, RefreshCw } from 'lucide-solid';
 import { ToolCard } from './ToolCard';
 import { ThinkingBlock } from './ThinkingBlock';
+import { useChatSafe } from '@/contexts/ChatContext';
 import type { Message as MessageType, ToolCallDisplay } from '@/lib/types';
 import { renderMarkdown, renderMarkdownAsync } from '@/lib/markdown';
 
@@ -62,20 +64,50 @@ function addCopyButtons(container: HTMLDivElement): void {
   }
 }
 
+/** Format a timestamp as relative time (e.g., "2 min ago") */
+function formatRelativeTime(timestamp: number): string {
+  const now = Date.now();
+  const diffMs = now - timestamp;
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHour = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHour / 24);
+
+  if (diffSec < 60) return 'just now';
+  if (diffMin < 60) return `${diffMin} min ago`;
+  if (diffHour < 24) return `${diffHour} hour${diffHour === 1 ? '' : 's'} ago`;
+
+  if (diffDay === 1) {
+    const date = new Date(timestamp);
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    return `Yesterday at ${hours}:${minutes}`;
+  }
+
+  const date = new Date(timestamp);
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 interface MessageProps {
   message: MessageType;
   isStreaming?: boolean;
+  isLast?: boolean;
 }
 
 export const Message: Component<MessageProps> = (props) => {
+  const chat = useChatSafe();
   const isUser = () => props.message.role === 'user';
   const isSystem = () => props.message.role === 'system';
+  const isAssistant = () => props.message.role === 'assistant';
   const isPrecognition = () => props.message.role === 'system' && props.message.type === 'precognition';
   const isEmpty = () => !props.message.content || props.message.content.length === 0;
   const hasToolCalls = () => props.message.toolCalls && props.message.toolCalls.length > 0;
   const hasThinking = () => !!props.message.thinking && props.message.thinking.content.length > 0;
   const [renderedContent, setRenderedContent] = createSignal('');
   const [showPrecognitionNotes, setShowPrecognitionNotes] = createSignal(false);
+  const [copied, setCopied] = createSignal(false);
+  const [isEditing, setIsEditing] = createSignal(false);
+  const [editContent, setEditContent] = createSignal('');
   let markdownRef: HTMLDivElement | undefined;
 
   const toolCalls = createMemo<ToolCallDisplay[]>(() => {
@@ -133,9 +165,54 @@ export const Message: Component<MessageProps> = (props) => {
     }
   };
 
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(props.message.content);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API not available
+    }
+  };
+
+  const handleEditStart = () => {
+    setEditContent(props.message.content);
+    setIsEditing(true);
+  };
+
+  const handleEditCancel = () => {
+    setIsEditing(false);
+    setEditContent('');
+  };
+
+  const handleEditSave = async () => {
+    const content = editContent().trim();
+    if (!content) return;
+    setIsEditing(false);
+    setEditContent('');
+    await chat.sendMessage(content);
+  };
+
+  const handleRegenerate = async () => {
+    const msgs = chat.messages();
+    // Find the previous user message before this assistant message
+    let prevUserContent: string | null = null;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === 'user') {
+        prevUserContent = msgs[i].content;
+        break;
+      }
+    }
+    if (prevUserContent) {
+      await chat.sendMessage(prevUserContent);
+    }
+  };
+
+  const showActions = () => !isSystem() && !isPrecognition() && !props.isStreaming;
+
   return (
     <div
-      class={`mb-4 flex ${isUser() ? 'justify-end' : 'justify-start'}`}
+      class={`group relative mb-4 flex ${isUser() ? 'justify-end' : 'justify-start'}`}
       data-testid={`message-${props.message.role}`}
       data-role={props.message.role}
     >
@@ -208,23 +285,62 @@ export const Message: Component<MessageProps> = (props) => {
             </Show>
 
             <Show when={!isPrecognition()}>
-              <Show
-                when={!isUser()}
-                fallback={<p class="whitespace-pre-wrap break-words">{props.message.content}</p>}
-              >
-                <div
-                  ref={markdownRef}
-                  onClick={handleRenderedClick}
-                  class="prose prose-invert prose-sm max-w-none
-                    prose-p:my-1 prose-p:leading-relaxed
-                    prose-pre:bg-neutral-900 prose-pre:rounded-lg prose-pre:p-3 prose-pre:text-sm
-                    prose-code:bg-neutral-700 prose-code:px-1 prose-code:rounded prose-code:text-sm prose-code:before:content-none prose-code:after:content-none
-                    prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5
-                    prose-headings:my-2 prose-headings:font-semibold
-                    prose-a:text-blue-400 prose-a:no-underline hover:prose-a:underline
-                    prose-blockquote:border-l-2 prose-blockquote:border-neutral-600 prose-blockquote:pl-3 prose-blockquote:italic prose-blockquote:text-neutral-400"
-                  innerHTML={renderedContent()}
-                />
+              <Show when={!isEditing()} fallback={
+                <div class="flex flex-col gap-2">
+                  <textarea
+                    class="w-full rounded border border-neutral-600 bg-neutral-800 px-3 py-2 text-sm text-neutral-200 focus:border-blue-500 focus:outline-none resize-y min-h-[60px]"
+                    value={editContent()}
+                    onInput={(e) => setEditContent(e.currentTarget.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        handleEditCancel();
+                      }
+                    }}
+                    ref={(el) => {
+                      // Auto-focus and set cursor to end
+                      queueMicrotask(() => {
+                        el.focus();
+                        el.setSelectionRange(el.value.length, el.value.length);
+                      });
+                    }}
+                  />
+                  <div class="flex gap-2 justify-end">
+                    <button
+                      type="button"
+                      class="rounded px-3 py-1 text-xs text-neutral-400 hover:text-neutral-200 hover:bg-neutral-700 transition-colors"
+                      onClick={handleEditCancel}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      class="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-500 transition-colors"
+                      onClick={handleEditSave}
+                    >
+                      Save & Send
+                    </button>
+                  </div>
+                </div>
+              }>
+                <Show
+                  when={!isUser()}
+                  fallback={<p class="whitespace-pre-wrap break-words">{props.message.content}</p>}
+                >
+                  <div
+                    ref={markdownRef}
+                    onClick={handleRenderedClick}
+                    class="prose prose-invert prose-sm max-w-none
+                      prose-p:my-1 prose-p:leading-relaxed
+                      prose-pre:bg-neutral-900 prose-pre:rounded-lg prose-pre:p-3 prose-pre:text-sm
+                      prose-code:bg-neutral-700 prose-code:px-1 prose-code:rounded prose-code:text-sm prose-code:before:content-none prose-code:after:content-none
+                      prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5
+                      prose-headings:my-2 prose-headings:font-semibold
+                      prose-a:text-blue-400 prose-a:no-underline hover:prose-a:underline
+                      prose-blockquote:border-l-2 prose-blockquote:border-neutral-600 prose-blockquote:pl-3 prose-blockquote:italic prose-blockquote:text-neutral-400"
+                    innerHTML={renderedContent()}
+                  />
+                </Show>
               </Show>
             </Show>
           </Show>
@@ -233,7 +349,57 @@ export const Message: Component<MessageProps> = (props) => {
              <span class="inline-block w-2 h-4 bg-primary-hover animate-pulse ml-0.5" />
            </Show>
         </Show>
+
+        {/* Timestamp */}
+        <Show when={props.message.timestamp && !isSystem()}>
+          <div class={`mt-1 text-xs text-neutral-500 ${isUser() ? 'text-right' : 'text-left'}`}>
+            {formatRelativeTime(props.message.timestamp)}
+          </div>
+        </Show>
       </div>
+
+      {/* Action buttons — visible on hover */}
+      <Show when={showActions()}>
+        <div
+          class={`absolute ${isUser() ? 'right-0 -bottom-6' : 'left-0 -bottom-6'} flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150`}
+        >
+          {/* Copy — all messages */}
+          <button
+            type="button"
+            class="rounded p-1 text-neutral-500 hover:text-neutral-200 hover:bg-neutral-700/60 transition-colors"
+            title={copied() ? 'Copied!' : 'Copy message'}
+            onClick={handleCopy}
+          >
+            <Show when={copied()} fallback={<Copy size={14} />}>
+              <Check size={14} class="text-emerald-400" />
+            </Show>
+          </button>
+
+          {/* Edit — user messages only */}
+          <Show when={isUser()}>
+            <button
+              type="button"
+              class="rounded p-1 text-neutral-500 hover:text-neutral-200 hover:bg-neutral-700/60 transition-colors"
+              title="Edit message"
+              onClick={handleEditStart}
+            >
+              <Pencil size={14} />
+            </button>
+          </Show>
+
+          {/* Regenerate — last assistant message only */}
+          <Show when={isAssistant() && props.isLast}>
+            <button
+              type="button"
+              class="rounded p-1 text-neutral-500 hover:text-neutral-200 hover:bg-neutral-700/60 transition-colors"
+              title="Regenerate response"
+              onClick={handleRegenerate}
+            >
+              <RefreshCw size={14} />
+            </button>
+          </Show>
+        </div>
+      </Show>
     </div>
   );
 };
