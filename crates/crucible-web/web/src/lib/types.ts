@@ -8,6 +8,8 @@ export interface Message {
   toolCalls?: ToolCallSummary[];
   /** Message subtype (e.g., 'precognition' for auto-injected context) */
   type?: string;
+  /** Thinking block data (extended thinking / reasoning) */
+  thinking?: ThinkingBlock;
 }
 
 /** Summary of a tool call */
