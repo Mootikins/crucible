@@ -484,13 +484,19 @@ async fn get_precognition(
 async fn export_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<([(axum::http::header::HeaderName, axum::http::header::HeaderValue); 1], String), WebError> {
+) -> Result<
+    (
+        [(
+            axum::http::header::HeaderName,
+            axum::http::header::HeaderValue,
+        ); 1],
+        String,
+    ),
+    WebError,
+> {
     // Get session metadata to find kiln path
     let session = state.daemon.session_get(&id).await.daemon_err()?;
-    let kiln_str = session
-        .get("kiln")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let kiln_str = session.get("kiln").and_then(|v| v.as_str()).unwrap_or("");
 
     if kiln_str.is_empty() {
         return Err(WebError::Validation(
@@ -575,7 +581,8 @@ async fn execute_command(
 
     match cmd {
         "help" => {
-            let help_text = ["/help — Show available commands",
+            let help_text = [
+                "/help — Show available commands",
                 "/search <query> — Search notes by title",
                 "/models — List available models",
                 "/clear — Clear the chat",
@@ -598,10 +605,7 @@ async fn execute_command(
 
             // Get session to find kiln path
             let session = state.daemon.session_get(&id).await.daemon_err()?;
-            let kiln_str = session
-                .get("kiln")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let kiln_str = session.get("kiln").and_then(|v| v.as_str()).unwrap_or("");
 
             let kiln_path = if kiln_str.is_empty() {
                 None
@@ -619,7 +623,11 @@ async fn execute_command(
                 if sessions.is_empty() {
                     format!("No results found for '{}'", args)
                 } else {
-                    let mut lines = vec![format!("Search results for '{}' ({} found):", args, sessions.len())];
+                    let mut lines = vec![format!(
+                        "Search results for '{}' ({} found):",
+                        args,
+                        sessions.len()
+                    )];
                     for (i, item) in sessions.iter().enumerate() {
                         let title = item
                             .get("title")
@@ -687,7 +695,10 @@ async fn execute_command(
             }))
         }
         _ => Ok(Json(CommandResponse {
-            result: format!("Unknown command: /{}. Type /help for available commands.", cmd),
+            result: format!(
+                "Unknown command: /{}. Type /help for available commands.",
+                cmd
+            ),
             response_type: "error".to_string(),
         })),
     }

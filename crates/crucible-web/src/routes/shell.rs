@@ -1,10 +1,10 @@
 use crate::services::daemon::AppState;
-use crate::{WebError, error::WebResultExt};
+use crate::{error::WebResultExt, WebError};
 use axum::{
-    Json, Router,
     extract::State,
     response::sse::{Event, Sse},
     routing::post,
+    Json, Router,
 };
 use futures::stream::Stream;
 use serde::{Deserialize, Serialize};
@@ -14,7 +14,7 @@ use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc;
-use tokio_stream::{StreamExt, wrappers::ReceiverStream};
+use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 
@@ -261,9 +261,9 @@ mod tests {
             .unwrap();
 
         let events = collect_events(rx).await;
-        assert!(events.iter().any(
-            |event| matches!(event, ShellEvent::Stderr { data } if data.trim() == "err")
-        ));
+        assert!(events
+            .iter()
+            .any(|event| matches!(event, ShellEvent::Stderr { data } if data.trim() == "err")));
         assert!(events
             .iter()
             .any(|event| matches!(event, ShellEvent::Exit { code: 0 })));
