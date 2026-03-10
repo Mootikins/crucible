@@ -1,19 +1,13 @@
-use crate::services::daemon::AppState;
 use crate::error::WebResultExt;
+use crate::services::daemon::AppState;
 use crate::WebError;
-use axum::{
-    extract::State,
-    routing::get,
-    Json, Router,
-};
+use axum::{extract::State, routing::get, Json, Router};
 
 pub fn mcp_routes() -> Router<AppState> {
     Router::new().route("/api/mcp/status", get(mcp_status))
 }
 
-async fn mcp_status(
-    State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, WebError> {
+async fn mcp_status(State(state): State<AppState>) -> Result<Json<serde_json::Value>, WebError> {
     let result = state.daemon.mcp_status().await.daemon_err()?;
 
     Ok(Json(result))

@@ -1805,7 +1805,9 @@ impl DaemonClient {
     }
 
     /// List all available providers without requiring an active session.
-    pub async fn list_providers(&self) -> Result<Vec<crate::agent_manager::providers::ProviderInfo>> {
+    pub async fn list_providers(
+        &self,
+    ) -> Result<Vec<crate::agent_manager::providers::ProviderInfo>> {
         let result: serde_json::Value = self
             .typed_call_with_retry("providers.list", ListProvidersRequest {})
             .await?;

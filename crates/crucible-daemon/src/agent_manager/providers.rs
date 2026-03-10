@@ -196,7 +196,9 @@ mod tests {
 
         AgentManager::new(AgentManagerParams {
             kiln_manager: Arc::new(KilnManager::new()),
-            session_manager: Arc::new(SessionManager::with_storage(Arc::new(FileSessionStorage::new()))),
+            session_manager: Arc::new(SessionManager::with_storage(Arc::new(
+                FileSessionStorage::new(),
+            ))),
             background_manager,
             mcp_gateway: None,
             llm_config: config,
@@ -275,7 +277,9 @@ mod tests {
 
         let providers = manager.list_providers().await;
 
-        assert!(!providers.iter().any(|provider| provider.provider_type == "fastembed"));
+        assert!(!providers
+            .iter()
+            .any(|provider| provider.provider_type == "fastembed"));
         assert!(providers.is_empty());
     }
 

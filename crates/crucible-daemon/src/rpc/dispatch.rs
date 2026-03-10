@@ -560,7 +560,8 @@ impl RpcDispatcher {
     }
 
     async fn handle_providers_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_providers_list(req.clone(), &self.ctx.agents).await;
+        let resp =
+            crate::server::session::handle_providers_list(req.clone(), &self.ctx.agents).await;
         map_server_resp(resp)
     }
 

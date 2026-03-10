@@ -223,16 +223,18 @@ async fn run_preflight_checks(config: &mut CliConfig) -> Result<()> {
             // Fall back to local detection
             detect_providers(&config.chat)
                 .into_iter()
-                .map(|p| crucible_daemon::agent_manager::providers::ProviderInfo {
-                    name: p.name,
-                    provider_type: p.provider_type,
-                    available: p.available,
-                    default_model: p.default_model,
-                    models: Vec::new(),
-                    endpoint: None,
-                    reason: Some(p.reason),
-                    is_local: true,
-                })
+                .map(
+                    |p| crucible_daemon::agent_manager::providers::ProviderInfo {
+                        name: p.name,
+                        provider_type: p.provider_type,
+                        available: p.available,
+                        default_model: p.default_model,
+                        models: Vec::new(),
+                        endpoint: None,
+                        reason: Some(p.reason),
+                        is_local: true,
+                    },
+                )
                 .collect()
         }
     };
@@ -350,7 +352,10 @@ async fn run_preflight_checks(config: &mut CliConfig) -> Result<()> {
 
         if !has_cloud_provider {
             if let Some(ollama) = providers.iter().find(|p| p.provider_type == "ollama") {
-                info!("Auto-detected Ollama: {}", ollama.reason.as_deref().unwrap_or("detected"));
+                info!(
+                    "Auto-detected Ollama: {}",
+                    ollama.reason.as_deref().unwrap_or("detected")
+                );
                 if config.chat.model.is_none() {
                     if let Some(ref model) = ollama.default_model {
                         config.chat.model = Some(model.clone());

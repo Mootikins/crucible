@@ -1,4 +1,16 @@
 #[cfg(test)]
+use crate::routes::{chat_routes, health_routes, project_routes, search_routes, session_routes};
+#[cfg(test)]
+use crate::services::daemon::{AppState, EventBroker};
+#[cfg(test)]
+use axum::Router;
+#[cfg(test)]
+use crucible_config::CliAppConfig;
+#[cfg(test)]
+use crucible_daemon::DaemonClient;
+#[cfg(test)]
+use serde_json::{json, Value};
+#[cfg(test)]
 use std::sync::Arc;
 #[cfg(test)]
 use tempfile::TempDir;
@@ -6,18 +18,6 @@ use tempfile::TempDir;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 #[cfg(test)]
 use tokio::net::UnixListener;
-#[cfg(test)]
-use serde_json::{json, Value};
-#[cfg(test)]
-use crucible_daemon::DaemonClient;
-#[cfg(test)]
-use crucible_config::CliAppConfig;
-#[cfg(test)]
-use crate::services::daemon::{AppState, EventBroker};
-#[cfg(test)]
-use axum::Router;
-#[cfg(test)]
-use crate::routes::{chat_routes, health_routes, project_routes, search_routes, session_routes};
 
 use std::net::Ipv4Addr;
 

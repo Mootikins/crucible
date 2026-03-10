@@ -22,8 +22,12 @@ pub async fn start_server(web_config: &WebConfig, app_config: &CliAppConfig) -> 
 
     let cors = CorsLayer::new()
         .allow_origin(AllowOrigin::list([
-            "http://localhost:3000".parse().expect("valid localhost URL"),
-            "http://localhost:5173".parse().expect("valid localhost URL"),
+            "http://localhost:3000"
+                .parse()
+                .expect("valid localhost URL"),
+            "http://localhost:5173"
+                .parse()
+                .expect("valid localhost URL"),
             "http://127.0.0.1:3000".parse().expect("valid loopback URL"),
             "http://127.0.0.1:5173".parse().expect("valid loopback URL"),
         ]))

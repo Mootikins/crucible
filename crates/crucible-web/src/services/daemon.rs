@@ -114,7 +114,10 @@ mod tests {
 
         let sessions = broker.sessions.read().await;
         assert_eq!(sessions.len(), 1, "Should have one session after subscribe");
-        assert!(sessions.contains_key("session-1"), "Session key should exist");
+        assert!(
+            sessions.contains_key("session-1"),
+            "Session key should exist"
+        );
     }
 
     #[tokio::test]

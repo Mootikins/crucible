@@ -1,10 +1,6 @@
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
-use axum::{
-    extract::State,
-    routing::get,
-    Json, Router,
-};
+use axum::{extract::State, routing::get, Json, Router};
 use serde::Deserialize;
 use std::path::PathBuf;
 use tokio::fs;
@@ -238,7 +234,10 @@ mod tests {
         let content = "a".repeat(MAX_SIZE + 1);
 
         assert_eq!(
-            format!("Content too large: {} bytes (max {MAX_SIZE})", content.len()),
+            format!(
+                "Content too large: {} bytes (max {MAX_SIZE})",
+                content.len()
+            ),
             "Content too large: 10485761 bytes (max 10485760)"
         );
         assert!(content.len() > MAX_SIZE);
