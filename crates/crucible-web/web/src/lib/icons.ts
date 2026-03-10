@@ -36,4 +36,5 @@ export {
   AlertTriangle,
   FileOutput,
   AppWindow,
+  Bell,
 } from 'lucide-solid';
