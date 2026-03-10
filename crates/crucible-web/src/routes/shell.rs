@@ -211,3 +211,167 @@ async fn run_local_shell_command(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::sync::mpsc;
+
+    async fn collect_events(mut rx: mpsc::Receiver<ShellEvent>) -> Vec<ShellEvent> {
+        let mut events = Vec::new();
+        while let Some(event) = rx.recv().await {
+            events.push(event);
+        }
+        events
+    }
+
+    #[tokio::test]
+    async fn echo_hello_emits_stdout_then_exit_zero() {
+        let (tx, rx) = mpsc::channel(32);
+        run_local_shell_command("echo hello".to_string(), Duration::from_secs(5), tx)
+            .await
+            .unwrap();
+
+        let events = collect_events(rx).await;
+        assert!(matches!(
+            events.first(),
+            Some(ShellEvent::Stdout { data }) if data.trim() == "hello"
+        ));
+        assert!(matches!(events.last(), Some(ShellEvent::Exit { code: 0 })));
+    }
+
+    #[tokio::test]
+    async fn false_command_emits_non_zero_exit() {
+        let (tx, rx) = mpsc::channel(32);
+        run_local_shell_command("false".to_string(), Duration::from_secs(5), tx)
+            .await
+            .unwrap();
+
+        let events = collect_events(rx).await;
+        assert!(events
+            .iter()
+            .any(|event| matches!(event, ShellEvent::Exit { code: 1 })));
+    }
+
+    #[tokio::test]
+    async fn stderr_output_emits_stderr_event() {
+        let (tx, rx) = mpsc::channel(32);
+        run_local_shell_command("echo err >&2".to_string(), Duration::from_secs(5), tx)
+            .await
+            .unwrap();
+
+        let events = collect_events(rx).await;
+        assert!(events.iter().any(
+            |event| matches!(event, ShellEvent::Stderr { data } if data.trim() == "err")
+        ));
+        assert!(events
+            .iter()
+            .any(|event| matches!(event, ShellEvent::Exit { code: 0 })));
+    }
+
+    #[tokio::test]
+    async fn sleep_timeout_emits_timeout_error_quickly() {
+        let (tx, rx) = mpsc::channel(32);
+        let start = tokio::time::Instant::now();
+
+        run_local_shell_command("sleep 10".to_string(), Duration::from_secs(1), tx)
+            .await
+            .unwrap();
+
+        let elapsed = start.elapsed();
+        assert!(elapsed < Duration::from_secs(3));
+
+        let events = collect_events(rx).await;
+        assert!(events.iter().any(
+            |event| matches!(event, ShellEvent::Error { message } if message.contains("timed out"))
+        ));
+    }
+
+    #[tokio::test]
+    async fn shell_event_error_serializes_validation_message_shape() {
+        let event = ShellEvent::Error {
+            message: "Command cannot be empty".to_string(),
+        };
+
+        let value = serde_json::to_value(&event).unwrap();
+        assert_eq!(value["type"], "error");
+        assert_eq!(value["message"], "Command cannot be empty");
+    }
+
+    #[tokio::test]
+    async fn stdout_event_name_is_stdout() {
+        let event = ShellEvent::Stdout {
+            data: "hi".to_string(),
+        };
+        assert_eq!(event.event_name(), "stdout");
+    }
+
+    #[tokio::test]
+    async fn stderr_event_name_is_stderr() {
+        let event = ShellEvent::Stderr {
+            data: "e".to_string(),
+        };
+        assert_eq!(event.event_name(), "stderr");
+    }
+
+    #[tokio::test]
+    async fn exit_event_name_is_exit() {
+        let event = ShellEvent::Exit { code: 0 };
+        assert_eq!(event.event_name(), "exit");
+    }
+
+    #[tokio::test]
+    async fn error_event_name_is_error() {
+        let event = ShellEvent::Error {
+            message: "m".to_string(),
+        };
+        assert_eq!(event.event_name(), "error");
+    }
+
+    #[tokio::test]
+    async fn cat_dev_null_exits_zero_without_stdout() {
+        let (tx, rx) = mpsc::channel(32);
+        run_local_shell_command("cat /dev/null".to_string(), Duration::from_secs(5), tx)
+            .await
+            .unwrap();
+
+        let events = collect_events(rx).await;
+        assert!(!events
+            .iter()
+            .any(|event| matches!(event, ShellEvent::Stdout { .. })));
+        assert!(events
+            .iter()
+            .any(|event| matches!(event, ShellEvent::Exit { code: 0 })));
+    }
+
+    #[tokio::test]
+    async fn multiline_echo_emits_two_stdout_events_and_exit() {
+        let (tx, rx) = mpsc::channel(32);
+        run_local_shell_command(
+            "echo line1; echo line2".to_string(),
+            Duration::from_secs(5),
+            tx,
+        )
+        .await
+        .unwrap();
+
+        let events = collect_events(rx).await;
+        let stdout_lines: Vec<String> = events
+            .iter()
+            .filter_map(|event| {
+                if let ShellEvent::Stdout { data } = event {
+                    Some(data.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(stdout_lines.len(), 2);
+        assert_eq!(stdout_lines[0].trim(), "line1");
+        assert_eq!(stdout_lines[1].trim(), "line2");
+        assert!(events
+            .iter()
+            .any(|event| matches!(event, ShellEvent::Exit { code: 0 })));
+    }
+}
