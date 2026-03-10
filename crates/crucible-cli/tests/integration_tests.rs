@@ -27,7 +27,7 @@ fn test_cli_version() {
 
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("0.2.1")); // Check for version number
+        .stdout(predicate::str::contains("0.3.0")); // Check for version number
 }
 
 #[test]
