@@ -2,7 +2,7 @@ use crate::assets::static_routes;
 use crate::middleware::auth::localhost_only_shell_auth;
 use crate::routes::{
     chat_routes, health_routes, kiln_routes, mcp_routes, plugin_routes, project_routes,
-    search_routes, session_routes,
+    search_routes, session_routes, shell_routes,
 };
 use crate::services::daemon;
 use crate::{Result, WebError};
@@ -39,7 +39,7 @@ pub async fn start_server(web_config: &WebConfig, app_config: &CliAppConfig) -> 
     let app = Router::new()
         .nest(
             "/api/shell",
-            Router::new().layer(middleware::from_fn(localhost_only_shell_auth)),
+            shell_routes().layer(middleware::from_fn(localhost_only_shell_auth)),
         )
         .merge(chat_routes())
         .merge(session_routes())
