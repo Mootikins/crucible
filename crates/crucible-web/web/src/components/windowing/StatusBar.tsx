@@ -1,6 +1,8 @@
-import { Component } from 'solid-js';
+import { Component, Show, createSignal } from 'solid-js';
 import { createDraggable, createDroppable } from '@thisbeyond/solid-dnd';
 import { windowStore } from '@/stores/windowStore';
+import { statusBarStore } from '@/stores/statusBarStore';
+import type { ChatMode } from '@/lib/types';
 import { IconLayout } from './icons';
 
 export const StatusBar: Component = () => {
@@ -20,9 +22,37 @@ export const StatusBar: Component = () => {
   const droppable = createDroppable(dropNewFloatingId, { type: 'newFloating' });
   void droppable;
 
+  // Placeholder notification count — Task 17 will wire to notification store
+  const [notifCount] = createSignal(0);
+
+  const modeColor = (mode: ChatMode): string => {
+    switch (mode) {
+      case 'normal': return 'bg-emerald-600/80 text-emerald-100';
+      case 'plan': return 'bg-blue-600/80 text-blue-100';
+      case 'auto': return 'bg-amber-600/80 text-amber-100';
+    }
+  };
+
+  const formatTokens = (n: number): string => {
+    if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+    return String(n);
+  };
+
+  const usagePercent = () => {
+    const u = statusBarStore.contextUsage();
+    if (!u || u.total === 0) return 0;
+    return Math.min(100, (u.used / u.total) * 100);
+  };
+
   return (
     <div class="flex items-center justify-between px-2 h-5 bg-zinc-950 border-t border-zinc-800 text-[10px] text-zinc-500 select-none">
       <div class="flex items-center gap-3">
+        {/* Mode badge */}
+        <span
+          class={`px-1.5 rounded-sm font-medium uppercase tracking-wider text-[9px] leading-tight ${modeColor(statusBarStore.chatMode())}`}
+        >
+          {statusBarStore.chatMode()}
+        </span>
         <span>Ready</span>
         <span>{totalTabs()} tabs</span>
         {minimizedCount() > 0 && (
@@ -42,6 +72,39 @@ export const StatusBar: Component = () => {
             <span>New Window</span>
           </div>
         </div>
+        {/* Context usage */}
+        <Show when={statusBarStore.contextUsage()}>
+          {(usage) => (
+            <div class="flex items-center gap-1.5">
+              <span class="text-zinc-400 tabular-nums">
+                {formatTokens(usage().used)} / {formatTokens(usage().total)}
+              </span>
+              <div class="w-12 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                <div
+                  class="h-full rounded-full transition-all duration-300"
+                  classList={{
+                    'bg-emerald-500': usagePercent() < 60,
+                    'bg-amber-500': usagePercent() >= 60 && usagePercent() < 85,
+                    'bg-red-500': usagePercent() >= 85,
+                  }}
+                  style={{ width: `${usagePercent()}%` }}
+                />
+              </div>
+            </div>
+          )}
+        </Show>
+        {/* Active model */}
+        <Show when={statusBarStore.activeModel()}>
+          {(model) => (
+            <span class="text-zinc-400 font-mono">{model()}</span>
+          )}
+        </Show>
+        {/* Notification count */}
+        <Show when={notifCount() > 0}>
+          <span class="px-1 min-w-[14px] text-center rounded-sm bg-red-600/80 text-red-100 text-[9px] font-medium">
+            {notifCount()}
+          </span>
+        </Show>
         <div class="w-px h-3 bg-zinc-800" />
         <span>UTF-8</span>
         <span>TypeScript</span>

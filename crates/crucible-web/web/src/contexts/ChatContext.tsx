@@ -8,12 +8,12 @@ import {
   Accessor,
 } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
+import { statusBarActions } from '@/stores/statusBarStore';
 import type {
   Message,
   ChatEvent,
   InteractionRequest,
   InteractionResponse,
-  Session,
   ToolCallDisplay,
   SubagentEvent,
   ContextUsage,
@@ -25,7 +25,9 @@ import {
   respondToInteraction as apiRespondToInteraction,
   cancelSession as apiCancelSession,
   generateMessageId,
+  getSession,
   getSessionHistory,
+  setSessionTitle as apiSetSessionTitle,
 } from '@/lib/api';
 
 export interface ChatContextValue {
@@ -38,6 +40,7 @@ export interface ChatContextValue {
   subagentEvents: Accessor<SubagentEvent[]>;
   contextUsage: Accessor<ContextUsage | null>;
   chatMode: Accessor<ChatMode>;
+  setChatMode: (mode: ChatMode) => void;
   sendMessage: (content: string) => Promise<void>;
   respondToInteraction: (response: InteractionResponse) => Promise<void>;
   clearMessages: () => void;
@@ -45,8 +48,7 @@ export interface ChatContextValue {
 }
 
 interface ChatProviderProps {
-  session: Accessor<Session | null>;
-  setSessionTitle: (title: string) => Promise<void>;
+  sessionId: string;
   children: any;
 }
 
@@ -68,6 +70,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   let firstUserMessage: string | null = null;
   let hasReceivedFirstResponse = false;
   let previousSessionId: string | null = null;
+  const [sessionTitle, setSessionTitle] = createSignal<string | null>(null);
 
   const addMessage = (message: Message) => {
     setMessages((prev) => [...prev, message]);
@@ -167,15 +170,32 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
          break;
 
        case 'thinking':
-         // Thinking content is tracked but not yet rendered — placeholder for Wave 2 ThinkingBlock component
+         if (currentStreamingMessageId) {
+           updateMessage(currentStreamingMessageId, {
+             thinking: {
+               content: (messages.find((m) => m.id === currentStreamingMessageId)?.thinking?.content ?? '') + event.content,
+               isStreaming: true,
+             },
+           });
+         }
          break;
 
-       case 'message_complete':
+       case 'message_complete': {
+         const thinkingData = currentStreamingMessageId
+           ? messages.find((m) => m.id === currentStreamingMessageId)?.thinking
+           : undefined;
          if (currentStreamingMessageId) {
            updateMessage(currentStreamingMessageId, {
              id: event.id,
              content: event.content,
              toolCalls: event.tool_calls,
+             ...(thinkingData ? {
+               thinking: {
+                 content: thinkingData.content,
+                 isStreaming: false,
+                 tokenCount: thinkingData.content.length,
+               },
+             } : {}),
            });
          }
          setIsStreaming(false);
@@ -189,6 +209,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
            autoGenerateTitle();
          }
          break;
+       }
 
        case 'error':
          setError(`${event.message} (${event.code})`);
@@ -294,7 +315,8 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
          break;
 
        case 'context_usage':
-         setContextUsage({ used: event.used, total: event.total });
+        setContextUsage({ used: event.used, total: event.total });
+        statusBarActions.setContextUsage({ used: event.used, total: event.total });
          break;
 
        case 'precognition_result': {
@@ -311,7 +333,8 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
        }
 
        case 'mode_changed':
-         setChatMode(event.mode);
+        setChatMode(event.mode);
+        statusBarActions.setChatMode(event.mode);
          break;
 
        case 'session_event':
@@ -320,9 +343,9 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
      }
    };
 
-  const loadHistory = async (session: Session) => {
+  const loadHistory = async (sessionId: string, kiln: string) => {
     try {
-      const response = await getSessionHistory(session.id, session.kiln);
+      const response = await getSessionHistory(sessionId, kiln);
       const loadedMessages: Message[] = [];
       
       for (const evt of response.history) {
@@ -366,8 +389,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   };
 
   createEffect(() => {
-    const session = props.session();
-    const newSessionId = session?.id ?? null;
+    const newSessionId = props.sessionId;
     
     if (eventSourceCleanup) {
       eventSourceCleanup();
@@ -379,12 +401,22 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     }
     previousSessionId = newSessionId;
     
-    if (session) {
-      loadHistory(session);
-      if (session.state === 'active') {
-        eventSourceCleanup = subscribeToEvents(session.id, handleEvent);
-      }
+    if (!newSessionId) {
+      return;
     }
+
+    void (async () => {
+      try {
+        const session = await getSession(newSessionId);
+        setSessionTitle(session.title);
+        statusBarActions.setActiveModel(session.agent_model ?? null);
+        await loadHistory(session.id, session.kiln);
+      } catch (err) {
+        console.error('Failed to load session metadata:', err);
+      }
+    })();
+
+    eventSourceCleanup = subscribeToEvents(newSessionId, handleEvent);
   });
 
   onCleanup(() => {
@@ -395,10 +427,10 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   });
 
   const autoGenerateTitle = async () => {
-    const session = props.session();
-    if (!session || !firstUserMessage) return;
-    
-    if (session.title && session.title.trim() !== '') {
+    if (!props.sessionId || !firstUserMessage) return;
+
+    const currentTitle = sessionTitle();
+    if (currentTitle && currentTitle.trim() !== '') {
       return;
     }
     
@@ -407,15 +439,15 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     const title = lastSpace > 0 ? truncated.slice(0, lastSpace) + '...' : truncated;
     
     try {
-      await props.setSessionTitle(title);
+      await apiSetSessionTitle(props.sessionId, title);
+      setSessionTitle(title);
     } catch (err) {
       console.error('Failed to auto-generate title:', err);
     }
   };
 
   const sendMessage = async (content: string) => {
-    const session = props.session();
-    if (!content.trim() || isLoading() || !session) return;
+    if (!content.trim() || isLoading() || !props.sessionId) return;
 
     setError(null);
 
@@ -445,7 +477,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     setIsStreaming(true);
 
     try {
-      await sendChatMessage(session.id, content);
+      await sendChatMessage(props.sessionId, content);
     } catch (err) {
       console.error('Failed to send message:', err);
       const errorMsg = err instanceof Error ? err.message : 'Failed to connect to server';
@@ -460,14 +492,13 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   };
 
    const respondToInteraction = async (response: InteractionResponse) => {
-    const session = props.session();
     const request = pendingInteraction();
-    if (!request || !session) return;
+    if (!request || !props.sessionId) return;
 
     setPendingInteraction(null);
 
     try {
-      await apiRespondToInteraction(session.id, request.id, response);
+      await apiRespondToInteraction(props.sessionId, request.id, response);
     } catch (err) {
       console.error('Failed to send interaction response:', err);
       setError(err instanceof Error ? err.message : 'Failed to respond');
@@ -475,10 +506,9 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   };
 
   const cancelStream = async () => {
-    const session = props.session();
-    if (session) {
+    if (props.sessionId) {
       try {
-        await apiCancelSession(session.id);
+        await apiCancelSession(props.sessionId);
       } catch (err) {
         console.error('Failed to cancel session:', err);
       }
@@ -504,6 +534,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     subagentEvents: () => subagentEvents,
     contextUsage,
     chatMode,
+    setChatMode,
     sendMessage,
     respondToInteraction,
     clearMessages,
@@ -537,6 +568,7 @@ const fallbackChatContext: ChatContextValue = {
   subagentEvents: () => [],
   contextUsage: () => null,
   chatMode: () => 'normal',
+  setChatMode: () => {},
   sendMessage: noopAsync,
   respondToInteraction: noopAsync,
   clearMessages: () => {},
