@@ -3,9 +3,10 @@ import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useMediaRecorder } from '@/hooks/useMediaRecorder';
 import { MicButton } from './MicButton';
+import { ChatModeControl, nextChatMode } from './ChatModeControl';
 
 export const ChatInput: Component = () => {
-  const { sendMessage, isLoading, isStreaming, cancelStream, error } = useChatSafe();
+  const { sendMessage, isLoading, isStreaming, cancelStream, error, chatMode, setChatMode } = useChatSafe();
   const { currentSession, cancelCurrentOperation, availableModels, switchModel, refreshModels, selectedProvider } = useSessionSafe();
   const [input, setInput] = createSignal('');
   const [isModelPickerOpen, setIsModelPickerOpen] = createSignal(false);
@@ -28,6 +29,13 @@ export const ChatInput: Component = () => {
   };
 
   const handleKeyDown = (e: KeyboardEvent) => {
+    // Shift+Tab cycles chat mode (Normal → Plan → Auto)
+    if (e.key === 'Tab' && e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      setChatMode(nextChatMode(chatMode()));
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e);
@@ -192,6 +200,8 @@ export const ChatInput: Component = () => {
               </div>
             </Show>
           </div>
+
+          <ChatModeControl />
 
           <div class="flex-1" />
 

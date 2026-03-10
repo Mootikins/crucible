@@ -10,6 +10,7 @@ export const DEFAULT_SHORTCUTS: ShortcutAction[] = [
   { key: 'Tab', modifiers: ['ctrl'], action: 'nextTab', description: 'Next tab' },
   { key: '\\', modifiers: ['ctrl'], action: 'splitVertical', description: 'Split pane vertically' },
   { key: 'b', modifiers: ['ctrl'], action: 'toggleLeftPanel', description: 'Toggle left panel' },
+  { key: 'Tab', modifiers: ['shift'], action: 'cycleMode', description: 'Cycle chat mode (Normal → Plan → Auto)' },
 ];
 
 // Note: Ctrl+W may be intercepted by browser. Works in PWA/Electron contexts.

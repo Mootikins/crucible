@@ -217,7 +217,8 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
               {(tab) => {
                 const panel = getGlobalRegistry().get(tab().contentType);
                 if (panel) {
-                  return <Dynamic component={panel.component} />;
+                  const panelProps = (tab().metadata ?? {}) as Record<string, unknown>;
+                  return <Dynamic component={panel.component} {...panelProps} />;
                 }
                 return <div>{tab().title} content</div>;
               }}

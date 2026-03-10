@@ -185,7 +185,8 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
             const activeTab = tabs()[0];
             const panel = getGlobalRegistry().get(activeTab.contentType);
             if (panel) {
-              return <Dynamic component={panel.component} />;
+              const panelProps = (activeTab.metadata ?? {}) as Record<string, unknown>;
+              return <Dynamic component={panel.component} {...panelProps} />;
             }
             return (
               <div class="flex-1 bg-zinc-900 overflow-auto p-2 text-xs text-zinc-400">
