@@ -617,55 +617,49 @@ export async function getProject(path: string): Promise<Project | null> {
   return (await res.json()) as Project;
 }
 
-/** List files in a directory (mocked for now). */
+/** List files in a kiln directory. */
 export async function listFiles(path: string): Promise<FileEntry[]> {
-  const mockFiles: FileEntry[] = [
-    { name: 'src', path: `${path}/src`, is_dir: true },
-    { name: 'package.json', path: `${path}/package.json`, is_dir: false },
-    { name: 'README.md', path: `${path}/README.md`, is_dir: false },
-    { name: 'tsconfig.json', path: `${path}/tsconfig.json`, is_dir: false },
-  ];
-  
-  await new Promise(resolve => setTimeout(resolve, 100));
-  return mockFiles;
+  const params = new URLSearchParams({ kiln: path });
+  const res = await fetch(`/api/kiln/files?${params.toString()}`);
+  if (!res.ok) {
+    throw new Error(`Failed to list files: HTTP ${res.status}`);
+  }
+  const data = (await res.json()) as { files: FileEntry[] };
+  return data.files;
 }
 
-/** List kiln notes (mocked for now). */
+/** List kiln notes. */
 export async function listKilnNotes(kilnPath: string): Promise<FileEntry[]> {
-  const mockNotes: FileEntry[] = [
-    { name: 'Daily', path: `${kilnPath}/Daily`, is_dir: true },
-    { name: 'Projects', path: `${kilnPath}/Projects`, is_dir: true },
-    { name: 'Index.md', path: `${kilnPath}/Index.md`, is_dir: false },
-    { name: 'TODO.md', path: `${kilnPath}/TODO.md`, is_dir: false },
-  ];
-  
-  await new Promise(resolve => setTimeout(resolve, 100));
-  return mockNotes;
+  const params = new URLSearchParams({ kiln: kilnPath });
+  const res = await fetch(`/api/kiln/notes?${params.toString()}`);
+  if (!res.ok) {
+    throw new Error(`Failed to list kiln notes: HTTP ${res.status}`);
+  }
+  const data = (await res.json()) as { files: FileEntry[] };
+  return data.files;
 }
 
-/** Get file content (mocked for now). */
+/** Get file content by path. */
 export async function getFileContent(path: string): Promise<string> {
-  await new Promise(resolve => setTimeout(resolve, 100));
-  
-  const ext = path.split('.').pop()?.toLowerCase() ?? '';
-  const filename = path.split('/').pop() ?? 'file';
-  
-  const mockContent: Record<string, string> = {
-    md: `# ${filename}\n\nThis is mock content for **${filename}**.\n\n## Section\n\nSome text here with [[wikilinks]].\n`,
-    ts: `export function example(): string {\n  return 'Hello from ${filename}';\n}\n`,
-    tsx: `import { Component } from 'solid-js';\n\nexport const Example: Component = () => {\n  return <div>Hello from ${filename}</div>;\n};\n`,
-    js: `function example() {\n  return 'Hello from ${filename}';\n}\n\nmodule.exports = { example };\n`,
-    rs: `pub fn example() -> &'static str {\n    "Hello from ${filename}"\n}\n`,
-    json: `{\n  "name": "${filename}",\n  "version": "1.0.0"\n}\n`,
-  };
-  
-  return mockContent[ext] ?? `// Content of ${filename}\n`;
+  const params = new URLSearchParams({ path });
+  const res = await fetch(`/api/kiln/file?${params.toString()}`);
+  if (!res.ok) {
+    throw new Error(`Failed to get file content: HTTP ${res.status}`);
+  }
+  const data = (await res.json()) as { content: string };
+  return data.content;
 }
 
-/** Save file content (mocked for now). */
-export async function saveFileContent(path: string, _content: string): Promise<void> {
-  await new Promise(resolve => setTimeout(resolve, 100));
-  console.log('Mock save:', path);
+/** Save file content by path. */
+export async function saveFileContent(path: string, content: string): Promise<void> {
+  const res = await fetch('/api/kiln/file', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, content }),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to save file: HTTP ${res.status}`);
+  }
 }
 
 // =============================================================================

@@ -1,7 +1,7 @@
 use crate::assets::static_routes;
 use crate::routes::{
-    chat_routes, health_routes, mcp_routes, plugin_routes, project_routes, search_routes,
-    session_routes,
+    chat_routes, health_routes, kiln_routes, mcp_routes, plugin_routes, project_routes,
+    search_routes, session_routes,
 };
 use crate::services::daemon;
 use crate::{Result, WebError};
@@ -41,6 +41,7 @@ pub async fn start_server(web_config: &WebConfig, app_config: &CliAppConfig) -> 
         .merge(search_routes())
         .merge(plugin_routes())
         .merge(mcp_routes())
+        .merge(kiln_routes())
         .with_state(state)
         .merge(health_routes())
         .merge(static_routes(web_config.static_dir.as_deref()))
