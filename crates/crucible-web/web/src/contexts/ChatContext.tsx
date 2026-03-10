@@ -7,13 +7,17 @@ import {
   onCleanup,
   Accessor,
 } from 'solid-js';
-import { createStore } from 'solid-js/store';
+import { createStore, produce } from 'solid-js/store';
 import type {
   Message,
   ChatEvent,
   InteractionRequest,
   InteractionResponse,
   Session,
+  ToolCallDisplay,
+  SubagentEvent,
+  ContextUsage,
+  ChatMode,
 } from '@/lib/types';
 import {
   sendChatMessage,
@@ -30,6 +34,10 @@ export interface ChatContextValue {
   isStreaming: Accessor<boolean>;
   pendingInteraction: Accessor<InteractionRequest | null>;
   error: Accessor<string | null>;
+  activeTools: Accessor<ToolCallDisplay[]>;
+  subagentEvents: Accessor<SubagentEvent[]>;
+  contextUsage: Accessor<ContextUsage | null>;
+  chatMode: Accessor<ChatMode>;
   sendMessage: (content: string) => Promise<void>;
   respondToInteraction: (response: InteractionResponse) => Promise<void>;
   clearMessages: () => void;
@@ -50,6 +58,10 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   const [isStreaming, setIsStreaming] = createSignal(false);
   const [pendingInteraction, setPendingInteraction] = createSignal<InteractionRequest | null>(null);
   const [error, setError] = createSignal<string | null>(null);
+  const [activeTools, setActiveTools] = createStore<ToolCallDisplay[]>([]);
+  const [subagentEvents, setSubagentEvents] = createStore<SubagentEvent[]>([]);
+  const [contextUsage, setContextUsage] = createSignal<ContextUsage | null>(null);
+  const [chatMode, setChatMode] = createSignal<ChatMode>('normal');
   
   let eventSourceCleanup: (() => void) | null = null;
   let currentStreamingMessageId: string | null = null;
@@ -83,6 +95,9 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
 
    const clearMessages = () => {
      setMessages([]);
+     setActiveTools([]);
+     setSubagentEvents([]);
+     setContextUsage(null);
      setError(null);
      setPendingInteraction(null);
      currentStreamingMessageId = null;
@@ -99,15 +114,60 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
          break;
 
        case 'tool_call':
-         console.log('[ToolCall]', event.title, event.id, event.arguments);
+       case 'tool_call_start': {
+         const toolName = 'title' in event ? event.title : ('name' in event ? event.name : '');
+         const toolArgs = 'arguments' in event ? JSON.stringify(event.arguments ?? '') : '';
+         const tool: ToolCallDisplay = {
+           id: event.id,
+           name: toolName,
+           args: toolArgs,
+           status: 'running',
+           callId: event.id,
+         };
+         setActiveTools((prev) => [...prev, tool]);
          break;
+       }
 
        case 'tool_result':
-         console.log('[ToolResult]', event.id, event.result);
+         setActiveTools(produce((tools) => {
+           const tool = tools.find((t) => t.callId === event.id || t.id === event.id);
+           if (tool) {
+             tool.result = event.result ?? '';
+             tool.status = 'complete';
+           }
+         }));
+         break;
+
+       case 'tool_result_delta':
+         setActiveTools(produce((tools) => {
+           const tool = tools.find((t) => t.callId === event.id || t.id === event.id);
+           if (tool) {
+             tool.result = (tool.result ?? '') + event.delta;
+           }
+         }));
+         break;
+
+       case 'tool_result_complete':
+         setActiveTools(produce((tools) => {
+           const tool = tools.find((t) => t.callId === event.id || t.id === event.id);
+           if (tool) {
+             tool.status = 'complete';
+           }
+         }));
+         break;
+
+       case 'tool_result_error':
+         setActiveTools(produce((tools) => {
+           const tool = tools.find((t) => t.callId === event.id || t.id === event.id);
+           if (tool) {
+             tool.result = event.error;
+             tool.status = 'error';
+           }
+         }));
          break;
 
        case 'thinking':
-         console.log('[Thinking]', event.content);
+         // Thinking content is tracked but not yet rendered — placeholder for Wave 2 ThinkingBlock component
          break;
 
        case 'message_complete':
@@ -120,6 +180,8 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
          }
          setIsStreaming(false);
          setIsLoading(false);
+         // Reset per-turn tool state on message completion
+         setActiveTools([]);
          currentStreamingMessageId = null;
          
          if (!hasReceivedFirstResponse && firstUserMessage) {
@@ -145,6 +207,112 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
          setPendingInteraction(requestData as unknown as InteractionRequest);
          break;
        }
+
+       case 'subagent_spawned':
+         setSubagentEvents((prev) => [...prev, {
+           id: event.id,
+           prompt: event.prompt,
+           status: 'spawned' as const,
+         }]);
+         break;
+
+       case 'subagent_completed':
+         setSubagentEvents(produce((events) => {
+           const existing = events.find((e) => e.id === event.id);
+           if (existing) {
+             existing.status = 'completed';
+             existing.summary = event.summary;
+           } else {
+             events.push({
+               id: event.id,
+               prompt: '',
+               status: 'completed',
+               summary: event.summary,
+             });
+           }
+         }));
+         break;
+
+       case 'subagent_failed':
+         setSubagentEvents(produce((events) => {
+           const existing = events.find((e) => e.id === event.id);
+           if (existing) {
+             existing.status = 'failed';
+             existing.error = event.error;
+           } else {
+             events.push({
+               id: event.id,
+               prompt: '',
+               status: 'failed',
+               error: event.error,
+             });
+           }
+         }));
+         break;
+
+       case 'delegation_spawned':
+         setSubagentEvents((prev) => [...prev, {
+           id: event.id,
+           prompt: event.prompt,
+           status: 'spawned' as const,
+           targetAgent: event.target_agent,
+         }]);
+         break;
+
+       case 'delegation_completed':
+         setSubagentEvents(produce((events) => {
+           const existing = events.find((e) => e.id === event.id);
+           if (existing) {
+             existing.status = 'completed';
+             existing.summary = event.summary;
+           } else {
+             events.push({
+               id: event.id,
+               prompt: '',
+               status: 'completed',
+               summary: event.summary,
+             });
+           }
+         }));
+         break;
+
+       case 'delegation_failed':
+         setSubagentEvents(produce((events) => {
+           const existing = events.find((e) => e.id === event.id);
+           if (existing) {
+             existing.status = 'failed';
+             existing.error = event.error;
+           } else {
+             events.push({
+               id: event.id,
+               prompt: '',
+               status: 'failed',
+               error: event.error,
+             });
+           }
+         }));
+         break;
+
+       case 'context_usage':
+         setContextUsage({ used: event.used, total: event.total });
+         break;
+
+       case 'precognition_result': {
+         const noteNames = event.notes.map((n) => n.name);
+         const noteList = noteNames.length > 0 ? noteNames.join(', ') : 'none';
+         addMessage({
+           id: generateMessageId(),
+           role: 'system' as Message['role'],
+           content: `Auto-enriched with ${event.notes_count} notes: [${noteList}]`,
+           timestamp: Date.now(),
+           type: 'precognition',
+         } as Message);
+         break;
+       }
+
+       case 'mode_changed':
+         setChatMode(event.mode);
+         break;
 
        case 'session_event':
          console.log('[SessionEvent]', event.event_type, event.data);
@@ -332,6 +500,10 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     isStreaming,
     pendingInteraction,
     error,
+    activeTools: () => activeTools,
+    subagentEvents: () => subagentEvents,
+    contextUsage,
+    chatMode,
     sendMessage,
     respondToInteraction,
     clearMessages,
@@ -361,6 +533,10 @@ const fallbackChatContext: ChatContextValue = {
   isStreaming: () => false,
   pendingInteraction: () => null,
   error: () => null,
+  activeTools: () => [],
+  subagentEvents: () => [],
+  contextUsage: () => null,
+  chatMode: () => 'normal',
   sendMessage: noopAsync,
   respondToInteraction: noopAsync,
   clearMessages: () => {},
