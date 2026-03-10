@@ -27,8 +27,23 @@ pub fn session_routes() -> Router<AppState> {
         .route("/api/session/{id}/model", post(switch_model))
         .route("/api/session/{id}/title", put(set_session_title))
         .route("/api/providers", get(list_providers))
+        .route(
+            "/api/session/{id}/config/thinking-budget",
+            put(set_thinking_budget).get(get_thinking_budget),
+        )
+        .route(
+            "/api/session/{id}/config/temperature",
+            put(set_temperature).get(get_temperature),
+        )
+        .route(
+            "/api/session/{id}/config/max-tokens",
+            put(set_max_tokens).get(get_max_tokens),
+        )
+        .route(
+            "/api/session/{id}/config/precognition",
+            put(set_precognition).get(get_precognition),
+        )
 }
-
 #[derive(Debug, Deserialize)]
 struct CreateSessionRequest {
     #[serde(default = "default_session_type")]
@@ -309,6 +324,138 @@ async fn set_session_title(
         .daemon_err()?;
 
     Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+// =========================================================================
+// Session Config Endpoints
+// =========================================================================
+
+#[derive(Debug, Deserialize)]
+struct SetThinkingBudgetRequest {
+    thinking_budget: Option<i64>,
+}
+
+async fn set_thinking_budget(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<SetThinkingBudgetRequest>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    state
+        .daemon
+        .session_set_thinking_budget(&id, req.thinking_budget)
+        .await
+        .daemon_err()?;
+
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+async fn get_thinking_budget(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let budget = state
+        .daemon
+        .session_get_thinking_budget(&id)
+        .await
+        .daemon_err()?;
+
+    Ok(Json(serde_json::json!({ "thinking_budget": budget })))
+}
+
+#[derive(Debug, Deserialize)]
+struct SetTemperatureRequest {
+    temperature: f64,
+}
+
+async fn set_temperature(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<SetTemperatureRequest>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    state
+        .daemon
+        .session_set_temperature(&id, req.temperature)
+        .await
+        .daemon_err()?;
+
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+async fn get_temperature(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let temperature = state
+        .daemon
+        .session_get_temperature(&id)
+        .await
+        .daemon_err()?;
+
+    Ok(Json(serde_json::json!({ "temperature": temperature })))
+}
+
+#[derive(Debug, Deserialize)]
+struct SetMaxTokensRequest {
+    max_tokens: Option<u32>,
+}
+
+async fn set_max_tokens(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<SetMaxTokensRequest>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    state
+        .daemon
+        .session_set_max_tokens(&id, req.max_tokens)
+        .await
+        .daemon_err()?;
+
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+async fn get_max_tokens(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let max_tokens = state
+        .daemon
+        .session_get_max_tokens(&id)
+        .await
+        .daemon_err()?;
+
+    Ok(Json(serde_json::json!({ "max_tokens": max_tokens })))
+}
+
+#[derive(Debug, Deserialize)]
+struct SetPrecognitionRequest {
+    enabled: bool,
+}
+
+async fn set_precognition(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<SetPrecognitionRequest>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    state
+        .daemon
+        .session_set_precognition(&id, req.enabled)
+        .await
+        .daemon_err()?;
+
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+async fn get_precognition(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let enabled = state
+        .daemon
+        .session_get_precognition(&id)
+        .await
+        .daemon_err()?;
+
+    Ok(Json(serde_json::json!({ "precognition_enabled": enabled })))
 }
 
 #[derive(Debug, Serialize)]
