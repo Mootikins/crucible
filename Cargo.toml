@@ -19,7 +19,7 @@ members = [
 default-members = ["crates/crucible-cli"]
 
 [workspace.package]
-version = "0.2.1"
+version = "0.3.0"
 authors = ["Matthew Krohn <matthew.d.krohn@gmail.com>"]
 license = "MIT OR Apache-2.0"
 edition = "2021"
