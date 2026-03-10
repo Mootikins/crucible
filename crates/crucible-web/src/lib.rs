@@ -5,6 +5,7 @@ pub mod services;
 mod assets;
 mod error;
 mod events;
+mod middleware;
 
 pub use crucible_config::WebConfig;
 pub use error::{Result, WebError};
