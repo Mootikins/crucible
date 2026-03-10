@@ -88,6 +88,8 @@ pub const METHODS: &[&str] = &[
     "skills.search",
     "agents.list_profiles",
     "agents.resolve_profile",
+    "models.list",
+    "providers.list",
 ];
 // TODO: METHODS array is incomplete - add missing methods handled by dispatch.
 
@@ -190,6 +192,7 @@ impl RpcDispatcher {
 
             // Models handler
             "models.list" => to_response(id, self.handle_models_list(&req).await),
+            "providers.list" => to_response(id, self.handle_providers_list(&req).await),
 
             // Session lifecycle handlers
             "session.create" => to_response(id, self.handle_session_create(&req).await),
@@ -553,6 +556,11 @@ impl RpcDispatcher {
 
     async fn handle_models_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::session::handle_models_list(req.clone(), &self.ctx.agents).await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_providers_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_providers_list(req.clone(), &self.ctx.agents).await;
         map_server_resp(resp)
     }
 
@@ -1025,7 +1033,7 @@ mod tests {
 
     #[test]
     fn methods_count() {
-        assert_eq!(METHODS.len(), 77, "Update when adding RPC methods");
+        assert_eq!(METHODS.len(), 79, "Update when adding RPC methods");
     }
 
     #[tokio::test]
