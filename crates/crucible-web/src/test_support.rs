@@ -1,3 +1,24 @@
+#[cfg(test)]
+use std::sync::Arc;
+#[cfg(test)]
+use tempfile::TempDir;
+#[cfg(test)]
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+#[cfg(test)]
+use tokio::net::UnixListener;
+#[cfg(test)]
+use serde_json::{json, Value};
+#[cfg(test)]
+use crucible_daemon::DaemonClient;
+#[cfg(test)]
+use crucible_config::CliAppConfig;
+#[cfg(test)]
+use crate::services::daemon::{AppState, EventBroker};
+#[cfg(test)]
+use axum::Router;
+#[cfg(test)]
+use crate::routes::{chat_routes, health_routes, project_routes, search_routes, session_routes};
+
 use std::net::Ipv4Addr;
 
 use proptest::prelude::*;
@@ -144,4 +165,149 @@ mod tests {
             prop_assert!(!path.contains('\0'));
         }
     }
+}
+
+#[cfg(test)]
+/// A mock daemon that listens on a Unix socket and responds to JSON-RPC calls
+/// with canned responses. This allows testing HTTP routes without a real daemon.
+pub struct MockDaemon {
+    _tmp: TempDir,
+}
+
+#[cfg(test)]
+/// Start a mock daemon on a temporary Unix socket. Returns the mock daemon
+/// handle (holds TempDir alive) and a connected DaemonClient.
+pub async fn start_mock_daemon() -> (MockDaemon, DaemonClient) {
+    let tmp = tempfile::tempdir().expect("Failed to create temp dir");
+    let socket_path = tmp.path().join("mock-daemon.sock");
+
+    let listener = UnixListener::bind(&socket_path).expect("Failed to bind mock socket");
+
+    // Spawn mock daemon server
+    tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            tokio::spawn(async move {
+                let (read, mut write) = stream.into_split();
+                let mut reader = BufReader::new(read);
+                let mut line = String::new();
+
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line).await {
+                        Ok(0) => break, // EOF
+                        Ok(_) => {
+                            let msg: Value = match serde_json::from_str(&line) {
+                                Ok(m) => m,
+                                Err(_) => continue,
+                            };
+
+                            let id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+                            let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
+
+                            let result = mock_rpc_response(method, &msg);
+
+                            let response = json!({
+                                "jsonrpc": "2.0",
+                                "id": id,
+                                "result": result
+                            });
+
+                            let mut resp_str = serde_json::to_string(&response).unwrap();
+                            resp_str.push('\n');
+
+                            if write.write_all(resp_str.as_bytes()).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+        }
+    });
+
+    // Give the listener a moment to start
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+    let client = DaemonClient::connect_to(&socket_path)
+        .await
+        .expect("Failed to connect to mock daemon");
+
+    (MockDaemon { _tmp: tmp }, client)
+}
+
+#[cfg(test)]
+/// Generate mock RPC responses based on method name.
+fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
+    match method {
+        "kiln.list" => json!([]),
+        "list_notes" => json!([]),
+        "get_note_by_name" => Value::Null,
+        "note.upsert" => json!({}),
+        "search_vectors" => json!([]),
+        "session.create" => json!({"session_id": "test-session-001"}),
+        "session.list" => json!([]),
+        "session.get" => json!({
+            "session_id": "test-session-001",
+            "state": "active",
+            "session_type": "chat",
+            "kiln": "/tmp/test-kiln"
+        }),
+        "session.pause" => json!({"ok": true}),
+        "session.resume" => json!({"ok": true}),
+        "session.end" => json!({"ok": true}),
+        "session.cancel" => json!({"cancelled": true}),
+        "session.subscribe" => json!(null),
+        "session.configure_agent" => json!(null),
+        "session.send_message" => json!({"message_id": "msg-001"}),
+        "session.interaction_respond" => json!(null),
+        "session.list_models" => json!({"models": ["llama3.2", "mistral"]}),
+        "session.switch_model" => json!(null),
+        "session.set_title" => json!(null),
+        "session.search" => json!([{"session_id": "s1", "title": "Test Session"}]),
+        "session.resume_from_storage" => json!({"messages": [], "session_id": "test-session-001"}),
+        "project.list" => json!([]),
+        "project.register" => json!({
+            "path": "/tmp/test-project",
+            "name": "test-project",
+            "kilns": [],
+            "last_accessed": "2025-01-01T00:00:00Z"
+        }),
+        "project.unregister" => json!(null),
+        "project.get" => Value::Null,
+        "session.set_thinking_budget" => json!(null),
+        "session.get_thinking_budget" => json!({"thinking_budget": 1024}),
+        "session.set_temperature" => json!(null),
+        "session.get_temperature" => json!({"temperature": 0.7}),
+        "session.set_max_tokens" => json!(null),
+        "session.get_max_tokens" => json!({"max_tokens": 4096}),
+        "session.set_precognition" => json!(null),
+        "session.get_precognition" => json!({"precognition_enabled": true}),
+        "session.render_markdown" => json!({"markdown": "# Test Session\n\nExported content"}),
+        "providers.list" => json!({"providers": []}),
+        _ => json!(null),
+    }
+}
+
+#[cfg(test)]
+/// Build an AppState using a mock daemon client.
+pub fn build_mock_state(client: DaemonClient) -> AppState {
+    AppState {
+        daemon: Arc::new(client),
+        events: Arc::new(EventBroker::new()),
+        config: Arc::new(CliAppConfig::default()),
+        http_client: reqwest::Client::new(),
+    }
+}
+
+#[cfg(test)]
+/// Build the full app router with mock state.
+pub fn build_test_app(state: AppState) -> Router {
+    Router::new()
+        .merge(chat_routes())
+        .merge(session_routes())
+        .merge(project_routes())
+        .merge(search_routes())
+        .with_state(state)
+        .merge(health_routes())
 }
