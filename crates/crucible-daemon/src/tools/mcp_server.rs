@@ -26,7 +26,7 @@
 
 #![allow(missing_docs)]
 
-use super::helpers::McpResultExt;
+use super::helpers::{make_server_info, McpResultExt};
 use super::{KilnTools, NoteTools, SearchTools};
 use crucible_config::{DataClassification, TrustLevel};
 use crucible_core::background::{BackgroundSpawner, JobStatus, SubagentBlockingConfig};
@@ -491,14 +491,17 @@ impl CrucibleMcpServer {
 #[tool_handler]
 impl ServerHandler for CrucibleMcpServer {
     fn get_info(&self) -> rmcp::model::ServerInfo {
-        let mut capabilities = rmcp::model::ServerCapabilities::default();
-        capabilities.tools = Some(rmcp::model::ToolsCapability { list_changed: None });
-        let server_info =
-            rmcp::model::Implementation::new("crucible-mcp-server", env!("CARGO_PKG_VERSION"))
-                .with_title("Crucible MCP Server");
-        rmcp::model::InitializeResult::new(capabilities)
-            .with_server_info(server_info)
-            .with_instructions("Crucible knowledge management server with 14 tools. Notes: create_note, read_note, update_note, delete_note, list_notes, read_metadata. Search: semantic_search, text_search, property_search. Kiln: get_kiln_info. Delegation: delegate_session — hand off tasks to other agents when asked to delegate. Jobs: list_jobs, get_job_result, cancel_job — manage background jobs.".to_string())
+        make_server_info(
+            "Crucible knowledge management server with 14 tools. \
+            Notes: create_note, read_note, update_note, delete_note, list_notes, \
+            read_metadata. \
+            Search: semantic_search, text_search, property_search. \
+            Kiln: get_kiln_info. \
+            Delegation: delegate_session \
+            \u{2014} hand off tasks to other agents when asked to delegate. \
+            Jobs: list_jobs, get_job_result, cancel_job \
+            \u{2014} manage background jobs.",
+        )
     }
 }
 
