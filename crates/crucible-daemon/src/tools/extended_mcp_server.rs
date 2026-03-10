@@ -241,30 +241,22 @@ impl ExtendedMcpServer {
             Value::Object(map) => map.clone(),
             _ => serde_json::Map::new(),
         };
-        Tool {
-            name: Cow::Owned(tool.prefixed_name.clone()),
-            title: None,
-            description: tool.description.clone().map(Cow::Owned),
-            input_schema: Arc::new(schema),
-            output_schema: None,
-            annotations: None,
-            icons: None,
-            meta: None,
-        }
+        Tool::new_with_raw(
+            Cow::Owned(tool.prefixed_name.clone()),
+            tool.description.clone().map(Cow::Owned),
+            Arc::new(schema),
+        )
     }
 
     fn discovery_tools() -> Vec<Tool> {
-        use std::borrow::Cow;
         use std::sync::Arc;
 
         vec![
-            Tool {
-                name: Cow::Borrowed("discover_tools"),
-                description: Some(Cow::Borrowed(
-                    "Search available tools by name, description, or source. \
-                     Use to find tools before calling them.",
-                )),
-                input_schema: Arc::new(serde_json::Map::from_iter([
+            Tool::new(
+                "discover_tools",
+                "Search available tools by name, description, or source. \
+                 Use to find tools before calling them.",
+                Arc::new(serde_json::Map::from_iter([
                     ("type".to_string(), json!("object")),
                     (
                         "properties".to_string(),
@@ -286,18 +278,11 @@ impl ExtendedMcpServer {
                         }),
                     ),
                 ])),
-                annotations: None,
-                title: None,
-                output_schema: None,
-                icons: None,
-                meta: None,
-            },
-            Tool {
-                name: Cow::Borrowed("get_tool_schema"),
-                description: Some(Cow::Borrowed(
-                    "Get the full JSON Schema for a specific tool's input parameters.",
-                )),
-                input_schema: Arc::new(serde_json::Map::from_iter([
+            ),
+            Tool::new(
+                "get_tool_schema",
+                "Get the full JSON Schema for a specific tool's input parameters.",
+                Arc::new(serde_json::Map::from_iter([
                     ("type".to_string(), json!("object")),
                     (
                         "properties".to_string(),
@@ -310,12 +295,7 @@ impl ExtendedMcpServer {
                     ),
                     ("required".to_string(), json!(["name"])),
                 ])),
-                annotations: None,
-                title: None,
-                output_schema: None,
-                icons: None,
-                meta: None,
-            },
+            ),
         ]
     }
 
@@ -347,16 +327,11 @@ impl ExtendedMcpServer {
             full_schema.insert("required".to_string(), json!(required));
         }
 
-        Tool {
-            name: format!("lua_{}", lt.name).into(),
-            title: None,
-            description: Some(lt.description.clone().into()),
-            input_schema: Arc::new(full_schema),
-            output_schema: None,
-            annotations: None,
-            icons: None,
-            meta: None,
-        }
+        Tool::new_with_raw(
+            Cow::Owned(format!("lua_{}", lt.name)),
+            Some(Cow::Owned(lt.description.clone())),
+            Arc::new(full_schema),
+        )
     }
 
     async fn emit_event(&self, event: SessionEvent) -> (SessionEvent, bool) {
@@ -537,15 +512,15 @@ impl ExtendedMcpServer {
                 drop(gateway);
                 self.emit_event(post_event).await;
 
-                Ok(CallToolResult {
-                    content: result
-                        .content
-                        .into_iter()
-                        .filter_map(|c| c.as_text().map(|t| Content::text(t.to_string())))
-                        .collect(),
-                    is_error: Some(result.is_error),
-                    structured_content: None,
-                    meta: None,
+                let content_vec: Vec<Content> = result
+                    .content
+                    .into_iter()
+                    .filter_map(|c| c.as_text().map(|t| Content::text(t.to_string())))
+                    .collect();
+                Ok(if result.is_error {
+                    CallToolResult::error(content_vec)
+                } else {
+                    CallToolResult::success(content_vec)
                 })
             }
             Err(e) => {
@@ -642,30 +617,19 @@ impl ExtendedMcpService {
 
 impl ServerHandler for ExtendedMcpService {
     fn get_info(&self) -> rmcp::model::ServerInfo {
-        rmcp::model::ServerInfo {
-            protocol_version: rmcp::model::ProtocolVersion::default(),
-            capabilities: rmcp::model::ServerCapabilities {
-                tools: Some(rmcp::model::ToolsCapability { list_changed: None }),
-                ..Default::default()
-            },
-            server_info: rmcp::model::Implementation {
-                name: "crucible-mcp-server".into(),
-                version: env!("CARGO_PKG_VERSION").into(),
-                title: Some("Crucible MCP Server".into()),
-                icons: None,
-                website_url: None,
-            },
-            instructions: Some(
-                "Crucible MCP server exposing kiln tools (notes, search, metadata) \
-                and Lua plugins for knowledge management."
-                    .into(),
-            ),
-        }
+        let mut capabilities = rmcp::model::ServerCapabilities::default();
+        capabilities.tools = Some(rmcp::model::ToolsCapability { list_changed: None });
+        let server_info =
+            rmcp::model::Implementation::new("crucible-mcp-server", env!("CARGO_PKG_VERSION"))
+                .with_title("Crucible MCP Server");
+        rmcp::model::InitializeResult::new(capabilities)
+            .with_server_info(server_info)
+            .with_instructions("Crucible MCP server exposing kiln tools (notes, search, metadata) and Lua plugins for knowledge management.".to_string())
     }
 
     async fn list_tools(
         &self,
-        _request: Option<rmcp::model::PaginatedRequestParam>,
+        _request: Option<rmcp::model::PaginatedRequestParams>,
         _context: RequestContext<rmcp::RoleServer>,
     ) -> Result<rmcp::model::ListToolsResult, rmcp::ErrorData> {
         let tools = self.cached_tools.read().await.clone();
@@ -679,7 +643,7 @@ impl ServerHandler for ExtendedMcpService {
 
     async fn call_tool(
         &self,
-        request: rmcp::model::CallToolRequestParam,
+        request: rmcp::model::CallToolRequestParams,
         context: RequestContext<rmcp::RoleServer>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let name = request.name.as_ref();

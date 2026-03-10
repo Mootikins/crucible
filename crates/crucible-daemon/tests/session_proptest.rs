@@ -1,6 +1,6 @@
 use crucible_core::session::{SessionState, SessionType};
 use crucible_daemon::session_manager::{SessionError, SessionManager};
-use rand::{prelude::IndexedRandom, Rng};
+use rand::{prelude::IndexedRandom, RngExt};
 use tempfile::TempDir;
 
 #[derive(Debug, Clone, Copy)]

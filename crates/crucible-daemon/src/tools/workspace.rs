@@ -20,7 +20,6 @@
 
 use super::helpers::{text_success, McpResultExt};
 use rmcp::model::{CallToolResult, RawContent, Tool};
-use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::process::Command;
@@ -74,13 +73,10 @@ impl WorkspaceTools {
     }
 
     fn read_file_definition() -> Tool {
-        Tool {
-            name: Cow::Borrowed("read_file"),
-            title: None,
-            description: Some(Cow::Borrowed(
-                "Read file contents. Returns content with line numbers.",
-            )),
-            input_schema: Arc::new(
+        Tool::new(
+            "read_file",
+            "Read file contents. Returns content with line numbers.",
+            Arc::new(
                 serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -104,21 +100,14 @@ impl WorkspaceTools {
                 .unwrap()
                 .clone(),
             ),
-            output_schema: None,
-            annotations: None,
-            icons: None,
-            meta: None,
-        }
+        )
     }
 
     fn edit_file_definition() -> Tool {
-        Tool {
-            name: Cow::Borrowed("edit_file"),
-            title: None,
-            description: Some(Cow::Borrowed(
-                "Edit file by replacing text. old_string must match exactly.",
-            )),
-            input_schema: Arc::new(
+        Tool::new(
+            "edit_file",
+            "Edit file by replacing text. old_string must match exactly.",
+            Arc::new(
                 serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -146,21 +135,14 @@ impl WorkspaceTools {
                 .unwrap()
                 .clone(),
             ),
-            output_schema: None,
-            annotations: None,
-            icons: None,
-            meta: None,
-        }
+        )
     }
 
     fn write_file_definition() -> Tool {
-        Tool {
-            name: Cow::Borrowed("write_file"),
-            title: None,
-            description: Some(Cow::Borrowed(
-                "Write content to file. Creates parent directories if needed.",
-            )),
-            input_schema: Arc::new(
+        Tool::new(
+            "write_file",
+            "Write content to file. Creates parent directories if needed.",
+            Arc::new(
                 serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -180,21 +162,14 @@ impl WorkspaceTools {
                 .unwrap()
                 .clone(),
             ),
-            output_schema: None,
-            annotations: None,
-            icons: None,
-            meta: None,
-        }
+        )
     }
 
     fn bash_definition() -> Tool {
-        Tool {
-            name: Cow::Borrowed("bash"),
-            title: None,
-            description: Some(Cow::Borrowed(
-                "Execute bash command. Use for git, npm, cargo, etc. Set background=true for long-running commands.",
-            )),
-            input_schema: Arc::new(
+        Tool::new(
+            "bash",
+            "Execute bash command. Use for git, npm, cargo, etc. Set background=true for long-running commands.",
+            Arc::new(
                 serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -218,21 +193,14 @@ impl WorkspaceTools {
                 .unwrap()
                 .clone(),
             ),
-            output_schema: None,
-            annotations: None,
-            icons: None,
-            meta: None,
-        }
+        )
     }
 
     fn glob_definition() -> Tool {
-        Tool {
-            name: Cow::Borrowed("glob"),
-            title: None,
-            description: Some(Cow::Borrowed(
-                "Find files matching glob pattern (e.g., '**/*.rs').",
-            )),
-            input_schema: Arc::new(
+        Tool::new(
+            "glob",
+            "Find files matching glob pattern (e.g., '**/*.rs').",
+            Arc::new(
                 serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -256,21 +224,14 @@ impl WorkspaceTools {
                 .unwrap()
                 .clone(),
             ),
-            output_schema: None,
-            annotations: None,
-            icons: None,
-            meta: None,
-        }
+        )
     }
 
     fn grep_definition() -> Tool {
-        Tool {
-            name: Cow::Borrowed("grep"),
-            title: None,
-            description: Some(Cow::Borrowed(
-                "Search file contents with regex. Uses ripgrep.",
-            )),
-            input_schema: Arc::new(
+        Tool::new(
+            "grep",
+            "Search file contents with regex. Uses ripgrep.",
+            Arc::new(
                 serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -298,11 +259,7 @@ impl WorkspaceTools {
                 .unwrap()
                 .clone(),
             ),
-            output_schema: None,
-            annotations: None,
-            icons: None,
-            meta: None,
-        }
+        )
     }
 }
 

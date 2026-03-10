@@ -176,16 +176,7 @@ mod tests {
         schema.insert("type".to_string(), json!("object"));
         schema.insert("properties".to_string(), json!({}));
 
-        Tool {
-            name: Cow::Owned(name.to_string()),
-            description: Some(Cow::Owned(desc.to_string())),
-            input_schema: Arc::new(schema),
-            annotations: None,
-            title: None,
-            output_schema: None,
-            icons: None,
-            meta: None,
-        }
+        Tool::new(name.to_string(), desc.to_string(), Arc::new(schema))
     }
 
     #[test]

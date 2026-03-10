@@ -159,7 +159,7 @@ impl ProjectManager {
         match gix::discover(path) {
             Ok(repo) => {
                 let git_dir = repo.git_dir().to_path_buf();
-                let work_dir = repo.work_dir().map(|p| p.to_path_buf());
+                let work_dir = repo.workdir().map(|p| p.to_path_buf());
 
                 let common_dir = repo.common_dir().to_path_buf();
                 let is_worktree = git_dir != common_dir;

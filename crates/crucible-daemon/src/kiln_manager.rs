@@ -557,7 +557,7 @@ impl KilnManager {
                         let mut mismatches = Vec::new();
                         for model in models {
                             if model != current_model_owned {
-                                let count: usize = conn
+                                let count: u32 = conn
                                     .query_row(
                                         "SELECT COUNT(*) FROM notes \
                                          WHERE embedding_model = ?1 AND embedding IS NOT NULL",
@@ -565,7 +565,7 @@ impl KilnManager {
                                         |row| row.get(0),
                                     )
                                     .map_err(|e| StorageError::Backend(e.to_string()))?;
-                                mismatches.push((model, count));
+                                mismatches.push((model, count as usize));
                             }
                         }
 

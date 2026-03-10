@@ -214,16 +214,11 @@ mod tests {
     use std::borrow::Cow;
 
     fn make_test_tool(name: &str, desc: &str) -> Tool {
-        Tool {
-            name: Cow::Owned(name.to_string()),
-            title: None,
-            description: Some(Cow::Owned(desc.to_string())),
-            input_schema: Default::default(),
-            output_schema: None,
-            annotations: None,
-            icons: None,
-            meta: None,
-        }
+        Tool::new(
+            name.to_string(),
+            desc.to_string(),
+            std::sync::Arc::new(Default::default()),
+        )
     }
 
     #[test]
