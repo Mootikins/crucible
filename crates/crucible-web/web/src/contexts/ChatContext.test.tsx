@@ -9,11 +9,15 @@ vi.mock('@/lib/api', () => ({
   sendChatMessage: vi.fn(),
   subscribeToEvents: vi.fn(() => () => {}),
   respondToInteraction: vi.fn(),
+  getSession: vi.fn(),
+  getSessionHistory: vi.fn(async () => ({ history: [], total_events: 0 })),
+  setSessionTitle: vi.fn(),
   generateMessageId: () => `msg_${Date.now()}_test`,
 }));
 
 const mockSendChatMessage = api.sendChatMessage as ReturnType<typeof vi.fn>;
 const mockSubscribeToEvents = api.subscribeToEvents as ReturnType<typeof vi.fn>;
+const mockGetSession = api.getSession as ReturnType<typeof vi.fn>;
 
 const mockSession: Session = {
   id: 'test-session-1',
@@ -48,13 +52,14 @@ function TestConsumer() {
 
 function TestWrapper(props: { children: any; session?: Session | null }) {
   const [session] = createSignal(props.session !== undefined ? props.session : mockSession);
-  return <ChatProvider session={session} setSessionTitle={async () => {}}>{props.children}</ChatProvider>;
+  return <ChatProvider sessionId={session()?.id ?? ''}>{props.children}</ChatProvider>;
 }
 
 describe('ChatContext', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSubscribeToEvents.mockReturnValue(() => {});
+    mockGetSession.mockResolvedValue(mockSession);
   });
 
   it('starts with empty messages', () => {
@@ -157,7 +162,7 @@ describe('session switching', () => {
   function DynamicTestWrapper(props: { children: any }) {
     const [session, setSession] = createSignal<Session | null>(mockSession);
     return (
-      <ChatProvider session={session} setSessionTitle={async () => {}}>
+      <ChatProvider sessionId={session()?.id ?? ''}>
         {props.children}
         <button data-testid="switch-session" onClick={() => setSession(mockSession2)}>Switch</button>
         <button data-testid="clear-session" onClick={() => setSession(null)}>Clear</button>
@@ -168,6 +173,7 @@ describe('session switching', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSubscribeToEvents.mockReturnValue(() => {});
+    mockGetSession.mockResolvedValue(mockSession);
   });
 
   it('does not clear messages on initial mount', async () => {
