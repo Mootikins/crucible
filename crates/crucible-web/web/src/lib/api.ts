@@ -214,6 +214,21 @@ export async function listSessions(filters?: {
   return data.sessions.map(mapSession);
 }
 
+/** Search sessions by title/content. */
+export async function searchSessions(query: string, kiln?: string, limit?: number): Promise<Session[]> {
+  const params = new URLSearchParams({ q: query });
+  if (kiln) params.set('kiln', kiln);
+  if (limit !== undefined) params.set('limit', limit.toString());
+
+  const res = await fetch(`/api/sessions/search?${params.toString()}`);
+  if (!res.ok) {
+    throw new Error(`Failed to search sessions: HTTP ${res.status}`);
+  }
+
+  const data = (await res.json()) as RawSession[];
+  return data.map(mapSession);
+}
+
 export async function getSession(id: string): Promise<Session> {
   const res = await fetch(`/api/session/${encodeURIComponent(id)}`);
   if (!res.ok) {

@@ -86,6 +86,18 @@ const App: Component = () => {
       action: () => window.dispatchEvent(new CustomEvent('crucible:switch-model')),
     },
     {
+      id: 'session-search',
+      label: 'Search Sessions',
+      description: 'Find sessions by title or content.',
+      category: 'Session',
+      keywords: ['search', 'find', 'session', 'filter'],
+      action: () => {
+        windowActions.setEdgePanelCollapsed('left', false);
+        // Defer to next tick so the panel is visible before focusing
+        setTimeout(() => window.dispatchEvent(new CustomEvent('crucible:focus-session-search')), 100);
+      },
+    },
+    {
       id: 'nav-open-settings',
       label: 'Open Settings',
       description: 'Show settings in the right side panel.',
