@@ -16,28 +16,40 @@ Complete reference for all Crucible CLI commands.
 
 | Command | Description |
 |---------|-------------|
-| `cru process` | Process kiln and sync to database |
-| `cru stats` | Show kiln statistics |
-| `cru status` | Show storage status and statistics |
-| `cru config` | Configuration management |
+| `cru chat` | Interactive AI chat with session persistence and tool access |
+| `cru process` | Process markdown files through the pipeline (parse, enrich, store) |
+| `cru init` | Initialize a new kiln (Crucible workspace) |
+| `cru stats` | Display kiln statistics |
+| `cru status` | Display storage status and statistics for the knowledge base |
+| `cru models` | List available models from configured LLM provider |
 
-## Agent Commands
-
-| Command | Description |
-|---------|-------------|
-| `cru chat` | Interactive chat with agents |
-| `cru agents list` | List available agents |
-| `cru agents info <name>` | Show agent details |
-| `cru mcp` | Start MCP server for external tools |
-
-## Management Commands
+## Agent & Integration Commands
 
 | Command | Description |
 |---------|-------------|
-| `cru storage` | Storage management and operations |
-| `cru tasks` | Task harness management |
-| `cru daemon` | Daemon management (start, stop, status) |
-| `cru skills` | Agent skills management |
+| `cru agents` | Manage agent cards (list, show, validate) |
+| `cru mcp` | Start MCP server exposing Crucible tools for external AI agents |
+| `cru skills` | Discover and manage agent skills (list, show, search) |
+| `cru tools` | Discover and manage tools (list, show) |
+
+## Session & Configuration Commands
+
+| Command | Description |
+|---------|-------------|
+| `cru session` | Manage chat sessions (list, show, resume, export, search) |
+| `cru config` | Manage Crucible configuration (initialize, view, export) |
+| `cru auth` | Manage LLM provider credentials (login, logout, list) |
+| `cru set` | Configure a running session's settings (same syntax as TUI :set) |
+
+## System & Development Commands
+
+| Command | Description |
+|---------|-------------|
+| `cru daemon` | Manage the Crucible daemon (start, stop, status, logs) |
+| `cru storage` | Manage storage operations (migration, verification, backup, cleanup) |
+| `cru tasks` | Manage tasks from a TASKS.md file (list, next, pick, done) |
+| `cru plugin` | Manage and develop Lua plugins |
+| `cru web` | Start the web UI server for browser-based chat |
 
 ## Global Options
 
@@ -50,6 +62,7 @@ Complete reference for all Crucible CLI commands.
     --embedding-model <MODEL> Embedding model name (overrides config)
     --no-process            Skip file processing on startup
     --process-timeout <SEC> Processing timeout in seconds (default: 300)
+    --standalone            Run with in-process daemon (no background server required)
 -h, --help                  Show help
 -V, --version               Print version
 ```
