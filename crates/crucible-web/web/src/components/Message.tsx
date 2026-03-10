@@ -161,7 +161,7 @@ export const Message: Component<MessageProps> = (props) => {
     event.preventDefault();
     const note = noteElement.dataset.note;
     if (note) {
-      console.log(`[wikilink] ${note}`);
+      // TODO: navigate to note view when editor panel supports it
     }
   };
 

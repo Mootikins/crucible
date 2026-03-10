@@ -80,7 +80,7 @@ async fn embedded_handler(req: Request<Body>) -> impl IntoResponse {
     Response::builder()
         .status(StatusCode::NOT_FOUND)
         .body(Body::from("Not Found"))
-        .unwrap()
+        .expect("valid 404 response")
 }
 
 fn respond_with_asset(path: &str, data: Vec<u8>) -> Response<Body> {
@@ -92,5 +92,5 @@ fn respond_with_asset(path: &str, data: Vec<u8>) -> Response<Body> {
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, mime)
         .body(Body::from(data))
-        .unwrap()
+        .expect("valid asset response")
 }
