@@ -105,7 +105,8 @@ fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
         "session.get" => json!({
             "session_id": "test-session-001",
             "state": "active",
-            "session_type": "chat"
+            "session_type": "chat",
+            "kiln": "/tmp/test-kiln"
         }),
         "session.pause" => json!({"ok": true}),
         "session.resume" => json!({"ok": true}),
@@ -129,6 +130,16 @@ fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
         }),
         "project.unregister" => json!(null),
         "project.get" => Value::Null,
+        "session.set_thinking_budget" => json!(null),
+        "session.get_thinking_budget" => json!({"thinking_budget": 1024}),
+        "session.set_temperature" => json!(null),
+        "session.get_temperature" => json!({"temperature": 0.7}),
+        "session.set_max_tokens" => json!(null),
+        "session.get_max_tokens" => json!({"max_tokens": 4096}),
+        "session.set_precognition" => json!(null),
+        "session.get_precognition" => json!({"precognition_enabled": true}),
+        "session.render_markdown" => json!({"markdown": "# Test Session\n\nExported content"}),
+        "providers.list" => json!({"providers": []}),
         _ => json!(null),
     }
 }
@@ -1439,4 +1450,397 @@ async fn command_with_whitespace_padding_works() {
         json["result"].as_str().unwrap().contains("cleared"),
         "Command should work with whitespace padding"
     );
+}
+
+// =========================================================================
+// Session Creation Contract Tests (with mock daemon)
+// =========================================================================
+
+#[tokio::test]
+async fn create_session_returns_200_with_session_id() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/session")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "kiln": "/tmp/test-kiln",
+                        "provider": "ollama",
+                        "model": "llama3.2"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert!(
+        json.get("session_id").is_some(),
+        "Response must contain session_id"
+    );
+    assert_eq!(json["session_id"], "test-session-001");
+}
+
+#[tokio::test]
+async fn create_session_with_private_ip_endpoint_returns_422() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/session")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "kiln": "/tmp/test-kiln",
+                        "provider": "openai",
+                        "model": "gpt-4o",
+                        "endpoint": "http://10.0.0.1/v1"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn create_session_with_defaults_uses_ollama() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    // Only required field is kiln — provider and model use defaults
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/session")
+                .header("content-type", "application/json")
+                .body(Body::from(json!({"kiln": "/tmp/test-kiln"}).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["session_id"], "test-session-001");
+}
+
+// =========================================================================
+// Session Config Endpoint Contract Tests (with mock daemon)
+// =========================================================================
+
+#[tokio::test]
+async fn set_thinking_budget_returns_200() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/session/test-session-001/config/thinking-budget")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({"thinking_budget": 1024}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["ok"], true);
+}
+
+#[tokio::test]
+async fn get_thinking_budget_returns_200_with_budget() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/session/test-session-001/config/thinking-budget")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert!(
+        json.get("thinking_budget").is_some(),
+        "Response must contain thinking_budget field"
+    );
+}
+
+#[tokio::test]
+async fn set_temperature_returns_200() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/session/test-session-001/config/temperature")
+                .header("content-type", "application/json")
+                .body(Body::from(json!({"temperature": 0.7}).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["ok"], true);
+}
+
+#[tokio::test]
+async fn get_temperature_returns_200_with_value() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/session/test-session-001/config/temperature")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert!(
+        json.get("temperature").is_some(),
+        "Response must contain temperature field"
+    );
+}
+
+#[tokio::test]
+async fn set_max_tokens_returns_200() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/session/test-session-001/config/max-tokens")
+                .header("content-type", "application/json")
+                .body(Body::from(json!({"max_tokens": 4096}).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["ok"], true);
+}
+
+#[tokio::test]
+async fn get_max_tokens_returns_200_with_value() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/session/test-session-001/config/max-tokens")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert!(
+        json.get("max_tokens").is_some(),
+        "Response must contain max_tokens field"
+    );
+}
+
+#[tokio::test]
+async fn set_precognition_returns_200() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/session/test-session-001/config/precognition")
+                .header("content-type", "application/json")
+                .body(Body::from(json!({"enabled": true}).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["ok"], true);
+}
+
+#[tokio::test]
+async fn get_precognition_returns_200_with_enabled_field() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/session/test-session-001/config/precognition")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert!(
+        json.get("precognition_enabled").is_some(),
+        "Response must contain precognition_enabled field"
+    );
+}
+
+#[tokio::test]
+async fn export_session_returns_markdown_content_type() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/session/test-session-001/export")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(
+        content_type.contains("text/markdown"),
+        "Expected text/markdown content-type, got: {}",
+        content_type
+    );
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let text = String::from_utf8(body.to_vec()).unwrap();
+    assert!(
+        !text.is_empty(),
+        "Exported markdown should not be empty"
+    );
+}
+
+#[tokio::test]
+async fn get_session_returns_session_data() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/session/test-session-001")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["session_id"], "test-session-001");
+    assert_eq!(json["state"], "active");
+    assert_eq!(json["session_type"], "chat");
 }

@@ -705,6 +705,7 @@ mod tests {
     use super::*;
     use crate::test_support::*;
     use proptest::prelude::*;
+    use tower::ServiceExt;
 
     proptest! {
         #[test]
@@ -782,5 +783,126 @@ mod tests {
     fn validate_endpoint_allows_public_domain_name() {
         // TODO(security): DNS rebinding not checked — hostname "evil.com" resolving to 10.0.0.1 would pass this validation
         assert!(validate_endpoint("http://evil.com").is_ok());
+    }
+
+    // =========================================================================
+    // export_session Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn export_session_returns_text_markdown_content_type() {
+        let (_mock, client) = crate::test_support::start_mock_daemon().await;
+        let state = crate::test_support::build_mock_state(client);
+        let app = crate::test_support::build_test_app(state);
+
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/session/test-session-001/export")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+        let content_type = response
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(
+            content_type.contains("text/markdown"),
+            "Expected text/markdown content-type, got: {}",
+            content_type
+        );
+    }
+
+    #[tokio::test]
+    async fn export_session_returns_markdown_body() {
+        let (_mock, client) = crate::test_support::start_mock_daemon().await;
+        let state = crate::test_support::build_mock_state(client);
+        let app = crate::test_support::build_test_app(state);
+
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/session/test-session-001/export")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let text = String::from_utf8(body.to_vec()).unwrap();
+
+        // Should contain markdown content (either from render or fallback)
+        assert!(!text.is_empty(), "Exported markdown should not be empty");
+        // Fallback markdown includes session title
+        assert!(
+            text.contains("#") || text.contains("Test Session"),
+            "Exported markdown should contain heading or session title"
+        );
+    }
+
+    #[tokio::test]
+    async fn export_session_fallback_includes_session_metadata() {
+        let (_mock, client) = crate::test_support::start_mock_daemon().await;
+        let state = crate::test_support::build_mock_state(client);
+        let app = crate::test_support::build_test_app(state);
+
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/session/test-session-001/export")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let text = String::from_utf8(body.to_vec()).unwrap();
+
+        // Fallback markdown should include metadata fields
+        // The mock returns render_markdown with "# Test Session\n\nExported content"
+        // But if render fails, fallback includes: title, started_at, model, state
+        assert!(
+            text.contains("Test Session") || text.contains("Date"),
+            "Exported markdown should include session metadata"
+        );
+    }
+
+    #[tokio::test]
+    async fn export_session_with_valid_session_returns_200() {
+        let (_mock, client) = crate::test_support::start_mock_daemon().await;
+        let state = crate::test_support::build_mock_state(client);
+        let app = crate::test_support::build_test_app(state);
+
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/session/test-session-001/export")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Valid session with kiln should return 200
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
     }
 }

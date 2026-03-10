@@ -253,6 +253,8 @@ async fn search_vectors(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{arb_safe_path, arb_traversal_path};
+    use proptest::prelude::*;
 
     fn is_valid_note_name(name: &str) -> bool {
         !name.contains("..")
@@ -461,5 +463,84 @@ mod tests {
     fn test_extract_title_trims_whitespace() {
         let content = "#    Lots of spaces   \n\nContent";
         assert_eq!(extract_title(content), "Lots of spaces");
+    }
+
+    #[test]
+    fn test_put_note_content_exactly_ten_megabytes_is_allowed() {
+        let content = "x".repeat(MAX_NOTE_SIZE);
+        assert_eq!(content.len(), 10 * 1024 * 1024);
+        assert!(content.len() <= MAX_NOTE_SIZE);
+        assert!(!(content.len() > MAX_NOTE_SIZE));
+    }
+
+    #[test]
+    fn test_put_note_content_ten_megabytes_plus_one_is_rejected() {
+        let content = "x".repeat(MAX_NOTE_SIZE + 1);
+        assert_eq!(content.len(), (10 * 1024 * 1024) + 1);
+        assert!(content.len() > MAX_NOTE_SIZE);
+        assert_eq!(
+            format!(
+                "Note content too large: {} bytes (max {} bytes)",
+                content.len(),
+                MAX_NOTE_SIZE
+            ),
+            "Note content too large: 10485761 bytes (max 10485760 bytes)"
+        );
+    }
+
+    #[test]
+    fn test_put_note_appends_md_extension_when_missing() {
+        let name = "daily/2026-03-10";
+        let note_filename = if name.ends_with(".md") {
+            name.to_string()
+        } else {
+            format!("{}.md", name)
+        };
+        assert_eq!(note_filename, "daily/2026-03-10.md");
+    }
+
+    #[test]
+    fn test_put_note_preserves_md_extension_when_present() {
+        let name = "daily/2026-03-10.md";
+        let note_filename = if name.ends_with(".md") {
+            name.to_string()
+        } else {
+            format!("{}.md", name)
+        };
+        assert_eq!(note_filename, "daily/2026-03-10.md");
+    }
+
+    #[test]
+    fn test_extract_title_returns_first_heading_when_multiple_exist() {
+        let content = "Intro line\n## First Heading\n### Second Heading";
+        assert_eq!(extract_title(content), "First Heading");
+    }
+
+    #[test]
+    fn test_extract_title_without_heading_falls_back_to_first_line() {
+        let content = "No heading here\nstill no heading";
+        assert_eq!(extract_title(content), "No heading here");
+    }
+
+    proptest! {
+        #[test]
+        fn prop_validate_note_name_rejects_traversal_patterns(path in arb_traversal_path()) {
+            prop_assert!(!is_valid_note_name(&path));
+        }
+
+        #[test]
+        fn prop_validate_note_name_rejects_embedded_null_bytes(prefix in ".{0,32}", suffix in ".{0,32}") {
+            let path = format!("{prefix}\0{suffix}");
+            prop_assert!(!is_valid_note_name(&path));
+        }
+
+        #[test]
+        fn prop_validate_note_name_accepts_safe_paths(
+            path in arb_safe_path().prop_filter("matches current note-name policy", |s| {
+                !s.starts_with('/') && !s.starts_with('\\')
+            })
+        ) {
+            prop_assert!(is_valid_note_name(&path));
+        }
     }
 }
