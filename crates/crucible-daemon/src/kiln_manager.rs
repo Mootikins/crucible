@@ -4,8 +4,10 @@
 //! Supports SQLite backend via feature flags.
 
 use anyhow::Result;
+use crucible_config::WorkspaceConfig;
 use crucible_core::events::InternalSessionEvent;
 use std::collections::HashMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -162,6 +164,7 @@ impl StorageHandle {
 pub struct KilnConnection {
     pub handle: StorageHandle,
     pub pipeline: NotePipeline,
+    pub name: Option<String>,
     pub last_access: Instant,
     watch_manager: Option<WatchManager>,
 }
@@ -226,6 +229,8 @@ impl KilnManager {
         let pipeline = create_pipeline(&handle, self.enrichment_config.as_ref()).await?;
         info!("Pipeline created for kiln at {:?}", canonical);
 
+        let name = read_kiln_name(&canonical);
+
         let watch_manager = self.start_watch_manager(&canonical).await;
 
         let mut conns = self.connections.write().await;
@@ -234,6 +239,7 @@ impl KilnManager {
             KilnConnection {
                 handle,
                 pipeline,
+                name,
                 last_access: Instant::now(),
                 watch_manager,
             },
@@ -313,11 +319,11 @@ impl KilnManager {
     }
 
     /// List all open kilns
-    pub async fn list(&self) -> Vec<(PathBuf, Instant)> {
+    pub async fn list(&self) -> Vec<(PathBuf, Option<String>, Instant)> {
         let conns = self.connections.read().await;
         conns
             .iter()
-            .map(|(path, conn)| (path.clone(), conn.last_access))
+            .map(|(path, conn)| (path.clone(), conn.name.clone(), conn.last_access))
             .collect()
     }
 
@@ -757,6 +763,18 @@ fn discover_markdown_files(kiln_path: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
+fn read_kiln_name(kiln_path: &Path) -> Option<String> {
+    let config_path = kiln_path.join(".crucible").join("workspace.toml");
+    let content = fs::read_to_string(config_path).ok()?;
+    let config: WorkspaceConfig = toml::from_str(&content).ok()?;
+    let trimmed = config.workspace.name.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -853,6 +871,38 @@ mod tests {
         // Should now be in the list
         let list = km.list().await;
         assert_eq!(list.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_open_reads_kiln_name_from_workspace_toml() {
+        let km = KilnManager::new();
+        let tmp = TempDir::new().unwrap();
+        let kiln_path = tmp.path().join("named_kiln");
+        std::fs::create_dir_all(kiln_path.join(".crucible")).unwrap();
+        std::fs::write(
+            kiln_path.join(".crucible").join("workspace.toml"),
+            "[workspace]\nname = \"crucible-docs\"\n",
+        )
+        .unwrap();
+
+        km.open(&kiln_path).await.unwrap();
+
+        let list = km.list().await;
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].1.as_deref(), Some("crucible-docs"));
+    }
+
+    #[tokio::test]
+    async fn test_open_without_workspace_toml_has_null_name() {
+        let km = KilnManager::new();
+        let tmp = TempDir::new().unwrap();
+        let kiln_path = tmp.path().join("unnamed_kiln");
+
+        km.open(&kiln_path).await.unwrap();
+
+        let list = km.list().await;
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].1, None);
     }
 
     #[tokio::test]
@@ -1018,7 +1068,7 @@ mod tests {
         // Open and get initial access time
         km.open(&kiln_path).await.unwrap();
         let initial_list = km.list().await;
-        let initial_time = initial_list[0].1;
+        let initial_time = initial_list[0].2;
 
         // Wait a bit
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -1028,7 +1078,7 @@ mod tests {
 
         // Last access should be updated
         let updated_list = km.list().await;
-        let updated_time = updated_list[0].1;
+        let updated_time = updated_list[0].2;
 
         assert!(updated_time > initial_time);
     }
