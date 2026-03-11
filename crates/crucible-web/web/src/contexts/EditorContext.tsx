@@ -53,7 +53,7 @@ export const EditorProvider: ParentComponent = (props) => {
         return;
       }
 
-      const kilnPath = currentProject.kilns[0];
+      const kilnPath = currentProject.kilns[0].path;
       const noteName = extractNoteName(path, kilnPath);
       const noteData = await getNote(noteName, kilnPath);
       const content = noteData.content ?? '';
@@ -104,7 +104,7 @@ export const EditorProvider: ParentComponent = (props) => {
         return;
       }
 
-      const kilnPath = currentProject.kilns[0];
+      const kilnPath = currentProject.kilns[0].path;
       const noteName = extractNoteName(path, kilnPath);
       await saveNote(noteName, kilnPath, file.content);
 

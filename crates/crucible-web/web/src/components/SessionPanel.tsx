@@ -1,18 +1,22 @@
 import { Component, For, Show, createSignal, createEffect, onCleanup } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useProjectSafe } from '@/contexts/ProjectContext';
-import type { Session, Project } from '@/lib/types';
+import type { Session, Project, KilnInfo } from '@/lib/types';
 import { RefreshCw, Plus, Search, X } from '@/lib/icons';
 import { searchSessions } from '@/lib/api';
 
 const KilnSelector: Component<{
-  kilns: string[];
+  kilns: KilnInfo[];
   selected: string;
   onSelect: (kiln: string) => void;
 }> = (props) => {
-  const getKilnName = (path: string) => {
-    const parts = path.split('/');
-    return parts[parts.length - 1] || path;
+  const getKilnDisplayName = (kiln: KilnInfo) => {
+    // Use the kiln name if available, otherwise fall back to last path segment
+    if (kiln.name) {
+      return kiln.name;
+    }
+    const parts = kiln.path.split('/');
+    return parts[parts.length - 1] || kiln.path;
   };
 
   return (
@@ -22,19 +26,19 @@ const KilnSelector: Component<{
         <Show
           when={props.kilns.length > 1}
           fallback={
-            <div class="text-sm text-neutral-300 truncate" title={props.kilns[0]}>
-              {getKilnName(props.kilns[0])}
+            <div class="text-sm text-neutral-300 truncate" title={props.kilns[0].path}>
+              {getKilnDisplayName(props.kilns[0])}
             </div>
           }
         >
-           <select
-             value={props.selected}
-             onChange={(e) => props.onSelect(e.currentTarget.value)}
-             class="w-full bg-surface-elevated text-neutral-200 text-sm px-2 py-1.5 rounded border border-neutral-700 focus:border-primary focus:outline-none"
-           >
+          <select
+            value={props.selected}
+            onChange={(e) => props.onSelect(e.currentTarget.value)}
+            class="w-full bg-surface-elevated text-neutral-200 text-sm px-2 py-1.5 rounded border border-neutral-700 focus:border-primary focus:outline-none"
+          >
             <For each={props.kilns}>
               {(kiln) => (
-                <option value={kiln}>{getKilnName(kiln)}</option>
+                <option value={kiln.path}>{getKilnDisplayName(kiln)}</option>
               )}
             </For>
           </select>
@@ -173,8 +177,8 @@ export const SessionPanel: Component = () => {
   createEffect(() => {
     const project = currentProject();
     if (project && project.kilns.length > 0) {
-      if (!selectedKiln() || !project.kilns.includes(selectedKiln())) {
-        setSelectedKiln(project.kilns[0]);
+      if (!selectedKiln() || !project.kilns.some((k) => k.path === selectedKiln())) {
+        setSelectedKiln(project.kilns[0].path);
       }
     }
   });

@@ -196,7 +196,7 @@ export const FilesPanel: Component = () => {
       setLoadingKiln(true);
       setKilnError(null);
 
-      listNotes(project.kilns[0])
+      listNotes(project.kilns[0].path)
         .then((notes) => {
           const entries: FileEntry[] = notes.map((n) => ({
             name: n.name,

@@ -86,10 +86,15 @@ export interface NoteContent {
 // Project Types
 // =============================================================================
 
+export interface KilnInfo {
+  path: string;
+  name: string | null;
+}
+
 export interface Project {
   path: string;
   name: string;
-  kilns: string[];
+  kilns: KilnInfo[];
   last_accessed: string; // ISO datetime
 }
 
