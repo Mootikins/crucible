@@ -84,7 +84,7 @@ const SessionItem: Component<{ session: Session; selected: boolean; onSelect: ()
          props.selected
            ? 'bg-primary/20 text-primary-hover'
            : 'hover:bg-surface-elevated text-neutral-300'
-       }`}
+       } ${props.session.state === 'ended' ? 'opacity-60' : ''}`}
      >
       <div class="flex items-center gap-2">
         <StateIndicator state={props.session.state} />
