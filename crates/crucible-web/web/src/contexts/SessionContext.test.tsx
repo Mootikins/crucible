@@ -8,6 +8,7 @@ vi.mock('@/lib/api', () => ({
   createSession: vi.fn(),
   listSessions: vi.fn(() => Promise.resolve([])),
   getSession: vi.fn(),
+  getSessionHistory: vi.fn(),
   pauseSession: vi.fn(),
   resumeSession: vi.fn(),
   endSession: vi.fn(),
@@ -90,6 +91,11 @@ describe('selectSession auto-resume', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (api.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (api.getSessionHistory as ReturnType<typeof vi.fn>).mockResolvedValue({
+      session_id: 'test-id',
+      history: [],
+      total_events: 0,
+    });
     (api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (api.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (api.resumeSession as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
@@ -108,6 +114,10 @@ describe('selectSession auto-resume', () => {
         <SelectConsumer />
       </SessionProvider>
     ));
+
+    await waitFor(() => {
+      expect(api.listSessions).toHaveBeenCalled();
+    });
 
     screen.getByTestId('select').click();
 
@@ -158,5 +168,30 @@ describe('selectSession auto-resume', () => {
     });
 
     expect(api.resumeSession).not.toHaveBeenCalled();
+  });
+
+  it('loads persisted session into daemon when selecting from existing list', async () => {
+    (api.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue([makeSession('active')]);
+    (api.getSession as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('Session not found'))
+      .mockResolvedValue(makeSession('active'));
+
+    render(() => (
+      <SessionProvider initialKiln="/tmp/test-kiln">
+        <SelectConsumer />
+      </SessionProvider>
+    ));
+
+    screen.getByTestId('select').click();
+
+    await waitFor(() => {
+      expect(api.getSessionHistory).toHaveBeenCalledWith('test-id', '/tmp/test-kiln', 1, 0);
+    });
+
+    await waitFor(() => {
+      expect(dispatchSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'crucible:open-session' })
+      );
+    });
   });
 });

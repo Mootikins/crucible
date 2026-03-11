@@ -12,6 +12,7 @@ import {
   createSession as apiCreateSession,
   listSessions as apiListSessions,
   getSession as apiGetSession,
+  getSessionHistory as apiGetSessionHistory,
   pauseSession as apiPauseSession,
   resumeSession as apiResumeSession,
   endSession as apiEndSession,
@@ -61,6 +62,16 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   const [providers, setProviders] = createSignal<ProviderInfo[]>([]);
   const [selectedProvider, setSelectedProvider] = createSignal<ProviderInfo | null>(null);
 
+  const hydrateSession = async (sessionId: string, kiln: string | undefined): Promise<boolean> => {
+    if (!kiln) return false;
+    try {
+      await apiGetSessionHistory(sessionId, kiln, 1, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const refreshSessions = async (filters?: { kiln?: string; workspace?: string }) => {
     setIsLoading(true);
     setError(null);
@@ -105,6 +116,10 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   const selectSession = async (id: string) => {
     const existing = sessions.find((s) => s.id === id);
     if (existing) {
+      if (!(await apiGetSession(existing.id).then(() => true).catch(() => false))) {
+        await hydrateSession(existing.id, existing.kiln);
+      }
+
       setCurrentSession(existing);
       // Auto-resume paused sessions
       if (existing.state === 'paused') {
@@ -127,7 +142,13 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     setError(null);
     
     try {
-      const session = await apiGetSession(id);
+      const session = await apiGetSession(id).catch(async () => {
+        const hydrated = await hydrateSession(id, props.initialKiln);
+        if (!hydrated) {
+          throw new Error('Failed to load session');
+        }
+        return await apiGetSession(id);
+      });
       setCurrentSession(session);
       // Auto-resume paused sessions
       if (session.state === 'paused') {
