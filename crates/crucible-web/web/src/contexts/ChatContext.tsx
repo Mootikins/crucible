@@ -40,6 +40,7 @@ export interface ChatContextValue {
   subagentEvents: Accessor<SubagentEvent[]>;
   contextUsage: Accessor<ContextUsage | null>;
   chatMode: Accessor<ChatMode>;
+  isLoadingHistory: Accessor<boolean>;
   setChatMode: (mode: ChatMode) => void;
   sendMessage: (content: string) => Promise<void>;
   respondToInteraction: (response: InteractionResponse) => Promise<void>;
@@ -65,6 +66,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   const [subagentEvents, setSubagentEvents] = createStore<SubagentEvent[]>([]);
   const [contextUsage, setContextUsage] = createSignal<ContextUsage | null>(null);
   const [chatMode, setChatMode] = createSignal<ChatMode>('normal');
+  const [isLoadingHistory, setIsLoadingHistory] = createSignal(false);
   
   let eventSourceCleanup: (() => void) | null = null;
   let currentStreamingMessageId: string | null = null;
@@ -354,6 +356,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
    };
 
   const loadHistory = async (sessionId: string, kiln: string) => {
+    setIsLoadingHistory(true);
     try {
       const response = await getSessionHistory(sessionId, kiln);
       const loadedMessages: Message[] = [];
@@ -395,6 +398,8 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
       }
     } catch (err) {
       console.error('Failed to load session history:', err);
+    } finally {
+      setIsLoadingHistory(false);
     }
   };
 
@@ -546,6 +551,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     subagentEvents: () => subagentEvents,
     contextUsage,
     chatMode,
+    isLoadingHistory,
     setChatMode,
     sendMessage,
     respondToInteraction,
@@ -581,6 +587,7 @@ const fallbackChatContext: ChatContextValue = {
   subagentEvents: () => [],
   contextUsage: () => null,
   chatMode: () => 'normal',
+  isLoadingHistory: () => false,
   setChatMode: () => {},
   sendMessage: noopAsync,
   respondToInteraction: noopAsync,
