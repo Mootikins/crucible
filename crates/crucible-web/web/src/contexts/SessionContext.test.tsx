@@ -1,6 +1,8 @@
-import { render, screen } from '@solidjs/testing-library';
-import { describe, it, expect, vi } from 'vitest';
-import { useSessionSafe } from './SessionContext';
+import { render, screen, waitFor } from '@solidjs/testing-library';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { useSessionSafe, useSession, SessionProvider } from './SessionContext';
+import * as api from '@/lib/api';
+import type { Session } from '@/lib/types';
 
 vi.mock('@/lib/api', () => ({
   createSession: vi.fn(),
@@ -13,6 +15,7 @@ vi.mock('@/lib/api', () => ({
   listModels: vi.fn(() => Promise.resolve([])),
   switchModel: vi.fn(),
   setSessionTitle: vi.fn(),
+  listProviders: vi.fn(() => Promise.resolve([])),
 }));
 
 describe('useSessionSafe', () => {
@@ -56,5 +59,103 @@ describe('useSessionSafe', () => {
     expect(() => screen.getByText('Select').click()).not.toThrow();
     expect(() => screen.getByText('Pause').click()).not.toThrow();
     expect(() => screen.getByText('Resume').click()).not.toThrow();
+  });
+});
+
+describe('selectSession auto-resume', () => {
+  function makeSession(state: Session['state'], id = 'test-id'): Session {
+    return {
+      id,
+      session_type: 'chat',
+      kiln: '/tmp/test-kiln',
+      workspace: '/tmp/test-workspace',
+      state,
+      title: 'Test Session',
+      agent_model: 'test-model',
+      started_at: new Date().toISOString(),
+      event_count: 0,
+    };
+  }
+
+  function SelectConsumer() {
+    const { selectSession } = useSession();
+    return (
+      <button data-testid="select" onClick={() => void selectSession('test-id')}>Select</button>
+    );
+  }
+
+  let dispatchSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (api.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (api.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (api.resumeSession as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+  });
+
+  afterEach(() => {
+    dispatchSpy.mockRestore();
+  });
+
+  it('calls resumeSession for paused sessions', async () => {
+    (api.getSession as ReturnType<typeof vi.fn>).mockResolvedValue(makeSession('paused'));
+
+    render(() => (
+      <SessionProvider initialKiln="/tmp/test-kiln">
+        <SelectConsumer />
+      </SessionProvider>
+    ));
+
+    screen.getByTestId('select').click();
+
+    await waitFor(() => {
+      expect(api.resumeSession).toHaveBeenCalledWith('test-id');
+    });
+
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'crucible:open-session' })
+    );
+  });
+
+  it('does not call resumeSession for active sessions', async () => {
+    (api.getSession as ReturnType<typeof vi.fn>).mockResolvedValue(makeSession('active'));
+
+    render(() => (
+      <SessionProvider initialKiln="/tmp/test-kiln">
+        <SelectConsumer />
+      </SessionProvider>
+    ));
+
+    screen.getByTestId('select').click();
+
+    await waitFor(() => {
+      expect(dispatchSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'crucible:open-session' })
+      );
+    });
+
+    expect(api.resumeSession).not.toHaveBeenCalled();
+  });
+
+  it('does not call resumeSession for ended sessions', async () => {
+    (api.getSession as ReturnType<typeof vi.fn>).mockResolvedValue(makeSession('ended'));
+
+    render(() => (
+      <SessionProvider initialKiln="/tmp/test-kiln">
+        <SelectConsumer />
+      </SessionProvider>
+    ));
+
+    screen.getByTestId('select').click();
+
+    await waitFor(() => {
+      expect(dispatchSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'crucible:open-session' })
+      );
+    });
+
+    expect(api.resumeSession).not.toHaveBeenCalled();
   });
 });

@@ -18,6 +18,7 @@ vi.mock('@/lib/api', () => ({
 const mockSendChatMessage = api.sendChatMessage as ReturnType<typeof vi.fn>;
 const mockSubscribeToEvents = api.subscribeToEvents as ReturnType<typeof vi.fn>;
 const mockGetSession = api.getSession as ReturnType<typeof vi.fn>;
+const mockGetSessionHistory = api.getSessionHistory as ReturnType<typeof vi.fn>;
 
 const mockSession: Session = {
   id: 'test-session-1',
@@ -255,5 +256,105 @@ describe('useChatSafe', () => {
 
     expect(screen.getByTestId('count').textContent).toBe('0');
     expect(screen.getByTestId('loading').textContent).toBe('idle');
+  });
+});
+
+describe('isLoadingHistory', () => {
+  function HistoryTestConsumer() {
+    const { isLoadingHistory, messages } = useChat();
+
+    return (
+      <div>
+        <span data-testid="history-loading">{isLoadingHistory() ? 'loading' : 'idle'}</span>
+        <span data-testid="msg-count">{messages().length}</span>
+        <ul>
+          {messages().map((m) => (
+            <li data-testid={`hist-msg-${m.id}`} data-role={m.role}>
+              {m.content}
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSubscribeToEvents.mockReturnValue(() => {});
+    mockGetSession.mockResolvedValue(mockSession);
+  });
+
+  it('is true during history load and false after', async () => {
+    let resolveHistory!: (value: any) => void;
+    const historyPromise = new Promise((resolve) => {
+      resolveHistory = resolve;
+    });
+    mockGetSessionHistory.mockReturnValue(historyPromise);
+
+    render(() => (
+      <TestWrapper>
+        <HistoryTestConsumer />
+      </TestWrapper>
+    ));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('history-loading').textContent).toBe('loading');
+    });
+
+    resolveHistory({ history: [], total_events: 0 });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('history-loading').textContent).toBe('idle');
+    });
+  });
+
+  it('resets to false on error', async () => {
+    mockGetSessionHistory.mockRejectedValue(new Error('Network error'));
+
+    render(() => (
+      <TestWrapper>
+        <HistoryTestConsumer />
+      </TestWrapper>
+    ));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('history-loading').textContent).toBe('idle');
+    });
+  });
+
+  it('populates messages from session history events', async () => {
+    mockGetSessionHistory.mockResolvedValue({
+      history: [
+        {
+          type: 'event',
+          session_id: 'test-session-1',
+          event: 'user_message',
+          data: { content: 'hello', message_id: 'msg1' },
+        },
+        {
+          type: 'event',
+          session_id: 'test-session-1',
+          event: 'message_complete',
+          data: { full_response: 'hi there', message_id: 'msg2' },
+        },
+      ],
+      total_events: 2,
+    });
+
+    render(() => (
+      <TestWrapper>
+        <HistoryTestConsumer />
+      </TestWrapper>
+    ));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('msg-count').textContent).toBe('2');
+    });
+
+    const items = screen.getAllByRole('listitem');
+    expect(items[0].getAttribute('data-role')).toBe('user');
+    expect(items[0].textContent?.trim()).toBe('hello');
+    expect(items[1].getAttribute('data-role')).toBe('assistant');
+    expect(items[1].textContent?.trim()).toBe('hi there');
   });
 });
