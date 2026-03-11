@@ -5,6 +5,7 @@ import { TabBar } from './TabBar';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import { getGlobalRegistry } from '@/lib/panel-registry';
 import { AppWindow } from '@/lib/icons';
+import { EmptyState } from '@/components/EmptyState';
 
 type PaneDropPosition = 'left' | 'right' | 'top' | 'bottom';
 
@@ -160,10 +161,7 @@ export const Pane: Component<{ paneId: string }> = (props) => {
       <Show
         when={tabs().length > 0}
         fallback={
-          <div class="flex-1 flex flex-col items-center justify-center bg-zinc-900/30 border-2 border-dashed border-zinc-700 rounded text-zinc-500 text-sm gap-3">
-            <AppWindow class="w-8 h-8 text-zinc-600" />
-            <span>Drop tabs here</span>
-          </div>
+          <EmptyState />
         }
       >
         <TabBar
