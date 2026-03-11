@@ -314,7 +314,7 @@ Examples:
 
     /// Initialize a new kiln (Crucible workspace)
     #[command(
-        long_about = "Initialize a new kiln (Crucible workspace) with configuration and directory structure.\n\nExamples:\n  # Initialize kiln in current directory\n  cru init\n\n  # Initialize in specific directory\n  cru init --path ~/my-kiln\n\n  # Interactive setup with provider selection\n  cru init --interactive\n\n  # Force overwrite existing kiln\n  cru init --force",
+        long_about = "Initialize a new kiln (Crucible workspace) with configuration and directory structure.\n\nExamples:\n  # Initialize kiln in current directory\n  cru init\n\n  # Initialize in specific directory\n  cru init --path ~/my-kiln\n\n  # Interactive setup with provider selection\n  cru init --interactive\n\n  # Force overwrite existing kiln\n  cru init --force\n\n  # Initialize a personal kiln for session storage\n  cru init --personal --path ~/my-sessions",
         visible_alias = "i"
     )]
     Init {
@@ -329,6 +329,13 @@ Examples:
         /// Interactive provider/model selection
         #[arg(short = 'i', long)]
         interactive: bool,
+
+        /// Initialize as a personal session kiln and update config.toml
+        ///
+        /// Creates the kiln directory and sets session_kiln in
+        /// ~/.config/crucible/config.toml so sessions are stored here by default.
+        #[arg(long)]
+        personal: bool,
     },
 
     /// Manage chat sessions (list, show, resume, export, search)
@@ -1006,7 +1013,8 @@ mod tests {
             Some(Commands::Init {
                 path: None,
                 force: false,
-                interactive: false
+                interactive: false,
+                personal: false,
             })
         ));
     }
@@ -1018,11 +1026,13 @@ mod tests {
             path,
             force,
             interactive,
+            personal,
         }) = cli.command
         {
             assert_eq!(path, Some(std::path::PathBuf::from("/tmp/test")));
             assert!(!force);
             assert!(!interactive);
+            assert!(!personal);
         } else {
             panic!("Expected Init command");
         }
@@ -1035,11 +1045,13 @@ mod tests {
             path,
             force,
             interactive,
+            personal,
         }) = cli.command
         {
             assert_eq!(path, None);
             assert!(force);
             assert!(!interactive);
+            assert!(!personal);
         } else {
             panic!("Expected Init command");
         }
@@ -1052,11 +1064,13 @@ mod tests {
             path,
             force,
             interactive,
+            personal,
         }) = cli.command
         {
             assert_eq!(path, Some(std::path::PathBuf::from("/tmp/test")));
             assert!(force);
             assert!(!interactive);
+            assert!(!personal);
         } else {
             panic!("Expected Init command");
         }
@@ -1069,11 +1083,13 @@ mod tests {
             path,
             force,
             interactive,
+            personal,
         }) = cli.command
         {
             assert_eq!(path, None);
             assert!(!force);
             assert!(interactive);
+            assert!(!personal);
         } else {
             panic!("Expected Init command");
         }
@@ -1086,11 +1102,32 @@ mod tests {
             path,
             force,
             interactive,
+            personal,
         }) = cli.command
         {
             assert_eq!(path, None);
             assert!(!force);
             assert!(interactive);
+            assert!(!personal);
+        } else {
+            panic!("Expected Init command");
+        }
+    }
+
+    #[test]
+    fn test_init_with_personal_flag_parses() {
+        let cli = Cli::try_parse_from(["cru", "init", "--personal", "--path", "/tmp/sessions"]).unwrap();
+        if let Some(Commands::Init {
+            path,
+            force,
+            interactive,
+            personal,
+        }) = cli.command
+        {
+            assert_eq!(path, Some(std::path::PathBuf::from("/tmp/sessions")));
+            assert!(!force);
+            assert!(!interactive);
+            assert!(personal);
         } else {
             panic!("Expected Init command");
         }

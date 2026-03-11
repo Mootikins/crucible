@@ -38,6 +38,7 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
 
     let config = CliConfig {
         kiln_path: kiln_path.clone(),
+        session_kiln: None,
         agent_directories: Vec::new(),
         acp: AcpConfig::default(),
         chat: ChatConfig::default(),
@@ -136,6 +137,7 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
 
     let config = CliConfig {
         kiln_path: kiln_path.clone(),
+        session_kiln: None,
         agent_directories: Vec::new(),
         acp: AcpConfig::default(),
         chat: ChatConfig::default(),

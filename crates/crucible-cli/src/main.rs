@@ -311,8 +311,9 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             path,
             force,
             interactive,
+            personal,
         }) => {
-            commands::init::execute(path, force, interactive).await?;
+            commands::init::execute(path, force, interactive, personal).await?;
         }
 
         Some(Commands::Session(cmd)) => {
