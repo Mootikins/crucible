@@ -27,6 +27,8 @@ import {
   generateMessageId,
   getSession,
   getSessionHistory,
+  getConfig,
+  listSessions,
   setSessionTitle as apiSetSessionTitle,
 } from '@/lib/api';
 
@@ -437,7 +439,27 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         if (err instanceof Error && err.name === 'AbortError') {
           return;
         }
-        console.error('Failed to load session metadata:', err);
+
+        try {
+          const config = await getConfig();
+          const sessions = await listSessions({ kiln: config.kiln_path });
+          const persistedSession = sessions.find((s) => s.id === newSessionId) ?? null;
+          const sessionKiln = persistedSession?.kiln || config.kiln_path;
+
+          setSessionTitle(persistedSession?.title ?? null);
+          statusBarActions.setActiveModel(persistedSession?.agent_model ?? null);
+          statusBarActions.setActiveSessionId(newSessionId);
+          statusBarActions.setActiveSessionTitle(
+            persistedSession?.title ?? `Session ${newSessionId.slice(0, 8)}`,
+          );
+
+          await loadHistory(newSessionId, sessionKiln, abortController.signal);
+        } catch (fallbackErr) {
+          if (fallbackErr instanceof Error && fallbackErr.name === 'AbortError') {
+            return;
+          }
+          console.error('Failed to load session metadata:', fallbackErr);
+        }
       }
     })();
 
