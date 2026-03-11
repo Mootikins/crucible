@@ -80,18 +80,33 @@ pub struct RunOneshotChatParams {
 
 /// Determine which kiln to save sessions to.
 ///
-/// - Single kiln: use it automatically
-/// - Multiple kilns: use primary (first) kiln (future: config.kilns support)
-/// - No kilns/invalid path: return None (sessions won't be saved)
+/// Priority:
+/// 1. `config.session_kiln` — explicit personal session kiln
+/// 2. `config.kiln_path` — workspace kiln (original behavior)
+/// 3. None — sessions won't be saved
 ///
-/// Currently Crucible supports a single kiln_path. This function is designed
-/// to support future multi-kiln configurations where multiple kilns can be
-/// attached to a workspace.
+/// When `session_kiln` is set in `~/.config/crucible/config.toml`,
+/// sessions are stored there instead of the workspace kiln.
 #[allow(dead_code)] // Prepared for future multi-kiln support
 fn select_session_kiln(config: &CliConfig) -> Option<PathBuf> {
+    // Prefer session_kiln if configured
+    if let Some(ref session_kiln) = config.session_kiln {
+        if session_kiln.exists() && session_kiln.is_dir() {
+            info!(
+                "Using session_kiln for session storage: {}",
+                session_kiln.display()
+            );
+            return Some(session_kiln.clone());
+        }
+        warn!(
+            "session_kiln path is invalid (not a directory or missing): {} - falling back to kiln_path",
+            session_kiln.display()
+        );
+    }
+
+    // Fall back to kiln_path
     let kiln_path = &config.kiln_path;
 
-    // Check if the kiln path exists and is a directory
     if !kiln_path.exists() {
         warn!(
             "Kiln path does not exist: {} - sessions will not be saved",
@@ -107,13 +122,6 @@ fn select_session_kiln(config: &CliConfig) -> Option<PathBuf> {
         );
         return None;
     }
-
-    // Future: when config.kilns is available, use first kiln as primary
-    // if config.kilns.is_empty() {
-    //     warn!("No kilns configured - sessions will not be saved");
-    //     return None;
-    // }
-    // Some(config.kilns[0].path.clone())
 
     Some(kiln_path.clone())
 }
@@ -1083,5 +1091,48 @@ mod tests {
 
         let result = select_session_kiln(&config);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_select_session_kiln_prefers_session_kiln_over_kiln_path() {
+        let session_dir = TempDir::new().unwrap();
+        let workspace_dir = TempDir::new().unwrap();
+        let config = CliConfig {
+            kiln_path: workspace_dir.path().to_path_buf(),
+            session_kiln: Some(session_dir.path().to_path_buf()),
+            ..Default::default()
+        };
+
+        let result = select_session_kiln(&config);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), session_dir.path());
+    }
+
+    #[test]
+    fn test_select_session_kiln_falls_back_when_session_kiln_invalid() {
+        let workspace_dir = TempDir::new().unwrap();
+        let config = CliConfig {
+            kiln_path: workspace_dir.path().to_path_buf(),
+            session_kiln: Some(std::path::PathBuf::from("/nonexistent/session/kiln")),
+            ..Default::default()
+        };
+
+        let result = select_session_kiln(&config);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), workspace_dir.path());
+    }
+
+    #[test]
+    fn test_select_session_kiln_none_when_not_set() {
+        let workspace_dir = TempDir::new().unwrap();
+        let config = CliConfig {
+            kiln_path: workspace_dir.path().to_path_buf(),
+            session_kiln: None,
+            ..Default::default()
+        };
+
+        let result = select_session_kiln(&config);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), workspace_dir.path());
     }
 }
