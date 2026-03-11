@@ -31,7 +31,7 @@ export function openSessionInChat(sessionId: string, sessionTitle: string): void
   const newTab: Tab = {
     id: `tab-chat-${sessionId}`,
     title: sessionTitle || 'Chat',
-    contentType: 'chat' as Tab['contentType'],
+    contentType: 'chat',
     metadata: { sessionId },
   };
 

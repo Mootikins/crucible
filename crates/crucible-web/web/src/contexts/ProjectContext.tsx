@@ -122,8 +122,11 @@ export const ProjectProvider: ParentComponent = (props) => {
     setCurrentProject(null);
   };
 
-  onMount(() => {
-    refreshProjects();
+  onMount(async () => {
+    await refreshProjects();
+    if (projects.length > 0 && !currentProject()) {
+      setCurrentProject(projects[0]);
+    }
   });
 
   const value: ProjectContextValue = {

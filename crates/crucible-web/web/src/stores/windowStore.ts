@@ -23,6 +23,8 @@ import {
   Terminal,
   AlertTriangle,
   FileOutput,
+  MessageCircle,
+  ClipboardList,
 } from '@/lib/icons';
 
 const generateId = () => Math.random().toString(36).substring(2, 11);
@@ -155,13 +157,13 @@ function insertPaneRelative(
 }
 
 const createSampleTabs = (): Tab[] => [
-  { id: 'tab-chat-1', title: 'Chat', contentType: 'chat', isModified: false },
+  { id: 'tab-chat-1', title: 'Chat', contentType: 'chat', isModified: false, icon: MessageCircle },
 ];
 
 const createSampleTabs2 = (): Tab[] => [];
 
 const createLeftPanelTabs = (): Tab[] => [
-  { id: 'sessions-tab', title: 'Sessions', contentType: 'sessions' },
+  { id: 'sessions-tab', title: 'Sessions', contentType: 'sessions', icon: ClipboardList },
 ];
 
 const createRightPanelTabs = (): Tab[] => [
