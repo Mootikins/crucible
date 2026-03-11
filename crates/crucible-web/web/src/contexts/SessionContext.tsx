@@ -323,6 +323,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   };
 
   createEffect(() => {
+    if (!props.initialKiln) return; // Guard: skip when kiln not yet available
     refreshSessions({
       kiln: props.initialKiln,
       workspace: props.initialWorkspace,
