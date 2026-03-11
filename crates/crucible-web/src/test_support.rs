@@ -1,7 +1,7 @@
 #[cfg(test)]
 use crate::routes::{chat_routes, health_routes, project_routes, search_routes, session_routes};
 #[cfg(test)]
-use crate::services::daemon::{AppState, EventBroker};
+use crate::services::daemon::{AppState, EventBroker, ReconnectingDaemon};
 #[cfg(test)]
 use axum::Router;
 #[cfg(test)]
@@ -293,7 +293,7 @@ fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
 /// Build an AppState using a mock daemon client.
 pub fn build_mock_state(client: DaemonClient) -> AppState {
     AppState {
-        daemon: Arc::new(client),
+        daemon: Arc::new(ReconnectingDaemon::new(client)),
         events: Arc::new(EventBroker::new()),
         config: Arc::new(CliAppConfig::default()),
         http_client: reqwest::Client::new(),
