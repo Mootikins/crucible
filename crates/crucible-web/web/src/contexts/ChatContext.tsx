@@ -69,6 +69,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   const [isLoadingHistory, setIsLoadingHistory] = createSignal(false);
   
   let eventSourceCleanup: (() => void) | null = null;
+  let historyAbortController: AbortController | null = null;
   let currentStreamingMessageId: string | null = null;
   let firstUserMessage: string | null = null;
   let hasReceivedFirstResponse = false;
@@ -355,34 +356,25 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
      }
    };
 
-  const loadHistory = async (sessionId: string, kiln: string) => {
+  const loadHistory = async (sessionId: string, kiln: string, signal?: AbortSignal) => {
     setIsLoadingHistory(true);
     try {
-      const response = await getSessionHistory(sessionId, kiln);
+      const response = await getSessionHistory(sessionId, kiln, undefined, undefined, signal);
       const loadedMessages: Message[] = [];
       
       for (const evt of response.history) {
-        const rawEvt = evt as unknown as { 
-          event?: string; 
-          data?: { 
-            full_response?: string; 
-            content?: string;
-            message_id?: string;
-          } 
-        };
-        
-        if (rawEvt.event === 'user_message' && rawEvt.data?.content) {
+        if (evt.event === 'user_message' && evt.data?.content) {
           loadedMessages.push({
-            id: rawEvt.data.message_id || `user-${loadedMessages.length}`,
+            id: evt.data.message_id as string || `user-${loadedMessages.length}`,
             role: 'user',
-            content: rawEvt.data.content,
+            content: evt.data.content,
             timestamp: Date.now() - (response.history.length - loadedMessages.length) * 1000,
           });
-        } else if (rawEvt.event === 'message_complete' && rawEvt.data?.full_response) {
+        } else if (evt.event === 'message_complete' && evt.data?.full_response) {
           loadedMessages.push({
-            id: rawEvt.data.message_id || `assistant-${loadedMessages.length}`,
+            id: evt.data.message_id as string || `assistant-${loadedMessages.length}`,
             role: 'assistant',
-            content: rawEvt.data.full_response,
+            content: evt.data.full_response,
             timestamp: Date.now() - (response.history.length - loadedMessages.length) * 1000,
           });
         }
@@ -397,6 +389,10 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         }
       }
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        // Silently ignore — expected when session switches rapidly
+        return;
+      }
       console.error('Failed to load session history:', err);
     } finally {
       setIsLoadingHistory(false);
@@ -411,6 +407,12 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
       eventSourceCleanup = null;
     }
     
+    // Abort any in-flight history load from a previous session
+    if (historyAbortController) {
+      historyAbortController.abort();
+      historyAbortController = null;
+    }
+    
     if (newSessionId !== previousSessionId && previousSessionId !== null) {
       clearMessages();
     }
@@ -420,6 +422,9 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
       return;
     }
 
+    const abortController = new AbortController();
+    historyAbortController = abortController;
+
     void (async () => {
       try {
         const session = await getSession(newSessionId);
@@ -427,8 +432,11 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         statusBarActions.setActiveModel(session.agent_model ?? null);
         statusBarActions.setActiveSessionId(session.id);
         statusBarActions.setActiveSessionTitle(session.title);
-        await loadHistory(session.id, session.kiln);
+        await loadHistory(session.id, session.kiln, abortController.signal);
       } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          return;
+        }
         console.error('Failed to load session metadata:', err);
       }
     })();
@@ -440,6 +448,10 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     if (eventSourceCleanup) {
       eventSourceCleanup();
       eventSourceCleanup = null;
+    }
+    if (historyAbortController) {
+      historyAbortController.abort();
+      historyAbortController = null;
     }
   });
 

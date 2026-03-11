@@ -328,21 +328,26 @@ export async function setSessionTitle(sessionId: string, title: string): Promise
   }
 }
 
-export interface SessionHistoryEvent {
-  role: 'user' | 'assistant' | 'system' | 'tool';
-  content: string;
+/** Raw daemon event from session.jsonl (SessionEventMessage format). */
+export interface DaemonHistoryEvent {
+  /** Always "event" for persisted events. */
+  type: string;
+  session_id: string;
+  /** Event kind: "user_message", "message_complete", "text_delta", "thinking", "tool_call", etc. */
+  event: string;
+  data: {
+    content?: string;
+    full_response?: string;
+    message_id?: string;
+    [key: string]: unknown;
+  };
   timestamp?: string;
-  tool_calls?: Array<{
-    id: string;
-    name: string;
-    arguments?: unknown;
-  }>;
-  tool_call_id?: string;
+  seq?: number;
 }
 
 export interface SessionHistoryResponse {
   session_id: string;
-  history: SessionHistoryEvent[];
+  history: DaemonHistoryEvent[];
   total_events: number;
 }
 
@@ -351,6 +356,7 @@ export async function getSessionHistory(
   kiln: string,
   limit?: number,
   offset?: number,
+  signal?: AbortSignal,
 ): Promise<SessionHistoryResponse> {
   const params = new URLSearchParams({ kiln });
   if (limit !== undefined) params.set('limit', limit.toString());
@@ -358,6 +364,7 @@ export async function getSessionHistory(
 
   const res = await fetch(
     `/api/session/${encodeURIComponent(sessionId)}/history?${params.toString()}`,
+    { signal },
   );
   if (!res.ok) {
     throw new Error(`Failed to load session history: HTTP ${res.status}`);
