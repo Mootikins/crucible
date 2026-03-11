@@ -84,7 +84,8 @@ describe('selectSession auto-resume', () => {
     );
   }
 
-  let dispatchSpy: ReturnType<typeof vi.spyOn>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let dispatchSpy: ReturnType<typeof vi.spyOn<any, any>>;
 
   beforeEach(() => {
     vi.clearAllMocks();
