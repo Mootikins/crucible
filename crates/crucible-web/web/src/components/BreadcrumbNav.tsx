@@ -1,7 +1,7 @@
 import { Component, createSignal, For, Show, createEffect, onCleanup } from 'solid-js';
 import { useProject } from '@/contexts/ProjectContext';
 import { useSession } from '@/contexts/SessionContext';
-
+import type { KilnInfo } from '@/lib/types';
 const ChevronDownIcon: Component<{ class?: string }> = (props) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class={props.class ?? 'w-4 h-4'}>
     <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
@@ -156,9 +156,9 @@ export const BreadcrumbNav: Component = () => {
   const projectCtx = useProject();
   const sessionCtx = useSession();
 
-  const handleProjectSelect = async (project: { path: string; name: string; kilns?: string[] }) => {
+  const handleProjectSelect = async (project: { path: string; name: string; kilns?: KilnInfo[] }) => {
     await projectCtx.selectProject(project.path);
-    const kiln = project.kilns?.[0] ?? project.path;
+    const kiln = project.kilns?.[0]?.path ?? project.path;
     await sessionCtx.refreshSessions({ kiln, workspace: project.path });
   };
 
@@ -170,7 +170,7 @@ export const BreadcrumbNav: Component = () => {
     const project = projectCtx.currentProject();
     if (!project) return;
 
-    const kiln = project.kilns[0] ?? project.path;
+    const kiln = project.kilns[0]?.path ?? project.path;
     await sessionCtx.createSession({
       kiln,
       session_type: 'chat',
