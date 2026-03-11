@@ -37,4 +37,6 @@ export {
   FileOutput,
   AppWindow,
   Bell,
+  MessageCircle,
+  ClipboardList,
 } from 'lucide-solid';
