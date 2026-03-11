@@ -7,7 +7,9 @@ export type TabContentType =
   | 'tool'
   | 'terminal'
   | 'preview'
-  | 'settings';
+  | 'settings'
+  | 'chat'
+  | 'sessions';
 
 export interface Tab {
   id: string;

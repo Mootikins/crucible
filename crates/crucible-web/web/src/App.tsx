@@ -33,10 +33,10 @@ function openFilesPanel(): void {
 }
 
 const App: Component = () => {
+  registerPanels();
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = createSignal(false);
   const [isExportDialogOpen, setIsExportDialogOpen] = createSignal(false);
   const [kilnPath, setKilnPath] = createSignal<string | undefined>(undefined);
-
 
   const paletteCommands: PaletteCommand[] = [
     {
@@ -151,7 +151,6 @@ const App: Component = () => {
     getConfig()
       .then((cfg) => setKilnPath(cfg.kiln_path))
       .catch(() => {});
-    registerPanels();
 
     loadLayoutOnStartup();
     setupLayoutAutoSave();
