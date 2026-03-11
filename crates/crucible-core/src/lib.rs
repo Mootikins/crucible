@@ -147,7 +147,7 @@ pub use interaction_registry::InteractionRegistry;
 pub use session::{Session, SessionState, SessionSummary, SessionType};
 
 // Re-export project types (workspace registration)
-pub use project::{Project, RepositoryInfo};
+pub use project::{Project, ProjectKiln, RepositoryInfo};
 
 pub use background::{generate_job_id, JobError, JobId, JobInfo, JobKind, JobResult, JobStatus};
 

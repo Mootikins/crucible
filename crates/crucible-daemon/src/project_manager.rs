@@ -5,7 +5,7 @@
 //! persisted to a JSON file in the crucible home directory.
 
 use crucible_config::WorkspaceConfig;
-use crucible_core::{Project, RepositoryInfo};
+use crucible_core::{Project, ProjectKiln, RepositoryInfo};
 use dashmap::DashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -198,20 +198,22 @@ impl ProjectManager {
         }
     }
 
-    fn read_project_metadata(&self, path: &Path) -> (String, Vec<PathBuf>) {
+    fn read_project_metadata(&self, path: &Path) -> (String, Vec<ProjectKiln>) {
         let config_path = path.join(".crucible").join("workspace.toml");
         if let Ok(content) = fs::read_to_string(&config_path) {
             if let Ok(config) = toml::from_str::<WorkspaceConfig>(&content) {
                 let name = config.workspace.name;
-                let kilns: Vec<PathBuf> = config
+                let kilns: Vec<ProjectKiln> = config
                     .kilns
                     .into_iter()
                     .map(|k| {
-                        if k.path.is_absolute() {
+                        let path = if k.path.is_absolute() {
                             k.path
                         } else {
                             path.join(&k.path)
-                        }
+                        };
+
+                        ProjectKiln { path, name: k.name }
                     })
                     .collect();
                 return (name, kilns);
@@ -220,7 +222,10 @@ impl ProjectManager {
 
         let crucible_dir = path.join(".crucible");
         let kilns = if crucible_dir.is_dir() {
-            vec![crucible_dir]
+            vec![ProjectKiln {
+                path: crucible_dir,
+                name: None,
+            }]
         } else {
             vec![]
         };
@@ -336,6 +341,8 @@ path = "./notes"
         let project = manager.register(&project_dir).unwrap();
         assert_eq!(project.name, "My Custom Name");
         assert_eq!(project.kilns.len(), 1);
+        assert_eq!(project.kilns[0].name, None);
+        assert_eq!(project.kilns[0].path, project_dir.join("notes"));
     }
 
     #[test]
