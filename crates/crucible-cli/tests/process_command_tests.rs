@@ -58,6 +58,7 @@ fn create_process_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfi
 
     CliConfig {
         kiln_path,
+        session_kiln: None,
         agent_directories: Vec::new(),
         acp: AcpConfig {
             default_agent: Some("test-agent".to_string()),

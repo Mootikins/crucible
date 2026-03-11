@@ -34,6 +34,13 @@ pub struct CliAppConfig {
     #[serde(default = "default_kiln_path")]
     pub kiln_path: std::path::PathBuf,
 
+    /// Default kiln for storing chat sessions.
+    ///
+    /// When set, `cru chat` will save sessions to this kiln instead of `kiln_path`.
+    /// This allows separating personal session storage from workspace kilns.
+    #[serde(default)]
+    pub session_kiln: Option<std::path::PathBuf>,
+
     /// Additional directories to search for agent cards
     ///
     /// Paths can be absolute or relative (to config file location).
@@ -109,6 +116,7 @@ impl Default for CliAppConfig {
     fn default() -> Self {
         Self {
             kiln_path: default_kiln_path(),
+            session_kiln: None,
             agent_directories: Vec::new(),
             acp: AcpConfig::default(),
             chat: ChatConfig::default(),
@@ -241,6 +249,7 @@ impl CliAppConfig {
         let all_tracked_fields = [
             "kiln_path",
             "agent_directories",
+            "session_kiln",
             "llm.default",
             "acp.default_agent",
             "acp.enable_discovery",
@@ -313,6 +322,9 @@ impl CliAppConfig {
         }
         if table.contains_key("agent_directories") {
             fields.push("agent_directories".to_string());
+        }
+        if table.contains_key("session_kiln") {
+            fields.push("session_kiln".to_string());
         }
         if let Some(toml::Value::Table(llm)) = table.get("llm") {
             if llm.contains_key("default") {
@@ -392,6 +404,7 @@ impl CliAppConfig {
     pub fn log_config(&self) {
         info!("Effective configuration:");
         info!("  kiln_path: {}", self.kiln_path.display());
+        info!("  session_kiln: {:?}", self.session_kiln);
         info!("  llm.default: {:?}", self.llm.default);
         info!("  acp.default_agent: {:?}", self.acp.default_agent);
         info!("  acp.enable_discovery: {}", self.acp.enable_discovery);
@@ -773,6 +786,10 @@ kiln_path = "/home/user/Documents/my-kiln"
 # Additional directories to search for agent cards (optional)
 # Paths can be absolute or relative to this config file location
 # agent_directories = ["/home/user/shared-agents", "./docs/agents"]
+
+# Default kiln for storing chat sessions (optional)
+# When set, sessions are saved here instead of kiln_path
+# session_kiln = "/home/user/Documents/my-sessions"
 
 # LLM provider configuration
 [llm]

@@ -3,13 +3,13 @@ use colored::Colorize;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tokio::task;
+use tracing::info;
 
 use crate::kiln_validate::{expand_tilde, validate_kiln_path, ValidationSeverity};
 use crate::provider_detect::{detect_providers, DetectedProvider};
 use crucible_config::components::DataClassification;
-use crucible_config::{KilnAttachment, SecurityConfig, WorkspaceConfig, WorkspaceMeta};
-
-pub async fn execute(path: Option<PathBuf>, force: bool, interactive: bool) -> Result<()> {
+use crucible_config::{CliAppConfig, KilnAttachment, SecurityConfig, WorkspaceConfig, WorkspaceMeta};
+pub async fn execute(path: Option<PathBuf>, force: bool, interactive: bool, personal: bool) -> Result<()> {
     let target_path = match path {
         Some(p) => {
             let expanded = expand_tilde(&p.to_string_lossy());
@@ -98,6 +98,79 @@ pub async fn execute(path: Option<PathBuf>, force: bool, interactive: bool) -> R
         );
     }
 
+    // If --personal flag, update global config to set session_kiln
+    if personal {
+        let absolute_path = if target_for_display.is_absolute() {
+            target_for_display.clone()
+        } else {
+            std::env::current_dir()?.join(&target_for_display)
+        };
+        update_global_config_session_kiln(&absolute_path)?;
+        println!(
+            "  {} session_kiln set to {} in config",
+            "✓".green(),
+            absolute_path.display()
+        );
+    }
+
+    Ok(())
+}
+
+/// Update `~/.config/crucible/config.toml` to set `session_kiln`.
+///
+/// If the config file exists, inserts or replaces the `session_kiln` line.
+/// If not, creates a minimal config with just `session_kiln`.
+fn update_global_config_session_kiln(kiln_path: &Path) -> Result<()> {
+    let config_path = CliAppConfig::default_config_path();
+    let path_str = kiln_path.to_string_lossy();
+
+    let new_line = format!("session_kiln = \"{}\"", path_str);
+
+    if config_path.exists() {
+        let contents = fs::read_to_string(&config_path)?;
+
+        // Check if session_kiln already exists (commented or not)
+        if let Some(idx) = contents.find("session_kiln") {
+            // Find the line boundaries and replace it
+            let line_start = contents[..idx].rfind('\n').map_or(0, |p| p + 1);
+            let line_end = contents[idx..]
+                .find('\n')
+                .map_or(contents.len(), |p| idx + p);
+            let mut new_contents = String::with_capacity(contents.len());
+            new_contents.push_str(&contents[..line_start]);
+            new_contents.push_str(&new_line);
+            new_contents.push_str(&contents[line_end..]);
+            fs::write(&config_path, new_contents)?;
+        } else {
+            // Append after kiln_path line if it exists, otherwise at top
+            if let Some(idx) = contents.find("kiln_path") {
+                let line_end = contents[idx..]
+                    .find('\n')
+                    .map_or(contents.len(), |p| idx + p);
+                let mut new_contents = String::with_capacity(contents.len() + new_line.len() + 1);
+                new_contents.push_str(&contents[..line_end]);
+                new_contents.push('\n');
+                new_contents.push_str(&new_line);
+                new_contents.push_str(&contents[line_end..]);
+                fs::write(&config_path, new_contents)?;
+            } else {
+                // Prepend to file
+                let mut new_contents = String::with_capacity(contents.len() + new_line.len() + 2);
+                new_contents.push_str(&new_line);
+                new_contents.push('\n');
+                new_contents.push_str(&contents);
+                fs::write(&config_path, new_contents)?;
+            }
+        }
+    } else {
+        // Create config file with session_kiln
+        if let Some(parent) = config_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&config_path, format!("{}\n", new_line))?;
+    }
+
+    info!("Updated {} with session_kiln", config_path.display());
     Ok(())
 }
 

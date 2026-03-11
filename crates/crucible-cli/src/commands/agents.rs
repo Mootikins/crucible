@@ -342,6 +342,7 @@ mod tests {
     fn test_config(kiln_path: PathBuf) -> CliConfig {
         CliConfig {
             kiln_path,
+            session_kiln: None,
             agent_directories: Vec::new(),
             acp: AcpConfig::default(),
             chat: ChatConfig::default(),
