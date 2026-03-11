@@ -106,6 +106,16 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     const existing = sessions.find((s) => s.id === id);
     if (existing) {
       setCurrentSession(existing);
+      // Auto-resume paused sessions
+      if (existing.state === 'paused') {
+        try {
+          await apiResumeSession(id);
+          updateCurrentSessionState('active');
+        } catch (err) {
+          console.error('Failed to resume session:', err);
+          // Continue to open session even if resume fails (graceful degradation)
+        }
+      }
       window.dispatchEvent(new CustomEvent('crucible:open-session', {
         detail: { sessionId: id, title: existing.title || `Session ${id.slice(0, 8)}` },
       }));
@@ -119,6 +129,16 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     try {
       const session = await apiGetSession(id);
       setCurrentSession(session);
+      // Auto-resume paused sessions
+      if (session.state === 'paused') {
+        try {
+          await apiResumeSession(id);
+          updateCurrentSessionState('active');
+        } catch (err) {
+          console.error('Failed to resume session:', err);
+          // Continue to open session even if resume fails (graceful degradation)
+        }
+      }
       window.dispatchEvent(new CustomEvent('crucible:open-session', {
         detail: { sessionId: id, title: session.title || `Session ${id.slice(0, 8)}` },
       }));
