@@ -177,7 +177,7 @@ export const ChatInput: Component = () => {
             onInput={(e) => void autocomplete.onInput(e)}
             onKeyDown={handleKeyDown}
             placeholder={session() ? "Type a message..." : "Select a session first..."}
-            disabled={!session() || isLoading()}
+            disabled={!session() || isLoading() || session()?.state === 'ended'}
             rows={1}
             class="flex-1 w-full bg-transparent text-neutral-100 placeholder-neutral-500 resize-none outline-none px-2 py-1 max-h-32 min-h-[2.5rem] disabled:opacity-50"
             data-testid="chat-input"

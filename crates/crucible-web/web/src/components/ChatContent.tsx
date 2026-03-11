@@ -6,18 +6,30 @@ import { SubagentCard } from './SubagentCard';
 import { DelegationCard } from './DelegationCard';
 import { InteractionHandler } from './interactions';
 import { useChatSafe } from '@/contexts/ChatContext';
+import { useSessionSafe } from '@/contexts/SessionContext';
 
 export const ChatContent: Component = () => {
   const chatCtx = useChatSafe();
-  const { pendingInteraction, respondToInteraction } = chatCtx;
+  const { pendingInteraction, respondToInteraction, isLoadingHistory } = chatCtx;
+  const { currentSession } = useSessionSafe();
 
   const hasActiveTools = () => chatCtx.activeTools().length > 0;
   const hasSubagentEvents = () => chatCtx.subagentEvents().length > 0;
-
+  const isSessionEnded = () => currentSession()?.state === 'ended';
   return (
     <div class="h-full flex flex-col overflow-hidden" data-message-renderer="markdown-it">
       <div class="flex-1 min-h-0 flex flex-col">
-        <MessageList />
+        <Show when={isLoadingHistory()}>
+          <div class="flex flex-col gap-3 p-4">
+            <div class="animate-pulse bg-neutral-700 rounded-lg h-12 w-3/4" />
+            <div class="animate-pulse bg-neutral-700 rounded-lg h-16 w-full ml-auto" style="max-width: 80%" />
+            <div class="animate-pulse bg-neutral-700 rounded-lg h-12 w-2/3" />
+            <div class="animate-pulse bg-neutral-700 rounded-lg h-20 w-full ml-auto" style="max-width: 85%" />
+          </div>
+        </Show>
+        <Show when={!isLoadingHistory()}>
+          <MessageList />
+        </Show>
       </div>
 
       {/* Active tool calls during streaming — shown above input */}
@@ -49,7 +61,15 @@ export const ChatContent: Component = () => {
         )}
       </Show>
 
-      <ChatInput />
+      <Show when={isSessionEnded()}>
+        <div class="flex items-center justify-center py-3 px-4 border-t border-neutral-800 bg-neutral-900/50">
+          <span class="text-sm text-neutral-500">This session has ended</span>
+        </div>
+      </Show>
+
+      <Show when={!isSessionEnded()}>
+        <ChatInput />
+      </Show>
     </div>
   );
 };
