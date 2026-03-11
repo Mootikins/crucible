@@ -11,6 +11,8 @@ vi.mock('@/lib/api', () => ({
   respondToInteraction: vi.fn(),
   getSession: vi.fn(),
   getSessionHistory: vi.fn(async () => ({ history: [], total_events: 0 })),
+  getConfig: vi.fn(async () => ({ kiln_path: '/tmp/test-kiln' })),
+  listSessions: vi.fn(async () => []),
   setSessionTitle: vi.fn(),
   generateMessageId: () => `msg_${Date.now()}_test`,
 }));
@@ -19,6 +21,7 @@ const mockSendChatMessage = api.sendChatMessage as ReturnType<typeof vi.fn>;
 const mockSubscribeToEvents = api.subscribeToEvents as ReturnType<typeof vi.fn>;
 const mockGetSession = api.getSession as ReturnType<typeof vi.fn>;
 const mockGetSessionHistory = api.getSessionHistory as ReturnType<typeof vi.fn>;
+const mockListSessions = api.listSessions as ReturnType<typeof vi.fn>;
 
 const mockSession: Session = {
   id: 'test-session-1',
@@ -61,6 +64,7 @@ describe('ChatContext', () => {
     vi.clearAllMocks();
     mockSubscribeToEvents.mockReturnValue(() => {});
     mockGetSession.mockResolvedValue(mockSession);
+    mockListSessions.mockResolvedValue([]);
   });
 
   it('starts with empty messages', () => {
@@ -175,6 +179,7 @@ describe('session switching', () => {
     vi.clearAllMocks();
     mockSubscribeToEvents.mockReturnValue(() => {});
     mockGetSession.mockResolvedValue(mockSession);
+    mockListSessions.mockResolvedValue([]);
   });
 
   it('does not clear messages on initial mount', async () => {
@@ -282,6 +287,7 @@ describe('isLoadingHistory', () => {
     vi.clearAllMocks();
     mockSubscribeToEvents.mockReturnValue(() => {});
     mockGetSession.mockResolvedValue(mockSession);
+    mockListSessions.mockResolvedValue([]);
   });
 
   it('is true during history load and false after', async () => {
@@ -356,5 +362,51 @@ describe('isLoadingHistory', () => {
     expect(items[0].textContent?.trim()).toBe('hello');
     expect(items[1].getAttribute('data-role')).toBe('assistant');
     expect(items[1].textContent?.trim()).toBe('hi there');
+  });
+
+  it('falls back to persisted history when getSession fails', async () => {
+    mockGetSession.mockRejectedValue(new Error('Session not found'));
+    mockListSessions.mockResolvedValue([
+      {
+        ...mockSession,
+        id: 'test-session-1',
+        kiln: '/tmp/test-kiln',
+      },
+    ]);
+    mockGetSessionHistory.mockResolvedValue({
+      history: [
+        {
+          type: 'event',
+          session_id: 'test-session-1',
+          event: 'user_message',
+          data: { content: 'persisted user', message_id: 'msg-user' },
+        },
+        {
+          type: 'event',
+          session_id: 'test-session-1',
+          event: 'message_complete',
+          data: { full_response: 'persisted assistant', message_id: 'msg-assistant' },
+        },
+      ],
+      total_events: 2,
+    });
+
+    render(() => (
+      <TestWrapper>
+        <HistoryTestConsumer />
+      </TestWrapper>
+    ));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('msg-count').textContent).toBe('2');
+    });
+
+    expect(mockGetSessionHistory).toHaveBeenCalledWith(
+      'test-session-1',
+      '/tmp/test-kiln',
+      undefined,
+      undefined,
+      expect.any(AbortSignal),
+    );
   });
 });
