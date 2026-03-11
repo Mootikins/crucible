@@ -85,9 +85,10 @@ pub(crate) async fn handle_kiln_list(req: Request, km: &Arc<KilnManager>) -> Res
     let kilns = km.list().await;
     let list: Vec<_> = kilns
         .iter()
-        .map(|(path, last_access)| {
+        .map(|(path, name, last_access)| {
             serde_json::json!({
                 "path": path.to_string_lossy(),
+                "name": name,
                 "last_access_secs_ago": last_access.elapsed().as_secs()
             })
         })

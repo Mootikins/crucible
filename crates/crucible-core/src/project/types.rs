@@ -13,6 +13,13 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProjectKiln {
+    pub path: PathBuf,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
 /// A registered project — a directory the user works on.
 ///
 /// Projects group sessions by workspace path and provide metadata
@@ -25,7 +32,7 @@ pub struct Project {
     pub name: String,
     /// Attached kilns (from WorkspaceConfig or auto-discovered .crucible/)
     #[serde(default)]
-    pub kilns: Vec<PathBuf>,
+    pub kilns: Vec<ProjectKiln>,
     /// When this project was last accessed
     pub last_accessed: DateTime<Utc>,
     /// SCM/repository information (if detected)
@@ -61,11 +68,19 @@ impl Project {
     }
 
     pub fn with_kiln(mut self, kiln: PathBuf) -> Self {
-        self.kilns.push(kiln);
+        self.kilns.push(ProjectKiln {
+            path: kiln,
+            name: None,
+        });
         self
     }
 
-    pub fn with_kilns(mut self, kilns: Vec<PathBuf>) -> Self {
+    pub fn with_named_kiln(mut self, kiln: PathBuf, name: Option<String>) -> Self {
+        self.kilns.push(ProjectKiln { path: kiln, name });
+        self
+    }
+
+    pub fn with_kilns(mut self, kilns: Vec<ProjectKiln>) -> Self {
         self.kilns = kilns;
         self
     }
