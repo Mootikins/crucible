@@ -24,7 +24,7 @@ function capitalize(s: string): string {
 }
 
 /**
- * Pointer-based drag: mousedown → mousemove(steps) → mouseup.
+ * Pointer-based drag: mousedown -> mousemove(steps) -> mouseup.
  * Required because @thisbeyond/solid-dnd uses pointer events, not HTML5 DnD.
  */
 async function pointerDrag(
@@ -61,7 +61,7 @@ test.describe('Cross-zone tab drag and drop', () => {
 
   test('drag edge tab from expanded left panel to center pane', async ({ page }) => {
     const from = await getCenter(page, '[data-testid="edge-tab-left-search-tab"]');
-    const to = await getCenterOf(page, page.locator('[data-tab-id="tab-1"]'));
+    const to = await getCenterOf(page, page.locator('[data-tab-id="tab-chat-1"]'));
 
     await pointerDrag(page, from, to);
     await page.waitForTimeout(300);
@@ -71,16 +71,16 @@ test.describe('Cross-zone tab drag and drop', () => {
   });
 
   test('drag center tab to left edge panel', async ({ page }) => {
-    const centerTab = page.locator('[data-tab-id="tab-3"]');
+    const centerTab = page.locator('[data-tab-id="tab-chat-1"]');
     const from = await getCenterOf(page, centerTab);
     const to = await getCenter(page, '[data-testid="edge-tabbar-left"]');
 
     await pointerDrag(page, from, to);
     await page.waitForTimeout(300);
 
-    const edgeTab = page.locator('[data-testid="edge-tab-left-tab-3"]');
+    const edgeTab = page.locator('[data-testid="edge-tab-left-tab-chat-1"]');
     await expect(edgeTab).toBeVisible({ timeout: 2000 });
-    const tabInCenter = page.locator('[data-tab-id="tab-3"]:not([data-testid^="edge-tab-"])');
+    const tabInCenter = page.locator('[data-tab-id="tab-chat-1"]:not([data-testid^="edge-tab-"])');
     await expect(tabInCenter).not.toBeVisible({ timeout: 2000 });
   });
 
@@ -96,12 +96,12 @@ test.describe('Cross-zone tab drag and drop', () => {
   });
 
   test('dragging last tab out of edge panel auto-collapses it', async ({ page }) => {
-    // Given: left panel has 3 tabs; drain to 1 by moving search + git to center
-    const centerTarget = await getCenterOf(page, page.locator('[data-tab-id="tab-2"]'));
+    // Given: left panel has 4 tabs; drain to 1 by moving search + source-control to center
+    const centerTarget = await getCenterOf(page, page.locator('[data-tab-id="tab-chat-1"]'));
 
     await pointerDrag(page, await getCenter(page, '[data-testid="edge-tab-left-search-tab"]'), centerTarget);
     await page.waitForTimeout(300);
-    await pointerDrag(page, await getCenter(page, '[data-testid="edge-tab-left-git-tab"]'), centerTarget);
+    await pointerDrag(page, await getCenter(page, '[data-testid="edge-tab-left-source-control-tab"]'), centerTarget);
     await page.waitForTimeout(300);
 
     const leftTabBar = page.locator('[data-testid="edge-tabbar-left"]');
@@ -117,7 +117,7 @@ test.describe('Cross-zone tab drag and drop', () => {
 
   test('drag center tab onto collapsed right panel expands it', async ({ page }) => {
     // Given: right panel starts collapsed
-    const from = await getCenterOf(page, page.locator('[data-tab-id="tab-2"]'));
+    const from = await getCenterOf(page, page.locator('[data-tab-id="tab-chat-1"]'));
     const to = await getCenter(page, '[data-testid="edge-collapsed-drop-right"]');
 
     // When: drag center tab onto collapsed strip
@@ -126,7 +126,7 @@ test.describe('Cross-zone tab drag and drop', () => {
 
     // Then: right panel expands with the dropped tab
     await expect(page.locator('[data-testid="edge-tabbar-right"]')).toBeVisible({ timeout: 2000 });
-    await expect(page.locator('[data-testid="edge-tab-right-tab-2"]')).toBeVisible({ timeout: 2000 });
+    await expect(page.locator('[data-testid="edge-tab-right-tab-chat-1"]')).toBeVisible({ timeout: 2000 });
   });
 
   test('edge tab drag creates drag overlay with tab title', async ({ page }) => {
@@ -147,8 +147,14 @@ test.describe('Cross-zone tab drag and drop', () => {
   });
 
   test('drag edge tab from bottom panel to center pane tab group', async ({ page }) => {
+    // Bottom panel starts collapsed in new layout - expand it first
+    const collapsedStrip = page.locator('[data-testid="edge-collapsed-drop-bottom"]');
+    if (await collapsedStrip.isVisible()) {
+      await collapsedStrip.click();
+      await page.waitForTimeout(300);
+    }
     const from = await getCenter(page, '[data-testid="edge-tab-bottom-problems-tab"]');
-    const to = await getCenterOf(page, page.locator('[data-tab-id="tab-5"]'));
+    const to = await getCenterOf(page, page.locator('[data-tab-id="tab-chat-1"]'));
 
     await pointerDrag(page, from, to);
     await page.waitForTimeout(300);

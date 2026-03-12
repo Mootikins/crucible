@@ -12,7 +12,7 @@ import type {
 
 // Arbitraries for building random WindowManagerState
 
-const arbTabContentType = fc.constantFrom('file', 'document', 'tool', 'terminal', 'preview', 'settings');
+const arbTabContentType = fc.constantFrom('file', 'document', 'tool', 'terminal', 'preview', 'settings', 'chat', 'sessions', 'explorer', 'search', 'source-control', 'outline', 'problems', 'output');
 
 const arbTab = fc.record({
   id: fc.uuid(),
