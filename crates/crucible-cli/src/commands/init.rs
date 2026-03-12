@@ -8,7 +8,7 @@ use tracing::info;
 use crate::kiln_validate::{expand_tilde, validate_kiln_path, ValidationSeverity};
 use crate::provider_detect::{detect_providers, DetectedProvider};
 use crucible_config::components::DataClassification;
-use crucible_config::{CliAppConfig, KilnAttachment, SecurityConfig, WorkspaceConfig, WorkspaceMeta};
+use crucible_config::{CliAppConfig, KilnAttachment, SecurityConfig, KilnConfig, KilnMeta, ProjectConfig, read_kiln_config, read_project_config, write_kiln_config, write_project_config};
 pub async fn execute(path: Option<PathBuf>, force: bool, interactive: bool, personal: bool) -> Result<()> {
     let target_path = match path {
         Some(p) => {
@@ -77,7 +77,7 @@ pub async fn execute(path: Option<PathBuf>, force: bool, interactive: bool, pers
     let classification_for_write = classification;
     task::spawn_blocking(move || {
         create_kiln_with_config(&crucible_dir, &config_content, force)?;
-        write_workspace_config(&crucible_dir, classification_for_write)?;
+        write_kiln_and_project_config(&crucible_dir, classification_for_write)?;
         Ok::<(), anyhow::Error>(())
     })
     .await??;
@@ -244,43 +244,52 @@ fn prompt_classification_selection() -> Result<DataClassification> {
     Ok(levels[selection])
 }
 
-fn write_workspace_config(crucible_dir: &Path, classification: DataClassification) -> Result<()> {
-    let workspace_toml_path = crucible_dir.join("workspace.toml");
-
-    // Read existing workspace config or create a new one
-    let mut config = if workspace_toml_path.exists() {
-        let content = fs::read_to_string(&workspace_toml_path)?;
-        toml::from_str(&content).unwrap_or_else(|_| WorkspaceConfig {
-            workspace: WorkspaceMeta {
-                name: "Crucible Workspace".to_string(),
-            },
-            kilns: vec![],
-            security: SecurityConfig::default(),
-        })
+fn write_kiln_and_project_config(crucible_dir: &Path, classification: DataClassification) -> Result<()> {
+    // Get the root directory (parent of .crucible/)
+    let root_dir = crucible_dir.parent().unwrap_or(crucible_dir);
+    
+    // Read or create kiln.toml
+    let kiln_config = if let Some(config) = read_kiln_config(root_dir) {
+        config
     } else {
-        WorkspaceConfig {
-            workspace: WorkspaceMeta {
-                name: "Crucible Workspace".to_string(),
-            },
+        let dir_name = root_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Crucible Kiln")
+            .to_string();
+        KilnConfig {
+            kiln: KilnMeta { name: dir_name },
+        }
+    };
+    
+    // Write kiln.toml
+    write_kiln_config(root_dir, &kiln_config)?;
+    
+    // Read or create project.toml
+    let mut project_config = if let Some(config) = read_project_config(root_dir) {
+        config
+    } else {
+        ProjectConfig {
+            project: None,
             kilns: vec![],
             security: SecurityConfig::default(),
         }
     };
-
+    
     // Ensure there's a kiln entry for "." with the classification
-    if let Some(kiln) = config.kilns.iter_mut().find(|k| k.path == Path::new(".")) {
+    if let Some(kiln) = project_config.kilns.iter_mut().find(|k| k.path == Path::new(".")) {
         kiln.data_classification = Some(classification);
     } else {
-        config.kilns.push(KilnAttachment {
+        project_config.kilns.push(KilnAttachment {
             path: PathBuf::from("."),
             name: None,
             data_classification: Some(classification),
         });
     }
-
-    let toml_str = toml::to_string_pretty(&config)?;
-    fs::write(&workspace_toml_path, toml_str)?;
-
+    
+    // Write project.toml
+    write_project_config(root_dir, &project_config)?;
+    
     Ok(())
 }
 
