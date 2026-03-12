@@ -33,9 +33,11 @@ pub mod credentials;
 mod enrichment;
 mod global;
 mod includes;
+mod kiln_config;
 mod loader;
 mod patterns;
 mod profile;
+mod project_config;
 mod security;
 pub mod serde_helpers;
 mod value_source;
@@ -80,6 +82,8 @@ pub use patterns::{
     BashPatterns, FilePatterns, PatternError, PatternResult, PatternStore, ToolPatterns,
 };
 pub use profile::{Environment, ProfileConfig};
+pub use project_config::{ProjectConfig, ProjectMeta, read_project_config, write_project_config};
 pub use security::ShellPolicy;
 pub use value_source::{ValueInfo, ValueSource, ValueSourceMap};
 pub use workspace::{KilnAttachment, SecurityConfig, WorkspaceConfig, WorkspaceMeta};
+pub use kiln_config::{KilnConfig, KilnMeta, read_kiln_config, write_kiln_config};
