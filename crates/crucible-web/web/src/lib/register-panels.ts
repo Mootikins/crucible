@@ -11,5 +11,5 @@ export function registerPanels(): void {
   registry.register('settings', 'Settings', SettingsPanel, 'center', '⚙️');
   registry.register('chat', 'Chat', ChatPanel, 'center', '💬');
   registry.register('activity', 'Activity', ActivityPanel, 'right', '📊');
-  registry.register('shell', 'Shell', ShellPanel, 'bottom', '💻');
+  registry.register('terminal', 'Terminal', ShellPanel, 'bottom', '💻');
 }
