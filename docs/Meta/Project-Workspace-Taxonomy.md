@@ -39,7 +39,7 @@ Projects are auto-registered when:
 
 Registration detects:
 - **SCM info**: Git repository root, remote URL, worktree status
-- **Metadata**: Name from `.crucible/workspace.toml` or directory name
+- **Metadata**: Name from `.crucible/kiln.toml` or directory name
 - **Kilns**: Attached knowledge bases from workspace config
 
 ## Repository Grouping

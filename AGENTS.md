@@ -34,6 +34,27 @@
 | `crucible-daemon` | Daemon server (library); includes enrichment pipeline, note processing, RPC client, observability, file watching, skills discovery, and tools (absorbed from crucible-tools) | `Server`, `SessionManager`, `AgentManager` |
 | `crucible-lance` | LanceDB vector storage backend | `LanceStore`, `LanceNoteStore` |
 
+### Terminology: Kiln vs Workspace vs Project
+
+These three terms have precise meanings in Crucible — do not use them interchangeably:
+
+| Term | Definition | Config File |
+|------|------------|-------------|
+| **Project** | Where work output is done/put. A registered directory in the daemon (git repo root or invocation directory). Contains code, configs, build artifacts. | `.crucible/project.toml` |
+| **Kiln** | Where accrued knowledge goes. A content directory for notes, sessions, and linked knowledge. | `.crucible/kiln.toml` |
+| **Workspace** | A specific instance of a project directory. Often the same dir as project root, could be a worktree. **Runtime concept — no config file.** | — |
+
+**Correct uses of "workspace"** (do NOT rename these):
+- `session.workspace` — the working directory for a session
+- `WorkspaceTools` — tools scoped to the working directory
+- `workspace: &Path` parameters in agent code
+- Lua `paths.workspace()` — returns the working directory
+
+**Config files** (`.crucible/` directory inside a kiln or project root):
+- `kiln.toml` — kiln identity: name, data classification
+- `project.toml` — project config: attached kilns, security policies
+- Old `workspace.toml` is still read for backward compatibility (read-only fallback)
+
 ### Daemon Architecture
 
 Crucible uses a **single `cru` binary** with a built-in daemon for multi-session support:

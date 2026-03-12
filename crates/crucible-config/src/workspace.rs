@@ -11,6 +11,8 @@ use std::path::PathBuf;
 /// Complete workspace configuration
 ///
 /// Loaded from `.crucible/workspace.toml` in the workspace root.
+#[allow(deprecated)]
+#[deprecated(since = "0.1.0", note = "Use KilnConfig + ProjectConfig instead")]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkspaceConfig {
     /// Workspace metadata
@@ -24,6 +26,8 @@ pub struct WorkspaceConfig {
 }
 
 /// Workspace metadata
+#[allow(deprecated)]
+#[deprecated(since = "0.1.0", note = "Use KilnMeta instead")]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkspaceMeta {
     /// Human-readable workspace name

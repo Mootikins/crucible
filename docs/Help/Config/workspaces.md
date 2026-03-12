@@ -20,7 +20,7 @@ User-wide settings that apply across all workspaces:
 - Default security policies
 - Registered workspaces
 
-### Workspace (`.crucible/workspace.toml`)
+### Project (`.crucible/project.toml`) and Kiln (`.crucible/kiln.toml`)
 
 Project-level settings:
 - Shell command whitelist/blacklist
@@ -47,14 +47,16 @@ A kiln is *attached to* a workspace. The same kiln can be attached to multiple w
 
 ### Implicit Discovery
 
-Any directory with `.crucible/workspace.toml` is automatically recognized as a workspace:
+Any directory with `.crucible/project.toml` or `.crucible/kiln.toml` is automatically recognized as a workspace:
 
 ```bash
 mkdir -p myproject/.crucible
-cat > myproject/.crucible/workspace.toml << 'EOF'
-[workspace]
+cat > myproject/.crucible/kiln.toml << 'EOF'
+[kiln]
 name = "myproject"
+EOF
 
+cat > myproject/.crucible/project.toml << 'EOF'
 [[kilns]]
 path = "docs"  # Relative path to kiln
 EOF
@@ -83,7 +85,7 @@ Crucible ships with a default whitelist of common safe commands: `git`, `cargo`,
 ### Workspace Customization
 
 ```toml
-# .crucible/workspace.toml
+# .crucible/project.toml
 [security.shell]
 # Add project-specific tools
 whitelist = ["aws", "terraform"]
@@ -116,7 +118,7 @@ Choose the prefix granularity and where to save it.
 Control which LLM providers are available in each workspace:
 
 ```toml
-# .crucible/workspace.toml
+# .crucible/project.toml
 [security.providers]
 allowed = ["ollama-*"]           # Only local models
 blocked = ["openai", "anthropic"] # No cloud providers
