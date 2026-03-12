@@ -89,6 +89,7 @@ const SessionItem: Component<{ session: Session; selected: boolean; onSelect: ()
            ? 'bg-primary/20 text-primary-hover'
            : 'hover:bg-surface-elevated text-neutral-300'
        } ${props.session.state === 'ended' ? 'opacity-60' : ''}`}
+       data-testid={`session-item-${props.session.id}`}
      >
       <div class="flex items-center gap-2">
         <StateIndicator state={props.session.state} />
@@ -299,6 +300,7 @@ export const SessionPanel: Component = () => {
                   onInput={(e) => handleSearchInput(e.currentTarget.value)}
                   placeholder="Search sessions..."
                   class="w-full bg-neutral-800 text-neutral-200 text-sm pl-8 pr-7 py-1.5 rounded border border-neutral-700 focus:border-primary focus:outline-none placeholder:text-neutral-500"
+                  data-testid="session-search-input"
                 />
                 <Show when={searchQuery()}>
                   <button
@@ -311,7 +313,7 @@ export const SessionPanel: Component = () => {
               </div>
             </div>
 
-            <div class="p-2">
+            <div class="p-2" data-testid="session-list">
               <Show when={isSearching()}>
                 <p class="text-neutral-500 text-sm text-center py-2">Searching...</p>
               </Show>
@@ -339,6 +341,7 @@ export const SessionPanel: Component = () => {
                 onClick={handleCreateSession}
                 disabled={isLoading() || !selectedKiln()}
                 class="w-full mt-2 px-3 py-2 text-sm text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                data-testid="new-session-button"
               >
                 <Plus class="w-3.5 h-3.5" />
                 New Session
