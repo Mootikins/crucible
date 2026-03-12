@@ -316,7 +316,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn workspace_tools() -> Arc<WorkspaceTools> {
-        Arc::new(WorkspaceTools::new(&std::path::PathBuf::from("/tmp")))
+        Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp")))
     }
 
     fn test_dispatcher() -> DaemonToolDispatcher {

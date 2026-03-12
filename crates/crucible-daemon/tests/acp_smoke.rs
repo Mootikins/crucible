@@ -35,14 +35,13 @@ use tokio::time::{timeout, Duration};
 /// The binary is built at `target/debug/mock-acp-agent` relative to the workspace root.
 /// This function resolves the path from the daemon crate's manifest directory.
 pub fn mock_agent_path() -> PathBuf {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/debug/mock-acp-agent")
         .canonicalize()
         .expect(
             "mock-acp-agent binary not found. Build it with:\n\
              cargo build -p crucible-acp --features test-utils --bin mock-acp-agent",
-        );
-    path
+        )
 }
 
 /// Creates a SessionAgent configured for ACP with the given agent path.
@@ -295,8 +294,10 @@ async fn inject_errors_causes_handshake_failure() {
     let agent_config = mock_session_agent(&agent_path);
 
     let mut acp_config = AcpConfig::default();
-    let mut profile = AgentProfile::default();
-    profile.args = Some(vec!["--inject-errors".to_string()]);
+    let profile = AgentProfile {
+        args: Some(vec!["--inject-errors".to_string()]),
+        ..Default::default()
+    };
     acp_config.agents.insert(agent_path, profile);
 
     let result = timeout(

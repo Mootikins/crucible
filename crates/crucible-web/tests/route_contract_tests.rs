@@ -12,7 +12,7 @@ use crucible_daemon::DaemonClient;
 use crucible_web::routes::{
     chat_routes, health_routes, project_routes, search_routes, session_routes,
 };
-use crucible_web::services::daemon::{AppState, EventBroker};
+use crucible_web::services::daemon::{AppState, EventBroker, ReconnectingDaemon};
 use crucible_web::{ChatEvent, WebError};
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -147,7 +147,7 @@ fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
 /// Build an AppState using a mock daemon client.
 fn build_mock_state(client: DaemonClient) -> AppState {
     AppState {
-        daemon: Arc::new(client),
+        daemon: Arc::new(ReconnectingDaemon::new(client)),
         events: Arc::new(EventBroker::new()),
         config: Arc::new(CliAppConfig::default()),
         http_client: reqwest::Client::new(),

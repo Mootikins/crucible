@@ -173,7 +173,7 @@ mod tests {
         // Should start with chat-20260104-1530-
         assert!(id.as_str().starts_with("chat-20260104-1530-"));
         // Should have 4 char hash suffix
-        let hash = id.as_str().split('-').last().unwrap();
+        let hash = id.as_str().split('-').next_back().unwrap();
         assert_eq!(hash.len(), 4);
         assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
     }

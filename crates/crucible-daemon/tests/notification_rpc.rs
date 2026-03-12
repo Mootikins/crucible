@@ -103,7 +103,7 @@ async fn test_add_notification_contract() {
         response["result"]["session_id"].as_str().unwrap(),
         session_id
     );
-    assert_eq!(response["result"]["success"].as_bool().unwrap(), true);
+    assert!(response["result"]["success"].as_bool().unwrap());
 
     daemon.stop().await.expect("Failed to stop daemon");
 }
@@ -198,7 +198,7 @@ async fn test_add_notification_with_progress_kind() {
 
     assert_eq!(response["jsonrpc"], "2.0");
     assert_eq!(response["id"], 2);
-    assert_eq!(response["result"]["success"].as_bool().unwrap(), true);
+    assert!(response["result"]["success"].as_bool().unwrap());
 
     daemon.stop().await.expect("Failed to stop daemon");
 }
@@ -224,7 +224,7 @@ async fn test_add_notification_with_warning_kind() {
 
     assert_eq!(response["jsonrpc"], "2.0");
     assert_eq!(response["id"], 2);
-    assert_eq!(response["result"]["success"].as_bool().unwrap(), true);
+    assert!(response["result"]["success"].as_bool().unwrap());
 
     daemon.stop().await.expect("Failed to stop daemon");
 }
@@ -297,9 +297,8 @@ async fn test_dismiss_notification_removes_from_list() {
     )
     .await;
 
-    assert_eq!(
+    assert!(
         dismiss_response["result"]["success"].as_bool().unwrap(),
-        true,
         "Dismiss should succeed"
     );
 
@@ -335,9 +334,8 @@ async fn test_dismiss_nonexistent_notification_returns_false() {
     let response = rpc_call(&mut stream, "session.dismiss_notification", params, 2).await;
 
     assert_eq!(response["jsonrpc"], "2.0");
-    assert_eq!(
-        response["result"]["success"].as_bool().unwrap(),
-        false,
+    assert!(
+        !response["result"]["success"].as_bool().unwrap(),
         "Should return false when notification not found"
     );
 

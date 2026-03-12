@@ -205,11 +205,14 @@ mod tests {
             acp_config: None,
             permission_config: None,
             plugin_loader: None,
-            workspace_tools: Arc::new(WorkspaceTools::new(&PathBuf::from("/tmp"))),
+            workspace_tools: Arc::new(WorkspaceTools::new(PathBuf::from("/tmp"))),
         })
     }
 
     #[tokio::test]
+    // SAFETY: This lock intentionally serializes process-wide env var mutation across async tests.
+    // It must be held for the entire test body (including await points) to prevent cross-test races.
+    #[allow(clippy::await_holding_lock)]
     async fn test_list_providers_empty_config() {
         let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
         let _env_guards = clear_provider_env();
@@ -221,6 +224,9 @@ mod tests {
     }
 
     #[tokio::test]
+    // SAFETY: This lock intentionally serializes process-wide env var mutation across async tests.
+    // It must be held for the entire test body (including await points) to prevent cross-test races.
+    #[allow(clippy::await_holding_lock)]
     async fn test_list_providers_with_configured_provider() {
         let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
         let _env_guards = clear_provider_env();
@@ -253,6 +259,9 @@ mod tests {
     }
 
     #[tokio::test]
+    // SAFETY: This lock intentionally serializes process-wide env var mutation across async tests.
+    // It must be held for the entire test body (including await points) to prevent cross-test races.
+    #[allow(clippy::await_holding_lock)]
     async fn test_list_providers_filters_non_chat_providers() {
         let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
         let _env_guards = clear_provider_env();
