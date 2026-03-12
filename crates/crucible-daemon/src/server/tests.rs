@@ -62,10 +62,7 @@ fn write_workspace_config(
 ) {
     let crucible_dir = workspace.join(".crucible");
     std::fs::create_dir_all(&crucible_dir).unwrap();
-    let mut config = format!(
-        "[[kilns]]\npath = \"{}\"\n",
-        kiln_relative_path
-    );
+    let mut config = format!("[[kilns]]\npath = \"{}\"\n", kiln_relative_path);
     if let Some(classification) = classification {
         config.push_str(&format!("data_classification = \"{}\"\n", classification));
     }

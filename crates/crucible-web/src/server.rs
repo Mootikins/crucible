@@ -1,8 +1,8 @@
 use crate::assets::static_routes;
 use crate::middleware::auth::localhost_only_shell_auth;
 use crate::routes::{
-    chat_routes, config_routes, health_routes, kiln_routes, mcp_routes, plugin_routes, project_routes,
-    search_routes, session_routes, shell_routes,
+    chat_routes, config_routes, health_routes, kiln_routes, mcp_routes, plugin_routes,
+    project_routes, search_routes, session_routes, shell_routes,
 };
 use crate::services::daemon;
 use crate::{Result, WebError};
@@ -85,21 +85,25 @@ mod tests {
         // After switching to AllowOrigin::any(), CORS accepts all origins.
         // This test verifies the policy is configured for permissive access.
         // This is safe for a local-first app not exposed to the internet.
-        
+
         // The key assertion: we're using AllowOrigin::any() which accepts any origin.
         // This enables LAN access from 192.168.x.x and other local networks.
         let test_origins = [
             "http://localhost:3000",
             "http://127.0.0.1:3000",
-            "http://192.168.0.16:3000",  // LAN access now allowed
-            "http://10.0.0.5:3000",       // Private network access now allowed
-            "https://example.com",         // Any origin is accepted
+            "http://192.168.0.16:3000", // LAN access now allowed
+            "http://10.0.0.5:3000",     // Private network access now allowed
+            "https://example.com",      // Any origin is accepted
         ];
-        
+
         // All origins should be valid (no filtering)
         for origin in test_origins {
             let parsed: axum::http::HeaderValue = origin.parse().expect("Should be valid header");
-            assert!(!parsed.is_empty(), "Origin {} should parse as valid header", origin);
+            assert!(
+                !parsed.is_empty(),
+                "Origin {} should parse as valid header",
+                origin
+            );
         }
     }
 
@@ -108,16 +112,14 @@ mod tests {
         // Verify that AllowOrigin::any() is the configured policy.
         // This test documents the CORS behavior: all origins are accepted.
         // This is appropriate for a local-first application.
-        
+
         // The policy allows any origin, so we just verify that
         // the configuration doesn't have a restrictive list.
         // In production, this would be verified by checking the actual
         // CorsLayer configuration, but that's tested implicitly by
         // the server accepting requests from any origin.
-        
+
         // This test serves as documentation that the CORS policy is intentionally permissive.
         assert!(true, "AllowOrigin::any() is the configured policy");
     }
-
-
 }

@@ -1116,7 +1116,8 @@ mod tests {
 
     #[test]
     fn test_init_with_personal_flag_parses() {
-        let cli = Cli::try_parse_from(["cru", "init", "--personal", "--path", "/tmp/sessions"]).unwrap();
+        let cli =
+            Cli::try_parse_from(["cru", "init", "--personal", "--path", "/tmp/sessions"]).unwrap();
         if let Some(Commands::Init {
             path,
             force,

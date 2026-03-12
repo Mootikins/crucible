@@ -214,11 +214,7 @@ mod tests {
     use std::sync::Arc;
 
     fn make_test_tool(name: &str, desc: &str) -> Tool {
-        Tool::new(
-            name.to_string(),
-            desc.to_string(),
-            Arc::default(),
-        )
+        Tool::new(name.to_string(), desc.to_string(), Arc::default())
     }
 
     #[test]
