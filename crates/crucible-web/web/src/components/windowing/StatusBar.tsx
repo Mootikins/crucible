@@ -53,6 +53,7 @@ export const StatusBar: Component = () => {
           {/* Mode badge */}
           <span
             class={`px-1.5 rounded-sm font-medium uppercase tracking-wider text-[9px] leading-tight ${modeColor(statusBarStore.chatMode())}`}
+            data-testid="status-mode"
           >
             {statusBarStore.chatMode()}
           </span>
@@ -78,7 +79,7 @@ export const StatusBar: Component = () => {
           {/* Context usage */}
           <Show when={statusBarStore.contextUsage()}>
             {(usage) => (
-              <div class="flex items-center gap-1.5">
+              <div class="flex items-center gap-1.5" data-testid="status-context-usage">
                 <span class="text-zinc-400 tabular-nums">
                   {formatTokens(usage().used)} / {formatTokens(usage().total)}
                 </span>
@@ -99,7 +100,7 @@ export const StatusBar: Component = () => {
           {/* Active model */}
           <Show when={statusBarStore.activeModel()}>
             {(model) => (
-              <span class="text-zinc-400 font-mono">{model()}</span>
+              <span class="text-zinc-400 font-mono" data-testid="status-model">{model()}</span>
             )}
           </Show>
           {/* Notification bell */}
