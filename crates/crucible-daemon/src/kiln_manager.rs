@@ -4,7 +4,7 @@
 //! Supports SQLite backend via feature flags.
 
 use anyhow::Result;
-use crucible_config::WorkspaceConfig;
+use crucible_config::read_kiln_config;
 use crucible_core::events::InternalSessionEvent;
 use std::collections::HashMap;
 use std::fs;
@@ -764,10 +764,8 @@ fn discover_markdown_files(kiln_path: &Path) -> Vec<PathBuf> {
 }
 
 fn read_kiln_name(kiln_path: &Path) -> Option<String> {
-    let config_path = kiln_path.join(".crucible").join("workspace.toml");
-    let content = fs::read_to_string(config_path).ok()?;
-    let config: WorkspaceConfig = toml::from_str(&content).ok()?;
-    let trimmed = config.workspace.name.trim();
+    let config = read_kiln_config(kiln_path)?;
+    let trimmed = config.kiln.name.trim();
     if trimmed.is_empty() {
         None
     } else {
@@ -874,14 +872,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_open_reads_kiln_name_from_workspace_toml() {
+    async fn test_open_reads_kiln_name_from_kiln_toml() {
         let km = KilnManager::new();
         let tmp = TempDir::new().unwrap();
         let kiln_path = tmp.path().join("named_kiln");
         std::fs::create_dir_all(kiln_path.join(".crucible")).unwrap();
         std::fs::write(
-            kiln_path.join(".crucible").join("workspace.toml"),
-            "[workspace]\nname = \"crucible-docs\"\n",
+            kiln_path.join(".crucible").join("kiln.toml"),
+            "[kiln]\nname = \"crucible-docs\"\n",
         )
         .unwrap();
 

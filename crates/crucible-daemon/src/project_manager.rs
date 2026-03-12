@@ -4,7 +4,7 @@
 //! registered projects and provides CRUD operations. Projects are
 //! persisted to a JSON file in the crucible home directory.
 
-use crucible_config::WorkspaceConfig;
+use crucible_config::{read_kiln_config, read_project_config};
 use crucible_core::{Project, ProjectKiln, RepositoryInfo};
 use dashmap::DashMap;
 use std::fs;
@@ -199,42 +199,47 @@ impl ProjectManager {
     }
 
     fn read_project_metadata(&self, path: &Path) -> (String, Vec<ProjectKiln>) {
-        let config_path = path.join(".crucible").join("workspace.toml");
-        if let Ok(content) = fs::read_to_string(&config_path) {
-            if let Ok(config) = toml::from_str::<WorkspaceConfig>(&content) {
-                let name = config.workspace.name;
-                let kilns: Vec<ProjectKiln> = config
-                    .kilns
-                    .into_iter()
-                    .map(|k| {
-                        let path = if k.path.is_absolute() {
-                            k.path
-                        } else {
-                            path.join(&k.path)
-                        };
-
-                        ProjectKiln { path, name: k.name }
-                    })
-                    .collect();
-                return (name, kilns);
-            }
-        }
-
-        let crucible_dir = path.join(".crucible");
-        let kilns = if crucible_dir.is_dir() {
-            vec![ProjectKiln {
-                path: crucible_dir,
-                name: None,
-            }]
+        // Try to read kiln config for the name
+        let name = if let Some(kiln_config) = read_kiln_config(path) {
+            kiln_config.kiln.name
         } else {
-            vec![]
+            // Fallback to directory name
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("Unknown")
+                .to_string()
         };
 
-        let name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("Unknown")
-            .to_string();
+        // Try to read project config for kilns list
+        let kilns = if let Some(project_config) = read_project_config(path) {
+            project_config
+                .kilns
+                .into_iter()
+                .map(|k| {
+                    let kiln_path = if k.path.is_absolute() {
+                        k.path
+                    } else {
+                        path.join(&k.path)
+                    };
+
+                    ProjectKiln {
+                        path: kiln_path,
+                        name: k.name,
+                    }
+                })
+                .collect()
+        } else {
+            // Fallback: if .crucible dir exists, use it as a kiln
+            let crucible_dir = path.join(".crucible");
+            if crucible_dir.is_dir() {
+                vec![ProjectKiln {
+                    path: crucible_dir,
+                    name: None,
+                }]
+            } else {
+                vec![]
+            }
+        };
 
         (name, kilns)
     }
@@ -329,14 +334,19 @@ mod tests {
         let crucible_dir = project_dir.join(".crucible");
         fs::create_dir_all(&crucible_dir).unwrap();
 
-        let config = r#"
-[workspace]
+        // Write kiln config with the name
+        let kiln_config = r#"
+[kiln]
 name = "My Custom Name"
+"#;
+        fs::write(crucible_dir.join("kiln.toml"), kiln_config).unwrap();
 
+        // Write project config with kilns list
+        let project_config = r#"
 [[kilns]]
 path = "./notes"
 "#;
-        fs::write(crucible_dir.join("workspace.toml"), config).unwrap();
+        fs::write(crucible_dir.join("project.toml"), project_config).unwrap();
 
         let project = manager.register(&project_dir).unwrap();
         assert_eq!(project.name, "My Custom Name");
