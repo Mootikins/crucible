@@ -1,5 +1,8 @@
 use super::*;
-use crucible_config::{ProjectConfig, KilnConfig, KilnMeta, read_project_config, write_project_config, read_kiln_config, write_kiln_config, DataClassification};
+use crucible_config::{
+    read_kiln_config, read_project_config, write_kiln_config, write_project_config,
+    DataClassification, KilnConfig, KilnMeta, ProjectConfig,
+};
 
 pub(crate) async fn handle_kiln_open(
     req: Request,

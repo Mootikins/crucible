@@ -8,8 +8,8 @@ use crucible_daemon::{
 use futures::future::BoxFuture;
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
 
 const EVENT_CHANNEL_CAPACITY: usize = 256;
@@ -235,7 +235,8 @@ impl ReconnectingDaemon {
             let recording_mode = recording_mode.clone();
             let recording_path = recording_path.clone();
             Box::pin(async move {
-                let connect_kilns_ref: Vec<&Path> = connect_kilns.iter().map(|p| p.as_path()).collect();
+                let connect_kilns_ref: Vec<&Path> =
+                    connect_kilns.iter().map(|p| p.as_path()).collect();
                 daemon
                     .session_create(
                         &session_type,
@@ -292,7 +293,11 @@ impl ReconnectingDaemon {
         self.call_with_reconnect("session.search", move |daemon| {
             let query = query.clone();
             let kiln_path = kiln_path.clone();
-            Box::pin(async move { daemon.session_search(&query, kiln_path.as_deref(), limit).await })
+            Box::pin(async move {
+                daemon
+                    .session_search(&query, kiln_path.as_deref(), limit)
+                    .await
+            })
         })
         .await
     }
@@ -363,7 +368,10 @@ impl ReconnectingDaemon {
         .await
     }
 
-    pub async fn session_subscribe(&self, session_ids: &[&str]) -> anyhow::Result<serde_json::Value> {
+    pub async fn session_subscribe(
+        &self,
+        session_ids: &[&str],
+    ) -> anyhow::Result<serde_json::Value> {
         let ids: Vec<String> = session_ids.iter().map(|id| (*id).to_string()).collect();
         self.call_with_reconnect("session.subscribe", move |daemon| {
             let ids = ids.clone();
@@ -426,7 +434,11 @@ impl ReconnectingDaemon {
         .await
     }
 
-    pub async fn session_switch_model(&self, session_id: &str, model_id: &str) -> anyhow::Result<()> {
+    pub async fn session_switch_model(
+        &self,
+        session_id: &str,
+        model_id: &str,
+    ) -> anyhow::Result<()> {
         let session_id = session_id.to_string();
         let model_id = model_id.to_string();
         self.call_with_reconnect("session.switch_model", move |daemon| {
@@ -470,12 +482,19 @@ impl ReconnectingDaemon {
         let session_id = session_id.to_string();
         self.call_with_reconnect("session.set_thinking_budget", move |daemon| {
             let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_set_thinking_budget(&session_id, budget).await })
+            Box::pin(async move {
+                daemon
+                    .session_set_thinking_budget(&session_id, budget)
+                    .await
+            })
         })
         .await
     }
 
-    pub async fn session_get_thinking_budget(&self, session_id: &str) -> anyhow::Result<Option<i64>> {
+    pub async fn session_get_thinking_budget(
+        &self,
+        session_id: &str,
+    ) -> anyhow::Result<Option<i64>> {
         let session_id = session_id.to_string();
         self.call_with_reconnect("session.get_thinking_budget", move |daemon| {
             let session_id = session_id.clone();
@@ -484,11 +503,19 @@ impl ReconnectingDaemon {
         .await
     }
 
-    pub async fn session_set_temperature(&self, session_id: &str, temperature: f64) -> anyhow::Result<()> {
+    pub async fn session_set_temperature(
+        &self,
+        session_id: &str,
+        temperature: f64,
+    ) -> anyhow::Result<()> {
         let session_id = session_id.to_string();
         self.call_with_reconnect("session.set_temperature", move |daemon| {
             let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_set_temperature(&session_id, temperature).await })
+            Box::pin(async move {
+                daemon
+                    .session_set_temperature(&session_id, temperature)
+                    .await
+            })
         })
         .await
     }
@@ -524,7 +551,11 @@ impl ReconnectingDaemon {
         .await
     }
 
-    pub async fn session_set_precognition(&self, session_id: &str, enabled: bool) -> anyhow::Result<()> {
+    pub async fn session_set_precognition(
+        &self,
+        session_id: &str,
+        enabled: bool,
+    ) -> anyhow::Result<()> {
         let session_id = session_id.to_string();
         self.call_with_reconnect("session.set_precognition", move |daemon| {
             let session_id = session_id.clone();
@@ -649,7 +680,10 @@ pub async fn init_daemon(config: CliAppConfig) -> Result<AppState> {
     // Auto-register the configured kiln so the frontend has a project on startup
     let kiln_path = config.kiln_path_str().unwrap_or_default();
     if !kiln_path.is_empty() {
-        if let Err(e) = daemon.project_register(std::path::Path::new(&kiln_path)).await {
+        if let Err(e) = daemon
+            .project_register(std::path::Path::new(&kiln_path))
+            .await
+        {
             tracing::warn!("Failed to auto-register kiln {kiln_path}: {e}");
         }
     }

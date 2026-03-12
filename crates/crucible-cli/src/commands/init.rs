@@ -8,8 +8,16 @@ use tracing::info;
 use crate::kiln_validate::{expand_tilde, validate_kiln_path, ValidationSeverity};
 use crate::provider_detect::{detect_providers, DetectedProvider};
 use crucible_config::components::DataClassification;
-use crucible_config::{CliAppConfig, KilnAttachment, SecurityConfig, KilnConfig, KilnMeta, ProjectConfig, read_kiln_config, read_project_config, write_kiln_config, write_project_config};
-pub async fn execute(path: Option<PathBuf>, force: bool, interactive: bool, personal: bool) -> Result<()> {
+use crucible_config::{
+    read_kiln_config, read_project_config, write_kiln_config, write_project_config, CliAppConfig,
+    KilnAttachment, KilnConfig, KilnMeta, ProjectConfig, SecurityConfig,
+};
+pub async fn execute(
+    path: Option<PathBuf>,
+    force: bool,
+    interactive: bool,
+    personal: bool,
+) -> Result<()> {
     let target_path = match path {
         Some(p) => {
             let expanded = expand_tilde(&p.to_string_lossy());
@@ -244,10 +252,13 @@ fn prompt_classification_selection() -> Result<DataClassification> {
     Ok(levels[selection])
 }
 
-fn write_kiln_and_project_config(crucible_dir: &Path, classification: DataClassification) -> Result<()> {
+fn write_kiln_and_project_config(
+    crucible_dir: &Path,
+    classification: DataClassification,
+) -> Result<()> {
     // Get the root directory (parent of .crucible/)
     let root_dir = crucible_dir.parent().unwrap_or(crucible_dir);
-    
+
     // Read or create kiln.toml
     let kiln_config = if let Some(config) = read_kiln_config(root_dir) {
         config
@@ -261,10 +272,10 @@ fn write_kiln_and_project_config(crucible_dir: &Path, classification: DataClassi
             kiln: KilnMeta { name: dir_name },
         }
     };
-    
+
     // Write kiln.toml
     write_kiln_config(root_dir, &kiln_config)?;
-    
+
     // Read or create project.toml
     let mut project_config = if let Some(config) = read_project_config(root_dir) {
         config
@@ -275,9 +286,13 @@ fn write_kiln_and_project_config(crucible_dir: &Path, classification: DataClassi
             security: SecurityConfig::default(),
         }
     };
-    
+
     // Ensure there's a kiln entry for "." with the classification
-    if let Some(kiln) = project_config.kilns.iter_mut().find(|k| k.path == Path::new(".")) {
+    if let Some(kiln) = project_config
+        .kilns
+        .iter_mut()
+        .find(|k| k.path == Path::new("."))
+    {
         kiln.data_classification = Some(classification);
     } else {
         project_config.kilns.push(KilnAttachment {
@@ -286,10 +301,10 @@ fn write_kiln_and_project_config(crucible_dir: &Path, classification: DataClassi
             data_classification: Some(classification),
         });
     }
-    
+
     // Write project.toml
     write_project_config(root_dir, &project_config)?;
-    
+
     Ok(())
 }
 

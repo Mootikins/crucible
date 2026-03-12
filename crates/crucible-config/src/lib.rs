@@ -77,14 +77,14 @@ pub use enrichment::{
 };
 pub use global::GlobalConfig;
 pub use includes::{process_file_references, IncludeConfig, IncludeError};
+pub use kiln_config::{read_kiln_config, write_kiln_config, KilnConfig, KilnMeta};
 pub use loader::{ConfigFormat, ConfigLoader};
 pub use patterns::{
     BashPatterns, FilePatterns, PatternError, PatternResult, PatternStore, ToolPatterns,
 };
 pub use profile::{Environment, ProfileConfig};
-pub use project_config::{ProjectConfig, ProjectMeta, read_project_config, write_project_config};
+pub use project_config::{read_project_config, write_project_config, ProjectConfig, ProjectMeta};
 pub use security::ShellPolicy;
 pub use value_source::{ValueInfo, ValueSource, ValueSourceMap};
 #[allow(deprecated)]
 pub use workspace::{KilnAttachment, SecurityConfig, WorkspaceConfig, WorkspaceMeta};
-pub use kiln_config::{KilnConfig, KilnMeta, read_kiln_config, write_kiln_config};
