@@ -218,10 +218,10 @@ When a plugin tries a non-whitelisted command, the user is prompted to allow or 
 
 Common commands (`git`, `cargo`, `npm`, `docker`, etc.) are whitelisted by default.
 
-### Workspace Shell Policy
+### Project Shell Policy
 
 ```toml
-# .crucible/workspace.toml
+# .crucible/project.toml
 [security.shell]
 whitelist = ["aws", "terraform"]  # Allow these commands
 blacklist = ["docker run"]         # Block these (prefix match)
