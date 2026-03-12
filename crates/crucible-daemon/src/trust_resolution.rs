@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use crucible_config::{DataClassification, LlmConfig, TrustLevel, WorkspaceConfig};
+use crucible_config::{DataClassification, LlmConfig, TrustLevel, read_project_config};
 use crucible_core::session::SessionAgent;
 
 /// Resolve the data classification for a kiln by reading the workspace config.
@@ -18,9 +18,7 @@ pub(crate) fn resolve_kiln_classification(
     workspace: &Path,
     kiln: &Path,
 ) -> Option<DataClassification> {
-    let config_path = workspace.join(".crucible").join("workspace.toml");
-    let content = std::fs::read_to_string(config_path).ok()?;
-    let config = toml::from_str::<WorkspaceConfig>(&content).ok()?;
+    let config = read_project_config(workspace)?;
 
     let kiln_canonical = std::fs::canonicalize(kiln).ok();
     for attachment in &config.kilns {
@@ -49,8 +47,11 @@ pub(crate) fn resolve_kiln_classification(
 pub fn find_workspace_and_resolve_classification(kiln: &Path) -> Option<DataClassification> {
     let mut dir = kiln.to_path_buf();
     loop {
-        if dir.join(".crucible").join("workspace.toml").exists() {
-            return resolve_kiln_classification(&dir, kiln);
+        if dir.join(".crucible").is_dir() {
+            // read_project_config handles project.toml → workspace.toml fallback
+            if let Some(_) = read_project_config(&dir) {
+                return resolve_kiln_classification(&dir, kiln);
+            }
         }
         if !dir.pop() {
             return None;
@@ -124,12 +125,11 @@ mod tests {
     ) {
         let dir = workspace.join(".crucible");
         fs::create_dir_all(&dir).unwrap();
-        let mut toml =
-            format!("[workspace]\nname = \"test\"\n\n[[kilns]]\npath = \"{kiln_rel}\"\n");
+        let mut toml = format!("[[kilns]]\npath = \"{kiln_rel}\"\n");
         if let Some(c) = classification {
             toml.push_str(&format!("data_classification = \"{c}\"\n"));
         }
-        fs::write(dir.join("workspace.toml"), toml).unwrap();
+        fs::write(dir.join("project.toml"), toml).unwrap();
     }
 
     #[test]
@@ -150,7 +150,7 @@ mod tests {
         let workspace = tmp.path().join("ws");
         let kiln = workspace.join("notes");
         fs::create_dir_all(&kiln).unwrap();
-        // No .crucible/workspace.toml written
+        // No .crucible/project.toml or workspace.toml written
 
         let result = resolve_kiln_classification(&workspace, &kiln);
         assert_eq!(result, None);
@@ -165,7 +165,7 @@ mod tests {
         let crucible_dir = workspace.join(".crucible");
         fs::create_dir_all(&crucible_dir).unwrap();
         fs::write(
-            crucible_dir.join("workspace.toml"),
+            crucible_dir.join("project.toml"),
             "THIS IS NOT VALID TOML !!!@@@",
         )
         .unwrap();
@@ -212,6 +212,29 @@ mod tests {
 
         let result = resolve_kiln_classification(&workspace, &kiln);
         assert_eq!(result, Some(DataClassification::Public));
+    }
+
+    #[test]
+    fn classification_backward_compat_workspace_toml() {
+        // Verify old workspace.toml format still works via read_project_config fallback
+        let tmp = TempDir::new().unwrap();
+        let workspace = tmp.path().join("ws");
+        let kiln = workspace.join("notes");
+        fs::create_dir_all(&kiln).unwrap();
+        let crucible_dir = workspace.join(".crucible");
+        fs::create_dir_all(&crucible_dir).unwrap();
+        // Write old workspace.toml format (with [workspace] section)
+        let old_format = r#"[workspace]
+name = "test"
+
+[[kilns]]
+path = "./notes"
+data_classification = "confidential"
+"#;
+        fs::write(crucible_dir.join("workspace.toml"), old_format).unwrap();
+
+        let result = resolve_kiln_classification(&workspace, &kiln);
+        assert_eq!(result, Some(DataClassification::Confidential));
     }
 
     // ===== resolve_provider_trust Tests =====
