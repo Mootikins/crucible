@@ -1,4 +1,5 @@
 use super::*;
+use crucible_config::{ProjectConfig, KilnConfig, KilnMeta, read_project_config, write_project_config, read_kiln_config, write_kiln_config, DataClassification};
 
 pub(crate) async fn handle_kiln_open(
     req: Request,
@@ -128,35 +129,20 @@ pub(crate) async fn handle_kiln_set_classification(
         return internal_error(req.id, e);
     }
 
-    let config_path = crucible_dir.join("workspace.toml");
-    let mut config = if config_path.exists() {
-        match std::fs::read_to_string(&config_path) {
-            Ok(content) => match toml::from_str::<crucible_config::WorkspaceConfig>(&content) {
-                Ok(c) => c,
-                Err(e) => {
-                    return internal_error(
-                        req.id,
-                        format!("Failed to parse workspace.toml: {}", e),
-                    );
-                }
-            },
-            Err(e) => return internal_error(req.id, e),
-        }
-    } else {
-        // Create a minimal workspace config with the kiln path as "."
-        crucible_config::WorkspaceConfig {
-            workspace: crucible_config::WorkspaceMeta {
-                name: workspace
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "workspace".to_string()),
-            },
-            kilns: vec![crucible_config::KilnAttachment {
-                path: ".".into(),
-                name: None,
-                data_classification: None,
-            }],
-            security: Default::default(),
+    // Read existing project config or create default
+    let mut config = match read_project_config(workspace) {
+        Some(c) => c,
+        None => {
+            // Create default ProjectConfig with a single kiln at "."
+            ProjectConfig {
+                project: None,
+                kilns: vec![crucible_config::KilnAttachment {
+                    path: ".".into(),
+                    name: None,
+                    data_classification: None,
+                }],
+                security: Default::default(),
+            }
         }
     };
 
@@ -176,13 +162,23 @@ pub(crate) async fn handle_kiln_set_classification(
         });
     }
 
-    let toml_str = match toml::to_string_pretty(&config) {
-        Ok(s) => s,
-        Err(e) => return internal_error(req.id, e),
-    };
-
-    if let Err(e) = std::fs::write(&config_path, toml_str) {
+    // Write project config
+    if let Err(e) = write_project_config(workspace, &config) {
         return internal_error(req.id, e);
+    }
+
+    // Ensure kiln.toml exists with default metadata
+    if read_kiln_config(workspace).is_none() {
+        let kiln_name = workspace
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "kiln".to_string());
+        let kiln_config = KilnConfig {
+            kiln: KilnMeta { name: kiln_name },
+        };
+        if let Err(e) = write_kiln_config(workspace, &kiln_config) {
+            return internal_error(req.id, e);
+        }
     }
 
     info!(
