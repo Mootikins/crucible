@@ -248,7 +248,7 @@ mod tests {
         let path_str = file_path.to_string_lossy().to_string();
 
         let lua = create_lua();
-        lua.load(&format!(
+        lua.load(format!(
             r#"
             fs.write("{}", "Hello, Lua!")
             return fs.read("{}")
@@ -267,7 +267,7 @@ mod tests {
         let path_str = file_path.to_string_lossy().to_string();
 
         let lua = create_lua();
-        lua.load(&format!(
+        lua.load(format!(
             r#"
             fs.append("{0}", "Line 1\n")
             fs.append("{0}", "Line 2\n")
@@ -288,7 +288,7 @@ mod tests {
 
         let lua = create_lua();
         let result: Table = lua
-            .load(&format!(
+            .load(format!(
                 r#"
             local before = fs.exists("{0}")
             fs.mkdir("{0}")
@@ -315,7 +315,7 @@ mod tests {
 
         let lua = create_lua();
         let result: Table = lua
-            .load(&format!(
+            .load(format!(
                 r#"
             return {{
                 file_is_file = fs.is_file("{}"),
@@ -347,7 +347,7 @@ mod tests {
 
         let lua = create_lua();
         let result: Table = lua
-            .load(&format!(
+            .load(format!(
                 r#"
             local before = fs.exists("{0}")
             fs.remove("{0}")
@@ -373,7 +373,7 @@ mod tests {
 
         let lua = create_lua();
         let result: Table = lua
-            .load(&format!(r#"return fs.list("{}")"#, dir_path))
+            .load(format!(r#"return fs.list("{}")"#, dir_path))
             .eval()
             .unwrap();
 
@@ -398,7 +398,7 @@ mod tests {
 
         let lua = create_lua();
         let content: String = lua
-            .load(&format!(
+            .load(format!(
                 r#"
             fs.copy("{}", "{}")
             return fs.read("{}")
@@ -422,7 +422,7 @@ mod tests {
 
         let lua = create_lua();
         let result: Table = lua
-            .load(&format!(
+            .load(format!(
                 r#"
             fs.rename("{}", "{}")
             return {{ old = fs.exists("{}"), new = fs.exists("{}") }}
@@ -447,7 +447,7 @@ mod tests {
 
         let lua = create_lua();
         let content: String = lua
-            .load(&format!(
+            .load(format!(
                 r#"
             fs.write("{0}", "nested content")
             return fs.read("{0}")

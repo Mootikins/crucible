@@ -246,7 +246,7 @@ Body text.
 
     #[test]
     fn default_trait_works() {
-        let parser = SkillParser::default();
+        let parser = SkillParser;
         let content = "---\nname: default-test\ndescription: Works\n---\n\nBody.";
         assert!(parser.parse(content, test_source()).is_ok());
     }

@@ -66,6 +66,7 @@ impl TestDaemon {
     }
 
     /// Start a test daemon with additional environment variables.
+    #[allow(dead_code)]
     pub async fn start_with_env(env_vars: Vec<(&str, &str)>) -> Result<Self> {
         let temp_dir = tempfile::tempdir()?;
         let socket_path = temp_dir.path().join("daemon.sock");
@@ -143,6 +144,9 @@ impl Drop for TestDaemon {
     }
 }
 
+#[allow(unused_imports)]
+pub use crucible_daemon::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,6 +187,3 @@ mod tests {
         // This is best-effort cleanup test
     }
 }
-
-// Re-export canonical test mocks for integration tests
-pub use crucible_daemon::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};

@@ -366,7 +366,8 @@ mod tests {
         ];
 
         for (s, expected) in &variants {
-            let parsed = BackendType::from_str(s).expect(&format!("Failed to parse: {}", s));
+            let parsed =
+                BackendType::from_str(s).unwrap_or_else(|_| panic!("Failed to parse: {}", s));
             assert_eq!(parsed, *expected, "Mismatch for: {}", s);
         }
     }
@@ -396,8 +397,8 @@ mod tests {
             "githubcopilot",
         ];
         for alias in &aliases {
-            let parsed =
-                BackendType::from_str(alias).expect(&format!("Failed to parse alias: {}", alias));
+            let parsed = BackendType::from_str(alias)
+                .unwrap_or_else(|_| panic!("Failed to parse alias: {}", alias));
             assert_eq!(
                 parsed,
                 BackendType::GitHubCopilot,
@@ -411,8 +412,8 @@ mod tests {
     fn test_from_str_openrouter_aliases() {
         let aliases = ["openrouter", "open_router", "open-router"];
         for alias in &aliases {
-            let parsed =
-                BackendType::from_str(alias).expect(&format!("Failed to parse alias: {}", alias));
+            let parsed = BackendType::from_str(alias)
+                .unwrap_or_else(|_| panic!("Failed to parse alias: {}", alias));
             assert_eq!(parsed, BackendType::OpenRouter, "Alias mismatch: {}", alias);
         }
     }
@@ -421,8 +422,8 @@ mod tests {
     fn test_from_str_zai_aliases() {
         let aliases = ["zai", "z.ai", "z_ai"];
         for alias in &aliases {
-            let parsed =
-                BackendType::from_str(alias).expect(&format!("Failed to parse alias: {}", alias));
+            let parsed = BackendType::from_str(alias)
+                .unwrap_or_else(|_| panic!("Failed to parse alias: {}", alias));
             assert_eq!(parsed, BackendType::ZAI, "Alias mismatch: {}", alias);
         }
     }
@@ -454,7 +455,7 @@ mod tests {
         for variant in &all_variants {
             let s = variant.as_str();
             let parsed = BackendType::from_str(s)
-                .expect(&format!("Failed to parse roundtrip for: {:?}", variant));
+                .unwrap_or_else(|_| panic!("Failed to parse roundtrip for: {:?}", variant));
             assert_eq!(parsed, *variant, "Roundtrip failed for {:?}", variant);
         }
     }

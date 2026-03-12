@@ -759,8 +759,10 @@ mod tests {
         let config = test_session_agent("opencode");
         let mut acp_config = AcpConfig::default();
 
-        let mut profile = crucible_config::AgentProfile::default();
-        profile.command = Some("/usr/local/bin/opencode".to_string());
+        let profile = crucible_config::AgentProfile {
+            command: Some("/usr/local/bin/opencode".to_string()),
+            ..Default::default()
+        };
         acp_config.agents.insert("opencode".to_string(), profile);
 
         let (cmd, _, _) = resolve_agent_command("opencode", &config, Some(&acp_config)).unwrap();
@@ -780,8 +782,10 @@ mod tests {
     #[test]
     fn test_build_client_config_with_timeout() {
         let agent = test_session_agent("opencode");
-        let mut acp_config = AcpConfig::default();
-        acp_config.streaming_timeout_minutes = 30;
+        let acp_config = AcpConfig {
+            streaming_timeout_minutes: 30,
+            ..Default::default()
+        };
 
         let config = build_client_config(&agent, Path::new("/tmp"), Some(&acp_config)).unwrap();
         assert_eq!(config.timeout_ms, Some(180_000));

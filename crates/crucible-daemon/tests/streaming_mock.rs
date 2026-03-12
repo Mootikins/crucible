@@ -211,6 +211,7 @@ impl StreamingMockAgent {
     /// Create a mock agent that never completes (blocks forever on next())
     ///
     /// Simulates a stream that hangs indefinitely — useful for timeout testing.
+    #[allow(dead_code)]
     pub fn hanging() -> Self {
         let chunks: Vec<ChatChunk> = vec![];
         Self {
@@ -223,6 +224,7 @@ impl StreamingMockAgent {
     ///
     /// Simulates the Z.AI failure mode: stream "completes" immediately with no content.
     /// Single chunk has `done=true, delta=""` with all other fields default.
+    #[allow(dead_code)]
     pub fn immediate_end() -> Self {
         let chunks = vec![ChatChunk {
             delta: String::new(),
@@ -268,9 +270,12 @@ impl AgentHandle for StreamingMockAgent {
 
 /// Test harness bundling full daemon test setup
 pub struct TestHarness {
+    #[allow(dead_code)]
     pub temp_dir: TempDir,
     pub session_manager: Arc<SessionManager>,
+    #[allow(dead_code)]
     pub agent_manager: AgentManager,
+    #[allow(dead_code)]
     pub event_rx: broadcast::Receiver<SessionEventMessage>,
     pub session_id: String,
 }
@@ -294,7 +299,7 @@ impl TestHarness {
             acp_config: None,
             permission_config: None,
             plugin_loader: None,
-            workspace_tools: Arc::new(WorkspaceTools::new(&std::path::PathBuf::from("/tmp"))),
+            workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
         });
 
         let session = session_manager

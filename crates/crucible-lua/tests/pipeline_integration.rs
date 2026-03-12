@@ -44,7 +44,7 @@ fn write_scaffold_plugin(root: &Path, name: &str) {
 
 fn configure_package_path(lua: &mlua::Lua, plugin_dir: &Path) {
     let plugin_dir = plugin_dir.to_string_lossy();
-    lua.load(&format!(
+    lua.load(format!(
         r#"
 local plugin_dir = {plugin_dir:?}
 local entries = {{
@@ -302,7 +302,7 @@ fn test_fennel_test_execution() {
 
     let raw = fs::read_to_string(fennel_test_path).unwrap();
     let compiled: String = lua
-        .load(&format!("return fennel.compileString({raw:?})"))
+        .load(format!("return fennel.compileString({raw:?})"))
         .eval()
         .unwrap();
 
@@ -349,7 +349,7 @@ fn test_scaffold_template_validity() {
     .unwrap();
 
     let init_module: mlua::Table = lua
-        .load(&TEMPLATE_INIT_LUA.replace("{{name}}", plugin_name))
+        .load(TEMPLATE_INIT_LUA.replace("{{name}}", plugin_name))
         .set_name("init.lua")
         .eval()
         .unwrap();
@@ -357,14 +357,14 @@ fn test_scaffold_template_validity() {
     assert_eq!(plugin_spec_name, plugin_name);
 
     let health_module: mlua::Table = lua
-        .load(&TEMPLATE_HEALTH_LUA.replace("{{name}}", plugin_name))
+        .load(TEMPLATE_HEALTH_LUA.replace("{{name}}", plugin_name))
         .set_name("health.lua")
         .eval()
         .unwrap();
     let health_fn: mlua::Function = health_module.get("check").unwrap();
     health_fn.call::<()>(()).unwrap();
 
-    lua.load(&TEMPLATE_INIT_TEST_LUA.replace("{{name}}", plugin_name))
+    lua.load(TEMPLATE_INIT_TEST_LUA.replace("{{name}}", plugin_name))
         .set_name("tests/init_test.lua")
         .exec()
         .unwrap();

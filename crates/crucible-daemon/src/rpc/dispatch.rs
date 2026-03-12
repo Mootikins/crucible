@@ -980,7 +980,7 @@ mod tests {
     fn test_context() -> RpcContext {
         use crate::agent_manager::{AgentManager, AgentManagerParams};
         use crate::background_manager::BackgroundJobManager;
-        use crate::daemon_plugins::DaemonPluginLoader;
+
         use crate::kiln_manager::KilnManager;
         use crate::mcp_server::McpServerManager;
         use crate::project_manager::ProjectManager;
@@ -1004,7 +1004,7 @@ mod tests {
             acp_config: None,
             permission_config: None,
             plugin_loader: None,
-            workspace_tools: Arc::new(WorkspaceTools::new(&std::path::PathBuf::from("/tmp"))),
+            workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
         }));
 
         RpcContext::new(

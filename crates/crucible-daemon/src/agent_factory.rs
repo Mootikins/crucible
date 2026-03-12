@@ -202,6 +202,7 @@ fn is_plan_mode_tool(name: &str) -> bool {
 }
 
 #[cfg(test)]
+#[allow(clippy::too_many_arguments)]
 async fn create_internal_mcp_tool_names_for_tests(
     workspace: &Path,
     kiln_path: Option<&Path>,

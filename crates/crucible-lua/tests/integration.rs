@@ -427,7 +427,7 @@ fn test_fennel_test_runner_integration() {
 "#;
 
     let compiled: String = lua
-        .load(&format!(
+        .load(format!(
             "return fennel.compileString({:?})",
             fennel_test_source
         ))

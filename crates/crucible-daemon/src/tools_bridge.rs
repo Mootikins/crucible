@@ -47,7 +47,7 @@ mod tests {
     #[test]
     fn test_daemon_tools_bridge_construction() {
         let workspace_tools = Arc::new(crate::tools::workspace::WorkspaceTools::new(
-            &std::path::PathBuf::from("/tmp"),
+            std::path::PathBuf::from("/tmp"),
         ));
 
         let bridge = DaemonToolsBridge::new(workspace_tools.clone());
@@ -59,7 +59,7 @@ mod tests {
     #[test]
     fn test_daemon_tools_bridge_delegates_to_workspace_tools() {
         let workspace_tools = Arc::new(crate::tools::workspace::WorkspaceTools::new(
-            &std::path::PathBuf::from("/tmp"),
+            std::path::PathBuf::from("/tmp"),
         ));
 
         let strong_count = Arc::strong_count(&workspace_tools);

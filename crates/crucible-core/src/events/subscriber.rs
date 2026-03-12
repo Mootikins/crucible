@@ -385,7 +385,6 @@ pub type SubscriptionResult<T> = Result<T, SubscriptionError>;
 /// // Unsubscribe when done
 /// subscriber.unsubscribe(id)?;
 /// ```
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1974,7 +1974,7 @@ enabled: false
         for name in &["todo-list", "daily-notes", "graph-view"] {
             let plugin = manager
                 .get(name)
-                .expect(&format!("{} should be loaded", name));
+                .unwrap_or_else(|| panic!("{} should be loaded", name));
             assert_eq!(
                 plugin.state,
                 PluginState::Active,

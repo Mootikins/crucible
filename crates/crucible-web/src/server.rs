@@ -118,8 +118,5 @@ mod tests {
         // In production, this would be verified by checking the actual
         // CorsLayer configuration, but that's tested implicitly by
         // the server accepting requests from any origin.
-
-        // This test serves as documentation that the CORS policy is intentionally permissive.
-        assert!(true, "AllowOrigin::any() is the configured policy");
     }
 }

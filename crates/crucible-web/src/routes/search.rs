@@ -470,7 +470,7 @@ mod tests {
         let content = "x".repeat(MAX_NOTE_SIZE);
         assert_eq!(content.len(), 10 * 1024 * 1024);
         assert!(content.len() <= MAX_NOTE_SIZE);
-        assert!(!(content.len() > MAX_NOTE_SIZE));
+        assert!(content.len() <= MAX_NOTE_SIZE);
     }
 
     #[test]

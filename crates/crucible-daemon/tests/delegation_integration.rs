@@ -437,7 +437,7 @@ async fn test_root_session_delegation_succeeds() {
         acp_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: Arc::new(WorkspaceTools::new(&std::path::PathBuf::from("/tmp"))),
+        workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
     });
 
     let session = session_manager
@@ -515,7 +515,7 @@ async fn test_delegation_to_acp_agent_creates_acp_session() {
         acp_config: Some(acp_config),
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: Arc::new(WorkspaceTools::new(&std::path::PathBuf::from("/tmp"))),
+        workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
     });
 
     let session = session_manager

@@ -955,7 +955,7 @@ mod tests {
         assert_eq!(parsed.agent_description, original.agent_description);
         assert!(parsed.delegation_config.is_some());
         let parsed_delegation = parsed.delegation_config.unwrap();
-        assert_eq!(parsed_delegation.enabled, true);
+        assert!(parsed_delegation.enabled);
         assert_eq!(parsed_delegation.max_depth, 3);
     }
 

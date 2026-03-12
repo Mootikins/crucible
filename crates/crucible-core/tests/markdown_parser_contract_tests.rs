@@ -43,7 +43,7 @@ async fn assert_markdown_parser_contract(parser: &dyn MarkdownParser) {
     assert!(!capabilities.name.is_empty());
     assert!(!capabilities.extensions.is_empty());
     assert!(
-        capabilities.extensions.iter().any(|ext| *ext == "md"),
+        capabilities.extensions.contains(&"md"),
         "parser must advertise markdown support"
     );
 }

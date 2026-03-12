@@ -11,11 +11,8 @@ async fn test_empty_text_embedding() {
 
     let result = provider.embed("").await;
 
-    match result {
-        Ok(embedding) => {
-            assert!(!embedding.is_empty());
-        }
-        Err(_) => {}
+    if let Ok(embedding) = result {
+        assert!(!embedding.is_empty());
     }
 }
 

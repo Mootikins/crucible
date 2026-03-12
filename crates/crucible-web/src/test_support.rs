@@ -112,62 +112,6 @@ pub fn arb_safe_path() -> impl Strategy<Value = String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    proptest! {
-        #[test]
-        fn smoke_arb_url_scheme(scheme in arb_url_scheme()) {
-            prop_assert!(!scheme.is_empty());
-        }
-
-        #[test]
-        fn smoke_arb_ipv4_private(ip in arb_ipv4_private()) {
-            let parsed: Ipv4Addr = ip.parse().expect("strategy must produce valid IPv4");
-            prop_assert!(parsed.is_private() || parsed.is_loopback());
-        }
-
-        #[test]
-        fn smoke_arb_ipv4_public(ip in arb_ipv4_public()) {
-            let parsed: Ipv4Addr = ip.parse().expect("strategy must produce valid IPv4");
-            prop_assert!(!parsed.is_private());
-            prop_assert!(!parsed.is_loopback());
-            prop_assert!(!parsed.is_link_local());
-            prop_assert!(!parsed.is_broadcast());
-            prop_assert!(!parsed.is_unspecified());
-        }
-
-        #[test]
-        fn smoke_arb_ipv6_loopback(ip in arb_ipv6_loopback()) {
-            let host = ip.trim_matches(['[', ']']);
-            let parsed: std::net::Ipv6Addr = host.parse().expect("strategy must produce valid IPv6");
-            prop_assert!(parsed.is_loopback());
-        }
-
-        #[test]
-        fn smoke_arb_hostname(host in arb_hostname()) {
-            prop_assert!(host.len() <= 84);
-        }
-
-        #[test]
-        fn smoke_arb_endpoint_url(url in arb_endpoint_url()) {
-            prop_assert!(url.contains("://"));
-        }
-
-        #[test]
-        fn smoke_arb_traversal_path(path in arb_traversal_path()) {
-            prop_assert!(path.contains("..") || path.contains('\0'));
-        }
-
-        #[test]
-        fn smoke_arb_safe_path(path in arb_safe_path()) {
-            prop_assert!(!path.contains(".."));
-            prop_assert!(!path.contains('\0'));
-        }
-    }
-}
-
-#[cfg(test)]
 /// A mock daemon that listens on a Unix socket and responds to JSON-RPC calls
 /// with canned responses. This allows testing HTTP routes without a real daemon.
 pub struct MockDaemon {
@@ -310,4 +254,60 @@ pub fn build_test_app(state: AppState) -> Router {
         .merge(search_routes())
         .with_state(state)
         .merge(health_routes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    proptest! {
+        #[test]
+        fn smoke_arb_url_scheme(scheme in arb_url_scheme()) {
+            prop_assert!(!scheme.is_empty());
+        }
+
+        #[test]
+        fn smoke_arb_ipv4_private(ip in arb_ipv4_private()) {
+            let parsed: Ipv4Addr = ip.parse().expect("strategy must produce valid IPv4");
+            prop_assert!(parsed.is_private() || parsed.is_loopback());
+        }
+
+        #[test]
+        fn smoke_arb_ipv4_public(ip in arb_ipv4_public()) {
+            let parsed: Ipv4Addr = ip.parse().expect("strategy must produce valid IPv4");
+            prop_assert!(!parsed.is_private());
+            prop_assert!(!parsed.is_loopback());
+            prop_assert!(!parsed.is_link_local());
+            prop_assert!(!parsed.is_broadcast());
+            prop_assert!(!parsed.is_unspecified());
+        }
+
+        #[test]
+        fn smoke_arb_ipv6_loopback(ip in arb_ipv6_loopback()) {
+            let host = ip.trim_matches(['[', ']']);
+            let parsed: std::net::Ipv6Addr = host.parse().expect("strategy must produce valid IPv6");
+            prop_assert!(parsed.is_loopback());
+        }
+
+        #[test]
+        fn smoke_arb_hostname(host in arb_hostname()) {
+            prop_assert!(host.len() <= 84);
+        }
+
+        #[test]
+        fn smoke_arb_endpoint_url(url in arb_endpoint_url()) {
+            prop_assert!(url.contains("://"));
+        }
+
+        #[test]
+        fn smoke_arb_traversal_path(path in arb_traversal_path()) {
+            prop_assert!(path.contains("..") || path.contains('\0'));
+        }
+
+        #[test]
+        fn smoke_arb_safe_path(path in arb_safe_path()) {
+            prop_assert!(!path.contains(".."));
+            prop_assert!(!path.contains('\0'));
+        }
+    }
 }

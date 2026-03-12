@@ -518,7 +518,7 @@ mod tests {
             acp_config: None,
             permission_config: None,
             plugin_loader: None,
-            workspace_tools: Arc::new(WorkspaceTools::new(&PathBuf::from("/tmp"))),
+            workspace_tools: Arc::new(WorkspaceTools::new(PathBuf::from("/tmp"))),
         }));
 
         // Construct bridge
@@ -529,7 +529,7 @@ mod tests {
         );
 
         // Verify bridge was created (no panic)
-        assert_eq!(std::mem::size_of_val(&bridge) > 0, true);
+        assert!(std::mem::size_of_val(&bridge) > 0);
     }
 
     #[test]
@@ -548,7 +548,7 @@ mod tests {
             acp_config: None,
             permission_config: None,
             plugin_loader: None,
-            workspace_tools: Arc::new(WorkspaceTools::new(&PathBuf::from("/tmp"))),
+            workspace_tools: Arc::new(WorkspaceTools::new(PathBuf::from("/tmp"))),
         }));
 
         let sm_strong_count = Arc::strong_count(&session_manager);
