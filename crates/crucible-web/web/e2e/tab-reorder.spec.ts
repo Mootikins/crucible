@@ -55,16 +55,12 @@ test.describe('Tab reorder within same bar', () => {
     await waitForApp(page);
   });
 
-  test('reorder center tab: drag first tab past third tab', async ({ page }) => {
-    const firstTab = page.locator('[data-tab-id="tab-1"]');
-    const thirdTab = page.locator('[data-tab-id="tab-3"]');
+  test('reorder edge tab: drag first tab past third tab', async ({ page }) => {
+    const firstTab = page.locator('[data-testid="edge-tab-left-sessions-tab"]');
+    const thirdTab = page.locator('[data-testid="edge-tab-left-search-tab"]');
 
-    const initialOrder = await firstTab
-      .locator('..')
-      .locator('[data-tab-id]')
-      .evaluateAll((els) => els.map((el) => el.getAttribute('data-tab-id')));
-
-    expect(initialOrder.indexOf('tab-1')).toBeLessThan(initialOrder.indexOf('tab-3'));
+    const initialOrder = await getEdgeTabOrder(page, 'left');
+    expect(initialOrder.indexOf('sessions-tab')).toBeLessThan(initialOrder.indexOf('search-tab'));
 
     const from = await getCenterOf(page, firstTab);
     const thirdBox = await thirdTab.boundingBox();
@@ -74,24 +70,16 @@ test.describe('Tab reorder within same bar', () => {
     await pointerDrag(page, from, to);
     await page.waitForTimeout(300);
 
-    const newOrder = await firstTab
-      .locator('..')
-      .locator('[data-tab-id]')
-      .evaluateAll((els) => els.map((el) => el.getAttribute('data-tab-id')));
-
-    expect(newOrder.indexOf('tab-1')).toBeGreaterThan(newOrder.indexOf('tab-3'));
+    const newOrder = await getEdgeTabOrder(page, 'left');
+    expect(newOrder.indexOf('sessions-tab')).toBeGreaterThan(newOrder.indexOf('search-tab'));
   });
 
-  test('reorder center tab: drag last tab to first position', async ({ page }) => {
-    const lastTab = page.locator('[data-tab-id="tab-4"]');
-    const firstTab = page.locator('[data-tab-id="tab-1"]');
+  test('reorder edge tab: drag last tab to first position', async ({ page }) => {
+    const lastTab = page.locator('[data-testid="edge-tab-left-source-control-tab"]');
+    const firstTab = page.locator('[data-testid="edge-tab-left-sessions-tab"]');
 
-    const initialOrder = await firstTab
-      .locator('..')
-      .locator('[data-tab-id]')
-      .evaluateAll((els) => els.map((el) => el.getAttribute('data-tab-id')));
-
-    expect(initialOrder.indexOf('tab-4')).toBeGreaterThan(initialOrder.indexOf('tab-1'));
+    const initialOrder = await getEdgeTabOrder(page, 'left');
+    expect(initialOrder.indexOf('source-control-tab')).toBeGreaterThan(initialOrder.indexOf('sessions-tab'));
 
     await lastTab.scrollIntoViewIfNeeded();
     await page.waitForTimeout(100);
@@ -104,12 +92,8 @@ test.describe('Tab reorder within same bar', () => {
     await pointerDrag(page, from, to, 15);
     await page.waitForTimeout(500);
 
-    const newOrder = await firstTab
-      .locator('..')
-      .locator('[data-tab-id]')
-      .evaluateAll((els) => els.map((el) => el.getAttribute('data-tab-id')));
-
-    expect(newOrder.indexOf('tab-4')).toBeLessThan(newOrder.indexOf('tab-1'));
+    const newOrder = await getEdgeTabOrder(page, 'left');
+    expect(newOrder.indexOf('source-control-tab')).toBeLessThan(newOrder.indexOf('sessions-tab'));
   });
 
   test('reorder edge tab within left panel', async ({ page }) => {
@@ -131,9 +115,9 @@ test.describe('Tab reorder within same bar', () => {
     expect(newOrder.indexOf(initialOrder[0]!)).toBeGreaterThan(newOrder.indexOf(initialOrder[1]!));
   });
 
-  test('insert indicator appears during center tab reorder drag', async ({ page }) => {
-    const firstTab = page.locator('[data-tab-id="tab-1"]');
-    const thirdTab = page.locator('[data-tab-id="tab-3"]');
+  test('insert indicator appears during edge tab reorder drag', async ({ page }) => {
+    const firstTab = page.locator('[data-testid="edge-tab-left-sessions-tab"]');
+    const thirdTab = page.locator('[data-testid="edge-tab-left-search-tab"]');
 
     const from = await getCenterOf(page, firstTab);
     const thirdBox = await thirdTab.boundingBox();
@@ -158,7 +142,7 @@ test.describe('Tab reorder within same bar', () => {
 
   test('no insert indicator during cross-zone drag', async ({ page }) => {
     const edgeTab = page.locator('[data-testid="edge-tab-left-explorer-tab"]');
-    const centerTab = page.locator('[data-tab-id="tab-1"]');
+    const centerTab = page.locator('[data-tab-id="tab-chat-1"]');
 
     const from = await getCenterOf(page, edgeTab);
     const to = await getCenterOf(page, centerTab);
@@ -177,7 +161,7 @@ test.describe('Tab reorder within same bar', () => {
 
   test('cross-zone DnD still works after reorder implementation (regression)', async ({ page }) => {
     const from = await getCenter(page, '[data-testid="edge-tab-left-search-tab"]');
-    const to = await getCenterOf(page, page.locator('[data-tab-id="tab-1"]'));
+    const to = await getCenterOf(page, page.locator('[data-tab-id="tab-chat-1"]'));
 
     await pointerDrag(page, from, to);
     await page.waitForTimeout(300);

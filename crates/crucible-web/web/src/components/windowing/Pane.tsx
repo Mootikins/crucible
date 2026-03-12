@@ -139,6 +139,42 @@ export const Pane: Component<{ paneId: string }> = (props) => {
           <div class="flex-1 bg-zinc-900 overflow-auto p-4">
           </div>
         );
+      case 'explorer':
+        return (
+          <div class="flex-1 bg-zinc-900 flex items-center justify-center">
+            <div class="text-zinc-500 text-sm">📁 Explorer (Coming Soon)</div>
+          </div>
+        );
+      case 'search':
+        return (
+          <div class="flex-1 bg-zinc-900 flex items-center justify-center">
+            <div class="text-zinc-500 text-sm">🔍 Search (Coming Soon)</div>
+          </div>
+        );
+      case 'source-control':
+        return (
+          <div class="flex-1 bg-zinc-900 flex items-center justify-center">
+            <div class="text-zinc-500 text-sm">⎇ Source Control (Coming Soon)</div>
+          </div>
+        );
+      case 'outline':
+        return (
+          <div class="flex-1 bg-zinc-900 flex items-center justify-center">
+            <div class="text-zinc-500 text-sm">📋 Outline (Coming Soon)</div>
+          </div>
+        );
+      case 'problems':
+        return (
+          <div class="flex-1 bg-zinc-900 flex items-center justify-center">
+            <div class="text-zinc-500 text-sm">⚠️ Problems (Coming Soon)</div>
+          </div>
+        );
+      case 'output':
+        return (
+          <div class="flex-1 bg-zinc-900 flex items-center justify-center">
+            <div class="text-zinc-500 text-sm">📄 Output (Coming Soon)</div>
+          </div>
+        );
       default:
         return (
           <div class="flex-1 bg-zinc-900 flex items-center justify-center">
