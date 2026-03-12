@@ -1,14 +1,13 @@
-import { Component, For, Show, createEffect } from 'solid-js';
+import { Component, For, Show, createSignal, createEffect, onMount, onCleanup } from 'solid-js';
 import {
   createDraggable,
   createDroppable,
+  useDragDropContext,
 } from '@thisbeyond/solid-dnd';
 import type { Tab as TabType, EdgePanelPosition, TabBarProps, DragSource } from '@/types/windowTypes';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import { IconGripVertical, IconClose, IconLayout } from './icons';
 import { ChevronDown } from '@/lib/icons';
-import { useTabReorderDrag } from './hooks/useTabReorderDrag';
-import { useOverflowDropdown } from './hooks/useOverflowDropdown';
 
 // ── Module-level reorder state (shared with WindowManager) ──────────────
 
@@ -17,7 +16,38 @@ export type ReorderState = {
   insertIndex: number;
 } | null;
 
-export { getPendingReorder, clearPendingReorder } from './hooks/useTabReorderDrag';
+const [reorderState, setReorderState] = createSignal<ReorderState>(null);
+export { reorderState, setReorderState };
+
+// Non-reactive pending reorder state (survives reactive cleanup race)
+let pendingReorder: ReorderState = null;
+
+export function getPendingReorder(): ReorderState {
+  return pendingReorder;
+}
+
+export function clearPendingReorder(): void {
+  pendingReorder = null;
+}
+
+// ── Insert-index computation helper ─────────────────────────────────────
+
+function computeInsertIndex(
+  containerEl: HTMLElement,
+  pointerX: number,
+  draggedTabId?: string,
+): { logical: number; display: number } | null {
+  const tabEls = containerEl.querySelectorAll('[data-tab-id]');
+  let logicalIndex = 0;
+  for (let i = 0; i < tabEls.length; i++) {
+    const el = tabEls[i] as HTMLElement;
+    if (draggedTabId && el.dataset.tabId === draggedTabId) continue;
+    const rect = el.getBoundingClientRect();
+    if (pointerX < rect.left + rect.width / 2) return { logical: logicalIndex, display: i };
+    logicalIndex++;
+  }
+  return { logical: logicalIndex, display: tabEls.length };
+}
 
 // ── Unified TabItem (replaces Tab + EdgeTab) ────────────────────────────
 
@@ -111,6 +141,9 @@ const CenterTabBar: Component<{
   const activeTabId = () => group()?.activeTabId ?? null;
   const isFocused = () => windowStore.activePaneId === props.paneId && windowStore.focusedRegion === 'center';
 
+  const [isOverflowing, setIsOverflowing] = createSignal(false);
+  const [showDropdown, setShowDropdown] = createSignal(false);
+  const [insertIdx, setInsertIdx] = createSignal<number | null>(null);
   let tabsContainerRef: HTMLDivElement | undefined;
 
   const droppable = createDroppable(`tabgroup:${props.groupId}`, {
@@ -118,14 +151,95 @@ const CenterTabBar: Component<{
     groupId: props.groupId,
   });
 
-  const { insertIdx } = useTabReorderDrag({
-    groupId: () => props.groupId,
-    containerRef: () => tabsContainerRef,
+  const dndCtx = useDragDropContext();
+
+  const isSameBarDrag = () => {
+    const active = dndCtx?.[0]?.active?.draggable;
+    if (!active) return false;
+    const data = active.data as DragSource | undefined;
+    return data?.type === 'tab' && data.sourceGroupId === props.groupId;
+  };
+
+  const draggedTabId = () => {
+    const active = dndCtx?.[0]?.active?.draggable;
+    if (!active) return undefined;
+    const data = active.data as DragSource | undefined;
+    return data?.type === 'tab' ? data.tab.id : undefined;
+  };
+
+  // Read sensor coordinates reactively — onPointerMove doesn't fire during
+  // drag because the DragOverlay portal intercepts pointer events.
+  createEffect(() => {
+    if (!isSameBarDrag() || !tabsContainerRef) {
+      setInsertIdx(null);
+      setReorderState(null);
+      return;
+    }
+    const sensor = dndCtx?.[0]?.active?.sensor;
+    const x = sensor?.coordinates?.current?.x;
+    const y = sensor?.coordinates?.current?.y;
+    if (x != null && y != null) {
+      const rect = tabsContainerRef.getBoundingClientRect();
+      const VERTICAL_TOLERANCE = 8;
+      const inBounds = x >= rect.left && x <= rect.right &&
+                       y >= rect.top - VERTICAL_TOLERANCE && y <= rect.bottom + VERTICAL_TOLERANCE;
+      if (!inBounds) {
+        setInsertIdx(null);
+        setReorderState(null);
+        return;
+      }
+      const result = computeInsertIndex(tabsContainerRef, x, draggedTabId());
+      setInsertIdx(result?.display ?? null);
+      if (result != null) {
+        setReorderState({ groupId: props.groupId, insertIndex: result.logical });
+        pendingReorder = { groupId: props.groupId, insertIndex: result.logical };
+      }
+    } else {
+      setInsertIdx(null);
+      setReorderState(null);
+      pendingReorder = null;
+    }
   });
 
-  const { isOverflowing, showDropdown, setShowDropdown, toggleDropdown } = useOverflowDropdown({
-    containerRef: () => tabsContainerRef,
-    deps: () => tabs(),
+  createEffect(() => {
+    if (!dndCtx?.[0]?.active?.draggable) {
+      setInsertIdx(null);
+      setReorderState(null);
+    }
+  });
+
+  onMount(() => {
+    if (!tabsContainerRef) return;
+    const checkOverflow = () => {
+      if (tabsContainerRef) {
+        setIsOverflowing(tabsContainerRef.scrollWidth > tabsContainerRef.clientWidth);
+      }
+    };
+    const observer = new ResizeObserver(checkOverflow);
+    observer.observe(tabsContainerRef);
+    createEffect(() => {
+      tabs();
+      checkOverflow();
+    });
+    onCleanup(() => observer.disconnect());
+  });
+
+  createEffect(() => {
+    if (!showDropdown()) return;
+    const handleClickOutside = () => {
+      setShowDropdown(false);
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowDropdown(false);
+    };
+    setTimeout(() => {
+      document.addEventListener('click', handleClickOutside);
+      document.addEventListener('keydown', handleEscape);
+    }, 0);
+    onCleanup(() => {
+      document.removeEventListener('click', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    });
   });
 
   return (
@@ -164,11 +278,11 @@ const CenterTabBar: Component<{
       </div>
        <Show when={isOverflowing()}>
          <div class="relative flex-shrink-0">
-            <button
-              class="flex-shrink-0 w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors"
-              onClick={(e) => { e.stopPropagation(); toggleDropdown(); }}
-              title="Show all tabs"
-            >
+           <button
+             class="flex-shrink-0 w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors"
+             onClick={(e) => { e.stopPropagation(); setShowDropdown(!showDropdown()); }}
+             title="Show all tabs"
+           >
              <ChevronDown class="w-3.5 h-3.5" />
            </button>
           <Show when={showDropdown()}>
@@ -226,6 +340,9 @@ const EdgeTabBar: Component<{
   const activeTabId = () => group()?.activeTabId ?? null;
   const isFocused = () => windowStore.focusedRegion === props.position;
 
+  const [isOverflowing, setIsOverflowing] = createSignal(false);
+  const [showDropdown, setShowDropdown] = createSignal(false);
+  const [insertIdx, setInsertIdx] = createSignal<number | null>(null);
   let containerRef: HTMLDivElement | undefined;
   let tabsContainerRef: HTMLDivElement | undefined;
 
@@ -234,14 +351,95 @@ const EdgeTabBar: Component<{
     panelId: props.position,
   });
 
-  const { insertIdx } = useTabReorderDrag({
-    groupId,
-    containerRef: () => tabsContainerRef,
+  const dndCtx = useDragDropContext();
+
+  const isSameBarDrag = () => {
+    const active = dndCtx?.[0]?.active?.draggable;
+    if (!active) return false;
+    const data = active.data as DragSource | undefined;
+    return data?.type === 'tab' && data.sourceGroupId === groupId();
+  };
+
+  const draggedTabId = () => {
+    const active = dndCtx?.[0]?.active?.draggable;
+    if (!active) return undefined;
+    const data = active.data as DragSource | undefined;
+    return data?.type === 'tab' ? data.tab.id : undefined;
+  };
+
+  // Read sensor coordinates reactively — onPointerMove doesn't fire during
+  // drag because the DragOverlay portal intercepts pointer events.
+  createEffect(() => {
+    if (!isSameBarDrag() || !tabsContainerRef) {
+      setInsertIdx(null);
+      setReorderState(null);
+      return;
+    }
+    const sensor = dndCtx?.[0]?.active?.sensor;
+    const x = sensor?.coordinates?.current?.x;
+    const y = sensor?.coordinates?.current?.y;
+    if (x != null && y != null) {
+      const rect = tabsContainerRef.getBoundingClientRect();
+      const VERTICAL_TOLERANCE = 8;
+      const inBounds = x >= rect.left && x <= rect.right &&
+                       y >= rect.top - VERTICAL_TOLERANCE && y <= rect.bottom + VERTICAL_TOLERANCE;
+      if (!inBounds) {
+        setInsertIdx(null);
+        setReorderState(null);
+        return;
+      }
+      const result = computeInsertIndex(tabsContainerRef, x, draggedTabId());
+      setInsertIdx(result?.display ?? null);
+      if (result != null) {
+        setReorderState({ groupId: groupId(), insertIndex: result.logical });
+        pendingReorder = { groupId: groupId(), insertIndex: result.logical };
+      }
+    } else {
+      setInsertIdx(null);
+      setReorderState(null);
+      pendingReorder = null;
+    }
   });
 
-  const { isOverflowing, showDropdown, setShowDropdown } = useOverflowDropdown({
-    containerRef: () => tabsContainerRef,
-    deps: () => tabs(),
+  createEffect(() => {
+    if (!dndCtx?.[0]?.active?.draggable) {
+      setInsertIdx(null);
+      setReorderState(null);
+    }
+  });
+
+  onMount(() => {
+    if (!tabsContainerRef) return;
+    const checkOverflow = () => {
+      if (tabsContainerRef) {
+        setIsOverflowing(tabsContainerRef.scrollWidth > tabsContainerRef.clientWidth);
+      }
+    };
+    const observer = new ResizeObserver(checkOverflow);
+    observer.observe(tabsContainerRef);
+    createEffect(() => {
+      tabs();
+      checkOverflow();
+    });
+    onCleanup(() => observer.disconnect());
+  });
+
+  createEffect(() => {
+    if (!showDropdown()) return;
+    const handleClickOutside = () => {
+      setShowDropdown(false);
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowDropdown(false);
+    };
+    setTimeout(() => {
+      document.addEventListener('click', handleClickOutside);
+      document.addEventListener('keydown', handleEscape);
+    }, 0);
+    onCleanup(() => {
+      document.removeEventListener('click', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    });
   });
 
   return (

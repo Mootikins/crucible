@@ -19,12 +19,18 @@ import {
 import type { SerializedLayout } from '@/lib/layout-serializer';
 import {
   ListTree,
-  Bug,
   Terminal,
   AlertTriangle,
   FileOutput,
   MessageCircle,
   ClipboardList,
+  FolderTree,
+  Search,
+  GitBranch,
+  FileCode,
+  FileJson,
+  Palette,
+  FileText,
 } from '@/lib/icons';
 
 const generateId = () => Math.random().toString(36).substring(2, 11);
@@ -157,49 +163,73 @@ function insertPaneRelative(
 }
 
 const createSampleTabs = (): Tab[] => [
-  { id: 'tab-chat-1', title: 'Chat', contentType: 'chat', isModified: false, icon: MessageCircle },
+  { id: 'tab-1', title: 'index.tsx', contentType: 'file', isModified: false, icon: FileCode },
+  { id: 'tab-2', title: 'App.tsx', contentType: 'file', isModified: true, icon: FileCode },
+  { id: 'tab-3', title: 'styles.css', contentType: 'file', isModified: false, icon: Palette },
+  { id: 'tab-4', title: 'package.json', contentType: 'file', isModified: false, icon: FileJson },
 ];
 
-const createSampleTabs2 = (): Tab[] => [];
+const createSampleTabs2 = (): Tab[] => [
+  { id: 'tab-5', title: 'README.md', contentType: 'document', isModified: false, icon: FileText },
+  { id: 'tab-6', title: 'preview.png', contentType: 'preview', isModified: false, icon: Palette },
+];
 
 const createLeftPanelTabs = (): Tab[] => [
-  { id: 'sessions-tab', title: 'Sessions', contentType: 'sessions', icon: ClipboardList },
+  { id: 'explorer-tab', title: 'Explorer', contentType: 'explorer', icon: FolderTree },
+  { id: 'search-tab', title: 'Search', contentType: 'search', icon: Search },
+  { id: 'git-tab', title: 'Source Control', contentType: 'source-control', icon: GitBranch },
 ];
 
 const createRightPanelTabs = (): Tab[] => [
-  { id: 'outline-tab', title: 'Outline', contentType: 'tool', icon: ListTree },
-  { id: 'debug-tab', title: 'Debug', contentType: 'tool', icon: Bug },
+  { id: 'outline-tab', title: 'Outline', contentType: 'outline', icon: ListTree },
 ];
 
 const createBottomPanelTabs = (): Tab[] => [
   { id: 'terminal-tab-1', title: 'Terminal', contentType: 'terminal', icon: Terminal },
   { id: 'terminal-tab-2', title: 'Terminal 2', contentType: 'terminal', icon: Terminal },
-  { id: 'problems-tab', title: 'Problems', contentType: 'tool', icon: AlertTriangle },
-  { id: 'output-tab', title: 'Output', contentType: 'tool', icon: FileOutput },
+  { id: 'problems-tab', title: 'Problems', contentType: 'problems', icon: AlertTriangle },
+  { id: 'output-tab', title: 'Output', contentType: 'output', icon: FileOutput },
 ];
 
 function createInitialState(): WindowState {
   const mainPaneId = generateId();
-  const tabGroupId = generateId();
+  const tabGroupId1 = generateId();
+  const tabGroupId2 = generateId();
   const leftGroupId = generateId();
   const rightGroupId = generateId();
   const bottomGroupId = generateId();
   return {
     layout: {
-      id: mainPaneId,
-      type: 'pane' as const,
-      tabGroupId: tabGroupId,
+      id: 'split-root',
+      type: 'split' as const,
+      direction: 'horizontal' as const,
+      splitRatio: 0.5,
+      first: {
+        id: mainPaneId,
+        type: 'pane' as const,
+        tabGroupId: tabGroupId1,
+      },
+      second: {
+        id: generateId(),
+        type: 'pane' as const,
+        tabGroupId: tabGroupId2,
+      },
     },
     tabGroups: {
-      [tabGroupId]: {
-        id: tabGroupId,
+      [tabGroupId1]: {
+        id: tabGroupId1,
         tabs: createSampleTabs(),
-        activeTabId: 'tab-chat-1',
+        activeTabId: 'tab-1',
+      },
+      [tabGroupId2]: {
+        id: tabGroupId2,
+        tabs: createSampleTabs2(),
+        activeTabId: 'tab-5',
       },
       [leftGroupId]: {
         id: leftGroupId,
         tabs: createLeftPanelTabs(),
-        activeTabId: 'sessions-tab',
+        activeTabId: 'explorer-tab',
       },
       [rightGroupId]: {
         id: rightGroupId,
