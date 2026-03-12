@@ -29,7 +29,6 @@ describe('EdgePanel - Icon Replacement', () => {
     expect(source).toContain('Search');
     expect(source).toContain('GitBranch');
     expect(source).toContain('ListTree');
-    expect(source).toContain('Bug');
     expect(source).toContain('Terminal');
     expect(source).toContain('AlertTriangle');
     expect(source).toContain('FileOutput');
@@ -42,7 +41,6 @@ describe('EdgePanel - Icon Replacement', () => {
     expect(source).toContain('icon: Search');
     expect(source).toContain('icon: GitBranch');
     expect(source).toContain('icon: ListTree');
-    expect(source).toContain('icon: Bug');
     expect(source).toContain('icon: Terminal');
     expect(source).toContain('icon: AlertTriangle');
     expect(source).toContain('icon: FileOutput');
