@@ -1819,17 +1819,12 @@ async fn non_delegation_subagent_does_not_emit_delegation_events() {
         .expect("subagent should succeed");
 
     let mut delegation_events = vec![];
-    loop {
-        match tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
-            Ok(Ok(event)) => {
-                if event.event == events::DELEGATION_SPAWNED
-                    || event.event == events::DELEGATION_COMPLETED
-                    || event.event == events::DELEGATION_FAILED
-                {
-                    delegation_events.push(event.event.clone());
-                }
-            }
-            _ => break,
+    while let Ok(Ok(event)) = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
+        if event.event == events::DELEGATION_SPAWNED
+            || event.event == events::DELEGATION_COMPLETED
+            || event.event == events::DELEGATION_FAILED
+        {
+            delegation_events.push(event.event.clone());
         }
     }
     assert!(

@@ -51,7 +51,7 @@ async fn test_list_models_returns_all_providers() {
         acp_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: Arc::new(WorkspaceTools::new(&std::path::PathBuf::from("/tmp"))),
+        workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
     });
 
     agent_manager
@@ -628,7 +628,7 @@ async fn test_list_models_no_llm_config() {
         acp_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: Arc::new(WorkspaceTools::new(&std::path::PathBuf::from("/tmp"))),
+        workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
     });
 
     agent_manager
@@ -691,7 +691,7 @@ async fn test_list_models_prefixes_with_provider_key() {
         acp_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: Arc::new(WorkspaceTools::new(&std::path::PathBuf::from("/tmp"))),
+        workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
     });
 
     agent_manager

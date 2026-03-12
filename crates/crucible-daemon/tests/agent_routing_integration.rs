@@ -25,7 +25,7 @@ fn make_agent_manager() -> (AgentManager, Arc<SessionManager>, TempDir) {
         acp_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: Arc::new(WorkspaceTools::new(&std::path::PathBuf::from("/tmp"))),
+        workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
     });
     (agent_manager, session_manager, tmp)
 }

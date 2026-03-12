@@ -828,6 +828,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn permission_bridge_list_tools_returns_registry() {
+        let bridge = PermissionedToolBridge::new(true);
+
+        let tools = bridge.list_tools().await.unwrap();
+        let names = tools
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(names.contains(&"read_note"));
+        assert!(names.contains(&"create_note"));
+    }
+
+    #[tokio::test]
+    async fn permission_bridge_get_tool_schema_returns_expected_schema() {
+        let bridge = PermissionedToolBridge::new(true);
+
+        let schema = bridge.get_tool_schema("create_note").await.unwrap();
+
+        assert_eq!(schema["type"], json!("object"));
+        assert!(schema["required"].is_array());
+    }
+
+    #[tokio::test]
     async fn permission_gate_denied_fails_with_permission_denied() {
         let bridge = PermissionedToolBridge::new(false);
 
