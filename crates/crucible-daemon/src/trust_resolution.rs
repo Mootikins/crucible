@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use crucible_config::{DataClassification, LlmConfig, TrustLevel, read_project_config};
+use crucible_config::{read_project_config, DataClassification, LlmConfig, TrustLevel};
 use crucible_core::session::SessionAgent;
 
 /// Resolve the data classification for a kiln by reading the workspace config.
@@ -49,7 +49,7 @@ pub fn find_workspace_and_resolve_classification(kiln: &Path) -> Option<DataClas
     loop {
         if dir.join(".crucible").is_dir() {
             // read_project_config handles project.toml → workspace.toml fallback
-            if let Some(_) = read_project_config(&dir) {
+            if read_project_config(&dir).is_some() {
                 return resolve_kiln_classification(&dir, kiln);
             }
         }

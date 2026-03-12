@@ -7,7 +7,6 @@ use anyhow::Result;
 use crucible_config::read_kiln_config;
 use crucible_core::events::InternalSessionEvent;
 use std::collections::HashMap;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
