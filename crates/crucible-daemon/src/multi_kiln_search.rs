@@ -155,7 +155,7 @@ mod tests {
             }
         }
 
-        fs::write(crucible_dir.join("workspace.toml"), toml).unwrap();
+        fs::write(crucible_dir.join("project.toml"), toml).unwrap();
     }
 
     #[tokio::test]
