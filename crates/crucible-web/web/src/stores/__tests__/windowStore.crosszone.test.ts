@@ -72,9 +72,9 @@ const splitLayout = (pane1Id: string, group1Id: string, pane2Id: string, group2I
 });
 
 describe('initial state structure', () => {
-  it('creates 5 tab groups (2 center + 3 edge)', () => {
+  it('creates 4 tab groups (1 center + 3 edge)', () => {
     const groupIds = Object.keys(windowStore.tabGroups);
-    expect(groupIds).toHaveLength(5);
+    expect(groupIds).toHaveLength(4);
   });
 
   it('edgePanels.left.tabGroupId references a group in tabGroups', () => {
