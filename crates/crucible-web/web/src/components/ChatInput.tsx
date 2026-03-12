@@ -227,6 +227,7 @@ export const ChatInput: Component = () => {
                          onClick={() => handleModelSelect(model)}
                          class="w-full px-3 py-2 text-left text-sm text-neutral-200 hover:bg-surface-overlay transition-colors first:rounded-t-lg last:rounded-b-lg"
                          classList={{ 'bg-surface-overlay/50': model === currentSession()?.agent_model }}
+                         data-testid={`model-option-${model}`}
                       >
                         <span class="flex items-center gap-2">
                           <Show when={model === currentSession()?.agent_model}>
