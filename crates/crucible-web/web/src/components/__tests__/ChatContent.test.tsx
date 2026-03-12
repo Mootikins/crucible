@@ -46,6 +46,7 @@ vi.mock('@/contexts/ChatContext', () => ({
     subagentEvents: () => [],
     pendingInteraction: () => null,
     respondToInteraction: mockRespondToInteraction,
+    isLoadingHistory: () => false,
   }),
 }));
 

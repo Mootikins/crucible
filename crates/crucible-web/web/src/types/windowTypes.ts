@@ -9,7 +9,13 @@ export type TabContentType =
   | 'preview'
   | 'settings'
   | 'chat'
-  | 'sessions';
+  | 'sessions'
+  | 'explorer'
+  | 'search'
+  | 'source-control'
+  | 'outline'
+  | 'problems'
+  | 'output';
 
 export interface Tab {
   id: string;
