@@ -85,5 +85,6 @@ pub use profile::{Environment, ProfileConfig};
 pub use project_config::{ProjectConfig, ProjectMeta, read_project_config, write_project_config};
 pub use security::ShellPolicy;
 pub use value_source::{ValueInfo, ValueSource, ValueSourceMap};
+#[allow(deprecated)]
 pub use workspace::{KilnAttachment, SecurityConfig, WorkspaceConfig, WorkspaceMeta};
 pub use kiln_config::{KilnConfig, KilnMeta, read_kiln_config, write_kiln_config};
