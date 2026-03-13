@@ -42,7 +42,10 @@ test.describe('Chat happy path', () => {
     // Set up mocks with empty SSE (we control SSE delivery separately)
     await setupBasicMocks(page, { sseEvents: [] });
 
-    // Mock the title endpoint (auto-title fires after first response)
+    // Mock the title endpoints (auto-title fires after first response)
+    await page.route('**/api/session/*/generate-title', (route) =>
+      route.fulfill({ json: { title: 'Generated Title' } }),
+    );
     await page.route('**/api/session/*/title', (route) =>
       route.fulfill({ status: 200, body: '{}' }),
     );
@@ -139,6 +142,9 @@ test.describe('Chat happy path', () => {
     // Mock cancel and title endpoints BEFORE goto
     await page.route('**/api/session/*/cancel', (route) =>
       route.fulfill({ json: { cancelled: true } }),
+    );
+    await page.route('**/api/session/*/generate-title', (route) =>
+      route.fulfill({ json: { title: 'Generated Title' } }),
     );
     await page.route('**/api/session/*/title', (route) =>
       route.fulfill({ status: 200, body: '{}' }),
