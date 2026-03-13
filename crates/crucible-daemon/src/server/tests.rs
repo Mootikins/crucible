@@ -1,5 +1,6 @@
 use super::*;
 use crate::session_storage::FileSessionStorage;
+use chrono::{Duration as ChronoDuration, Utc};
 use observe::*;
 use serde_json::json;
 use serde_json::Value;
@@ -2114,6 +2115,78 @@ mod persist_event_tests {
             !should_persist(&replay_event),
             "replay events should not be persisted"
         );
+    }
+
+    #[tokio::test]
+    async fn test_sweep_and_archive_stale_sessions_archives_inactive_sessions_without_subscribers() {
+        let tmp = TempDir::new().unwrap();
+        let session_manager = SessionManager::new();
+        let subscription_manager = SubscriptionManager::new();
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        session_manager
+            .update_last_activity(&session.id, Utc::now() - ChronoDuration::hours(80))
+            .await
+            .unwrap();
+
+        let archived =
+            sweep_and_archive_stale_sessions(&session_manager, &subscription_manager, 72)
+                .await
+                .unwrap();
+
+        assert_eq!(archived, 1);
+        assert!(session_manager.get_session(&session.id).is_none());
+
+        let persisted = FileSessionStorage::new()
+            .load(&session.id, tmp.path())
+            .await
+            .unwrap();
+        assert!(persisted.archived);
+    }
+
+    #[tokio::test]
+    async fn test_sweep_and_archive_stale_sessions_skips_sessions_with_active_subscribers() {
+        let tmp = TempDir::new().unwrap();
+        let session_manager = SessionManager::new();
+        let subscription_manager = SubscriptionManager::new();
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        session_manager
+            .update_last_activity(&session.id, Utc::now() - ChronoDuration::hours(80))
+            .await
+            .unwrap();
+
+        let client = ClientId::new();
+        subscription_manager.subscribe(client, &session.id);
+
+        let archived =
+            sweep_and_archive_stale_sessions(&session_manager, &subscription_manager, 72)
+                .await
+                .unwrap();
+
+        assert_eq!(archived, 0);
+        let still_active = session_manager.get_session(&session.id).unwrap();
+        assert!(!still_active.archived);
     }
 
     #[tokio::test]

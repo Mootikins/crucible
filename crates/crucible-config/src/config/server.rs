@@ -31,6 +31,10 @@ pub struct ServerConfig {
 
     /// Request timeout in seconds.
     pub timeout_seconds: Option<u64>,
+
+    /// Auto-archive threshold in hours for inactive sessions.
+    #[serde(default)]
+    pub auto_archive_hours: Option<u64>,
 }
 
 fn default_host() -> String {
@@ -51,6 +55,7 @@ impl Default for ServerConfig {
             key_file: None,
             max_body_size: Some(10 * 1024 * 1024), // 10MB
             timeout_seconds: Some(30),
+            auto_archive_hours: Some(72),
         }
     }
 }

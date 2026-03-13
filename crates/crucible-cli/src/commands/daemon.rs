@@ -65,6 +65,7 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
             mcp_config: None,
             plugin_config: std::collections::HashMap::new(),
             plugin_watch: false,
+            auto_archive_hours: config.server.as_ref().and_then(|s| s.auto_archive_hours),
             llm_config: Some(config.llm.clone()),
             enrichment_config: config.enrichment.as_ref().map(|e| e.provider.clone()),
             acp_config: Some(config.acp.clone()),

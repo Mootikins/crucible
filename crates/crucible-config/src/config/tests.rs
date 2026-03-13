@@ -329,6 +329,26 @@ fn test_config_accessor_methods() {
 }
 
 #[test]
+fn test_server_config_default_sets_auto_archive_hours() {
+    let server = ServerConfig::default();
+    assert_eq!(server.auto_archive_hours, Some(72));
+}
+
+#[test]
+fn test_server_config_deserializes_auto_archive_hours() {
+    let parsed: ServerConfig = toml::from_str(
+        r#"
+host = "127.0.0.1"
+port = 8080
+auto_archive_hours = 24
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(parsed.auto_archive_hours, Some(24));
+}
+
+#[test]
 fn test_effective_llm_provider_from_llm_config() {
     use std::collections::HashMap;
     let mut providers = HashMap::new();
