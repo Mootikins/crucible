@@ -273,6 +273,7 @@ pub async fn create_daemon_agent(
                     Some(&workspace),
                     Some("chat"),
                     Some("active"),
+                    None,
                 )
                 .await?;
 

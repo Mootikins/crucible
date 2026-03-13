@@ -330,6 +330,8 @@ pub struct SessionListRequest {
     pub workspace: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_archived: Option<bool>,
 }
 
 /// Shared request for methods that only require a `session_id`.
@@ -362,6 +364,12 @@ pub struct SessionResumeFromStorageRequest {
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionDeleteRequest {
+    pub session_id: String,
+    pub kiln: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionArchiveRequest {
     pub session_id: String,
     pub kiln: String,
 }
@@ -1599,6 +1607,7 @@ impl DaemonClient {
         workspace: Option<&Path>,
         session_type: Option<&str>,
         state: Option<&str>,
+        include_archived: Option<bool>,
     ) -> Result<serde_json::Value> {
         self.typed_call(
             "session.list",
@@ -1607,6 +1616,7 @@ impl DaemonClient {
                 kiln: kiln.map(|k| k.to_string_lossy().to_string()),
                 workspace: workspace.map(|ws| ws.to_string_lossy().to_string()),
                 state: state.map(|s| s.to_string()),
+                include_archived,
             },
         )
         .await
@@ -1632,6 +1642,28 @@ impl DaemonClient {
         self.typed_call(
             "session.delete",
             SessionDeleteRequest {
+                session_id: session_id.to_string(),
+                kiln: kiln.to_string_lossy().to_string(),
+            },
+        )
+        .await
+    }
+
+    pub async fn session_archive(&self, session_id: &str, kiln: &Path) -> Result<serde_json::Value> {
+        self.typed_call(
+            "session.archive",
+            SessionArchiveRequest {
+                session_id: session_id.to_string(),
+                kiln: kiln.to_string_lossy().to_string(),
+            },
+        )
+        .await
+    }
+
+    pub async fn session_unarchive(&self, session_id: &str, kiln: &Path) -> Result<serde_json::Value> {
+        self.typed_call(
+            "session.unarchive",
+            SessionArchiveRequest {
                 session_id: session_id.to_string(),
                 kiln: kiln.to_string_lossy().to_string(),
             },
@@ -2340,7 +2372,7 @@ mod tests {
     #[ignore = "requires running daemon with session support"]
     async fn test_session_list() {
         let client = DaemonClient::connect().await.unwrap();
-        let result = client.session_list(None, None, None, None).await.unwrap();
+        let result = client.session_list(None, None, None, None, None).await.unwrap();
         assert!(result.is_array() || result.is_object());
     }
 

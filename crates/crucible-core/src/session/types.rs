@@ -464,8 +464,10 @@ pub struct SessionSummary {
     /// Agent model name (for display)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_model: Option<String>,
+    /// Whether this session is archived
+    #[serde(default)]
+    pub archived: bool,
 }
-
 impl From<&Session> for SessionSummary {
     fn from(session: &Session) -> Self {
         Self {
@@ -478,6 +480,7 @@ impl From<&Session> for SessionSummary {
             title: session.title.clone(),
             event_count: 0, // Would be populated from storage
             agent_model: session.agent.as_ref().map(|a| a.model.clone()),
+            archived: session.archived,
         }
     }
 }

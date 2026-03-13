@@ -357,7 +357,7 @@ async fn test_user_flow_session_list_reflects_state() {
 
     // List active sessions — should contain our session
     let list = client
-        .session_list(Some(kiln_dir.path()), None, Some("chat"), None)
+        .session_list(Some(kiln_dir.path()), None, Some("chat"), None, None)
         .await
         .expect("session.list failed");
     let sessions = list["sessions"]

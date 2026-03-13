@@ -212,12 +212,14 @@ export async function listSessions(filters?: {
   workspace?: string;
   type?: string;
   state?: string;
+  includeArchived?: boolean;
 }): Promise<Session[]> {
   const params = new URLSearchParams();
   if (filters?.kiln) params.set('kiln', filters.kiln);
   if (filters?.workspace) params.set('workspace', filters.workspace);
   if (filters?.type) params.set('type', filters.type);
   if (filters?.state) params.set('state', filters.state);
+  if (filters?.includeArchived) params.set('include_archived', 'true');
 
   const qs = params.toString();
   const url = qs ? `/api/session/list?${qs}` : '/api/session/list';

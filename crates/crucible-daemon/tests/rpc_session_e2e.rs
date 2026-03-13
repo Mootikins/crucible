@@ -101,7 +101,7 @@ async fn test_session_list_includes_created() {
     let session_id = create_session(&client, kiln_dir.path()).await;
 
     let list = client
-        .session_list(Some(kiln_dir.path()), None, Some("chat"), None)
+        .session_list(Some(kiln_dir.path()), None, Some("chat"), None, None)
         .await
         .expect("session_list failed");
 
@@ -270,7 +270,7 @@ async fn test_session_end_removes_from_list() {
 
     // Verify: session should not appear in active list
     let list = client
-        .session_list(Some(kiln_dir.path()), None, Some("chat"), Some("active"))
+        .session_list(Some(kiln_dir.path()), None, Some("chat"), Some("active"), None)
         .await
         .expect("session_list failed");
 

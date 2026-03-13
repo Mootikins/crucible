@@ -177,6 +177,7 @@ pub(crate) async fn handle_session_list(req: Request, sm: &Arc<SessionManager>, 
         "ended" => Some(SessionState::Ended),
         _ => None,
     });
+    let include_archived = optional_param!(req, "include_archived", as_bool).unwrap_or(false);
 
     let sessions = if kiln.is_none() {
         // When no kiln is specified, load sessions from all open kilns + crucible home
@@ -187,7 +188,7 @@ pub(crate) async fn handle_session_list(req: Request, sm: &Arc<SessionManager>, 
         let kilns = km.list().await;
         for (kiln_path, _, _) in &kilns {
             let filtered = sm
-                .list_sessions_filtered_async(Some(kiln_path), workspace.as_ref(), session_type, state)
+                .list_sessions_filtered_async(Some(kiln_path), workspace.as_ref(), session_type, state, include_archived)
                 .await;
             for session in filtered {
                 if !seen_ids.contains(&session.id) {
@@ -203,7 +204,7 @@ pub(crate) async fn handle_session_list(req: Request, sm: &Arc<SessionManager>, 
             // Try to open crucible home if not already open
             let _ = km.open(&home).await;
             let home_sessions = sm
-                .list_sessions_filtered_async(Some(&home), workspace.as_ref(), session_type, state)
+                .list_sessions_filtered_async(Some(&home), workspace.as_ref(), session_type, state, include_archived)
                 .await;
             for session in home_sessions {
                 if !seen_ids.contains(&session.id) {
@@ -216,7 +217,7 @@ pub(crate) async fn handle_session_list(req: Request, sm: &Arc<SessionManager>, 
         all_sessions
     } else {
         sm
-            .list_sessions_filtered_async(kiln.as_ref(), workspace.as_ref(), session_type, state)
+            .list_sessions_filtered_async(kiln.as_ref(), workspace.as_ref(), session_type, state, include_archived)
             .await
     };
 
@@ -329,7 +330,7 @@ pub(crate) async fn handle_session_search(req: Request, sm: &Arc<SessionManager>
 
     // Also include active sessions matching by title
     let active_sessions = sm
-        .list_sessions_filtered_async(None, None, None, None)
+        .list_sessions_filtered_async(None, None, None, None, true)
         .await;
     for session in &active_sessions {
         if matches.len() >= limit {
@@ -527,6 +528,52 @@ pub(crate) async fn handle_session_delete(
             )
         }
         Err(e) => invalid_state_error(req.id, "delete", e),
+    }
+}
+
+pub(crate) async fn handle_session_archive(
+    req: Request,
+    sm: &Arc<SessionManager>,
+    am: &Arc<AgentManager>,
+) -> Response {
+    let session_id = require_param!(req, "session_id", as_str);
+    let kiln = PathBuf::from(require_param!(req, "kiln", as_str));
+
+    match sm.archive_session(session_id, &kiln).await {
+        Ok(session) => {
+            am.cleanup_session(session_id);
+            Response::success(
+                req.id,
+                serde_json::json!({
+                    "session_id": session.id,
+                    "archived": session.archived,
+                }),
+            )
+        }
+        Err(e) => invalid_state_error(req.id, "archive", e),
+    }
+}
+
+pub(crate) async fn handle_session_unarchive(
+    req: Request,
+    sm: &Arc<SessionManager>,
+    am: &Arc<AgentManager>,
+) -> Response {
+    let session_id = require_param!(req, "session_id", as_str);
+    let kiln = PathBuf::from(require_param!(req, "kiln", as_str));
+
+    match sm.unarchive_session(session_id, &kiln).await {
+        Ok(session) => {
+            am.cleanup_session(session_id);
+            Response::success(
+                req.id,
+                serde_json::json!({
+                    "session_id": session.id,
+                    "archived": session.archived,
+                }),
+            )
+        }
+        Err(e) => invalid_state_error(req.id, "unarchive", e),
     }
 }
 

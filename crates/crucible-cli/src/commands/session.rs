@@ -861,7 +861,7 @@ async fn daemon_list(
     state: Option<&str>,
 ) -> Result<()> {
     let result = client
-        .session_list(Some(&config.kiln_path), None, session_type, state)
+        .session_list(Some(&config.kiln_path), None, session_type, state, None)
         .await?;
 
     let sessions = result["sessions"].as_array();

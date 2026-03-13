@@ -173,6 +173,7 @@ impl SessionManager {
         workspace: Option<&PathBuf>,
         session_type: Option<SessionType>,
         state: Option<SessionState>,
+        include_archived: bool,
     ) -> Vec<SessionSummary> {
         self.sessions
             .iter()
@@ -182,6 +183,7 @@ impl SessionManager {
                     && workspace.is_none_or(|w| &s.workspace == w)
                     && session_type.is_none_or(|t| s.session_type == t)
                     && state.is_none_or(|st| s.state == st)
+                    && (include_archived || !s.archived)
             })
             .map(|r| SessionSummary::from(r.value()))
             .collect()
@@ -197,6 +199,7 @@ impl SessionManager {
         workspace: Option<&PathBuf>,
         session_type: Option<SessionType>,
         state: Option<SessionState>,
+        include_archived: bool,
     ) -> Vec<SessionSummary> {
         use std::collections::HashSet;
 
@@ -210,6 +213,7 @@ impl SessionManager {
                 && workspace.is_none_or(|w| &s.workspace == w)
                 && session_type.is_none_or(|t| s.session_type == t)
                 && state.is_none_or(|st| s.state == st)
+                && (include_archived || !s.archived)
             {
                 seen_ids.insert(s.id.clone());
                 results.push(SessionSummary::from(s));
@@ -226,6 +230,7 @@ impl SessionManager {
                     if workspace.is_none_or(|w| &summary.workspace == w)
                         && session_type.is_none_or(|t| summary.session_type == t)
                         && state.is_none_or(|st| summary.state == st)
+                        && (include_archived || !summary.archived)
                     {
                         results.push(summary);
                     }
@@ -353,6 +358,67 @@ impl SessionManager {
 
         info!(session_id = %session_id, kiln = %kiln.display(), "Session deleted");
         Ok(())
+    }
+
+    pub async fn archive_session(
+        &self,
+        session_id: &str,
+        kiln: &Path,
+    ) -> Result<Session, SessionError> {
+        if let Some(session) = self.get_session(session_id) {
+            if matches!(session.state, SessionState::Active | SessionState::Paused) {
+                self.end_session(session_id).await?;
+            }
+        }
+
+        let session_dir = FileSessionStorage::sessions_base(kiln).join(session_id);
+        let meta_path = session_dir.join("meta.json");
+        let legacy_path = session_dir.join("session.json");
+
+        let source_path = if tokio::fs::metadata(&meta_path).await.is_ok() {
+            meta_path.clone()
+        } else if tokio::fs::metadata(&legacy_path).await.is_ok() {
+            legacy_path
+        } else {
+            return Err(SessionError::NotFound(session_id.to_string()));
+        };
+
+        let mut session: Session = serde_json::from_str(&tokio::fs::read_to_string(&source_path).await?)?;
+        session.archived = true;
+
+        tokio::fs::write(&meta_path, serde_json::to_string_pretty(&session)?).await?;
+
+        self.sessions.remove(session_id);
+        self.recording_senders.remove(session_id);
+
+        info!(session_id = %session_id, kiln = %kiln.display(), "Session archived");
+        Ok(session)
+    }
+
+    pub async fn unarchive_session(
+        &self,
+        session_id: &str,
+        kiln: &Path,
+    ) -> Result<Session, SessionError> {
+        let session_dir = FileSessionStorage::sessions_base(kiln).join(session_id);
+        let meta_path = session_dir.join("meta.json");
+        let legacy_path = session_dir.join("session.json");
+
+        let source_path = if tokio::fs::metadata(&meta_path).await.is_ok() {
+            meta_path.clone()
+        } else if tokio::fs::metadata(&legacy_path).await.is_ok() {
+            legacy_path
+        } else {
+            return Err(SessionError::NotFound(session_id.to_string()));
+        };
+
+        let mut session: Session = serde_json::from_str(&tokio::fs::read_to_string(&source_path).await?)?;
+        session.archived = false;
+
+        tokio::fs::write(&meta_path, serde_json::to_string_pretty(&session)?).await?;
+
+        info!(session_id = %session_id, kiln = %kiln.display(), "Session unarchived");
+        Ok(session)
     }
 
     /// Request compaction for a session.
@@ -618,11 +684,11 @@ mod tests {
             .unwrap();
 
         // Filter by kiln
-        let filtered = manager.list_sessions_filtered(Some(&kiln1), None, None, None);
+        let filtered = manager.list_sessions_filtered(Some(&kiln1), None, None, None, true);
         assert_eq!(filtered.len(), 1);
 
         // Filter by type
-        let filtered = manager.list_sessions_filtered(None, None, Some(SessionType::Chat), None);
+        let filtered = manager.list_sessions_filtered(None, None, Some(SessionType::Chat), None, true);
         assert_eq!(filtered.len(), 2);
     }
 
@@ -837,6 +903,74 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_archive_session_sets_archived_and_keeps_files() {
+        let tmp = TempDir::new().unwrap();
+        let manager = SessionManager::new();
+        let session = manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let session_dir = FileSessionStorage::sessions_base(tmp.path()).join(&session.id);
+        assert!(session_dir.exists());
+
+        let archived = manager
+            .archive_session(&session.id, tmp.path())
+            .await
+            .unwrap();
+
+        assert!(archived.archived);
+        assert!(session_dir.exists());
+        assert!(manager.get_session(&session.id).is_none());
+
+        let persisted = FileSessionStorage::new()
+            .load(&session.id, tmp.path())
+            .await
+            .unwrap();
+        assert!(persisted.archived);
+    }
+
+    #[tokio::test]
+    async fn test_unarchive_session_sets_archived_false() {
+        let tmp = TempDir::new().unwrap();
+        let manager = SessionManager::new();
+        let session = manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        manager
+            .archive_session(&session.id, tmp.path())
+            .await
+            .unwrap();
+
+        let unarchived = manager
+            .unarchive_session(&session.id, tmp.path())
+            .await
+            .unwrap();
+
+        assert!(!unarchived.archived);
+
+        let persisted = FileSessionStorage::new()
+            .load(&session.id, tmp.path())
+            .await
+            .unwrap();
+        assert!(!persisted.archived);
+    }
+
+    #[tokio::test]
     async fn test_session_manager_persists_on_create() {
         let tmp = TempDir::new().unwrap();
         let storage = Arc::new(FileSessionStorage::new());
@@ -939,7 +1073,7 @@ mod tests {
 
         let manager2 = SessionManager::with_storage(storage);
         let sessions = manager2
-            .list_sessions_filtered_async(Some(&tmp.path().to_path_buf()), None, None, None)
+            .list_sessions_filtered_async(Some(&tmp.path().to_path_buf()), None, None, None, true)
             .await;
 
         assert_eq!(
@@ -996,7 +1130,7 @@ mod tests {
         let manager2 = SessionManager::with_storage(storage);
 
         let sessions = manager2
-            .list_sessions_filtered_async(Some(&tmp.path().to_path_buf()), None, None, None)
+            .list_sessions_filtered_async(Some(&tmp.path().to_path_buf()), None, None, None, true)
             .await;
         assert_eq!(
             sessions.len(),
@@ -1010,6 +1144,7 @@ mod tests {
                 None,
                 None,
                 Some(SessionState::Paused),
+                true,
             )
             .await;
         assert_eq!(paused.len(), 1);
