@@ -1,7 +1,8 @@
 import { Component, For, Show, createSignal, createEffect, createMemo } from 'solid-js';
 import { Collapsible } from '@ark-ui/solid';
 import { useProjectSafe } from '@/contexts/ProjectContext';
-import { useEditorSafe } from '@/contexts/EditorContext';
+import { openFileInEditor } from '@/lib/file-actions';
+
 import { listNotes } from '@/lib/api';
 import type { FileEntry } from '@/lib/types';
 import {
@@ -179,7 +180,7 @@ const filesToNodes = (files: FileEntry[]): FileNode[] => {
 
 export const FilesPanel: Component = () => {
   const { currentProject } = useProjectSafe();
-  const { openFile } = useEditorSafe();
+
   const [kilnFiles, setKilnFiles] = createSignal<FileNode[]>([]);
   const [loadingKiln, setLoadingKiln] = createSignal(false);
   const [kilnError, setKilnError] = createSignal<string | null>(null);
@@ -220,8 +221,11 @@ export const FilesPanel: Component = () => {
   });
 
   const handleFileClick = (path: string) => {
-    openFile(path);
+    const fileName = path.split('/').pop() ?? path;
+    openFileInEditor(path, fileName);
   };
+
+
 
   return (
     <div class="h-full flex flex-col bg-neutral-900 text-neutral-100 overflow-hidden">
