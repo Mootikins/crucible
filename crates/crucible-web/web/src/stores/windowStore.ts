@@ -158,9 +158,7 @@ function insertPaneRelative(
   return replacePaneWithSplit(layout, paneId, newSplit);
 }
 
-const createSampleTabs = (): Tab[] => [
-  { id: 'tab-chat-1', title: 'Chat', contentType: 'chat', isModified: false, icon: MessageCircle },
-];
+const createSampleTabs = (): Tab[] => [];
 
 
 
@@ -197,7 +195,7 @@ function createInitialState(): WindowState {
       [tabGroupId1]: {
         id: tabGroupId1,
         tabs: createSampleTabs(),
-        activeTabId: 'tab-chat-1',
+        activeTabId: null,
       },
       [leftGroupId]: {
         id: leftGroupId,
