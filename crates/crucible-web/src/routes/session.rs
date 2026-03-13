@@ -479,10 +479,7 @@ async fn generate_title(
 ) -> Result<Json<serde_json::Value>, WebError> {
     // Get session info to find kiln path
     let session = state.daemon.session_get(&id).await.daemon_err()?;
-    let kiln_str = session
-        .get("kiln")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let kiln_str = session.get("kiln").and_then(|v| v.as_str()).unwrap_or("");
 
     // Try to get conversation history for title generation
     let first_user_message = if !kiln_str.is_empty() {
@@ -532,10 +529,7 @@ fn truncate_to_title(message: &str) -> String {
     const MAX_LEN: usize = 60;
 
     // Clean up: collapse whitespace, trim
-    let cleaned: String = message
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
+    let cleaned: String = message.split_whitespace().collect::<Vec<_>>().join(" ");
 
     if cleaned.len() <= MAX_LEN {
         return cleaned;
@@ -1148,11 +1142,11 @@ mod tests {
             .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
-        assert!(json.get("title").is_some(), "Response should contain 'title' field");
         assert!(
-            json["title"].is_string(),
-            "Title should be a string"
+            json.get("title").is_some(),
+            "Response should contain 'title' field"
         );
+        assert!(json["title"].is_string(), "Title should be a string");
     }
 
     #[tokio::test]
@@ -1203,17 +1197,18 @@ mod tests {
         let msg = "How do I implement a binary search tree in Rust with proper lifetime annotations and borrowing";
         let title = truncate_to_title(msg);
         assert!(title.ends_with("..."), "Long titles should end with '...'");
-        assert!(title.len() <= 65, "Title should be ~60 chars + '...': got {}", title.len());
+        assert!(
+            title.len() <= 65,
+            "Title should be ~60 chars + '...': got {}",
+            title.len()
+        );
         // Should break at a word boundary
         assert!(!title.contains("  "), "Should not have double spaces");
     }
 
     #[test]
     fn truncate_to_title_collapses_whitespace() {
-        assert_eq!(
-            truncate_to_title("  hello   world  "),
-            "hello world"
-        );
+        assert_eq!(truncate_to_title("  hello   world  "), "hello world");
     }
 
     #[test]
