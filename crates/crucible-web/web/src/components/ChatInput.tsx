@@ -118,6 +118,9 @@ export const ChatInput: Component = () => {
   };
 
   const formatModelDisplay = (model: string) => {
+    if (model.includes('/')) {
+      return model;
+    }
     return `${providerPrefix()}/${model}`;
   };
 
