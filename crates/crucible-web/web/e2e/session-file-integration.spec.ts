@@ -64,7 +64,7 @@ test.describe('Session and file tab integration', () => {
     await expect(fileTab).toHaveCount(1);
   });
 
-  test('ended session shows continue button and hides chat input', async ({ page }) => {
+  test('ended session shows chat input (no continue button)', async ({ page }) => {
     await setupBasicMocks(page, { sessions: [ENDED_SESSION] });
 
     // Override specific session GET to return ended state (LIFO priority over wildcard)
@@ -82,18 +82,17 @@ test.describe('Session and file tab integration', () => {
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
     await page.getByTestId('session-item-test-session-001').click();
 
-    // Wait for chat content to load
-    const continueButton = page.getByRole('button', { name: /Continue as new session/ });
-    await expect(continueButton).toBeVisible({ timeout: 10000 });
+    // Assert: no 'Continue as new session' button (removed in lifecycle redesign)
+    await expect(page.getByRole('button', { name: /Continue as new session/ })).toHaveCount(0);
 
-    // Assert: "This session has ended" text is visible
-    await expect(page.getByText('This session has ended')).toBeVisible();
+    // Assert: 'This session has ended' text is NOT visible (removed in lifecycle redesign)
+    await expect(page.getByText('This session has ended')).toHaveCount(0);
 
-    // Assert: chat input is NOT visible (hidden for ended sessions)
-    await expect(page.getByTestId('chat-input')).not.toBeVisible();
+    // Assert: chat input IS visible (always shown regardless of session state)
+    await expect(page.getByTestId('chat-input')).toBeVisible({ timeout: 5000 });
   });
 
-  test('continue as new session creates a new session', async ({ page }) => {
+  test('ended session does not show continue button (lifecycle redesign)', async ({ page }) => {
     await setupBasicMocks(page, { sessions: [ENDED_SESSION] });
 
     // Override specific session GET to return ended state
@@ -111,20 +110,10 @@ test.describe('Session and file tab integration', () => {
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
     await page.getByTestId('session-item-test-session-001').click();
 
-    // Wait for "Continue" button
-    const continueButton = page.getByRole('button', { name: /Continue as new session/ });
-    await expect(continueButton).toBeVisible({ timeout: 10000 });
+    // Assert: 'Continue as new session' button is NOT present
+    await expect(page.getByRole('button', { name: /Continue as new session/ })).toHaveCount(0);
 
-    // Set up request interception for session creation POST
-    const createRequestPromise = page.waitForRequest(
-      (req) => req.url().includes('/api/session') && req.method() === 'POST',
-    );
-
-    // Click "Continue as new session"
-    await continueButton.click();
-
-    // Assert: POST to /api/session was made
-    const createRequest = await createRequestPromise;
-    expect(createRequest).toBeTruthy();
+    // Assert: chat input IS visible (always shown)
+    await expect(page.getByTestId('chat-input')).toBeVisible({ timeout: 5000 });
   });
 });
