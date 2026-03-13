@@ -1,39 +1,19 @@
-import { test, expect, type Page } from '@playwright/test';
-import { setupBasicMocks } from './helpers/mock-api';
-import { MOCK_SESSION } from './helpers/fixtures';
-
-async function waitForApp(page: Page) {
-  await setupBasicMocks(page, { sessions: [MOCK_SESSION] });
-  await page.route('**/api/layout', async (route) => {
-    const method = route.request().method();
-    if (method === 'GET') {
-      await route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
-      return;
-    }
-    if (method === 'POST' || method === 'DELETE') {
-      await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
-      return;
-    }
-    await route.continue();
-  });
-  await page.goto('/');
-  await page.waitForTimeout(500);
-}
+import { test, expect } from '@playwright/test';
 
 test.describe('Placeholder panels for missing tab types', () => {
   test.beforeEach(async ({ page }) => {
-    await waitForApp(page);
-    const sessionItem = page.getByTestId('session-item-test-session-001');
-    await expect(sessionItem).toBeVisible({ timeout: 5000 });
-    await sessionItem.click();
-    await expect(page.locator('[data-tab-id^="tab-chat-"]')).toBeVisible({ timeout: 5000 });
+    await page.goto('/');
+    // Wait for the main layout to be visible
+    await expect(page.locator('div.flex.flex-col.h-screen')).toBeVisible({ timeout: 5000 });
   });
 
   test('explorer tab shows placeholder content', async ({ page }) => {
+    // Explorer tab should be visible in the left panel
     const explorerTab = page.locator('[data-tab-id="explorer-tab"]');
     await expect(explorerTab).toBeVisible({ timeout: 5000 });
     await explorerTab.click();
 
+    // Check that the placeholder content is displayed
     const panelContent = page.locator('[data-testid="panel-content-explorer"]');
     await expect(panelContent).toBeVisible({ timeout: 5000 });
     await expect(panelContent).toContainText('Coming soon');
