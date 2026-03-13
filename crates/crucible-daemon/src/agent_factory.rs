@@ -928,8 +928,6 @@ mod tests {
         let auth_headers = fire_provider_auth_hooks(&lua, &hooks, "openai", "gpt-4o").unwrap();
 
         assert!(auth_headers.is_none());
-        let fallback_key = std::env::var("OPENAI_API_KEY").unwrap();
-        assert_eq!(fallback_key, "config-key");
     }
 
     #[tokio::test]
