@@ -1,6 +1,9 @@
 import { test, expect, type Page } from '@playwright/test';
+import { setupBasicMocks } from './helpers/mock-api';
+
 
 async function waitForApp(page: Page) {
+  await setupBasicMocks(page);
   await page.route('**/api/layout', async (route) => {
     const method = route.request().method();
     if (method === 'GET') {
@@ -53,6 +56,12 @@ async function getEdgeTabOrder(page: Page, position: string): Promise<string[]> 
 test.describe('Tab reorder within same bar', () => {
   test.beforeEach(async ({ page }) => {
     await waitForApp(page);
+    // Open a session to create a chat tab in the center pane for cross-zone tests
+    const sessionItem = page.getByTestId('session-item-test-session-001');
+    await expect(sessionItem).toBeVisible({ timeout: 5000 });
+    await sessionItem.click();
+    // Wait for the chat tab to appear
+    await expect(page.locator('[data-tab-id^="tab-chat-"]')).toBeVisible({ timeout: 5000 });
   });
 
   test('reorder edge tab: drag first tab past third tab', async ({ page }) => {
@@ -142,7 +151,7 @@ test.describe('Tab reorder within same bar', () => {
 
   test('no insert indicator during cross-zone drag', async ({ page }) => {
     const edgeTab = page.locator('[data-testid="edge-tab-left-explorer-tab"]');
-    const centerTab = page.locator('[data-tab-id="tab-chat-1"]');
+    const centerTab = page.locator('[data-tab-id^="tab-chat-"]').first();
 
     const from = await getCenterOf(page, edgeTab);
     const to = await getCenterOf(page, centerTab);
@@ -161,7 +170,7 @@ test.describe('Tab reorder within same bar', () => {
 
   test('cross-zone DnD still works after reorder implementation (regression)', async ({ page }) => {
     const from = await getCenter(page, '[data-testid="edge-tab-left-search-tab"]');
-    const to = await getCenterOf(page, page.locator('[data-tab-id="tab-chat-1"]'));
+    const to = await getCenterOf(page, page.locator('[data-tab-id^="tab-chat-"]').first());
 
     await pointerDrag(page, from, to);
     await page.waitForTimeout(300);
