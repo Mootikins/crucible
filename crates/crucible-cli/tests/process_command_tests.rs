@@ -78,6 +78,7 @@ fn create_process_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfi
         permissions: None,
         plugins: std::collections::HashMap::new(),
         web: None,
+        server: None,
         source_map: None,
     }
 }
