@@ -1879,10 +1879,7 @@ async fn delete_session_returns_200_with_deleted_field() {
         .await
         .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(
-        json["deleted"], true,
-        "Response must contain deleted: true"
-    );
+    assert_eq!(json["deleted"], true, "Response must contain deleted: true");
 }
 
 #[tokio::test]

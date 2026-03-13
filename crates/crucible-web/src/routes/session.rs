@@ -351,7 +351,11 @@ async fn delete_session(
 ) -> Result<Json<serde_json::Value>, WebError> {
     let kiln = resolve_session_kiln(&state, &id).await?;
 
-    match state.daemon.session_delete(&id, std::path::Path::new(&kiln)).await {
+    match state
+        .daemon
+        .session_delete(&id, std::path::Path::new(&kiln))
+        .await
+    {
         Ok(_) => {
             state.events.remove_session(&id).await;
             Ok(Json(serde_json::json!({ "deleted": true })))

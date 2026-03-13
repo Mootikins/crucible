@@ -586,8 +586,12 @@ impl RpcDispatcher {
     }
 
     async fn handle_session_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::session::handle_session_list(req.clone(), &self.ctx.sessions, &self.ctx.kiln).await;
+        let resp = crate::server::session::handle_session_list(
+            req.clone(),
+            &self.ctx.sessions,
+            &self.ctx.kiln,
+        )
+        .await;
         map_server_resp(resp)
     }
 

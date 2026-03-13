@@ -271,7 +271,13 @@ async fn test_session_end_removes_from_list() {
 
     // Verify: session should not appear in active list
     let list = client
-        .session_list(Some(kiln_dir.path()), None, Some("chat"), Some("active"), None)
+        .session_list(
+            Some(kiln_dir.path()),
+            None,
+            Some("chat"),
+            Some("active"),
+            None,
+        )
         .await
         .expect("session_list failed");
 
@@ -493,9 +499,7 @@ async fn test_session_unarchive_restores_session() {
         .await
         .expect("session_unarchive failed");
 
-    let archived = unarchive_result
-        .get("archived")
-        .and_then(|v| v.as_bool());
+    let archived = unarchive_result.get("archived").and_then(|v| v.as_bool());
     assert_eq!(
         archived,
         Some(false),

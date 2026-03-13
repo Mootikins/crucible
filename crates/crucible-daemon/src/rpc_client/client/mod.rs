@@ -1649,7 +1649,11 @@ impl DaemonClient {
         .await
     }
 
-    pub async fn session_archive(&self, session_id: &str, kiln: &Path) -> Result<serde_json::Value> {
+    pub async fn session_archive(
+        &self,
+        session_id: &str,
+        kiln: &Path,
+    ) -> Result<serde_json::Value> {
         self.typed_call(
             "session.archive",
             SessionArchiveRequest {
@@ -1660,7 +1664,11 @@ impl DaemonClient {
         .await
     }
 
-    pub async fn session_unarchive(&self, session_id: &str, kiln: &Path) -> Result<serde_json::Value> {
+    pub async fn session_unarchive(
+        &self,
+        session_id: &str,
+        kiln: &Path,
+    ) -> Result<serde_json::Value> {
         self.typed_call(
             "session.unarchive",
             SessionArchiveRequest {
@@ -2372,7 +2380,10 @@ mod tests {
     #[ignore = "requires running daemon with session support"]
     async fn test_session_list() {
         let client = DaemonClient::connect().await.unwrap();
-        let result = client.session_list(None, None, None, None, None).await.unwrap();
+        let result = client
+            .session_list(None, None, None, None, None)
+            .await
+            .unwrap();
         assert!(result.is_array() || result.is_object());
     }
 

@@ -72,7 +72,7 @@ pub(crate) async fn handle_session_create(
             if let Err(e) = km.open(&session.kiln).await {
                 tracing::warn!(kiln = %session.kiln.display(), error = %e, "Failed to open kiln in manager");
             }
-            
+
             if session.recording_mode == Some(RecordingMode::Granular) {
                 let recording_path = match custom_recording_path {
                     Some(ref p) => p.clone(),
@@ -160,7 +160,11 @@ pub(super) fn resolve_kiln_classification_for_create(
     crate::trust_resolution::resolve_kiln_classification(&workspace_path, kiln)
 }
 
-pub(crate) async fn handle_session_list(req: Request, sm: &Arc<SessionManager>, km: &Arc<KilnManager>) -> Response {
+pub(crate) async fn handle_session_list(
+    req: Request,
+    sm: &Arc<SessionManager>,
+    km: &Arc<KilnManager>,
+) -> Response {
     // Parse optional filters
     let kiln = optional_param!(req, "kiln", as_str).map(PathBuf::from);
     let workspace = optional_param!(req, "workspace", as_str).map(PathBuf::from);
@@ -183,12 +187,18 @@ pub(crate) async fn handle_session_list(req: Request, sm: &Arc<SessionManager>, 
         // When no kiln is specified, load sessions from all open kilns + crucible home
         let mut all_sessions = Vec::new();
         let mut seen_ids = std::collections::HashSet::new();
-        
+
         // First, get sessions from all open kilns
         let kilns = km.list().await;
         for (kiln_path, _, _) in &kilns {
             let filtered = sm
-                .list_sessions_filtered_async(Some(kiln_path), workspace.as_ref(), session_type, state, include_archived)
+                .list_sessions_filtered_async(
+                    Some(kiln_path),
+                    workspace.as_ref(),
+                    session_type,
+                    state,
+                    include_archived,
+                )
                 .await;
             for session in filtered {
                 if !seen_ids.contains(&session.id) {
@@ -197,14 +207,20 @@ pub(crate) async fn handle_session_list(req: Request, sm: &Arc<SessionManager>, 
                 }
             }
         }
-        
+
         // Also load from crucible home if not already included
         let home = crucible_config::crucible_home();
         if !kilns.iter().any(|(k, _, _)| k == &home) {
             // Try to open crucible home if not already open
             let _ = km.open(&home).await;
             let home_sessions = sm
-                .list_sessions_filtered_async(Some(&home), workspace.as_ref(), session_type, state, include_archived)
+                .list_sessions_filtered_async(
+                    Some(&home),
+                    workspace.as_ref(),
+                    session_type,
+                    state,
+                    include_archived,
+                )
                 .await;
             for session in home_sessions {
                 if !seen_ids.contains(&session.id) {
@@ -213,12 +229,17 @@ pub(crate) async fn handle_session_list(req: Request, sm: &Arc<SessionManager>, 
                 }
             }
         }
-        
+
         all_sessions
     } else {
-        sm
-            .list_sessions_filtered_async(kiln.as_ref(), workspace.as_ref(), session_type, state, include_archived)
-            .await
+        sm.list_sessions_filtered_async(
+            kiln.as_ref(),
+            workspace.as_ref(),
+            session_type,
+            state,
+            include_archived,
+        )
+        .await
     };
 
     let sessions_json: Vec<_> = sessions
