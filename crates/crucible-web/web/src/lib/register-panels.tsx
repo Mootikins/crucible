@@ -1,4 +1,3 @@
-import { Component } from 'solid-js';
 import { getGlobalRegistry } from './panel-registry';
 import { SettingsPanel } from '@/components/SettingsPanel';
 import { ChatPanel } from '@/components/ChatPanel';
