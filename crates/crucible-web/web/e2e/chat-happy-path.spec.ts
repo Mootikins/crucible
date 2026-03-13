@@ -84,7 +84,7 @@ test.describe('Chat happy path', () => {
     await page.goto('/');
 
     // Click the session in the left panel to select it and open in chat tab
-    const sessionButton = page.getByRole('button', { name: /Test Session/ });
+    const sessionButton = page.getByTestId('session-item-test-session-001');
     await expect(sessionButton).toBeVisible({ timeout: 5000 });
     await sessionButton.click();
 
@@ -147,7 +147,7 @@ test.describe('Chat happy path', () => {
     await page.goto('/');
 
     // Click the session in the left panel to select it and open in chat tab
-    const sessionButton = page.getByRole('button', { name: /Test Session/ });
+    const sessionButton = page.getByTestId('session-item-test-session-001');
     await expect(sessionButton).toBeVisible({ timeout: 5000 });
     await sessionButton.click();
 
