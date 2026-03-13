@@ -174,6 +174,13 @@ web-dev:
 release-web: web-build
     cargo build -p crucible-cli --release
 
+# Run web E2E tests (Playwright)
+web-test:
+    cd crates/crucible-web/web && bunx playwright test --reporter=line
+
+# Run web unit tests (Vitest)
+web-test-unit:
+    cd crates/crucible-web/web && bunx vitest run
 # === Daemon Management ===
 
 # Start the background daemon
@@ -209,7 +216,7 @@ coverage-open: coverage
 # === CI ===
 
 # Run full CI check (mirrors GitHub CI workflow)
-ci: fmt-check clippy test-ci
+ci: fmt-check clippy test-ci web-test
     @echo "CI checks passed!"
 
 # Run tests with CI profile (matches GitHub Actions)
