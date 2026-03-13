@@ -89,6 +89,14 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     }
   });
 
+  await page.route('**/api/session/*/generate-title', (route) =>
+    route.fulfill({ json: { title: 'Auto-generated Title' } }),
+  );
+
+  await page.route('**/api/session/*/title', (route) =>
+    route.fulfill({ status: 200, body: '{}' }),
+  );
+
   await page.route('**/api/session/*/models', (route) =>
     route.fulfill({ json: { models: ['llama3.2', 'mistral'] } }),
   );

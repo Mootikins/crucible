@@ -30,6 +30,7 @@ import {
   getConfig,
   listSessions,
   setSessionTitle as apiSetSessionTitle,
+  generateSessionTitle,
 } from '@/lib/api';
 import { findTabBySessionId } from '@/lib/session-actions';
 import { windowActions } from '@/stores/windowStore';
@@ -480,18 +481,13 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   });
 
   const autoGenerateTitle = async () => {
-    if (!props.sessionId || !firstUserMessage) return;
+    if (!props.sessionId) return;
 
     const currentTitle = sessionTitle();
-    if (currentTitle && currentTitle.trim() !== '') {
-      return;
-    }
-    
-    const truncated = firstUserMessage.slice(0, 50);
-    const lastSpace = truncated.lastIndexOf(' ');
-    const title = lastSpace > 0 ? truncated.slice(0, lastSpace) + '...' : truncated;
-    
+    if (currentTitle && currentTitle.trim() !== '') return;
+
     try {
+      const title = await generateSessionTitle(props.sessionId);
       await apiSetSessionTitle(props.sessionId, title);
       setSessionTitle(title);
       const tabInfo = findTabBySessionId(props.sessionId);
@@ -499,7 +495,22 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         windowActions.updateTab(tabInfo.groupId, tabInfo.tab.id, { title });
       }
     } catch (err) {
-      console.error('Failed to auto-generate title:', err);
+      // Fallback to truncation on API failure
+      if (firstUserMessage) {
+        const truncated = firstUserMessage.slice(0, 50);
+        const lastSpace = truncated.lastIndexOf(' ');
+        const title = lastSpace > 0 ? truncated.slice(0, lastSpace) + '...' : truncated;
+        try {
+          await apiSetSessionTitle(props.sessionId, title);
+          setSessionTitle(title);
+          const tabInfo = findTabBySessionId(props.sessionId);
+          if (tabInfo) {
+            windowActions.updateTab(tabInfo.groupId, tabInfo.tab.id, { title });
+          }
+        } catch {
+          console.error('Failed to auto-generate title:', err);
+        }
+      }
     }
   };
 

@@ -356,6 +356,18 @@ export async function setSessionTitle(sessionId: string, title: string): Promise
   }
 }
 
+/** Generate a title for a session using LLM. */
+export async function generateSessionTitle(sessionId: string): Promise<string> {
+  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/generate-title`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to generate title: HTTP ${res.status}`);
+  }
+  const data = (await res.json()) as { title: string };
+  return data.title;
+}
+
 /** Raw daemon event from session.jsonl (SessionEventMessage format). */
 export interface DaemonHistoryEvent {
   /** Always "event" for persisted events. */
