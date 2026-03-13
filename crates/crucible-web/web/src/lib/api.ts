@@ -282,6 +282,30 @@ export async function endSession(id: string): Promise<void> {
   }
 }
 
+/** Delete a session permanently. */
+export async function deleteSession(id: string): Promise<void> {
+  const res = await fetch(`/api/session/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!res.ok) {
+    throw new Error(`Failed to delete session: HTTP ${res.status}`);
+  }
+}
+
+/** Archive a session (hide from default listing). */
+export async function archiveSession(id: string): Promise<void> {
+  const res = await fetch(`/api/session/${encodeURIComponent(id)}/archive`, { method: 'POST' });
+  if (!res.ok) {
+    throw new Error(`Failed to archive session: HTTP ${res.status}`);
+  }
+}
+
+/** Unarchive a session (restore to default listing). */
+export async function unarchiveSession(id: string): Promise<void> {
+  const res = await fetch(`/api/session/${encodeURIComponent(id)}/unarchive`, { method: 'POST' });
+  if (!res.ok) {
+    throw new Error(`Failed to unarchive session: HTTP ${res.status}`);
+  }
+}
+
 /** Cancel the current agent operation in a session. */
 export async function cancelSession(id: string): Promise<boolean> {
   const res = await fetch(`/api/session/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
