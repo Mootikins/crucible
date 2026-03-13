@@ -31,6 +31,8 @@ import {
   listSessions,
   setSessionTitle as apiSetSessionTitle,
 } from '@/lib/api';
+import { findTabBySessionId } from '@/lib/session-actions';
+import { windowActions } from '@/stores/windowStore';
 
 export interface ChatContextValue {
   messages: Accessor<Message[]>;
@@ -492,6 +494,10 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     try {
       await apiSetSessionTitle(props.sessionId, title);
       setSessionTitle(title);
+      const tabInfo = findTabBySessionId(props.sessionId);
+      if (tabInfo) {
+        windowActions.updateTab(tabInfo.groupId, tabInfo.tab.id, { title });
+      }
     } catch (err) {
       console.error('Failed to auto-generate title:', err);
     }
