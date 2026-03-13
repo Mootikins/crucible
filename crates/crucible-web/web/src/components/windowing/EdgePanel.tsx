@@ -213,16 +213,16 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
             position={props.position}
           />
           <div class="flex-1 overflow-auto p-2 text-xs text-zinc-400" data-testid={`panel-content-${activeTab()?.contentType ?? 'unknown'}`}>
-            <Show when={activeTab()} fallback={<span>Select a tab</span>}>
-              {(tab) => {
-                const panel = getGlobalRegistry().get(tab().contentType);
-                if (panel) {
-                  const panelProps = (tab().metadata ?? {}) as Record<string, unknown>;
-                  return <Dynamic component={panel.component} {...panelProps} />;
-                }
-                return <div>{tab().title} content</div>;
-              }}
-            </Show>
+            {(() => {
+              const tab = activeTab();
+              if (!tab) return <span>Select a tab</span>;
+              const panel = getGlobalRegistry().get(tab.contentType);
+              if (panel) {
+                const panelProps = (tab.metadata ?? {}) as Record<string, unknown>;
+                return <Dynamic component={panel.component} {...panelProps} />;
+              }
+              return <div>{tab.title} content</div>;
+            })()}
           </div>
         </div>
         {props.position === 'left' && <EdgePanelResizeHandle position={props.position} />}
