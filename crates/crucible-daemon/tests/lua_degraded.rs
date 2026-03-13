@@ -31,12 +31,26 @@ async fn rpc_call(stream: &mut UnixStream, request: &str) -> serde_json::Value {
         .await
         .expect("Failed to write request");
 
-    let mut buf = vec![0u8; 8192];
-    let n = stream
-        .read(&mut buf)
-        .await
-        .expect("Failed to read response");
-    serde_json::from_slice(&buf[..n]).expect("Failed to parse JSON response")
+    let mut response = Vec::new();
+    loop {
+        let mut chunk = [0u8; 1024];
+        let n = stream
+            .read(&mut chunk)
+            .await
+            .expect("Failed to read response");
+        assert!(n > 0, "Connection closed before full response");
+
+        response.extend_from_slice(&chunk[..n]);
+        if response.contains(&b'\n') {
+            break;
+        }
+    }
+
+    let line_end = response
+        .iter()
+        .position(|&b| b == b'\n')
+        .unwrap_or(response.len());
+    serde_json::from_slice(&response[..line_end]).expect("Failed to parse JSON response")
 }
 
 /// Daemon starts and runs with a broken Lua plugin file.
@@ -249,11 +263,11 @@ async fn test_e2e_lua_degraded_state_detectable_via_rpc() {
     );
 
     // List sessions — should show our session
-    let response = rpc_call(
-        &mut stream,
-        r#"{"jsonrpc":"2.0","id":6,"method":"session.list","params":{}}"#,
-    )
-    .await;
+    let list_req = format!(
+        r#"{{"jsonrpc":"2.0","id":6,"method":"session.list","params":{{"kiln":"{}"}}}}"#,
+        kiln_path
+    );
+    let response = rpc_call(&mut stream, &list_req).await;
     let result = response.get("result").expect("Session list should succeed");
     let total = result.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
     assert_eq!(total, 1, "Should have exactly 1 session");
