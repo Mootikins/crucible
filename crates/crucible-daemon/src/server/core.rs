@@ -1,4 +1,5 @@
 use super::*;
+use chrono::{Duration as ChronoDuration, Utc};
 
 pub(super) fn internal_error(req_id: Option<RequestId>, err: impl std::fmt::Display) -> Response {
     error!("Internal error: {}", err);
@@ -193,6 +194,43 @@ pub(super) async fn persist_event(
         _ => {}
     }
     Ok(())
+}
+
+pub(super) async fn sweep_and_archive_stale_sessions(
+    session_manager: &SessionManager,
+    subscription_manager: &SubscriptionManager,
+    auto_archive_hours: u64,
+) -> Result<usize> {
+    let now = Utc::now();
+    let stale_after = ChronoDuration::hours(auto_archive_hours as i64);
+    let mut archived = 0;
+
+    let active_sessions = session_manager
+        .list_sessions()
+        .into_iter()
+        .filter_map(|summary| session_manager.get_session(&summary.id))
+        .filter(|session| session.state == SessionState::Active && !session.archived)
+        .collect::<Vec<_>>();
+
+    for session in active_sessions {
+        if !subscription_manager.get_subscribers(&session.id).is_empty() {
+            continue;
+        }
+
+        let last_activity = session.last_activity.unwrap_or(session.started_at);
+
+        if now - last_activity < stale_after {
+            continue;
+        }
+
+        session_manager
+            .archive_session(&session.id, &session.kiln)
+            .await
+            .map_err(|e| anyhow::anyhow!("archive_session failed for {}: {}", session.id, e))?;
+        archived += 1;
+    }
+
+    Ok(archived)
 }
 
 pub(super) async fn handle_request(

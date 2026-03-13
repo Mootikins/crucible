@@ -5,6 +5,7 @@
 
 use crate::session_storage::{FileSessionStorage, SessionStorage};
 use crucible_core::protocol::SessionEventMessage;
+use chrono::{DateTime, Utc};
 use crucible_core::session::{RecordingMode, Session, SessionState, SessionSummary, SessionType};
 use dashmap::DashMap;
 use std::path::{Path, PathBuf};
@@ -504,6 +505,25 @@ impl SessionManager {
         self.storage.save(&session).await?;
         Ok(())
     }
+
+    pub async fn update_last_activity(
+        &self,
+        session_id: &str,
+        last_activity: DateTime<Utc>,
+    ) -> Result<(), SessionError> {
+        let session = {
+            let mut entry = self
+                .sessions
+                .get_mut(session_id)
+                .ok_or(SessionError::NotFound(session_id.to_string()))?;
+
+            entry.last_activity = Some(last_activity);
+            entry.clone()
+        };
+
+        self.storage.save(&session).await?;
+        Ok(())
+    }
 }
 
 impl Default for SessionManager {
@@ -863,6 +883,37 @@ mod tests {
 
         let updated = manager.get_session(&session.id).unwrap();
         assert_eq!(updated.title, Some("My Session".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_update_last_activity_updates_and_persists_timestamp() {
+        let tmp = TempDir::new().unwrap();
+        let manager = SessionManager::new();
+        let session = manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let ts = chrono::Utc::now() + chrono::Duration::hours(1);
+        manager
+            .update_last_activity(&session.id, ts)
+            .await
+            .unwrap();
+
+        let updated = manager.get_session(&session.id).unwrap();
+        assert_eq!(updated.last_activity, Some(ts));
+
+        let persisted = FileSessionStorage::new()
+            .load(&session.id, tmp.path())
+            .await
+            .unwrap();
+        assert_eq!(persisted.last_activity, Some(ts));
     }
 
     #[tokio::test]
