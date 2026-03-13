@@ -18,7 +18,22 @@ use futures::StreamExt;
 use std::collections::HashMap;
 use tempfile::TempDir;
 use tokio::time::{timeout, Duration};
+use crucible_core::test_support::EnvVarGuard;
+use std::sync::{LazyLock, Mutex as StdMutex};
 
+static ENV_LOCK: LazyLock<StdMutex<()>> = LazyLock::new(|| StdMutex::new(()));
+
+fn clear_provider_env() -> Vec<EnvVarGuard> {
+    vec![
+        EnvVarGuard::remove("OLLAMA_HOST"),
+        EnvVarGuard::remove("OPENAI_API_KEY"),
+        EnvVarGuard::remove("ANTHROPIC_API_KEY"),
+        EnvVarGuard::remove("COHERE_API_KEY"),
+        EnvVarGuard::remove("GOOGLE_API_KEY"),
+        EnvVarGuard::remove("OPENROUTER_API_KEY"),
+        EnvVarGuard::remove("GLM_AUTH_TOKEN"),
+    ]
+}
 struct MockAgent;
 
 struct StreamingMockAgent {

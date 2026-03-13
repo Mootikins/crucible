@@ -1,10 +1,13 @@
 use super::*;
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn test_list_models_dynamic_discovery_openai_succeeds() {
     use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let _env_guards = clear_provider_env();
     let tmp = TempDir::new().unwrap();
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));
@@ -158,10 +161,13 @@ async fn test_list_models_dynamic_discovery_zai_succeeds() {
 }
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn test_list_models_dynamic_discovery_openrouter_succeeds() {
     use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let _env_guards = clear_provider_env();
     let tmp = TempDir::new().unwrap();
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));
@@ -465,10 +471,13 @@ async fn test_list_models_integration_multi_provider() {
 }
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn test_list_models_integration_dynamic_discovery() {
     use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let _env_guards = clear_provider_env();
     let tmp = TempDir::new().unwrap();
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));
@@ -841,10 +850,13 @@ async fn test_openai_model_discovery_returns_all_models() {
 }
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn test_list_models_ollama_failure() {
     use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let _env_guards = clear_provider_env();
     let tmp = TempDir::new().unwrap();
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));

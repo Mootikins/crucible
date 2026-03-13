@@ -1,5 +1,4 @@
 use super::*;
-
 #[tokio::test]
 async fn test_list_models_returns_all_providers() {
     use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
@@ -601,7 +600,11 @@ async fn test_list_models_count_matches_sum() {
 }
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn test_list_models_no_llm_config() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let _env_guards = clear_provider_env();
+
     let tmp = TempDir::new().unwrap();
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));
@@ -644,6 +647,116 @@ async fn test_list_models_no_llm_config() {
                 .iter()
                 .all(|m| m.starts_with("[error]") || !m.contains('/')),
         "Should not prefix models when llm_config is None"
+    );
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn test_list_models_includes_env_discovered_providers() {
+    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use std::collections::HashMap;
+
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let _env_guards = clear_provider_env();
+    let _glm_guard = EnvVarGuard::set("GLM_AUTH_TOKEN", "test-token".to_string());
+
+    let tmp = TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    // Configure ZAI provider with static available_models (no network needed)
+    let mut providers = HashMap::new();
+    providers.insert(
+        "zai".to_string(),
+        LlmProviderConfig::builder(BackendType::ZAI)
+            .available_models(vec!["glm-4".to_string()])
+            .build(),
+    );
+
+    let llm_config = LlmConfig {
+        default: None,
+        providers,
+    };
+
+    let agent_manager =
+        create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+    agent_manager
+        .configure_agent(&session.id, test_agent())
+        .await
+        .unwrap();
+
+    let models = agent_manager.list_models(&session.id, None).await.unwrap();
+    assert!(
+        models.iter().any(|model| model.starts_with("zai/")),
+        "Expected ZAI models with zai/ prefix, got: {:?}",
+        models
+    );
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn test_list_models_classification_filters_env_providers() {
+    use crucible_config::{BackendType, DataClassification, LlmConfig, LlmProviderConfig, TrustLevel};
+    use std::collections::HashMap;
+
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let _env_guards = clear_provider_env();
+    let _glm_guard = EnvVarGuard::set("GLM_AUTH_TOKEN", "test-token".to_string());
+
+    let tmp = TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    // Configure ZAI provider with Cloud trust level (simulates env-discovered provider)
+    let mut providers = HashMap::new();
+    let mut zai_config = LlmProviderConfig::builder(BackendType::ZAI)
+        .available_models(vec!["glm-4".to_string()])
+        .build();
+    zai_config.trust_level = Some(TrustLevel::Cloud);
+    providers.insert("zai".to_string(), zai_config);
+
+    let llm_config = LlmConfig {
+        default: None,
+        providers,
+    };
+
+    let agent_manager =
+        create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+    agent_manager
+        .configure_agent(&session.id, test_agent())
+        .await
+        .unwrap();
+
+    let models = agent_manager
+        .list_models(&session.id, Some(DataClassification::Confidential))
+        .await
+        .unwrap();
+    assert!(
+        !models.iter().any(|model| model.starts_with("zai/")),
+        "Expected Confidential classification to filter Cloud providers, got: {:?}",
+        models
     );
 }
 

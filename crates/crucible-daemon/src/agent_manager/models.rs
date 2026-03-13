@@ -154,8 +154,12 @@ impl AgentManager {
         session_id: &str,
         classification: Option<DataClassification>,
     ) -> Result<Vec<String>, AgentError> {
+        let cache_key = classification
+            .map(|value| format!("classification:{}", value.as_str()))
+            .unwrap_or_else(|| "all".to_string());
+
         if classification.is_none() {
-            if let Some(entry) = self.model_cache.get("all") {
+            if let Some(entry) = self.model_cache.get(cache_key.as_str()) {
                 let (models, fetched_at) = entry.value();
                 if fetched_at.elapsed() < MODEL_CACHE_TTL {
                     return Ok(models.clone());
@@ -183,6 +187,29 @@ impl AgentManager {
             }
         }
 
+        let mut seen_types = std::collections::HashSet::new();
+        if let Some(ref llm_config) = self.llm_config {
+            for (_, provider_config) in &llm_config.providers {
+                seen_types.insert(provider_config.provider_type.as_str().to_string());
+            }
+        }
+
+        for (provider_key, provider_config) in self.discover_env_providers(&seen_types) {
+            if let Some(ref classification) = classification {
+                if !provider_config
+                    .effective_trust_level()
+                    .satisfies(*classification)
+                {
+                    continue;
+                }
+            }
+
+            let models = self.discover_models(&provider_key, &provider_config).await;
+            for model in models {
+                all_models.push(format!("{}/{}", provider_key, model));
+            }
+        }
+
         // Only fall back to session agent's provider when no llm_config providers exist.
         // When providers are configured but return empty (discovery failed, no available_models),
         // that's expected — the user should configure available_models or fix their endpoint.
@@ -197,22 +224,16 @@ impl AgentManager {
             let endpoint = agent_config
                 .endpoint
                 .unwrap_or_else(|| crucible_config::DEFAULT_OLLAMA_ENDPOINT.to_string());
+            let backend = agent_config.provider;
 
-            match agent_config.provider.as_str() {
-                "ollama" => {
-                    match model_listing::list_models(BackendType::Ollama, &endpoint, None).await {
-                        Ok(models) => return Ok(models),
-                        Err(e) => {
-                            warn!(error = %e, "Failed to list Ollama models (fallback)");
-                            all_models.push(format!("[error] ollama: {}", e));
-                        }
-                    }
+            match model_listing::list_models(backend, &endpoint, None).await {
+                Ok(models) if !models.is_empty() => return Ok(models),
+                Ok(_) => {
+                    debug!(provider = %backend, "Fallback model listing returned empty");
                 }
-                _ => {
-                    debug!(
-                        provider = %agent_config.provider,
-                        "Model listing not supported for provider"
-                    );
+                Err(e) => {
+                    warn!(error = %e, provider = %backend, "Fallback model listing failed");
+                    all_models.push(format!("[error] {}: {}", backend.as_str(), e));
                 }
             }
         }
@@ -220,7 +241,7 @@ impl AgentManager {
         if classification.is_none() && !all_models.iter().any(|model| model.starts_with("[error]"))
         {
             self.model_cache
-                .insert("all".to_string(), (all_models.clone(), Instant::now()));
+                .insert(cache_key, (all_models.clone(), Instant::now()));
         }
 
         Ok(all_models)
