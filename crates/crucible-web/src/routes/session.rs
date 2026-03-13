@@ -302,25 +302,11 @@ async fn archive_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, WebError> {
-    let session = match state.daemon.session_get(&id).await {
-        Ok(session) => session,
-        Err(e) => {
-            let message = e.to_string();
-            if message.contains("Session not found") {
-                return Err(WebError::NotFound(format!("Session not found: {id}")));
-            }
-            return Err(WebError::Daemon(message));
-        }
-    };
-
-    let kiln_str = session
-        .get("kiln")
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| WebError::Validation("Session has no kiln path".to_string()))?;
+    let kiln = resolve_session_kiln(&state, &id).await?;
 
     match state
         .daemon
-        .session_archive(&id, std::path::Path::new(kiln_str))
+        .session_archive(&id, std::path::Path::new(&kiln))
         .await
     {
         Ok(_) => {
@@ -341,25 +327,11 @@ async fn unarchive_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, WebError> {
-    let session = match state.daemon.session_get(&id).await {
-        Ok(session) => session,
-        Err(e) => {
-            let message = e.to_string();
-            if message.contains("Session not found") {
-                return Err(WebError::NotFound(format!("Session not found: {id}")));
-            }
-            return Err(WebError::Daemon(message));
-        }
-    };
-
-    let kiln_str = session
-        .get("kiln")
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| WebError::Validation("Session has no kiln path".to_string()))?;
+    let kiln = resolve_session_kiln(&state, &id).await?;
 
     match state
         .daemon
-        .session_unarchive(&id, std::path::Path::new(kiln_str))
+        .session_unarchive(&id, std::path::Path::new(&kiln))
         .await
     {
         Ok(_) => Ok(Json(serde_json::json!({ "archived": false }))),
@@ -377,23 +349,9 @@ async fn delete_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, WebError> {
-    let session = match state.daemon.session_get(&id).await {
-        Ok(session) => session,
-        Err(e) => {
-            let message = e.to_string();
-            if message.contains("Session not found") {
-                return Err(WebError::NotFound(format!("Session not found: {id}")));
-            }
-            return Err(WebError::Daemon(message));
-        }
-    };
+    let kiln = resolve_session_kiln(&state, &id).await?;
 
-    let kiln_str = session
-        .get("kiln")
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| WebError::Validation("Session has no kiln path".to_string()))?;
-
-    match state.daemon.session_delete(&id, std::path::Path::new(kiln_str)).await {
+    match state.daemon.session_delete(&id, std::path::Path::new(&kiln)).await {
         Ok(_) => {
             state.events.remove_session(&id).await;
             Ok(Json(serde_json::json!({ "deleted": true })))
@@ -406,6 +364,48 @@ async fn delete_session(
             Err(WebError::Daemon(message))
         }
     }
+}
+
+async fn resolve_session_kiln(state: &AppState, session_id: &str) -> Result<String, WebError> {
+    match state.daemon.session_get(session_id).await {
+        Ok(session) => {
+            return session
+                .get("kiln")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string())
+                .ok_or_else(|| WebError::Validation("Session has no kiln path".to_string()));
+        }
+        Err(e) => {
+            let message = e.to_string();
+            if !message.contains("Session not found") {
+                return Err(WebError::Daemon(message));
+            }
+        }
+    }
+
+    let sessions = state
+        .daemon
+        .session_list(None, None, None, None, Some(true))
+        .await
+        .daemon_err()?;
+
+    let kiln = sessions
+        .get("sessions")
+        .and_then(|value| value.as_array())
+        .and_then(|items| {
+            items.iter().find_map(|item| {
+                let id = item.get("session_id").and_then(|value| value.as_str())?;
+                if id == session_id {
+                    item.get("kiln")
+                        .and_then(|value| value.as_str())
+                        .map(str::to_string)
+                } else {
+                    None
+                }
+            })
+        });
+
+    kiln.ok_or_else(|| WebError::NotFound(format!("Session not found: {session_id}")))
 }
 
 async fn cancel_session(
