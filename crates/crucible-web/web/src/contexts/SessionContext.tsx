@@ -81,6 +81,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
       const list = await apiListSessions({
         kiln: filters?.kiln ?? props.initialKiln,
         workspace: filters?.workspace ?? props.initialWorkspace,
+        includeArchived: false,
       });
       setSessions(list);
     } catch (err) {

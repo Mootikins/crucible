@@ -258,6 +258,7 @@ impl ReconnectingDaemon {
         workspace: Option<&Path>,
         session_type: Option<&str>,
         state: Option<&str>,
+        include_archived: Option<bool>,
     ) -> anyhow::Result<serde_json::Value> {
         let kiln = kiln.map(Path::to_path_buf);
         let workspace = workspace.map(Path::to_path_buf);
@@ -275,6 +276,7 @@ impl ReconnectingDaemon {
                         workspace.as_deref(),
                         session_type.as_deref(),
                         state.as_deref(),
+                        include_archived,
                     )
                     .await
             })
@@ -370,6 +372,36 @@ impl ReconnectingDaemon {
             let session_id = session_id.clone();
             let kiln = kiln.clone();
             Box::pin(async move { daemon.session_delete(&session_id, &kiln).await })
+        })
+        .await
+    }
+
+    pub async fn session_archive(
+        &self,
+        session_id: &str,
+        kiln: &Path,
+    ) -> anyhow::Result<serde_json::Value> {
+        let session_id = session_id.to_string();
+        let kiln = kiln.to_path_buf();
+        self.call_with_reconnect("session.archive", move |daemon| {
+            let session_id = session_id.clone();
+            let kiln = kiln.clone();
+            Box::pin(async move { daemon.session_archive(&session_id, &kiln).await })
+        })
+        .await
+    }
+
+    pub async fn session_unarchive(
+        &self,
+        session_id: &str,
+        kiln: &Path,
+    ) -> anyhow::Result<serde_json::Value> {
+        let session_id = session_id.to_string();
+        let kiln = kiln.to_path_buf();
+        self.call_with_reconnect("session.unarchive", move |daemon| {
+            let session_id = session_id.clone();
+            let kiln = kiln.clone();
+            Box::pin(async move { daemon.session_unarchive(&session_id, &kiln).await })
         })
         .await
     }

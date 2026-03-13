@@ -23,6 +23,8 @@ pub fn session_routes() -> Router<AppState> {
         .route("/api/session/{id}/pause", post(pause_session))
         .route("/api/session/{id}/resume", post(resume_session))
         .route("/api/session/{id}/end", post(end_session))
+        .route("/api/session/{id}/archive", post(archive_session))
+        .route("/api/session/{id}/unarchive", post(unarchive_session))
         .route("/api/session/{id}/cancel", post(cancel_session))
         .route("/api/session/{id}/models", get(list_models))
         .route("/api/session/{id}/model", post(switch_model))
@@ -187,6 +189,8 @@ struct ListSessionsQuery {
     #[serde(rename = "type")]
     session_type: Option<String>,
     state: Option<String>,
+    #[serde(default)]
+    include_archived: Option<bool>,
 }
 
 async fn list_sessions(
@@ -200,6 +204,7 @@ async fn list_sessions(
             query.workspace.as_deref(),
             query.session_type.as_deref(),
             query.state.as_deref(),
+            query.include_archived,
         )
         .await
         .daemon_err()?;
@@ -291,6 +296,81 @@ async fn end_session(
     state.events.remove_session(&id).await;
 
     Ok(Json(result))
+}
+
+async fn archive_session(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let session = match state.daemon.session_get(&id).await {
+        Ok(session) => session,
+        Err(e) => {
+            let message = e.to_string();
+            if message.contains("Session not found") {
+                return Err(WebError::NotFound(format!("Session not found: {id}")));
+            }
+            return Err(WebError::Daemon(message));
+        }
+    };
+
+    let kiln_str = session
+        .get("kiln")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| WebError::Validation("Session has no kiln path".to_string()))?;
+
+    match state
+        .daemon
+        .session_archive(&id, std::path::Path::new(kiln_str))
+        .await
+    {
+        Ok(_) => {
+            state.events.remove_session(&id).await;
+            Ok(Json(serde_json::json!({ "archived": true })))
+        }
+        Err(e) => {
+            let message = e.to_string();
+            if message.contains("Session not found") {
+                return Err(WebError::NotFound(format!("Session not found: {id}")));
+            }
+            Err(WebError::Daemon(message))
+        }
+    }
+}
+
+async fn unarchive_session(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let session = match state.daemon.session_get(&id).await {
+        Ok(session) => session,
+        Err(e) => {
+            let message = e.to_string();
+            if message.contains("Session not found") {
+                return Err(WebError::NotFound(format!("Session not found: {id}")));
+            }
+            return Err(WebError::Daemon(message));
+        }
+    };
+
+    let kiln_str = session
+        .get("kiln")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| WebError::Validation("Session has no kiln path".to_string()))?;
+
+    match state
+        .daemon
+        .session_unarchive(&id, std::path::Path::new(kiln_str))
+        .await
+    {
+        Ok(_) => Ok(Json(serde_json::json!({ "archived": false }))),
+        Err(e) => {
+            let message = e.to_string();
+            if message.contains("Session not found") {
+                return Err(WebError::NotFound(format!("Session not found: {id}")));
+            }
+            Err(WebError::Daemon(message))
+        }
+    }
 }
 
 async fn delete_session(

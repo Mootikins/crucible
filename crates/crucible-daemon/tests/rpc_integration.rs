@@ -760,7 +760,7 @@ async fn test_session_create_and_list() {
     assert!(!session_id.is_empty(), "session_id should not be empty");
 
     let list = client
-        .session_list(Some(kiln_dir.path()), None, Some("chat"), None)
+        .session_list(Some(kiln_dir.path()), None, Some("chat"), None, None)
         .await
         .expect("session_list failed");
 
@@ -1017,6 +1017,7 @@ async fn test_tui_sessions_command_flow() {
             Some(kiln_dir.path()),
             Some(workspace_dir.path()),
             Some("chat"),
+            None,
             None,
         )
         .await
