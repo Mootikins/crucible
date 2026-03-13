@@ -34,6 +34,8 @@ pub const METHODS: &[&str] = &[
     "session.resume",
     "session.resume_from_storage",
     "session.end",
+    "session.archive",
+    "session.unarchive",
     "session.delete",
     "session.compact",
     "session.subscribe",
@@ -205,6 +207,8 @@ impl RpcDispatcher {
                 to_response(id, self.handle_session_resume_from_storage(&req).await)
             }
             "session.end" => to_response(id, self.handle_session_end(&req).await),
+            "session.archive" => to_response(id, self.handle_session_archive(&req).await),
+            "session.unarchive" => to_response(id, self.handle_session_unarchive(&req).await),
             "session.delete" => to_response(id, self.handle_session_delete(&req).await),
             "session.compact" => to_response(id, self.handle_session_compact(&req).await),
 
@@ -619,6 +623,26 @@ impl RpcDispatcher {
 
     async fn handle_session_end(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::session::handle_session_end(
+            req.clone(),
+            &self.ctx.sessions,
+            &self.ctx.agents,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_archive(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_archive(
+            req.clone(),
+            &self.ctx.sessions,
+            &self.ctx.agents,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_unarchive(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_unarchive(
             req.clone(),
             &self.ctx.sessions,
             &self.ctx.agents,
@@ -1047,7 +1071,7 @@ mod tests {
 
     #[test]
     fn methods_count() {
-        assert_eq!(METHODS.len(), 80, "Update when adding RPC methods");
+        assert_eq!(METHODS.len(), 82, "Update when adding RPC methods");
     }
 
     #[tokio::test]
