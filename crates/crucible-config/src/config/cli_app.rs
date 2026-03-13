@@ -100,6 +100,10 @@ pub struct CliAppConfig {
     #[serde(default)]
     pub web: Option<WebConfig>,
 
+    /// Server configuration (daemon settings, auto-archive, etc.)
+    #[serde(default)]
+    pub server: Option<super::server::ServerConfig>,
+
     /// Value source tracking for configuration provenance
     ///
     /// Tracks where each configuration value came from (file, environment, CLI, default).
@@ -131,6 +135,7 @@ impl Default for CliAppConfig {
             permissions: None,
             plugins: HashMap::new(),
             web: None,
+            server: None,
             source_map: None,
         }
     }
