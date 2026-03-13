@@ -57,11 +57,9 @@ struct CreateSessionRequest {
     kiln: PathBuf,
     workspace: Option<PathBuf>,
     /// LLM provider (e.g., "ollama", "openai", "anthropic")
-    #[serde(default = "default_provider")]
-    provider: String,
+    provider: Option<String>,
     /// Model name (e.g., "llama3.2", "gpt-4o", "claude-3-5-sonnet")
-    #[serde(default = "default_model")]
-    model: String,
+    model: Option<String>,
     /// Custom endpoint URL (optional, for self-hosted models)
     endpoint: Option<String>,
 }
@@ -70,13 +68,6 @@ fn default_session_type() -> String {
     "chat".to_string()
 }
 
-fn default_provider() -> String {
-    "ollama".to_string()
-}
-
-fn default_model() -> String {
-    "llama3.2".to_string()
-}
 
 /// Validate that an endpoint URL is safe (no SSRF to internal networks).
 fn validate_endpoint(endpoint: &str) -> Result<(), WebError> {
@@ -143,16 +134,39 @@ async fn create_session(
 
     let session_id = result["session_id"].as_str().unwrap_or("");
 
+    // Resolve provider and model: use provided values or detect from available providers
+    let (provider_str, model_str) = match (req.provider, req.model) {
+        (Some(p), Some(m)) => (p, m),
+        (p_opt, m_opt) => {
+            // Resolve from detected providers
+            let providers = state
+                .daemon
+                .list_providers(None)
+                .await
+                .unwrap_or_default();
+            let first = providers.into_iter().find(|p| p.available);
+            let default_p = first
+                .as_ref()
+                .map(|p| p.provider_type.clone())
+                .unwrap_or_else(|| "ollama".to_string());
+            let default_m = first
+                .as_ref()
+                .and_then(|p| p.default_model.clone())
+                .unwrap_or_else(|| "llama3.2".to_string());
+            (p_opt.unwrap_or(default_p), m_opt.unwrap_or(default_m))
+        }
+    };
+
     // Configure agent for the session (required before sending messages)
-    let provider_type = BackendType::from_str(&req.provider)
+    let provider_type = BackendType::from_str(&provider_str)
         .map_err(|e| WebError::Validation(format!("Invalid provider: {}", e)))?;
 
     let agent = SessionAgent {
         agent_type: "internal".to_string(),
         agent_name: None,
-        provider_key: Some(req.provider.clone()),
+        provider_key: Some(provider_str.clone()),
         provider: provider_type,
-        model: req.model,
+        model: model_str,
         system_prompt: String::new(),
         temperature: None,
         max_tokens: None,
@@ -901,10 +915,21 @@ async fn execute_command(
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct ListProvidersQuery {
+    kiln: Option<PathBuf>,
+}
+
+
 async fn list_providers(
     State(state): State<AppState>,
+    axum::extract::Query(query): axum::extract::Query<ListProvidersQuery>,
 ) -> Result<Json<serde_json::Value>, WebError> {
-    let providers = state.daemon.list_providers().await.daemon_err()?;
+    let providers = state
+        .daemon
+        .list_providers(query.kiln.as_deref())
+        .await
+        .daemon_err()?;
     Ok(Json(serde_json::json!({ "providers": providers })))
 }
 
