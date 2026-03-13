@@ -68,7 +68,7 @@ impl AgentManager {
         providers
     }
 
-    fn discover_env_providers(
+    pub(super) fn discover_env_providers(
         &self,
         seen_types: &HashSet<String>,
     ) -> Vec<(String, LlmProviderConfig)> {
