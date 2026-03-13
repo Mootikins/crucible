@@ -9,12 +9,12 @@ import FileViewerPanel from '@/components/FileViewerPanel';
 import PlaceholderPanel from '@/components/PlaceholderPanel';
 
 // Wrapper components for placeholder panels with specific names
-const ExplorerPanel: Component = () => <PlaceholderPanel name="Explorer" />;
-const SearchPanel: Component = () => <PlaceholderPanel name="Search" />;
-const SourceControlPanel: Component = () => <PlaceholderPanel name="Source Control" />;
-const OutlinePanel: Component = () => <PlaceholderPanel name="Outline" />;
-const ProblemsPanel: Component = () => <PlaceholderPanel name="Problems" />;
-const OutputPanel: Component = () => <PlaceholderPanel name="Output" />;
+function ExplorerPanel() { return <PlaceholderPanel name="Explorer" />; }
+function SearchPanel() { return <PlaceholderPanel name="Search" />; }
+function SourceControlPanel() { return <PlaceholderPanel name="Source Control" />; }
+function OutlinePanel() { return <PlaceholderPanel name="Outline" />; }
+function ProblemsPanel() { return <PlaceholderPanel name="Problems" />; }
+function OutputPanel() { return <PlaceholderPanel name="Output" />; }
 
 export function registerPanels(): void {
   const registry = getGlobalRegistry();
