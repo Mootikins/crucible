@@ -2118,7 +2118,8 @@ mod persist_event_tests {
     }
 
     #[tokio::test]
-    async fn test_sweep_and_archive_stale_sessions_archives_inactive_sessions_without_subscribers() {
+    async fn test_sweep_and_archive_stale_sessions_archives_inactive_sessions_without_subscribers()
+    {
         let tmp = TempDir::new().unwrap();
         let session_manager = SessionManager::new();
         let subscription_manager = SubscriptionManager::new();

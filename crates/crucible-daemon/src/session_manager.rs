@@ -4,8 +4,8 @@
 //! in their owning kiln's `.crucible/sessions/` directory.
 
 use crate::session_storage::{FileSessionStorage, SessionStorage};
-use crucible_core::protocol::SessionEventMessage;
 use chrono::{DateTime, Utc};
+use crucible_core::protocol::SessionEventMessage;
 use crucible_core::session::{RecordingMode, Session, SessionState, SessionSummary, SessionType};
 use dashmap::DashMap;
 use std::path::{Path, PathBuf};
@@ -901,10 +901,7 @@ mod tests {
             .unwrap();
 
         let ts = chrono::Utc::now() + chrono::Duration::hours(1);
-        manager
-            .update_last_activity(&session.id, ts)
-            .await
-            .unwrap();
+        manager.update_last_activity(&session.id, ts).await.unwrap();
 
         let updated = manager.get_session(&session.id).unwrap();
         assert_eq!(updated.last_activity, Some(ts));
