@@ -145,7 +145,7 @@ export const SessionPanel: Component = () => {
     selectSession,
     pauseSession,
     resumeSession,
-    endSession,
+    // endSession,
     refreshSessions,
     selectedProvider,
     providers,
@@ -436,14 +436,6 @@ export const SessionPanel: Component = () => {
               </button>
             </Show>
 
-            <Show when={session()!.state !== 'ended'}>
-              <button
-                onClick={endSession}
-                class="flex-1 px-2 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700"
-              >
-                End
-              </button>
-            </Show>
 
             <button
               onClick={() => refreshSessions()}
