@@ -4,6 +4,7 @@ import { ChatPanel } from '@/components/ChatPanel';
 import { ActivityPanel } from '@/components/ActivityPanel';
 import { ShellPanel } from '@/components/ShellPanel';
 import { SessionPanel } from '@/components/SessionPanel';
+import FileViewerPanel from '@/components/FileViewerPanel';
 
 export function registerPanels(): void {
   const registry = getGlobalRegistry();
@@ -12,4 +13,5 @@ export function registerPanels(): void {
   registry.register('chat', 'Chat', ChatPanel, 'center', '💬');
   registry.register('activity', 'Activity', ActivityPanel, 'right', '📊');
   registry.register('terminal', 'Terminal', ShellPanel, 'bottom', '💻');
+  registry.register('file', 'File', FileViewerPanel, 'center', '📄');
 }
