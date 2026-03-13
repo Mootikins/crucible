@@ -270,12 +270,26 @@ mod session_helpers {
             .await
             .expect("Failed to write request");
 
-        let mut buf = vec![0u8; 8192];
-        let n = stream
-            .read(&mut buf)
-            .await
-            .expect("Failed to read response");
-        serde_json::from_slice(&buf[..n]).expect("Failed to parse JSON response")
+        let mut response = Vec::new();
+        loop {
+            let mut chunk = [0u8; 1024];
+            let n = stream
+                .read(&mut chunk)
+                .await
+                .expect("Failed to read response");
+            assert!(n > 0, "Connection closed before full response");
+
+            response.extend_from_slice(&chunk[..n]);
+            if response.contains(&b'\n') {
+                break;
+            }
+        }
+
+        let line_end = response
+            .iter()
+            .position(|&b| b == b'\n')
+            .unwrap_or(response.len());
+        serde_json::from_slice(&response[..line_end]).expect("Failed to parse JSON response")
     }
 
     /// Extract the "result" field from a JSON-RPC response
@@ -383,11 +397,11 @@ async fn test_e2e_session_list() {
     }
 
     // List sessions
-    let response = rpc_call(
-        &mut stream,
-        r#"{"jsonrpc":"2.0","id":3,"method":"session.list","params":{}}"#,
-    )
-    .await;
+    let list_req = format!(
+        r#"{{"jsonrpc":"2.0","id":3,"method":"session.list","params":{{"kiln":"{}"}}}}"#,
+        kiln_path
+    );
+    let response = rpc_call(&mut stream, &list_req).await;
 
     let result = get_result(&response);
     let total = result.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
