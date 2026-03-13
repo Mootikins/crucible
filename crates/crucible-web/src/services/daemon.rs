@@ -516,9 +516,15 @@ impl ReconnectingDaemon {
         .await
     }
 
-    pub async fn list_providers(&self) -> anyhow::Result<Vec<ProviderInfo>> {
-        self.call_with_reconnect("providers.list", |daemon| Box::pin(daemon.list_providers()))
-            .await
+    pub async fn list_providers(
+        &self,
+        kiln_path: Option<&std::path::Path>,
+    ) -> anyhow::Result<Vec<ProviderInfo>> {
+        self.call_with_reconnect("providers.list", move |daemon| {
+            let kiln_path = kiln_path.map(|p| p.to_path_buf());
+            Box::pin(async move { daemon.list_providers(kiln_path.as_deref()).await })
+        })
+        .await
     }
 
     pub async fn session_set_thinking_budget(

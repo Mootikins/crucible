@@ -15,7 +15,7 @@ pub struct ProviderInfo {
 }
 
 impl AgentManager {
-    pub async fn list_providers(&self) -> Vec<ProviderInfo> {
+    pub async fn list_providers(&self, classification: Option<DataClassification>) -> Vec<ProviderInfo> {
         let mut providers = Vec::new();
         let mut seen_types = HashSet::new();
 
@@ -24,6 +24,15 @@ impl AgentManager {
                 let backend = provider_config.provider_type;
                 if !backend.supports_chat() {
                     continue;
+                }
+
+                if let Some(ref classification) = classification {
+                    if !provider_config
+                        .effective_trust_level()
+                        .satisfies(*classification)
+                    {
+                        continue;
+                    }
                 }
 
                 seen_types.insert(backend.as_str().to_string());
@@ -44,6 +53,16 @@ impl AgentManager {
 
         for (provider_key, provider_config) in self.discover_env_providers(&seen_types) {
             let backend = provider_config.provider_type;
+
+            if let Some(ref classification) = classification {
+                if !provider_config
+                    .effective_trust_level()
+                    .satisfies(*classification)
+                {
+                    continue;
+                }
+            }
+
             let models = self.discover_models(&provider_key, &provider_config).await;
             let reason = if backend == BackendType::Ollama {
                 Some("OLLAMA_HOST env var".to_string())
@@ -239,7 +258,7 @@ mod tests {
         let _env_guards = clear_provider_env();
         let manager = make_agent_manager_with_config(Some(LlmConfig::default()));
 
-        let providers = manager.list_providers().await;
+        let providers = manager.list_providers(None).await;
 
         assert!(providers.is_empty());
     }
@@ -270,7 +289,7 @@ mod tests {
         };
         let manager = make_agent_manager_with_config(Some(config));
 
-        let providers = manager.list_providers().await;
+        let providers = manager.list_providers(None).await;
 
         assert_eq!(providers.len(), 1);
         assert_eq!(providers[0].provider_type, "openai");
@@ -305,7 +324,7 @@ mod tests {
         };
         let manager = make_agent_manager_with_config(Some(config));
 
-        let providers = manager.list_providers().await;
+        let providers = manager.list_providers(None).await;
 
         assert!(!providers
             .iter()
@@ -346,5 +365,63 @@ mod tests {
         let providers = manager.discover_env_providers(&HashSet::new());
 
         assert!(providers.is_empty());
+    }
+
+    #[tokio::test]
+    // SAFETY: This lock intentionally serializes process-wide env var mutation across async tests.
+    // It must be held for the entire test body (including await points) to prevent cross-test races.
+    #[allow(clippy::await_holding_lock)]
+    async fn test_list_providers_with_classification_filter() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+        let _env_guards = clear_provider_env();
+        use crucible_config::TrustLevel;
+        
+        let config = LlmConfig {
+            providers: HashMap::from([
+                (
+                    "openai".to_string(),
+                    LlmProviderConfig {
+                        provider_type: BackendType::OpenAI,
+                        endpoint: None,
+                        default_model: Some("gpt-4o".to_string()),
+                        temperature: None,
+                        max_tokens: None,
+                        timeout_secs: None,
+                        api_key: Some("sk-test".to_string()),
+                        available_models: Some(vec!["gpt-4o".to_string()]),
+                        trust_level: Some(TrustLevel::Local),
+                    },
+                ),
+                (
+                    "anthropic".to_string(),
+                    LlmProviderConfig {
+                        provider_type: BackendType::Anthropic,
+                        endpoint: None,
+                        default_model: Some("claude-3-5-sonnet".to_string()),
+                        temperature: None,
+                        max_tokens: None,
+                        timeout_secs: None,
+                        api_key: Some("sk-test".to_string()),
+                        available_models: Some(vec!["claude-3-5-sonnet".to_string()]),
+                        trust_level: None, // Cloud (default)
+                    },
+                ),
+            ]),
+            ..Default::default()
+        };
+        let manager = make_agent_manager_with_config(Some(config));
+
+        // With Confidential classification, only Local-trust providers should be returned
+        let providers = manager
+            .list_providers(Some(crucible_config::DataClassification::Confidential))
+            .await;
+
+        assert_eq!(providers.len(), 1);
+        assert_eq!(providers[0].provider_type, "openai");
+        assert_eq!(providers[0].name, "OpenAI");
+
+        // With no classification, all providers should be returned
+        let all_providers = manager.list_providers(None).await;
+        assert_eq!(all_providers.len(), 2);
     }
 }

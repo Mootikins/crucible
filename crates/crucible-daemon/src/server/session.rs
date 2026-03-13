@@ -965,7 +965,17 @@ pub(crate) async fn handle_models_list(req: Request, am: &Arc<AgentManager>) -> 
 
 /// List all available providers without requiring an active session.
 pub(crate) async fn handle_providers_list(req: Request, am: &Arc<AgentManager>) -> Response {
-    let providers = am.list_providers().await;
+    let kiln_path = req
+        .params
+        .get("kiln_path")
+        .and_then(|v| v.as_str())
+        .map(PathBuf::from);
+
+    let classification = kiln_path
+        .as_ref()
+        .and_then(|kiln| crate::trust_resolution::find_workspace_and_resolve_classification(kiln));
+
+    let providers = am.list_providers(classification).await;
     Response::success(req.id, serde_json::json!({ "providers": providers }))
 }
 
