@@ -80,6 +80,8 @@ test.describe('Session and file tab integration', () => {
 
     // Wait for session list and click the ended session
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
+    // Switch to 'all' filter so ended sessions are visible
+    await page.getByTestId('session-filter-dropdown').selectOption('all');
     await page.getByTestId('session-item-test-session-001').click();
 
     // Assert: no 'Continue as new session' button (removed in lifecycle redesign)
@@ -108,6 +110,8 @@ test.describe('Session and file tab integration', () => {
 
     // Open the ended session
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
+    // Switch to 'all' filter so ended sessions are visible
+    await page.getByTestId('session-filter-dropdown').selectOption('all');
     await page.getByTestId('session-item-test-session-001').click();
 
     // Assert: 'Continue as new session' button is NOT present

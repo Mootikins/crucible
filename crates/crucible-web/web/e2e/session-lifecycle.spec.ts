@@ -228,6 +228,8 @@ test.describe('Session Lifecycle', () => {
 
     // Wait for session list and click the ended session
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
+    // Switch to 'all' filter so ended sessions are visible
+    await page.getByTestId('session-filter-dropdown').selectOption('all');
     await page.getByTestId('session-item-test-session-001').click();
 
 
@@ -431,6 +433,8 @@ test.describe('Session Lifecycle', () => {
 
     // Wait for session list and click the ended session
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
+    // Switch to 'all' filter so ended sessions are visible
+    await page.getByTestId('session-filter-dropdown').selectOption('all');
     await page.getByTestId('session-item-test-session-001').click();
 
     // Assert: "Continue as new session" button is NOT visible

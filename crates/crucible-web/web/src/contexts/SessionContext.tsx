@@ -39,7 +39,7 @@ export interface SessionContextValue {
   selectedProvider: Accessor<ProviderInfo | null>;
   createSession: (params: CreateSessionParams) => Promise<Session>;
   selectSession: (id: string) => Promise<void>;
-  refreshSessions: (filters?: { kiln?: string; workspace?: string }) => Promise<void>;
+  refreshSessions: (filters?: { kiln?: string; workspace?: string; includeArchived?: boolean }) => Promise<void>;
   pauseSession: () => Promise<void>;
   resumeSession: () => Promise<void>;
   endSession: () => Promise<void>;
@@ -81,7 +81,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     }
   };
 
-  const refreshSessions = async (filters?: { kiln?: string; workspace?: string }) => {
+  const refreshSessions = async (filters?: { kiln?: string; workspace?: string; includeArchived?: boolean }) => {
     setIsLoading(true);
     setError(null);
     
@@ -89,7 +89,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
       const list = await apiListSessions({
         kiln: filters?.kiln ?? props.initialKiln,
         workspace: filters?.workspace ?? props.initialWorkspace,
-        includeArchived: false,
+        includeArchived: filters?.includeArchived ?? false,
       });
       setSessions(list);
     } catch (err) {
