@@ -175,6 +175,7 @@ interface RawSession {
   agent_model?: string | null;
   started_at: string;
   event_count?: number;
+  archived?: boolean;
 }
 
 function mapSession(raw: RawSession): Session {
@@ -188,6 +189,7 @@ function mapSession(raw: RawSession): Session {
     agent_model: raw.agent_model ?? null,
     started_at: raw.started_at,
     event_count: raw.event_count ?? 0,
+    archived: raw.archived ?? false,
   };
 }
 

@@ -35,6 +35,7 @@ export interface Session {
   agent_model: string | null;
   started_at: string; // ISO datetime
   event_count: number;
+  archived?: boolean;
 }
 
 export interface CreateSessionParams {

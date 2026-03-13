@@ -208,7 +208,24 @@ export const SessionPanel: Component = () => {
     window.removeEventListener('crucible:focus-session-search', onFocusSearch);
   });
 
-  const displayedSessions = () => searchQuery().trim() ? searchResults() : sessions();
+  const displayedSessions = () => {
+    const base = searchQuery().trim() ? searchResults() : sessions();
+    const filter = sessionFilter();
+    if (filter === 'active') {
+      return base.filter(s => !s.archived && s.state !== 'ended');
+    }
+    if (filter === 'archived') {
+      return base.filter(s => s.archived === true);
+    }
+    return base; // 'all'
+  };
+
+  // When session filter changes, re-fetch with appropriate includeArchived flag
+  createEffect(() => {
+    const filter = sessionFilter();
+    const includeArchived = filter === 'all' || filter === 'archived';
+    refreshSessions({ includeArchived });
+  });
 
   createEffect(() => {
     const project = currentProject();
