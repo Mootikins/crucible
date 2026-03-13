@@ -1243,4 +1243,107 @@ mod tests {
         // split_whitespace treats \n as whitespace, so this becomes single-line
         assert!(!title.contains('\n'), "Title should not contain newlines");
     }
+
+    // =========================================================================
+    // Session creation smart defaults & provider filtering
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_create_session_without_provider_uses_detected_default() {
+        let (_mock, client) = crate::test_support::start_mock_daemon().await;
+        let state = crate::test_support::build_mock_state(client);
+        let app = crate::test_support::build_test_app(state);
+
+        // Only kiln is required — provider and model should resolve from detected defaults
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/session")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(
+                        serde_json::json!({"kiln": "/tmp/test-kiln"}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(
+            json.get("session_id").is_some(),
+            "Response must contain session_id even without explicit provider/model"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_create_session_with_explicit_provider_still_works() {
+        let (_mock, client) = crate::test_support::start_mock_daemon().await;
+        let state = crate::test_support::build_mock_state(client);
+        let app = crate::test_support::build_test_app(state);
+
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/session")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(
+                        serde_json::json!({
+                            "kiln": "/tmp/test-kiln",
+                            "provider": "ollama",
+                            "model": "llama3.2"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(
+            json.get("session_id").is_some(),
+            "Response must contain session_id with explicit provider/model"
+        );
+        assert_eq!(json["session_id"], "test-session-001");
+    }
+
+    #[tokio::test]
+    async fn test_list_providers_with_kiln_query_param_returns_200() {
+        let (_mock, client) = crate::test_support::start_mock_daemon().await;
+        let state = crate::test_support::build_mock_state(client);
+        let app = crate::test_support::build_test_app(state);
+
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/api/providers?kiln=/tmp/test-kiln")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(
+            json["providers"].is_array(),
+            "Response must have 'providers' array when kiln query param is provided"
+        );
+    }
 }
