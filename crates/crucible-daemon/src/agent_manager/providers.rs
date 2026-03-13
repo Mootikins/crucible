@@ -42,6 +42,38 @@ impl AgentManager {
             }
         }
 
+        for (provider_key, provider_config) in self.discover_env_providers(&seen_types) {
+            let backend = provider_config.provider_type;
+            let models = self.discover_models(&provider_key, &provider_config).await;
+            let reason = if backend == BackendType::Ollama {
+                Some("OLLAMA_HOST env var".to_string())
+            } else {
+                backend
+                    .api_key_env_var()
+                    .map(|env_var| format!("{env_var} env var"))
+            };
+
+            providers.push(ProviderInfo {
+                name: format_provider_name(&provider_key, backend),
+                provider_type: backend.as_str().to_string(),
+                available: !models.is_empty() || backend != BackendType::Ollama,
+                default_model: backend.default_chat_model().map(str::to_string),
+                models,
+                endpoint: provider_config.endpoint.clone(),
+                reason,
+                is_local: backend.is_local(),
+            });
+        }
+
+        providers
+    }
+
+    fn discover_env_providers(
+        &self,
+        seen_types: &HashSet<String>,
+    ) -> Vec<(String, LlmProviderConfig)> {
+        let mut providers = Vec::new();
+
         for &backend in all_backend_types() {
             if !backend.supports_chat() {
                 continue;
@@ -65,9 +97,9 @@ impl AgentManager {
                 })
             };
 
-            let Some(reason) = reason else {
+            if reason.is_none() {
                 continue;
-            };
+            }
 
             let endpoint = if backend == BackendType::Ollama {
                 ollama_endpoint_from_env()
@@ -75,33 +107,22 @@ impl AgentManager {
                 backend.default_endpoint().map(str::to_string)
             };
 
-            let provider_config = LlmProviderConfig {
-                provider_type: backend,
-                endpoint: endpoint.clone(),
-                default_model: backend.default_chat_model().map(str::to_string),
-                temperature: None,
-                max_tokens: None,
-                timeout_secs: None,
-                api_key: backend
-                    .api_key_env_var()
-                    .and_then(|env_var| std::env::var(env_var).ok()),
-                available_models: None,
-                trust_level: None,
-            };
-
-            let provider_key = backend.as_str().to_string();
-            let models = self.discover_models(&provider_key, &provider_config).await;
-
-            providers.push(ProviderInfo {
-                name: format_provider_name(&provider_key, backend),
-                provider_type: backend.as_str().to_string(),
-                available: !models.is_empty() || backend != BackendType::Ollama,
-                default_model: backend.default_chat_model().map(str::to_string),
-                models,
-                endpoint,
-                reason: Some(reason),
-                is_local: backend.is_local(),
-            });
+            providers.push((
+                backend.as_str().to_string(),
+                LlmProviderConfig {
+                    provider_type: backend,
+                    endpoint,
+                    default_model: backend.default_chat_model().map(str::to_string),
+                    temperature: None,
+                    max_tokens: None,
+                    timeout_secs: None,
+                    api_key: backend
+                        .api_key_env_var()
+                        .and_then(|env_var| std::env::var(env_var).ok()),
+                    available_models: None,
+                    trust_level: None,
+                },
+            ));
         }
 
         providers
@@ -171,7 +192,7 @@ mod tests {
     use crate::tools::workspace::WorkspaceTools;
     use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
     use crucible_core::test_support::EnvVarGuard;
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
     use std::path::PathBuf;
     use std::sync::{Arc, LazyLock, Mutex};
     use tokio::sync::broadcast;
@@ -314,5 +335,16 @@ mod tests {
         assert_eq!(json["is_local"], false);
         assert!(json.get("reason").is_some());
         assert!(json["reason"].is_null());
+    }
+
+    #[test]
+    fn test_discover_env_providers_returns_empty_with_no_env_vars() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+        let _env_guards = clear_provider_env();
+        let manager = make_agent_manager_with_config(Some(LlmConfig::default()));
+
+        let providers = manager.discover_env_providers(&HashSet::new());
+
+        assert!(providers.is_empty());
     }
 }
