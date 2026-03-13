@@ -1,5 +1,6 @@
 // Re-export all Lucide icons for use across the Crucible web frontend
 export {
+  Archive,
   PanelLeft,
   PanelLeftClose,
   PanelRight,
@@ -39,4 +40,5 @@ export {
   Bell,
   MessageCircle,
   ClipboardList,
+  Trash2,
 } from 'lucide-solid';

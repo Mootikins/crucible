@@ -2,7 +2,7 @@ import { Component, For, Show, createSignal, createEffect, createMemo, onCleanup
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import type { Session, Project, KilnInfo } from '@/lib/types';
-import { RefreshCw, Plus, Search, X } from '@/lib/icons';
+import { RefreshCw, Plus, Search, X, Archive, Trash2 } from '@/lib/icons';
 import { searchSessions } from '@/lib/api';
 import { notificationActions } from '@/stores/notificationStore';
 
@@ -81,11 +81,17 @@ const ProjectItem: Component<{ project: Project; selected: boolean; onSelect: ()
   );
 };
 
-const SessionItem: Component<{ session: Session; selected: boolean; onSelect: () => void }> = (props) => {
+const SessionItem: Component<{
+  session: Session;
+  selected: boolean;
+  onSelect: () => void;
+  onArchive?: () => void;
+  onDelete?: () => void;
+}> = (props) => {
    return (
-     <button
+     <div
        onClick={props.onSelect}
-       class={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
+       class={`group relative w-full text-left px-3 py-2 rounded-lg transition-colors cursor-pointer ${
          props.selected
            ? 'bg-primary/20 text-primary-hover'
            : 'hover:bg-surface-elevated text-neutral-300'
@@ -101,7 +107,31 @@ const SessionItem: Component<{ session: Session; selected: boolean; onSelect: ()
       <div class="text-xs text-neutral-500 mt-1">
         {props.session.agent_model || 'No model'}
       </div>
-    </button>
+
+      {/* Action buttons — visible on hover */}
+      <div class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+        <Show when={props.onArchive}>
+          <button
+            type="button"
+            class="rounded p-1 text-neutral-500 hover:text-neutral-200 hover:bg-neutral-700/60 transition-colors"
+            title="Archive session"
+            onClick={(e) => { e.stopPropagation(); props.onArchive?.(); }}
+          >
+            <Archive size={14} />
+          </button>
+        </Show>
+        <Show when={props.onDelete}>
+          <button
+            type="button"
+            class="rounded p-1 text-neutral-500 hover:text-neutral-200 hover:bg-neutral-700/60 transition-colors"
+            title="Delete session"
+            onClick={(e) => { e.stopPropagation(); props.onDelete?.(); }}
+          >
+            <Trash2 size={14} />
+          </button>
+        </Show>
+      </div>
+    </div>
   );
 };
 
@@ -119,6 +149,8 @@ export const SessionPanel: Component = () => {
     refreshSessions,
     selectedProvider,
     providers,
+    deleteSession,
+    archiveSession,
   } = useSessionSafe();
 
   const [showNewProject, setShowNewProject] = createSignal(false);
@@ -337,6 +369,8 @@ export const SessionPanel: Component = () => {
                     session={s}
                     selected={session()?.id === s.id}
                     onSelect={() => selectSession(s.id)}
+                    onArchive={() => archiveSession(s.id)}
+                    onDelete={() => deleteSession(s.id)}
                   />
                 )}
               </For>
