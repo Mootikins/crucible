@@ -216,6 +216,10 @@ pub struct Session {
     /// Whether this session is archived
     #[serde(default)]
     pub archived: bool,
+
+    /// Last time this session had activity
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity: Option<DateTime<Utc>>,
 }
 
 impl Session {
@@ -241,6 +245,7 @@ impl Session {
             recording_mode: None,
             notifications: crate::types::NotificationQueue::new(),
             archived: false,
+            last_activity: Some(Utc::now()),
         }
     }
 
@@ -1223,5 +1228,41 @@ mod tests {
         let session: Session = serde_json::from_str(old_json).unwrap();
         assert_eq!(session.recording_mode, None);
         assert!(!session.is_granular());
+    }
+
+    #[test]
+    fn test_session_last_activity_serde_compat() {
+        // Old JSON without last_activity should deserialize with None
+        let old_json = r#"{
+            "id": "chat-2025-01-08T1530-abc123",
+            "session_type": "chat",
+            "kiln": "/home/user/notes",
+            "workspace": "/home/user/notes",
+            "state": "active",
+            "started_at": "2025-01-08T15:30:00Z",
+            "archived": false
+        }"#;
+
+        let session: Session = serde_json::from_str(old_json).unwrap();
+        assert!(session.last_activity.is_none());
+    }
+
+    #[test]
+    fn test_session_last_activity_omitted_when_none() {
+        // When last_activity is None, it should be omitted from JSON
+        let kiln = PathBuf::from("/home/user/notes");
+        let mut session = Session::new(SessionType::Chat, kiln);
+        session.last_activity = None;
+
+        let json = serde_json::to_string(&session).unwrap();
+        assert!(!json.contains("last_activity"));
+    }
+
+    #[test]
+    fn test_session_last_activity_set_on_creation() {
+        // New sessions should have last_activity set
+        let kiln = PathBuf::from("/home/user/notes");
+        let session = Session::new(SessionType::Chat, kiln);
+        assert!(session.last_activity.is_some());
     }
 }

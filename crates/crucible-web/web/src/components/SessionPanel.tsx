@@ -363,6 +363,27 @@ export const SessionPanel: Component = () => {
                 <p class="text-neutral-500 text-sm text-center py-2">Searching...</p>
               </Show>
 
+              {(() => {
+                const hasProviders = createMemo(() => providers().length > 0);
+                const isDisabled = createMemo(() => isLoading() || !selectedKiln() || !hasProviders());
+                return (
+                  <>
+                    <button
+                      onClick={handleCreateSession}
+                      disabled={isDisabled()}
+                      class="w-full mt-2 px-3 py-2 text-sm text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      data-testid="new-session-button"
+                    >
+                      <Plus class="w-3.5 h-3.5" />
+                      New Session
+                    </button>
+                    <Show when={!hasProviders()}>
+                      <p class="text-xs text-neutral-500 text-center mt-1">No LLM providers detected</p>
+                    </Show>
+                  </>
+                );
+              })()}
+
               <For each={displayedSessions()}>
                 {(s) => (
                   <SessionItem
@@ -384,26 +405,6 @@ export const SessionPanel: Component = () => {
                 </Show>
               </Show>
 
-              {(() => {
-                const hasProviders = createMemo(() => providers().length > 0);
-                const isDisabled = createMemo(() => isLoading() || !selectedKiln() || !hasProviders());
-                return (
-                  <>
-                    <button
-                      onClick={handleCreateSession}
-                      disabled={isDisabled()}
-                      class="w-full mt-2 px-3 py-2 text-sm text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                      data-testid="new-session-button"
-                    >
-                      <Plus class="w-3.5 h-3.5" />
-                      New Session
-                    </button>
-                    <Show when={!hasProviders()}>
-                      <p class="text-xs text-neutral-500 text-center mt-1">No LLM providers detected</p>
-                    </Show>
-                  </>
-                );
-              })()}
             </div>
           </div>
         </Show>
