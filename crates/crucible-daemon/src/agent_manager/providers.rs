@@ -39,7 +39,7 @@ impl AgentManager {
 
                 let models = self.discover_models(key, provider_config).await;
                 providers.push(ProviderInfo {
-                    name: format_provider_name(key, backend),
+                    name: format_provider_name(key, backend, provider_config.name.as_deref()),
                     provider_type: backend.as_str().to_string(),
                     available: !models.is_empty() || backend != BackendType::Ollama,
                     default_model: Some(provider_config.model()),
@@ -73,7 +73,7 @@ impl AgentManager {
             };
 
             providers.push(ProviderInfo {
-                name: format_provider_name(&provider_key, backend),
+                name: format_provider_name(&provider_key, backend, None),
                 provider_type: backend.as_str().to_string(),
                 available: !models.is_empty() || backend != BackendType::Ollama,
                 default_model: backend.default_chat_model().map(str::to_string),
@@ -140,6 +140,7 @@ impl AgentManager {
                         .and_then(|env_var| std::env::var(env_var).ok()),
                     available_models: None,
                     trust_level: None,
+                    name: None,
                 },
             ));
         }
@@ -165,7 +166,13 @@ fn all_backend_types() -> &'static [BackendType] {
     ]
 }
 
-fn format_provider_name(key: &str, provider_type: BackendType) -> String {
+fn format_provider_name(key: &str, provider_type: BackendType, custom_name: Option<&str>) -> String {
+    if let Some(name) = custom_name {
+        let trimmed = name.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
     let type_label = provider_type_label(provider_type);
     if key.eq_ignore_ascii_case(provider_type.as_str()) {
         type_label.to_string()
@@ -274,16 +281,17 @@ mod tests {
             providers: HashMap::from([(
                 "openai".to_string(),
                 LlmProviderConfig {
-                    provider_type: BackendType::OpenAI,
-                    endpoint: None,
-                    default_model: Some("gpt-4o".to_string()),
-                    temperature: None,
-                    max_tokens: None,
-                    timeout_secs: None,
-                    api_key: Some("sk-test".to_string()),
-                    available_models: Some(vec!["gpt-4o".to_string()]),
-                    trust_level: None,
-                },
+                            provider_type: BackendType::OpenAI,
+                            endpoint: None,
+                            default_model: Some("gpt-4o".to_string()),
+                            temperature: None,
+                            max_tokens: None,
+                            timeout_secs: None,
+                            api_key: Some("sk-test".to_string()),
+                            available_models: Some(vec!["gpt-4o".to_string()]),
+                            trust_level: None,
+                            name: None,
+                        },
             )]),
             ..Default::default()
         };
@@ -309,16 +317,17 @@ mod tests {
             providers: HashMap::from([(
                 "fastembed".to_string(),
                 LlmProviderConfig {
-                    provider_type: BackendType::FastEmbed,
-                    endpoint: None,
-                    default_model: None,
-                    temperature: None,
-                    max_tokens: None,
-                    timeout_secs: None,
-                    api_key: None,
-                    available_models: Some(vec!["BAAI/bge-small-en-v1.5".to_string()]),
-                    trust_level: None,
-                },
+                            provider_type: BackendType::FastEmbed,
+                            endpoint: None,
+                            default_model: None,
+                            temperature: None,
+                            max_tokens: None,
+                            timeout_secs: None,
+                            api_key: None,
+                            available_models: Some(vec!["BAAI/bge-small-en-v1.5".to_string()]),
+                            trust_level: None,
+                            name: None,
+                        },
             )]),
             ..Default::default()
         };
@@ -357,6 +366,31 @@ mod tests {
     }
 
     #[test]
+    fn test_format_provider_name_custom_name() {
+        assert_eq!(format_provider_name("llama-swappo", BackendType::OpenAI, Some("My Ollama")), "My Ollama");
+    }
+
+    #[test]
+    fn test_format_provider_name_empty_falls_back() {
+        // Empty name → falls back to auto-generated
+        let result = format_provider_name("my-key", BackendType::OpenAI, Some(""));
+        assert_eq!(result, "OpenAI (my-key)");
+    }
+
+    #[test]
+    fn test_format_provider_name_none_falls_back() {
+        // None → existing behavior
+        let result = format_provider_name("openai", BackendType::OpenAI, None);
+        assert_eq!(result, "OpenAI");
+    }
+
+    #[test]
+    fn test_format_provider_name_whitespace_falls_back() {
+        // Whitespace-only name → falls back
+        let result = format_provider_name("my-key", BackendType::OpenAI, Some("   "));
+        assert_eq!(result, "OpenAI (my-key)");
+    }
+    #[test]
     fn test_discover_env_providers_returns_empty_with_no_env_vars() {
         let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
         let _env_guards = clear_provider_env();
@@ -381,16 +415,17 @@ mod tests {
                 (
                     "openai".to_string(),
                     LlmProviderConfig {
-                        provider_type: BackendType::OpenAI,
-                        endpoint: None,
-                        default_model: Some("gpt-4o".to_string()),
-                        temperature: None,
-                        max_tokens: None,
-                        timeout_secs: None,
-                        api_key: Some("sk-test".to_string()),
-                        available_models: Some(vec!["gpt-4o".to_string()]),
-                        trust_level: Some(TrustLevel::Local),
-                    },
+                                provider_type: BackendType::OpenAI,
+                                endpoint: None,
+                                default_model: Some("gpt-4o".to_string()),
+                                temperature: None,
+                                max_tokens: None,
+                                timeout_secs: None,
+                                api_key: Some("sk-test".to_string()),
+                                available_models: Some(vec!["gpt-4o".to_string()]),
+                                trust_level: Some(TrustLevel::Local),
+                                name: None,
+                            },
                 ),
                 (
                     "anthropic".to_string(),
@@ -404,6 +439,7 @@ mod tests {
                         api_key: Some("sk-test".to_string()),
                         available_models: Some(vec!["claude-3-5-sonnet".to_string()]),
                         trust_level: None, // Cloud (default)
+                        name: None,
                     },
                 ),
             ]),

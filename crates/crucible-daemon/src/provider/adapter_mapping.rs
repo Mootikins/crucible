@@ -416,6 +416,7 @@ mod tests {
             api_key: None,
             available_models: None,
             trust_level: None,
+            name: None,
         };
 
         let _client = build_genai_client(&config);
@@ -434,6 +435,7 @@ mod tests {
             api_key: Some("sk-test-key-123".to_string()),
             available_models: None,
             trust_level: None,
+            name: None,
         };
 
         let _client = build_genai_client(&config);
@@ -452,6 +454,7 @@ mod tests {
             api_key: Some("sk-ant-test-key".to_string()),
             available_models: None,
             trust_level: None,
+            name: None,
         };
 
         let _client = build_genai_client(&config);
@@ -470,6 +473,7 @@ mod tests {
             api_key: Some("github-token".to_string()),
             available_models: None,
             trust_level: None,
+            name: None,
         };
 
         let _client = build_genai_client(&config);
@@ -488,6 +492,7 @@ mod tests {
             api_key: Some("sk-or-test-key".to_string()),
             available_models: None,
             trust_level: None,
+            name: None,
         };
 
         let _client = build_genai_client(&config);
@@ -506,6 +511,7 @@ mod tests {
             api_key: Some("glm-auth-token".to_string()),
             available_models: None,
             trust_level: None,
+            name: None,
         };
 
         let _client = build_genai_client(&config);
@@ -524,6 +530,7 @@ mod tests {
             api_key: Some("custom-api-key".to_string()),
             available_models: None,
             trust_level: None,
+            name: None,
         };
 
         let _client = build_genai_client(&config);
@@ -543,6 +550,7 @@ mod tests {
             api_key: None,
             available_models: None,
             trust_level: None,
+            name: None,
         };
 
         let _client = build_genai_client(&config);
@@ -561,6 +569,7 @@ mod tests {
             api_key: None,
             available_models: None,
             trust_level: None,
+            name: None,
         };
 
         let _client = build_genai_client(&config);
@@ -579,6 +588,7 @@ mod tests {
             api_key: None,
             available_models: None,
             trust_level: None,
+            name: None,
         };
 
         let _client = build_genai_client(&config);
@@ -719,6 +729,7 @@ mod tests {
             api_key: None,
             available_models: None,
             trust_level: None,
+            name: None,
         };
         let client = ChatClient::new(&config);
         assert_eq!(client.backend, BackendType::Ollama);
@@ -758,6 +769,7 @@ mod tests {
             api_key: None,
             available_models: None,
             trust_level: None,
+            name: None,
         };
         // Should build successfully (trailing slash applied internally)
         let client = ChatClient::new(&config);
@@ -776,6 +788,7 @@ mod tests {
             api_key: None,
             available_models: None,
             trust_level: None,
+            name: None,
         };
 
         let client = ChatClient::new(&config);
@@ -798,6 +811,7 @@ mod tests {
             api_key: Some("sk-test".to_string()),
             available_models: None,
             trust_level: None,
+            name: None,
         };
 
         let client = ChatClient::new(&config);

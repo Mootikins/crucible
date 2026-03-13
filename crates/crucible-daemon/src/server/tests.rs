@@ -33,6 +33,7 @@ fn build_llm_config_with_trust(
             api_key: None,
             available_models: None,
             trust_level,
+            name: None,
         },
     );
     LlmConfig {
