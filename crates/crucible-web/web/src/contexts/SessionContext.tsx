@@ -22,6 +22,7 @@ import {
   setSessionTitle as apiSetSessionTitle,
   listProviders as apiListProviders,
 } from '@/lib/api';
+import { notificationActions } from '@/stores/notificationStore';
 
 export interface SessionContextValue {
   currentSession: Accessor<Session | null>;
@@ -85,6 +86,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load sessions';
       setError(msg);
+      notificationActions.addNotification('error', msg);
       console.error('Failed to refresh sessions:', err);
     } finally {
       setIsLoading(false);
@@ -99,6 +101,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
       const session = await apiCreateSession(params);
       setSessions(produce((s) => s.unshift(session)));
       setCurrentSession(session);
+      notificationActions.addNotification('success', 'Session created');
       window.dispatchEvent(new CustomEvent('crucible:open-session', {
         detail: { sessionId: session.id, title: session.title || 'New Session' },
       }));
@@ -107,6 +110,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to create session';
       setError(msg);
+      notificationActions.addNotification('error', msg);
       throw err;
     } finally {
       setIsLoading(false);
@@ -199,6 +203,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to pause session';
       setError(msg);
+      notificationActions.addNotification('error', msg);
       console.error('Failed to pause session:', err);
     }
   };
@@ -214,6 +219,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to resume session';
       setError(msg);
+      notificationActions.addNotification('error', msg);
       console.error('Failed to resume session:', err);
     }
   };
@@ -230,6 +236,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to end session';
       setError(msg);
+      notificationActions.addNotification('error', msg);
       console.error('Failed to end session:', err);
     }
   };
@@ -267,7 +274,9 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
         setAvailableModels([]);
       }
     } catch (err) {
-      console.error('Failed to load models:', err);
+      const msg = 'Failed to load models';
+      notificationActions.addNotification('error', msg);
+      console.error(msg, err);
       // Fall back to provider models on error
       const provider = selectedProvider() ?? providers()[0];
       if (provider?.models) {

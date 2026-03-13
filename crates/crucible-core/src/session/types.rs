@@ -212,6 +212,10 @@ pub struct Session {
         skip_serializing_if = "crate::types::NotificationQueue::is_empty"
     )]
     pub notifications: crate::types::NotificationQueue,
+
+    /// Whether this session is archived
+    #[serde(default)]
+    pub archived: bool,
 }
 
 impl Session {
@@ -236,6 +240,7 @@ impl Session {
             agent: None,
             recording_mode: None,
             notifications: crate::types::NotificationQueue::new(),
+            archived: false,
         }
     }
 

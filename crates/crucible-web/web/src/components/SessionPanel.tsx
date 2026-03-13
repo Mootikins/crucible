@@ -4,6 +4,7 @@ import { useProjectSafe } from '@/contexts/ProjectContext';
 import type { Session, Project, KilnInfo } from '@/lib/types';
 import { RefreshCw, Plus, Search, X } from '@/lib/icons';
 import { searchSessions } from '@/lib/api';
+import { notificationActions } from '@/stores/notificationStore';
 
 const KilnSelector: Component<{
   kilns: KilnInfo[];
@@ -187,7 +188,14 @@ export const SessionPanel: Component = () => {
   const handleCreateSession = async () => {
     const project = currentProject();
     const kiln = selectedKiln();
-    if (!project || !kiln) return;
+    if (!project) {
+      notificationActions.addNotification('error', 'No project selected');
+      return;
+    }
+    if (!kiln) {
+      notificationActions.addNotification('error', 'No kiln selected');
+      return;
+    }
 
     const provider = selectedProvider();
 
