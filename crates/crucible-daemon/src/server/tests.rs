@@ -76,9 +76,25 @@ async fn rpc_call(client: &mut UnixStream, request: Value) -> Value {
         .await
         .unwrap();
 
-    let mut buf = vec![0u8; 8192];
-    let n = client.read(&mut buf).await.unwrap();
-    serde_json::from_slice(&buf[..n]).unwrap()
+    let mut buf = Vec::with_capacity(8192);
+    loop {
+        let mut chunk = [0u8; 1024];
+        let n = client.read(&mut chunk).await.unwrap();
+        if n == 0 {
+            break;
+        }
+
+        buf.extend_from_slice(&chunk[..n]);
+        if buf.contains(&b'\n') {
+            break;
+        }
+    }
+
+    let end = buf
+        .iter()
+        .position(|b| *b == b'\n')
+        .unwrap_or(buf.len());
+    serde_json::from_slice(&buf[..end]).unwrap()
 }
 
 fn extract_session_id(response: &Value) -> String {
