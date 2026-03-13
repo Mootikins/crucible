@@ -10,8 +10,23 @@ test('center splitter resize updates pane width', async ({ page }) => {
   await setupBasicMocks(page);
   await page.goto('/');
 
-  const splitter = page.locator('[data-split-id="split-root"]');
-  await splitter.waitFor({ state: 'visible' });
+  const sessionItem = page.getByTestId('session-item-test-session-001');
+  await expect(sessionItem).toBeVisible({ timeout: 5000 });
+  await sessionItem.click();
+  await expect(page.locator('[data-tab-id^="tab-chat-"]')).toBeVisible({ timeout: 5000 });
+
+  await page.evaluate(async () => {
+    // @ts-expect-error - Vite dev server runtime path import for browser context
+    const { windowStore, windowActions } = await import('/src/stores/windowStore.ts');
+    const layout = windowStore.layout;
+    if (layout.type === 'pane') {
+      windowActions.splitPane(layout.id, 'horizontal');
+    }
+  });
+  await page.waitForTimeout(200);
+
+  const splitter = page.locator('[data-split-id]').first();
+  await splitter.waitFor({ state: 'visible', timeout: 3000 });
 
   const container = splitter.locator('..');
   const firstPane = container.locator('> div').first();
