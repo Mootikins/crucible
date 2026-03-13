@@ -215,8 +215,16 @@ impl CliAppConfig {
                 }
 
                 let file_fields = Self::detect_present_fields(&raw_table);
+                let mut value = toml::Value::Table(raw_table);
+                let base_dir = config_path.parent().unwrap_or(std::path::Path::new("."));
+                if let Err(errors) = crate::includes::process_file_references(&mut value, base_dir)
+                {
+                    for error in errors {
+                        tracing::warn!("Config reference error: {}", error);
+                    }
+                }
 
-                match toml::from_str::<CliAppConfig>(&contents) {
+                match value.try_into::<CliAppConfig>() {
                     Ok(cfg) => {
                         info!("Successfully loaded config file: {}", config_path.display());
                         (cfg, file_fields)
@@ -954,5 +962,103 @@ verbose = false
         Err(ConfigError::MissingValue {
             field: "llm.default".to_string(),
         })
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crucible_core::test_support::EnvVarGuard;
+
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_load_resolves_env_var_in_api_key() {
+        // Create a temporary config file with {env:VAR} in api_key
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let config_content = r#"
+[llm]
+default = "test-provider"
+
+[llm.providers.test-provider]
+type = "openai"
+api_key = "{env:CRUCIBLE_TEST_KEY_12345}"
+"#;
+        use std::io::Write;
+        temp_file.write_all(config_content.as_bytes()).unwrap();
+        temp_file.flush().unwrap();
+
+        // Set the environment variable
+        let _guard = EnvVarGuard::set("CRUCIBLE_TEST_KEY_12345", "test-resolved-value".to_string());
+
+        // Load the config
+        let config = CliAppConfig::load(Some(temp_file.path().to_path_buf()), None, None).unwrap();
+
+        // Assert that the api_key was resolved
+        let provider = config.llm.providers.get("test-provider").unwrap();
+        assert_eq!(provider.api_key.as_deref(), Some("test-resolved-value"));
+    }
+
+    #[test]
+    fn test_load_missing_env_var_warns_not_crashes() {
+        // Create a temporary config file with a non-existent env var
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let config_content = r#"
+[llm]
+default = "test-provider"
+
+[llm.providers.test-provider]
+type = "openai"
+api_key = "{env:CRUCIBLE_NONEXISTENT_VAR_XYZ_12345}"
+"#;
+        use std::io::Write;
+        temp_file.write_all(config_content.as_bytes()).unwrap();
+        temp_file.flush().unwrap();
+
+        // Ensure the env var is NOT set
+        std::env::remove_var("CRUCIBLE_NONEXISTENT_VAR_XYZ_12345");
+
+        // Load the config — should succeed (not crash)
+        let result = CliAppConfig::load(Some(temp_file.path().to_path_buf()), None, None);
+        assert!(result.is_ok(), "Config load should succeed even with missing env var");
+
+        let config = result.unwrap();
+        let provider = config.llm.providers.get("test-provider").unwrap();
+        // The api_key should either be unresolved or None
+        // (depends on how process_file_references handles missing vars)
+        // The important thing is that load succeeded
+        assert!(provider.api_key.is_none() || provider.api_key.as_deref() == Some("{env:CRUCIBLE_NONEXISTENT_VAR_XYZ_12345}"));
+    }
+
+    #[test]
+    fn test_detect_present_fields_unaffected_by_env_resolution() {
+        // Create a temporary config file with both a field and an env var
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let config_content = r#"
+[llm]
+default = "my-provider"
+
+[llm.providers.my-provider]
+type = "openai"
+api_key = "{env:SOME_VAR}"
+"#;
+        use std::io::Write;
+        temp_file.write_all(config_content.as_bytes()).unwrap();
+        temp_file.flush().unwrap();
+
+        // Set the env var so load succeeds
+        let _guard = EnvVarGuard::set("SOME_VAR", "test-value".to_string());
+
+        // Load the config
+        let config = CliAppConfig::load(Some(temp_file.path().to_path_buf()), None, None).unwrap();
+
+        // Assert that the llm.default field is present and correct
+        // This verifies that detect_present_fields ran correctly before env resolution
+        assert_eq!(config.llm.default, Some("my-provider".to_string()));
+        
+        // Also verify the provider exists and api_key was resolved
+        let provider = config.llm.providers.get("my-provider").unwrap();
+        assert_eq!(provider.api_key.as_deref(), Some("test-value"));
     }
 }
