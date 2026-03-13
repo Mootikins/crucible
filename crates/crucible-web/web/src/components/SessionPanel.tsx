@@ -157,6 +157,7 @@ export const SessionPanel: Component = () => {
   const [newProjectPath, setNewProjectPath] = createSignal('');
   const [selectedKiln, setSelectedKiln] = createSignal<string>('');
   const [searchQuery, setSearchQuery] = createSignal('');
+  const [sessionFilter, setSessionFilter] = createSignal<'active' | 'all' | 'archived'>('active');
   const [searchResults, setSearchResults] = createSignal<Session[]>([]);
   const [isSearching, setIsSearching] = createSignal(false);
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -333,6 +334,16 @@ export const SessionPanel: Component = () => {
 
             <div class="p-3 flex items-center justify-between">
               <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wide">Sessions</h2>
+              <select
+                data-testid="session-filter-dropdown"
+                value={sessionFilter()}
+                onChange={(e) => setSessionFilter(e.target.value as 'active' | 'all' | 'archived')}
+                class="text-xs bg-neutral-800 text-neutral-300 border border-neutral-700 rounded px-1 py-0.5"
+              >
+                <option value="active">Active</option>
+                <option value="all">All</option>
+                <option value="archived">Archived</option>
+              </select>
             </div>
 
             <div class="px-3 pb-2">
