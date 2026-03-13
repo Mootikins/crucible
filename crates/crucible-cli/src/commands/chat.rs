@@ -225,7 +225,7 @@ fn parse_env_overrides(env_overrides: &[String]) -> std::collections::HashMap<St
 async fn run_preflight_checks(config: &mut CliConfig) -> Result<()> {
     let config_kiln_valid = config.kiln_path.join(".crucible").is_dir();
     let providers = match crate::common::daemon_client().await {
-        Ok(client) => client.list_providers().await.unwrap_or_default(),
+        Ok(client) => client.list_providers(None).await.unwrap_or_default(),
         Err(_) => {
             // Daemon not available (e.g., first run before daemon starts)
             // Fall back to local detection

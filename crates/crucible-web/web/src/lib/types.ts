@@ -54,6 +54,8 @@ export interface ProviderInfo {
   default_model: string | null;
   models: string[];
   endpoint?: string;
+  reason?: string;
+  is_local: boolean;
 }
 
 // =============================================================================
