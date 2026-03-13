@@ -17,12 +17,17 @@ import {
   resumeSession as apiResumeSession,
   endSession as apiEndSession,
   cancelSession as apiCancelSession,
+  deleteSession as apiDeleteSession,
+  archiveSession as apiArchiveSession,
+  unarchiveSession as apiUnarchiveSession,
   listModels as apiListModels,
   switchModel as apiSwitchModel,
   setSessionTitle as apiSetSessionTitle,
   listProviders as apiListProviders,
 } from '@/lib/api';
 import { notificationActions } from '@/stores/notificationStore';
+import { findTabBySessionId } from '@/lib/session-actions';
+import { windowActions } from '@/stores/windowStore';
 
 export interface SessionContextValue {
   currentSession: Accessor<Session | null>;
@@ -44,6 +49,9 @@ export interface SessionContextValue {
   setSessionTitle: (title: string) => Promise<void>;
   refreshProviders: () => Promise<void>;
   selectProvider: (providerType: string) => void;
+  deleteSession: (sessionId: string) => Promise<void>;
+  archiveSession: (sessionId: string) => Promise<void>;
+  unarchiveSession: (sessionId: string) => Promise<void>;
 }
 
 interface SessionProviderProps {
@@ -242,6 +250,76 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     }
   };
 
+  const deleteSession = async (sessionId: string) => {
+    if (!confirm('Delete this session? This cannot be undone.')) return;
+
+    setError(null);
+    try {
+      await apiDeleteSession(sessionId);
+      // Remove from local store for snappy UX
+      setSessions(produce((list) => {
+        const idx = list.findIndex((s) => s.id === sessionId);
+        if (idx !== -1) list.splice(idx, 1);
+      }));
+      // Close open chat tab if any
+      const openTab = findTabBySessionId(sessionId);
+      if (openTab) {
+        windowActions.removeTab(openTab.groupId, openTab.tab.id);
+      }
+      // Clear current session if it was the deleted one
+      if (currentSession()?.id === sessionId) {
+        setCurrentSession(null);
+      }
+      notificationActions.addNotification('success', 'Session deleted');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete session';
+      setError(msg);
+      notificationActions.addNotification('error', msg);
+      console.error('Failed to delete session:', err);
+    }
+  };
+
+  const archiveSession = async (sessionId: string) => {
+    setError(null);
+    try {
+      await apiArchiveSession(sessionId);
+      // Remove from local store (archived sessions are hidden from default listing)
+      setSessions(produce((list) => {
+        const idx = list.findIndex((s) => s.id === sessionId);
+        if (idx !== -1) list.splice(idx, 1);
+      }));
+      // Close open chat tab if any
+      const openTab = findTabBySessionId(sessionId);
+      if (openTab) {
+        windowActions.removeTab(openTab.groupId, openTab.tab.id);
+      }
+      // Clear current session if it was the archived one
+      if (currentSession()?.id === sessionId) {
+        setCurrentSession(null);
+      }
+      notificationActions.addNotification('success', 'Session archived');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to archive session';
+      setError(msg);
+      notificationActions.addNotification('error', msg);
+      console.error('Failed to archive session:', err);
+    }
+  };
+
+  const unarchiveSession = async (sessionId: string) => {
+    setError(null);
+    try {
+      await apiUnarchiveSession(sessionId);
+      await refreshSessions();
+      notificationActions.addNotification('success', 'Session unarchived');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to unarchive session';
+      setError(msg);
+      notificationActions.addNotification('error', msg);
+      console.error('Failed to unarchive session:', err);
+    }
+  };
+
   const cancelCurrentOperation = async (): Promise<boolean> => {
     const session = currentSession();
     if (!session) return false;
@@ -382,6 +460,9 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     setSessionTitle,
     refreshProviders,
     selectProvider,
+    deleteSession,
+    archiveSession,
+    unarchiveSession,
   };
 
   return (
@@ -421,6 +502,9 @@ const fallbackSessionContext: SessionContextValue = {
   setSessionTitle: noopAsync,
   refreshProviders: noopAsync,
   selectProvider: () => {},
+  deleteSession: noopAsync,
+  archiveSession: noopAsync,
+  unarchiveSession: noopAsync,
 };
 
 export function useSessionSafe(): SessionContextValue {
