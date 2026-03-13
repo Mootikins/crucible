@@ -15,7 +15,12 @@ test.describe('Placeholder panels for missing tab types', () => {
     });
     await page.goto('/');
     await page.waitForTimeout(500);
-    // Wait for the edge panel to be visible
+    // Expand left panel (collapsed by default) so tabs are visible
+    await page.evaluate(() => {
+      (window as any).__windowActions?.setEdgePanelCollapsed('left', false);
+    });
+    await page.waitForTimeout(200);
+    // Wait for the left edge panel tabbar to be visible
     await expect(page.locator('[data-testid="edge-tabbar-left"]')).toBeVisible({ timeout: 5000 });
   });
 
