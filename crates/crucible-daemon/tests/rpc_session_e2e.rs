@@ -1,7 +1,8 @@
 //! End-to-end tests for session lifecycle RPC methods.
 //!
 //! Covers: session.create, session.list, session.get, session.pause,
-//! session.resume, session.end — the full session lifecycle.
+//! session.resume, session.end, session.delete, session.archive,
+//! session.unarchive — the full session lifecycle.
 
 use anyhow::Result;
 use crucible_daemon::DaemonClient;
@@ -353,6 +354,244 @@ async fn test_session_full_lifecycle() {
         Ok(val) => val.get("state").and_then(|s| s.as_str()) == Some("ended"),
     };
     assert!(ended, "Session should be ended, got: {get_result:?}");
+
+    server.shutdown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Delete Tests
+// ---------------------------------------------------------------------------
+
+/// session.delete removes the session and confirms deletion.
+#[tokio::test]
+async fn test_session_delete_removes_session() {
+    let server = TestServer::start().await.expect("Failed to start server");
+    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+
+    let client = DaemonClient::connect_to(&server.socket_path)
+        .await
+        .expect("Failed to connect");
+
+    let session_id = create_session(&client, kiln_dir.path()).await;
+
+    // Delete the session
+    let delete_result = client
+        .session_delete(&session_id, kiln_dir.path())
+        .await
+        .expect("session_delete failed");
+
+    // Verify the response indicates deletion
+    let deleted = delete_result
+        .get("deleted")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    assert!(deleted, "session_delete should return deleted: true");
+
+    // Allow time for cleanup
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Verify: session should not appear in list
+    let list = client
+        .session_list(Some(kiln_dir.path()), None, Some("chat"), None, None)
+        .await
+        .expect("session_list failed");
+
+    let empty = vec![];
+    let sessions = list["sessions"].as_array().unwrap_or(&empty);
+    let still_listed = sessions
+        .iter()
+        .any(|s| s["session_id"].as_str() == Some(session_id.as_str()));
+    assert!(
+        !still_listed,
+        "Deleted session must not appear in session list"
+    );
+
+    server.shutdown().await;
+}
+
+/// session.delete with a nonexistent session ID returns an error.
+#[tokio::test]
+async fn test_session_delete_nonexistent_returns_error() {
+    let server = TestServer::start().await.expect("Failed to start server");
+    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+
+    let client = DaemonClient::connect_to(&server.socket_path)
+        .await
+        .expect("Failed to connect");
+
+    let result = client
+        .session_delete("nonexistent-session-id", kiln_dir.path())
+        .await;
+
+    assert!(
+        result.is_err(),
+        "Deleting a nonexistent session should return an error"
+    );
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("not found")
+            || err_msg.contains("Not found")
+            || err_msg.contains("not allowed"),
+        "Error should indicate session not found or not allowed, got: {err_msg}"
+    );
+
+    server.shutdown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Archive/Unarchive Tests
+// ---------------------------------------------------------------------------
+
+/// session.archive marks a session as archived.
+#[tokio::test]
+async fn test_session_archive_marks_archived() {
+    let server = TestServer::start().await.expect("Failed to start server");
+    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+
+    let client = DaemonClient::connect_to(&server.socket_path)
+        .await
+        .expect("Failed to connect");
+
+    let session_id = create_session(&client, kiln_dir.path()).await;
+
+    // Archive the session
+    let archive_result = client
+        .session_archive(&session_id, kiln_dir.path())
+        .await
+        .expect("session_archive failed");
+
+    let archived = archive_result
+        .get("archived")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    assert!(archived, "session_archive should return archived: true");
+
+    server.shutdown().await;
+}
+
+/// session.unarchive restores an archived session.
+#[tokio::test]
+async fn test_session_unarchive_restores_session() {
+    let server = TestServer::start().await.expect("Failed to start server");
+    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+
+    let client = DaemonClient::connect_to(&server.socket_path)
+        .await
+        .expect("Failed to connect");
+
+    let session_id = create_session(&client, kiln_dir.path()).await;
+
+    // Archive first
+    client
+        .session_archive(&session_id, kiln_dir.path())
+        .await
+        .expect("session_archive failed");
+
+    // Then unarchive
+    let unarchive_result = client
+        .session_unarchive(&session_id, kiln_dir.path())
+        .await
+        .expect("session_unarchive failed");
+
+    let archived = unarchive_result
+        .get("archived")
+        .and_then(|v| v.as_bool());
+    assert_eq!(
+        archived,
+        Some(false),
+        "session_unarchive should return archived: false"
+    );
+
+    server.shutdown().await;
+}
+
+// ---------------------------------------------------------------------------
+// include_archived Filter Tests
+// ---------------------------------------------------------------------------
+
+/// session.list excludes archived sessions by default.
+#[tokio::test]
+async fn test_session_list_excludes_archived_by_default() {
+    let server = TestServer::start().await.expect("Failed to start server");
+    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+
+    let client = DaemonClient::connect_to(&server.socket_path)
+        .await
+        .expect("Failed to connect");
+
+    // Create two sessions
+    let session_a = create_session(&client, kiln_dir.path()).await;
+    let _session_b = create_session(&client, kiln_dir.path()).await;
+
+    // Archive session A
+    client
+        .session_archive(&session_a, kiln_dir.path())
+        .await
+        .expect("session_archive failed");
+
+    // List WITHOUT include_archived (default = exclude archived)
+    let list = client
+        .session_list(Some(kiln_dir.path()), None, Some("chat"), None, Some(false))
+        .await
+        .expect("session_list failed");
+
+    let empty = vec![];
+    let sessions = list["sessions"].as_array().unwrap_or(&empty);
+
+    let found_archived = sessions
+        .iter()
+        .any(|s| s["session_id"].as_str() == Some(session_a.as_str()));
+    assert!(
+        !found_archived,
+        "Archived session should NOT appear in default listing"
+    );
+
+    server.shutdown().await;
+}
+
+/// session.list includes archived sessions when include_archived=true.
+#[tokio::test]
+async fn test_session_list_includes_archived_when_requested() {
+    let server = TestServer::start().await.expect("Failed to start server");
+    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+
+    let client = DaemonClient::connect_to(&server.socket_path)
+        .await
+        .expect("Failed to connect");
+
+    // Create two sessions
+    let session_a = create_session(&client, kiln_dir.path()).await;
+    let session_b = create_session(&client, kiln_dir.path()).await;
+
+    // Archive session A
+    client
+        .session_archive(&session_a, kiln_dir.path())
+        .await
+        .expect("session_archive failed");
+
+    // List WITH include_archived=true
+    let list = client
+        .session_list(Some(kiln_dir.path()), None, Some("chat"), None, Some(true))
+        .await
+        .expect("session_list failed");
+
+    let empty = vec![];
+    let sessions = list["sessions"].as_array().unwrap_or(&empty);
+
+    let found_a = sessions
+        .iter()
+        .any(|s| s["session_id"].as_str() == Some(session_a.as_str()));
+    let found_b = sessions
+        .iter()
+        .any(|s| s["session_id"].as_str() == Some(session_b.as_str()));
+    assert!(
+        found_a,
+        "Archived session should appear when include_archived=true"
+    );
+    assert!(
+        found_b,
+        "Non-archived session should also appear when include_archived=true"
+    );
 
     server.shutdown().await;
 }
