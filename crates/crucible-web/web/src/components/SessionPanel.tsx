@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, createEffect, onCleanup } from 'solid-js';
+import { Component, For, Show, createSignal, createEffect, createMemo, onCleanup } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import type { Session, Project, KilnInfo } from '@/lib/types';
@@ -118,6 +118,7 @@ export const SessionPanel: Component = () => {
     endSession,
     refreshSessions,
     selectedProvider,
+    providers,
   } = useSessionSafe();
 
   const [showNewProject, setShowNewProject] = createSignal(false);
@@ -189,11 +190,15 @@ export const SessionPanel: Component = () => {
     const project = currentProject();
     const kiln = selectedKiln();
     if (!project) {
-      notificationActions.addNotification('error', 'No project selected');
+      notificationActions.addNotification('error', 'Select a project before creating a session');
       return;
     }
     if (!kiln) {
-      notificationActions.addNotification('error', 'No kiln selected');
+      notificationActions.addNotification('error', 'Select a kiln before creating a session');
+      return;
+    }
+    if (providers().length === 0) {
+      notificationActions.addNotification('error', 'No LLM providers available. Configure a provider first.');
       return;
     }
 
@@ -345,15 +350,26 @@ export const SessionPanel: Component = () => {
                 </Show>
               </Show>
 
-              <button
-                onClick={handleCreateSession}
-                disabled={isLoading() || !selectedKiln()}
-                class="w-full mt-2 px-3 py-2 text-sm text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                data-testid="new-session-button"
-              >
-                <Plus class="w-3.5 h-3.5" />
-                New Session
-              </button>
+              {(() => {
+                const hasProviders = createMemo(() => providers().length > 0);
+                const isDisabled = createMemo(() => isLoading() || !selectedKiln() || !hasProviders());
+                return (
+                  <>
+                    <button
+                      onClick={handleCreateSession}
+                      disabled={isDisabled()}
+                      class="w-full mt-2 px-3 py-2 text-sm text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      data-testid="new-session-button"
+                    >
+                      <Plus class="w-3.5 h-3.5" />
+                      New Session
+                    </button>
+                    <Show when={!hasProviders()}>
+                      <p class="text-xs text-neutral-500 text-center mt-1">No LLM providers detected</p>
+                    </Show>
+                  </>
+                );
+              })()}
             </div>
           </div>
         </Show>
