@@ -468,7 +468,9 @@ pub struct ListAllModelsRequest {
 
 /// Request for `providers.list` (no active session required).
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct ListProvidersRequest {}
+pub struct ListProvidersRequest {
+    pub kiln_path: Option<String>,
+}
 
 /// Request for `session.load_events`.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -1864,9 +1866,15 @@ impl DaemonClient {
     /// List all available providers without requiring an active session.
     pub async fn list_providers(
         &self,
+        kiln_path: Option<&std::path::Path>,
     ) -> Result<Vec<crate::agent_manager::providers::ProviderInfo>> {
         let result: serde_json::Value = self
-            .typed_call_with_retry("providers.list", ListProvidersRequest {})
+            .typed_call_with_retry(
+                "providers.list",
+                ListProvidersRequest {
+                    kiln_path: kiln_path.map(|p| p.to_string_lossy().to_string()),
+                },
+            )
             .await?;
         let providers = result["providers"]
             .as_array()
