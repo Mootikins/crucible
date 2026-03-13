@@ -359,6 +359,21 @@ impl ReconnectingDaemon {
         .await
     }
 
+    pub async fn session_delete(
+        &self,
+        session_id: &str,
+        kiln: &Path,
+    ) -> anyhow::Result<serde_json::Value> {
+        let session_id = session_id.to_string();
+        let kiln = kiln.to_path_buf();
+        self.call_with_reconnect("session.delete", move |daemon| {
+            let session_id = session_id.clone();
+            let kiln = kiln.clone();
+            Box::pin(async move { daemon.session_delete(&session_id, &kiln).await })
+        })
+        .await
+    }
+
     pub async fn session_cancel(&self, session_id: &str) -> anyhow::Result<bool> {
         let session_id = session_id.to_string();
         self.call_with_reconnect("session.cancel", move |daemon| {

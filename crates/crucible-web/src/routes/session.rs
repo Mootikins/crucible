@@ -18,7 +18,7 @@ pub fn session_routes() -> Router<AppState> {
         .route("/api/session", post(create_session))
         .route("/api/session/list", get(list_sessions))
         .route("/api/sessions/search", get(search_sessions))
-        .route("/api/session/{id}", get(get_session))
+        .route("/api/session/{id}", get(get_session).delete(delete_session))
         .route("/api/session/{id}/history", get(get_session_history))
         .route("/api/session/{id}/pause", post(pause_session))
         .route("/api/session/{id}/resume", post(resume_session))
@@ -291,6 +291,41 @@ async fn end_session(
     state.events.remove_session(&id).await;
 
     Ok(Json(result))
+}
+
+async fn delete_session(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let session = match state.daemon.session_get(&id).await {
+        Ok(session) => session,
+        Err(e) => {
+            let message = e.to_string();
+            if message.contains("Session not found") {
+                return Err(WebError::NotFound(format!("Session not found: {id}")));
+            }
+            return Err(WebError::Daemon(message));
+        }
+    };
+
+    let kiln_str = session
+        .get("kiln")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| WebError::Validation("Session has no kiln path".to_string()))?;
+
+    match state.daemon.session_delete(&id, std::path::Path::new(kiln_str)).await {
+        Ok(_) => {
+            state.events.remove_session(&id).await;
+            Ok(Json(serde_json::json!({ "deleted": true })))
+        }
+        Err(e) => {
+            let message = e.to_string();
+            if message.contains("Session not found") {
+                return Err(WebError::NotFound(format!("Session not found: {id}")));
+            }
+            Err(WebError::Daemon(message))
+        }
+    }
 }
 
 async fn cancel_session(

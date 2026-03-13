@@ -34,6 +34,7 @@ pub const METHODS: &[&str] = &[
     "session.resume",
     "session.resume_from_storage",
     "session.end",
+    "session.delete",
     "session.compact",
     "session.subscribe",
     "session.unsubscribe",
@@ -204,6 +205,7 @@ impl RpcDispatcher {
                 to_response(id, self.handle_session_resume_from_storage(&req).await)
             }
             "session.end" => to_response(id, self.handle_session_end(&req).await),
+            "session.delete" => to_response(id, self.handle_session_delete(&req).await),
             "session.compact" => to_response(id, self.handle_session_compact(&req).await),
 
             // Session utility handlers
@@ -573,6 +575,7 @@ impl RpcDispatcher {
             &self.ctx.sessions,
             &self.ctx.project_manager,
             &self.ctx.llm_config,
+            &self.ctx.kiln,
         )
         .await;
         map_server_resp(resp)
@@ -580,7 +583,7 @@ impl RpcDispatcher {
 
     async fn handle_session_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
-            crate::server::session::handle_session_list(req.clone(), &self.ctx.sessions).await;
+            crate::server::session::handle_session_list(req.clone(), &self.ctx.sessions, &self.ctx.kiln).await;
         map_server_resp(resp)
     }
 
@@ -616,6 +619,16 @@ impl RpcDispatcher {
 
     async fn handle_session_end(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::session::handle_session_end(
+            req.clone(),
+            &self.ctx.sessions,
+            &self.ctx.agents,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_delete(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_delete(
             req.clone(),
             &self.ctx.sessions,
             &self.ctx.agents,
@@ -1034,7 +1047,7 @@ mod tests {
 
     #[test]
     fn methods_count() {
-        assert_eq!(METHODS.len(), 79, "Update when adding RPC methods");
+        assert_eq!(METHODS.len(), 80, "Update when adding RPC methods");
     }
 
     #[tokio::test]

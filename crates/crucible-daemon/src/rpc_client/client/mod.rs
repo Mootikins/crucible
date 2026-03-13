@@ -360,6 +360,12 @@ pub struct SessionResumeFromStorageRequest {
     pub offset: Option<usize>,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionDeleteRequest {
+    pub session_id: String,
+    pub kiln: String,
+}
+
 /// Shared request for `session.subscribe` and `session.unsubscribe`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionSubscribeRequest {
@@ -1620,6 +1626,17 @@ impl DaemonClient {
 
     pub async fn session_end(&self, session_id: &str) -> Result<serde_json::Value> {
         self.session_id_call("session.end", session_id).await
+    }
+
+    pub async fn session_delete(&self, session_id: &str, kiln: &Path) -> Result<serde_json::Value> {
+        self.typed_call(
+            "session.delete",
+            SessionDeleteRequest {
+                session_id: session_id.to_string(),
+                kiln: kiln.to_string_lossy().to_string(),
+            },
+        )
+        .await
     }
 
     pub async fn session_replay(
