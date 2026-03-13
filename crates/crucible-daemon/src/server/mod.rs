@@ -21,9 +21,10 @@ use crate::session_storage::{FileSessionStorage, SessionStorage};
 use crate::skills::discovery::{default_discovery_paths, FolderDiscovery};
 use crate::tools::workspace::WorkspaceTools;
 use anyhow::Result;
+use chrono::Utc;
 use crucible_config::{DataClassification, LlmConfig, TrustLevel};
 use crucible_core::events::SessionEvent;
-use crucible_core::session::RecordingMode;
+use crucible_core::session::{RecordingMode, SessionState};
 use crucible_lua::stubs::StubGenerator;
 use crucible_lua::{
     register_crucible_on_api, LuaExecutor, LuaScriptHandlerRegistry, PluginManager,
@@ -71,6 +72,7 @@ pub struct Server {
     dispatcher: Arc<RpcDispatcher>,
     plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
     plugin_watch: bool,
+    auto_archive_hours: Option<u64>,
     llm_config: Option<LlmConfig>,
     #[cfg(feature = "web")]
     #[allow(dead_code)] // web server started externally by crucible-web crate
@@ -92,6 +94,7 @@ pub struct BindWithPluginConfigParams {
     pub mcp_config: Option<crucible_config::McpConfig>,
     pub plugin_config: std::collections::HashMap<String, serde_json::Value>,
     pub plugin_watch: bool,
+    pub auto_archive_hours: Option<u64>,
     pub llm_config: Option<crucible_config::LlmConfig>,
     pub enrichment_config: Option<crucible_config::EmbeddingProviderConfig>,
     pub acp_config: Option<crucible_config::components::acp::AcpConfig>,
@@ -111,6 +114,7 @@ impl Server {
             mcp_config: mcp_config.cloned(),
             plugin_config: std::collections::HashMap::new(),
             plugin_watch: false,
+            auto_archive_hours: None,
             llm_config: None,
             enrichment_config: None,
             acp_config: None,
@@ -227,6 +231,7 @@ impl Server {
             dispatcher,
             plugin_loader,
             plugin_watch: params.plugin_watch,
+            auto_archive_hours: params.auto_archive_hours,
             llm_config: params.llm_config.clone(),
             mcp_server_manager,
             #[cfg(feature = "web")]
@@ -339,6 +344,11 @@ impl Server {
                         debug!("Persist task received shutdown signal, draining remaining events");
                         while let Ok(event) = persist_rx.try_recv() {
                             forward_to_recording(&sm_clone, &event);
+                            if let Err(e) = sm_clone.update_last_activity(&event.session_id, Utc::now()).await {
+                                if !matches!(e, crate::session_manager::SessionError::NotFound(_)) {
+                                    warn!(session_id = %event.session_id, error = %e, "Failed to update last activity during shutdown drain");
+                                }
+                            }
                             if let Err(e) = persist_event(&event, &sm_clone, &storage).await {
                                 warn!(session_id = %event.session_id, error = %e, "Failed to persist event during shutdown drain");
                             }
@@ -349,6 +359,11 @@ impl Server {
                         match result {
                             Ok(event) => {
                                 forward_to_recording(&sm_clone, &event);
+                                if let Err(e) = sm_clone.update_last_activity(&event.session_id, Utc::now()).await {
+                                    if !matches!(e, crate::session_manager::SessionError::NotFound(_)) {
+                                        warn!(session_id = %event.session_id, error = %e, "Failed to update last activity");
+                                    }
+                                }
                                 if let Err(e) = persist_event(&event, &sm_clone, &storage).await {
                                     warn!(session_id = %event.session_id, event = %event.event, error = %e, "Failed to persist event");
                                 }
@@ -461,6 +476,37 @@ impl Server {
             }
         });
 
+        let sweep_session_manager = self.session_manager.clone();
+        let sweep_subscription_manager = self.subscription_manager.clone();
+        let sweep_cancel = CancellationToken::new();
+        let sweep_cancel_clone = sweep_cancel.clone();
+        let auto_archive_hours = self.auto_archive_hours.unwrap_or(72);
+
+        let archive_sweep_task = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30 * 60));
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = sweep_cancel_clone.cancelled() => break,
+                    _ = interval.tick() => {
+                        match sweep_and_archive_stale_sessions(
+                            &sweep_session_manager,
+                            &sweep_subscription_manager,
+                            auto_archive_hours,
+                        ).await {
+                            Ok(archived) if archived > 0 => {
+                                info!(archived, auto_archive_hours, "Auto-archived stale sessions");
+                            }
+                            Ok(_) => {}
+                            Err(e) => {
+                                warn!(error = %e, "Auto-archive sweep failed");
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
         loop {
             tokio::select! {
                 accept_result = self.listener.accept() => {
@@ -503,6 +549,7 @@ impl Server {
         web_cancel.cancel();
         persist_cancel.cancel();
         reprocess_cancel.cancel();
+        sweep_cancel.cancel();
         match tokio::time::timeout(std::time::Duration::from_secs(5), persist_task).await {
             Ok(Ok(())) => debug!("Persist task completed gracefully"),
             Ok(Err(e)) => warn!("Persist task panicked: {}", e),
@@ -512,6 +559,11 @@ impl Server {
             Ok(Ok(())) => debug!("Reprocess task completed gracefully"),
             Ok(Err(e)) => warn!("Reprocess task panicked: {}", e),
             Err(_) => warn!("Reprocess task did not complete within timeout, aborting"),
+        }
+        match tokio::time::timeout(std::time::Duration::from_secs(5), archive_sweep_task).await {
+            Ok(Ok(())) => debug!("Auto-archive sweep task completed gracefully"),
+            Ok(Err(e)) => warn!("Auto-archive sweep task panicked: {}", e),
+            Err(_) => warn!("Auto-archive sweep task did not complete within timeout, aborting"),
         }
 
         Ok(())
