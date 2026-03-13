@@ -29,6 +29,7 @@ pub fn session_routes() -> Router<AppState> {
         .route("/api/session/{id}/models", get(list_models))
         .route("/api/session/{id}/model", post(switch_model))
         .route("/api/session/{id}/title", put(set_session_title))
+        .route("/api/session/{id}/generate-title", post(generate_title))
         .route("/api/providers", get(list_providers))
         .route(
             "/api/session/{id}/config/thinking-budget",
@@ -466,6 +467,89 @@ async fn set_session_title(
         .daemon_err()?;
 
     Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+/// Generate a title for a session from its conversation history.
+///
+/// Extracts the first user message and creates a concise title from it.
+/// Falls back to "Untitled Session" if no messages are available.
+async fn generate_title(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    // Get session info to find kiln path
+    let session = state.daemon.session_get(&id).await.daemon_err()?;
+    let kiln_str = session
+        .get("kiln")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    // Try to get conversation history for title generation
+    let first_user_message = if !kiln_str.is_empty() {
+        let history = state
+            .daemon
+            .session_resume_from_storage(&id, std::path::Path::new(kiln_str), Some(10), None)
+            .await
+            .ok();
+
+        history
+            .as_ref()
+            .and_then(|h| h.get("messages"))
+            .and_then(|v| v.as_array())
+            .and_then(|msgs| {
+                msgs.iter().find_map(|m| {
+                    let role = m.get("role").and_then(|r| r.as_str())?;
+                    if role == "user" {
+                        m.get("content").and_then(|c| c.as_str()).map(String::from)
+                    } else {
+                        None
+                    }
+                })
+            })
+    } else {
+        None
+    };
+
+    let title = match first_user_message {
+        Some(msg) => truncate_to_title(&msg),
+        None => "Untitled Session".to_string(),
+    };
+
+    // Update the session title
+    state
+        .daemon
+        .session_set_title(&id, &title)
+        .await
+        .daemon_err()?;
+
+    Ok(Json(serde_json::json!({ "title": title })))
+}
+
+/// Create a concise title from a message by smart truncation.
+///
+/// Keeps the first ~60 characters, breaking at word boundaries when possible.
+fn truncate_to_title(message: &str) -> String {
+    const MAX_LEN: usize = 60;
+
+    // Clean up: collapse whitespace, trim
+    let cleaned: String = message
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if cleaned.len() <= MAX_LEN {
+        return cleaned;
+    }
+
+    // Truncate at word boundary
+    let truncated = &cleaned[..MAX_LEN];
+    if let Some(last_space) = truncated.rfind(' ') {
+        if last_space > MAX_LEN / 2 {
+            return format!("{}...", &truncated[..last_space]);
+        }
+    }
+
+    format!("{}...", truncated)
 }
 
 // =========================================================================
@@ -1034,5 +1118,109 @@ mod tests {
 
         // Valid session with kiln should return 200
         assert_eq!(response.status(), axum::http::StatusCode::OK);
+    }
+
+    // =========================================================================
+    // generate_title Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn generate_title_returns_200_with_title_field() {
+        let (_mock, client) = crate::test_support::start_mock_daemon().await;
+        let state = crate::test_support::build_mock_state(client);
+        let app = crate::test_support::build_test_app(state);
+
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/session/test-session-001/generate-title")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        assert!(json.get("title").is_some(), "Response should contain 'title' field");
+        assert!(
+            json["title"].is_string(),
+            "Title should be a string"
+        );
+    }
+
+    #[tokio::test]
+    async fn generate_title_fallback_when_no_messages() {
+        // Mock daemon returns empty messages, so fallback to "Untitled Session"
+        let (_mock, client) = crate::test_support::start_mock_daemon().await;
+        let state = crate::test_support::build_mock_state(client);
+        let app = crate::test_support::build_test_app(state);
+
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/session/test-session-001/generate-title")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(
+            json["title"].as_str().unwrap(),
+            "Untitled Session",
+            "Should fall back to 'Untitled Session' when no messages"
+        );
+    }
+
+    #[test]
+    fn truncate_to_title_short_message() {
+        assert_eq!(truncate_to_title("Hello world"), "Hello world");
+    }
+
+    #[test]
+    fn truncate_to_title_exact_limit() {
+        let msg = "a".repeat(60);
+        assert_eq!(truncate_to_title(&msg), msg);
+    }
+
+    #[test]
+    fn truncate_to_title_long_message_breaks_at_word() {
+        let msg = "How do I implement a binary search tree in Rust with proper lifetime annotations and borrowing";
+        let title = truncate_to_title(msg);
+        assert!(title.ends_with("..."), "Long titles should end with '...'");
+        assert!(title.len() <= 65, "Title should be ~60 chars + '...': got {}", title.len());
+        // Should break at a word boundary
+        assert!(!title.contains("  "), "Should not have double spaces");
+    }
+
+    #[test]
+    fn truncate_to_title_collapses_whitespace() {
+        assert_eq!(
+            truncate_to_title("  hello   world  "),
+            "hello world"
+        );
+    }
+
+    #[test]
+    fn truncate_to_title_multiline_message() {
+        let msg = "First line\nSecond line\nThird line";
+        let title = truncate_to_title(msg);
+        // split_whitespace treats \n as whitespace, so this becomes single-line
+        assert!(!title.contains('\n'), "Title should not contain newlines");
     }
 }
