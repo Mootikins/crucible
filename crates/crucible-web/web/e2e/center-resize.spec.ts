@@ -15,9 +15,9 @@ test('center splitter resize updates pane width', async ({ page }) => {
   await sessionItem.click();
   await expect(page.locator('[data-tab-id^="tab-chat-"]')).toBeVisible({ timeout: 5000 });
 
-  await page.evaluate(async () => {
-    // @ts-expect-error - Vite dev server runtime path import for browser context
-    const { windowStore, windowActions } = await import('/src/stores/windowStore.ts');
+  await page.evaluate(() => {
+    const windowStore = (window as unknown as Record<string, unknown>).__windowStore as { layout: { type: string; id: string } };
+    const windowActions = (window as unknown as Record<string, unknown>).__windowActions as { splitPane: (id: string, dir: string) => void };
     const layout = windowStore.layout;
     if (layout.type === 'pane') {
       windowActions.splitPane(layout.id, 'horizontal');
