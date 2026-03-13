@@ -1,10 +1,13 @@
 import { test, expect } from '@playwright/test';
+import { setupBasicMocks } from './helpers/mock-api';
+
 
 /**
  * E2E: center splitter resize. Verifies that dragging the root splitter
  * changes the first pane width (layout updates and re-renders).
  */
 test('center splitter resize updates pane width', async ({ page }) => {
+  await setupBasicMocks(page);
   await page.goto('/');
 
   const splitter = page.locator('[data-split-id="split-root"]');
