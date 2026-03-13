@@ -230,15 +230,16 @@ test.describe('Session Lifecycle', () => {
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
     await page.getByTestId('session-item-test-session-001').click();
 
-    // Assert: "This session has ended" message is visible
-    await expect(page.getByText('This session has ended')).toBeVisible({ timeout: 10000 });
 
-    // Assert: chat input is NOT visible (hidden for ended sessions)
-    await expect(page.getByTestId('chat-input')).not.toBeVisible();
+    // Assert: "This session has ended" message is NOT visible (removed)
+    await expect(page.getByText('This session has ended')).toHaveCount(0);
 
-    // Assert: "Continue as new session" button is visible
+    // Assert: chat input IS visible (always shown, even for ended sessions)
+    await expect(page.getByTestId('chat-input')).toBeVisible({ timeout: 5000 });
+
+    // Assert: "Continue as new session" button is NOT visible (removed)
     const continueButton = page.getByRole('button', { name: /Continue as new session/ });
-    await expect(continueButton).toBeVisible({ timeout: 5000 });
+    await expect(continueButton).toHaveCount(0);
   });
 
   // ── Flow 5: Archive Session ────────────────────────────────────────
@@ -391,5 +392,54 @@ test.describe('Session Lifecycle', () => {
     // Assert: session titles still display correctly
     await expect(page.getByText('Test Session')).toBeVisible();
     await expect(page.getByText('Second Session')).toBeVisible();
+  });
+
+  // ── Flow 9: No End Button ──────────────────────────────────────────
+  test('no End button visible for active session', async ({ page }) => {
+    await setupBasicMocks(page, { sessions: [MOCK_SESSION] });
+    await page.goto('/');
+
+    // Wait for session list
+    await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
+
+    // Click session to open it
+    await page.getByTestId('session-item-test-session-001').click();
+
+    // Wait a moment for the session to load
+    await page.waitForTimeout(1000);
+
+    // Assert no End button exists anywhere on the page
+    const endButton = page.locator('button:has-text("End")');
+    await expect(endButton).toHaveCount(0);
+  });
+
+  // ── Flow 10: No Continue as New Session Button ─────────────────────
+  test('no Continue as new session button in ended session', async ({ page }) => {
+    const endedSession = { ...MOCK_SESSION, state: 'ended' as const };
+    await setupBasicMocks(page, { sessions: [endedSession] });
+
+    // Override specific session GET to return ended state
+    await page.route('**/api/session/test-session-001', (route) => {
+      if (route.request().method() === 'GET') {
+        route.fulfill({ json: endedSession });
+      } else {
+        route.continue();
+      }
+    });
+
+    await page.goto('/');
+
+    // Wait for session list and click the ended session
+    await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
+    await page.getByTestId('session-item-test-session-001').click();
+
+    // Assert: "Continue as new session" button is NOT visible
+    await expect(page.getByRole('button', { name: /Continue as new session/ })).toHaveCount(0);
+
+    // Assert: "This session has ended" text is NOT visible
+    await expect(page.getByText('This session has ended')).toHaveCount(0);
+
+    // Assert: chat input IS visible (always shown)
+    await expect(page.getByTestId('chat-input')).toBeVisible({ timeout: 5000 });
   });
 });
