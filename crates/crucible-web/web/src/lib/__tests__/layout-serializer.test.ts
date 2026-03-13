@@ -254,4 +254,81 @@ describe('layout-serializer', () => {
     expect((serialized2.edgePanels.left as any).tabs).toBeUndefined();
     expect((serialized2.edgePanels.left as any).position).toBeUndefined();
   });
+
+  it('file tab metadata survives round-trip serialization', () => {
+    const tabGroupId = 'group-with-file-tabs';
+    const state: WindowManagerState = {
+      layout: {
+        id: 'pane-1',
+        type: 'pane',
+        tabGroupId,
+      },
+      tabGroups: {
+        [tabGroupId]: {
+          id: tabGroupId,
+          tabs: [
+            {
+              id: 'tab-file-test',
+              title: 'test.md',
+              contentType: 'file',
+              metadata: { filePath: '/path/to/test.md' },
+            },
+            {
+              id: 'tab-file-other',
+              title: 'other.ts',
+              contentType: 'file',
+              metadata: { filePath: '/path/to/other.ts', encoding: 'utf-8' },
+            },
+          ],
+          activeTabId: 'tab-file-test',
+        },
+      },
+      edgePanels: {
+        left: {
+          id: 'left-panel',
+          tabGroupId: 'edge-left-group',
+          isCollapsed: false,
+          width: 250,
+        },
+        right: {
+          id: 'right-panel',
+          tabGroupId: 'edge-right-group',
+          isCollapsed: true,
+          width: 250,
+        },
+        bottom: {
+          id: 'bottom-panel',
+          tabGroupId: 'edge-bottom-group',
+          isCollapsed: false,
+          height: 200,
+        },
+      },
+      floatingWindows: [],
+      activePaneId: 'pane-1',
+      focusedRegion: 'center',
+      dragState: null,
+      flyoutState: null,
+      nextZIndex: 1,
+    };
+
+    // Serialize and deserialize
+    const serialized = serializeLayout(state);
+    const deserialized = deserializeLayout(serialized);
+
+    // Verify metadata is preserved
+    const group = deserialized.tabGroups[tabGroupId];
+    expect(group).toBeDefined();
+    expect(group.tabs.length).toBe(2);
+
+    const fileTab1 = group.tabs[0];
+    expect(fileTab1.id).toBe('tab-file-test');
+    expect(fileTab1.metadata).toBeDefined();
+    expect(fileTab1.metadata?.filePath).toBe('/path/to/test.md');
+
+    const fileTab2 = group.tabs[1];
+    expect(fileTab2.id).toBe('tab-file-other');
+    expect(fileTab2.metadata).toBeDefined();
+    expect(fileTab2.metadata?.filePath).toBe('/path/to/other.ts');
+    expect(fileTab2.metadata?.encoding).toBe('utf-8');
+  });
 });
