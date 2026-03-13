@@ -364,6 +364,7 @@ fn test_effective_llm_provider_from_llm_config() {
             api_key: None,
             available_models: None,
             trust_level: None,
+            name: None,
         },
     );
 
@@ -460,6 +461,7 @@ fn test_cli_app_config_effective_llm_provider() {
             api_key: None,
             available_models: None,
             trust_level: None,
+            name: None,
         },
     );
 

@@ -83,16 +83,17 @@ fn test_llm_config_with_single_ollama_provider() {
     providers.insert(
         "local".to_string(),
         LlmProviderConfig {
-            provider_type: BackendType::Ollama,
-            endpoint: Some("http://localhost:11434".to_string()),
-            default_model: Some("llama3.2".to_string()),
-            temperature: Some(0.7),
-            max_tokens: Some(4096),
-            timeout_secs: Some(120),
-            api_key: None,
-            available_models: None,
-            trust_level: None,
-        },
+                    provider_type: BackendType::Ollama,
+                    endpoint: Some("http://localhost:11434".to_string()),
+                    default_model: Some("llama3.2".to_string()),
+                    temperature: Some(0.7),
+                    max_tokens: Some(4096),
+                    timeout_secs: Some(120),
+                    api_key: None,
+                    available_models: None,
+                    trust_level: None,
+                    name: None,
+                },
     );
 
     let config = create_config_with_named_providers(Some("local".to_string()), providers);
@@ -114,16 +115,17 @@ fn test_llm_config_with_multiple_providers() {
     providers.insert(
         "local-ollama".to_string(),
         LlmProviderConfig {
-            provider_type: BackendType::Ollama,
-            endpoint: Some("http://localhost:11434".to_string()),
-            default_model: Some("llama3.2".to_string()),
-            temperature: None,
-            max_tokens: None,
-            timeout_secs: None,
-            api_key: None,
-            available_models: None,
-            trust_level: None,
-        },
+                    provider_type: BackendType::Ollama,
+                    endpoint: Some("http://localhost:11434".to_string()),
+                    default_model: Some("llama3.2".to_string()),
+                    temperature: None,
+                    max_tokens: None,
+                    timeout_secs: None,
+                    api_key: None,
+                    available_models: None,
+                    trust_level: None,
+                    name: None,
+                },
     );
 
     providers.insert(
@@ -138,6 +140,7 @@ fn test_llm_config_with_multiple_providers() {
             api_key: Some("OPENAI_API_KEY".to_string()),
             available_models: None,
             trust_level: None,
+            name: None,
         },
     );
 
@@ -173,16 +176,17 @@ fn test_llm_config_invalid_default_provider() {
     providers.insert(
         "local".to_string(),
         LlmProviderConfig {
-            provider_type: BackendType::Ollama,
-            endpoint: None,
-            default_model: None,
-            temperature: None,
-            max_tokens: None,
-            timeout_secs: None,
-            api_key: None,
-            available_models: None,
-            trust_level: None,
-        },
+                    provider_type: BackendType::Ollama,
+                    endpoint: None,
+                    default_model: None,
+                    temperature: None,
+                    max_tokens: None,
+                    timeout_secs: None,
+                    api_key: None,
+                    available_models: None,
+                    trust_level: None,
+                    name: None,
+                },
     );
 
     // Default points to non-existent provider
@@ -199,16 +203,17 @@ fn test_llm_config_invalid_default_provider() {
 #[test]
 fn test_provider_type_ollama_defaults() {
     let provider = LlmProviderConfig {
-        provider_type: BackendType::Ollama,
-        endpoint: None,
-        default_model: None,
-        temperature: None,
-        max_tokens: None,
-        timeout_secs: None,
-        api_key: None,
-        available_models: None,
-        trust_level: None,
-    };
+                provider_type: BackendType::Ollama,
+                endpoint: None,
+                default_model: None,
+                temperature: None,
+                max_tokens: None,
+                timeout_secs: None,
+                api_key: None,
+                available_models: None,
+                trust_level: None,
+                name: None,
+            };
 
     assert_eq!(provider.endpoint(), "http://localhost:11434");
     assert_eq!(provider.model(), "llama3.2");
@@ -220,16 +225,17 @@ fn test_provider_type_ollama_defaults() {
 #[test]
 fn test_provider_type_openai_defaults() {
     let provider = LlmProviderConfig {
-        provider_type: BackendType::OpenAI,
-        endpoint: None,
-        default_model: None,
-        temperature: None,
-        max_tokens: None,
-        timeout_secs: None,
-        api_key: None,
-        available_models: None,
-        trust_level: None,
-    };
+                provider_type: BackendType::OpenAI,
+                endpoint: None,
+                default_model: None,
+                temperature: None,
+                max_tokens: None,
+                timeout_secs: None,
+                api_key: None,
+                available_models: None,
+                trust_level: None,
+                name: None,
+            };
 
     assert_eq!(provider.endpoint(), "https://api.openai.com/v1");
     assert_eq!(provider.model(), "gpt-4o");
@@ -241,16 +247,17 @@ fn test_provider_type_openai_defaults() {
 #[test]
 fn test_provider_type_anthropic_defaults() {
     let provider = LlmProviderConfig {
-        provider_type: BackendType::Anthropic,
-        endpoint: None,
-        default_model: None,
-        temperature: None,
-        max_tokens: None,
-        timeout_secs: None,
-        api_key: None,
-        available_models: None,
-        trust_level: None,
-    };
+                provider_type: BackendType::Anthropic,
+                endpoint: None,
+                default_model: None,
+                temperature: None,
+                max_tokens: None,
+                timeout_secs: None,
+                api_key: None,
+                available_models: None,
+                trust_level: None,
+                name: None,
+            };
 
     assert_eq!(provider.endpoint(), "https://api.anthropic.com/v1");
     assert_eq!(provider.model(), "claude-3-5-sonnet-20241022");
@@ -262,16 +269,17 @@ fn test_provider_type_anthropic_defaults() {
 #[test]
 fn test_provider_custom_overrides() {
     let provider = LlmProviderConfig {
-        provider_type: BackendType::Ollama,
-        endpoint: Some("http://192.168.1.100:11434".to_string()),
-        default_model: Some("llama3.1:70b".to_string()),
-        temperature: Some(0.9),
-        max_tokens: Some(8192),
-        timeout_secs: Some(300),
-        api_key: None,
-        available_models: None,
-        trust_level: None,
-    };
+                provider_type: BackendType::Ollama,
+                endpoint: Some("http://192.168.1.100:11434".to_string()),
+                default_model: Some("llama3.1:70b".to_string()),
+                temperature: Some(0.9),
+                max_tokens: Some(8192),
+                timeout_secs: Some(300),
+                api_key: None,
+                available_models: None,
+                trust_level: None,
+                name: None,
+            };
 
     assert_eq!(provider.endpoint(), "http://192.168.1.100:11434");
     assert_eq!(provider.model(), "llama3.1:70b");
@@ -312,16 +320,17 @@ fn test_model_name_from_named_provider() {
     providers.insert(
         "custom".to_string(),
         LlmProviderConfig {
-            provider_type: BackendType::Ollama,
-            endpoint: None,
-            default_model: Some("custom-provider-model".to_string()),
-            temperature: None,
-            max_tokens: None,
-            timeout_secs: None,
-            api_key: None,
-            available_models: None,
-            trust_level: None,
-        },
+                    provider_type: BackendType::Ollama,
+                    endpoint: None,
+                    default_model: Some("custom-provider-model".to_string()),
+                    temperature: None,
+                    max_tokens: None,
+                    timeout_secs: None,
+                    api_key: None,
+                    available_models: None,
+                    trust_level: None,
+                    name: None,
+                },
     );
 
     let config = create_config_with_named_providers(Some("custom".to_string()), providers);
@@ -451,16 +460,17 @@ fn test_config_timeout_boundary_values() {
 fn test_provider_api_key_direct_value() {
     // With new model, api_key is the resolved value (not an env var name)
     let provider = LlmProviderConfig {
-        provider_type: BackendType::OpenAI,
-        endpoint: None,
-        default_model: None,
-        temperature: None,
-        max_tokens: None,
-        timeout_secs: None,
-        api_key: Some("sk-test-key-12345".to_string()),
-        available_models: None,
-        trust_level: None,
-    };
+                provider_type: BackendType::OpenAI,
+                endpoint: None,
+                default_model: None,
+                temperature: None,
+                max_tokens: None,
+                timeout_secs: None,
+                api_key: Some("sk-test-key-12345".to_string()),
+                available_models: None,
+                trust_level: None,
+                name: None,
+            };
 
     assert_eq!(provider.api_key(), Some("sk-test-key-12345".to_string()));
 }
@@ -468,16 +478,17 @@ fn test_provider_api_key_direct_value() {
 #[test]
 fn test_provider_no_api_key_configured() {
     let provider = LlmProviderConfig {
-        provider_type: BackendType::Ollama,
-        endpoint: None,
-        default_model: None,
-        temperature: None,
-        max_tokens: None,
-        timeout_secs: None,
-        api_key: None,
-        available_models: None,
-        trust_level: None,
-    };
+                provider_type: BackendType::Ollama,
+                endpoint: None,
+                default_model: None,
+                temperature: None,
+                max_tokens: None,
+                timeout_secs: None,
+                api_key: None,
+                available_models: None,
+                trust_level: None,
+                name: None,
+            };
 
     // Should return None if no api_key configured
     assert_eq!(provider.api_key(), None);
@@ -493,16 +504,17 @@ fn test_realistic_ollama_config() {
     providers.insert(
         "local-llama".to_string(),
         LlmProviderConfig {
-            provider_type: BackendType::Ollama,
-            endpoint: Some("http://localhost:11434".to_string()),
-            default_model: Some("llama3.2:latest".to_string()),
-            temperature: Some(0.7),
-            max_tokens: Some(4096),
-            timeout_secs: Some(120),
-            api_key: None,
-            available_models: None,
-            trust_level: None,
-        },
+                    provider_type: BackendType::Ollama,
+                    endpoint: Some("http://localhost:11434".to_string()),
+                    default_model: Some("llama3.2:latest".to_string()),
+                    temperature: Some(0.7),
+                    max_tokens: Some(4096),
+                    timeout_secs: Some(120),
+                    api_key: None,
+                    available_models: None,
+                    trust_level: None,
+                    name: None,
+                },
     );
 
     let config = create_config_with_named_providers(Some("local-llama".to_string()), providers);
@@ -529,6 +541,7 @@ fn test_realistic_openai_config() {
             api_key: Some("OPENAI_API_KEY".to_string()),
             available_models: None,
             trust_level: None,
+            name: None,
         },
     );
 
@@ -551,16 +564,17 @@ fn test_realistic_multi_provider_config() {
     providers.insert(
         "dev".to_string(),
         LlmProviderConfig {
-            provider_type: BackendType::Ollama,
-            endpoint: Some("http://localhost:11434".to_string()),
-            default_model: Some("llama3.2".to_string()),
-            temperature: Some(0.7),
-            max_tokens: Some(4096),
-            timeout_secs: Some(120),
-            api_key: None,
-            available_models: None,
-            trust_level: None,
-        },
+                    provider_type: BackendType::Ollama,
+                    endpoint: Some("http://localhost:11434".to_string()),
+                    default_model: Some("llama3.2".to_string()),
+                    temperature: Some(0.7),
+                    max_tokens: Some(4096),
+                    timeout_secs: Some(120),
+                    api_key: None,
+                    available_models: None,
+                    trust_level: None,
+                    name: None,
+                },
     );
 
     // Production with OpenAI
@@ -576,6 +590,7 @@ fn test_realistic_multi_provider_config() {
             api_key: Some("OPENAI_API_KEY".to_string()),
             available_models: None,
             trust_level: None,
+            name: None,
         },
     );
 
@@ -583,16 +598,17 @@ fn test_realistic_multi_provider_config() {
     providers.insert(
         "claude".to_string(),
         LlmProviderConfig {
-            provider_type: BackendType::Anthropic,
-            endpoint: None,
-            default_model: Some("claude-3-5-sonnet-20241022".to_string()),
-            temperature: Some(0.7),
-            max_tokens: Some(4096),
-            timeout_secs: Some(300),
-            api_key: Some("ANTHROPIC_API_KEY".to_string()),
-            available_models: None,
-            trust_level: None,
-        },
+                    provider_type: BackendType::Anthropic,
+                    endpoint: None,
+                    default_model: Some("claude-3-5-sonnet-20241022".to_string()),
+                    temperature: Some(0.7),
+                    max_tokens: Some(4096),
+                    timeout_secs: Some(300),
+                    api_key: Some("ANTHROPIC_API_KEY".to_string()),
+                    available_models: None,
+                    trust_level: None,
+                    name: None,
+                },
     );
 
     let config = create_config_with_named_providers(Some("dev".to_string()), providers);
