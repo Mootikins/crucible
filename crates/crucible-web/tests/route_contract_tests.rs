@@ -112,6 +112,9 @@ fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
         "session.resume" => json!({"ok": true}),
         "session.end" => json!({"ok": true}),
         "session.cancel" => json!({"cancelled": true}),
+        "session.delete" => json!({"deleted": true}),
+        "session.archive" => json!({"archived": true}),
+        "session.unarchive" => json!({"archived": false}),
         "session.subscribe" => json!(null),
         "session.configure_agent" => json!(null),
         "session.send_message" => json!({"message_id": "msg-001"}),
@@ -1847,4 +1850,118 @@ async fn get_session_returns_session_data() {
     assert_eq!(json["session_id"], "test-session-001");
     assert_eq!(json["state"], "active");
     assert_eq!(json["session_type"], "chat");
+}
+
+// =========================================================================
+// Session Delete/Archive/Unarchive Route Contract Tests (with mock daemon)
+// =========================================================================
+
+#[tokio::test]
+async fn delete_session_returns_200_with_deleted_field() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri("/api/session/test-session-001")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        json["deleted"], true,
+        "Response must contain deleted: true"
+    );
+}
+
+#[tokio::test]
+async fn archive_session_returns_200_with_archived_true() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/session/test-session-001/archive")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        json["archived"], true,
+        "Response must contain archived: true"
+    );
+}
+
+#[tokio::test]
+async fn unarchive_session_returns_200_with_archived_false() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/session/test-session-001/unarchive")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        json["archived"], false,
+        "Response must contain archived: false"
+    );
+}
+
+#[tokio::test]
+async fn list_sessions_with_include_archived_returns_200() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/session/list?include_archived=true")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "include_archived query param should be accepted"
+    );
 }
