@@ -11,6 +11,8 @@ import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { markdown } from '@codemirror/lang-markdown';
 import { useEditorSafe } from '@/contexts/EditorContext';
+import { findTabByFilePath } from '@/lib/file-actions';
+import { windowActions } from '@/stores/windowStore';
 
 type LanguageSupport = ReturnType<typeof markdown>;
 
@@ -120,6 +122,18 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   onCleanup(() => {
     if (props.filePath) {
       closeFile(props.filePath);
+    }
+  });
+
+  // Sync EditorContext dirty state → windowStore tab isModified
+  createEffect(() => {
+    const file = openFiles().find(f => f.path === props.filePath);
+    if (!props.filePath) return;
+    const tabInfo = findTabByFilePath(props.filePath);
+    if (tabInfo) {
+      windowActions.updateTab(tabInfo.groupId, tabInfo.tab.id, {
+        isModified: file?.dirty ?? false,
+      });
     }
   });
 
