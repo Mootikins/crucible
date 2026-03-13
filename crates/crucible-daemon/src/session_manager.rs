@@ -383,7 +383,8 @@ impl SessionManager {
             return Err(SessionError::NotFound(session_id.to_string()));
         };
 
-        let mut session: Session = serde_json::from_str(&tokio::fs::read_to_string(&source_path).await?)?;
+        let mut session: Session =
+            serde_json::from_str(&tokio::fs::read_to_string(&source_path).await?)?;
         session.archived = true;
 
         tokio::fs::write(&meta_path, serde_json::to_string_pretty(&session)?).await?;
@@ -412,7 +413,8 @@ impl SessionManager {
             return Err(SessionError::NotFound(session_id.to_string()));
         };
 
-        let mut session: Session = serde_json::from_str(&tokio::fs::read_to_string(&source_path).await?)?;
+        let mut session: Session =
+            serde_json::from_str(&tokio::fs::read_to_string(&source_path).await?)?;
         session.archived = false;
 
         tokio::fs::write(&meta_path, serde_json::to_string_pretty(&session)?).await?;
@@ -688,7 +690,8 @@ mod tests {
         assert_eq!(filtered.len(), 1);
 
         // Filter by type
-        let filtered = manager.list_sessions_filtered(None, None, Some(SessionType::Chat), None, true);
+        let filtered =
+            manager.list_sessions_filtered(None, None, Some(SessionType::Chat), None, true);
         assert_eq!(filtered.len(), 2);
     }
 

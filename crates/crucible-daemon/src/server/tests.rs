@@ -90,10 +90,7 @@ async fn rpc_call(client: &mut UnixStream, request: Value) -> Value {
         }
     }
 
-    let end = buf
-        .iter()
-        .position(|b| *b == b'\n')
-        .unwrap_or(buf.len());
+    let end = buf.iter().position(|b| *b == b'\n').unwrap_or(buf.len());
     serde_json::from_slice(&buf[..end]).unwrap()
 }
 
