@@ -26,7 +26,10 @@ export function openSessionInChat(sessionId: string, sessionTitle: string): void
   }
 
   const groupId = findFirstCenterPaneGroupId();
-  if (!groupId) return;
+  if (!groupId) {
+    console.error('openSessionInChat: no center pane group found — cannot open chat tab');
+    return;
+  }
 
   const newTab: Tab = {
     id: `tab-chat-${sessionId}`,

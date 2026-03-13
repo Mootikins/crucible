@@ -328,6 +328,33 @@ impl SessionManager {
         Ok(session)
     }
 
+    pub async fn delete_session(&self, session_id: &str, kiln: &Path) -> Result<(), SessionError> {
+        let was_in_memory = self.sessions.get(session_id).is_some();
+
+        if let Some(session) = self.get_session(session_id) {
+            if session.state != SessionState::Ended {
+                self.end_session(session_id).await?;
+            }
+        }
+
+        self.sessions.remove(session_id);
+        self.recording_senders.remove(session_id);
+
+        let session_dir = FileSessionStorage::sessions_base(kiln).join(session_id);
+        let persisted_exists = session_dir.exists();
+
+        if !was_in_memory && !persisted_exists {
+            return Err(SessionError::NotFound(session_id.to_string()));
+        }
+
+        if persisted_exists {
+            tokio::fs::remove_dir_all(&session_dir).await?;
+        }
+
+        info!(session_id = %session_id, kiln = %kiln.display(), "Session deleted");
+        Ok(())
+    }
+
     /// Request compaction for a session.
     ///
     /// Sets the session state to Compacting. The actual compaction
@@ -767,6 +794,46 @@ mod tests {
 
         let updated = manager.get_session(&session.id).unwrap();
         assert_eq!(updated.title, Some("My Session".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_delete_session() {
+        let tmp = TempDir::new().unwrap();
+        let manager = SessionManager::new();
+        let session = manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let session_dir = FileSessionStorage::sessions_base(tmp.path()).join(&session.id);
+        assert!(session_dir.exists());
+
+        manager
+            .delete_session(&session.id, tmp.path())
+            .await
+            .unwrap();
+
+        assert!(manager.get_session(&session.id).is_none());
+        assert!(!session_dir.exists());
+    }
+
+    #[tokio::test]
+    async fn test_delete_session_not_found() {
+        let tmp = TempDir::new().unwrap();
+        let manager = SessionManager::new();
+
+        let err = manager
+            .delete_session("missing-session", tmp.path())
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, SessionError::NotFound(_)));
     }
 
     #[tokio::test]
