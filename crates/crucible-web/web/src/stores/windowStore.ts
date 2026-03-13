@@ -816,6 +816,7 @@ export const windowActions = {
 
 if (typeof window !== 'undefined') {
   (window as unknown as Record<string, unknown>).__windowActions = windowActions;
+  (window as unknown as Record<string, unknown>).__windowStore = store;
 }
 
 export function updateSplitRatio(

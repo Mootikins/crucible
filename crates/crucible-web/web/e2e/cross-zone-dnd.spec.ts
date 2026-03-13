@@ -122,9 +122,14 @@ test.describe('Cross-zone tab drag and drop', () => {
   });
 
   test('dragging last tab out of edge panel auto-collapses it', async ({ page }) => {
-    await page.evaluate(async () => {
-      // @ts-expect-error - Vite dev server runtime path import for browser context
-      const { windowStore, windowActions } = await import('/src/stores/windowStore.ts');
+    await page.evaluate(() => {
+      const windowStore = (window as unknown as Record<string, unknown>).__windowStore as {
+        layout: { type?: string; tabGroupId?: string; first?: unknown; second?: unknown };
+        edgePanels: { left: { tabGroupId: string } };
+      };
+      const windowActions = (window as unknown as Record<string, unknown>).__windowActions as {
+        moveTab: (from: string, to: string, tabId: string) => void;
+      };
       const leftGroupId = windowStore.edgePanels.left.tabGroupId;
 
       const findFirstPaneGroupId = (node: unknown): string | null => {
