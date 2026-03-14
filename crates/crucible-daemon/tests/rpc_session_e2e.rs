@@ -51,7 +51,7 @@ impl TestServer {
 
 /// Helper: create a session and return its ID.
 async fn create_session(client: &DaemonClient, kiln: &std::path::Path) -> String {
-let result = client
+    let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
             kiln: kiln.to_path_buf(),
@@ -83,7 +83,7 @@ async fn test_session_create_returns_id() {
         .await
         .expect("Failed to connect");
 
-let result = client
+    let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
             kiln: kiln_dir.path().to_path_buf(),

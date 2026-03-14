@@ -283,9 +283,12 @@ impl CliAppConfig {
         };
 
         // Track sources for all known fields
-        let all_tracked_fields = TRACKED_FIELDS.iter().map(|(name, _)| *name).collect::<Vec<_>>();
+        let all_tracked_fields = TRACKED_FIELDS
+            .iter()
+            .map(|(name, _)| *name)
+            .collect::<Vec<_>>();
 
-for field in &all_tracked_fields {
+        for field in &all_tracked_fields {
             if file_fields.contains(&(*field).to_string()) {
                 source_map.set(
                     field,
@@ -508,7 +511,6 @@ for field in &all_tracked_fields {
 
         let mut map = ValueSourceMap::new();
         for (field_name, _) in TRACKED_FIELDS {
-
             map.set(field_name, ValueSource::Default);
         }
 
