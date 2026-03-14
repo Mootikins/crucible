@@ -159,8 +159,14 @@ async fn put_kiln_file(
 // Helpers
 // =========================================================================
 
-/// Reject paths containing traversal sequences or null bytes.
+/// Reject paths containing traversal sequences, null bytes, or absolute paths.
 fn validate_no_traversal(path: &str) -> Result<(), WebError> {
+    // Reject absolute paths — callers must use kiln-relative or daemon-resolved paths.
+    if path.starts_with('/') || path.starts_with('\\') {
+        return Err(WebError::Validation(
+            "Invalid path: absolute paths not allowed".to_string(),
+        ));
+    }
     if path.contains("..") || path.contains('\0') {
         return Err(WebError::Validation(
             "Invalid path: traversal not allowed".to_string(),
@@ -251,8 +257,14 @@ mod tests {
 
     #[test]
     fn test_validate_no_traversal_allows_valid_paths() {
-        assert!(validate_no_traversal("/home/user/kiln/note.md").is_ok());
         assert!(validate_no_traversal("notes/daily/2024-01-15.md").is_ok());
+        assert!(validate_no_traversal("subdir/note.md").is_ok());
+    }
+
+    #[test]
+    fn test_validate_no_traversal_rejects_absolute_paths() {
+        assert!(validate_no_traversal("/home/user/kiln/note.md").is_err());
+        assert!(validate_no_traversal("/etc/passwd").is_err());
     }
 
     #[test]
@@ -291,8 +303,9 @@ mod tests {
         symlink_dir(outside.path(), &link).expect("create symlink to outside");
 
         let escaped_path = link.join("outside-note.md");
-        let err = validate_file_within_kiln(&escaped_path, kiln.path(), &escaped_path.to_string_lossy())
-            .expect_err("symlink target outside kiln must be rejected");
+        let err =
+            validate_file_within_kiln(&escaped_path, kiln.path(), &escaped_path.to_string_lossy())
+                .expect_err("symlink target outside kiln must be rejected");
 
         match err {
             WebError::Validation(message) => {
