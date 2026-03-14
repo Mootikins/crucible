@@ -55,70 +55,82 @@ impl StorageClient for DaemonStorageClient {
 // KnowledgeRepository implementation
 // =============================================================================
 
+/// DTO for wikilink data returned by the daemon RPC
+#[derive(serde::Deserialize)]
+struct WikilinkDto {
+    target: String,
+    #[serde(default)]
+    alias: Option<String>,
+    #[serde(default)]
+    is_embed: Option<bool>,
+    #[serde(default)]
+    block_ref: Option<String>,
+    #[serde(default)]
+    heading_ref: Option<String>,
+}
+
+/// DTO matching the JSON shape returned by get_note_by_name RPC
+#[derive(serde::Deserialize)]
+struct NoteRecordDto {
+    path: String,
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default)]
+    tags: Option<Vec<String>>,
+    #[serde(default)]
+    wikilinks: Option<Vec<WikilinkDto>>,
+}
+
+impl NoteRecordDto {
+    /// Convert this DTO into a ParsedNote, mapping fields to the canonical types.
+    fn into_parsed_note(self) -> ParsedNote {
+        use crucible_core::parser::{NoteContent, ParsedNoteBuilder, Tag, Wikilink};
+
+        let path = std::path::PathBuf::from(self.path);
+
+        let tags: Vec<Tag> = self
+            .tags
+            .unwrap_or_default()
+            .into_iter()
+            .enumerate()
+            .map(|(i, s)| Tag {
+                path: s.split('/').map(String::from).collect(),
+                name: s,
+                offset: i, // Placeholder offset
+            })
+            .collect();
+
+        let wikilinks: Vec<Wikilink> = self
+            .wikilinks
+            .unwrap_or_default()
+            .into_iter()
+            .enumerate()
+            .map(|(i, w)| Wikilink {
+                target: w.target,
+                alias: w.alias,
+                offset: i, // Placeholder offset
+                is_embed: w.is_embed.unwrap_or(false),
+                block_ref: w.block_ref,
+                heading_ref: w.heading_ref,
+            })
+            .collect();
+
+        let mut content = NoteContent::new();
+        content.plain_text = self.content.unwrap_or_default();
+
+        ParsedNoteBuilder::new(path)
+            .with_content(content)
+            .with_wikilinks(wikilinks)
+            .with_tags(tags)
+            .build()
+    }
+}
+
 /// Parse a record into a ParsedNote (minimal version for daemon)
 fn parse_note_from_record(record: &Value) -> Option<ParsedNote> {
-    use crucible_core::parser::{NoteContent, ParsedNoteBuilder, Tag, Wikilink};
-
-    let path_str = record.get("path")?.as_str()?;
-    let path = std::path::PathBuf::from(path_str);
-
-    let content_str = record.get("content").and_then(|v| v.as_str()).unwrap_or("");
-
-    let tags: Vec<Tag> = record
-        .get("tags")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .enumerate()
-                .filter_map(|(i, t)| {
-                    t.as_str().map(|s| Tag {
-                        name: s.to_string(),
-                        path: s.split('/').map(String::from).collect(),
-                        offset: i, // Placeholder offset
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    let wikilinks: Vec<Wikilink> = record
-        .get("wikilinks")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .enumerate()
-                .filter_map(|(i, w)| {
-                    let target = w.get("target").and_then(|v| v.as_str())?;
-                    Some(Wikilink {
-                        target: target.to_string(),
-                        alias: w.get("alias").and_then(|v| v.as_str()).map(String::from),
-                        offset: i, // Placeholder offset
-                        is_embed: w.get("is_embed").and_then(|v| v.as_bool()).unwrap_or(false),
-                        block_ref: w
-                            .get("block_ref")
-                            .and_then(|v| v.as_str())
-                            .map(String::from),
-                        heading_ref: w
-                            .get("heading_ref")
-                            .and_then(|v| v.as_str())
-                            .map(String::from),
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    // Build a minimal ParsedNote using the builder
-    let mut content = NoteContent::new();
-    content.plain_text = content_str.to_string();
-
-    let note = ParsedNoteBuilder::new(path)
-        .with_content(content)
-        .with_wikilinks(wikilinks)
-        .with_tags(tags)
-        .build();
-
-    Some(note)
+    serde_json::from_value::<NoteRecordDto>(record.clone())
+        .ok()
+        .map(NoteRecordDto::into_parsed_note)
 }
 
 #[async_trait]
