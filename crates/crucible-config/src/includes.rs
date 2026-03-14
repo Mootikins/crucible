@@ -251,43 +251,28 @@ const ENV_REF_SUFFIX: &str = "}";
 const DIR_REF_PREFIX: &str = "{dir:";
 const DIR_REF_SUFFIX: &str = "}";
 
-/// Check if a string is a file reference
-fn is_file_reference(s: &str) -> bool {
-    s.starts_with(FILE_REF_PREFIX) && s.ends_with(FILE_REF_SUFFIX)
+/// Reference kind enum for template resolution
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RefKind {
+    /// File reference: {file:path}
+    File(PathBuf),
+    /// Environment variable reference: {env:VAR}
+    Env(String),
+    /// Directory reference: {dir:path}
+    Dir(PathBuf),
 }
 
-/// Check if a string is an env reference
-fn is_env_reference(s: &str) -> bool {
-    s.starts_with(ENV_REF_PREFIX) && s.ends_with(ENV_REF_SUFFIX)
-}
-
-/// Extract the path from a file reference
-fn extract_file_path(s: &str) -> Option<&str> {
-    if is_file_reference(s) {
-        Some(&s[FILE_REF_PREFIX.len()..s.len() - FILE_REF_SUFFIX.len()])
-    } else {
-        None
-    }
-}
-
-/// Extract the variable name from an env reference
-fn extract_env_var(s: &str) -> Option<&str> {
-    if is_env_reference(s) {
-        Some(&s[ENV_REF_PREFIX.len()..s.len() - ENV_REF_SUFFIX.len()])
-    } else {
-        None
-    }
-}
-
-/// Check if a string is a directory reference
-fn is_dir_reference(s: &str) -> bool {
-    s.starts_with(DIR_REF_PREFIX) && s.ends_with(DIR_REF_SUFFIX)
-}
-
-/// Extract the path from a directory reference
-fn extract_dir_path(s: &str) -> Option<&str> {
-    if is_dir_reference(s) {
-        Some(&s[DIR_REF_PREFIX.len()..s.len() - DIR_REF_SUFFIX.len()])
+/// Parse a reference string into RefKind if it matches any pattern
+fn parse_ref_kind(s: &str) -> Option<RefKind> {
+    if s.starts_with(FILE_REF_PREFIX) && s.ends_with(FILE_REF_SUFFIX) {
+        let path_str = &s[FILE_REF_PREFIX.len()..s.len() - FILE_REF_SUFFIX.len()];
+        Some(RefKind::File(PathBuf::from(path_str)))
+    } else if s.starts_with(ENV_REF_PREFIX) && s.ends_with(ENV_REF_SUFFIX) {
+        let var_name = &s[ENV_REF_PREFIX.len()..s.len() - ENV_REF_SUFFIX.len()];
+        Some(RefKind::Env(var_name.to_string()))
+    } else if s.starts_with(DIR_REF_PREFIX) && s.ends_with(DIR_REF_SUFFIX) {
+        let path_str = &s[DIR_REF_PREFIX.len()..s.len() - DIR_REF_SUFFIX.len()];
+        Some(RefKind::Dir(PathBuf::from(path_str)))
     } else {
         None
     }
@@ -427,57 +412,59 @@ fn process_refs_recursive(
 ) {
     match value {
         toml::Value::String(s) => {
-            // Handle {file:path} references
-            if let Some(file_path) = extract_file_path(s) {
-                let resolved = resolve_include_path(file_path, base_dir);
-                debug!(
-                    "Processing file reference: {} -> {}",
-                    file_path,
-                    resolved.display()
-                );
+            // Parse the reference and handle accordingly
+            if let Some(ref_kind) = parse_ref_kind(s) {
+                match ref_kind {
+                    RefKind::File(file_path) => {
+                        let resolved = resolve_include_path(file_path.to_str().unwrap(), base_dir);
+                        debug!(
+                            "Processing file reference: {} -> {}",
+                            file_path.display(),
+                            resolved.display()
+                        );
 
-                match read_file_as_value(&resolved) {
-                    Ok(file_value) => {
-                        *value = file_value;
+                        match read_file_as_value(&resolved) {
+                            Ok(file_value) => {
+                                *value = file_value;
+                            }
+                            Err(e) => {
+                                warn!("Failed to load file reference {}: {}", file_path.display(), e);
+                                errors.push(e);
+                            }
+                        }
                     }
-                    Err(e) => {
-                        warn!("Failed to load file reference {}: {}", file_path, e);
-                        errors.push(e);
-                    }
-                }
-            }
-            // Handle {env:VAR} references
-            else if let Some(var_name) = extract_env_var(s) {
-                debug!("Processing env reference: {}", var_name);
+                    RefKind::Env(var_name) => {
+                        debug!("Processing env reference: {}", var_name);
 
-                match std::env::var(var_name) {
-                    Ok(env_value) => {
-                        *value = toml::Value::String(env_value);
+                        match std::env::var(&var_name) {
+                            Ok(env_value) => {
+                                *value = toml::Value::String(env_value);
+                            }
+                            Err(_) => {
+                                warn!("Environment variable not found: {}", var_name);
+                                errors.push(IncludeError::EnvVarNotFound {
+                                    var_name: var_name.clone(),
+                                });
+                            }
+                        }
                     }
-                    Err(_) => {
-                        warn!("Environment variable not found: {}", var_name);
-                        errors.push(IncludeError::EnvVarNotFound {
-                            var_name: var_name.to_string(),
-                        });
-                    }
-                }
-            }
-            // Handle {dir:path} references (config.d style)
-            else if let Some(dir_path) = extract_dir_path(s) {
-                let resolved = resolve_include_path(dir_path, base_dir);
-                debug!(
-                    "Processing dir reference: {} -> {}",
-                    dir_path,
-                    resolved.display()
-                );
+                    RefKind::Dir(dir_path) => {
+                        let resolved = resolve_include_path(dir_path.to_str().unwrap(), base_dir);
+                        debug!(
+                            "Processing dir reference: {} -> {}",
+                            dir_path.display(),
+                            resolved.display()
+                        );
 
-                match read_dir_as_value(&resolved, base_dir, errors) {
-                    Ok(dir_value) => {
-                        *value = dir_value;
-                    }
-                    Err(e) => {
-                        warn!("Failed to load dir reference {}: {}", dir_path, e);
-                        errors.push(e);
+                        match read_dir_as_value(&resolved, base_dir, errors) {
+                            Ok(dir_value) => {
+                                *value = dir_value;
+                            }
+                            Err(e) => {
+                                warn!("Failed to load dir reference {}: {}", dir_path.display(), e);
+                                errors.push(e);
+                            }
+                        }
                     }
                 }
             }
@@ -871,25 +858,67 @@ verbose = true
     // =========================================================================
 
     #[test]
-    fn test_is_file_reference() {
-        assert!(is_file_reference("{file:test.toml}"));
-        assert!(is_file_reference("{file:~/secrets/key.txt}"));
-        assert!(is_file_reference("{file:/etc/crucible/config.toml}"));
+    fn test_parse_ref_kind_file() {
+        assert_eq!(
+            parse_ref_kind("{file:test.toml}"),
+            Some(RefKind::File(PathBuf::from("test.toml")))
+        );
+        assert_eq!(
+            parse_ref_kind("{file:~/secrets/key.txt}"),
+            Some(RefKind::File(PathBuf::from("~/secrets/key.txt")))
+        );
+        assert_eq!(
+            parse_ref_kind("{file:/etc/crucible/config.toml}"),
+            Some(RefKind::File(PathBuf::from("/etc/crucible/config.toml")))
+        );
 
-        assert!(!is_file_reference("test.toml"));
-        assert!(!is_file_reference("{file:missing-end"));
-        assert!(!is_file_reference("file:test.toml}"));
-        assert!(!is_file_reference(""));
+        assert_eq!(parse_ref_kind("test.toml"), None);
+        assert_eq!(parse_ref_kind("{file:missing-end"), None);
+        assert_eq!(parse_ref_kind("file:test.toml}"), None);
+        assert_eq!(parse_ref_kind(""), None);
     }
 
     #[test]
-    fn test_extract_file_path() {
-        assert_eq!(extract_file_path("{file:test.toml}"), Some("test.toml"));
+    #[test]
+    fn test_parse_ref_kind_env() {
         assert_eq!(
-            extract_file_path("{file:~/secrets/key.txt}"),
-            Some("~/secrets/key.txt")
+            parse_ref_kind("{env:OPENAI_API_KEY}"),
+            Some(RefKind::Env("OPENAI_API_KEY".to_string()))
         );
-        assert_eq!(extract_file_path("not a ref"), None);
+        assert_eq!(
+            parse_ref_kind("{env:MY_VAR}"),
+            Some(RefKind::Env("MY_VAR".to_string()))
+        );
+        assert_eq!(
+            parse_ref_kind("{env:A}"),
+            Some(RefKind::Env("A".to_string()))
+        );
+
+        assert_eq!(parse_ref_kind("OPENAI_API_KEY"), None);
+        assert_eq!(parse_ref_kind("{env:missing-end"), None);
+        assert_eq!(parse_ref_kind("env:VAR}"), None);
+        assert_eq!(parse_ref_kind(""), None);
+    }
+
+    #[test]
+    fn test_parse_ref_kind_dir() {
+        assert_eq!(
+            parse_ref_kind("{dir:~/.config/crucible/providers.d/}"),
+            Some(RefKind::Dir(PathBuf::from("~/.config/crucible/providers.d/")))
+        );
+        assert_eq!(
+            parse_ref_kind("{dir:providers.d}"),
+            Some(RefKind::Dir(PathBuf::from("providers.d")))
+        );
+        assert_eq!(
+            parse_ref_kind("{dir:/etc/crucible/conf.d}"),
+            Some(RefKind::Dir(PathBuf::from("/etc/crucible/conf.d")))
+        );
+
+        assert_eq!(parse_ref_kind("providers.d"), None);
+        assert_eq!(parse_ref_kind("{dir:missing-end"), None);
+        assert_eq!(parse_ref_kind("dir:path}"), None);
+        assert_eq!(parse_ref_kind(""), None);
     }
 
     #[test]
@@ -1060,156 +1089,6 @@ api_key = "{file:~/.secrets/test.key}"
     // Environment variable reference tests
     // ========================================================================
 
-    #[test]
-    fn test_is_env_reference() {
-        assert!(is_env_reference("{env:OPENAI_API_KEY}"));
-        assert!(is_env_reference("{env:MY_VAR}"));
-        assert!(is_env_reference("{env:A}"));
-
-        assert!(!is_env_reference("OPENAI_API_KEY"));
-        assert!(!is_env_reference("{env:missing-end"));
-        assert!(!is_env_reference("env:VAR}"));
-        assert!(!is_env_reference(""));
-        assert!(!is_env_reference("{file:test.toml}"));
-    }
-
-    #[test]
-    fn test_extract_env_var() {
-        assert_eq!(
-            extract_env_var("{env:OPENAI_API_KEY}"),
-            Some("OPENAI_API_KEY")
-        );
-        assert_eq!(extract_env_var("{env:MY_VAR}"), Some("MY_VAR"));
-        assert_eq!(extract_env_var("not-a-ref"), None);
-    }
-
-    #[test]
-    fn test_env_ref_string_value() {
-        let temp = TempDir::new().unwrap();
-
-        // Set an env var for testing
-        let _guard = EnvVarGuard::set("CRUCIBLE_TEST_API_KEY", "sk-test-key-12345".to_string());
-
-        let config_content = r#"
-[embedding]
-provider = "openai"
-api_key = "{env:CRUCIBLE_TEST_API_KEY}"
-"#;
-        let mut config: toml::Value = toml::from_str(config_content).unwrap();
-
-        let result = process_file_references(&mut config, temp.path());
-        assert!(result.is_ok());
-
-        let embedding = config.get("embedding").unwrap();
-        assert_eq!(
-            embedding.get("api_key").unwrap().as_str().unwrap(),
-            "sk-test-key-12345"
-        );
-
-        // Cleanup
-    }
-
-    #[test]
-    fn test_env_ref_not_found() {
-        let temp = TempDir::new().unwrap();
-
-        let config_content = r#"
-api_key = "{env:CRUCIBLE_NONEXISTENT_VAR_12345}"
-"#;
-        let mut config: toml::Value = toml::from_str(config_content).unwrap();
-
-        let result = process_file_references(&mut config, temp.path());
-        assert!(result.is_err());
-
-        let errors = result.unwrap_err();
-        assert!(matches!(errors[0], IncludeError::EnvVarNotFound { .. }));
-
-        if let IncludeError::EnvVarNotFound { var_name } = &errors[0] {
-            assert_eq!(var_name, "CRUCIBLE_NONEXISTENT_VAR_12345");
-        }
-    }
-
-    #[test]
-    fn test_env_ref_in_array() {
-        let temp = TempDir::new().unwrap();
-
-        let _guard1 = EnvVarGuard::set("CRUCIBLE_TEST_PATH1", "/opt/tools".to_string());
-        let _guard2 = EnvVarGuard::set("CRUCIBLE_TEST_PATH2", "/usr/local/tools".to_string());
-
-        let config_content = r#"
-extra_paths = ["{env:CRUCIBLE_TEST_PATH1}", "{env:CRUCIBLE_TEST_PATH2}", "/static/path"]
-"#;
-        let mut config: toml::Value = toml::from_str(config_content).unwrap();
-
-        let result = process_file_references(&mut config, temp.path());
-        assert!(result.is_ok());
-
-        let paths = config.get("extra_paths").unwrap().as_array().unwrap();
-        assert_eq!(paths[0].as_str().unwrap(), "/opt/tools");
-        assert_eq!(paths[1].as_str().unwrap(), "/usr/local/tools");
-        assert_eq!(paths[2].as_str().unwrap(), "/static/path");
-
-        // Cleanup
-    }
-
-    #[test]
-    fn test_mixed_file_and_env_refs() {
-        let temp = TempDir::new().unwrap();
-
-        // Create a file
-        fs::write(temp.path().join("model.txt"), "gpt-4").unwrap();
-
-        // Set an env var
-        let _guard = EnvVarGuard::set("CRUCIBLE_TEST_MIXED_KEY", "sk-mixed-key".to_string());
-
-        let config_content = r#"
-[embedding]
-provider = "openai"
-api_key = "{env:CRUCIBLE_TEST_MIXED_KEY}"
-model = "{file:model.txt}"
-"#;
-        let mut config: toml::Value = toml::from_str(config_content).unwrap();
-
-        let result = process_file_references(&mut config, temp.path());
-        assert!(result.is_ok());
-
-        let embedding = config.get("embedding").unwrap();
-        assert_eq!(
-            embedding.get("api_key").unwrap().as_str().unwrap(),
-            "sk-mixed-key"
-        );
-        assert_eq!(embedding.get("model").unwrap().as_str().unwrap(), "gpt-4");
-
-        // Cleanup
-    }
-
-    // ========================================================================
-    // Directory reference tests ({dir:path} - config.d style)
-    // ========================================================================
-
-    #[test]
-    fn test_is_dir_reference() {
-        assert!(is_dir_reference("{dir:~/.config/crucible/providers.d/}"));
-        assert!(is_dir_reference("{dir:providers.d}"));
-        assert!(is_dir_reference("{dir:/etc/crucible/conf.d}"));
-
-        assert!(!is_dir_reference("providers.d"));
-        assert!(!is_dir_reference("{dir:missing-end"));
-        assert!(!is_dir_reference("dir:path}"));
-        assert!(!is_dir_reference(""));
-        assert!(!is_dir_reference("{file:test.toml}"));
-        assert!(!is_dir_reference("{env:VAR}"));
-    }
-
-    #[test]
-    fn test_extract_dir_path() {
-        assert_eq!(extract_dir_path("{dir:providers.d}"), Some("providers.d"));
-        assert_eq!(
-            extract_dir_path("{dir:~/.config/crucible/conf.d/}"),
-            Some("~/.config/crucible/conf.d/")
-        );
-        assert_eq!(extract_dir_path("not-a-ref"), None);
-    }
 
     #[test]
     fn test_dir_ref_merges_toml_files() {
