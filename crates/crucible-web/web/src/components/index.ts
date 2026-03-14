@@ -9,3 +9,5 @@ export { SessionPanel } from './SessionPanel';
 export { ToolCard } from './ToolCard';
 export { EditorPanel } from './EditorPanel';
 export { FilesPanel } from './FilesPanel';
+export { PanelShell } from './PanelShell';
+export { PanelHeader } from './PanelHeader';

@@ -6,6 +6,8 @@ import { useSessionSearch } from '@/hooks/useSessionSearch';
 import { ProjectSection } from './ProjectSection';
 import { SessionSection } from './SessionSection';
 import { SessionFooter } from './SessionFooter';
+import { PanelShell } from './PanelShell';
+import { PanelHeader } from './PanelHeader';
 
 export const SessionPanel: Component = () => {
   const { currentProject, projects, selectProject, registerProject } = useProjectSafe();
@@ -85,12 +87,11 @@ export const SessionPanel: Component = () => {
   const project = () => currentProject();
 
   return (
-    <div class="h-full flex flex-col bg-neutral-900 text-neutral-100">
-      <div class="p-3 border-b border-neutral-800">
-        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wide">Projects</h2>
-      </div>
+    <PanelShell>
+      <PanelHeader title="Projects" />
 
       <div class="flex-1 overflow-y-auto">
+
         <ProjectSection
           projects={projects()}
           currentProject={project()}
@@ -130,6 +131,6 @@ export const SessionPanel: Component = () => {
           onRefresh={() => refreshSessions()}
         />
       </Show>
-    </div>
+    </PanelShell>
   );
 };
