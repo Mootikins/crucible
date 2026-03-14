@@ -29,7 +29,7 @@ pub fn session_routes() -> Router<AppState> {
         .route("/api/session/{id}/models", get(list_models))
         .route("/api/session/{id}/model", post(switch_model))
         .route("/api/session/{id}/title", put(set_session_title))
-        .route("/api/session/{id}/generate-title", post(generate_title))
+        .route("/api/session/{id}/auto-title", post(auto_title))
         .route("/api/providers", get(list_providers))
         .route(
             "/api/session/{id}/config/thinking-budget",
@@ -478,11 +478,11 @@ async fn set_session_title(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-/// Generate a title for a session from its conversation history.
+/// Auto-generate a title for a session from its conversation history.
 ///
-/// Extracts the first user message and creates a concise title from it.
+/// This is a simple string-truncation-based auto-title (not LLM generation).
 /// Falls back to "Untitled Session" if no messages are available.
-async fn generate_title(
+async fn auto_title(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, WebError> {
@@ -533,7 +533,9 @@ async fn generate_title(
 
 /// Create a concise title from a message by smart truncation.
 ///
-/// Keeps the first ~60 characters, breaking at word boundaries when possible.
+/// This function truncates at character boundaries (not byte boundaries) to safely
+/// handle multi-byte UTF-8 characters like CJK, emoji, etc. It keeps the first ~60
+/// characters, breaking at word boundaries when possible.
 fn truncate_to_title(message: &str) -> String {
     const MAX_LEN: usize = 60;
 
@@ -545,7 +547,7 @@ fn truncate_to_title(message: &str) -> String {
     }
 
     // Truncate at word boundary
-    let truncated = &cleaned[..MAX_LEN];
+    let truncated = cleaned.chars().take(MAX_LEN).collect::<String>();
     if let Some(last_space) = truncated.rfind(' ') {
         if last_space > MAX_LEN / 2 {
             return format!("{}...", &truncated[..last_space]);
@@ -1134,11 +1136,11 @@ mod tests {
     }
 
     // =========================================================================
-    // generate_title Tests
+    // auto_title Tests
     // =========================================================================
 
     #[tokio::test]
-    async fn generate_title_returns_200_with_title_field() {
+    async fn auto_title_returns_200_with_title_field() {
         let (_mock, client) = crate::test_support::start_mock_daemon().await;
         let state = crate::test_support::build_mock_state(client);
         let app = crate::test_support::build_test_app(state);
@@ -1147,7 +1149,7 @@ mod tests {
             .oneshot(
                 axum::http::Request::builder()
                     .method("POST")
-                    .uri("/api/session/test-session-001/generate-title")
+                    .uri("/api/session/test-session-001/auto-title")
                     .body(axum::body::Body::empty())
                     .unwrap(),
             )
@@ -1169,7 +1171,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn generate_title_fallback_when_no_messages() {
+    async fn auto_title_fallback_when_no_messages() {
         // Mock daemon returns empty messages, so fallback to "Untitled Session"
         let (_mock, client) = crate::test_support::start_mock_daemon().await;
         let state = crate::test_support::build_mock_state(client);
@@ -1179,7 +1181,7 @@ mod tests {
             .oneshot(
                 axum::http::Request::builder()
                     .method("POST")
-                    .uri("/api/session/test-session-001/generate-title")
+                    .uri("/api/session/test-session-001/auto-title")
                     .body(axum::body::Body::empty())
                     .unwrap(),
             )
@@ -1236,6 +1238,32 @@ mod tests {
         let title = truncate_to_title(msg);
         // split_whitespace treats \n as whitespace, so this becomes single-line
         assert!(!title.contains('\n'), "Title should not contain newlines");
+    }
+
+    #[test]
+    fn truncate_to_title_handles_cjk_input() {
+        // Test with Chinese characters
+        let msg = "学习Rust编程语言";
+        let title = truncate_to_title(msg);
+        // Should not panic and should be valid UTF-8
+        assert!(!title.is_empty(), "Title should not be empty");
+        // Verify it's valid UTF-8 by checking we can iterate chars
+        let char_count = title.chars().count();
+        assert!(char_count > 0, "Title should contain valid characters");
+        // Verify no truncation happened (message is shorter than MAX_LEN)
+        assert_eq!(title, msg, "Short CJK message should not be truncated");
+    }
+
+    #[test]
+    fn truncate_to_title_handles_emoji() {
+        // Test with emoji
+        let msg = "Hello 👋 world 🌍 this is a test message with emoji";
+        let title = truncate_to_title(msg);
+        // Should not panic and should be valid UTF-8
+        assert!(!title.is_empty(), "Title should not be empty");
+        // Verify it's valid UTF-8
+        let char_count = title.chars().count();
+        assert!(char_count > 0, "Title should contain valid characters");
     }
 
     // =========================================================================
