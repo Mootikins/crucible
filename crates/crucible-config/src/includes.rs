@@ -36,7 +36,8 @@
 //! api_key = "{env:ANTHROPIC_API_KEY}"
 //! ```
 //!
-//! - The env var must be set or config loading will fail
+//! - In `BestEffort` mode (default), missing env vars log a warning and continue
+//! - In `Strict` mode, missing env vars are treated as hard errors
 //! - Use this for secrets that shouldn't be in files
 //!
 //! ## 3. Directory References: `{dir:path}` (config.d style)
@@ -262,6 +263,19 @@ enum RefKind {
     Dir(PathBuf),
 }
 
+/// Controls how template resolution handles missing references (e.g., env vars).
+///
+/// - `BestEffort` (default): logs warnings and continues, collecting errors.
+/// - `Strict`: treats missing references as hard errors (logs at error level).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ResolveMode {
+    /// Treat missing references as hard errors.
+    Strict,
+    /// Log warnings and continue (default). Current callers use this.
+    #[default]
+    BestEffort,
+}
+
 /// Parse a reference string into RefKind if it matches any pattern
 fn parse_ref_kind(s: &str) -> Option<RefKind> {
     if s.starts_with(FILE_REF_PREFIX) && s.ends_with(FILE_REF_SUFFIX) {
@@ -319,6 +333,7 @@ fn read_dir_as_value(
     dir_path: &Path,
     base_dir: &Path,
     errors: &mut Vec<IncludeError>,
+    mode: ResolveMode,
 ) -> Result<toml::Value, IncludeError> {
     if !dir_path.exists() {
         return Err(IncludeError::DirNotFound(dir_path.to_path_buf()));
@@ -364,7 +379,7 @@ fn read_dir_as_value(
         match read_file_as_value(&file_path) {
             Ok(mut file_value) => {
                 // Recursively process any refs in this file
-                process_refs_recursive(&mut file_value, base_dir, errors);
+                process_refs_recursive(&mut file_value, base_dir, errors, mode);
 
                 // Merge into result
                 merge_toml_values(&mut result, &file_value);
@@ -393,9 +408,10 @@ fn read_dir_as_value(
 pub fn process_file_references(
     value: &mut toml::Value,
     base_dir: &Path,
+    mode: ResolveMode,
 ) -> Result<(), Vec<IncludeError>> {
     let mut errors = Vec::new();
-    process_refs_recursive(value, base_dir, &mut errors);
+    process_refs_recursive(value, base_dir, &mut errors, mode);
 
     if errors.is_empty() {
         Ok(())
@@ -409,6 +425,7 @@ fn process_refs_recursive(
     value: &mut toml::Value,
     base_dir: &Path,
     errors: &mut Vec<IncludeError>,
+    mode: ResolveMode,
 ) {
     match value {
         toml::Value::String(s) => {
@@ -428,11 +445,22 @@ fn process_refs_recursive(
                                 *value = file_value;
                             }
                             Err(e) => {
-                                warn!(
-                                    "Failed to load file reference {}: {}",
-                                    file_path.display(),
-                                    e
-                                );
+                                match mode {
+                                    ResolveMode::Strict => {
+                                        tracing::error!(
+                                            "Failed to load file reference {}: {}",
+                                            file_path.display(),
+                                            e
+                                        );
+                                    }
+                                    ResolveMode::BestEffort => {
+                                        warn!(
+                                            "Failed to load file reference {}: {}",
+                                            file_path.display(),
+                                            e
+                                        );
+                                    }
+                                }
                                 errors.push(e);
                             }
                         }
@@ -445,7 +473,14 @@ fn process_refs_recursive(
                                 *value = toml::Value::String(env_value);
                             }
                             Err(_) => {
-                                warn!("Environment variable not found: {}", var_name);
+                                match mode {
+                                    ResolveMode::Strict => {
+                                        tracing::error!("Environment variable not found: {}", var_name);
+                                    }
+                                    ResolveMode::BestEffort => {
+                                        warn!("Environment variable not found: {}", var_name);
+                                    }
+                                }
                                 errors.push(IncludeError::EnvVarNotFound {
                                     var_name: var_name.clone(),
                                 });
@@ -460,12 +495,19 @@ fn process_refs_recursive(
                             resolved.display()
                         );
 
-                        match read_dir_as_value(&resolved, base_dir, errors) {
+                        match read_dir_as_value(&resolved, base_dir, errors, mode) {
                             Ok(dir_value) => {
                                 *value = dir_value;
                             }
                             Err(e) => {
-                                warn!("Failed to load dir reference {}: {}", dir_path.display(), e);
+                                match mode {
+                                    ResolveMode::Strict => {
+                                        tracing::error!("Failed to load dir reference {}: {}", dir_path.display(), e);
+                                    }
+                                    ResolveMode::BestEffort => {
+                                        warn!("Failed to load dir reference {}: {}", dir_path.display(), e);
+                                    }
+                                }
                                 errors.push(e);
                             }
                         }
@@ -475,12 +517,12 @@ fn process_refs_recursive(
         }
         toml::Value::Array(arr) => {
             for item in arr.iter_mut() {
-                process_refs_recursive(item, base_dir, errors);
+                process_refs_recursive(item, base_dir, errors, mode);
             }
         }
         toml::Value::Table(table) => {
             for (_key, val) in table.iter_mut() {
-                process_refs_recursive(val, base_dir, errors);
+                process_refs_recursive(val, base_dir, errors, mode);
             }
         }
         // Other types (Integer, Float, Boolean, Datetime) don't contain refs
@@ -941,7 +983,7 @@ api_key = "{file:api.key}"
 "#;
         let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-        let result = process_file_references(&mut config, temp.path());
+        let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
         assert!(result.is_ok());
 
         // The api_key should now be the file content (trimmed)
@@ -976,7 +1018,7 @@ gateway = "{file:gateway.toml}"
 "#;
         let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-        let result = process_file_references(&mut config, temp.path());
+        let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
         assert!(result.is_ok());
 
         // The gateway should now be the parsed TOML content
@@ -1006,7 +1048,7 @@ extra_paths = ["{file:path1.txt}", "{file:path2.txt}", "/static/path"]
 "#;
         let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-        let result = process_file_references(&mut config, temp.path());
+        let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
         assert!(result.is_ok());
 
         let paths = config
@@ -1034,7 +1076,7 @@ secret = "{file:secret.txt}"
 "#;
         let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-        let result = process_file_references(&mut config, temp.path());
+        let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
         assert!(result.is_ok());
 
         let secret = config
@@ -1057,7 +1099,7 @@ api_key = "{file:nonexistent.key}"
 "#;
         let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-        let result = process_file_references(&mut config, temp.path());
+        let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
         assert!(result.is_err());
 
         let errors = result.unwrap_err();
@@ -1076,7 +1118,7 @@ api_key = "{file:~/.secrets/test.key}"
 "#;
         let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-        let result = process_file_references(&mut config, temp.path());
+        let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
         // Should fail with FileNotFound (not a parse error)
         assert!(result.is_err());
 
@@ -1129,7 +1171,7 @@ providers = "{dir:providers.d}"
 "#;
         let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-        let result = process_file_references(&mut config, temp.path());
+        let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
         assert!(result.is_ok(), "Should succeed: {:?}", result);
 
         // Should have merged both files
@@ -1173,7 +1215,7 @@ settings = "{dir:conf.d}"
 "#;
         let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-        let result = process_file_references(&mut config, temp.path());
+        let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
         assert!(result.is_ok());
 
         let settings = config.get("settings").unwrap();
@@ -1208,7 +1250,7 @@ settings = "{dir:conf.d}"
 "#;
         let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-        let result = process_file_references(&mut config, temp.path());
+        let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
         assert!(result.is_ok());
 
         let settings = config.get("settings").unwrap();
@@ -1229,7 +1271,7 @@ settings = "{dir:empty.d}"
 "#;
         let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-        let result = process_file_references(&mut config, temp.path());
+        let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
         assert!(result.is_ok());
 
         // Should be an empty table
@@ -1247,7 +1289,7 @@ settings = "{dir:nonexistent.d}"
 "#;
         let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-        let result = process_file_references(&mut config, temp.path());
+        let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
         assert!(result.is_err());
 
         let errors = result.unwrap_err();
@@ -1278,7 +1320,7 @@ settings = "{dir:conf.d}"
 "#;
         let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-        let result = process_file_references(&mut config, temp.path());
+        let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
         assert!(result.is_ok());
 
         let settings = config.get("settings").unwrap();
@@ -1298,7 +1340,7 @@ settings = "{dir:~/.config/crucible/nonexistent.d/}"
 "#;
         let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-        let result = process_file_references(&mut config, temp.path());
+        let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
         assert!(result.is_err());
 
         let errors = result.unwrap_err();
@@ -1344,7 +1386,7 @@ settings = "{dir:conf.d}"
 "#;
         let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-        let result = process_file_references(&mut config, temp.path());
+        let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
         assert!(result.is_ok());
 
         let settings = config.get("settings").unwrap();
@@ -1389,7 +1431,7 @@ settings = "{dir:conf.d}"
 "#;
         let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-        let result = process_file_references(&mut config, temp.path());
+        let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
         // Should have errors from the invalid file
         assert!(result.is_err());
 
@@ -1435,7 +1477,7 @@ settings = "{dir:conf.d}"
 "#;
         let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-        let result = process_file_references(&mut config, temp.path());
+        let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
         assert!(result.is_ok(), "Should succeed: {:?}", result);
 
         let settings = config.get("settings").unwrap();
@@ -1486,7 +1528,7 @@ gateway = "{dir:mcps.d}"
 "#;
         let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-        let result = process_file_references(&mut config, temp.path());
+        let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
         assert!(result.is_ok(), "Should succeed: {:?}", result);
 
         let gateway = config.get("gateway").unwrap();
