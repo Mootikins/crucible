@@ -338,74 +338,74 @@ impl Server {
         let persist_cancel = CancellationToken::new();
         let persist_cancel_clone = persist_cancel.clone();
 
-let persist_task = tokio::spawn(async move {
+        let persist_task = tokio::spawn(async move {
             let last_persist_times: DashMap<String, Instant> = DashMap::new();
             let persist_debounce_interval = Duration::from_secs(30);
             loop {
                 tokio::select! {
-                    biased;
-                    _ = persist_cancel_clone.cancelled() => {
-                        debug!("Persist task received shutdown signal, draining remaining events");
-                        while let Ok(event) = persist_rx.try_recv() {
-                            forward_to_recording(&sm_clone, &event);
-                            if let Err(e) = sm_clone.update_last_activity(&event.session_id, Utc::now()).await {
-                                if !matches!(e, crate::session_manager::SessionError::NotFound(_)) {
-                                    warn!(session_id = %event.session_id, error = %e, "Failed to update last activity during shutdown drain");
-                                }
-                            }
-                            if let Err(e) = persist_event(&event, &sm_clone, &storage).await {
-                                warn!(session_id = %event.session_id, error = %e, "Failed to persist event during shutdown drain");
-                            }
-                        }
-                        break;
-                    }
-                    result = persist_rx.recv() => {
-                        match result {
-Ok(event) => {
-                                forward_to_recording(&sm_clone, &event);
-                                
-                                // Determine if this is a terminal event that should always persist
-                                let is_terminal_event = matches!(
-                                    event.event.as_str(),
-                                    "session_end" | "session_error" | "session_start"
-                                );
-                                
-                                // Check if we should persist last_activity
-                                let should_persist = if is_terminal_event {
-                                    true
-                                } else {
-                                    // Check if 30 seconds have passed since last persist for this session
-                                    match last_persist_times.get(&event.session_id) {
-                                        Some(last_time) => {
-                                            Instant::now().duration_since(*last_time) >= persist_debounce_interval
+                                    biased;
+                                    _ = persist_cancel_clone.cancelled() => {
+                                        debug!("Persist task received shutdown signal, draining remaining events");
+                                        while let Ok(event) = persist_rx.try_recv() {
+                                            forward_to_recording(&sm_clone, &event);
+                                            if let Err(e) = sm_clone.update_last_activity(&event.session_id, Utc::now()).await {
+                                                if !matches!(e, crate::session_manager::SessionError::NotFound(_)) {
+                                                    warn!(session_id = %event.session_id, error = %e, "Failed to update last activity during shutdown drain");
+                                                }
+                                            }
+                                            if let Err(e) = persist_event(&event, &sm_clone, &storage).await {
+                                                warn!(session_id = %event.session_id, error = %e, "Failed to persist event during shutdown drain");
+                                            }
                                         }
-                                        None => true, // First event for this session
+                                        break;
                                     }
-                                };
-                                
-                                if should_persist {
-                                    if let Err(e) = sm_clone.update_last_activity(&event.session_id, Utc::now()).await {
-                                        if !matches!(e, crate::session_manager::SessionError::NotFound(_)) {
-                                            warn!(session_id = %event.session_id, error = %e, "Failed to update last activity");
+                                    result = persist_rx.recv() => {
+                                        match result {
+                Ok(event) => {
+                                                forward_to_recording(&sm_clone, &event);
+
+                                                // Determine if this is a terminal event that should always persist
+                                                let is_terminal_event = matches!(
+                                                    event.event.as_str(),
+                                                    "session_end" | "session_error" | "session_start"
+                                                );
+
+                                                // Check if we should persist last_activity
+                                                let should_persist = if is_terminal_event {
+                                                    true
+                                                } else {
+                                                    // Check if 30 seconds have passed since last persist for this session
+                                                    match last_persist_times.get(&event.session_id) {
+                                                        Some(last_time) => {
+                                                            Instant::now().duration_since(*last_time) >= persist_debounce_interval
+                                                        }
+                                                        None => true, // First event for this session
+                                                    }
+                                                };
+
+                                                if should_persist {
+                                                    if let Err(e) = sm_clone.update_last_activity(&event.session_id, Utc::now()).await {
+                                                        if !matches!(e, crate::session_manager::SessionError::NotFound(_)) {
+                                                            warn!(session_id = %event.session_id, error = %e, "Failed to update last activity");
+                                                        }
+                                                    }
+                                                    last_persist_times.insert(event.session_id.clone(), Instant::now());
+                                                }
+
+                                                if let Err(e) = persist_event(&event, &sm_clone, &storage).await {
+                                                    warn!(session_id = %event.session_id, event = %event.event, error = %e, "Failed to persist event");
+                                                }
+                                            }
+                                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                                                tracing::warn!(
+                                                    "Persist task lagged, dropped {} events", n
+                                                );
+                                                continue;
+                                            }
+                                            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                                         }
                                     }
-                                    last_persist_times.insert(event.session_id.clone(), Instant::now());
                                 }
-                                
-                                if let Err(e) = persist_event(&event, &sm_clone, &storage).await {
-                                    warn!(session_id = %event.session_id, event = %event.event, error = %e, "Failed to persist event");
-                                }
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                                tracing::warn!(
-                                    "Persist task lagged, dropped {} events", n
-                                );
-                                continue;
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                        }
-                    }
-                }
             }
         });
 

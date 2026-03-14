@@ -355,7 +355,7 @@ async fn create_new_daemon_session(
     recording_mode: Option<&str>,
     recording_path: Option<&std::path::Path>,
 ) -> Result<String> {
-let result = client
+    let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
             kiln: config.kiln_path.clone(),

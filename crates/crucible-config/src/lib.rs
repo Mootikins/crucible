@@ -44,7 +44,6 @@ pub mod serde_helpers;
 mod value_source;
 mod workspace;
 
-
 pub use components::defaults::{
     ANTHROPIC_MODELS, DEFAULT_ANTHROPIC_ENDPOINT, DEFAULT_ANTHROPIC_MODEL, DEFAULT_BATCH_SIZE,
     DEFAULT_CHAT_MAX_TOKENS, DEFAULT_CHAT_MODEL, DEFAULT_GITHUB_COPILOT_ENDPOINT,

@@ -428,7 +428,11 @@ fn process_refs_recursive(
                                 *value = file_value;
                             }
                             Err(e) => {
-                                warn!("Failed to load file reference {}: {}", file_path.display(), e);
+                                warn!(
+                                    "Failed to load file reference {}: {}",
+                                    file_path.display(),
+                                    e
+                                );
                                 errors.push(e);
                             }
                         }
@@ -904,7 +908,9 @@ verbose = true
     fn test_parse_ref_kind_dir() {
         assert_eq!(
             parse_ref_kind("{dir:~/.config/crucible/providers.d/}"),
-            Some(RefKind::Dir(PathBuf::from("~/.config/crucible/providers.d/")))
+            Some(RefKind::Dir(PathBuf::from(
+                "~/.config/crucible/providers.d/"
+            )))
         );
         assert_eq!(
             parse_ref_kind("{dir:providers.d}"),
@@ -1088,7 +1094,6 @@ api_key = "{file:~/.secrets/test.key}"
     // ========================================================================
     // Environment variable reference tests
     // ========================================================================
-
 
     #[test]
     fn test_dir_ref_merges_toml_files() {

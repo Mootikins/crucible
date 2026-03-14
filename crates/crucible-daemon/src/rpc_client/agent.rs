@@ -435,7 +435,7 @@ impl AgentHandle for DaemonAgentHandle {
             return;
         };
 
-let result = match self
+        let result = match self
             .client
             .session_create(crate::rpc_client::client::SessionCreateParams {
                 session_type: "chat".to_string(),
