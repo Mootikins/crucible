@@ -241,18 +241,18 @@ Use the `:session` command:
 
 ## Session Configuration
 
-Configure session behavior in `~/.config/crucible/config.toml`:
+Session behavior is configured through the `[chat]` section in `~/.config/crucible/config.toml`. The daemon manages session persistence automatically; sessions always save to your kiln's `sessions/` directory.
 
 ```toml
 [chat]
-# Auto-save sessions (default: true)
-auto_save = true
+# Default chat model (can be overridden per session)
+# model = "llama3.2"
 
-# Session save directory (default: workspace/sessions/)
-session_dir = "sessions"
+# Enable markdown rendering in terminal output
+enable_markdown = true
 
-# Auto-resume recent sessions (default: true)
-auto_resume = true
+# Show thinking/reasoning tokens from models that support it
+# show_thinking = false
 ```
 
 ## Agent Configuration per Session

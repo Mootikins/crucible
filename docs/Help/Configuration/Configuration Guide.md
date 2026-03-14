@@ -282,5 +282,5 @@ cru daemon stop
 1. **Secure API keys**: Use `{env:VAR}` syntax so secrets never appear in config files
 2. **Use file references** for shared configs: `gateway = "{file:mcps.toml}"`
 3. **Test your config**: Run `cru config show` to see effective configuration
-4. **Validate**: Run `cru config validate` to check for errors
+4. **Verify**: Use `cru config show` to confirm your changes took effect
 5. **Use daemon mode** if you frequently run multiple cru commands at once
