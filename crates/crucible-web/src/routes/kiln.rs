@@ -1,5 +1,6 @@
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
+use super::helpers::{note_to_file_json, validate_no_traversal, MAX_CONTENT_SIZE};
 use axum::{extract::State, routing::get, Json, Router};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -47,16 +48,7 @@ async fn list_kiln_files(
         .await
         .daemon_err()?;
 
-    let files: Vec<serde_json::Value> = notes
-        .into_iter()
-        .map(|(name, path, _title, _tags, _updated_at)| {
-            serde_json::json!({
-                "name": name,
-                "path": path,
-                "is_dir": false,
-            })
-        })
-        .collect();
+    let files: Vec<serde_json::Value> = notes.into_iter().map(note_to_file_json).collect();
 
     Ok(Json(serde_json::json!({ "files": files })))
 }
@@ -72,16 +64,7 @@ async fn list_kiln_notes(
         .await
         .daemon_err()?;
 
-    let notes_json: Vec<serde_json::Value> = notes
-        .into_iter()
-        .map(|(name, path, _title, _tags, _updated_at)| {
-            serde_json::json!({
-                "name": name,
-                "path": path,
-                "is_dir": false,
-            })
-        })
-        .collect();
+    let notes_json: Vec<serde_json::Value> = notes.into_iter().map(note_to_file_json).collect();
 
     Ok(Json(serde_json::json!({ "files": notes_json })))
 }
@@ -129,10 +112,9 @@ async fn put_kiln_file(
     validate_no_traversal(&req.path)?;
 
     // Security: limit content size (10 MB)
-    const MAX_SIZE: usize = 10 * 1024 * 1024;
-    if req.content.len() > MAX_SIZE {
+    if req.content.len() > MAX_CONTENT_SIZE {
         return Err(WebError::Validation(format!(
-            "Content too large: {} bytes (max {MAX_SIZE})",
+            "Content too large: {} bytes (max {MAX_CONTENT_SIZE})",
             req.content.len()
         )));
     }
@@ -161,19 +143,6 @@ async fn put_kiln_file(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-// =========================================================================
-// Helpers
-// =========================================================================
-
-/// Reject paths containing traversal sequences or null bytes.
-fn validate_no_traversal(path: &str) -> Result<(), WebError> {
-    if path.contains("..") || path.contains('\0') {
-        return Err(WebError::Validation(
-            "Invalid path: traversal not allowed".to_string(),
-        ));
-    }
-    Ok(())
-}
 
 /// Find the open kiln that contains `file_path`.
 async fn find_enclosing_kiln(state: &AppState, file_path: &Path) -> Result<PathBuf, WebError> {
