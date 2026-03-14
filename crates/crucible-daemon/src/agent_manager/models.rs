@@ -169,41 +169,7 @@ impl AgentManager {
 
         let mut all_models = Vec::new();
 
-        if let Some(ref llm_config) = self.llm_config {
-            for (provider_key, provider_config) in &llm_config.providers {
-                if let Some(ref classification) = classification {
-                    if !provider_config
-                        .effective_trust_level()
-                        .satisfies(*classification)
-                    {
-                        continue;
-                    }
-                }
-
-                let models = self.discover_models(provider_key, provider_config).await;
-                for model in models {
-                    all_models.push(format!("{}/{}", provider_key, model));
-                }
-            }
-        }
-
-        let mut seen_types = std::collections::HashSet::new();
-        if let Some(ref llm_config) = self.llm_config {
-            for provider_config in llm_config.providers.values() {
-                seen_types.insert(provider_config.provider_type.as_str().to_string());
-            }
-        }
-
-        for (provider_key, provider_config) in self.discover_env_providers(&seen_types) {
-            if let Some(ref classification) = classification {
-                if !provider_config
-                    .effective_trust_level()
-                    .satisfies(*classification)
-                {
-                    continue;
-                }
-            }
-
+        for (provider_key, provider_config, _) in self.iter_chat_providers(classification) {
             let models = self.discover_models(&provider_key, &provider_config).await;
             for model in models {
                 all_models.push(format!("{}/{}", provider_key, model));
