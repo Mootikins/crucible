@@ -1,6 +1,6 @@
+use super::helpers::{note_to_file_json, validate_no_traversal, MAX_CONTENT_SIZE};
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
-use super::helpers::{note_to_file_json, validate_no_traversal, MAX_CONTENT_SIZE};
 use axum::{extract::State, routing::get, Json, Router};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -142,7 +142,6 @@ async fn put_kiln_file(
 
     Ok(Json(serde_json::json!({ "ok": true })))
 }
-
 
 /// Find the open kiln that contains `file_path`.
 async fn find_enclosing_kiln(state: &AppState, file_path: &Path) -> Result<PathBuf, WebError> {
