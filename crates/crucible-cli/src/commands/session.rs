@@ -904,8 +904,8 @@ async fn daemon_create(
     // Parse recording_mode if provided
     let recording_mode_parsed = if let Some(mode_str) = recording_mode {
         match mode_str {
-            "granular" => Some("granular"),
-            "coarse" => Some("coarse"),
+            "granular" => Some("granular".to_string()),
+            "coarse" => Some("coarse".to_string()),
             _ => anyhow::bail!(
                 "Invalid recording mode: '{}'. Must be 'granular' or 'coarse'",
                 mode_str
