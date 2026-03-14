@@ -59,7 +59,7 @@ async fn setup_session_with_agent(server: &TestServer) -> (String, DaemonClient)
         .expect("Failed to connect");
 
     let result = client
-        .session_create(crucible_daemon::rpc_client::client::SessionCreateParams {
+        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
                 session_type: "chat".to_string(),
                 kiln: kiln_dir.path().to_path_buf(),
                 workspace: None,
@@ -304,7 +304,7 @@ async fn test_configure_agent_sets_agent() {
         .expect("Failed to connect");
 
     let result = client
-        .session_create(crucible_daemon::rpc_client::client::SessionCreateParams {
+        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
                 session_type: "chat".to_string(),
                 kiln: kiln_dir.path().to_path_buf(),
                 workspace: None,
