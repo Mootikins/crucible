@@ -6,12 +6,103 @@ use axum::{
     Json, Router,
 };
 use crucible_config::BackendType;
+use crucible_daemon::agent_manager::providers::ProviderInfo;
 use crucible_core::session::SessionAgent;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
+
+// =========================================================================
+// Typed Response Structs
+// =========================================================================
+
+/// Standard acknowledgment response for successful mutations.
+#[derive(Debug, Serialize)]
+struct OkResponse {
+    ok: bool,
+}
+
+impl OkResponse {
+    fn success() -> Json<Self> {
+        Json(Self { ok: true })
+    }
+}
+
+/// Response for session archive/unarchive status changes.
+#[derive(Debug, Serialize)]
+struct ArchiveResponse {
+    archived: bool,
+}
+
+/// Response for session deletion.
+#[derive(Debug, Serialize)]
+struct DeleteResponse {
+    deleted: bool,
+}
+
+/// Response for session cancellation.
+#[derive(Debug, Serialize)]
+struct CancelledResponse {
+    cancelled: bool,
+}
+
+/// Response for model listing.
+#[derive(Debug, Serialize)]
+struct ModelsResponse {
+    models: Vec<String>,
+}
+
+/// Response for title operations.
+#[derive(Debug, Serialize)]
+struct TitleResponse {
+    title: String,
+}
+
+/// Response for thinking budget config.
+#[derive(Debug, Serialize)]
+struct ThinkingBudgetResponse {
+    thinking_budget: Option<i64>,
+}
+
+/// Response for temperature config.
+#[derive(Debug, Serialize)]
+struct TemperatureResponse {
+    temperature: Option<f64>,
+}
+
+/// Response for max tokens config.
+#[derive(Debug, Serialize)]
+struct MaxTokensResponse {
+    max_tokens: Option<u32>,
+}
+
+/// Response for precognition config.
+#[derive(Debug, Serialize)]
+struct PrecognitionResponse {
+    precognition_enabled: bool,
+}
+
+/// Response for provider listing.
+#[derive(Debug, Serialize)]
+struct ProvidersResponse {
+    providers: Vec<ProviderInfo>,
+}
+
+// =========================================================================
+// Route Helpers
+// =========================================================================
+
+/// Map daemon errors for session operations, converting "Session not found" to 404.
+fn map_session_not_found(err: impl std::fmt::Display, id: &str) -> WebError {
+    let message = err.to_string();
+    if message.contains("Session not found") {
+        WebError::NotFound(format!("Session not found: {id}"))
+    } else {
+        WebError::Daemon(message)
+    }
+}
 
 pub fn session_routes() -> Router<AppState> {
     Router::new()
@@ -311,73 +402,42 @@ async fn end_session(
 async fn archive_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<ArchiveResponse>, WebError> {
     let kiln = resolve_session_kiln(&state, &id).await?;
-
-    match state
+    state
         .daemon
         .session_archive(&id, std::path::Path::new(&kiln))
         .await
-    {
-        Ok(_) => {
-            state.events.remove_session(&id).await;
-            Ok(Json(serde_json::json!({ "archived": true })))
-        }
-        Err(e) => {
-            let message = e.to_string();
-            if message.contains("Session not found") {
-                return Err(WebError::NotFound(format!("Session not found: {id}")));
-            }
-            Err(WebError::Daemon(message))
-        }
-    }
+        .map_err(|e| map_session_not_found(e, &id))?;
+    state.events.remove_session(&id).await;
+    Ok(Json(ArchiveResponse { archived: true }))
 }
 
 async fn unarchive_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<ArchiveResponse>, WebError> {
     let kiln = resolve_session_kiln(&state, &id).await?;
-
-    match state
+    state
         .daemon
         .session_unarchive(&id, std::path::Path::new(&kiln))
         .await
-    {
-        Ok(_) => Ok(Json(serde_json::json!({ "archived": false }))),
-        Err(e) => {
-            let message = e.to_string();
-            if message.contains("Session not found") {
-                return Err(WebError::NotFound(format!("Session not found: {id}")));
-            }
-            Err(WebError::Daemon(message))
-        }
-    }
+        .map_err(|e| map_session_not_found(e, &id))?;
+    Ok(Json(ArchiveResponse { archived: false }))
 }
 
 async fn delete_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<DeleteResponse>, WebError> {
     let kiln = resolve_session_kiln(&state, &id).await?;
-
-    match state
+    state
         .daemon
         .session_delete(&id, std::path::Path::new(&kiln))
         .await
-    {
-        Ok(_) => {
-            state.events.remove_session(&id).await;
-            Ok(Json(serde_json::json!({ "deleted": true })))
-        }
-        Err(e) => {
-            let message = e.to_string();
-            if message.contains("Session not found") {
-                return Err(WebError::NotFound(format!("Session not found: {id}")));
-            }
-            Err(WebError::Daemon(message))
-        }
-    }
+        .map_err(|e| map_session_not_found(e, &id))?;
+    state.events.remove_session(&id).await;
+    Ok(Json(DeleteResponse { deleted: true }))
 }
 
 async fn resolve_session_kiln(state: &AppState, session_id: &str) -> Result<String, WebError> {
@@ -425,19 +485,17 @@ async fn resolve_session_kiln(state: &AppState, session_id: &str) -> Result<Stri
 async fn cancel_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<CancelledResponse>, WebError> {
     let cancelled = state.daemon.session_cancel(&id).await.daemon_err()?;
-
-    Ok(Json(serde_json::json!({ "cancelled": cancelled })))
+    Ok(Json(CancelledResponse { cancelled }))
 }
 
 async fn list_models(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<ModelsResponse>, WebError> {
     let models = state.daemon.session_list_models(&id).await.daemon_err()?;
-
-    Ok(Json(serde_json::json!({ "models": models })))
+    Ok(Json(ModelsResponse { models }))
 }
 
 #[derive(Debug, Deserialize)]
@@ -449,14 +507,13 @@ async fn switch_model(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(req): Json<SwitchModelRequest>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<OkResponse>, WebError> {
     state
         .daemon
         .session_switch_model(&id, &req.model_id)
         .await
         .daemon_err()?;
-
-    Ok(Json(serde_json::json!({ "ok": true })))
+    Ok(OkResponse::success())
 }
 
 #[derive(Debug, Deserialize)]
@@ -468,14 +525,13 @@ async fn set_session_title(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(req): Json<SetTitleRequest>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<OkResponse>, WebError> {
     state
         .daemon
         .session_set_title(&id, &req.title)
         .await
         .daemon_err()?;
-
-    Ok(Json(serde_json::json!({ "ok": true })))
+    Ok(OkResponse::success())
 }
 
 /// Auto-generate a title for a session from its conversation history.
@@ -485,7 +541,7 @@ async fn set_session_title(
 async fn auto_title(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<TitleResponse>, WebError> {
     // Get session info to find kiln path
     let session = state.daemon.session_get(&id).await.daemon_err()?;
     let kiln_str = session.get("kiln").and_then(|v| v.as_str()).unwrap_or("");
@@ -528,7 +584,7 @@ async fn auto_title(
         .await
         .daemon_err()?;
 
-    Ok(Json(serde_json::json!({ "title": title })))
+    Ok(Json(TitleResponse { title }))
 }
 
 /// Create a concise title from a message by smart truncation.
@@ -570,27 +626,25 @@ async fn set_thinking_budget(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(req): Json<SetThinkingBudgetRequest>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<OkResponse>, WebError> {
     state
         .daemon
         .session_set_thinking_budget(&id, req.thinking_budget)
         .await
         .daemon_err()?;
-
-    Ok(Json(serde_json::json!({ "ok": true })))
+    Ok(OkResponse::success())
 }
 
 async fn get_thinking_budget(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, WebError> {
-    let budget = state
+) -> Result<Json<ThinkingBudgetResponse>, WebError> {
+    let thinking_budget = state
         .daemon
         .session_get_thinking_budget(&id)
         .await
         .daemon_err()?;
-
-    Ok(Json(serde_json::json!({ "thinking_budget": budget })))
+    Ok(Json(ThinkingBudgetResponse { thinking_budget }))
 }
 
 #[derive(Debug, Deserialize)]
@@ -602,27 +656,25 @@ async fn set_temperature(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(req): Json<SetTemperatureRequest>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<OkResponse>, WebError> {
     state
         .daemon
         .session_set_temperature(&id, req.temperature)
         .await
         .daemon_err()?;
-
-    Ok(Json(serde_json::json!({ "ok": true })))
+    Ok(OkResponse::success())
 }
 
 async fn get_temperature(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<TemperatureResponse>, WebError> {
     let temperature = state
         .daemon
         .session_get_temperature(&id)
         .await
         .daemon_err()?;
-
-    Ok(Json(serde_json::json!({ "temperature": temperature })))
+    Ok(Json(TemperatureResponse { temperature }))
 }
 
 #[derive(Debug, Deserialize)]
@@ -634,27 +686,25 @@ async fn set_max_tokens(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(req): Json<SetMaxTokensRequest>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<OkResponse>, WebError> {
     state
         .daemon
         .session_set_max_tokens(&id, req.max_tokens)
         .await
         .daemon_err()?;
-
-    Ok(Json(serde_json::json!({ "ok": true })))
+    Ok(OkResponse::success())
 }
 
 async fn get_max_tokens(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<MaxTokensResponse>, WebError> {
     let max_tokens = state
         .daemon
         .session_get_max_tokens(&id)
         .await
         .daemon_err()?;
-
-    Ok(Json(serde_json::json!({ "max_tokens": max_tokens })))
+    Ok(Json(MaxTokensResponse { max_tokens }))
 }
 
 #[derive(Debug, Deserialize)]
@@ -666,27 +716,27 @@ async fn set_precognition(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(req): Json<SetPrecognitionRequest>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<OkResponse>, WebError> {
     state
         .daemon
         .session_set_precognition(&id, req.enabled)
         .await
         .daemon_err()?;
-
-    Ok(Json(serde_json::json!({ "ok": true })))
+    Ok(OkResponse::success())
 }
 
 async fn get_precognition(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<PrecognitionResponse>, WebError> {
     let enabled = state
         .daemon
         .session_get_precognition(&id)
         .await
         .daemon_err()?;
-
-    Ok(Json(serde_json::json!({ "precognition_enabled": enabled })))
+    Ok(Json(PrecognitionResponse {
+        precognition_enabled: enabled,
+    }))
 }
 
 async fn export_session(
@@ -920,13 +970,13 @@ struct ListProvidersQuery {
 async fn list_providers(
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<ListProvidersQuery>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<ProvidersResponse>, WebError> {
     let providers = state
         .daemon
         .list_providers(query.kiln.as_deref())
         .await
         .daemon_err()?;
-    Ok(Json(serde_json::json!({ "providers": providers })))
+    Ok(Json(ProvidersResponse { providers }))
 }
 
 #[cfg(test)]
