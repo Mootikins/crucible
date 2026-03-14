@@ -139,6 +139,7 @@ Multi-session server for concurrent agent access. Owns all business logic that v
 - MCP server control: start, stop, status
 - Skills discovery: list, get, search
 - Agent profiles: list_profiles, resolve_profile
+- Tool dispatch via `DaemonToolDispatcher`: routes tool calls to the correct executor (built-in Rust tools, Lua plugin tools, or external MCP server tools) using a provider chain with lazy name hydration
 - Tool dispatch enforces a 30-second timeout per tool call; timed-out calls return an error to the LLM so it can retry or adjust
 - Auto-archive sweep runs every 30 minutes, archiving sessions idle beyond a configurable threshold (default 72 hours)
 
