@@ -48,14 +48,14 @@ fn build_provider_info(
     }
 }
 
-
 impl AgentManager {
     pub async fn list_providers(
         &self,
         classification: Option<DataClassification>,
     ) -> Vec<ProviderInfo> {
         let mut providers = Vec::new();
-        for (provider_key, provider_config, source_reason) in self.iter_chat_providers(classification)
+        for (provider_key, provider_config, source_reason) in
+            self.iter_chat_providers(classification)
         {
             let backend = provider_config.provider_type;
 
