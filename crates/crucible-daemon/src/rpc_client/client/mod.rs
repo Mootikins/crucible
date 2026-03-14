@@ -976,6 +976,37 @@ impl DaemonClient {
         Ok(serde_json::from_value(result)?)
     }
 
+    /// Send a typed JSON-RPC request and discard the response.
+    ///
+    /// Wraps `typed_call()` for methods that return unit (Ok(())).
+    /// Discards the response value to avoid unused variable warnings.
+    async fn typed_unit_call<Req>(&self, method: &str, params: Req) -> Result<()>
+    where
+        Req: serde::Serialize,
+    {
+        let _: serde_json::Value = self.typed_call(method, params).await?;
+        Ok(())
+    }
+
+    /// Send a typed JSON-RPC request with retry and discard the response.
+    ///
+    /// Wraps `typed_call_with_retry()` for methods that return unit (Ok(())).
+    /// Discards the response value to avoid unused variable warnings.
+    async fn typed_unit_call_with_retry<Req>(&self, method: &str, params: Req) -> Result<()>
+    where
+        Req: serde::Serialize,
+    {
+        let _: serde_json::Value = self.typed_call_with_retry(method, params).await?;
+        Ok(())
+    }
+
+    /// Build a request containing only a session_id.
+    ///
+    /// Helper for methods that take only a session_id parameter.
+    fn session_id_request(&self, session_id: &str) -> serde_json::Value {
+        serde_json::json!({"session_id": session_id.to_string()})
+    }
+
     /// Shorthand for RPC methods that only take a session_id parameter.
     async fn session_id_call(&self, method: &str, session_id: &str) -> Result<serde_json::Value> {
         self.typed_call(
