@@ -7,20 +7,10 @@ import {
 } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import type { EditorFile } from '@/lib/types';
+import type { EditorContextValue } from '@/lib/types/context';
 import { getNote, saveNote } from '@/lib/api';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 
-export interface EditorContextValue {
-  openFiles: Accessor<EditorFile[]>;
-  activeFile: Accessor<string | null>;
-  openFile: (path: string) => Promise<void>;
-  closeFile: (path: string) => void;
-  saveFile: (path: string) => Promise<void>;
-  setActiveFile: (path: string) => void;
-  updateFileContent: (path: string, content: string) => void;
-  isLoading: Accessor<boolean>;
-  error: Accessor<string | null>;
-}
 
 const EditorContext = createContext<EditorContextValue>();
 
