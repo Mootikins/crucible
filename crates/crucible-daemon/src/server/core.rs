@@ -223,6 +223,16 @@ pub(super) async fn sweep_and_archive_stale_sessions(
             continue;
         }
 
+        // Re-check last_activity before archiving to avoid TOCTOU race
+        // where session could receive new activity between staleness check and archive
+        let fresh_session = session_manager.get_session(&session.id);
+        if let Some(fresh) = fresh_session {
+            let fresh_last_activity = fresh.last_activity.unwrap_or(fresh.started_at);
+            if now - fresh_last_activity < stale_after {
+                continue;
+            }
+        }
+
         session_manager
             .archive_session(&session.id, &session.kiln)
             .await
