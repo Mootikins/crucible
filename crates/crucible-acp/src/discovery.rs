@@ -101,73 +101,37 @@ pub async fn probe_all_agents() -> Vec<KnownAgent> {
     join_all(futures).await
 }
 
+/// Built-in agent profiles (table-driven initialization)
+const BUILTIN_PROFILES: &[(&str, &str, &[&str], Option<&str>)] = &[
+    ("opencode", "opencode", &["acp"], Some("OpenCode AI (Go)")),
+    ("claude", "npx", &["@zed-industries/claude-agent-acp"], Some("Claude Code via ACP")),
+    ("gemini", "gemini", &[], Some("Google Gemini CLI")),
+    ("codex", "npx", &["@zed-industries/codex-acp"], Some("OpenAI Codex via ACP")),
+    ("cursor", "cursor-acp", &[], Some("Cursor IDE via ACP")),
+];
+
 pub fn default_agent_profiles() -> HashMap<String, AgentProfile> {
     let mut profiles = HashMap::new();
 
-    profiles.insert(
-        "opencode".to_string(),
-        AgentProfile {
-            extends: None,
-            command: Some("opencode".to_string()),
-            args: Some(vec!["acp".to_string()]),
-            env: HashMap::new(),
-            description: Some("OpenCode AI (Go)".to_string()),
-            capabilities: None,
-            delegation: None,
-        },
-    );
-
-    profiles.insert(
-        "claude".to_string(),
-        AgentProfile {
-            extends: None,
-            command: Some("npx".to_string()),
-            args: Some(vec!["@zed-industries/claude-agent-acp".to_string()]),
-            env: HashMap::new(),
-            description: Some("Claude Code via ACP".to_string()),
-            capabilities: None,
-            delegation: None,
-        },
-    );
-
-    profiles.insert(
-        "gemini".to_string(),
-        AgentProfile {
-            extends: None,
-            command: Some("gemini".to_string()),
-            args: Some(Vec::new()),
-            env: HashMap::new(),
-            description: Some("Google Gemini CLI".to_string()),
-            capabilities: None,
-            delegation: None,
-        },
-    );
-
-    profiles.insert(
-        "codex".to_string(),
-        AgentProfile {
-            extends: None,
-            command: Some("npx".to_string()),
-            args: Some(vec!["@zed-industries/codex-acp".to_string()]),
-            env: HashMap::new(),
-            description: Some("OpenAI Codex via ACP".to_string()),
-            capabilities: None,
-            delegation: None,
-        },
-    );
-
-    profiles.insert(
-        "cursor".to_string(),
-        AgentProfile {
-            extends: None,
-            command: Some("cursor-acp".to_string()),
-            args: Some(Vec::new()),
-            env: HashMap::new(),
-            description: Some("Cursor IDE via ACP".to_string()),
-            capabilities: None,
-            delegation: None,
-        },
-    );
+    for (name, command, args_slice, description) in BUILTIN_PROFILES {
+        let args = if args_slice.is_empty() {
+            Some(Vec::new())
+        } else {
+            Some(args_slice.iter().map(|s| s.to_string()).collect())
+        };
+        profiles.insert(
+            name.to_string(),
+            AgentProfile {
+                extends: None,
+                command: Some(command.to_string()),
+                args,
+                env: HashMap::new(),
+                description: description.map(|d| d.to_string()),
+                capabilities: None,
+                delegation: None,
+            },
+        );
+    }
 
     profiles
 }
