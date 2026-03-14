@@ -1,5 +1,29 @@
 //! CLI application configuration types and loading.
 
+/// Registry of all tracked configuration fields.
+/// Each field is tracked for source provenance (file, CLI, env, default).
+const TRACKED_FIELDS: &[(&str, &str)] = &[
+    ("kiln_path", "Top-level"),
+    ("agent_directories", "Top-level"),
+    ("session_kiln", "Top-level"),
+    ("llm.default", "LLM"),
+    ("acp.default_agent", "ACP"),
+    ("acp.enable_discovery", "ACP"),
+    ("acp.session_timeout_minutes", "ACP"),
+    ("acp.max_message_size_mb", "ACP"),
+    ("chat.model", "Chat"),
+    ("chat.enable_markdown", "Chat"),
+    ("chat.endpoint", "Chat"),
+    ("chat.temperature", "Chat"),
+    ("chat.max_tokens", "Chat"),
+    ("chat.timeout_secs", "Chat"),
+    ("cli.show_progress", "CLI"),
+    ("cli.confirm_destructive", "CLI"),
+    ("cli.verbose", "CLI"),
+    ("logging.level", "Logging"),
+    ("processing.parallel_workers", "Processing"),
+];
+
 use crate::components::{
     AcpConfig, ChatConfig, CliConfig, ContextConfig, LlmConfig, McpConfig, PermissionConfig,
     StorageConfig,
@@ -259,29 +283,9 @@ impl CliAppConfig {
         };
 
         // Track sources for all known fields
-        let all_tracked_fields = [
-            "kiln_path",
-            "agent_directories",
-            "session_kiln",
-            "llm.default",
-            "acp.default_agent",
-            "acp.enable_discovery",
-            "acp.session_timeout_minutes",
-            "acp.max_message_size_mb",
-            "chat.model",
-            "chat.enable_markdown",
-            "chat.endpoint",
-            "chat.temperature",
-            "chat.max_tokens",
-            "chat.timeout_secs",
-            "cli.show_progress",
-            "cli.confirm_destructive",
-            "cli.verbose",
-            "logging.level",
-            "processing.parallel_workers",
-        ];
+        let all_tracked_fields = TRACKED_FIELDS.iter().map(|(name, _)| *name).collect::<Vec<_>>();
 
-        for field in &all_tracked_fields {
+for field in &all_tracked_fields {
             if file_fields.contains(&(*field).to_string()) {
                 source_map.set(
                     field,
@@ -503,21 +507,9 @@ impl CliAppConfig {
         use crate::value_source::{ValueSource, ValueSourceMap};
 
         let mut map = ValueSourceMap::new();
-        let tracked_fields = [
-            "kiln_path",
-            "llm.default",
-            "acp.default_agent",
-            "acp.enable_discovery",
-            "acp.session_timeout_minutes",
-            "chat.model",
-            "chat.enable_markdown",
-            "cli.show_progress",
-            "cli.confirm_destructive",
-            "cli.verbose",
-        ];
+        for (field_name, _) in TRACKED_FIELDS {
 
-        for field in &tracked_fields {
-            map.set(field, ValueSource::Default);
+            map.set(field_name, ValueSource::Default);
         }
 
         map
