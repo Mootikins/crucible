@@ -140,14 +140,7 @@ async fn put_kiln_file(
     let file_path = PathBuf::from(&req.path);
     let kiln = find_enclosing_kiln(&state, &file_path).await?;
 
-    // Verify resolved path stays within kiln
-    if let Ok(canonical) = file_path.canonicalize() {
-        if !canonical.starts_with(&kiln) {
-            return Err(WebError::Validation(
-                "Path escapes kiln directory".to_string(),
-            ));
-        }
-    }
+    validate_parent_within_kiln(&file_path, &kiln)?;
 
     // Create parent directories if needed
     if let Some(parent) = file_path.parent() {
@@ -172,6 +165,24 @@ fn validate_no_traversal(path: &str) -> Result<(), WebError> {
             "Invalid path: traversal not allowed".to_string(),
         ));
     }
+    Ok(())
+}
+
+fn validate_parent_within_kiln(file_path: &Path, kiln: &Path) -> Result<(), WebError> {
+    let canonical_file_parent = file_path
+        .parent()
+        .ok_or_else(|| WebError::Validation("Path has no parent directory".to_string()))?;
+
+    let canonical_parent = canonical_file_parent.canonicalize().map_err(|_| {
+        WebError::Validation("Parent directory does not exist or is not accessible".to_string())
+    })?;
+
+    if !canonical_parent.starts_with(kiln) {
+        return Err(WebError::Validation(
+            "Path escapes kiln directory".to_string(),
+        ));
+    }
+
     Ok(())
 }
 
@@ -201,6 +212,12 @@ mod tests {
     use super::*;
     use crate::test_support::{arb_safe_path, arb_traversal_path};
     use proptest::prelude::*;
+    use tempfile::tempdir;
+
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink as symlink_dir;
+    #[cfg(windows)]
+    use std::os::windows::fs::symlink_dir;
 
     #[test]
     fn test_validate_no_traversal_rejects_dotdot() {
@@ -253,6 +270,27 @@ mod tests {
         assert!(documented.contains("symlink"));
     }
 
+    #[test]
+    fn put_kiln_file_rejects_new_file_outside_kiln() {
+        let kiln = tempdir().expect("temp kiln");
+        let outside = tempdir().expect("temp outside");
+
+        let link = kiln.path().join("escape-link");
+        symlink_dir(outside.path(), &link).expect("create symlink to outside");
+
+        let new_file_path = link.join("new-note.md");
+        assert!(!new_file_path.exists());
+
+        let err = validate_parent_within_kiln(&new_file_path, kiln.path())
+            .expect_err("symlinked parent outside kiln must be rejected");
+        match err {
+            WebError::Validation(message) => {
+                assert_eq!(message, "Path escapes kiln directory");
+            }
+            other => panic!("expected validation error, got: {other:?}"),
+        }
+    }
+
     proptest! {
         #[test]
         fn prop_traversal_paths_are_rejected(path in arb_traversal_path()) {
@@ -268,6 +306,20 @@ mod tests {
         fn prop_null_bytes_are_always_rejected(prefix in ".{0,32}", suffix in ".{0,32}") {
             let path = format!("{prefix}\0{suffix}");
             prop_assert!(validate_no_traversal(&path).is_err());
+        }
+
+        #[test]
+        fn prop_new_file_path_traversal_rejected(file_name in "[a-zA-Z0-9_-]{1,32}\\.md") {
+            let kiln = tempdir().expect("temp kiln");
+            let outside = tempdir().expect("temp outside");
+
+            let link = kiln.path().join("escape-link");
+            symlink_dir(outside.path(), &link).expect("create symlink to outside");
+
+            let new_file_path = link.join(file_name);
+            prop_assume!(!new_file_path.exists());
+
+            prop_assert!(validate_parent_within_kiln(&new_file_path, kiln.path()).is_err());
         }
     }
 }
