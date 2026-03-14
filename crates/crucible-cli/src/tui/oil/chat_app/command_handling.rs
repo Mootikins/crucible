@@ -189,7 +189,7 @@ impl OilChatApp {
 
     fn handle_reload_repl(&mut self, name: Option<&str>) -> Action<ChatAppMsg> {
         match name {
-            Some(plugin_name) if plugin_name.is_empty() => {
+            Some("") => {
                 self.notification_area
                     .add(crucible_core::types::Notification::warning(
                         "Usage: :reload <plugin_name>".to_string(),
