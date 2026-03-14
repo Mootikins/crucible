@@ -140,7 +140,7 @@ toml = { workspace = true }
 crucible-cli = { path = ".", features = ["test-utils"] }  # Enable test utilities
 crucible-config = { path = "../crucible-config", features = ["test-utils"] }
 # MCP client for testing examples
-rmcp = { version = "1.1", features = ["client", "transport-child-process"] }
+rmcp = { version = "1.2", features = ["client", "transport-child-process"] }
 tempfile = { workspace = true }
 assert_cmd = { workspace = true }
 predicates = { workspace = true }

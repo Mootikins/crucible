@@ -26,13 +26,13 @@ crucible-config = { path = "../crucible-config" }
 oq = { workspace = true }
 
 # MCP server transport
-rmcp = { version = "1.1", features = ["macros", "server", "transport-streamable-http-server"] }
+rmcp = { version = "1.2", features = ["macros", "server", "transport-streamable-http-server"] }
 
 # HTTP server for SSE (required for in-process MCP hosting)
 axum = "0.8"
 
 # Agent Client Protocol
-agent-client-protocol = "0.9.5"
+agent-client-protocol = "0.10.2"
 
 # Async runtime
 tokio = { workspace = true, features = ["full", "tracing"] }
