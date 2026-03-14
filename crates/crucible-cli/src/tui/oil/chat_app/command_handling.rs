@@ -235,220 +235,217 @@ impl OilChatApp {
         let input = command.strip_prefix("set").unwrap_or(command).trim();
 
         match SetCommand::parse(input) {
-            Ok(cmd) => {
-                match cmd {
-                    SetCommand::ShowModified => {
-                        let output = self.runtime_config.format_modified();
-                        self.add_system_message(output);
-                    }
-                    SetCommand::ShowAll => {
-                        let output = self.runtime_config.format_all();
-                        self.add_system_message(output);
-                    }
-                    SetCommand::Query { key } => {
-                        let output = self.runtime_config.format_query(&key);
-                        self.add_system_message(output);
-                    }
-                    SetCommand::QueryHistory { key } => {
-                        let output = self.runtime_config.format_history(&key);
-                        self.add_system_message(output);
-                    }
-                    SetCommand::Enable { key } => {
-                        if let Some(current) = self.runtime_config.get(&key) {
-                            if current.as_bool().is_some() {
-                                self.runtime_config.set(
-                                    &key,
-                                    ConfigValue::Bool(true),
-                                    ModSource::Command,
-                                );
-                                self.sync_runtime_to_fields(&key);
-                                self.add_system_message(format!("  {}=true", key));
-                            } else {
-                                let output = self.runtime_config.format_query(&key);
-                                self.add_system_message(output);
-                            }
-                        } else {
-                            self.runtime_config.set(
-                                &key,
-                                ConfigValue::Bool(true),
-                                ModSource::Command,
-                            );
-                            self.sync_runtime_to_fields(&key);
-                            self.add_system_message(format!("  {}=true", key));
-                        }
-                    }
-                    SetCommand::Disable { key } => {
-                        match self.runtime_config.disable(&key, ModSource::Command) {
-                            Ok(()) => {
-                                self.sync_runtime_to_fields(&key);
-                                self.add_system_message(format!("  {}=false", key));
-                            }
-                            Err(e) => {
-                                self.notification_area.add(
-                                    crucible_core::types::Notification::warning(e.to_string()),
-                                );
-                            }
-                        }
-                    }
-                    SetCommand::Toggle { key } => {
-                        match self.runtime_config.toggle(&key, ModSource::Command) {
-                            Ok(new_val) => {
-                                self.sync_runtime_to_fields(&key);
-                                self.add_system_message(format!("  {}={}", key, new_val));
-                            }
-                            Err(e) => {
-                                self.notification_area.add(
-                                    crucible_core::types::Notification::warning(e.to_string()),
-                                );
-                            }
-                        }
-                    }
-                    SetCommand::Reset { key } => {
-                        self.runtime_config.reset(&key);
-                        self.sync_runtime_to_fields(&key);
-                        let output = self.runtime_config.format_query(&key);
-                        self.add_system_message(format!("Reset: {}", output.trim()));
-                    }
-                    SetCommand::Pop { key } => {
-                        if self.runtime_config.pop(&key).is_some() {
-                            self.sync_runtime_to_fields(&key);
-                            let output = self.runtime_config.format_query(&key);
-                            self.add_system_message(output);
-                        } else {
-                            self.add_system_message(format!("  {} is at base value", key));
-                        }
-                    }
-                    SetCommand::Set { key, value } => {
-                        if key == "model" {
-                            self.model = value.clone();
-                            self.runtime_config.set_dynamic(
-                                &key,
-                                ConfigValue::String(value.clone()),
-                                ModSource::Command,
-                                &self.current_provider.clone(),
-                            );
-                            self.add_system_message(format!("  model={}", value));
-                            return Action::Send(ChatAppMsg::SwitchModel(value));
-                        }
-
-                        if key == "thinkingbudget" {
-                            use crate::tui::oil::config::ThinkingPreset;
-                            if let Some(preset) = ThinkingPreset::by_name(&value) {
-                                let budget = preset.to_budget();
-                                self.runtime_config
-                                    .set_str(&key, &value, ModSource::Command);
-                                self.add_system_message(format!(
-                                    "  thinkingbudget={} ({})",
-                                    value, budget
-                                ));
-                                return Action::Send(ChatAppMsg::SetThinkingBudget(budget));
-                            } else {
-                                let valid = ThinkingPreset::names().collect::<Vec<_>>().join(", ");
-                                self.notification_area.add(
-                                    crucible_core::types::Notification::warning(format!(
-                                        "Unknown preset '{}'. Valid: {}",
-                                        value, valid
-                                    )),
-                                );
-                                return Action::Continue;
-                            }
-                        }
-
-                        if key == "temperature" {
-                            match value.parse::<f64>() {
-                                Ok(temp) if (0.0..=2.0).contains(&temp) => {
-                                    self.runtime_config
-                                        .set_str(&key, &value, ModSource::Command);
-                                    self.add_system_message(format!("  temperature={}", temp));
-                                    return Action::Send(ChatAppMsg::SetTemperature(temp));
-                                }
-                                Ok(_) => {
-                                    self.notification_area.add(
-                                        crucible_core::types::Notification::warning(
-                                            "Temperature must be between 0.0 and 2.0".to_string(),
-                                        ),
-                                    );
-                                    return Action::Continue;
-                                }
-                                Err(_) => {
-                                    self.notification_area.add(
-                                        crucible_core::types::Notification::warning(format!(
-                                            "Invalid temperature value: {}",
-                                            value
-                                        )),
-                                    );
-                                    return Action::Continue;
-                                }
-                            }
-                        }
-
-                        if key == "maxtokens" {
-                            let max_tokens = if value == "none" || value == "null" {
-                                None
-                            } else {
-                                match value.parse::<u32>() {
-                                    Ok(n) => Some(n),
-                                    Err(_) => {
-                                        self.notification_area.add(
-                                            crucible_core::types::Notification::warning(format!(
-                                            "Invalid max_tokens value: {} (use a number or 'none')",
-                                            value
-                                        )),
-                                        );
-                                        return Action::Continue;
-                                    }
-                                }
-                            };
-                            self.runtime_config
-                                .set_str(&key, &value, ModSource::Command);
-                            let display = max_tokens.map_or("none".to_string(), |n| n.to_string());
-                            self.add_system_message(format!("  maxtokens={}", display));
-                            return Action::Send(ChatAppMsg::SetMaxTokens(max_tokens));
-                        }
-
-                        if key.starts_with("perm.") {
-                            return self.handle_perm_set(&key, &value);
-                        }
-
-                        if key == "precognition.results" {
-                            match value.parse::<usize>() {
-                                Ok(n) if (1..=20).contains(&n) => {
-                                    self.runtime_config
-                                        .set_str(&key, &value, ModSource::Command);
-                                    self.precognition.precognition_results = n;
-                                    self.add_system_message(format!(
-                                        "  precognition.results={}",
-                                        n
-                                    ));
-                                }
-                                _ => {
-                                    self.notification_area.add(
-                                        crucible_core::types::Notification::warning(
-                                            "precognition.results must be 1-20".to_string(),
-                                        ),
-                                    );
-                                }
-                            }
-                            return Action::Continue;
-                        }
-
-                        self.runtime_config
-                            .set_str(&key, &value, ModSource::Command);
-                        self.sync_runtime_to_fields(&key);
-                        self.add_system_message(format!("  {}={}", key, value));
-                    }
+            Ok(cmd) => match cmd {
+                SetCommand::ShowModified => {
+                    let output = self.runtime_config.format_modified();
+                    self.add_system_message(output);
+                    Action::Continue
                 }
-                Action::Continue
-            }
+                SetCommand::ShowAll => {
+                    let output = self.runtime_config.format_all();
+                    self.add_system_message(output);
+                    Action::Continue
+                }
+                SetCommand::Query { key } => {
+                    let output = self.runtime_config.format_query(&key);
+                    self.add_system_message(output);
+                    Action::Continue
+                }
+                SetCommand::QueryHistory { key } => {
+                    let output = self.runtime_config.format_history(&key);
+                    self.add_system_message(output);
+                    Action::Continue
+                }
+                SetCommand::Enable { key } => self.handle_set_enable(&key),
+                SetCommand::Disable { key } => self.handle_set_disable(&key),
+                SetCommand::Toggle { key } => self.handle_set_toggle(&key),
+                SetCommand::Reset { key } => {
+                    self.runtime_config.reset(&key);
+                    self.sync_runtime_to_fields(&key);
+                    let output = self.runtime_config.format_query(&key);
+                    self.add_system_message(format!("Reset: {}", output.trim()));
+                    Action::Continue
+                }
+                SetCommand::Pop { key } => {
+                    if self.runtime_config.pop(&key).is_some() {
+                        self.sync_runtime_to_fields(&key);
+                        let output = self.runtime_config.format_query(&key);
+                        self.add_system_message(output);
+                    } else {
+                        self.add_system_message(format!("  {} is at base value", key));
+                    }
+                    Action::Continue
+                }
+                SetCommand::Set { key, value } => self.dispatch_set_key(&key, value),
+            },
             Err(e) => {
-                self.notification_area
-                    .add(crucible_core::types::Notification::warning(format!(
-                        "Parse error: {}",
-                        e
-                    )));
+                self.warn_invalid(format!("Parse error: {}", e));
                 Action::Continue
             }
         }
+    }
+
+    /// Dispatches `:set key=value` to the appropriate per-key handler.
+    fn dispatch_set_key(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
+        match key {
+            "model" => self.handle_set_model(key, value),
+            "thinkingbudget" => self.handle_set_thinking_budget(key, value),
+            "temperature" => self.handle_set_temperature(key, value),
+            "maxtokens" => self.handle_set_max_tokens(key, value),
+            "precognition.results" => self.handle_set_precognition_results(key, value),
+            k if k.starts_with("perm.") => self.handle_perm_set(key, &value),
+            _ => {
+                self.runtime_config
+                    .set_str(key, &value, ModSource::Command);
+                self.sync_runtime_to_fields(key);
+                self.send_setting_ack(key, &value);
+                Action::Continue
+            }
+        }
+    }
+
+    fn handle_set_model(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
+        self.model = value.clone();
+        self.runtime_config.set_dynamic(
+            key,
+            ConfigValue::String(value.clone()),
+            ModSource::Command,
+            &self.current_provider.clone(),
+        );
+        self.send_setting_ack("model", &value);
+        Action::Send(ChatAppMsg::SwitchModel(value))
+    }
+
+    fn handle_set_thinking_budget(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
+        use crate::tui::oil::config::ThinkingPreset;
+        if let Some(preset) = ThinkingPreset::by_name(&value) {
+            let budget = preset.to_budget();
+            self.runtime_config
+                .set_str(key, &value, ModSource::Command);
+            self.add_system_message(format!("  thinkingbudget={} ({})", value, budget));
+            Action::Send(ChatAppMsg::SetThinkingBudget(budget))
+        } else {
+            let valid = ThinkingPreset::names().collect::<Vec<_>>().join(", ");
+            self.warn_invalid(format!("Unknown preset '{}'. Valid: {}", value, valid));
+            Action::Continue
+        }
+    }
+
+    fn handle_set_temperature(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
+        match value.parse::<f64>() {
+            Ok(temp) if (0.0..=2.0).contains(&temp) => {
+                self.runtime_config
+                    .set_str(key, &value, ModSource::Command);
+                self.send_setting_ack("temperature", temp);
+                Action::Send(ChatAppMsg::SetTemperature(temp))
+            }
+            Ok(_) => {
+                self.warn_invalid("Temperature must be between 0.0 and 2.0");
+                Action::Continue
+            }
+            Err(_) => {
+                self.warn_invalid(format!("Invalid temperature value: {}", value));
+                Action::Continue
+            }
+        }
+    }
+
+    fn handle_set_max_tokens(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
+        let max_tokens = if value == "none" || value == "null" {
+            None
+        } else {
+            match value.parse::<u32>() {
+                Ok(n) => Some(n),
+                Err(_) => {
+                    self.warn_invalid(format!(
+                        "Invalid max_tokens value: {} (use a number or 'none')",
+                        value
+                    ));
+                    return Action::Continue;
+                }
+            }
+        };
+        self.runtime_config
+            .set_str(key, &value, ModSource::Command);
+        let display = max_tokens.map_or("none".to_string(), |n| n.to_string());
+        self.send_setting_ack("maxtokens", &display);
+        Action::Send(ChatAppMsg::SetMaxTokens(max_tokens))
+    }
+
+    fn handle_set_precognition_results(
+        &mut self,
+        key: &str,
+        value: String,
+    ) -> Action<ChatAppMsg> {
+        match value.parse::<usize>() {
+            Ok(n) if (1..=20).contains(&n) => {
+                self.runtime_config
+                    .set_str(key, &value, ModSource::Command);
+                self.precognition.precognition_results = n;
+                self.send_setting_ack("precognition.results", n);
+            }
+            _ => {
+                self.warn_invalid("precognition.results must be 1-20");
+            }
+        }
+        Action::Continue
+    }
+
+    fn handle_set_enable(&mut self, key: &str) -> Action<ChatAppMsg> {
+        if let Some(current) = self.runtime_config.get(key) {
+            if current.as_bool().is_some() {
+                self.runtime_config
+                    .set(key, ConfigValue::Bool(true), ModSource::Command);
+                self.sync_runtime_to_fields(key);
+                self.send_setting_ack(key, true);
+            } else {
+                let output = self.runtime_config.format_query(key);
+                self.add_system_message(output);
+            }
+        } else {
+            self.runtime_config
+                .set(key, ConfigValue::Bool(true), ModSource::Command);
+            self.sync_runtime_to_fields(key);
+            self.send_setting_ack(key, true);
+        }
+        Action::Continue
+    }
+
+    fn handle_set_disable(&mut self, key: &str) -> Action<ChatAppMsg> {
+        match self.runtime_config.disable(key, ModSource::Command) {
+            Ok(()) => {
+                self.sync_runtime_to_fields(key);
+                self.send_setting_ack(key, false);
+            }
+            Err(e) => {
+                self.warn_invalid(e.to_string());
+            }
+        }
+        Action::Continue
+    }
+
+    fn handle_set_toggle(&mut self, key: &str) -> Action<ChatAppMsg> {
+        match self.runtime_config.toggle(key, ModSource::Command) {
+            Ok(new_val) => {
+                self.sync_runtime_to_fields(key);
+                self.send_setting_ack(key, new_val);
+            }
+            Err(e) => {
+                self.warn_invalid(e.to_string());
+            }
+        }
+        Action::Continue
+    }
+
+    /// Adds a warning notification for invalid input.
+    fn warn_invalid(&mut self, msg: impl Into<String>) {
+        self.notification_area
+            .add(crucible_core::types::Notification::warning(msg.into()));
+    }
+
+    /// Acknowledges a setting change with a formatted system message.
+    fn send_setting_ack(&mut self, key: &str, value: impl std::fmt::Display) {
+        self.add_system_message(format!("  {}={}", key, value));
     }
 
     pub(super) fn handle_config_show_command(&mut self) -> Action<ChatAppMsg> {
