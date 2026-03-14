@@ -41,6 +41,13 @@ pub struct DefaultEnrichmentService {
     emitter: Option<SharedEventBus<SessionEvent>>,
 }
 
+struct BlockCandidate {
+    block_id: String,
+    word_count: usize,
+    offset: usize,
+    text: String,
+}
+
 impl DefaultEnrichmentService {
     /// Create a new enrichment service with an embedding provider
     pub fn new(embedding_provider: Arc<dyn EmbeddingProvider>) -> Self {
@@ -244,134 +251,108 @@ impl DefaultEnrichmentService {
                     || id.starts_with("removed_section")
             });
 
-        // Extract from headings
-        for (idx, heading) in parsed.content.headings.iter().enumerate() {
-            let block_id = format!("heading_{}", idx);
-
-            // Check if this block changed (if we have change tracking and block-level IDs)
-            if !embed_all && !changed_blocks.contains(&block_id) {
-                continue;
-            }
-
-            let word_count = heading.text.split_whitespace().count();
-            if word_count >= self.min_words_for_embedding {
-                // Add breadcrumbs for context
-                let context = breadcrumbs
-                    .get(&heading.offset)
-                    .cloned()
-                    .unwrap_or_default();
-                let text_with_context = if context.is_empty() {
-                    heading.text.clone()
-                } else {
-                    format!("[{}] {}", context, heading.text)
-                };
-                blocks.push((block_id, text_with_context));
-            }
-        }
-
-        // Extract from paragraphs
-        for (idx, paragraph) in parsed.content.paragraphs.iter().enumerate() {
-            let block_id = format!("paragraph_{}", idx);
-
-            // Check if this block changed
-            if !embed_all && !changed_blocks.contains(&block_id) {
-                continue;
-            }
-
-            if paragraph.word_count >= self.min_words_for_embedding {
-                // Add breadcrumbs for context
-                let context = breadcrumbs
-                    .get(&paragraph.offset)
-                    .cloned()
-                    .unwrap_or_default();
-                let text_with_context = if context.is_empty() {
-                    paragraph.content.clone()
-                } else {
-                    format!("[{}] {}", context, paragraph.content)
-                };
-                blocks.push((block_id, text_with_context));
-            }
-        }
-
-        // Extract from code blocks
-        for (idx, code_block) in parsed.content.code_blocks.iter().enumerate() {
-            let block_id = format!("code_{}", idx);
-
-            // Check if this block changed
-            if !embed_all && !changed_blocks.contains(&block_id) {
-                continue;
-            }
-
-            let word_count = code_block.content.split_whitespace().count();
-            if word_count >= self.min_words_for_embedding {
-                // Add breadcrumbs for context
-                let context = breadcrumbs
-                    .get(&code_block.offset)
-                    .cloned()
-                    .unwrap_or_default();
-                let text_with_context = if context.is_empty() {
-                    code_block.content.clone()
-                } else {
-                    format!("[{}] {}", context, code_block.content)
-                };
-                blocks.push((block_id, text_with_context));
-            }
-        }
-
-        // Extract from lists
-        for (idx, list) in parsed.content.lists.iter().enumerate() {
-            let block_id = format!("list_{}", idx);
-
-            // Check if this block changed
-            if !embed_all && !changed_blocks.contains(&block_id) {
-                continue;
-            }
-
-            // Concatenate all list items
-            let list_text: String = list
-                .items
+        self.process_block_candidates(
+            &mut blocks,
+            parsed
+                .content
+                .headings
                 .iter()
-                .map(|item| item.content.as_str())
-                .collect::<Vec<_>>()
-                .join(" ");
+                .enumerate()
+                .map(|(idx, heading)| BlockCandidate {
+                    block_id: format!("heading_{}", idx),
+                    word_count: heading.text.split_whitespace().count(),
+                    offset: heading.offset,
+                    text: heading.text.clone(),
+                })
+                .collect(),
+            changed_blocks,
+            embed_all,
+            &breadcrumbs,
+        );
 
-            let word_count = list_text.split_whitespace().count();
-            if word_count >= self.min_words_for_embedding {
-                // Add breadcrumbs for context
-                let context = breadcrumbs.get(&list.offset).cloned().unwrap_or_default();
-                let text_with_context = if context.is_empty() {
-                    list_text
-                } else {
-                    format!("[{}] {}", context, list_text)
-                };
-                blocks.push((block_id, text_with_context));
-            }
-        }
+        self.process_block_candidates(
+            &mut blocks,
+            parsed
+                .content
+                .paragraphs
+                .iter()
+                .enumerate()
+                .map(|(idx, paragraph)| BlockCandidate {
+                    block_id: format!("paragraph_{}", idx),
+                    word_count: paragraph.word_count,
+                    offset: paragraph.offset,
+                    text: paragraph.content.clone(),
+                })
+                .collect(),
+            changed_blocks,
+            embed_all,
+            &breadcrumbs,
+        );
 
-        // Extract from blockquotes
-        for (idx, blockquote) in parsed.content.blockquotes.iter().enumerate() {
-            let block_id = format!("blockquote_{}", idx);
+        self.process_block_candidates(
+            &mut blocks,
+            parsed
+                .content
+                .code_blocks
+                .iter()
+                .enumerate()
+                .map(|(idx, code_block)| BlockCandidate {
+                    block_id: format!("code_{}", idx),
+                    word_count: code_block.content.split_whitespace().count(),
+                    offset: code_block.offset,
+                    text: code_block.content.clone(),
+                })
+                .collect(),
+            changed_blocks,
+            embed_all,
+            &breadcrumbs,
+        );
 
-            // Check if this block changed
-            if !embed_all && !changed_blocks.contains(&block_id) {
-                continue;
-            }
+        self.process_block_candidates(
+            &mut blocks,
+            parsed
+                .content
+                .lists
+                .iter()
+                .enumerate()
+                .map(|(idx, list)| {
+                    let text = list
+                        .items
+                        .iter()
+                        .map(|item| item.content.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    BlockCandidate {
+                        block_id: format!("list_{}", idx),
+                        word_count: text.split_whitespace().count(),
+                        offset: list.offset,
+                        text,
+                    }
+                })
+                .collect(),
+            changed_blocks,
+            embed_all,
+            &breadcrumbs,
+        );
 
-            let word_count = blockquote.content.split_whitespace().count();
-            if word_count >= self.min_words_for_embedding {
-                // Add breadcrumbs for context
-                let context = breadcrumbs
-                    .get(&blockquote.offset)
-                    .cloned()
-                    .unwrap_or_default();
-                let text_with_context = if context.is_empty() {
-                    blockquote.content.clone()
-                } else {
-                    format!("[{}] {}", context, blockquote.content)
-                };
-                blocks.push((block_id, text_with_context));
-            }
-        }
+        self.process_block_candidates(
+            &mut blocks,
+            parsed
+                .content
+                .blockquotes
+                .iter()
+                .enumerate()
+                .map(|(idx, blockquote)| BlockCandidate {
+                    block_id: format!("blockquote_{}", idx),
+                    word_count: blockquote.content.split_whitespace().count(),
+                    offset: blockquote.offset,
+                    text: blockquote.content.clone(),
+                })
+                .collect(),
+            changed_blocks,
+            embed_all,
+            &breadcrumbs,
+        );
 
         debug!(
             "Extracted {} blocks from {} ({} total blocks in note)",
@@ -385,6 +366,36 @@ impl DefaultEnrichmentService {
         );
 
         blocks
+    }
+
+    fn process_block_candidates(
+        &self,
+        blocks: &mut Vec<(String, String)>,
+        candidates: Vec<BlockCandidate>,
+        changed_blocks: &[String],
+        embed_all: bool,
+        breadcrumbs: &std::collections::HashMap<usize, String>,
+    ) {
+        for candidate in candidates {
+            if !embed_all && !changed_blocks.contains(&candidate.block_id) {
+                continue;
+            }
+
+            if candidate.word_count < self.min_words_for_embedding {
+                continue;
+            }
+
+            let context = breadcrumbs
+                .get(&candidate.offset)
+                .cloned()
+                .unwrap_or_default();
+            let text_with_context = if context.is_empty() {
+                candidate.text
+            } else {
+                format!("[{}] {}", context, candidate.text)
+            };
+            blocks.push((candidate.block_id, text_with_context));
+        }
     }
 
     /// Extract metadata from the parsed note
