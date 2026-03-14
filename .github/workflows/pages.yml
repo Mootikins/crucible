@@ -6,7 +6,7 @@ on:
     paths:
       - 'docs/Help/**'
       - 'docs/Guides/**'
-      - 'site/**'
+      - 'docs-site/**'
       - 'scripts/convert-docs.mjs'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
@@ -32,18 +32,18 @@ jobs:
 
       - name: Install dependencies
         run: bun install
-        working-directory: site
+        working-directory: docs-site
 
       - name: Convert docs (wikilinks → markdown links)
         run: node scripts/convert-docs.mjs
 
       - name: Build site
         run: bun run build
-        working-directory: site
+        working-directory: docs-site
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: site/dist
+          path: docs-site/dist
 
   deploy:
     needs: build
