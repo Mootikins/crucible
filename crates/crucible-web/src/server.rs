@@ -7,7 +7,7 @@ use crate::routes::{
 use crate::services::daemon;
 use crate::{Result, WebError};
 use axum::extract::DefaultBodyLimit;
-use axum::http::{header, Method};
+use axum::http::{header, HeaderValue, Method};
 use axum::middleware;
 use axum::Router;
 use std::net::SocketAddr;
@@ -20,8 +20,10 @@ const MAX_BODY_SIZE_10MB: usize = 10 * 1024 * 1024;
 pub async fn start_server(web_config: &WebConfig, app_config: &CliAppConfig) -> Result<()> {
     let state = daemon::init_daemon(app_config.clone()).await?;
 
+    // Wildcard CORS is dangerous here because `/api/shell/exec` can execute host shell commands.
+    // Restricting origins prevents arbitrary websites from triggering command execution via browsers.
     let cors = CorsLayer::new()
-        .allow_origin(AllowOrigin::any())
+        .allow_origin(AllowOrigin::list(build_cors_origins(web_config)))
         .allow_methods([
             Method::GET,
             Method::POST,
@@ -70,9 +72,43 @@ pub async fn start_server(web_config: &WebConfig, app_config: &CliAppConfig) -> 
     Ok(())
 }
 
+fn build_cors_origins(web_config: &WebConfig) -> Vec<HeaderValue> {
+    let mut origins = Vec::new();
+
+    let mut add_origin = |origin: &str| {
+        let Ok(value) = HeaderValue::from_str(origin) else {
+            tracing::warn!(origin, "Skipping invalid CORS origin");
+            return;
+        };
+
+        if !origins.iter().any(|existing| existing == &value) {
+            origins.push(value);
+        }
+    };
+
+    add_origin(&format!("http://{}:{}", web_config.host, web_config.port));
+    add_origin(&format!("http://127.0.0.1:{}", web_config.port));
+
+    if cfg!(debug_assertions) {
+        add_origin("http://localhost:5173");
+    }
+
+    if let Ok(extra_origins) = std::env::var("CRUCIBLE_CORS_ORIGINS") {
+        for origin in extra_origins.split(',').map(str::trim).filter(|o| !o.is_empty()) {
+            add_origin(origin);
+        }
+    }
+
+    origins
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::body::Body;
+    use axum::http::Request;
+    use axum::routing::get;
+    use tower::ServiceExt;
 
     #[test]
     fn test_max_body_size_is_10mb() {
@@ -81,42 +117,90 @@ mod tests {
     }
 
     #[test]
-    fn test_cors_allowed_origins_are_wildcard() {
-        // After switching to AllowOrigin::any(), CORS accepts all origins.
-        // This test verifies the policy is configured for permissive access.
-        // This is safe for a local-first app not exposed to the internet.
+    fn build_cors_origins_includes_expected_defaults() {
+        let web_config = WebConfig {
+            enabled: true,
+            host: "localhost".to_string(),
+            port: 3000,
+            static_dir: None,
+        };
 
-        // The key assertion: we're using AllowOrigin::any() which accepts any origin.
-        // This enables LAN access from 192.168.x.x and other local networks.
-        let test_origins = [
-            "http://localhost:3000",
-            "http://127.0.0.1:3000",
-            "http://192.168.0.16:3000", // LAN access now allowed
-            "http://10.0.0.5:3000",     // Private network access now allowed
-            "https://example.com",      // Any origin is accepted
-        ];
+        let origins = build_cors_origins(&web_config);
+        let has_origin = |value: &str| {
+            let value = HeaderValue::from_str(value).unwrap();
+            origins.iter().any(|origin| origin == &value)
+        };
 
-        // All origins should be valid (no filtering)
-        for origin in test_origins {
-            let parsed: axum::http::HeaderValue = origin.parse().expect("Should be valid header");
-            assert!(
-                !parsed.is_empty(),
-                "Origin {} should parse as valid header",
-                origin
-            );
+        assert!(has_origin("http://localhost:3000"));
+        assert!(has_origin("http://127.0.0.1:3000"));
+        if cfg!(debug_assertions) {
+            assert!(has_origin("http://localhost:5173"));
         }
     }
 
-    #[test]
-    fn test_cors_any_origin_policy() {
-        // Verify that AllowOrigin::any() is the configured policy.
-        // This test documents the CORS behavior: all origins are accepted.
-        // This is appropriate for a local-first application.
+    #[tokio::test]
+    async fn cors_rejects_evil_origin_and_allows_localhost_origin() {
+        let web_config = WebConfig {
+            enabled: true,
+            host: "localhost".to_string(),
+            port: 3000,
+            static_dir: None,
+        };
 
-        // The policy allows any origin, so we just verify that
-        // the configuration doesn't have a restrictive list.
-        // In production, this would be verified by checking the actual
-        // CorsLayer configuration, but that's tested implicitly by
-        // the server accepting requests from any origin.
+        let cors = CorsLayer::new()
+            .allow_origin(AllowOrigin::list(build_cors_origins(&web_config)))
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::DELETE,
+                Method::OPTIONS,
+            ])
+            .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
+
+        let app = Router::new()
+            .route("/api/test", get(|| async { "ok" }))
+            .layer(cors);
+
+        let disallowed_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::OPTIONS)
+                    .uri("/api/test")
+                    .header(header::ORIGIN, "https://evil.com")
+                    .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            disallowed_response
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .is_none()
+        );
+
+        let allowed_response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::OPTIONS)
+                    .uri("/api/test")
+                    .header(header::ORIGIN, "http://localhost:3000")
+                    .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            allowed_response
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN),
+            Some(&HeaderValue::from_static("http://localhost:3000"))
+        );
     }
 }
