@@ -8,9 +8,9 @@ kiln_path = "./docs"
 default = "demo"
 
 [llm.providers.demo]
-type = "ollama"
-endpoint = "https://llm.example.com"
-default_model = "qwen3-4b-instruct-2507-q8_0"
+type = "openai"
+endpoint = "https://llm.example.com/v1"
+default_model = "glm-4.7-flash-iq4"
 temperature = 0.3
 max_tokens = 2048
 
