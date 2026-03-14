@@ -183,6 +183,15 @@ impl CliAppConfig {
         config_file: Option<std::path::PathBuf>,
         embedding_url: Option<String>,
         embedding_model: Option<String>,
+    ) -> Result<Self, ConfigError> {
+        Self::load_inner(config_file, embedding_url, embedding_model).map_err(ConfigError::from)
+    }
+
+    /// Internal implementation using anyhow for ergonomic error handling.
+    fn load_inner(
+        config_file: Option<std::path::PathBuf>,
+        embedding_url: Option<String>,
+        embedding_model: Option<String>,
     ) -> anyhow::Result<Self> {
         use crate::value_source::{ValueSource, ValueSourceMap};
 
@@ -241,8 +250,11 @@ impl CliAppConfig {
                 let file_fields = Self::detect_present_fields(&raw_table);
                 let mut value = toml::Value::Table(raw_table);
                 let base_dir = config_path.parent().unwrap_or(std::path::Path::new("."));
-                if let Err(errors) = crate::includes::process_file_references(&mut value, base_dir, crate::includes::ResolveMode::BestEffort)
-                {
+                if let Err(errors) = crate::includes::process_file_references(
+                    &mut value,
+                    base_dir,
+                    crate::includes::ResolveMode::BestEffort,
+                ) {
                     for error in errors {
                         tracing::warn!("Config reference error: {}", error);
                     }
@@ -461,38 +473,42 @@ impl CliAppConfig {
     }
 
     /// Get database path as a string
-    pub fn database_path_str(&self) -> anyhow::Result<String> {
+    pub fn database_path_str(&self) -> Result<String, ConfigError> {
         self.database_path()
             .to_str()
             .map(|s| s.to_string())
-            .ok_or_else(|| anyhow::anyhow!("Database path is not valid UTF-8"))
+            .ok_or_else(|| ConfigError::InvalidValue {
+                field: "database_path".into(),
+                value: self.database_path().display().to_string(),
+            })
     }
 
     /// Get kiln path as a string
-    pub fn kiln_path_str(&self) -> anyhow::Result<String> {
+    pub fn kiln_path_str(&self) -> Result<String, ConfigError> {
         self.kiln_path
             .to_str()
             .map(|s| s.to_string())
-            .ok_or_else(|| anyhow::anyhow!("Kiln path is not valid UTF-8"))
+            .ok_or_else(|| ConfigError::InvalidValue {
+                field: "kiln_path".into(),
+                value: self.kiln_path.display().to_string(),
+            })
     }
 
     /// Display the current configuration as TOML
     #[cfg(feature = "toml")]
-    pub fn display_as_toml(&self) -> anyhow::Result<String> {
-        toml::to_string_pretty(self)
-            .map_err(|e| anyhow::anyhow!("Failed to serialize config as TOML: {}", e))
+    pub fn display_as_toml(&self) -> Result<String, ConfigError> {
+        toml::to_string_pretty(self).map_err(|e| ConfigError::TomlSer(e.to_string()))
     }
 
     /// Display the current configuration as TOML (placeholder when toml feature is disabled)
     #[cfg(not(feature = "toml"))]
-    pub fn display_as_toml(&self) -> anyhow::Result<String> {
-        Err(anyhow::anyhow!("TOML feature not enabled"))
+    pub fn display_as_toml(&self) -> Result<String, ConfigError> {
+        Err(ConfigError::Other("TOML feature not enabled".into()))
     }
 
     /// Display the current configuration as JSON
-    pub fn display_as_json(&self) -> anyhow::Result<String> {
-        serde_json::to_string_pretty(self)
-            .map_err(|e| anyhow::anyhow!("Failed to serialize config as JSON: {}", e))
+    pub fn display_as_json(&self) -> Result<String, ConfigError> {
+        Ok(serde_json::to_string_pretty(self)?)
     }
 
     /// Get the source map, preferring the stored one if available
@@ -518,7 +534,7 @@ impl CliAppConfig {
     }
 
     /// Display the current configuration as JSON with source tracking
-    pub fn display_as_json_with_sources(&self) -> anyhow::Result<String> {
+    pub fn display_as_json_with_sources(&self) -> Result<String, ConfigError> {
         use crate::value_source::ValueSource;
 
         let source_map = self.get_source_map();
@@ -659,12 +675,11 @@ impl CliAppConfig {
 
         output.insert("cli".to_string(), serde_json::Value::Object(cli_section));
 
-        serde_json::to_string_pretty(&output)
-            .map_err(|e| anyhow::anyhow!("Failed to serialize config as JSON: {}", e))
+        Ok(serde_json::to_string_pretty(&output)?)
     }
 
     /// Display the current configuration as TOML with source tracking
-    pub fn display_as_toml_with_sources(&self) -> anyhow::Result<String> {
+    pub fn display_as_toml_with_sources(&self) -> Result<String, ConfigError> {
         use crate::value_source::ValueSource;
 
         let source_map = self.get_source_map();
@@ -782,7 +797,7 @@ impl CliAppConfig {
     }
 
     /// Create a new config file with example values
-    pub fn create_example(path: &std::path::Path) -> anyhow::Result<()> {
+    pub fn create_example(path: &std::path::Path) -> Result<(), ConfigError> {
         let example = r#"# Crucible CLI Configuration
 # Location: ~/.config/crucible/config.toml
 
@@ -837,12 +852,10 @@ verbose = false
 
         // Create parent directory if it doesn't exist
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| anyhow::anyhow!("Failed to create config directory: {}", e))?;
+            std::fs::create_dir_all(parent)?;
         }
 
-        std::fs::write(path, example)
-            .map_err(|e| anyhow::anyhow!("Failed to write config file: {}", e))?;
+        std::fs::write(path, example)?;
         Ok(())
     }
 
