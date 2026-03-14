@@ -19,6 +19,13 @@ pub struct ProjectConfig {
     pub security: SecurityConfig,
 }
 
+impl ProjectConfig {
+    /// Get the project name, flattening both Option layers.
+    pub fn project_name(&self) -> Option<&str> {
+        self.project.as_ref().and_then(|p| p.name.as_deref())
+    }
+}
+
 /// Optional project metadata.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectMeta {
