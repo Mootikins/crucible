@@ -17,6 +17,7 @@ pub struct ComputedLayout {
 pub struct LayoutEngine {
     tree: TaffyTree<usize>,
     node_map: HashMap<usize, NodeId>,
+    reverse_node_map: HashMap<NodeId, usize>,
     next_id: usize,
 }
 
@@ -31,6 +32,7 @@ impl LayoutEngine {
         Self {
             tree: TaffyTree::new(),
             node_map: HashMap::new(),
+            reverse_node_map: HashMap::new(),
             next_id: 0,
         }
     }
@@ -43,6 +45,7 @@ impl LayoutEngine {
     ) -> HashMap<usize, ComputedLayout> {
         self.tree.clear();
         self.node_map.clear();
+        self.reverse_node_map.clear();
         self.next_id = 0;
 
         let root_id = self.build_node(node, width);
@@ -175,6 +178,7 @@ impl LayoutEngine {
         };
 
         self.node_map.insert(id, node_id);
+        self.reverse_node_map.insert(node_id, id);
         node_id
     }
 
@@ -226,6 +230,7 @@ impl LayoutEngine {
             Node::Box(boxnode) => {
                 let node_id = self.build_box(boxnode, available_width, true);
                 self.node_map.insert(id, node_id);
+                self.reverse_node_map.insert(node_id, id);
                 return node_id;
             }
 
@@ -233,6 +238,7 @@ impl LayoutEngine {
         };
 
         self.node_map.insert(id, node_id);
+        self.reverse_node_map.insert(node_id, id);
         node_id
     }
 
@@ -329,12 +335,7 @@ impl LayoutEngine {
         let x = offset_x + layout.location.x;
         let y = offset_y + layout.location.y;
 
-        if let Some(&id) = self
-            .node_map
-            .iter()
-            .find(|(_, &nid)| nid == node_id)
-            .map(|(id, _)| id)
-        {
+        if let Some(&id) = self.reverse_node_map.get(&node_id) {
             layouts.insert(
                 id,
                 ComputedLayout {
