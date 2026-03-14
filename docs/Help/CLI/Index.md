@@ -50,6 +50,7 @@ Complete reference for all Crucible CLI commands.
 | `cru tasks` | Manage tasks from a TASKS.md file (list, next, pick, done) |
 | `cru plugin` | Manage and develop Lua plugins |
 | `cru web` | Start the web UI server for browser-based chat |
+| `cru doctor` | Run installation diagnostics (daemon, config, providers, kiln, embeddings) |
 
 ## Global Options
 
@@ -60,11 +61,34 @@ Complete reference for all Crucible CLI commands.
 -f, --format <FORMAT>       Output format: table, json, csv (default: table)
     --embedding-url <URL>   Embedding service URL (overrides config)
     --embedding-model <MODEL> Embedding model name (overrides config)
-    --no-process            Skip file processing on startup
-    --process-timeout <SEC> Processing timeout in seconds (default: 300)
     --standalone            Run with in-process daemon (no background server required)
 -h, --help                  Show help
 -V, --version               Print version
+```
+
+## cru doctor
+
+Run bounded installation diagnostics. Performs exactly five checks:
+
+1. **Daemon reachability** — connects to the Unix socket to verify the daemon is running
+2. **Config validity** — loads and validates your config file
+3. **Provider connectivity** — pings each configured LLM provider endpoint (2s timeout per provider)
+4. **Kiln accessibility** — checks the kiln path exists, is a directory, and is writable
+5. **Embedding backend** — confirms FastEmbed or Ollama embeddings are available
+
+```
+cru doctor
+```
+
+Exits with code 0 if all checks pass, code 1 if any check fails. Warnings (e.g., read-only kiln, no providers configured) don't cause a non-zero exit.
+
+Each failed check prints a suggested fix:
+
+```
+✗ Daemon not running
+    Try: `cru daemon start`
+✗ Config missing at ~/.config/crucible/config.toml
+    Try: `cru config init`
 ```
 
 ## See Also
@@ -72,4 +96,5 @@ Complete reference for all Crucible CLI commands.
 - [[Help/CLI/process]] - Processing pipeline details
 - [[Help/CLI/chat]] - Chat command reference
 - [[Help/CLI/stats]] - Statistics command
+- [[Help/CLI/doctor]] - Installation diagnostics
 - [[Help/Config/storage]] - Storage configuration

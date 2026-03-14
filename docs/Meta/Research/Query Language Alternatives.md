@@ -126,4 +126,4 @@ Cons:
 
 - [[../Analysis/Storage Types Flow]] - Current storage architecture
 - [[Help/Query/Index]] - Planned query system
-- `crates/crucible-query/src/` - Query translation pipeline
+- `crates/crucible-sqlite/src/query/` - Query translation pipeline

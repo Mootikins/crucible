@@ -169,41 +169,7 @@ impl AgentManager {
 
         let mut all_models = Vec::new();
 
-        if let Some(ref llm_config) = self.llm_config {
-            for (provider_key, provider_config) in &llm_config.providers {
-                if let Some(ref classification) = classification {
-                    if !provider_config
-                        .effective_trust_level()
-                        .satisfies(*classification)
-                    {
-                        continue;
-                    }
-                }
-
-                let models = self.discover_models(provider_key, provider_config).await;
-                for model in models {
-                    all_models.push(format!("{}/{}", provider_key, model));
-                }
-            }
-        }
-
-        let mut seen_types = std::collections::HashSet::new();
-        if let Some(ref llm_config) = self.llm_config {
-            for provider_config in llm_config.providers.values() {
-                seen_types.insert(provider_config.provider_type.as_str().to_string());
-            }
-        }
-
-        for (provider_key, provider_config) in self.discover_env_providers(&seen_types) {
-            if let Some(ref classification) = classification {
-                if !provider_config
-                    .effective_trust_level()
-                    .satisfies(*classification)
-                {
-                    continue;
-                }
-            }
-
+        for (provider_key, provider_config, _) in self.iter_chat_providers(classification) {
             let models = self.discover_models(&provider_key, &provider_config).await;
             for model in models {
                 all_models.push(format!("{}/{}", provider_key, model));
@@ -238,8 +204,7 @@ impl AgentManager {
             }
         }
 
-        if classification.is_none() && !all_models.iter().any(|model| model.starts_with("[error]"))
-        {
+        if !all_models.iter().any(|model| model.starts_with("[error]")) {
             self.model_cache
                 .insert(cache_key, (all_models.clone(), Instant::now()));
         }
@@ -282,20 +247,28 @@ impl AgentManager {
         }
     }
 
-    pub async fn set_thinking_budget(
+    #[allow(clippy::too_many_arguments)] // Private helper; grouping into a struct would be over-engineering
+    async fn update_agent_config_and_emit<Mutate, OnUpdated>(
         &self,
         session_id: &str,
-        budget: i64,
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
-    ) -> Result<(), AgentError> {
+        event_type: &str,
+        event_payload: serde_json::Value,
+        no_subscribers_debug: &str,
+        mutator: Mutate,
+        on_updated: OnUpdated,
+    ) -> Result<(), AgentError>
+    where
+        Mutate: FnOnce(&mut SessionAgent) -> Result<(), AgentError>,
+        OnUpdated: FnOnce(),
+    {
         if self.request_state.contains_key(session_id) {
             return Err(AgentError::ConcurrentRequest(session_id.to_string()));
         }
 
         let (mut session, mut agent_config) = self.get_session_with_agent(session_id)?;
-
-        agent_config.thinking_budget = Some(budget);
-        session.agent = Some(agent_config.clone());
+        mutator(&mut agent_config)?;
+        session.agent = Some(agent_config);
 
         self.session_manager
             .update_session(&session)
@@ -303,27 +276,45 @@ impl AgentManager {
             .map_err(AgentError::Session)?;
 
         self.invalidate_agent_cache(session_id);
-
-        info!(
-            session_id = %session_id,
-            budget = budget,
-            "Thinking budget updated (agent cache invalidated)"
-        );
+        on_updated();
 
         if let Some(tx) = event_tx {
             if !emit_event(
                 tx,
-                SessionEventMessage::new(
-                    session_id,
-                    "thinking_budget_changed",
-                    serde_json::json!({ "budget": budget }),
-                ),
+                SessionEventMessage::new(session_id, event_type, event_payload),
             ) {
-                tracing::debug!("Failed to emit thinking_budget_changed event (no subscribers)");
+                tracing::debug!("{}", no_subscribers_debug);
             }
         }
 
         Ok(())
+    }
+
+    pub async fn set_thinking_budget(
+        &self,
+        session_id: &str,
+        budget: i64,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        self.update_agent_config_and_emit(
+            session_id,
+            event_tx,
+            "thinking_budget_changed",
+            serde_json::json!({ "budget": budget }),
+            "Failed to emit thinking_budget_changed event (no subscribers)",
+            |agent_config| {
+                agent_config.thinking_budget = Some(budget);
+                Ok(())
+            },
+            || {
+                info!(
+                    session_id = %session_id,
+                    budget = budget,
+                    "Thinking budget updated (agent cache invalidated)"
+                );
+            },
+        )
+        .await
     }
 
     pub fn get_thinking_budget(&self, session_id: &str) -> Result<Option<i64>, AgentError> {
@@ -337,42 +328,25 @@ impl AgentManager {
         enabled: bool,
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
     ) -> Result<(), AgentError> {
-        if self.request_state.contains_key(session_id) {
-            return Err(AgentError::ConcurrentRequest(session_id.to_string()));
-        }
-
-        let (mut session, mut agent_config) = self.get_session_with_agent(session_id)?;
-
-        agent_config.precognition_enabled = enabled;
-        session.agent = Some(agent_config.clone());
-
-        self.session_manager
-            .update_session(&session)
-            .await
-            .map_err(AgentError::Session)?;
-
-        self.invalidate_agent_cache(session_id);
-
-        info!(
-            session_id = %session_id,
-            enabled = enabled,
-            "Precognition toggle updated (agent cache invalidated)"
-        );
-
-        if let Some(tx) = event_tx {
-            if !emit_event(
-                tx,
-                SessionEventMessage::new(
-                    session_id,
-                    "precognition_toggled",
-                    serde_json::json!({ "enabled": enabled }),
-                ),
-            ) {
-                tracing::debug!("Failed to emit precognition_toggled event (no subscribers)");
-            }
-        }
-
-        Ok(())
+        self.update_agent_config_and_emit(
+            session_id,
+            event_tx,
+            "precognition_toggled",
+            serde_json::json!({ "enabled": enabled }),
+            "Failed to emit precognition_toggled event (no subscribers)",
+            |agent_config| {
+                agent_config.precognition_enabled = enabled;
+                Ok(())
+            },
+            || {
+                info!(
+                    session_id = %session_id,
+                    enabled = enabled,
+                    "Precognition toggle updated (agent cache invalidated)"
+                );
+            },
+        )
+        .await
     }
 
     pub fn get_precognition(&self, session_id: &str) -> Result<bool, AgentError> {
@@ -386,42 +360,25 @@ impl AgentManager {
         temperature: f64,
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
     ) -> Result<(), AgentError> {
-        if self.request_state.contains_key(session_id) {
-            return Err(AgentError::ConcurrentRequest(session_id.to_string()));
-        }
-
-        let (mut session, mut agent_config) = self.get_session_with_agent(session_id)?;
-
-        agent_config.temperature = Some(temperature);
-        session.agent = Some(agent_config.clone());
-
-        self.session_manager
-            .update_session(&session)
-            .await
-            .map_err(AgentError::Session)?;
-
-        self.invalidate_agent_cache(session_id);
-
-        info!(
-            session_id = %session_id,
-            temperature = temperature,
-            "Temperature updated (agent cache invalidated)"
-        );
-
-        if let Some(tx) = event_tx {
-            if !emit_event(
-                tx,
-                SessionEventMessage::new(
-                    session_id,
-                    "temperature_changed",
-                    serde_json::json!({ "temperature": temperature }),
-                ),
-            ) {
-                tracing::debug!("Failed to emit temperature_changed event (no subscribers)");
-            }
-        }
-
-        Ok(())
+        self.update_agent_config_and_emit(
+            session_id,
+            event_tx,
+            "temperature_changed",
+            serde_json::json!({ "temperature": temperature }),
+            "Failed to emit temperature_changed event (no subscribers)",
+            |agent_config| {
+                agent_config.temperature = Some(temperature);
+                Ok(())
+            },
+            || {
+                info!(
+                    session_id = %session_id,
+                    temperature = temperature,
+                    "Temperature updated (agent cache invalidated)"
+                );
+            },
+        )
+        .await
     }
 
     pub fn get_temperature(&self, session_id: &str) -> Result<Option<f64>, AgentError> {
@@ -519,41 +476,25 @@ impl AgentManager {
         max_tokens: Option<u32>,
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
     ) -> Result<(), AgentError> {
-        if self.request_state.contains_key(session_id) {
-            return Err(AgentError::ConcurrentRequest(session_id.to_string()));
-        }
-
-        let (mut session, mut agent_config) = self.get_session_with_agent(session_id)?;
-
-        agent_config.max_tokens = max_tokens;
-        session.agent = Some(agent_config.clone());
-
-        self.session_manager
-            .update_session(&session)
-            .await
-            .map_err(AgentError::Session)?;
-
-        self.invalidate_agent_cache(session_id);
-
-        info!(
-            session_id = %session_id,
-            max_tokens = ?max_tokens,
-            "Max tokens updated (agent cache invalidated)"
-        );
-
-        if let Some(tx) = event_tx {
-            if !emit_event(
-                tx,
-                SessionEventMessage::new(
-                    session_id,
-                    "max_tokens_changed",
-                    serde_json::json!({ "max_tokens": max_tokens }),
-                ),
-            ) {
-                tracing::debug!("Failed to emit max_tokens_changed event (no subscribers)");
-            }
-        }
-        Ok(())
+        self.update_agent_config_and_emit(
+            session_id,
+            event_tx,
+            "max_tokens_changed",
+            serde_json::json!({ "max_tokens": max_tokens }),
+            "Failed to emit max_tokens_changed event (no subscribers)",
+            |agent_config| {
+                agent_config.max_tokens = max_tokens;
+                Ok(())
+            },
+            || {
+                info!(
+                    session_id = %session_id,
+                    max_tokens = ?max_tokens,
+                    "Max tokens updated (agent cache invalidated)"
+                );
+            },
+        )
+        .await
     }
 
     pub fn get_max_tokens(&self, session_id: &str) -> Result<Option<u32>, AgentError> {

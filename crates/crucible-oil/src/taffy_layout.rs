@@ -17,6 +17,7 @@ pub struct ComputedLayout {
 pub struct LayoutEngine {
     tree: TaffyTree<usize>,
     node_map: HashMap<usize, NodeId>,
+    reverse_node_map: HashMap<NodeId, usize>,
     next_id: usize,
 }
 
@@ -31,6 +32,7 @@ impl LayoutEngine {
         Self {
             tree: TaffyTree::new(),
             node_map: HashMap::new(),
+            reverse_node_map: HashMap::new(),
             next_id: 0,
         }
     }
@@ -43,6 +45,7 @@ impl LayoutEngine {
     ) -> HashMap<usize, ComputedLayout> {
         self.tree.clear();
         self.node_map.clear();
+        self.reverse_node_map.clear();
         self.next_id = 0;
 
         let root_id = self.build_node(node, width);
@@ -57,6 +60,38 @@ impl LayoutEngine {
         let mut layouts = HashMap::new();
         self.collect_layouts(root_id, 0.0, 0.0, &mut layouts);
         layouts
+    }
+
+    /// Create a leaf node with the given dimensions.
+    fn new_leaf_size(&mut self, width: f32, height: f32) -> NodeId {
+        self.tree
+            .new_leaf(Style {
+                size: Size {
+                    width: length(width),
+                    height: length(height),
+                },
+                ..Default::default()
+            })
+            .expect("taffy operation failed")
+    }
+
+    /// Create a full-width leaf node with a height of 1 line.
+    fn new_full_width_line(&mut self, available_width: f32) -> NodeId {
+        self.new_leaf_size(available_width, 1.0)
+    }
+
+    /// Create a content-sized leaf node (flex_shrink: 0) with the given dimensions.
+    fn new_leaf_content_sized(&mut self, width: f32, height: f32) -> NodeId {
+        self.tree
+            .new_leaf(Style {
+                flex_shrink: 0.0,
+                size: Size {
+                    width: length(width),
+                    height: length(height),
+                },
+                ..Default::default()
+            })
+            .expect("taffy operation failed")
     }
 
     fn build_node(&mut self, node: &Node, available_width: f32) -> NodeId {
@@ -74,15 +109,7 @@ impl LayoutEngine {
 
             Node::Text(text) => {
                 let lines = measure_text_lines(&text.content, available_width as usize);
-                self.tree
-                    .new_leaf(Style {
-                        size: Size {
-                            width: length(available_width),
-                            height: length(lines as f32),
-                        },
-                        ..Default::default()
-                    })
-                    .expect("taffy operation failed")
+                self.new_leaf_size(available_width, lines as f32)
             }
 
             Node::Box(boxnode) => self.build_box(boxnode, available_width, false),
@@ -92,39 +119,13 @@ impl LayoutEngine {
                 return self.build_node(&fragment, available_width);
             }
 
-            Node::Input(_) => self
-                .tree
-                .new_leaf(Style {
-                    size: Size {
-                        width: length(available_width),
-                        height: length(1.0),
-                    },
-                    ..Default::default()
-                })
-                .expect("taffy operation failed"),
+            Node::Input(_) => self.new_full_width_line(available_width),
 
-            Node::Spinner(_) => self
-                .tree
-                .new_leaf(Style {
-                    size: Size {
-                        width: length(available_width),
-                        height: length(1.0),
-                    },
-                    ..Default::default()
-                })
-                .expect("taffy operation failed"),
+            Node::Spinner(_) => self.new_full_width_line(available_width),
 
             Node::Popup(popup) => {
                 let height = popup.max_visible.min(popup.items.len()) as f32;
-                self.tree
-                    .new_leaf(Style {
-                        size: Size {
-                            width: length(available_width),
-                            height: length(height),
-                        },
-                        ..Default::default()
-                    })
-                    .expect("taffy operation failed")
+                self.new_leaf_size(available_width, height)
             }
 
             Node::Fragment(children) => {
@@ -162,19 +163,13 @@ impl LayoutEngine {
                 .new_leaf(taffy::style::Style::default())
                 .expect("failed to create taffy leaf node"),
 
-            Node::Raw(raw) => self
-                .tree
-                .new_leaf(Style {
-                    size: Size {
-                        width: length(raw.display_width as f32),
-                        height: length(raw.display_height as f32),
-                    },
-                    ..Default::default()
-                })
-                .expect("taffy operation failed"),
+            Node::Raw(raw) => {
+                self.new_leaf_size(raw.display_width as f32, raw.display_height as f32)
+            }
         };
 
         self.node_map.insert(id, node_id);
+        self.reverse_node_map.insert(node_id, id);
         node_id
     }
 
@@ -188,16 +183,7 @@ impl LayoutEngine {
             Node::Text(text) => {
                 let content_width = crate::ansi::visible_width(&text.content) as f32;
                 let lines = measure_text_lines(&text.content, content_width as usize);
-                self.tree
-                    .new_leaf(Style {
-                        flex_shrink: 0.0,
-                        size: Size {
-                            width: length(content_width),
-                            height: length(lines as f32),
-                        },
-                        ..Default::default()
-                    })
-                    .expect("taffy operation failed")
+                self.new_leaf_content_sized(content_width, lines as f32)
             }
 
             Node::Spinner(spinner) => {
@@ -206,16 +192,7 @@ impl LayoutEngine {
                     .as_ref()
                     .map(|l| l.chars().count() + 2)
                     .unwrap_or(1) as f32;
-                self.tree
-                    .new_leaf(Style {
-                        flex_shrink: 0.0,
-                        size: Size {
-                            width: length(label_width),
-                            height: length(1.0),
-                        },
-                        ..Default::default()
-                    })
-                    .expect("taffy operation failed")
+                self.new_leaf_content_sized(label_width, 1.0)
             }
 
             Node::Input(_) => {
@@ -226,6 +203,7 @@ impl LayoutEngine {
             Node::Box(boxnode) => {
                 let node_id = self.build_box(boxnode, available_width, true);
                 self.node_map.insert(id, node_id);
+                self.reverse_node_map.insert(node_id, id);
                 return node_id;
             }
 
@@ -233,6 +211,7 @@ impl LayoutEngine {
         };
 
         self.node_map.insert(id, node_id);
+        self.reverse_node_map.insert(node_id, id);
         node_id
     }
 
@@ -329,12 +308,7 @@ impl LayoutEngine {
         let x = offset_x + layout.location.x;
         let y = offset_y + layout.location.y;
 
-        if let Some(&id) = self
-            .node_map
-            .iter()
-            .find(|(_, &nid)| nid == node_id)
-            .map(|(id, _)| id)
-        {
+        if let Some(&id) = self.reverse_node_map.get(&node_id) {
             layouts.insert(
                 id,
                 ComputedLayout {

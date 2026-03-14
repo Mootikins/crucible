@@ -2,6 +2,14 @@ import { Component, For, Show, createSignal, createEffect, createMemo } from 'so
 import { Collapsible } from '@ark-ui/solid';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import { openFileInEditor } from '@/lib/file-actions';
+import { PanelShell } from './PanelShell';
+import { PanelHeader } from './PanelHeader';
+
+import { listNotes } from '@/lib/api';
+import type { FileEntry } from '@/lib/types';
+import { Collapsible } from '@ark-ui/solid';
+import { useProjectSafe } from '@/contexts/ProjectContext';
+import { openFileInEditor } from '@/lib/file-actions';
 
 import { listNotes } from '@/lib/api';
 import type { FileEntry } from '@/lib/types';
@@ -228,11 +236,10 @@ export const FilesPanel: Component = () => {
 
 
   return (
-    <div class="h-full flex flex-col bg-neutral-900 text-neutral-100 overflow-hidden">
-      <div class="p-3 border-b border-neutral-800 shrink-0">
-        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wide">Notes</h2>
-      </div>
+    <PanelShell class="overflow-hidden">
+      <PanelHeader title="Notes" class="shrink-0" />
 
+      <div class="flex-1 overflow-y-auto py-2">
       <div class="flex-1 overflow-y-auto py-2">
         <Show
           when={currentProject()}
@@ -251,6 +258,6 @@ export const FilesPanel: Component = () => {
           />
         </Show>
       </div>
-    </div>
+    </PanelShell>
   );
 };

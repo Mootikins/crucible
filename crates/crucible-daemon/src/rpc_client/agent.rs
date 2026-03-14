@@ -195,135 +195,157 @@ async fn event_router(
     tracing::debug!("Event router task ended");
 }
 
+/// Convert a `text_delta` event to a ChatChunk.
+fn convert_text_delta(event: &SessionEvent) -> Option<ChatChunk> {
+    let content = event.data.get("content")?.as_str()?;
+    Some(ChatChunk {
+        delta: content.to_string(),
+        ..Default::default()
+    })
+}
+
+/// Convert a `thinking` event to a ChatChunk.
+fn convert_thinking(event: &SessionEvent) -> Option<ChatChunk> {
+    let content = event.data.get("content")?.as_str()?;
+    Some(ChatChunk {
+        reasoning: Some(content.to_string()),
+        ..Default::default()
+    })
+}
+
+/// Convert a `tool_call` event to a ChatChunk.
+fn convert_tool_call(event: &SessionEvent) -> Option<ChatChunk> {
+    let call_id = event.data.get("call_id").and_then(|v| v.as_str());
+    let tool = event.data.get("tool")?.as_str()?;
+    let args = event.data.get("args").cloned();
+
+    Some(ChatChunk {
+        tool_calls: Some(vec![ChatToolCall {
+            name: tool.to_string(),
+            arguments: args,
+            id: call_id.map(String::from),
+        }]),
+        ..Default::default()
+    })
+}
+
+/// Convert a `tool_result` event to a ChatChunk.
+fn convert_tool_result(event: &SessionEvent) -> Option<ChatChunk> {
+    let tool_name = event.data.get("tool").and_then(|v| v.as_str());
+    let call_id = event.data.get("call_id").and_then(|v| v.as_str());
+    let result = event.data.get("result")?;
+
+    let call_id_str = call_id.map(String::from);
+    let name = tool_name
+        .map(String::from)
+        .or_else(|| call_id_str.clone())
+        .unwrap_or_else(|| "tool".to_string());
+
+    let error = result
+        .get("error")
+        .and_then(|e| e.as_str())
+        .map(String::from);
+
+    let result_str = if error.is_some() {
+        String::new()
+    } else if result.is_string() {
+        result.as_str().unwrap_or("").to_string()
+    } else if let Some(inner) = result.get("result").and_then(|r| r.as_str()) {
+        inner.to_string()
+    } else {
+        result.to_string()
+    };
+
+    Some(ChatChunk {
+        tool_results: Some(vec![ChatToolResult {
+            name,
+            result: result_str,
+            error,
+            call_id: call_id_str,
+        }]),
+        ..Default::default()
+    })
+}
+
+/// Convert a `message_complete` event to a ChatChunk with optional token usage.
+fn convert_message_complete(event: &SessionEvent) -> Option<ChatChunk> {
+    let usage = event
+        .data
+        .get("total_tokens")
+        .and_then(|v| v.as_u64())
+        .map(|total| {
+            let prompt = event
+                .data
+                .get("prompt_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let completion = event
+                .data
+                .get("completion_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            crucible_core::traits::llm::TokenUsage {
+                prompt_tokens: prompt as u32,
+                completion_tokens: completion as u32,
+                total_tokens: total as u32,
+            }
+        });
+    Some(ChatChunk {
+        done: true,
+        usage,
+        ..Default::default()
+    })
+}
+
+/// Convert an `ended` event to a terminal ChatChunk.
+fn convert_ended() -> ChatChunk {
+    ChatChunk {
+        delta: String::new(),
+        done: true,
+        tool_calls: None,
+        tool_results: None,
+        reasoning: None,
+        usage: None,
+        subagent_events: None,
+        precognition_notes_count: None,
+        precognition_notes: None,
+    }
+}
+
+/// Convert a `precognition_complete` event to a ChatChunk.
+fn convert_precognition_complete(event: &SessionEvent) -> Option<ChatChunk> {
+    let notes_count = event
+        .data
+        .get("notes_count")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize);
+    let precognition_notes = event
+        .data
+        .get("notes")
+        .and_then(|v| serde_json::from_value::<Vec<PrecognitionNoteInfo>>(v.clone()).ok());
+    Some(ChatChunk {
+        precognition_notes_count: notes_count,
+        precognition_notes,
+        ..Default::default()
+    })
+}
+
 /// Convert a SessionEvent to a ChatChunk
 ///
-/// Maps daemon event types to ChatChunk fields:
-/// - `text_delta` → delta
-/// - `thinking` → reasoning
-/// - `tool_call` → tool_calls
-/// - `tool_result` → tool_results
-/// - `message_complete` → done: true
+/// Thin dispatcher that delegates to per-event-family helpers:
+/// - `text_delta` / `thinking` → streaming content
+/// - `tool_call` / `tool_result` → tool events
+/// - `message_complete` / `ended` → completion signals
+/// - `precognition_complete` → knowledge graph events
 fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
     match event.event_type.as_str() {
-        "text_delta" => {
-            let content = event.data.get("content")?.as_str()?;
-            Some(ChatChunk {
-                delta: content.to_string(),
-                ..Default::default()
-            })
-        }
-        "thinking" => {
-            let content = event.data.get("content")?.as_str()?;
-            Some(ChatChunk {
-                reasoning: Some(content.to_string()),
-                ..Default::default()
-            })
-        }
-        "tool_call" => {
-            let call_id = event.data.get("call_id").and_then(|v| v.as_str());
-            let tool = event.data.get("tool")?.as_str()?;
-            let args = event.data.get("args").cloned();
-
-            Some(ChatChunk {
-                tool_calls: Some(vec![ChatToolCall {
-                    name: tool.to_string(),
-                    arguments: args,
-                    id: call_id.map(String::from),
-                }]),
-                ..Default::default()
-            })
-        }
-        "tool_result" => {
-            let tool_name = event.data.get("tool").and_then(|v| v.as_str());
-            let call_id = event.data.get("call_id").and_then(|v| v.as_str());
-            let result = event.data.get("result")?;
-
-            let call_id_str = call_id.map(String::from);
-            let name = tool_name
-                .map(String::from)
-                .or_else(|| call_id_str.clone())
-                .unwrap_or_else(|| "tool".to_string());
-
-            let error = result
-                .get("error")
-                .and_then(|e| e.as_str())
-                .map(String::from);
-
-            let result_str = if error.is_some() {
-                String::new()
-            } else if result.is_string() {
-                result.as_str().unwrap_or("").to_string()
-            } else if let Some(inner) = result.get("result").and_then(|r| r.as_str()) {
-                inner.to_string()
-            } else {
-                result.to_string()
-            };
-
-            Some(ChatChunk {
-                tool_results: Some(vec![ChatToolResult {
-                    name,
-                    result: result_str,
-                    error,
-                    call_id: call_id_str,
-                }]),
-                ..Default::default()
-            })
-        }
-        "message_complete" => {
-            let usage = event
-                .data
-                .get("total_tokens")
-                .and_then(|v| v.as_u64())
-                .map(|total| {
-                    let prompt = event
-                        .data
-                        .get("prompt_tokens")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0);
-                    let completion = event
-                        .data
-                        .get("completion_tokens")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0);
-                    crucible_core::traits::llm::TokenUsage {
-                        prompt_tokens: prompt as u32,
-                        completion_tokens: completion as u32,
-                        total_tokens: total as u32,
-                    }
-                });
-            Some(ChatChunk {
-                done: true,
-                usage,
-                ..Default::default()
-            })
-        }
-        "ended" => Some(ChatChunk {
-            delta: String::new(),
-            done: true,
-            tool_calls: None,
-            tool_results: None,
-            reasoning: None,
-            usage: None,
-            subagent_events: None,
-            precognition_notes_count: None,
-            precognition_notes: None,
-        }),
-        "precognition_complete" => {
-            let notes_count = event
-                .data
-                .get("notes_count")
-                .and_then(|v| v.as_u64())
-                .map(|n| n as usize);
-            let precognition_notes = event
-                .data
-                .get("notes")
-                .and_then(|v| serde_json::from_value::<Vec<PrecognitionNoteInfo>>(v.clone()).ok());
-            Some(ChatChunk {
-                precognition_notes_count: notes_count,
-                precognition_notes,
-                ..Default::default()
-            })
-        }
+        "text_delta" => convert_text_delta(event),
+        "thinking" => convert_thinking(event),
+        "tool_call" => convert_tool_call(event),
+        "tool_result" => convert_tool_result(event),
+        "message_complete" => convert_message_complete(event),
+        "ended" => Some(convert_ended()),
+        "precognition_complete" => convert_precognition_complete(event),
         _ => {
             tracing::debug!("Unknown session event type: {}", event.event_type);
             None
@@ -437,7 +459,14 @@ impl AgentHandle for DaemonAgentHandle {
 
         let result = match self
             .client
-            .session_create("chat", kiln, Some(ws), vec![], None, None)
+            .session_create(crate::rpc_client::client::SessionCreateParams {
+                session_type: "chat".to_string(),
+                kiln: kiln.clone(),
+                workspace: Some(ws.clone()),
+                connect_kilns: vec![],
+                recording_mode: None,
+                recording_path: None,
+            })
             .await
         {
             Ok(r) => r,

@@ -8,6 +8,7 @@ import {
 } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import type { Project } from '@/lib/types';
+import type { ProjectContextValue } from '@/lib/types/context';
 import {
   registerProject as apiRegisterProject,
   unregisterProject as apiUnregisterProject,
@@ -15,17 +16,6 @@ import {
   getProject as apiGetProject,
 } from '@/lib/api';
 
-export interface ProjectContextValue {
-  currentProject: Accessor<Project | null>;
-  projects: Accessor<Project[]>;
-  isLoading: Accessor<boolean>;
-  error: Accessor<string | null>;
-  registerProject: (path: string) => Promise<Project>;
-  unregisterProject: (path: string) => Promise<void>;
-  selectProject: (path: string) => Promise<void>;
-  refreshProjects: () => Promise<void>;
-  clearProject: () => void;
-}
 
 const ProjectContext = createContext<ProjectContextValue>();
 

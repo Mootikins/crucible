@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 
 #[cfg(feature = "toml")]
-use crate::includes::{merge_includes, process_file_references};
+use crate::includes::{merge_includes, process_file_references, ResolveMode};
 
 /// Configuration loader supporting multiple file formats.
 #[derive(Debug)]
@@ -217,7 +217,9 @@ impl ConfigLoader {
                 let base_dir = config_path.parent().unwrap_or(Path::new("."));
 
                 // Process {file:path} references first (can be anywhere)
-                if let Err(errors) = process_file_references(&mut toml_value, base_dir) {
+                if let Err(errors) =
+                    process_file_references(&mut toml_value, base_dir, ResolveMode::BestEffort)
+                {
                     for error in errors {
                         tracing::warn!("File reference error: {}", error);
                     }

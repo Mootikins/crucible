@@ -1,3 +1,4 @@
+use crate::io_helpers::read_with_workspace_fallback;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -20,17 +21,7 @@ pub struct KilnMeta {
 
 /// Read kiln configuration from `.crucible/kiln.toml` with workspace fallback.
 pub fn read_kiln_config(dir: &Path) -> Option<KilnConfig> {
-    let crucible_dir = dir.join(".crucible");
-    let kiln_path = crucible_dir.join("kiln.toml");
-
-    if kiln_path.exists() {
-        let content = fs::read_to_string(&kiln_path).ok()?;
-        return toml::from_str::<KilnConfig>(&content).ok();
-    }
-
-    let workspace_path = crucible_dir.join("workspace.toml");
-    let content = fs::read_to_string(&workspace_path).ok()?;
-    toml::from_str::<KilnConfig>(&content).ok()
+    read_with_workspace_fallback(dir, "kiln.toml", "kiln")
 }
 
 /// Write kiln configuration to `.crucible/kiln.toml`.

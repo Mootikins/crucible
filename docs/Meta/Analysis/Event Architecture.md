@@ -81,7 +81,7 @@ Handlers subscribe to specific event types and perform operations when events ar
 
 ### WatchManager
 
-The `WatchManager` from `crucible-watch` monitors the file system for changes:
+The `WatchManager` in `crucible-daemon` (`src/watch/`) monitors the file system for changes:
 - Uses the `notify` crate for cross-platform file watching
 - Supports debouncing to prevent duplicate events
 - Emits `FileChanged`, `FileDeleted`, and `FileMoved` events

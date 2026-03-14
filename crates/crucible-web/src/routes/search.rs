@@ -1,3 +1,4 @@
+use super::helpers::{note_to_metadata_json, validate_note_name, MAX_CONTENT_SIZE};
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{
@@ -44,18 +45,7 @@ async fn list_notes(
         .await
         .daemon_err()?;
 
-    let notes_json: Vec<serde_json::Value> = notes
-        .into_iter()
-        .map(|(name, path, title, tags, updated_at)| {
-            serde_json::json!({
-                "name": name,
-                "path": path,
-                "title": title,
-                "tags": tags,
-                "updated_at": updated_at,
-            })
-        })
-        .collect();
+    let notes_json: Vec<serde_json::Value> = notes.into_iter().map(note_to_metadata_json).collect();
 
     Ok(Json(serde_json::json!({ "notes": notes_json })))
 }
@@ -66,12 +56,7 @@ async fn get_note(
     axum::extract::Query(query): axum::extract::Query<KilnQuery>,
 ) -> Result<Json<serde_json::Value>, WebError> {
     // Security: Validate note name doesn't contain path traversal
-    if name.contains("..") || name.starts_with('/') || name.starts_with('\\') || name.contains('\0')
-    {
-        return Err(WebError::Chat(
-            "Invalid note name: path traversal not allowed".to_string(),
-        ));
-    }
+    validate_note_name(&name)?;
 
     let note = state
         .daemon
@@ -96,30 +81,22 @@ struct PutNoteRequest {
     content: String,
 }
 
-/// Maximum note content size (10 MB)
-const MAX_NOTE_SIZE: usize = 10 * 1024 * 1024;
-
 async fn put_note(
     State(state): State<AppState>,
     Path(name): Path<String>,
     Json(req): Json<PutNoteRequest>,
 ) -> Result<Json<serde_json::Value>, WebError> {
     // Security: Validate content size to prevent DoS
-    if req.content.len() > MAX_NOTE_SIZE {
+    if req.content.len() > MAX_CONTENT_SIZE {
         return Err(WebError::Chat(format!(
             "Note content too large: {} bytes (max {} bytes)",
             req.content.len(),
-            MAX_NOTE_SIZE
+            MAX_CONTENT_SIZE
         )));
     }
 
     // Security: Validate note name doesn't contain path traversal
-    if name.contains("..") || name.starts_with('/') || name.starts_with('\\') || name.contains('\0')
-    {
-        return Err(WebError::Chat(
-            "Invalid note name: path traversal not allowed".to_string(),
-        ));
-    }
+    validate_note_name(&name)?;
 
     // Security: Validate kiln is registered/open
     let kilns = state.daemon.kiln_list().await.daemon_err()?;
@@ -366,23 +343,27 @@ mod tests {
 
     #[test]
     fn test_content_size_limit_constant() {
-        assert_eq!(MAX_NOTE_SIZE, 10 * 1024 * 1024, "Max size should be 10MB");
+        assert_eq!(
+            MAX_CONTENT_SIZE,
+            10 * 1024 * 1024,
+            "Max size should be 10MB"
+        );
     }
 
     #[test]
     fn test_content_size_validation_rejects_oversized() {
-        let oversized = "x".repeat(MAX_NOTE_SIZE + 1);
+        let oversized = "x".repeat(MAX_CONTENT_SIZE + 1);
         assert!(
-            oversized.len() > MAX_NOTE_SIZE,
+            oversized.len() > MAX_CONTENT_SIZE,
             "Content should exceed limit"
         );
     }
 
     #[test]
     fn test_content_size_validation_accepts_max_size() {
-        let max_content = "x".repeat(MAX_NOTE_SIZE);
+        let max_content = "x".repeat(MAX_CONTENT_SIZE);
         assert!(
-            max_content.len() <= MAX_NOTE_SIZE,
+            max_content.len() <= MAX_CONTENT_SIZE,
             "Content at max size should be accepted"
         );
     }
@@ -391,7 +372,7 @@ mod tests {
     fn test_content_size_validation_accepts_normal_size() {
         let normal_content = "# My Note\n\nSome content here.";
         assert!(
-            normal_content.len() <= MAX_NOTE_SIZE,
+            normal_content.len() <= MAX_CONTENT_SIZE,
             "Normal content should be accepted"
         );
     }
@@ -467,22 +448,22 @@ mod tests {
 
     #[test]
     fn test_put_note_content_exactly_ten_megabytes_is_allowed() {
-        let content = "x".repeat(MAX_NOTE_SIZE);
+        let content = "x".repeat(MAX_CONTENT_SIZE);
         assert_eq!(content.len(), 10 * 1024 * 1024);
-        assert!(content.len() <= MAX_NOTE_SIZE);
-        assert!(content.len() <= MAX_NOTE_SIZE);
+        assert!(content.len() <= MAX_CONTENT_SIZE);
+        assert!(content.len() <= MAX_CONTENT_SIZE);
     }
 
     #[test]
     fn test_put_note_content_ten_megabytes_plus_one_is_rejected() {
-        let content = "x".repeat(MAX_NOTE_SIZE + 1);
+        let content = "x".repeat(MAX_CONTENT_SIZE + 1);
         assert_eq!(content.len(), (10 * 1024 * 1024) + 1);
-        assert!(content.len() > MAX_NOTE_SIZE);
+        assert!(content.len() > MAX_CONTENT_SIZE);
         assert_eq!(
             format!(
                 "Note content too large: {} bytes (max {} bytes)",
                 content.len(),
-                MAX_NOTE_SIZE
+                MAX_CONTENT_SIZE
             ),
             "Note content too large: 10485761 bytes (max 10485760 bytes)"
         );

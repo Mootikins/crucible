@@ -1,6 +1,5 @@
 use super::*;
 use serde::Serialize;
-use std::collections::HashSet;
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct ProviderInfo {
@@ -14,77 +13,61 @@ pub struct ProviderInfo {
     pub is_local: bool,
 }
 
+fn build_provider_info(
+    backend: BackendType,
+    provider_config: &LlmProviderConfig,
+    source_reason: &str,
+    provider_key: &str,
+    models: Vec<String>,
+) -> ProviderInfo {
+    ProviderInfo {
+        name: format_provider_name(
+            provider_key,
+            backend,
+            if source_reason == "config" {
+                provider_config.name.as_deref()
+            } else {
+                None
+            },
+        ),
+        provider_type: backend.as_str().to_string(),
+        available: !models.is_empty() || backend != BackendType::Ollama,
+        default_model: if source_reason == "config" {
+            Some(provider_config.model())
+        } else {
+            backend.default_chat_model().map(str::to_string)
+        },
+        models,
+        endpoint: if source_reason == "config" {
+            Some(provider_config.endpoint())
+        } else {
+            provider_config.endpoint.clone()
+        },
+        reason: Some(source_reason.to_string()),
+        is_local: backend.is_local(),
+    }
+}
+
 impl AgentManager {
     pub async fn list_providers(
         &self,
         classification: Option<DataClassification>,
     ) -> Vec<ProviderInfo> {
         let mut providers = Vec::new();
-        let mut seen_types = HashSet::new();
-
-        if let Some(llm_config) = &self.llm_config {
-            for (key, provider_config) in &llm_config.providers {
-                let backend = provider_config.provider_type;
-                if !backend.supports_chat() {
-                    continue;
-                }
-
-                if let Some(ref classification) = classification {
-                    if !provider_config
-                        .effective_trust_level()
-                        .satisfies(*classification)
-                    {
-                        continue;
-                    }
-                }
-
-                seen_types.insert(backend.as_str().to_string());
-
-                let models = self.discover_models(key, provider_config).await;
-                providers.push(ProviderInfo {
-                    name: format_provider_name(key, backend, provider_config.name.as_deref()),
-                    provider_type: backend.as_str().to_string(),
-                    available: !models.is_empty() || backend != BackendType::Ollama,
-                    default_model: Some(provider_config.model()),
-                    models,
-                    endpoint: Some(provider_config.endpoint()),
-                    reason: Some("config".to_string()),
-                    is_local: backend.is_local(),
-                });
-            }
-        }
-
-        for (provider_key, provider_config) in self.discover_env_providers(&seen_types) {
+        for (provider_key, provider_config, source_reason) in
+            self.iter_chat_providers(classification)
+        {
             let backend = provider_config.provider_type;
 
-            if let Some(ref classification) = classification {
-                if !provider_config
-                    .effective_trust_level()
-                    .satisfies(*classification)
-                {
-                    continue;
-                }
-            }
-
             let models = self.discover_models(&provider_key, &provider_config).await;
-            let reason = if backend == BackendType::Ollama {
-                Some("OLLAMA_HOST env var".to_string())
-            } else {
-                backend
-                    .api_key_env_var()
-                    .map(|env_var| format!("{env_var} env var"))
-            };
 
-            providers.push(ProviderInfo {
-                name: format_provider_name(&provider_key, backend, None),
-                provider_type: backend.as_str().to_string(),
-                available: !models.is_empty() || backend != BackendType::Ollama,
-                default_model: backend.default_chat_model().map(str::to_string),
+            providers.push(build_provider_info(
+                backend,
+                &provider_config,
+                &source_reason,
+                &provider_key,
                 models,
-                endpoint: provider_config.endpoint.clone(),
-                reason,
-                is_local: backend.is_local(),
-            });
+            ));
         }
 
         providers
@@ -92,8 +75,8 @@ impl AgentManager {
 
     pub(super) fn discover_env_providers(
         &self,
-        seen_types: &HashSet<String>,
-    ) -> Vec<(String, LlmProviderConfig)> {
+        seen_types: &std::collections::HashSet<String>,
+    ) -> Vec<(String, LlmProviderConfig, String)> {
         let mut providers = Vec::new();
 
         for &backend in all_backend_types() {
@@ -145,6 +128,7 @@ impl AgentManager {
                     trust_level: None,
                     name: None,
                 },
+                reason.expect("env-discovered providers always have a reason"),
             ));
         }
 
@@ -469,5 +453,87 @@ mod tests {
         // With no classification, all providers should be returned
         let all_providers = manager.list_providers(None).await;
         assert_eq!(all_providers.len(), 2);
+    }
+
+    #[test]
+    fn all_backend_types_is_exhaustive() {
+        // This test ensures that all_backend_types() covers all BackendType variants.
+        // If a new variant is added to BackendType, this match will fail to compile
+        // until the variant is added to all_backend_types().
+        let all_types = all_backend_types();
+        let all_types_set: std::collections::HashSet<_> = all_types.iter().copied().collect();
+
+        // Verify each variant is in the array by matching exhaustively
+        let _ = match BackendType::Ollama {
+            BackendType::Ollama => (),
+            BackendType::OpenAI => (),
+            BackendType::Anthropic => (),
+            BackendType::Cohere => (),
+            BackendType::VertexAI => (),
+            BackendType::FastEmbed => (),
+            BackendType::Burn => (),
+            BackendType::GitHubCopilot => (),
+            BackendType::OpenRouter => (),
+            BackendType::ZAI => (),
+            BackendType::Custom => (),
+            BackendType::Mock => (),
+        };
+
+        // Now verify all variants are in the array
+        assert!(
+            all_types_set.contains(&BackendType::Ollama),
+            "Ollama missing from all_backend_types"
+        );
+        assert!(
+            all_types_set.contains(&BackendType::OpenAI),
+            "OpenAI missing from all_backend_types"
+        );
+        assert!(
+            all_types_set.contains(&BackendType::Anthropic),
+            "Anthropic missing from all_backend_types"
+        );
+        assert!(
+            all_types_set.contains(&BackendType::Cohere),
+            "Cohere missing from all_backend_types"
+        );
+        assert!(
+            all_types_set.contains(&BackendType::VertexAI),
+            "VertexAI missing from all_backend_types"
+        );
+        assert!(
+            all_types_set.contains(&BackendType::FastEmbed),
+            "FastEmbed missing from all_backend_types"
+        );
+        assert!(
+            all_types_set.contains(&BackendType::Burn),
+            "Burn missing from all_backend_types"
+        );
+        assert!(
+            all_types_set.contains(&BackendType::GitHubCopilot),
+            "GitHubCopilot missing from all_backend_types"
+        );
+        assert!(
+            all_types_set.contains(&BackendType::OpenRouter),
+            "OpenRouter missing from all_backend_types"
+        );
+        assert!(
+            all_types_set.contains(&BackendType::ZAI),
+            "ZAI missing from all_backend_types"
+        );
+        assert!(
+            all_types_set.contains(&BackendType::Custom),
+            "Custom missing from all_backend_types"
+        );
+        assert!(
+            all_types_set.contains(&BackendType::Mock),
+            "Mock missing from all_backend_types"
+        );
+
+        // Verify the count matches
+        assert_eq!(
+            all_types.len(),
+            12,
+            "all_backend_types() should contain exactly 12 variants"
+        );
     }
 }

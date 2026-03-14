@@ -71,7 +71,7 @@ Cypher Query → chumsky parser → GraphIR → SQLite Renderer → SQL + sqlite
 
 **Advantages**:
 - No upstream dependency risk
-- Existing infrastructure: `crucible-query` has chumsky + GraphIR
+- Existing infrastructure: `crucible-sqlite` (query module) has chumsky + GraphIR
 - SQLite's proven reliability
 - Smaller binary
 
@@ -165,7 +165,7 @@ This subset covers ~95% of Crucible's query patterns.
 
 ## Existing Infrastructure
 
-The `crucible-query` crate already has:
+The `crucible-sqlite` query module already has:
 
 ```
 src/

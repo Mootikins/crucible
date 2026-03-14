@@ -319,6 +319,17 @@ pub struct SessionCreateRequest {
     pub recording_path: Option<String>,
 }
 
+/// Parameters for creating a session.
+#[derive(Debug, Clone)]
+pub struct SessionCreateParams {
+    pub session_type: String,
+    pub kiln: PathBuf,
+    pub workspace: Option<PathBuf>,
+    pub connect_kilns: Vec<PathBuf>,
+    pub recording_mode: Option<String>,
+    pub recording_path: Option<PathBuf>,
+}
+
 /// Request for `session.list`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionListRequest {
@@ -965,6 +976,38 @@ impl DaemonClient {
         Ok(serde_json::from_value(result)?)
     }
 
+    /// Send a typed JSON-RPC request and discard the response.
+    ///
+    /// Wraps `typed_call()` for methods that return unit (Ok(())).
+    /// Discards the response value to avoid unused variable warnings.
+    async fn typed_unit_call<Req>(&self, method: &str, params: Req) -> Result<()>
+    where
+        Req: serde::Serialize,
+    {
+        let _: serde_json::Value = self.typed_call(method, params).await?;
+        Ok(())
+    }
+
+    /// Send a typed JSON-RPC request with retry and discard the response.
+    ///
+    /// Wraps `typed_call_with_retry()` for methods that return unit (Ok(())).
+    /// Discards the response value to avoid unused variable warnings.
+    async fn typed_unit_call_with_retry<Req>(&self, method: &str, params: Req) -> Result<()>
+    where
+        Req: serde::Serialize,
+    {
+        let _: serde_json::Value = self.typed_call_with_retry(method, params).await?;
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    /// Build a request containing only a session_id.
+    ///
+    /// Helper for methods that take only a session_id parameter.
+    fn session_id_request(&self, session_id: &str) -> serde_json::Value {
+        serde_json::json!({"session_id": session_id.to_string()})
+    }
+
     /// Shorthand for RPC methods that only take a session_id parameter.
     async fn session_id_call(&self, method: &str, session_id: &str) -> Result<serde_json::Value> {
         self.typed_call(
@@ -1571,7 +1614,36 @@ impl DaemonClient {
     // Session RPC Methods
     // =========================================================================
 
-    pub async fn session_create(
+    pub async fn session_create(&self, params: SessionCreateParams) -> Result<serde_json::Value> {
+        self.typed_call(
+            "session.create",
+            SessionCreateRequest {
+                session_type: params.session_type,
+                kiln: params.kiln.to_string_lossy().to_string(),
+                workspace: params.workspace.map(|ws| ws.to_string_lossy().to_string()),
+                connect_kilns: if params.connect_kilns.is_empty() {
+                    None
+                } else {
+                    Some(
+                        params
+                            .connect_kilns
+                            .iter()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .collect(),
+                    )
+                },
+                recording_mode: params.recording_mode,
+                recording_path: params
+                    .recording_path
+                    .map(|p| p.to_string_lossy().to_string()),
+            },
+        )
+        .await
+    }
+
+    /// Create a session (deprecated: use session_create with SessionCreateParams instead).
+    #[deprecated(since = "0.1.0", note = "use session_create with SessionCreateParams")]
+    pub async fn session_create_legacy(
         &self,
         session_type: &str,
         kiln: &Path,
@@ -1580,26 +1652,14 @@ impl DaemonClient {
         recording_mode: Option<&str>,
         recording_path: Option<&Path>,
     ) -> Result<serde_json::Value> {
-        self.typed_call(
-            "session.create",
-            SessionCreateRequest {
-                session_type: session_type.to_string(),
-                kiln: kiln.to_string_lossy().to_string(),
-                workspace: workspace.map(|ws| ws.to_string_lossy().to_string()),
-                connect_kilns: if connect_kilns.is_empty() {
-                    None
-                } else {
-                    Some(
-                        connect_kilns
-                            .iter()
-                            .map(|p| p.to_string_lossy().to_string())
-                            .collect(),
-                    )
-                },
-                recording_mode: recording_mode.map(|m| m.to_string()),
-                recording_path: recording_path.map(|p| p.to_string_lossy().to_string()),
-            },
-        )
+        self.session_create(SessionCreateParams {
+            session_type: session_type.to_string(),
+            kiln: kiln.to_path_buf(),
+            workspace: workspace.map(|ws| ws.to_path_buf()),
+            connect_kilns: connect_kilns.iter().map(|p| p.to_path_buf()).collect(),
+            recording_mode: recording_mode.map(|m| m.to_string()),
+            recording_path: recording_path.map(|p| p.to_path_buf()),
+        })
         .await
     }
 
@@ -1748,16 +1808,14 @@ impl DaemonClient {
         session_id: &str,
         agent: &crucible_core::session::SessionAgent,
     ) -> Result<()> {
-        let _: serde_json::Value = self
-            .typed_call(
-                "session.configure_agent",
-                SessionConfigureAgentRequest {
-                    session_id: session_id.to_string(),
-                    agent: serde_json::to_value(agent)?,
-                },
-            )
-            .await?;
-        Ok(())
+        self.typed_unit_call(
+            "session.configure_agent",
+            SessionConfigureAgentRequest {
+                session_id: session_id.to_string(),
+                agent: serde_json::to_value(agent)?,
+            },
+        )
+        .await
     }
 
     pub async fn session_send_message(&self, session_id: &str, content: &str) -> Result<String> {
@@ -1780,18 +1838,15 @@ impl DaemonClient {
         request_id: &str,
         response: crucible_core::interaction::InteractionResponse,
     ) -> Result<()> {
-        let _: serde_json::Value = self
-            .typed_call(
-                "session.interaction_respond",
-                SessionInteractionRespondRequest {
-                    session_id: session_id.to_string(),
-                    request_id: request_id.to_string(),
-                    response: serde_json::to_value(response)?,
-                },
-            )
-            .await?;
-
-        Ok(())
+        self.typed_unit_call(
+            "session.interaction_respond",
+            SessionInteractionRespondRequest {
+                session_id: session_id.to_string(),
+                request_id: request_id.to_string(),
+                response: serde_json::to_value(response)?,
+            },
+        )
+        .await
     }
 
     pub async fn session_cancel(&self, session_id: &str) -> Result<bool> {
@@ -1808,29 +1863,25 @@ impl DaemonClient {
     }
 
     pub async fn session_switch_model(&self, session_id: &str, model_id: &str) -> Result<()> {
-        let _: serde_json::Value = self
-            .typed_call_with_retry(
-                "session.switch_model",
-                SessionSwitchModelRequest {
-                    session_id: session_id.to_string(),
-                    model_id: model_id.to_string(),
-                },
-            )
-            .await?;
-        Ok(())
+        self.typed_unit_call_with_retry(
+            "session.switch_model",
+            SessionSwitchModelRequest {
+                session_id: session_id.to_string(),
+                model_id: model_id.to_string(),
+            },
+        )
+        .await
     }
 
     pub async fn session_set_title(&self, session_id: &str, title: &str) -> Result<()> {
-        let _: serde_json::Value = self
-            .typed_call_with_retry(
-                "session.set_title",
-                SessionSetTitleRequest {
-                    session_id: session_id.to_string(),
-                    title: title.to_string(),
-                },
-            )
-            .await?;
-        Ok(())
+        self.typed_unit_call_with_retry(
+            "session.set_title",
+            SessionSetTitleRequest {
+                session_id: session_id.to_string(),
+                title: title.to_string(),
+            },
+        )
+        .await
     }
 
     pub async fn session_list_models(&self, session_id: &str) -> Result<Vec<String>> {
@@ -1902,16 +1953,14 @@ impl DaemonClient {
         session_id: &str,
         budget: Option<i64>,
     ) -> Result<()> {
-        let _: serde_json::Value = self
-            .typed_call_with_retry(
-                "session.set_thinking_budget",
-                SessionSetThinkingBudgetRequest {
-                    session_id: session_id.to_string(),
-                    thinking_budget: budget,
-                },
-            )
-            .await?;
-        Ok(())
+        self.typed_unit_call_with_retry(
+            "session.set_thinking_budget",
+            SessionSetThinkingBudgetRequest {
+                session_id: session_id.to_string(),
+                thinking_budget: budget,
+            },
+        )
+        .await
     }
 
     /// Get the current thinking budget for a session's agent.
@@ -1929,16 +1978,14 @@ impl DaemonClient {
 
     /// Set whether Precognition (auto-RAG) is enabled for a session.
     pub async fn session_set_precognition(&self, session_id: &str, enabled: bool) -> Result<()> {
-        let _: serde_json::Value = self
-            .typed_call_with_retry(
-                "session.set_precognition",
-                SessionSetPrecognitionRequest {
-                    session_id: session_id.to_string(),
-                    precognition_enabled: enabled,
-                },
-            )
-            .await?;
-        Ok(())
+        self.typed_unit_call_with_retry(
+            "session.set_precognition",
+            SessionSetPrecognitionRequest {
+                session_id: session_id.to_string(),
+                precognition_enabled: enabled,
+            },
+        )
+        .await
     }
 
     /// Get whether Precognition is enabled for a session.
@@ -1961,16 +2008,14 @@ impl DaemonClient {
     }
 
     pub async fn session_set_temperature(&self, session_id: &str, temperature: f64) -> Result<()> {
-        let _: serde_json::Value = self
-            .typed_call_with_retry(
-                "session.set_temperature",
-                SessionSetTemperatureRequest {
-                    session_id: session_id.to_string(),
-                    temperature,
-                },
-            )
-            .await?;
-        Ok(())
+        self.typed_unit_call_with_retry(
+            "session.set_temperature",
+            SessionSetTemperatureRequest {
+                session_id: session_id.to_string(),
+                temperature,
+            },
+        )
+        .await
     }
 
     pub async fn session_get_temperature(&self, session_id: &str) -> Result<Option<f64>> {
@@ -2000,16 +2045,14 @@ impl DaemonClient {
         session_id: &str,
         max_tokens: Option<u32>,
     ) -> Result<()> {
-        let _: serde_json::Value = self
-            .typed_call_with_retry(
-                "session.set_max_tokens",
-                SessionSetMaxTokensRequest {
-                    session_id: session_id.to_string(),
-                    max_tokens,
-                },
-            )
-            .await?;
-        Ok(())
+        self.typed_unit_call_with_retry(
+            "session.set_max_tokens",
+            SessionSetMaxTokensRequest {
+                session_id: session_id.to_string(),
+                max_tokens,
+            },
+        )
+        .await
     }
 
     pub async fn session_get_max_tokens(&self, session_id: &str) -> Result<Option<u32>> {
@@ -2374,7 +2417,14 @@ mod tests {
         let tmp = TempDir::new().unwrap();
 
         let result = client
-            .session_create("chat", tmp.path(), None, vec![], None, None)
+            .session_create(SessionCreateParams {
+                session_type: "chat".to_string(),
+                kiln: tmp.path().to_path_buf(),
+                workspace: None,
+                connect_kilns: vec![],
+                recording_mode: None,
+                recording_path: None,
+            })
             .await
             .unwrap();
         let session_id = result["session_id"].as_str().unwrap();
@@ -2402,7 +2452,14 @@ mod tests {
         let tmp = TempDir::new().unwrap();
 
         let result = client
-            .session_create("chat", tmp.path(), None, vec![], None, None)
+            .session_create(SessionCreateParams {
+                session_type: "chat".to_string(),
+                kiln: tmp.path().to_path_buf(),
+                workspace: None,
+                connect_kilns: vec![],
+                recording_mode: None,
+                recording_path: None,
+            })
             .await
             .unwrap();
         let session_id = result["session_id"].as_str().unwrap();
@@ -2424,7 +2481,14 @@ mod tests {
         let tmp = TempDir::new().unwrap();
 
         let result = client
-            .session_create("chat", tmp.path(), None, vec![], None, None)
+            .session_create(SessionCreateParams {
+                session_type: "chat".to_string(),
+                kiln: tmp.path().to_path_buf(),
+                workspace: None,
+                connect_kilns: vec![],
+                recording_mode: None,
+                recording_path: None,
+            })
             .await
             .unwrap();
         let session_id = result["session_id"].as_str().unwrap();
@@ -2445,7 +2509,14 @@ mod tests {
         let tmp = TempDir::new().unwrap();
 
         let result = client
-            .session_create("chat", tmp.path(), None, vec![], None, None)
+            .session_create(SessionCreateParams {
+                session_type: "chat".to_string(),
+                kiln: tmp.path().to_path_buf(),
+                workspace: None,
+                connect_kilns: vec![],
+                recording_mode: None,
+                recording_path: None,
+            })
             .await
             .unwrap();
         let session_id = result["session_id"].as_str().unwrap();
@@ -2465,7 +2536,14 @@ mod tests {
         let tmp = TempDir::new().unwrap();
 
         let result = client
-            .session_create("chat", tmp.path(), None, vec![], None, None)
+            .session_create(SessionCreateParams {
+                session_type: "chat".to_string(),
+                kiln: tmp.path().to_path_buf(),
+                workspace: None,
+                connect_kilns: vec![],
+                recording_mode: None,
+                recording_path: None,
+            })
             .await
             .unwrap();
         let session_id = result["session_id"].as_str().unwrap();

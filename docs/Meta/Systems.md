@@ -24,6 +24,7 @@ This document defines the orthogonal systems that make up Crucible. Each system 
 | **apis** | HTTP REST, WebSocket, events | `crucible-web` |
 | **cli** | Commands, REPL, TUI, configuration | `crucible-cli`, `crucible-oil`, `crucible-config` |
 | **daemon** | Multi-session server, RPC, agent management | `crucible-daemon` |
+| **observe** | Session logging, JSONL event streams, markdown export | `crucible-daemon/observe` |
 
 
 ## System Descriptions
@@ -120,13 +121,27 @@ See: [[Help/CLI/Index]], [[Help/TUI/Index]]
 
 ### daemon
 
-Multi-session server for concurrent agent access.
+Multi-session server for concurrent agent access. Owns all business logic that views (CLI, TUI, Web) consume over RPC.
 
-- Unix socket RPC (`cru daemon serve`)
-- Session management (create, load, pause, resume)
-- Agent lifecycle (model switching, thinking budget)
-- Event streaming via subscriptions
-- Kiln management
+- Unix socket RPC (`cru daemon serve`) with 82+ registered methods
+- Session lifecycle: create, pause, resume, resume_from_storage, end, archive, unarchive, delete, compact, replay
+- Agent management: configure, send_message, cancel, switch_model, list_models, interaction_respond
+- Session config: thinking_budget, temperature, max_tokens, precognition (get/set pairs)
+- Kiln CRUD: open, close, list, set_classification, search_vectors, list_notes, get_note_by_name
+- Note CRUD: upsert, get, delete, list
+- Processing: process_file, process_batch
+- Notifications: add, list, dismiss per session
+- Event streaming via subscriptions (subscribe/unsubscribe with wildcard support)
+- Lua runtime: init_session, register_hooks, execute_hook, shutdown_session, discover_plugins, plugin_health, generate_stubs, run_plugin_tests, register_commands
+- Plugin management: reload, list
+- Project management: register, unregister, list, get
+- Storage operations: verify, cleanup, backup, restore
+- MCP server control: start, stop, status
+- Skills discovery: list, get, search
+- Agent profiles: list_profiles, resolve_profile
+- Tool dispatch via `DaemonToolDispatcher`: routes tool calls to the correct executor (built-in Rust tools, Lua plugin tools, or external MCP server tools) using a provider chain with lazy name hydration
+- Tool dispatch enforces a 30-second timeout per tool call; timed-out calls return an error to the LLM so it can retry or adjust
+- Auto-archive sweep runs every 30 minutes, archiving sessions idle beyond a configurable threshold (default 72 hours)
 
 See: [[Help/Core/Sessions]], AGENTS.md Daemon Architecture section
 

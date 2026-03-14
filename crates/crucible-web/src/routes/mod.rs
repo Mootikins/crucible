@@ -1,6 +1,7 @@
 mod chat;
 mod config;
 mod health;
+mod helpers;
 mod kiln;
 mod mcp;
 mod plugin;
