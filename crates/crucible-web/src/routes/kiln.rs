@@ -97,9 +97,10 @@ async fn get_kiln_file(
 
     let file_path = PathBuf::from(&query.path);
     let kiln = find_enclosing_kiln(&state, &file_path).await?;
+    let canonical_file = validate_file_within_kiln(&file_path, &kiln, &query.path)?;
 
     // Try daemon get_note_by_name first (structured data)
-    let relative = file_path
+    let relative = canonical_file
         .strip_prefix(&kiln)
         .map_err(|_| WebError::Validation("Path not within kiln".to_string()))?;
     let note_name = relative
@@ -114,7 +115,7 @@ async fn get_kiln_file(
     }
 
     // Fallback: read from filesystem directly
-    let content = fs::read_to_string(&file_path)
+    let content = fs::read_to_string(&canonical_file)
         .await
         .map_err(|e| WebError::NotFound(format!("File not found: {e}")))?;
 
@@ -184,6 +185,24 @@ fn validate_parent_within_kiln(file_path: &Path, kiln: &Path) -> Result<(), WebE
     }
 
     Ok(())
+}
+
+fn validate_file_within_kiln(
+    file_path: &Path,
+    kiln: &Path,
+    original_path: &str,
+) -> Result<PathBuf, WebError> {
+    let canonical_file = file_path
+        .canonicalize()
+        .map_err(|_| WebError::NotFound(format!("File not found: {original_path}")))?;
+
+    if !canonical_file.starts_with(kiln) {
+        return Err(WebError::Validation(
+            "File path escapes kiln directory".to_string(),
+        ));
+    }
+
+    Ok(canonical_file)
 }
 
 /// Find the open kiln that contains `file_path`.
@@ -261,13 +280,26 @@ mod tests {
     }
 
     #[test]
-    fn test_symlink_escape_risk_is_documented() {
-        // TODO(security): `get_kiln_file` reads `req.path` directly without canonicalizing
-        // or checking that the resolved path remains inside the kiln; a symlink inside the
-        // kiln can point outside and allow path escape on reads.
-        let documented = "get_kiln_file symlink escape risk documented";
+    fn symlink_escape_rejected() {
+        let kiln = tempdir().expect("temp kiln");
+        let outside = tempdir().expect("temp outside");
 
-        assert!(documented.contains("symlink"));
+        let outside_file = outside.path().join("outside-note.md");
+        std::fs::write(&outside_file, "outside").expect("write outside file");
+
+        let link = kiln.path().join("escape-link");
+        symlink_dir(outside.path(), &link).expect("create symlink to outside");
+
+        let escaped_path = link.join("outside-note.md");
+        let err = validate_file_within_kiln(&escaped_path, kiln.path(), &escaped_path.to_string_lossy())
+            .expect_err("symlink target outside kiln must be rejected");
+
+        match err {
+            WebError::Validation(message) => {
+                assert_eq!(message, "File path escapes kiln directory");
+            }
+            other => panic!("expected validation error, got: {other:?}"),
+        }
     }
 
     #[test]
