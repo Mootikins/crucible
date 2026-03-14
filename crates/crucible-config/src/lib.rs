@@ -33,6 +33,7 @@ pub mod credentials;
 mod enrichment;
 mod global;
 mod includes;
+mod io_helpers;
 mod kiln_config;
 mod loader;
 mod patterns;
@@ -42,6 +43,7 @@ mod security;
 pub mod serde_helpers;
 mod value_source;
 mod workspace;
+
 
 pub use components::defaults::{
     ANTHROPIC_MODELS, DEFAULT_ANTHROPIC_ENDPOINT, DEFAULT_ANTHROPIC_MODEL, DEFAULT_BATCH_SIZE,

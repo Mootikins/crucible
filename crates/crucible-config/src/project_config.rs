@@ -1,3 +1,4 @@
+use crate::io_helpers::read_with_workspace_fallback;
 use crate::workspace::{KilnAttachment, SecurityConfig};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -27,17 +28,7 @@ pub struct ProjectMeta {
 
 /// Read project configuration from `.crucible/project.toml` with workspace fallback.
 pub fn read_project_config(dir: &Path) -> Option<ProjectConfig> {
-    let crucible_dir = dir.join(".crucible");
-    let project_path = crucible_dir.join("project.toml");
-
-    if project_path.exists() {
-        let content = fs::read_to_string(&project_path).ok()?;
-        return toml::from_str::<ProjectConfig>(&content).ok();
-    }
-
-    let workspace_path = crucible_dir.join("workspace.toml");
-    let content = fs::read_to_string(&workspace_path).ok()?;
-    toml::from_str::<ProjectConfig>(&content).ok()
+    read_with_workspace_fallback(dir, "project.toml", "project")
 }
 
 /// Write project configuration to `.crucible/project.toml`.
