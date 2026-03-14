@@ -142,8 +142,15 @@ async fn test_complete_user_flow() {
     );
 
     // ── Step 2: Create session ────────────────────────────────────────────
-    let create_result = client
-        .session_create("chat", kiln_dir.path(), None, vec![], None, None)
+let create_result = client
+        .session_create(crucible_daemon::rpc_client::client::SessionCreateParams {
+            session_type: "chat".to_string(),
+            kiln: kiln_dir.path().to_path_buf(),
+            workspace: None,
+            connect_kilns: vec![],
+            recording_mode: None,
+            recording_path: None,
+        })
         .await
         .expect("session.create failed");
 
@@ -346,8 +353,15 @@ async fn test_user_flow_session_list_reflects_state() {
         .expect("Failed to connect");
 
     // Create session
-    let result = client
-        .session_create("chat", kiln_dir.path(), None, vec![], None, None)
+let result = client
+        .session_create(crucible_daemon::rpc_client::client::SessionCreateParams {
+            session_type: "chat".to_string(),
+            kiln: kiln_dir.path().to_path_buf(),
+            workspace: None,
+            connect_kilns: vec![],
+            recording_mode: None,
+            recording_path: None,
+        })
         .await
         .expect("session.create failed");
     let session_id = result["session_id"]
