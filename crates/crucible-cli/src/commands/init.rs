@@ -130,7 +130,12 @@ pub async fn execute(
 /// 1. Key exists (commented or not) - replace the line
 /// 2. Key doesn't exist, but preferred_anchor exists - insert after anchor
 /// 3. Neither exists - prepend to file
-fn upsert_kv_line(contents: &str, key: &str, value: &str, preferred_anchor: Option<&str>) -> String {
+fn upsert_kv_line(
+    contents: &str,
+    key: &str,
+    value: &str,
+    preferred_anchor: Option<&str>,
+) -> String {
     let new_line = format!("{}= \"{}\"", key, value);
 
     // Case 1: Key already exists (commented or not)
