@@ -972,6 +972,150 @@ mod tests {
         assert_eq!(blocks[0].0, "paragraph_1");
     }
 
+    fn create_test_note_with_all_extractable_block_types() -> ParsedNote {
+        use crucible_core::parser::{
+            Blockquote, CodeBlock, Heading, ListBlock, ListItem, ListType, Paragraph, ParsedNoteBuilder,
+        };
+
+        let mut note = ParsedNoteBuilder::new(PathBuf::from("/test/enrichment.md")).build();
+
+        note.content.headings.push(Heading::new(
+            1,
+            "Primary architecture heading context words",
+            0,
+        ));
+        note.content.headings.push(Heading::new(
+            2,
+            "Secondary execution heading context words",
+            40,
+        ));
+        note.content.headings.push(Heading::new(
+            3,
+            "Tertiary extraction heading context words",
+            80,
+        ));
+
+        note.content.paragraphs.push(Paragraph::new(
+            "Paragraph content carries enough words for extraction checks".to_string(),
+            120,
+        ));
+
+        note.content.code_blocks.push(CodeBlock::new(
+            Some("rust".to_string()),
+            "fn demo_example() { let answer = 42; println!(\"{}\", answer); }".to_string(),
+            160,
+        ));
+
+        let mut list = ListBlock::new(ListType::Unordered, 220);
+        list.add_item(ListItem::new(
+            "First list item carries context".to_string(),
+            0,
+        ));
+        list.add_item(ListItem::new(
+            "Second list item keeps meaning".to_string(),
+            0,
+        ));
+        note.content.lists.push(list);
+
+        note.content.blockquotes.push(Blockquote::new(
+            "Blockquote words stay visible with context".to_string(),
+            280,
+        ));
+
+        note
+    }
+
+    #[test]
+    fn test_extract_block_texts_all_block_types_with_context() {
+        let service = DefaultEnrichmentService::without_embeddings();
+        let note = create_test_note_with_all_extractable_block_types();
+
+        let blocks = service.extract_block_texts(&note, &[]);
+
+        let h1 = "Primary architecture heading context words";
+        let h2 = "Secondary execution heading context words";
+        let h3 = "Tertiary extraction heading context words";
+        let deep_context = format!("enrichment > {h1} > {h2} > {h3}");
+
+        let expected = vec![
+            (
+                "heading_0".to_string(),
+                format!("[enrichment > {h1}] {h1}"),
+            ),
+            (
+                "heading_1".to_string(),
+                format!("[enrichment > {h1} > {h2}] {h2}"),
+            ),
+            (
+                "heading_2".to_string(),
+                format!("[{deep_context}] {h3}"),
+            ),
+            (
+                "paragraph_0".to_string(),
+                format!("[{deep_context}] Paragraph content carries enough words for extraction checks"),
+            ),
+            (
+                "code_0".to_string(),
+                format!("[{deep_context}] fn demo_example() {{ let answer = 42; println!(\"{{}}\", answer); }}"),
+            ),
+            (
+                "list_0".to_string(),
+                format!("[{deep_context}] First list item carries context Second list item keeps meaning"),
+            ),
+            (
+                "blockquote_0".to_string(),
+                format!("[{deep_context}] Blockquote words stay visible with context"),
+            ),
+        ];
+
+        assert_eq!(blocks, expected);
+    }
+
+    #[test]
+    fn test_extract_block_texts_respects_changed_block_ids() {
+        let service = DefaultEnrichmentService::without_embeddings();
+        let note = create_test_note_with_all_extractable_block_types();
+        let changed_blocks = vec![
+            "heading_2".to_string(),
+            "paragraph_0".to_string(),
+            "code_0".to_string(),
+            "list_0".to_string(),
+            "blockquote_0".to_string(),
+        ];
+
+        let blocks = service.extract_block_texts(&note, &changed_blocks);
+
+        let h1 = "Primary architecture heading context words";
+        let h2 = "Secondary execution heading context words";
+        let h3 = "Tertiary extraction heading context words";
+        let deep_context = format!("enrichment > {h1} > {h2} > {h3}");
+
+        let expected = vec![
+            (
+                "heading_2".to_string(),
+                format!("[{deep_context}] {h3}"),
+            ),
+            (
+                "paragraph_0".to_string(),
+                format!("[{deep_context}] Paragraph content carries enough words for extraction checks"),
+            ),
+            (
+                "code_0".to_string(),
+                format!("[{deep_context}] fn demo_example() {{ let answer = 42; println!(\"{{}}\", answer); }}"),
+            ),
+            (
+                "list_0".to_string(),
+                format!("[{deep_context}] First list item carries context Second list item keeps meaning"),
+            ),
+            (
+                "blockquote_0".to_string(),
+                format!("[{deep_context}] Blockquote words stay visible with context"),
+            ),
+        ];
+
+        assert_eq!(blocks, expected);
+    }
+
     #[test]
     fn test_builder_with_max_batch_size() {
         let provider = Arc::new(MockEmbeddingProvider::new());
