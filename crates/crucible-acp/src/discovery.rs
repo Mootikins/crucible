@@ -104,9 +104,19 @@ pub async fn probe_all_agents() -> Vec<KnownAgent> {
 /// Built-in agent profiles (table-driven initialization)
 const BUILTIN_PROFILES: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("opencode", "opencode", &["acp"], Some("OpenCode AI (Go)")),
-    ("claude", "npx", &["@zed-industries/claude-agent-acp"], Some("Claude Code via ACP")),
+    (
+        "claude",
+        "npx",
+        &["@zed-industries/claude-agent-acp"],
+        Some("Claude Code via ACP"),
+    ),
     ("gemini", "gemini", &[], Some("Google Gemini CLI")),
-    ("codex", "npx", &["@zed-industries/codex-acp"], Some("OpenAI Codex via ACP")),
+    (
+        "codex",
+        "npx",
+        &["@zed-industries/codex-acp"],
+        Some("OpenAI Codex via ACP"),
+    ),
     ("cursor", "cursor-acp", &[], Some("Cursor IDE via ACP")),
 ];
 

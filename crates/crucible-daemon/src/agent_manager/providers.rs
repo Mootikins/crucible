@@ -496,20 +496,60 @@ mod tests {
         };
 
         // Now verify all variants are in the array
-        assert!(all_types_set.contains(&BackendType::Ollama), "Ollama missing from all_backend_types");
-        assert!(all_types_set.contains(&BackendType::OpenAI), "OpenAI missing from all_backend_types");
-        assert!(all_types_set.contains(&BackendType::Anthropic), "Anthropic missing from all_backend_types");
-        assert!(all_types_set.contains(&BackendType::Cohere), "Cohere missing from all_backend_types");
-        assert!(all_types_set.contains(&BackendType::VertexAI), "VertexAI missing from all_backend_types");
-        assert!(all_types_set.contains(&BackendType::FastEmbed), "FastEmbed missing from all_backend_types");
-        assert!(all_types_set.contains(&BackendType::Burn), "Burn missing from all_backend_types");
-        assert!(all_types_set.contains(&BackendType::GitHubCopilot), "GitHubCopilot missing from all_backend_types");
-        assert!(all_types_set.contains(&BackendType::OpenRouter), "OpenRouter missing from all_backend_types");
-        assert!(all_types_set.contains(&BackendType::ZAI), "ZAI missing from all_backend_types");
-        assert!(all_types_set.contains(&BackendType::Custom), "Custom missing from all_backend_types");
-        assert!(all_types_set.contains(&BackendType::Mock), "Mock missing from all_backend_types");
+        assert!(
+            all_types_set.contains(&BackendType::Ollama),
+            "Ollama missing from all_backend_types"
+        );
+        assert!(
+            all_types_set.contains(&BackendType::OpenAI),
+            "OpenAI missing from all_backend_types"
+        );
+        assert!(
+            all_types_set.contains(&BackendType::Anthropic),
+            "Anthropic missing from all_backend_types"
+        );
+        assert!(
+            all_types_set.contains(&BackendType::Cohere),
+            "Cohere missing from all_backend_types"
+        );
+        assert!(
+            all_types_set.contains(&BackendType::VertexAI),
+            "VertexAI missing from all_backend_types"
+        );
+        assert!(
+            all_types_set.contains(&BackendType::FastEmbed),
+            "FastEmbed missing from all_backend_types"
+        );
+        assert!(
+            all_types_set.contains(&BackendType::Burn),
+            "Burn missing from all_backend_types"
+        );
+        assert!(
+            all_types_set.contains(&BackendType::GitHubCopilot),
+            "GitHubCopilot missing from all_backend_types"
+        );
+        assert!(
+            all_types_set.contains(&BackendType::OpenRouter),
+            "OpenRouter missing from all_backend_types"
+        );
+        assert!(
+            all_types_set.contains(&BackendType::ZAI),
+            "ZAI missing from all_backend_types"
+        );
+        assert!(
+            all_types_set.contains(&BackendType::Custom),
+            "Custom missing from all_backend_types"
+        );
+        assert!(
+            all_types_set.contains(&BackendType::Mock),
+            "Mock missing from all_backend_types"
+        );
 
         // Verify the count matches
-        assert_eq!(all_types.len(), 12, "all_backend_types() should contain exactly 12 variants");
+        assert_eq!(
+            all_types.len(),
+            12,
+            "all_backend_types() should contain exactly 12 variants"
+        );
     }
 }

@@ -915,7 +915,7 @@ async fn daemon_create(
         None
     };
 
-let result = client
+    let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: session_type.to_string(),
             kiln: config.kiln_path.clone(),

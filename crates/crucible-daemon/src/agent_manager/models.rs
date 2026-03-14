@@ -238,8 +238,7 @@ impl AgentManager {
             }
         }
 
-        if !all_models.iter().any(|model| model.starts_with("[error]"))
-        {
+        if !all_models.iter().any(|model| model.starts_with("[error]")) {
             self.model_cache
                 .insert(cache_key, (all_models.clone(), Instant::now()));
         }

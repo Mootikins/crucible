@@ -92,7 +92,6 @@ pub(crate) fn truncate_with_ellipsis(input: &str, max_chars: usize) -> String {
     }
 }
 
-
 /// Formats a single popup item line (unstyled) with the standard layout:
 /// `[indicator] [kind] [label]  [description]` padded to `width`.
 ///

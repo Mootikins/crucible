@@ -237,7 +237,7 @@ impl ReconnectingDaemon {
             Box::pin(async move {
                 let connect_kilns_ref: Vec<&Path> =
                     connect_kilns.iter().map(|p| p.as_path()).collect();
-daemon
+                daemon
                     .session_create(crucible_daemon::rpc_client::SessionCreateParams {
                         session_type: session_type.clone(),
                         kiln: kiln.clone(),
