@@ -965,7 +965,6 @@ verbose = false
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1021,14 +1020,20 @@ api_key = "{env:CRUCIBLE_NONEXISTENT_VAR_XYZ_12345}"
 
         // Load the config — should succeed (not crash)
         let result = CliAppConfig::load(Some(temp_file.path().to_path_buf()), None, None);
-        assert!(result.is_ok(), "Config load should succeed even with missing env var");
+        assert!(
+            result.is_ok(),
+            "Config load should succeed even with missing env var"
+        );
 
         let config = result.unwrap();
         let provider = config.llm.providers.get("test-provider").unwrap();
         // The api_key should either be unresolved or None
         // (depends on how process_file_references handles missing vars)
         // The important thing is that load succeeded
-        assert!(provider.api_key.is_none() || provider.api_key.as_deref() == Some("{env:CRUCIBLE_NONEXISTENT_VAR_XYZ_12345}"));
+        assert!(
+            provider.api_key.is_none()
+                || provider.api_key.as_deref() == Some("{env:CRUCIBLE_NONEXISTENT_VAR_XYZ_12345}")
+        );
     }
 
     #[test]
@@ -1056,7 +1061,7 @@ api_key = "{env:SOME_VAR}"
         // Assert that the llm.default field is present and correct
         // This verifies that detect_present_fields ran correctly before env resolution
         assert_eq!(config.llm.default, Some("my-provider".to_string()));
-        
+
         // Also verify the provider exists and api_key was resolved
         let provider = config.llm.providers.get("my-provider").unwrap();
         assert_eq!(provider.api_key.as_deref(), Some("test-value"));
