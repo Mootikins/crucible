@@ -702,8 +702,8 @@ impl AgentManager {
     }
 }
 
-mod messaging;
 mod iter;
+mod messaging;
 mod models;
 mod precognition;
 pub mod providers;

@@ -247,6 +247,7 @@ impl AgentManager {
         }
     }
 
+    #[allow(clippy::too_many_arguments)] // Private helper; grouping into a struct would be over-engineering
     async fn update_agent_config_and_emit<Mutate, OnUpdated>(
         &self,
         session_id: &str,

@@ -72,13 +72,19 @@ impl OilChatApp {
             }
             "model" => self.handle_model_repl(None),
             _ if command.starts_with("model ") => {
-                let name = command.strip_prefix("model ").expect("starts_with guard").trim();
+                let name = command
+                    .strip_prefix("model ")
+                    .expect("starts_with guard")
+                    .trim();
                 self.handle_model_repl(Some(name))
             }
             "clear" => Action::Send(ChatAppMsg::ClearHistory),
             "reload" => self.handle_reload_repl(None),
             _ if command.starts_with("reload ") => {
-                let name = command.strip_prefix("reload ").expect("starts_with guard").trim();
+                let name = command
+                    .strip_prefix("reload ")
+                    .expect("starts_with guard")
+                    .trim();
                 self.handle_reload_repl(Some(name))
             }
             _ if command.starts_with("export ") => {
@@ -145,8 +151,7 @@ impl OilChatApp {
             ModelListState::Loaded => {
                 if self.available_models.is_empty() {
                     self.add_system_message(
-                        "No models configured. Use :model <name> to switch manually."
-                            .to_string(),
+                        "No models configured. Use :model <name> to switch manually.".to_string(),
                     );
                     Action::Continue
                 } else {
@@ -302,8 +307,7 @@ impl OilChatApp {
             "precognition.results" => self.handle_set_precognition_results(key, value),
             k if k.starts_with("perm.") => self.handle_perm_set(key, &value),
             _ => {
-                self.runtime_config
-                    .set_str(key, &value, ModSource::Command);
+                self.runtime_config.set_str(key, &value, ModSource::Command);
                 self.sync_runtime_to_fields(key);
                 self.send_setting_ack(key, &value);
                 Action::Continue
@@ -327,8 +331,7 @@ impl OilChatApp {
         use crate::tui::oil::config::ThinkingPreset;
         if let Some(preset) = ThinkingPreset::by_name(&value) {
             let budget = preset.to_budget();
-            self.runtime_config
-                .set_str(key, &value, ModSource::Command);
+            self.runtime_config.set_str(key, &value, ModSource::Command);
             self.add_system_message(format!("  thinkingbudget={} ({})", value, budget));
             Action::Send(ChatAppMsg::SetThinkingBudget(budget))
         } else {
@@ -341,8 +344,7 @@ impl OilChatApp {
     fn handle_set_temperature(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
         match value.parse::<f64>() {
             Ok(temp) if (0.0..=2.0).contains(&temp) => {
-                self.runtime_config
-                    .set_str(key, &value, ModSource::Command);
+                self.runtime_config.set_str(key, &value, ModSource::Command);
                 self.send_setting_ack("temperature", temp);
                 Action::Send(ChatAppMsg::SetTemperature(temp))
             }
@@ -372,22 +374,16 @@ impl OilChatApp {
                 }
             }
         };
-        self.runtime_config
-            .set_str(key, &value, ModSource::Command);
+        self.runtime_config.set_str(key, &value, ModSource::Command);
         let display = max_tokens.map_or("none".to_string(), |n| n.to_string());
         self.send_setting_ack("maxtokens", &display);
         Action::Send(ChatAppMsg::SetMaxTokens(max_tokens))
     }
 
-    fn handle_set_precognition_results(
-        &mut self,
-        key: &str,
-        value: String,
-    ) -> Action<ChatAppMsg> {
+    fn handle_set_precognition_results(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
         match value.parse::<usize>() {
             Ok(n) if (1..=20).contains(&n) => {
-                self.runtime_config
-                    .set_str(key, &value, ModSource::Command);
+                self.runtime_config.set_str(key, &value, ModSource::Command);
                 self.precognition.precognition_results = n;
                 self.send_setting_ack("precognition.results", n);
             }
