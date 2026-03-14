@@ -1,4 +1,4 @@
-//! SQLite query renderer for crucible-query.
+//! SQLite query renderer for crucible-sqlite (query module).
 //!
 //! Converts GraphIR to SQLite SQL with:
 //! - Recursive CTEs for variable-length paths
