@@ -985,7 +985,8 @@ mod tests {
 
     fn create_test_note_with_all_extractable_block_types() -> ParsedNote {
         use crucible_core::parser::{
-            Blockquote, CodeBlock, Heading, ListBlock, ListItem, ListType, Paragraph, ParsedNoteBuilder,
+            Blockquote, CodeBlock, Heading, ListBlock, ListItem, ListType, Paragraph,
+            ParsedNoteBuilder,
         };
 
         let mut note = ParsedNoteBuilder::new(PathBuf::from("/test/enrichment.md")).build();
