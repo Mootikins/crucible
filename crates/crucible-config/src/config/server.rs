@@ -16,20 +16,20 @@ pub struct ServerConfig {
     #[serde(default = "default_port")]
     pub port: u16,
 
-    /// Enable HTTPS.
+    /// Enable HTTPS. Reserved for future use — not yet wired to server behavior.
     #[serde(default)]
     pub https: bool,
 
-    /// Path to TLS certificate file.
+    /// Path to TLS certificate file. Reserved for future use — not yet wired to server behavior.
     pub cert_file: Option<String>,
 
-    /// Path to TLS private key file.
+    /// Path to TLS private key file. Reserved for future use — not yet wired to server behavior.
     pub key_file: Option<String>,
 
-    /// Maximum request body size in bytes.
+    /// Maximum request body size in bytes. Reserved for future use — not yet wired to server behavior.
     pub max_body_size: Option<usize>,
 
-    /// Request timeout in seconds.
+    /// Request timeout in seconds. Reserved for future use — not yet wired to server behavior.
     pub timeout_seconds: Option<u64>,
 
     /// Auto-archive threshold in hours for inactive sessions.
