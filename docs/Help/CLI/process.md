@@ -162,7 +162,7 @@ For large kilns (>1000 files):
 
 **Related modules:**
 - `crates/crucible-sqlite/` - SQLite storage layer (default)
-- `crates/crucible-parser/` - Markdown parsing
+- `crates/crucible-core/src/parser/` - Markdown parsing
 - `crates/crucible-llm/src/embeddings/` - Embedding generation
 
 ## See Also

@@ -1,4 +1,4 @@
-//! Cypher syntax parser for crucible-query.
+//! Cypher syntax parser for crucible-sqlite (query module).
 //!
 //! Extends the existing PGQ MATCH parser with:
 //! - WHERE clauses

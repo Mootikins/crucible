@@ -28,7 +28,7 @@ Features removed during Rune removal that should be ported to Lua.
 - Tool allow/block lists per upstream
 - Auto-reconnect on connection loss
 
-**Port approach**: This is protocol-level, not language-specific. Move to crucible-tools as pure Rust.
+**Port approach**: This is protocol-level, not language-specific. Move to crucible-daemon (tools) as pure Rust.
 
 ## Event Pipeline (Rune Plugins)
 

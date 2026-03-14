@@ -166,7 +166,7 @@ When writing Help/ docs, reference these code locations:
 - `crates/crucible-cli/src/main.rs` - Command registration
 
 ### Parser
-- `crates/crucible-parser/src/` - Markdown parsing
+- `crates/crucible-core/src/parser/` - Markdown parsing
 - `crates/crucible-core/src/parser/types/` - Parser types
 
 ### Storage
@@ -181,7 +181,7 @@ When writing Help/ docs, reference these code locations:
 - `crates/crucible-config/src/` - Configuration loading and types
 
 ### MCP/Tools
-- `crates/crucible-tools/src/` - MCP server
+- `crates/crucible-daemon/src/tools/` - MCP server
 - `crates/crucible-lua/src/` - Lua integration
 
 ## Test Integration
