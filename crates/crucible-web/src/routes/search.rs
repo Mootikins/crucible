@@ -1,6 +1,6 @@
+use super::helpers::{note_to_metadata_json, validate_note_name, MAX_CONTENT_SIZE};
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
-use super::helpers::{note_to_metadata_json, validate_note_name, MAX_CONTENT_SIZE};
 use axum::{
     extract::{Path, State},
     routing::{get, post, put},
@@ -80,7 +80,6 @@ struct PutNoteRequest {
     kiln: PathBuf,
     content: String,
 }
-
 
 async fn put_note(
     State(state): State<AppState>,
@@ -344,7 +343,11 @@ mod tests {
 
     #[test]
     fn test_content_size_limit_constant() {
-        assert_eq!(MAX_CONTENT_SIZE, 10 * 1024 * 1024, "Max size should be 10MB");
+        assert_eq!(
+            MAX_CONTENT_SIZE,
+            10 * 1024 * 1024,
+            "Max size should be 10MB"
+        );
     }
 
     #[test]
