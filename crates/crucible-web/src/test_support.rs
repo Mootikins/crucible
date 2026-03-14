@@ -106,9 +106,10 @@ pub fn arb_traversal_path() -> impl Strategy<Value = String> {
 }
 
 pub fn arb_safe_path() -> impl Strategy<Value = String> {
-    "[a-zA-Z0-9/_-]{1,64}".prop_filter("no traversal or null byte", |s| {
-        !s.contains("..") && !s.contains('\0')
-    })
+    "[a-zA-Z0-9_-][a-zA-Z0-9/_-]{0,63}"
+        .prop_filter("no traversal, null byte, or absolute path", |s| {
+            !s.contains("..") && !s.contains('\0') && !s.starts_with('/')
+        })
 }
 
 #[cfg(test)]
