@@ -13,6 +13,42 @@ pub struct ProviderInfo {
     pub is_local: bool,
 }
 
+fn build_provider_info(
+    backend: BackendType,
+    provider_config: &LlmProviderConfig,
+    source_reason: &str,
+    provider_key: &str,
+    models: Vec<String>,
+) -> ProviderInfo {
+    ProviderInfo {
+        name: format_provider_name(
+            provider_key,
+            backend,
+            if source_reason == "config" {
+                provider_config.name.as_deref()
+            } else {
+                None
+            },
+        ),
+        provider_type: backend.as_str().to_string(),
+        available: !models.is_empty() || backend != BackendType::Ollama,
+        default_model: if source_reason == "config" {
+            Some(provider_config.model())
+        } else {
+            backend.default_chat_model().map(str::to_string)
+        },
+        models,
+        endpoint: if source_reason == "config" {
+            Some(provider_config.endpoint())
+        } else {
+            provider_config.endpoint.clone()
+        },
+        reason: Some(source_reason.to_string()),
+        is_local: backend.is_local(),
+    }
+}
+
+
 impl AgentManager {
     pub async fn list_providers(
         &self,
@@ -25,32 +61,13 @@ impl AgentManager {
 
             let models = self.discover_models(&provider_key, &provider_config).await;
 
-            providers.push(ProviderInfo {
-                name: format_provider_name(
-                    &provider_key,
-                    backend,
-                    if source_reason == "config" {
-                        provider_config.name.as_deref()
-                    } else {
-                        None
-                    },
-                ),
-                provider_type: backend.as_str().to_string(),
-                available: !models.is_empty() || backend != BackendType::Ollama,
-                default_model: if source_reason == "config" {
-                    Some(provider_config.model())
-                } else {
-                    backend.default_chat_model().map(str::to_string)
-                },
+            providers.push(build_provider_info(
+                backend,
+                &provider_config,
+                &source_reason,
+                &provider_key,
                 models,
-                endpoint: if source_reason == "config" {
-                    Some(provider_config.endpoint())
-                } else {
-                    provider_config.endpoint.clone()
-                },
-                reason: Some(source_reason),
-                is_local: backend.is_local(),
-            });
+            ));
         }
 
         providers
