@@ -217,8 +217,6 @@ cru --verbose process
 # JSON output (where supported)
 cru stats --format json
 
-# Skip processing on startup
-cru --no-process chat
 ```
 
 ## Getting Help
