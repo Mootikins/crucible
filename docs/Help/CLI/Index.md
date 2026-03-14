@@ -50,6 +50,7 @@ Complete reference for all Crucible CLI commands.
 | `cru tasks` | Manage tasks from a TASKS.md file (list, next, pick, done) |
 | `cru plugin` | Manage and develop Lua plugins |
 | `cru web` | Start the web UI server for browser-based chat |
+| `cru doctor` | Run installation diagnostics (daemon, config, providers, kiln, embeddings) |
 
 ## Global Options
 
@@ -60,8 +61,6 @@ Complete reference for all Crucible CLI commands.
 -f, --format <FORMAT>       Output format: table, json, csv (default: table)
     --embedding-url <URL>   Embedding service URL (overrides config)
     --embedding-model <MODEL> Embedding model name (overrides config)
-    --no-process            Skip file processing on startup
-    --process-timeout <SEC> Processing timeout in seconds (default: 300)
     --standalone            Run with in-process daemon (no background server required)
 -h, --help                  Show help
 -V, --version               Print version
