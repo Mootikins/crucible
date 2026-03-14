@@ -189,7 +189,7 @@ impl AgentManager {
 
         let mut seen_types = std::collections::HashSet::new();
         if let Some(ref llm_config) = self.llm_config {
-            for (_, provider_config) in &llm_config.providers {
+            for provider_config in llm_config.providers.values() {
                 seen_types.insert(provider_config.provider_type.as_str().to_string());
             }
         }

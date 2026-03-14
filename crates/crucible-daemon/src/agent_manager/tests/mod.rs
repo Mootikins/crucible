@@ -7,6 +7,7 @@ use crucible_core::events::handler::{Handler, HandlerContext, HandlerResult};
 use crucible_core::events::{InternalSessionEvent, SessionEvent};
 use crucible_core::parser::ParsedNote;
 use crucible_core::session::SessionType;
+use crucible_core::test_support::EnvVarGuard;
 use crucible_core::traits::chat::{
     AgentHandle, ChatChunk, ChatResult, ChatToolCall, ChatToolResult,
 };
@@ -16,10 +17,9 @@ use crucible_core::types::SearchResult;
 use futures::stream::BoxStream;
 use futures::StreamExt;
 use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex as StdMutex};
 use tempfile::TempDir;
 use tokio::time::{timeout, Duration};
-use crucible_core::test_support::EnvVarGuard;
-use std::sync::{LazyLock, Mutex as StdMutex};
 
 static ENV_LOCK: LazyLock<StdMutex<()>> = LazyLock::new(|| StdMutex::new(()));
 

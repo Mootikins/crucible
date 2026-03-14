@@ -253,17 +253,17 @@ data_classification = "confidential"
         // return the provider's effective trust level
         let mut providers = HashMap::new();
         let provider_config = LlmProviderConfig {
-                    provider_type: BackendType::Ollama,
-                    endpoint: None,
-                    default_model: None,
-                    temperature: None,
-                    max_tokens: None,
-                    timeout_secs: None,
-                    api_key: None,
-                    available_models: None,
-                    trust_level: Some(TrustLevel::Local),
-                    name: None,
-                };
+            provider_type: BackendType::Ollama,
+            endpoint: None,
+            default_model: None,
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: None,
+            trust_level: Some(TrustLevel::Local),
+            name: None,
+        };
         providers.insert("local-ollama".to_string(), provider_config);
 
         let llm_config = LlmConfig {
