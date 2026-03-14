@@ -217,7 +217,9 @@ impl ConfigLoader {
                 let base_dir = config_path.parent().unwrap_or(Path::new("."));
 
                 // Process {file:path} references first (can be anywhere)
-                if let Err(errors) = process_file_references(&mut toml_value, base_dir, ResolveMode::BestEffort) {
+                if let Err(errors) =
+                    process_file_references(&mut toml_value, base_dir, ResolveMode::BestEffort)
+                {
                     for error in errors {
                         tracing::warn!("File reference error: {}", error);
                     }
