@@ -81,26 +81,26 @@ A knowledge management system where:
 ## AI Chat & Agents
 
 ### Conversation & Sessions
-- [x] **Interactive Chat** `P0` — Conversational AI with streaming text, thinking, tool calls, and subagent events · [[Help/CLI/chat]] · `crucible-cli`, `crucible-rig`
+- [x] **Interactive Chat** `P0` — Conversational AI with streaming text, thinking, tool calls, and subagent events · [[Help/CLI/chat]] · `crucible-cli`, `crucible-daemon`
 - [x] **Agent Cards** `P0` — Configurable agent personas with system prompts, model, temperature, tools · [[Help/Extending/Agent Cards]] · [[Help/Config/agents]] · `crucible-config`
 - [x] **Session Persistence** `P0` — Conversations saved as markdown + JSONL in kiln · [[Help/Core/Sessions]] · `crucible-daemon`
 - [x] **Session Resume** `P0` — Load and continue previous sessions with full history · [[Help/Core/Sessions]] · `crucible-daemon` (rpc)
-- [x] **Conversation History** `P0` — Clear history (`:clear`), resume with prior messages; TUI viewport hydrated from daemon session events · `crucible-rig`
+- [x] **Conversation History** `P0` — Clear history (`:clear`), resume with prior messages; TUI viewport hydrated from daemon session events · `crucible-cli`, `crucible-daemon`
 - [x] **Message Queueing** `P0` — Type and queue messages during streaming; Ctrl+Enter force-sends · `crucible-cli`
 
 ### Agent Runtime
-- [x] **Internal Agent** `P0` — Built-in agent with session memory and tool access · [[Help/Extending/Internal Agent]] · `crucible-rig`
-- [x] **Multiple LLM Providers** `P0` — Ollama, OpenAI, Anthropic via unified interface · [[Help/Config/llm]] · `crucible-rig`
+- [x] **Internal Agent** `P0` — Built-in agent with session memory and tool access · [[Help/Extending/Internal Agent]] · `crucible-daemon`, `crucible-core`
+- [x] **Multiple LLM Providers** `P0` — Ollama, OpenAI, Anthropic via unified interface · [[Help/Config/llm]] · `crucible-daemon`, `crucible-core`
 - [x] **Model Switching** `P0` — Runtime `:model <name>` with autocomplete; model listing from Ollama · `crucible-daemon`, `crucible-cli`
 - [x] **Temperature Control** `P0` — Runtime `:set temperature=0.5`; range 0.0–2.0; persisted per-session · `crucible-daemon`, `crucible-cli`
 - [x] **Max Tokens Control** `P0` — Runtime `:set max_tokens=4096` or `none` for provider default; persisted · `crucible-daemon`, `crucible-cli`
 - [x] **Extended Thinking** `P0` — Budget presets (off/minimal/low/medium/high/max) via `:set thinkingbudget`; Ctrl+T toggles display · `crucible-daemon`, `crucible-cli`
-- [x] **System Prompt** `P0` — Loaded from agent card at session creation; layered prompt composition · `crucible-rig`, `crucible-config`
+- [x] **System Prompt** `P0` — Loaded from agent card at session creation; layered prompt composition · `crucible-daemon`, `crucible-config`
 - [x] **Environment Overrides** `P0` — `--env KEY=VALUE` flag for per-session env vars (e.g., API keys) · `crucible-cli`
 - [x] **Agent Cancellation** `P0` — Ctrl+C/Esc cancels local stream and propagates to daemon via `session.cancel` RPC · `crucible-daemon`
 
 ### Tools & Permissions
-- [x] **Tool Calls** `P0` — Inline tool execution with streaming results; parallel calls tracked by call_id · `crucible-rig`, `crucible-daemon` (tools)
+- [x] **Tool Calls** `P0` — Inline tool execution with streaming results; parallel calls tracked by call_id · `crucible-daemon` (tools), `crucible-core`
 - [x] **Permission System** `P0` — Multi-layer: safe-tool whitelist → pattern matching → Lua hooks → user prompt · `crucible-daemon`
 - [x] **Pattern Whitelisting** `P0` — "Always allow" saves project-scoped patterns for future sessions · `crucible-daemon`
 - [x] **Permission Hooks (Lua)** `P0` — Custom Lua hooks can Allow/Deny/Prompt with 1s timeout · `crucible-lua`, `crucible-daemon`
