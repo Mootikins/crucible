@@ -124,6 +124,51 @@ pub async fn execute(
     Ok(())
 }
 
+/// Upsert a key=value line in config contents.
+///
+/// Handles three cases:
+/// 1. Key exists (commented or not) - replace the line
+/// 2. Key doesn't exist, but preferred_anchor exists - insert after anchor
+/// 3. Neither exists - prepend to file
+fn upsert_kv_line(contents: &str, key: &str, value: &str, preferred_anchor: Option<&str>) -> String {
+    let new_line = format!("{}= \"{}\"", key, value);
+
+    // Case 1: Key already exists (commented or not)
+    if let Some(idx) = contents.find(key) {
+        let line_start = contents[..idx].rfind('\n').map_or(0, |p| p + 1);
+        let line_end = contents[idx..]
+            .find('\n')
+            .map_or(contents.len(), |p| idx + p);
+        let mut new_contents = String::with_capacity(contents.len());
+        new_contents.push_str(&contents[..line_start]);
+        new_contents.push_str(&new_line);
+        new_contents.push_str(&contents[line_end..]);
+        return new_contents;
+    }
+
+    // Case 2: Key doesn't exist, but preferred_anchor does
+    if let Some(anchor) = preferred_anchor {
+        if let Some(idx) = contents.find(anchor) {
+            let line_end = contents[idx..]
+                .find('\n')
+                .map_or(contents.len(), |p| idx + p);
+            let mut new_contents = String::with_capacity(contents.len() + new_line.len() + 1);
+            new_contents.push_str(&contents[..line_end]);
+            new_contents.push('\n');
+            new_contents.push_str(&new_line);
+            new_contents.push_str(&contents[line_end..]);
+            return new_contents;
+        }
+    }
+
+    // Case 3: Neither key nor anchor exists - prepend
+    let mut new_contents = String::with_capacity(contents.len() + new_line.len() + 2);
+    new_contents.push_str(&new_line);
+    new_contents.push('\n');
+    new_contents.push_str(contents);
+    new_contents
+}
+
 /// Update `~/.config/crucible/config.toml` to set `session_kiln`.
 ///
 /// If the config file exists, inserts or replaces the `session_kiln` line.
@@ -132,49 +177,16 @@ fn update_global_config_session_kiln(kiln_path: &Path) -> Result<()> {
     let config_path = CliAppConfig::default_config_path();
     let path_str = kiln_path.to_string_lossy();
 
-    let new_line = format!("session_kiln = \"{}\"", path_str);
-
     if config_path.exists() {
         let contents = fs::read_to_string(&config_path)?;
-
-        // Check if session_kiln already exists (commented or not)
-        if let Some(idx) = contents.find("session_kiln") {
-            // Find the line boundaries and replace it
-            let line_start = contents[..idx].rfind('\n').map_or(0, |p| p + 1);
-            let line_end = contents[idx..]
-                .find('\n')
-                .map_or(contents.len(), |p| idx + p);
-            let mut new_contents = String::with_capacity(contents.len());
-            new_contents.push_str(&contents[..line_start]);
-            new_contents.push_str(&new_line);
-            new_contents.push_str(&contents[line_end..]);
-            fs::write(&config_path, new_contents)?;
-        } else {
-            // Append after kiln_path line if it exists, otherwise at top
-            if let Some(idx) = contents.find("kiln_path") {
-                let line_end = contents[idx..]
-                    .find('\n')
-                    .map_or(contents.len(), |p| idx + p);
-                let mut new_contents = String::with_capacity(contents.len() + new_line.len() + 1);
-                new_contents.push_str(&contents[..line_end]);
-                new_contents.push('\n');
-                new_contents.push_str(&new_line);
-                new_contents.push_str(&contents[line_end..]);
-                fs::write(&config_path, new_contents)?;
-            } else {
-                // Prepend to file
-                let mut new_contents = String::with_capacity(contents.len() + new_line.len() + 2);
-                new_contents.push_str(&new_line);
-                new_contents.push('\n');
-                new_contents.push_str(&contents);
-                fs::write(&config_path, new_contents)?;
-            }
-        }
+        let new_contents = upsert_kv_line(&contents, "session_kiln", &path_str, Some("kiln_path"));
+        fs::write(&config_path, new_contents)?;
     } else {
         // Create config file with session_kiln
         if let Some(parent) = config_path.parent() {
             fs::create_dir_all(parent)?;
         }
+        let new_line = format!("session_kiln = \"{}\"", path_str);
         fs::write(&config_path, format!("{}\n", new_line))?;
     }
 
