@@ -915,15 +915,15 @@ async fn daemon_create(
         None
     };
 
-    let result = client
-        .session_create(
-            session_type,
-            &config.kiln_path,
-            None,
-            vec![],
-            recording_mode_parsed,
-            None,
-        )
+let result = client
+        .session_create(crucible_daemon::rpc_client::client::SessionCreateParams {
+            session_type: session_type.to_string(),
+            kiln: config.kiln_path.clone(),
+            workspace: None,
+            connect_kilns: vec![],
+            recording_mode: recording_mode_parsed,
+            recording_path: None,
+        })
         .await?;
 
     let session_id = result["session_id"].as_str().unwrap_or("unknown");

@@ -319,6 +319,17 @@ pub struct SessionCreateRequest {
     pub recording_path: Option<String>,
 }
 
+/// Parameters for creating a session.
+#[derive(Debug, Clone)]
+pub struct SessionCreateParams {
+    pub session_type: String,
+    pub kiln: PathBuf,
+    pub workspace: Option<PathBuf>,
+    pub connect_kilns: Vec<PathBuf>,
+    pub recording_mode: Option<String>,
+    pub recording_path: Option<PathBuf>,
+}
+
 /// Request for `session.list`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionListRequest {
@@ -1571,7 +1582,37 @@ impl DaemonClient {
     // Session RPC Methods
     // =========================================================================
 
-    pub async fn session_create(
+pub async fn session_create(
+        &self,
+        params: SessionCreateParams,
+    ) -> Result<serde_json::Value> {
+        self.typed_call(
+            "session.create",
+            SessionCreateRequest {
+                session_type: params.session_type,
+                kiln: params.kiln.to_string_lossy().to_string(),
+                workspace: params.workspace.map(|ws| ws.to_string_lossy().to_string()),
+                connect_kilns: if params.connect_kilns.is_empty() {
+                    None
+                } else {
+                    Some(
+                        params
+                            .connect_kilns
+                            .iter()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .collect(),
+                    )
+                },
+                recording_mode: params.recording_mode,
+                recording_path: params.recording_path.map(|p| p.to_string_lossy().to_string()),
+            },
+        )
+        .await
+    }
+
+    /// Create a session (deprecated: use session_create with SessionCreateParams instead).
+    #[deprecated(since = "0.1.0", note = "use session_create with SessionCreateParams")]
+    pub async fn session_create_legacy(
         &self,
         session_type: &str,
         kiln: &Path,
@@ -1580,26 +1621,14 @@ impl DaemonClient {
         recording_mode: Option<&str>,
         recording_path: Option<&Path>,
     ) -> Result<serde_json::Value> {
-        self.typed_call(
-            "session.create",
-            SessionCreateRequest {
-                session_type: session_type.to_string(),
-                kiln: kiln.to_string_lossy().to_string(),
-                workspace: workspace.map(|ws| ws.to_string_lossy().to_string()),
-                connect_kilns: if connect_kilns.is_empty() {
-                    None
-                } else {
-                    Some(
-                        connect_kilns
-                            .iter()
-                            .map(|p| p.to_string_lossy().to_string())
-                            .collect(),
-                    )
-                },
-                recording_mode: recording_mode.map(|m| m.to_string()),
-                recording_path: recording_path.map(|p| p.to_string_lossy().to_string()),
-            },
-        )
+        self.session_create(SessionCreateParams {
+            session_type: session_type.to_string(),
+            kiln: kiln.to_path_buf(),
+            workspace: workspace.map(|ws| ws.to_path_buf()),
+            connect_kilns: connect_kilns.iter().map(|p| p.to_path_buf()).collect(),
+            recording_mode: recording_mode.map(|m| m.to_string()),
+            recording_path: recording_path.map(|p| p.to_path_buf()),
+        })
         .await
     }
 
@@ -2373,8 +2402,15 @@ mod tests {
         let client = DaemonClient::connect().await.unwrap();
         let tmp = TempDir::new().unwrap();
 
-        let result = client
-            .session_create("chat", tmp.path(), None, vec![], None, None)
+let result = client
+            .session_create(SessionCreateParams {
+                session_type: "chat".to_string(),
+                kiln: tmp.path().to_path_buf(),
+                workspace: None,
+                connect_kilns: vec![],
+                recording_mode: None,
+                recording_path: None,
+            })
             .await
             .unwrap();
         let session_id = result["session_id"].as_str().unwrap();
@@ -2401,8 +2437,15 @@ mod tests {
         let client = DaemonClient::connect().await.unwrap();
         let tmp = TempDir::new().unwrap();
 
-        let result = client
-            .session_create("chat", tmp.path(), None, vec![], None, None)
+let result = client
+            .session_create(SessionCreateParams {
+                session_type: "chat".to_string(),
+                kiln: tmp.path().to_path_buf(),
+                workspace: None,
+                connect_kilns: vec![],
+                recording_mode: None,
+                recording_path: None,
+            })
             .await
             .unwrap();
         let session_id = result["session_id"].as_str().unwrap();
@@ -2423,8 +2466,15 @@ mod tests {
         let client = DaemonClient::connect().await.unwrap();
         let tmp = TempDir::new().unwrap();
 
-        let result = client
-            .session_create("chat", tmp.path(), None, vec![], None, None)
+let result = client
+            .session_create(SessionCreateParams {
+                session_type: "chat".to_string(),
+                kiln: tmp.path().to_path_buf(),
+                workspace: None,
+                connect_kilns: vec![],
+                recording_mode: None,
+                recording_path: None,
+            })
             .await
             .unwrap();
         let session_id = result["session_id"].as_str().unwrap();
@@ -2444,8 +2494,15 @@ mod tests {
         let (client, mut event_rx) = DaemonClient::connect_with_events().await.unwrap();
         let tmp = TempDir::new().unwrap();
 
-        let result = client
-            .session_create("chat", tmp.path(), None, vec![], None, None)
+let result = client
+            .session_create(SessionCreateParams {
+                session_type: "chat".to_string(),
+                kiln: tmp.path().to_path_buf(),
+                workspace: None,
+                connect_kilns: vec![],
+                recording_mode: None,
+                recording_path: None,
+            })
             .await
             .unwrap();
         let session_id = result["session_id"].as_str().unwrap();
@@ -2464,9 +2521,16 @@ mod tests {
         let client = DaemonClient::connect().await.unwrap();
         let tmp = TempDir::new().unwrap();
 
-        let result = client
-            .session_create("chat", tmp.path(), None, vec![], None, None)
-            .await
+let result = client
+            .session_create(SessionCreateParams {
+                session_type: "chat".to_string(),
+                kiln: tmp.path().to_path_buf(),
+                workspace: None,
+                connect_kilns: vec![],
+                recording_mode: None,
+                recording_path: None,
+            })
+.await
             .unwrap();
         let session_id = result["session_id"].as_str().unwrap();
 
