@@ -435,9 +435,16 @@ impl AgentHandle for DaemonAgentHandle {
             return;
         };
 
-        let result = match self
+let result = match self
             .client
-            .session_create("chat", kiln, Some(ws), vec![], None, None)
+            .session_create(crate::rpc_client::client::SessionCreateParams {
+                session_type: "chat".to_string(),
+                kiln: kiln.clone(),
+                workspace: Some(ws.clone()),
+                connect_kilns: vec![],
+                recording_mode: None,
+                recording_path: None,
+            })
             .await
         {
             Ok(r) => r,
