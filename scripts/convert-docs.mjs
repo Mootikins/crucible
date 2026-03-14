@@ -3,7 +3,7 @@
  * convert-docs.mjs
  *
  * Converts docs/Help/ and docs/Guides/ to Starlight-compatible markdown.
- * Creates COPIES in site/src/content/docs/ — never modifies originals.
+ * Creates COPIES in docs-site/src/content/docs/ — never modifies originals.
  * Transforms [[wikilinks]] to standard markdown links.
  *
  * Usage: node scripts/convert-docs.mjs
@@ -14,7 +14,7 @@ import { join, relative, dirname, resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const DOCS_ROOT = join(ROOT, 'docs');
-const SITE_DOCS = join(ROOT, 'site', 'src', 'content', 'docs');
+const SITE_DOCS = join(ROOT, 'docs-site', 'src', 'content', 'docs');
 const CONVERT_DIRS = ['Help', 'Guides'];
 
 // ─── Slugification ───────────────────────────────────────────
