@@ -475,7 +475,10 @@ fn process_refs_recursive(
                             Err(_) => {
                                 match mode {
                                     ResolveMode::Strict => {
-                                        tracing::error!("Environment variable not found: {}", var_name);
+                                        tracing::error!(
+                                            "Environment variable not found: {}",
+                                            var_name
+                                        );
                                     }
                                     ResolveMode::BestEffort => {
                                         warn!("Environment variable not found: {}", var_name);
@@ -502,10 +505,18 @@ fn process_refs_recursive(
                             Err(e) => {
                                 match mode {
                                     ResolveMode::Strict => {
-                                        tracing::error!("Failed to load dir reference {}: {}", dir_path.display(), e);
+                                        tracing::error!(
+                                            "Failed to load dir reference {}: {}",
+                                            dir_path.display(),
+                                            e
+                                        );
                                     }
                                     ResolveMode::BestEffort => {
-                                        warn!("Failed to load dir reference {}: {}", dir_path.display(), e);
+                                        warn!(
+                                            "Failed to load dir reference {}: {}",
+                                            dir_path.display(),
+                                            e
+                                        );
                                     }
                                 }
                                 errors.push(e);
