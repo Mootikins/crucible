@@ -94,7 +94,11 @@ fn build_cors_origins(web_config: &WebConfig) -> Vec<HeaderValue> {
     }
 
     if let Ok(extra_origins) = std::env::var("CRUCIBLE_CORS_ORIGINS") {
-        for origin in extra_origins.split(',').map(str::trim).filter(|o| !o.is_empty()) {
+        for origin in extra_origins
+            .split(',')
+            .map(str::trim)
+            .filter(|o| !o.is_empty())
+        {
             add_origin(origin);
         }
     }
@@ -176,12 +180,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(
-            disallowed_response
-                .headers()
-                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
-                .is_none()
-        );
+        assert!(disallowed_response
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .is_none());
 
         let allowed_response = app
             .oneshot(
