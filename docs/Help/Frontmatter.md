@@ -62,9 +62,9 @@ Your content here...
 
 ## Parsing
 
-Crucible parses frontmatter using the `crucible-parser` crate:
+Crucible parses frontmatter using the parser module in `crucible-core`:
 
-- Implementation: `crates/crucible-parser/src/` (frontmatter parsing)
+- Implementation: `crates/crucible-core/src/parser/` (frontmatter parsing)
 - Types: `crates/crucible-core/src/parser/types/frontmatter.rs`
 
 ## See Also

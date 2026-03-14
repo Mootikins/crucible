@@ -57,7 +57,7 @@ Comprehensive antipattern audit identified **65+ issues** across the Crucible co
 
 ### 1.5 CRLF Line Offset Bug
 - **Severity:** HIGH
-- **Location:** `crates/crucible-parser/src/enhanced_tags.rs:139,273`
+- **Location:** `crates/crucible-core/src/parser/enhanced_tags.rs:139,273`
 - **Issue:** `line_offset += line.len() + 1` assumes Unix line endings. Windows CRLF causes offset misalignment.
 - **Fix:** Track actual newline bytes or use platform-aware calculation
 - **Effort:** 1 day
@@ -102,7 +102,7 @@ Comprehensive antipattern audit identified **65+ issues** across the Crucible co
 
 ### 3.1 Regex Compiled in Hot Path
 - **Severity:** HIGH
-- **Locations:** `crates/crucible-parser/src/` - 8 files:
+- **Locations:** `crates/crucible-core/src/parser/` - 8 files:
   - `enhanced_tags.rs:56-57`
   - `latex.rs:89,127,141`
   - `callouts.rs:55`
@@ -118,7 +118,7 @@ Comprehensive antipattern audit identified **65+ issues** across the Crucible co
 - **Severity:** HIGH
 - **Locations:**
   - `crates/crucible-sqlite/src/connection.rs:62,71` - `std::sync::Mutex::lock()`
-  - `crates/crucible-watch/src/manager.rs:32,34,36,70-72` - 3 blocking mutexes
+  - `crates/crucible-daemon/src/watch/manager.rs:32,34,36,70-72` - 3 blocking mutexes
   - `crates/crucible-daemon-client/src/agent.rs:28` - `Arc<Mutex>` wrapping receiver
   - `crates/crucible-cli/src/factories/storage.rs:56,87,581` - `SURREAL_CLIENT_CACHE`
   - `crates/crucible-cli/src/factories/enrichment.rs:21` - `EMBEDDING_PROVIDER_CACHE`
@@ -253,7 +253,7 @@ Comprehensive antipattern audit identified **65+ issues** across the Crucible co
 
 ### 6.1 Unsafe Regex Group `.unwrap()` (32 instances)
 - **Severity:** HIGH
-- **Locations:** `crates/crucible-parser/src/` - 6 files:
+- **Locations:** `crates/crucible-core/src/parser/` - 6 files:
   - `enhanced_tags.rs:106-107`
   - `wikilinks.rs`
   - `callouts.rs`
@@ -296,7 +296,7 @@ Comprehensive antipattern audit identified **65+ issues** across the Crucible co
 
 ### 7.1 Remove Unused ndarray
 - **Severity:** LOW
-- **Location:** `crates/crucible-tools/Cargo.toml:86`
+- **Location:** `crates/crucible-daemon/src/tools/Cargo.toml:86`
 - **Issue:** `ndarray = "0.17"` declared but not imported. Creates duplicate dependency chain.
 - **Fix:** Remove the line
 - **Effort:** 0.5 hr
@@ -304,16 +304,16 @@ Comprehensive antipattern audit identified **65+ issues** across the Crucible co
 
 ### 7.2 Remove Unused grep/ignore
 - **Severity:** LOW
-- **Location:** `crates/crucible-tools/Cargo.toml:92-93`
+- **Location:** `crates/crucible-daemon/src/tools/Cargo.toml:92-93`
 - **Issue:** Declared but likely not used
-- **Fix:** Verify usage with `grep -r "use grep\|use ignore" crates/crucible-tools/`, remove if unused
+- **Fix:** Verify usage with `grep -r "use grep\|use ignore" crates/crucible-daemon/src/tools/`, remove if unused
 - **Effort:** 0.5 hr
 - **Sprint:** 1
 
 ### 7.3 Make Storage/Embeddings Optional in Tools
 - **Severity:** LOW
-- **Location:** `crates/crucible-tools/Cargo.toml:14`
-- **Issue:** `crucible-skills = { workspace = true, features = ["storage", "embeddings"] }` pulls heavy deps
+- **Location:** `crates/crucible-daemon/Cargo.toml:14`
+- **Issue:** Skills module dependency pulls heavy deps via `features = ["storage", "embeddings"]`
 - **Fix:** Change to `features = []`, gate behind tool-specific features
 - **Effort:** 1 hr
 - **Sprint:** 2
@@ -337,7 +337,7 @@ Comprehensive antipattern audit identified **65+ issues** across the Crucible co
 - [x] 2.1 SQL injection fix — Parameterized queries in `embeddings.rs`
 - [x] 2.2 Error sanitization — Added `internal_error()` helpers in `server.rs`
 - [x] 6.2 dependency.rs unwrap — SKIP: unwraps are safe after `validate_dependencies()` guard
-- [x] 7.1 Remove unused ndarray — Removed from `crucible-tools/Cargo.toml`
+- [x] 7.1 Remove unused ndarray — Removed from `crucible-daemon` (tools) Cargo.toml
 - [x] 7.2 Remove unused grep/ignore — SKIP: verified they ARE used in codebase
 
 ### Sprint 2: Performance + UX (Week 2) ✅ COMPLETE
@@ -411,7 +411,7 @@ grep -rn "format!.*SELECT\|format!.*INSERT\|format!.*DELETE" crates/crucible-sur
 grep -rn "\.lock()\.unwrap()\|\.read()\.unwrap()\|\.write()\.unwrap()" crates/crucible-daemon/
 
 # Check for regex in hot path
-grep -rn "Regex::new" crates/crucible-parser/src/
+grep -rn "Regex::new" crates/crucible-core/src/parser/
 
 # Check for std::thread::sleep in async
 grep -rn "std::thread::sleep" crates/

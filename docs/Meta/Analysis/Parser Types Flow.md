@@ -15,7 +15,7 @@ tags:
 
 ## Executive Summary
 
-The parser system exhibits **excellent type ownership architecture** following Dependency Inversion Principle. Types are canonically defined in `crucible-core` and re-exported by `crucible-parser` implementation crate.
+The parser system exhibits **excellent type ownership architecture** following Dependency Inversion Principle. Types are canonically defined in `crucible-core` and implemented in the `crucible-core/src/parser/` module.
 
 **Key Findings:**
 - ✅ Clean type ownership (canonical in core, re-exported in parser)
@@ -89,7 +89,7 @@ ParsedNote (ready for storage)
   - Recommendation: Add priority validation during registration
 
 - [ ] **Block Extractor Complexity** (Medium)
-  - Location: `crucible-parser/src/block_extractor.rs`
+  - Location: `crucible-core/src/parser/block_extractor.rs`
   - Multiple passes over content
   - Recommendation: Consider single-pass during extension parsing
 
@@ -105,7 +105,7 @@ ParsedNote (ready for storage)
 - ✅ `block_hash.rs` - BlockHash
 - ✅ `frontmatter.rs` - Frontmatter
 
-**Re-exports** (crucible-parser/src/lib.rs):
+**Re-exports** (crucible-core/src/parser/mod.rs):
 - ✅ All core types properly re-exported
 
 **No critical issues found.** Parser is well-designed.
