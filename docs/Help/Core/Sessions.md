@@ -45,6 +45,9 @@ Sessions are managed by the daemon (`cru daemon serve`):
 - `session.send_message` — Send a message and stream the response
 - `session.configure_agent` — Configure the agent for a session
 - `session.subscribe` / `session.unsubscribe` — Event streaming
+- `session.archive` — Archive a session (remove from active list)
+- `session.unarchive` — Restore an archived session to active
+- `session.delete` — Permanently delete a session
 
 > **`resume` vs `unpause`**: These are different operations. `session.resume` opens the session in the interactive TUI for human use. `session.unpause` reactivates a paused daemon session programmatically, without opening a TUI. Scripts and automation tools should use `unpause`; humans picking up a conversation should use `resume`.
 
@@ -238,6 +241,69 @@ Use the `:session` command:
 :session list              # Show available sessions
 :session new               # Start fresh session
 ```
+
+## Session Archiving
+
+Sessions have two states: **active** and **archived**. Active sessions appear in `session.list` by default. Archived sessions are hidden unless you explicitly ask for them.
+
+### Active vs Archived
+
+| | Active | Archived |
+|---|---|---|
+| Visible in `session.list` | Yes | Only with `include_archived: true` |
+| Can receive messages | Yes | No (must unarchive first) |
+| Counts toward "recent sessions" | Yes | No |
+| Data preserved | Yes | Yes |
+| Can be resumed | Yes | Yes (after unarchive) |
+
+Archiving doesn't delete anything. It moves the session out of the active view so your session list stays manageable. Unarchive brings it back.
+
+### Manual Archive and Unarchive
+
+Use the `session.archive` and `session.unarchive` RPC methods. Both require `session_id` and `kiln` parameters:
+
+```bash
+# Archive a session
+cru session archive chat-20250102-1430-a1b2
+
+# Unarchive it later
+cru session unarchive chat-20250102-1430-a1b2
+```
+
+### Deleting Sessions
+
+To permanently remove a session, use `session.delete`. This cleans up both the daemon state and the agent resources. Requires `session_id` and `kiln` parameters:
+
+```bash
+cru session delete chat-20250102-1430-a1b2
+```
+
+Deletion is irreversible. The session's JSONL file and any associated daemon state are removed.
+
+### Listing Archived Sessions
+
+By default, `session.list` only returns active sessions. Pass `include_archived: true` to see everything:
+
+```bash
+cru session list --all    # includes archived sessions
+```
+
+### Auto-Archive
+
+The daemon automatically archives stale sessions. A background sweep runs every 30 minutes, checking for sessions that have been inactive (no messages, no subscribers) beyond a configurable threshold.
+
+**Default threshold:** 72 hours of inactivity.
+
+Configure it in `~/.config/crucible/config.toml`:
+
+```toml
+[server]
+auto_archive_hours = 72    # default; set to 0 to disable
+```
+
+The sweep skips sessions that have active subscribers (connected clients). It also re-checks activity timestamps before archiving to avoid race conditions where a session receives new activity between the staleness check and the archive operation.
+
+Auto-archived sessions can be unarchived at any time. No data is lost.
 
 ## Session Configuration
 
