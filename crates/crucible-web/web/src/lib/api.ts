@@ -13,6 +13,54 @@ export interface Config {
   kiln_path: string;
 }
 
+type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+
+interface RequestOptions extends Omit<RequestInit, 'method'> {
+  errorMessage?: string;
+  parseAs?: 'json' | 'text' | 'none';
+  includeErrorText?: boolean;
+}
+
+interface ApiError extends Error {
+  status: number;
+}
+
+function jsonRequest(body: unknown): Pick<RequestOptions, 'headers' | 'body'> {
+  return {
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  };
+}
+
+async function request<T>(
+  method: HttpMethod,
+  url: string,
+  options: RequestOptions = {},
+): Promise<T> {
+  const { errorMessage = 'Request failed', parseAs = 'json', includeErrorText = false, ...init } = options;
+  const res = await fetch(url, { method, ...init });
+
+  if (!res.ok) {
+    let errorText = '';
+    if (includeErrorText) {
+      errorText = await res.text().catch(() => '');
+    }
+    throw Object.assign(new Error(errorText || `${errorMessage}: HTTP ${res.status}`), {
+      status: res.status,
+    }) as ApiError;
+  }
+
+  if (parseAs === 'none') {
+    return undefined as T;
+  }
+
+  if (parseAs === 'text') {
+    return (await res.text()) as T;
+  }
+
+  return (await res.json()) as T;
+}
+
 // =============================================================================
 // Chat Endpoints
 // =============================================================================
@@ -26,18 +74,12 @@ export async function sendChatMessage(
   sessionId: string,
   content: string,
 ): Promise<string> {
-  const res = await fetch('/api/chat/send', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: sessionId, content }),
-  });
-
-  if (!res.ok) {
-    throw new Error(`Failed to send message: HTTP ${res.status}`);
-  }
-
-  const data = (await res.json()) as { message_id: string };
-  return data.message_id;
+  return (
+    await request<{ message_id: string }>('POST', '/api/chat/send', {
+      errorMessage: 'Failed to send message',
+      ...jsonRequest({ session_id: sessionId, content }),
+    })
+  ).message_id;
 }
 
 /**
@@ -137,15 +179,11 @@ export async function respondToInteraction(
   requestId: string,
   response: unknown,
 ): Promise<void> {
-  const res = await fetch('/api/interaction/respond', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: sessionId, request_id: requestId, response }),
+  await request<void>('POST', '/api/interaction/respond', {
+    errorMessage: 'Failed to respond',
+    parseAs: 'none',
+    ...jsonRequest({ session_id: sessionId, request_id: requestId, response }),
   });
-
-  if (!res.ok) {
-    throw new Error(`Failed to respond: HTTP ${res.status}`);
-  }
 }
 
 // =============================================================================
@@ -154,11 +192,7 @@ export async function respondToInteraction(
 
 /** Get server configuration including the configured kiln path. */
 export async function getConfig(): Promise<Config> {
-  const res = await fetch('/api/config');
-  if (!res.ok) {
-    throw new Error(`Failed to get config: HTTP ${res.status}`);
-  }
-  return res.json() as Promise<Config>;
+  return request<Config>('GET', '/api/config', { errorMessage: 'Failed to get config' });
 }
 
 // =============================================================================
@@ -194,18 +228,12 @@ function mapSession(raw: RawSession): Session {
 }
 
 export async function createSession(params: CreateSessionParams): Promise<Session> {
-  const res = await fetch('/api/session', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  });
-
-  if (!res.ok) {
-    throw new Error(`Failed to create session: HTTP ${res.status}`);
-  }
-
-  const raw = (await res.json()) as RawSession;
-  return mapSession(raw);
+  return mapSession(
+    await request<RawSession>('POST', '/api/session', {
+      errorMessage: 'Failed to create session',
+      ...jsonRequest(params),
+    }),
+  );
 }
 
 /** List sessions with optional filters. */
@@ -226,12 +254,9 @@ export async function listSessions(filters?: {
   const qs = params.toString();
   const url = qs ? `/api/session/list?${qs}` : '/api/session/list';
 
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Failed to list sessions: HTTP ${res.status}`);
-  }
-
-  const data = (await res.json()) as { sessions: RawSession[]; total: number };
+  const data = await request<{ sessions: RawSession[]; total: number }>('GET', url, {
+    errorMessage: 'Failed to list sessions',
+  });
   return data.sessions.map(mapSession);
 }
 
@@ -241,131 +266,111 @@ export async function searchSessions(query: string, kiln?: string, limit?: numbe
   if (kiln) params.set('kiln', kiln);
   if (limit !== undefined) params.set('limit', limit.toString());
 
-  const res = await fetch(`/api/sessions/search?${params.toString()}`);
-  if (!res.ok) {
-    throw new Error(`Failed to search sessions: HTTP ${res.status}`);
-  }
-
-  const data = (await res.json()) as RawSession[];
+  const data = await request<RawSession[]>('GET', `/api/sessions/search?${params.toString()}`, {
+    errorMessage: 'Failed to search sessions',
+  });
   return data.map(mapSession);
 }
 
 export async function getSession(id: string): Promise<Session> {
-  const res = await fetch(`/api/session/${encodeURIComponent(id)}`);
-  if (!res.ok) {
-    throw new Error(`Failed to get session: HTTP ${res.status}`);
-  }
-
-  const raw = (await res.json()) as RawSession;
-  return mapSession(raw);
+  return mapSession(
+    await request<RawSession>('GET', `/api/session/${encodeURIComponent(id)}`, {
+      errorMessage: 'Failed to get session',
+    }),
+  );
 }
 
 /** Pause a session. */
 export async function pauseSession(id: string): Promise<void> {
-  const res = await fetch(`/api/session/${encodeURIComponent(id)}/pause`, { method: 'POST' });
-  if (!res.ok) {
-    throw new Error(`Failed to pause session: HTTP ${res.status}`);
-  }
+  await request<void>('POST', `/api/session/${encodeURIComponent(id)}/pause`, {
+    errorMessage: 'Failed to pause session',
+    parseAs: 'none',
+  });
 }
 
 /** Resume a session (also auto-subscribes to events on the backend). */
 export async function resumeSession(id: string): Promise<void> {
-  const res = await fetch(`/api/session/${encodeURIComponent(id)}/resume`, { method: 'POST' });
-  if (!res.ok) {
-    throw new Error(`Failed to resume session: HTTP ${res.status}`);
-  }
+  await request<void>('POST', `/api/session/${encodeURIComponent(id)}/resume`, {
+    errorMessage: 'Failed to resume session',
+    parseAs: 'none',
+  });
 }
 
 /** End a session. */
 export async function endSession(id: string): Promise<void> {
-  const res = await fetch(`/api/session/${encodeURIComponent(id)}/end`, { method: 'POST' });
-  if (!res.ok) {
-    throw new Error(`Failed to end session: HTTP ${res.status}`);
-  }
+  await request<void>('POST', `/api/session/${encodeURIComponent(id)}/end`, {
+    errorMessage: 'Failed to end session',
+    parseAs: 'none',
+  });
 }
 
 /** Delete a session permanently. */
 export async function deleteSession(id: string): Promise<void> {
-  const res = await fetch(`/api/session/${encodeURIComponent(id)}`, { method: 'DELETE' });
-  if (!res.ok) {
-    throw new Error(`Failed to delete session: HTTP ${res.status}`);
-  }
+  await request<void>('DELETE', `/api/session/${encodeURIComponent(id)}`, {
+    errorMessage: 'Failed to delete session',
+    parseAs: 'none',
+  });
 }
 
 /** Archive a session (hide from default listing). */
 export async function archiveSession(id: string): Promise<void> {
-  const res = await fetch(`/api/session/${encodeURIComponent(id)}/archive`, { method: 'POST' });
-  if (!res.ok) {
-    throw new Error(`Failed to archive session: HTTP ${res.status}`);
-  }
+  await request<void>('POST', `/api/session/${encodeURIComponent(id)}/archive`, {
+    errorMessage: 'Failed to archive session',
+    parseAs: 'none',
+  });
 }
 
 /** Unarchive a session (restore to default listing). */
 export async function unarchiveSession(id: string): Promise<void> {
-  const res = await fetch(`/api/session/${encodeURIComponent(id)}/unarchive`, { method: 'POST' });
-  if (!res.ok) {
-    throw new Error(`Failed to unarchive session: HTTP ${res.status}`);
-  }
+  await request<void>('POST', `/api/session/${encodeURIComponent(id)}/unarchive`, {
+    errorMessage: 'Failed to unarchive session',
+    parseAs: 'none',
+  });
 }
 
 /** Cancel the current agent operation in a session. */
 export async function cancelSession(id: string): Promise<boolean> {
-  const res = await fetch(`/api/session/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
-  if (!res.ok) {
-    throw new Error(`Failed to cancel session: HTTP ${res.status}`);
-  }
-
-  const data = (await res.json()) as { cancelled: boolean };
-  return data.cancelled;
+  return (
+    await request<{ cancelled: boolean }>('POST', `/api/session/${encodeURIComponent(id)}/cancel`, {
+      errorMessage: 'Failed to cancel session',
+    })
+  ).cancelled;
 }
 
 /** List available models for a session. */
 export async function listModels(sessionId: string): Promise<string[]> {
-  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/models`);
-  if (!res.ok) {
-    throw new Error(`Failed to list models: HTTP ${res.status}`);
-  }
-
-  const data = (await res.json()) as { models: string[] };
-  return data.models;
+  return (
+    await request<{ models: string[] }>('GET', `/api/session/${encodeURIComponent(sessionId)}/models`, {
+      errorMessage: 'Failed to list models',
+    })
+  ).models;
 }
 
 /** Switch the model for a session. */
 export async function switchModel(sessionId: string, modelId: string): Promise<void> {
-  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/model`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model_id: modelId }),
+  await request<void>('POST', `/api/session/${encodeURIComponent(sessionId)}/model`, {
+    errorMessage: 'Failed to switch model',
+    parseAs: 'none',
+    ...jsonRequest({ model_id: modelId }),
   });
-
-  if (!res.ok) {
-    throw new Error(`Failed to switch model: HTTP ${res.status}`);
-  }
 }
 
 /** Set the title for a session. */
 export async function setSessionTitle(sessionId: string, title: string): Promise<void> {
-  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/title`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title }),
+  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/title`, {
+    errorMessage: 'Failed to set session title',
+    parseAs: 'none',
+    ...jsonRequest({ title }),
   });
-
-  if (!res.ok) {
-    throw new Error(`Failed to set session title: HTTP ${res.status}`);
-  }
 }
 
 /** Generate a title for a session using LLM. */
 export async function generateSessionTitle(sessionId: string): Promise<string> {
-  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/generate-title`, {
-    method: 'POST',
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to generate title: HTTP ${res.status}`);
-  }
-  const data = (await res.json()) as { title: string };
-  return data.title;
+  return (
+    await request<{ title: string }>('POST', `/api/session/${encodeURIComponent(sessionId)}/generate-title`, {
+      errorMessage: 'Failed to generate title',
+    })
+  ).title;
 }
 
 /** Raw daemon event from session.jsonl (SessionEventMessage format). */
@@ -402,26 +407,21 @@ export async function getSessionHistory(
   if (limit !== undefined) params.set('limit', limit.toString());
   if (offset !== undefined) params.set('offset', offset.toString());
 
-  const res = await fetch(
+  return request<SessionHistoryResponse>(
+    'GET',
     `/api/session/${encodeURIComponent(sessionId)}/history?${params.toString()}`,
-    { signal },
+    {
+      errorMessage: 'Failed to load session history',
+      signal,
+    },
   );
-  if (!res.ok) {
-    throw new Error(`Failed to load session history: HTTP ${res.status}`);
-  }
-
-  return (await res.json()) as SessionHistoryResponse;
 }
 
 /** List available LLM providers and their models. */
 export async function listProviders(): Promise<ProviderInfo[]> {
-  const res = await fetch('/api/providers');
-  if (!res.ok) {
-    throw new Error(`Failed to list providers: HTTP ${res.status}`);
-  }
-
-  const data = (await res.json()) as { providers: ProviderInfo[] };
-  return data.providers;
+  return (await request<{ providers: ProviderInfo[] }>('GET', '/api/providers', {
+    errorMessage: 'Failed to list providers',
+  })).providers;
 }
 
 // =============================================================================
@@ -430,90 +430,82 @@ export async function listProviders(): Promise<ProviderInfo[]> {
 
 /** Get the thinking budget for a session. */
 export async function getThinkingBudget(sessionId: string): Promise<number | null> {
-  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/config/thinking-budget`);
-  if (!res.ok) {
-    throw new Error(`Failed to get thinking budget: HTTP ${res.status}`);
-  }
-  const data = (await res.json()) as { thinking_budget: number | null };
-  return data.thinking_budget;
+  return (
+    await request<{ thinking_budget: number | null }>(
+      'GET',
+      `/api/session/${encodeURIComponent(sessionId)}/config/thinking-budget`,
+      { errorMessage: 'Failed to get thinking budget' },
+    )
+  ).thinking_budget;
 }
 
 /** Set the thinking budget for a session. */
 export async function setThinkingBudget(sessionId: string, budget: number | null): Promise<void> {
-  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/config/thinking-budget`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ thinking_budget: budget }),
+  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/config/thinking-budget`, {
+    errorMessage: 'Failed to set thinking budget',
+    parseAs: 'none',
+    ...jsonRequest({ thinking_budget: budget }),
   });
-  if (!res.ok) {
-    throw new Error(`Failed to set thinking budget: HTTP ${res.status}`);
-  }
 }
 
 /** Get the temperature for a session. */
 export async function getTemperature(sessionId: string): Promise<number | null> {
-  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/config/temperature`);
-  if (!res.ok) {
-    throw new Error(`Failed to get temperature: HTTP ${res.status}`);
-  }
-  const data = (await res.json()) as { temperature: number | null };
-  return data.temperature;
+  return (
+    await request<{ temperature: number | null }>(
+      'GET',
+      `/api/session/${encodeURIComponent(sessionId)}/config/temperature`,
+      { errorMessage: 'Failed to get temperature' },
+    )
+  ).temperature;
 }
 
 /** Set the temperature for a session. */
 export async function setTemperature(sessionId: string, temperature: number): Promise<void> {
-  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/config/temperature`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ temperature }),
+  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/config/temperature`, {
+    errorMessage: 'Failed to set temperature',
+    parseAs: 'none',
+    ...jsonRequest({ temperature }),
   });
-  if (!res.ok) {
-    throw new Error(`Failed to set temperature: HTTP ${res.status}`);
-  }
 }
 
 /** Get the max tokens for a session. */
 export async function getMaxTokens(sessionId: string): Promise<number | null> {
-  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/config/max-tokens`);
-  if (!res.ok) {
-    throw new Error(`Failed to get max tokens: HTTP ${res.status}`);
-  }
-  const data = (await res.json()) as { max_tokens: number | null };
-  return data.max_tokens;
+  return (
+    await request<{ max_tokens: number | null }>(
+      'GET',
+      `/api/session/${encodeURIComponent(sessionId)}/config/max-tokens`,
+      { errorMessage: 'Failed to get max tokens' },
+    )
+  ).max_tokens;
 }
 
 /** Set the max tokens for a session (null = unlimited). */
 export async function setMaxTokens(sessionId: string, maxTokens: number | null): Promise<void> {
-  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/config/max-tokens`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ max_tokens: maxTokens }),
+  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/config/max-tokens`, {
+    errorMessage: 'Failed to set max tokens',
+    parseAs: 'none',
+    ...jsonRequest({ max_tokens: maxTokens }),
   });
-  if (!res.ok) {
-    throw new Error(`Failed to set max tokens: HTTP ${res.status}`);
-  }
 }
 
 /** Get the precognition state for a session. */
 export async function getPrecognition(sessionId: string): Promise<boolean> {
-  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/config/precognition`);
-  if (!res.ok) {
-    throw new Error(`Failed to get precognition: HTTP ${res.status}`);
-  }
-  const data = (await res.json()) as { precognition_enabled: boolean };
-  return data.precognition_enabled;
+  return (
+    await request<{ precognition_enabled: boolean }>(
+      'GET',
+      `/api/session/${encodeURIComponent(sessionId)}/config/precognition`,
+      { errorMessage: 'Failed to get precognition' },
+    )
+  ).precognition_enabled;
 }
 
 /** Set the precognition state for a session. */
 export async function setPrecognition(sessionId: string, enabled: boolean): Promise<void> {
-  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/config/precognition`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ enabled }),
+  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/config/precognition`, {
+    errorMessage: 'Failed to set precognition',
+    parseAs: 'none',
+    ...jsonRequest({ enabled }),
   });
-  if (!res.ok) {
-    throw new Error(`Failed to set precognition: HTTP ${res.status}`);
-  }
 }
 
 // =============================================================================
@@ -522,15 +514,10 @@ export async function setPrecognition(sessionId: string, enabled: boolean): Prom
 
 /** Export a session to markdown. Returns the raw markdown string. */
 export async function exportSession(sessionId: string): Promise<string> {
-  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/export`, {
-    method: 'POST',
+  return request<string>('POST', `/api/session/${encodeURIComponent(sessionId)}/export`, {
+    errorMessage: 'Failed to export session',
+    parseAs: 'text',
   });
-
-  if (!res.ok) {
-    throw new Error(`Failed to export session: HTTP ${res.status}`);
-  }
-
-  return await res.text();
 }
 
 // =============================================================================
@@ -544,17 +531,10 @@ export interface CommandResult {
 
 /** Execute a slash command in a session. */
 export async function executeCommand(sessionId: string, command: string): Promise<CommandResult> {
-  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/command`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ command }),
+  return request<CommandResult>('POST', `/api/session/${encodeURIComponent(sessionId)}/command`, {
+    errorMessage: 'Failed to execute command',
+    ...jsonRequest({ command }),
   });
-
-  if (!res.ok) {
-    throw new Error(`Failed to execute command: HTTP ${res.status}`);
-  }
-
-  return (await res.json()) as CommandResult;
 }
 
 // =============================================================================
@@ -661,23 +641,18 @@ export interface PluginInfo {
 /** List discovered plugins for a kiln. */
 export async function getPlugins(kiln: string): Promise<PluginInfo[]> {
   const params = new URLSearchParams({ kiln });
-  const res = await fetch(`/api/plugins?${params.toString()}`);
-  if (!res.ok) {
-    throw new Error(`Failed to list plugins: HTTP ${res.status}`);
-  }
-  const data = (await res.json()) as { plugins: PluginInfo[] };
-  return data.plugins;
+  return (await request<{ plugins: PluginInfo[] }>('GET', `/api/plugins?${params.toString()}`, {
+    errorMessage: 'Failed to list plugins',
+  })).plugins;
 }
 
 /** Reload a plugin by name. */
 export async function reloadPlugin(name: string): Promise<{ healthy: boolean; message?: string }> {
-  const res = await fetch(`/api/plugins/${encodeURIComponent(name)}/reload`, {
-    method: 'POST',
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to reload plugin: HTTP ${res.status}`);
-  }
-  return (await res.json()) as { healthy: boolean; message?: string };
+  return request<{ healthy: boolean; message?: string }>(
+    'POST',
+    `/api/plugins/${encodeURIComponent(name)}/reload`,
+    { errorMessage: 'Failed to reload plugin' },
+  );
 }
 
 // =============================================================================
@@ -686,11 +661,9 @@ export async function reloadPlugin(name: string): Promise<{ healthy: boolean; me
 
 /** Get MCP server status. */
 export async function getMcpStatus(): Promise<Record<string, unknown>> {
-  const res = await fetch('/api/mcp/status');
-  if (!res.ok) {
-    throw new Error(`Failed to get MCP status: HTTP ${res.status}`);
-  }
-  return (await res.json()) as Record<string, unknown>;
+  return request<Record<string, unknown>>('GET', '/api/mcp/status', {
+    errorMessage: 'Failed to get MCP status',
+  });
 }
 
 // =============================================================================
@@ -699,51 +672,38 @@ export async function getMcpStatus(): Promise<Record<string, unknown>> {
 
 /** List available kilns. */
 export async function listKilns(): Promise<string[]> {
-  const res = await fetch('/api/kilns');
-  if (!res.ok) {
-    throw new Error(`Failed to list kilns: HTTP ${res.status}`);
-  }
-
-  const data = (await res.json()) as { kilns: string[] };
-  return data.kilns;
+  return (await request<{ kilns: string[] }>('GET', '/api/kilns', {
+    errorMessage: 'Failed to list kilns',
+  })).kilns;
 }
 
 export async function listNotes(kiln: string, pathFilter?: string): Promise<NoteEntry[]> {
   const params = new URLSearchParams({ kiln });
   if (pathFilter) params.set('path_filter', pathFilter);
 
-  const res = await fetch(`/api/notes?${params.toString()}`);
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => '');
-    throw new Error(errorText || `Failed to list notes: HTTP ${res.status}`);
-  }
-
-  const data = (await res.json()) as { notes: NoteEntry[] };
-  return data.notes;
+  return (
+    await request<{ notes: NoteEntry[] }>('GET', `/api/notes?${params.toString()}`, {
+      errorMessage: 'Failed to list notes',
+      includeErrorText: true,
+    })
+  ).notes;
 }
 
 export async function getNote(name: string, kiln: string): Promise<NoteContent> {
   const params = new URLSearchParams({ kiln });
-  const res = await fetch(`/api/notes/${encodeURIComponent(name)}?${params.toString()}`);
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => '');
-    throw new Error(errorText || `Failed to get note: HTTP ${res.status}`);
-  }
-
-  return (await res.json()) as NoteContent;
+  return request<NoteContent>('GET', `/api/notes/${encodeURIComponent(name)}?${params.toString()}`, {
+    errorMessage: 'Failed to get note',
+    includeErrorText: true,
+  });
 }
 
 export async function saveNote(name: string, kiln: string, content: string): Promise<void> {
-  const res = await fetch(`/api/notes/${encodeURIComponent(name)}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ kiln, content }),
+  await request<void>('PUT', `/api/notes/${encodeURIComponent(name)}`, {
+    errorMessage: 'Failed to save note',
+    parseAs: 'none',
+    includeErrorText: true,
+    ...jsonRequest({ kiln, content }),
   });
-
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => '');
-    throw new Error(errorText || `Failed to save note: HTTP ${res.status}`);
-  }
 }
 
 /** Perform a vector search. */
@@ -755,18 +715,12 @@ export async function searchVectors(
   const body: Record<string, unknown> = { kiln, vector };
   if (limit !== undefined) body.limit = limit;
 
-  const res = await fetch('/api/search/vectors', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    throw new Error(`Failed to search vectors: HTTP ${res.status}`);
-  }
-
-  const data = (await res.json()) as { results: unknown[] };
-  return data.results;
+  return (
+    await request<{ results: unknown[] }>('POST', '/api/search/vectors', {
+      errorMessage: 'Failed to search vectors',
+      ...jsonRequest(body),
+    })
+  ).results;
 }
 
 // =============================================================================
@@ -775,101 +729,72 @@ export async function searchVectors(
 
 /** Register a project. */
 export async function registerProject(path: string): Promise<Project> {
-  const res = await fetch('/api/project/register', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path }),
+  return request<Project>('POST', '/api/project/register', {
+    errorMessage: 'Failed to register project',
+    ...jsonRequest({ path }),
   });
-
-  if (!res.ok) {
-    throw new Error(`Failed to register project: HTTP ${res.status}`);
-  }
-
-  return (await res.json()) as Project;
 }
 
 /** Unregister a project. */
 export async function unregisterProject(path: string): Promise<void> {
-  const res = await fetch('/api/project/unregister', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path }),
+  await request<void>('POST', '/api/project/unregister', {
+    errorMessage: 'Failed to unregister project',
+    parseAs: 'none',
+    ...jsonRequest({ path }),
   });
-
-  if (!res.ok) {
-    throw new Error(`Failed to unregister project: HTTP ${res.status}`);
-  }
 }
 
 /** List all registered projects. */
 export async function listProjects(): Promise<Project[]> {
-  const res = await fetch('/api/project/list');
-  if (!res.ok) {
-    throw new Error(`Failed to list projects: HTTP ${res.status}`);
-  }
-
-  return (await res.json()) as Project[];
+  return request<Project[]>('GET', '/api/project/list', { errorMessage: 'Failed to list projects' });
 }
 
 /** Get project by path. */
 export async function getProject(path: string): Promise<Project | null> {
   const params = new URLSearchParams({ path });
-  const res = await fetch(`/api/project/get?${params.toString()}`);
-  
-  if (res.status === 404) {
-    return null;
+  try {
+    return await request<Project>('GET', `/api/project/get?${params.toString()}`, {
+      errorMessage: 'Failed to get project',
+    });
+  } catch (err) {
+    if ((err as ApiError).status === 404) {
+      return null;
+    }
+    throw err;
   }
-  
-  if (!res.ok) {
-    throw new Error(`Failed to get project: HTTP ${res.status}`);
-  }
-
-  return (await res.json()) as Project;
 }
 
 /** List files in a kiln directory. */
 export async function listFiles(path: string): Promise<FileEntry[]> {
   const params = new URLSearchParams({ kiln: path });
-  const res = await fetch(`/api/kiln/files?${params.toString()}`);
-  if (!res.ok) {
-    throw new Error(`Failed to list files: HTTP ${res.status}`);
-  }
-  const data = (await res.json()) as { files: FileEntry[] };
-  return data.files;
+  return (await request<{ files: FileEntry[] }>('GET', `/api/kiln/files?${params.toString()}`, {
+    errorMessage: 'Failed to list files',
+  })).files;
 }
 
 /** List kiln notes. */
 export async function listKilnNotes(kilnPath: string): Promise<FileEntry[]> {
   const params = new URLSearchParams({ kiln: kilnPath });
-  const res = await fetch(`/api/kiln/notes?${params.toString()}`);
-  if (!res.ok) {
-    throw new Error(`Failed to list kiln notes: HTTP ${res.status}`);
-  }
-  const data = (await res.json()) as { files: FileEntry[] };
-  return data.files;
+  return (await request<{ files: FileEntry[] }>('GET', `/api/kiln/notes?${params.toString()}`, {
+    errorMessage: 'Failed to list kiln notes',
+  })).files;
 }
 
 /** Get file content by path. */
 export async function getFileContent(path: string): Promise<string> {
   const params = new URLSearchParams({ path });
-  const res = await fetch(`/api/kiln/file?${params.toString()}`);
-  if (!res.ok) {
-    throw new Error(`Failed to get file content: HTTP ${res.status}`);
-  }
-  const data = (await res.json()) as { content: string };
-  return data.content;
+  return (await request<{ content: string }>('GET', `/api/kiln/file?${params.toString()}`, {
+    errorMessage: 'Failed to get file content',
+  })).content;
 }
 
 /** Save file content by path. */
 export async function saveFileContent(path: string, content: string): Promise<void> {
-  const res = await fetch('/api/kiln/file', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path, content }),
+  await request<void>('PUT', '/api/kiln/file', {
+    errorMessage: 'Failed to save file',
+    parseAs: 'none',
+    ...jsonRequest({ path, content }),
   });
-  if (!res.ok) {
-    throw new Error(`Failed to save file: HTTP ${res.status}`);
-  }
 }
 
 // =============================================================================
@@ -915,34 +840,38 @@ export function generateMessageId(): string {
 import type { SerializedLayout } from './layout-serializer';
 
 export async function saveLayout(layout: SerializedLayout): Promise<void> {
-  const res = await fetch('/api/layout', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(layout),
-  });
-  if (!res.ok) {
-    console.warn(`Failed to save layout: HTTP ${res.status}`);
+  try {
+    await request<void>('POST', '/api/layout', {
+      errorMessage: 'Failed to save layout',
+      parseAs: 'none',
+      ...jsonRequest(layout),
+    });
+  } catch (err) {
+    console.warn(err instanceof Error ? err.message : 'Failed to save layout');
   }
 }
 
 export async function loadLayout(): Promise<SerializedLayout | null> {
   try {
-    const res = await fetch('/api/layout');
-    if (res.status === 404) return null;
-    if (!res.ok) {
-      console.warn(`Failed to load layout: HTTP ${res.status}`);
+    return await request<SerializedLayout>('GET', '/api/layout', {
+      errorMessage: 'Failed to load layout',
+    });
+  } catch (err) {
+    if ((err as ApiError).status === 404) {
       return null;
     }
-    return (await res.json()) as SerializedLayout;
-  } catch (err) {
-    console.warn('Failed to load layout:', err);
+    console.warn(err instanceof Error ? err.message : 'Failed to load layout');
     return null;
   }
 }
 
 export async function resetLayout(): Promise<void> {
-  const res = await fetch('/api/layout', { method: 'DELETE' });
-  if (!res.ok) {
-    console.warn(`Failed to reset layout: HTTP ${res.status}`);
+  try {
+    await request<void>('DELETE', '/api/layout', {
+      errorMessage: 'Failed to reset layout',
+      parseAs: 'none',
+    });
+  } catch (err) {
+    console.warn(err instanceof Error ? err.message : 'Failed to reset layout');
   }
 }
