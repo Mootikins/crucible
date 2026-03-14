@@ -102,25 +102,84 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     }
   };
 
-  const createSession = async (params: CreateSessionParams): Promise<Session> => {
-    setIsLoading(true);
+  const patchSessionById = (
+    sessionId: string,
+    patch: Partial<Session> | ((session: Session) => Session),
+  ): Session | null => {
+    const applyPatch = (session: Session): Session => (
+      typeof patch === 'function'
+        ? patch(session)
+        : { ...session, ...patch }
+    );
+
+    let updatedSession: Session | null = null;
+    const current = currentSession();
+    if (current?.id === sessionId) {
+      updatedSession = applyPatch(current);
+      setCurrentSession(updatedSession);
+    }
+
+    setSessions(produce((list) => {
+      const idx = list.findIndex((s) => s.id === sessionId);
+      if (idx === -1) return;
+      updatedSession = applyPatch(list[idx]);
+      list[idx] = updatedSession;
+    }));
+
+    return updatedSession;
+  };
+
+  const withSessionAction = async <T,>(
+    action: () => Promise<T>,
+    options: {
+      errorMessage: string;
+      successMessage?: string;
+      rethrow?: boolean;
+      logPrefix: string;
+    },
+  ): Promise<T | undefined> => {
     setError(null);
-    
+
     try {
-      const session = await apiCreateSession(params);
-      setSessions(produce((s) => s.unshift(session)));
-      setCurrentSession(session);
-      notificationActions.addNotification('success', 'Session created');
-      window.dispatchEvent(new CustomEvent('crucible:open-session', {
-        detail: { sessionId: session.id, title: session.title || 'New Session' },
-      }));
-      await refreshModels(session);
-      return session;
+      const result = await action();
+      if (options.successMessage) {
+        notificationActions.addNotification('success', options.successMessage);
+      }
+      return result;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to create session';
+      const msg = err instanceof Error ? err.message : options.errorMessage;
       setError(msg);
       notificationActions.addNotification('error', msg);
-      throw err;
+      console.error(`${options.logPrefix}:`, err);
+      if (options.rethrow) {
+        throw err;
+      }
+      return undefined;
+    }
+  };
+
+  const createSession = async (params: CreateSessionParams): Promise<Session> => {
+    setIsLoading(true);
+    try {
+      const session = await withSessionAction(async () => {
+        const created = await apiCreateSession(params);
+        setSessions(produce((s) => s.unshift(created)));
+        setCurrentSession(created);
+        window.dispatchEvent(new CustomEvent('crucible:open-session', {
+          detail: { sessionId: created.id, title: created.title || 'New Session' },
+        }));
+        await refreshModels(created);
+        return created;
+      }, {
+        errorMessage: 'Failed to create session',
+        successMessage: 'Session created',
+        rethrow: true,
+        logPrefix: 'Failed to create session',
+      });
+      if (!session) {
+        throw new Error('Failed to create session');
+      }
+      return session;
     } finally {
       setIsLoading(false);
     }
@@ -189,72 +248,54 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   const updateCurrentSessionState = (state: Session['state']) => {
     const session = currentSession();
     if (!session) return;
-    
-    const updated = { ...session, state };
-    setCurrentSession(updated);
-    
-    setSessions(produce((list) => {
-      const idx = list.findIndex((s) => s.id === session.id);
-      if (idx !== -1) {
-        list[idx] = updated;
-      }
-    }));
+
+    patchSessionById(session.id, { state });
   };
 
   const pauseSession = async () => {
     const session = currentSession();
     if (!session) return;
 
-    setError(null);
-    try {
+    await withSessionAction(async () => {
       await apiPauseSession(session.id);
       updateCurrentSessionState('paused');
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to pause session';
-      setError(msg);
-      notificationActions.addNotification('error', msg);
-      console.error('Failed to pause session:', err);
-    }
+    }, {
+      errorMessage: 'Failed to pause session',
+      logPrefix: 'Failed to pause session',
+    });
   };
 
   const resumeSession = async () => {
     const session = currentSession();
     if (!session) return;
 
-    setError(null);
-    try {
+    await withSessionAction(async () => {
       await apiResumeSession(session.id);
       updateCurrentSessionState('active');
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to resume session';
-      setError(msg);
-      notificationActions.addNotification('error', msg);
-      console.error('Failed to resume session:', err);
-    }
+    }, {
+      errorMessage: 'Failed to resume session',
+      logPrefix: 'Failed to resume session',
+    });
   };
 
   const endSession = async () => {
     const session = currentSession();
     if (!session) return;
 
-    setError(null);
-    try {
+    await withSessionAction(async () => {
       await apiEndSession(session.id);
       updateCurrentSessionState('ended');
       setCurrentSession(null);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to end session';
-      setError(msg);
-      notificationActions.addNotification('error', msg);
-      console.error('Failed to end session:', err);
-    }
+    }, {
+      errorMessage: 'Failed to end session',
+      logPrefix: 'Failed to end session',
+    });
   };
 
   const deleteSession = async (sessionId: string) => {
     if (!confirm('Delete this session? This cannot be undone.')) return;
 
-    setError(null);
-    try {
+    await withSessionAction(async () => {
       await apiDeleteSession(sessionId);
       // Remove from local store for snappy UX
       setSessions(produce((list) => {
@@ -270,18 +311,15 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
       if (currentSession()?.id === sessionId) {
         setCurrentSession(null);
       }
-      notificationActions.addNotification('success', 'Session deleted');
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to delete session';
-      setError(msg);
-      notificationActions.addNotification('error', msg);
-      console.error('Failed to delete session:', err);
-    }
+    }, {
+      errorMessage: 'Failed to delete session',
+      successMessage: 'Session deleted',
+      logPrefix: 'Failed to delete session',
+    });
   };
 
   const archiveSession = async (sessionId: string) => {
-    setError(null);
-    try {
+    await withSessionAction(async () => {
       await apiArchiveSession(sessionId);
       // Remove from local store (archived sessions are hidden from default listing)
       setSessions(produce((list) => {
@@ -297,27 +335,22 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
       if (currentSession()?.id === sessionId) {
         setCurrentSession(null);
       }
-      notificationActions.addNotification('success', 'Session archived');
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to archive session';
-      setError(msg);
-      notificationActions.addNotification('error', msg);
-      console.error('Failed to archive session:', err);
-    }
+    }, {
+      errorMessage: 'Failed to archive session',
+      successMessage: 'Session archived',
+      logPrefix: 'Failed to archive session',
+    });
   };
 
   const unarchiveSession = async (sessionId: string) => {
-    setError(null);
-    try {
+    await withSessionAction(async () => {
       await apiUnarchiveSession(sessionId);
       await refreshSessions();
-      notificationActions.addNotification('success', 'Session unarchived');
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to unarchive session';
-      setError(msg);
-      notificationActions.addNotification('error', msg);
-      console.error('Failed to unarchive session:', err);
-    }
+    }, {
+      errorMessage: 'Failed to unarchive session',
+      successMessage: 'Session unarchived',
+      logPrefix: 'Failed to unarchive session',
+    });
   };
 
   const cancelCurrentOperation = async (): Promise<boolean> => {
@@ -370,46 +403,26 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     const session = currentSession();
     if (!session) return;
 
-    setError(null);
-    try {
+    await withSessionAction(async () => {
       await apiSwitchModel(session.id, modelId);
-      const updated = { ...session, agent_model: modelId };
-      setCurrentSession(updated);
-      
-      setSessions(produce((list) => {
-        const idx = list.findIndex((s) => s.id === session.id);
-        if (idx !== -1) {
-          list[idx] = updated;
-        }
-      }));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to switch model';
-      setError(msg);
-      console.error('Failed to switch model:', err);
-    }
+      patchSessionById(session.id, { agent_model: modelId });
+    }, {
+      errorMessage: 'Failed to switch model',
+      logPrefix: 'Failed to switch model',
+    });
   };
 
   const setSessionTitle = async (title: string) => {
     const session = currentSession();
     if (!session) return;
 
-    setError(null);
-    try {
+    await withSessionAction(async () => {
       await apiSetSessionTitle(session.id, title);
-      const updated = { ...session, title };
-      setCurrentSession(updated);
-      
-      setSessions(produce((list) => {
-        const idx = list.findIndex((s) => s.id === session.id);
-        if (idx !== -1) {
-          list[idx] = updated;
-        }
-      }));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to set session title';
-      setError(msg);
-      console.error('Failed to set session title:', err);
-    }
+      patchSessionById(session.id, { title });
+    }, {
+      errorMessage: 'Failed to set session title',
+      logPrefix: 'Failed to set session title',
+    });
   };
 
   const refreshProviders = async () => {
