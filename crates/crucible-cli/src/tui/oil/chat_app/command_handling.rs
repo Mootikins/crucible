@@ -50,19 +50,7 @@ impl OilChatApp {
 
         match command {
             "q" | "quit" => Action::Quit,
-            "help" | "h" => {
-                let slash_list: String = self
-                    .slash_commands
-                    .iter()
-                    .map(|(name, _)| format!("/{}", name))
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                self.add_system_message(format!(
-                    "[system] :quit :help :clear :palette :model :set :export <path> :messages :mcp :plugins :reload <name>\n[agent] {}",
-                    slash_list
-                ));
-                Action::Continue
-            }
+            "help" | "h" => self.handle_help_repl(),
             "messages" | "msgs" | "notifications" => {
                 self.notification_area.toggle();
                 Action::Continue
@@ -82,97 +70,16 @@ impl OilChatApp {
                 self.handle_plugins_command();
                 Action::Continue
             }
-            "model" => {
-                tracing::debug!(target: "crucible_cli::tui::oil::model_flow", state = ?self.model_list_state, "handle_repl_command: model pressed");
-                match &self.model_list_state {
-                    ModelListState::NotLoaded => {
-                        if !self.model_fetch_message_shown {
-                            self.add_system_message("Fetching available models...".to_string());
-                            self.model_fetch_message_shown = true;
-                        }
-                        Action::Send(ChatAppMsg::FetchModels)
-                    }
-                    ModelListState::Loading => {
-                        if !self.model_fetch_message_shown {
-                            self.model_list_state = ModelListState::NotLoaded;
-                            self.add_system_message("Retrying model fetch...".to_string());
-                            self.model_fetch_message_shown = true;
-                        }
-                        Action::Send(ChatAppMsg::FetchModels)
-                    }
-                    ModelListState::Loaded => {
-                        if self.available_models.is_empty() {
-                            self.add_system_message(
-                                "No models configured. Use :model <name> to switch manually."
-                                    .to_string(),
-                            );
-                            Action::Continue
-                        } else {
-                            let current = &self.model;
-                            let models_list = self
-                                .available_models
-                                .iter()
-                                .map(|m| {
-                                    if m == current {
-                                        format!("  • {}  ← current", m)
-                                    } else {
-                                        format!("  • {}", m)
-                                    }
-                                })
-                                .collect::<Vec<_>>()
-                                .join("\n");
-                            let msg = format!(
-                                "Available models ({}):\n{}",
-                                self.available_models.len(),
-                                models_list
-                            );
-                            self.add_system_message(msg);
-                            Action::Send(ChatAppMsg::FetchModels)
-                        }
-                    }
-                    ModelListState::Failed(reason) => {
-                        self.add_system_message(format!(
-                            "Retrying model fetch (last error: {})...",
-                            reason
-                        ));
-                        Action::Send(ChatAppMsg::FetchModels)
-                    }
-                }
-            }
+            "model" => self.handle_model_repl(None),
             _ if command.starts_with("model ") => {
-                let model_name = command
-                    .strip_prefix("model ")
-                    .expect("starts_with guard")
-                    .trim();
-                if model_name.is_empty() {
-                    self.notification_area
-                        .add(crucible_core::types::Notification::warning(
-                            "Usage: :model <name>".to_string(),
-                        ));
-                    Action::Continue
-                } else {
-                    self.handle_set_command(&format!("set model {}", model_name))
-                }
+                let name = command.strip_prefix("model ").expect("starts_with guard").trim();
+                self.handle_model_repl(Some(name))
             }
             "clear" => Action::Send(ChatAppMsg::ClearHistory),
+            "reload" => self.handle_reload_repl(None),
             _ if command.starts_with("reload ") => {
-                let plugin_name = command
-                    .strip_prefix("reload ")
-                    .expect("starts_with guard")
-                    .trim();
-                if plugin_name.is_empty() {
-                    self.notification_area
-                        .add(crucible_core::types::Notification::warning(
-                            "Usage: :reload <plugin_name>".to_string(),
-                        ));
-                    Action::Continue
-                } else {
-                    Action::Send(ChatAppMsg::ReloadPlugin(plugin_name.to_string()))
-                }
-            }
-            "reload" => {
-                // Empty name signals "reload all plugins"
-                Action::Send(ChatAppMsg::ReloadPlugin(String::new()))
+                let name = command.strip_prefix("reload ").expect("starts_with guard").trim();
+                self.handle_reload_repl(Some(name))
             }
             _ if command.starts_with("export ") => {
                 let path = command
@@ -188,6 +95,106 @@ impl OilChatApp {
                         cmd
                     )));
                 Action::Continue
+            }
+        }
+    }
+
+    fn handle_help_repl(&mut self) -> Action<ChatAppMsg> {
+        let slash_list: String = self
+            .slash_commands
+            .iter()
+            .map(|(name, _)| format!("/{}", name))
+            .collect::<Vec<_>>()
+            .join(" ");
+        self.add_system_message(format!(
+            "[system] :quit :help :clear :palette :model :set :export <path> :messages :mcp :plugins :reload <name>\n[agent] {}",
+            slash_list
+        ));
+        Action::Continue
+    }
+
+    fn handle_model_repl(&mut self, name: Option<&str>) -> Action<ChatAppMsg> {
+        if let Some(model_name) = name {
+            if model_name.is_empty() {
+                self.notification_area
+                    .add(crucible_core::types::Notification::warning(
+                        "Usage: :model <name>".to_string(),
+                    ));
+                return Action::Continue;
+            }
+            return self.handle_set_command(&format!("set model {}", model_name));
+        }
+
+        tracing::debug!(target: "crucible_cli::tui::oil::model_flow", state = ?self.model_list_state, "handle_repl_command: model pressed");
+        match &self.model_list_state {
+            ModelListState::NotLoaded => {
+                if !self.model_fetch_message_shown {
+                    self.add_system_message("Fetching available models...".to_string());
+                    self.model_fetch_message_shown = true;
+                }
+                Action::Send(ChatAppMsg::FetchModels)
+            }
+            ModelListState::Loading => {
+                if !self.model_fetch_message_shown {
+                    self.model_list_state = ModelListState::NotLoaded;
+                    self.add_system_message("Retrying model fetch...".to_string());
+                    self.model_fetch_message_shown = true;
+                }
+                Action::Send(ChatAppMsg::FetchModels)
+            }
+            ModelListState::Loaded => {
+                if self.available_models.is_empty() {
+                    self.add_system_message(
+                        "No models configured. Use :model <name> to switch manually."
+                            .to_string(),
+                    );
+                    Action::Continue
+                } else {
+                    let current = &self.model;
+                    let models_list = self
+                        .available_models
+                        .iter()
+                        .map(|m| {
+                            if m == current {
+                                format!("  \u{2022} {}  \u{2190} current", m)
+                            } else {
+                                format!("  \u{2022} {}", m)
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    let msg = format!(
+                        "Available models ({}):\n{}",
+                        self.available_models.len(),
+                        models_list
+                    );
+                    self.add_system_message(msg);
+                    Action::Send(ChatAppMsg::FetchModels)
+                }
+            }
+            ModelListState::Failed(reason) => {
+                self.add_system_message(format!(
+                    "Retrying model fetch (last error: {})...",
+                    reason
+                ));
+                Action::Send(ChatAppMsg::FetchModels)
+            }
+        }
+    }
+
+    fn handle_reload_repl(&mut self, name: Option<&str>) -> Action<ChatAppMsg> {
+        match name {
+            Some(plugin_name) if plugin_name.is_empty() => {
+                self.notification_area
+                    .add(crucible_core::types::Notification::warning(
+                        "Usage: :reload <plugin_name>".to_string(),
+                    ));
+                Action::Continue
+            }
+            Some(plugin_name) => Action::Send(ChatAppMsg::ReloadPlugin(plugin_name.to_string())),
+            None => {
+                // Empty name signals "reload all plugins"
+                Action::Send(ChatAppMsg::ReloadPlugin(String::new()))
             }
         }
     }
