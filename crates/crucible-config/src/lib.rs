@@ -33,6 +33,7 @@ pub mod credentials;
 mod enrichment;
 mod global;
 mod includes;
+mod io_helpers;
 mod kiln_config;
 mod loader;
 mod patterns;
@@ -76,7 +77,7 @@ pub use enrichment::{
     VertexAIConfig,
 };
 pub use global::GlobalConfig;
-pub use includes::{process_file_references, IncludeConfig, IncludeError};
+pub use includes::{process_file_references, IncludeConfig, IncludeError, ResolveMode};
 pub use kiln_config::{read_kiln_config, write_kiln_config, KilnConfig, KilnMeta};
 pub use loader::{ConfigFormat, ConfigLoader};
 pub use patterns::{

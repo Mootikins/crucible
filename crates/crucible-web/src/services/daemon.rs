@@ -235,17 +235,15 @@ impl ReconnectingDaemon {
             let recording_mode = recording_mode.clone();
             let recording_path = recording_path.clone();
             Box::pin(async move {
-                let connect_kilns_ref: Vec<&Path> =
-                    connect_kilns.iter().map(|p| p.as_path()).collect();
                 daemon
-                    .session_create(
-                        &session_type,
-                        &kiln,
-                        workspace.as_deref(),
-                        connect_kilns_ref,
-                        recording_mode.as_deref(),
-                        recording_path.as_deref(),
-                    )
+                    .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+                        session_type: session_type.clone(),
+                        kiln: kiln.clone(),
+                        workspace: workspace.clone(),
+                        connect_kilns,
+                        recording_mode: recording_mode.clone(),
+                        recording_path: recording_path.clone(),
+                    })
                     .await
             })
         })

@@ -196,51 +196,20 @@ impl App for OilChatApp {
     }
 
     fn on_message(&mut self, msg: ChatAppMsg) -> Action<ChatAppMsg> {
-        match msg {
-            ChatAppMsg::UserMessage(content) => {
-                if !self.is_streaming() {
-                    self.submit_user_message(content);
+        use messages::MsgCategory;
+        match msg.category() {
+            MsgCategory::User => {
+                if let ChatAppMsg::UserMessage(content) = msg {
+                    if !self.is_streaming() {
+                        self.submit_user_message(content);
+                    }
                 }
                 Action::Continue
             }
-            msg @ (ChatAppMsg::TextDelta(_)
-            | ChatAppMsg::ThinkingDelta(_)
-            | ChatAppMsg::ToolCall { .. }
-            | ChatAppMsg::ToolResultDelta { .. }
-            | ChatAppMsg::ToolResultComplete { .. }
-            | ChatAppMsg::ToolResultError { .. }
-            | ChatAppMsg::StreamComplete
-            | ChatAppMsg::StreamCancelled) => self.handle_stream_msg(msg),
-            msg @ (ChatAppMsg::SwitchModel(_)
-            | ChatAppMsg::FetchModels
-            | ChatAppMsg::ModelsLoaded(_)
-            | ChatAppMsg::ModelsFetchFailed(_)
-            | ChatAppMsg::SetThinkingBudget(_)
-            | ChatAppMsg::SetTemperature(_)
-            | ChatAppMsg::SetMaxTokens(_)
-            | ChatAppMsg::McpStatusLoaded(_)
-            | ChatAppMsg::PluginStatusLoaded(_)) => self.handle_config_msg(msg),
-            msg @ (ChatAppMsg::SubagentSpawned { .. }
-            | ChatAppMsg::SubagentCompleted { .. }
-            | ChatAppMsg::SubagentFailed { .. }
-            | ChatAppMsg::DelegationSpawned { .. }
-            | ChatAppMsg::DelegationCompleted { .. }
-            | ChatAppMsg::DelegationFailed { .. }) => self.handle_delegation_msg(msg),
-            msg @ (ChatAppMsg::QueueMessage(_)
-            | ChatAppMsg::Error(_)
-            | ChatAppMsg::Status(_)
-            | ChatAppMsg::ModeChanged(_)
-            | ChatAppMsg::ContextUsage { .. }
-            | ChatAppMsg::ClearHistory
-            | ChatAppMsg::ToggleMessages
-            | ChatAppMsg::OpenInteraction { .. }
-            | ChatAppMsg::CloseInteraction { .. }
-            | ChatAppMsg::LoadHistory(_)
-            | ChatAppMsg::PrecognitionResult { .. }
-            | ChatAppMsg::EnrichedMessage { .. }
-            | ChatAppMsg::ExecuteSlashCommand(_)
-            | ChatAppMsg::ExportSession(_)
-            | ChatAppMsg::ReloadPlugin(_)) => self.handle_ui_msg(msg),
+            MsgCategory::Stream => self.handle_stream_msg(msg),
+            MsgCategory::Config => self.handle_config_msg(msg),
+            MsgCategory::Delegation => self.handle_delegation_msg(msg),
+            MsgCategory::Ui => self.handle_ui_msg(msg),
         }
     }
 

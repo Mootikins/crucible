@@ -167,3 +167,72 @@ pub enum ChatAppMsg {
     /// **Dual-duty**: Internal enriched message ready to send (from background precognition).
     EnrichedMessage { original: String, enriched: String },
 }
+
+/// Category of a `ChatAppMsg` for top-level dispatch.
+///
+/// Used by `on_message` to route to the correct handler without
+/// enumerating every variant in a single match block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MsgCategory {
+    /// User-submitted chat input (`UserMessage`).
+    User,
+    /// Streaming events from the LLM response.
+    Stream,
+    /// Model/provider configuration changes.
+    Config,
+    /// Subagent and delegation lifecycle events.
+    Delegation,
+    /// UI state, interaction modals, and miscellaneous events.
+    Ui,
+}
+
+impl ChatAppMsg {
+    /// Classify this message for top-level routing.
+    pub(crate) fn category(&self) -> MsgCategory {
+        match self {
+            Self::UserMessage(_) => MsgCategory::User,
+
+            Self::TextDelta(_)
+            | Self::ThinkingDelta(_)
+            | Self::ToolCall { .. }
+            | Self::ToolResultDelta { .. }
+            | Self::ToolResultComplete { .. }
+            | Self::ToolResultError { .. }
+            | Self::StreamComplete
+            | Self::StreamCancelled => MsgCategory::Stream,
+
+            Self::SwitchModel(_)
+            | Self::FetchModels
+            | Self::ModelsLoaded(_)
+            | Self::ModelsFetchFailed(_)
+            | Self::SetThinkingBudget(_)
+            | Self::SetTemperature(_)
+            | Self::SetMaxTokens(_)
+            | Self::McpStatusLoaded(_)
+            | Self::PluginStatusLoaded(_) => MsgCategory::Config,
+
+            Self::SubagentSpawned { .. }
+            | Self::SubagentCompleted { .. }
+            | Self::SubagentFailed { .. }
+            | Self::DelegationSpawned { .. }
+            | Self::DelegationCompleted { .. }
+            | Self::DelegationFailed { .. } => MsgCategory::Delegation,
+
+            Self::QueueMessage(_)
+            | Self::Error(_)
+            | Self::Status(_)
+            | Self::ModeChanged(_)
+            | Self::ContextUsage { .. }
+            | Self::ClearHistory
+            | Self::ToggleMessages
+            | Self::OpenInteraction { .. }
+            | Self::CloseInteraction { .. }
+            | Self::LoadHistory(_)
+            | Self::PrecognitionResult { .. }
+            | Self::EnrichedMessage { .. }
+            | Self::ExecuteSlashCommand(_)
+            | Self::ExportSession(_)
+            | Self::ReloadPlugin(_) => MsgCategory::Ui,
+        }
+    }
+}

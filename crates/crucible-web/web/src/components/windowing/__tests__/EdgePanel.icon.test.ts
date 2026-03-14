@@ -22,8 +22,8 @@ describe('EdgePanel - Icon Replacement', () => {
     expect(source).toContain('{tab.title[0]}');
   });
 
-  it('should import icons from @/lib/icons in windowStore', () => {
-    const source = readFileSync(resolve(__dirname, '../../../stores/windowStore.ts'), 'utf-8');
+  it('should import icons from @/lib/icons in window store internals', () => {
+    const source = readFileSync(resolve(__dirname, '../../../stores/windowStoreInternals.ts'), 'utf-8');
     // Verify icons are imported
     expect(source).toContain('FolderTree');
     expect(source).toContain('Search');
@@ -35,7 +35,7 @@ describe('EdgePanel - Icon Replacement', () => {
   });
 
   it('should populate icon field on all edge panel tabs', () => {
-    const source = readFileSync(resolve(__dirname, '../../../stores/windowStore.ts'), 'utf-8');
+    const source = readFileSync(resolve(__dirname, '../../../stores/windowStoreInternals.ts'), 'utf-8');
     // Verify each tab has an icon field
     expect(source).toContain('icon: FolderTree');
     expect(source).toContain('icon: Search');

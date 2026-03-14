@@ -410,39 +410,6 @@ export interface PermResponse {
 export type InteractionResponse = AskResponse | PopupResponse | PermResponse;
 
 // =============================================================================
-// Session Context Types
-// =============================================================================
-
-export interface SessionContextValue {
-  currentSession: () => Session | null;
-  sessions: () => Session[];
-  isLoading: () => boolean;
-  error: () => string | null;
-  availableModels: () => string[];
-  createSession: (params: CreateSessionParams) => Promise<Session>;
-  selectSession: (id: string) => Promise<void>;
-  refreshSessions: (filters?: { kiln?: string; workspace?: string }) => Promise<void>;
-  pauseSession: () => Promise<void>;
-  resumeSession: () => Promise<void>;
-  endSession: () => Promise<void>;
-  cancelCurrentOperation: () => Promise<boolean>;
-  switchModel: (modelId: string) => Promise<void>;
-  refreshModels: () => Promise<void>;
-}
-
-export interface ProjectContextValue {
-  currentProject: () => Project | null;
-  projects: () => Project[];
-  isLoading: () => boolean;
-  error: () => string | null;
-  registerProject: (path: string) => Promise<Project>;
-  unregisterProject: (path: string) => Promise<void>;
-  selectProject: (path: string) => Promise<void>;
-  refreshProjects: () => Promise<void>;
-  clearProject: () => void;
-}
-
-// =============================================================================
 // Editor Types
 // =============================================================================
 
@@ -453,14 +420,16 @@ export interface EditorFile {
   dirty: boolean;
 }
 
-export interface EditorContextValue {
-  openFiles: () => EditorFile[];
-  activeFile: () => string | null;
-  openFile: (path: string) => Promise<void>;
-  closeFile: (path: string) => void;
-  saveFile: (path: string) => Promise<void>;
-  setActiveFile: (path: string) => void;
-  updateFileContent: (path: string, content: string) => void;
-  isLoading: () => boolean;
-  error: () => string | null;
-}
+// =============================================================================
+// Context Types (re-exported from types/context.ts)
+// =============================================================================
+
+
+export type {
+  ChatContextValue,
+  SessionContextValue,
+  ProjectContextValue,
+  EditorContextValue,
+} from './types/context';
+
+

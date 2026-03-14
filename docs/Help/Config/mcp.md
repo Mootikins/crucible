@@ -292,7 +292,7 @@ Each upstream must have a unique prefix. Check for duplicates in your config.
 
 **Configuration:** `crates/crucible-config/src/components/mcp.rs`
 
-**Gateway:** `crates/crucible-tools/src/mcp_gateway.rs`
+**Gateway:** `crates/crucible-daemon/src/tools/mcp_gateway.rs`
 
 ## See Also
 

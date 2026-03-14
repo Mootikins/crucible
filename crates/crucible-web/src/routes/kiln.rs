@@ -1,3 +1,7 @@
+use super::helpers::{
+    note_to_file_json, validate_file_within_kiln, validate_no_traversal,
+    validate_parent_within_kiln, MAX_CONTENT_SIZE,
+};
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{extract::State, routing::get, Json, Router};
@@ -47,16 +51,7 @@ async fn list_kiln_files(
         .await
         .daemon_err()?;
 
-    let files: Vec<serde_json::Value> = notes
-        .into_iter()
-        .map(|(name, path, _title, _tags, _updated_at)| {
-            serde_json::json!({
-                "name": name,
-                "path": path,
-                "is_dir": false,
-            })
-        })
-        .collect();
+    let files: Vec<serde_json::Value> = notes.into_iter().map(note_to_file_json).collect();
 
     Ok(Json(serde_json::json!({ "files": files })))
 }
@@ -72,16 +67,7 @@ async fn list_kiln_notes(
         .await
         .daemon_err()?;
 
-    let notes_json: Vec<serde_json::Value> = notes
-        .into_iter()
-        .map(|(name, path, _title, _tags, _updated_at)| {
-            serde_json::json!({
-                "name": name,
-                "path": path,
-                "is_dir": false,
-            })
-        })
-        .collect();
+    let notes_json: Vec<serde_json::Value> = notes.into_iter().map(note_to_file_json).collect();
 
     Ok(Json(serde_json::json!({ "files": notes_json })))
 }
@@ -130,10 +116,9 @@ async fn put_kiln_file(
     validate_no_traversal(&req.path)?;
 
     // Security: limit content size (10 MB)
-    const MAX_SIZE: usize = 10 * 1024 * 1024;
-    if req.content.len() > MAX_SIZE {
+    if req.content.len() > MAX_CONTENT_SIZE {
         return Err(WebError::Validation(format!(
-            "Content too large: {} bytes (max {MAX_SIZE})",
+            "Content too large: {} bytes (max {MAX_CONTENT_SIZE})",
             req.content.len()
         )));
     }
@@ -153,62 +138,6 @@ async fn put_kiln_file(
         .map_err(WebError::Io)?;
 
     Ok(Json(serde_json::json!({ "ok": true })))
-}
-
-// =========================================================================
-// Helpers
-// =========================================================================
-
-/// Reject paths containing traversal sequences, null bytes, or absolute paths.
-fn validate_no_traversal(path: &str) -> Result<(), WebError> {
-    // Reject absolute paths — callers must use kiln-relative or daemon-resolved paths.
-    if path.starts_with('/') || path.starts_with('\\') {
-        return Err(WebError::Validation(
-            "Invalid path: absolute paths not allowed".to_string(),
-        ));
-    }
-    if path.contains("..") || path.contains('\0') {
-        return Err(WebError::Validation(
-            "Invalid path: traversal not allowed".to_string(),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_parent_within_kiln(file_path: &Path, kiln: &Path) -> Result<(), WebError> {
-    let canonical_file_parent = file_path
-        .parent()
-        .ok_or_else(|| WebError::Validation("Path has no parent directory".to_string()))?;
-
-    let canonical_parent = canonical_file_parent.canonicalize().map_err(|_| {
-        WebError::Validation("Parent directory does not exist or is not accessible".to_string())
-    })?;
-
-    if !canonical_parent.starts_with(kiln) {
-        return Err(WebError::Validation(
-            "Path escapes kiln directory".to_string(),
-        ));
-    }
-
-    Ok(())
-}
-
-fn validate_file_within_kiln(
-    file_path: &Path,
-    kiln: &Path,
-    original_path: &str,
-) -> Result<PathBuf, WebError> {
-    let canonical_file = file_path
-        .canonicalize()
-        .map_err(|_| WebError::NotFound(format!("File not found: {original_path}")))?;
-
-    if !canonical_file.starts_with(kiln) {
-        return Err(WebError::Validation(
-            "File path escapes kiln directory".to_string(),
-        ));
-    }
-
-    Ok(canonical_file)
 }
 
 /// Find the open kiln that contains `file_path`.

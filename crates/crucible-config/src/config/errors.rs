@@ -74,4 +74,15 @@ pub enum ConfigError {
     /// Provider configuration error.
     #[error("Provider configuration error: {0}")]
     Provider(String),
+
+    /// General configuration error.
+    #[error("{0}")]
+    Other(String),
+}
+
+/// Adapter: convert internal anyhow errors to ConfigError at crate boundaries.
+impl From<anyhow::Error> for ConfigError {
+    fn from(err: anyhow::Error) -> Self {
+        ConfigError::Other(err.to_string())
+    }
 }

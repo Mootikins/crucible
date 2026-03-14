@@ -13,6 +13,8 @@ import { markdown } from '@codemirror/lang-markdown';
 import { useEditorSafe } from '@/contexts/EditorContext';
 import { findTabByFilePath } from '@/lib/file-actions';
 import { windowActions } from '@/stores/windowStore';
+import { PanelShell } from './PanelShell';
+
 
 type LanguageSupport = ReturnType<typeof markdown>;
 
@@ -147,7 +149,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   }
 
   return (
-    <div class="h-full flex flex-col bg-neutral-900 text-neutral-100 overflow-hidden relative">
+    <PanelShell class="overflow-hidden relative">
       {/* Loading overlay */}
       <Show when={isLoading()}>
         <div class="absolute inset-0 flex items-center justify-center bg-neutral-900/80 z-10">
@@ -157,7 +159,6 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
           </div>
         </div>
       </Show>
-
       {/* Error bar */}
       <Show when={error()}>
         <div class="mx-4 mt-2 px-3 py-2 text-sm text-red-400 bg-red-900/20 rounded border border-red-900/30 flex items-center gap-2">
@@ -192,7 +193,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
           )}
         </Show>
       </div>
-    </div>
+    </PanelShell>
   );
 };
 
