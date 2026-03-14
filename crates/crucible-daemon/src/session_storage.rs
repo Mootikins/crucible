@@ -195,6 +195,7 @@ impl SessionStorage for FileSessionStorage {
 
         file.write_all(event.as_bytes()).await?;
         file.write_all(b"\n").await?;
+        file.flush().await?;
 
         Ok(())
     }
@@ -238,6 +239,7 @@ impl SessionStorage for FileSessionStorage {
         let mut file = fs::OpenOptions::new().append(true).open(&md_path).await?;
 
         file.write_all(entry.as_bytes()).await?;
+        file.flush().await?;
 
         Ok(())
     }
