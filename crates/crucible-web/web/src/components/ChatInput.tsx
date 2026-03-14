@@ -9,7 +9,7 @@ import { AutocompletePopup } from './AutocompletePopup';
 import { executeCommand } from '@/lib/api';
 export const ChatInput: Component = () => {
   const { sendMessage, isLoading, isStreaming, cancelStream, error, chatMode, setChatMode, addSystemMessage, clearMessages } = useChatSafe();
-  const { currentSession, cancelCurrentOperation, availableModels, switchModel, refreshModels, selectedProvider } = useSessionSafe();
+  const { currentSession, cancelCurrentOperation, availableModels, switchModel, selectedProvider } = useSessionSafe();
   const [input, setInput] = createSignal('');
   const [isModelPickerOpen, setIsModelPickerOpen] = createSignal(false);
   const { isRecording, audioLevel, startRecording, stopRecording } = useMediaRecorder();
@@ -91,12 +91,6 @@ export const ChatInput: Component = () => {
 
   const fillPercent = () => Math.round(audioLevel() * 100);
 
-  // Refresh models when session changes
-  createEffect(() => {
-    if (currentSession()) {
-      refreshModels();
-    }
-  });
 
   // Close dropdown when clicking outside
   createEffect(() => {
