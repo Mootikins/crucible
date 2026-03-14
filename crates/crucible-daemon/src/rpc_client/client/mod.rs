@@ -976,6 +976,7 @@ impl DaemonClient {
         Ok(serde_json::from_value(result)?)
     }
 
+    #[allow(dead_code)] // Used by T22 (apply typed_unit_call to RPC session methods)
     /// Send a typed JSON-RPC request and discard the response.
     ///
     /// Wraps `typed_call()` for methods that return unit (Ok(())).
@@ -988,6 +989,7 @@ impl DaemonClient {
         Ok(())
     }
 
+    #[allow(dead_code)] // Used by T22 (apply typed_unit_call to RPC session methods)
     /// Send a typed JSON-RPC request with retry and discard the response.
     ///
     /// Wraps `typed_call_with_retry()` for methods that return unit (Ok(())).
@@ -1000,6 +1002,7 @@ impl DaemonClient {
         Ok(())
     }
 
+    #[allow(dead_code)] // Used by T22 (apply typed_unit_call to RPC session methods)
     /// Build a request containing only a session_id.
     ///
     /// Helper for methods that take only a session_id parameter.
