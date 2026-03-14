@@ -4,6 +4,8 @@ description: A local-first AI assistant where every conversation becomes a searc
 template: splash
 hero:
   tagline: Every conversation becomes a searchable, linkable note you own. No cloud. No lock-in.
+  image:
+    html: '<img src="/crucible/demo.gif" alt="Crucible chat with Precognition" width="720" style="border-radius: 8px;" />'
   actions:
     - text: Getting Started
       link: /crucible/guides/getting-started/
@@ -26,11 +28,24 @@ Most AI chat tools treat conversations as disposable. Crucible treats them as **
 - **Extend with Lua & Fennel.** Write tools, handlers, and automations as plugins.
 - **Plaintext first.** No proprietary formats. Files are the source of truth.
 
+## How It Compares
+
+| | Crucible | ChatGPT | Obsidian + AI | OpenClaw |
+|---|---|---|---|---|
+| Local-first | ✅ | ❌ | ✅ | ✅ |
+| Sessions as markdown | ✅ | ❌ | ❌ | ❌ |
+| Knowledge graph | ✅ | ❌ | ✅ | ❌ |
+| Bring your own LLM | ✅ | ❌ | Partial | ✅ |
+| Plugin system | ✅ Lua/Fennel | ❌ | ✅ JS | ✅ TS |
+| MCP server | ✅ | ❌ | ❌ | ❌ |
+| Semantic search | ✅ Block-level | ❌ | Plugin | ❌ |
+| Setup time | ~2 min | 0 | ~5 min | 2-7 hrs |
+
 ## Quick Start
 
 ```bash
 # Install
-curl -fsSL https://github.com/Mootikins/crucible/releases/latest/download/install.sh | sh
+cargo install --git https://github.com/Mootikins/crucible.git crucible-cli
 
 # Start chatting
 cru chat
