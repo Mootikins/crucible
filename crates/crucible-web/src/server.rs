@@ -81,7 +81,7 @@ fn build_cors_origins(web_config: &WebConfig) -> Vec<HeaderValue> {
             return;
         };
 
-        if !origins.iter().any(|existing| existing == &value) {
+        if !origins.contains(&value) {
             origins.push(value);
         }
     };
