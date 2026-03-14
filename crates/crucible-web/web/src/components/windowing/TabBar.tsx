@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, createEffect, onMount, onCleanup } from 'solid-js';
+import { Component, For, JSX, Show, createSignal, createEffect, onMount, onCleanup } from 'solid-js';
 import {
   createDraggable,
   createDroppable,
@@ -129,35 +129,20 @@ const InsertIndicator: Component = () => (
   <div class="w-0.5 h-5 bg-blue-500 rounded-full flex-shrink-0 my-auto" />
 );
 
-// ── Center TabBar ───────────────────────────────────────────────────────
+interface UseTabBarDnDOptions {
+  groupId: () => string;
+  tabsContainerRef: () => HTMLDivElement | undefined;
+}
 
-const CenterTabBar: Component<{
-  groupId: string;
-  paneId: string;
-  onPopOut?: () => void;
-}> = (props) => {
-  const group = () => windowStore.tabGroups[props.groupId];
-  const tabs = () => group()?.tabs ?? [];
-  const activeTabId = () => group()?.activeTabId ?? null;
-  const isFocused = () => windowStore.activePaneId === props.paneId && windowStore.focusedRegion === 'center';
-
-  const [isOverflowing, setIsOverflowing] = createSignal(false);
-  const [showDropdown, setShowDropdown] = createSignal(false);
+function useTabBarDnD(options: UseTabBarDnDOptions) {
   const [insertIdx, setInsertIdx] = createSignal<number | null>(null);
-  let tabsContainerRef: HTMLDivElement | undefined;
-
-  const droppable = createDroppable(`tabgroup:${props.groupId}`, {
-    type: 'tabGroup',
-    groupId: props.groupId,
-  });
-
   const dndCtx = useDragDropContext();
 
   const isSameBarDrag = () => {
     const active = dndCtx?.[0]?.active?.draggable;
     if (!active) return false;
     const data = active.data as DragSource | undefined;
-    return data?.type === 'tab' && data.sourceGroupId === props.groupId;
+    return data?.type === 'tab' && data.sourceGroupId === options.groupId();
   };
 
   const draggedTabId = () => {
@@ -167,9 +152,8 @@ const CenterTabBar: Component<{
     return data?.type === 'tab' ? data.tab.id : undefined;
   };
 
-  // Read sensor coordinates reactively — onPointerMove doesn't fire during
-  // drag because the DragOverlay portal intercepts pointer events.
   createEffect(() => {
+    const tabsContainerRef = options.tabsContainerRef();
     if (!isSameBarDrag() || !tabsContainerRef) {
       setInsertIdx(null);
       setReorderState(null);
@@ -191,8 +175,9 @@ const CenterTabBar: Component<{
       const result = computeInsertIndex(tabsContainerRef, x, draggedTabId());
       setInsertIdx(result?.display ?? null);
       if (result != null) {
-        setReorderState({ groupId: props.groupId, insertIndex: result.logical });
-        pendingReorder = { groupId: props.groupId, insertIndex: result.logical };
+        const nextReorder = { groupId: options.groupId(), insertIndex: result.logical };
+        setReorderState(nextReorder);
+        pendingReorder = nextReorder;
       }
     } else {
       setInsertIdx(null);
@@ -208,6 +193,25 @@ const CenterTabBar: Component<{
     }
   });
 
+  return {
+    insertIdx,
+  };
+}
+
+interface TabStripProps {
+  tabs: () => TabType[];
+  activeTabId: () => string | null;
+  insertIdx: () => number | null;
+  onSelectTab: (tabId: string) => void;
+  onTabsContainerRef?: (el: HTMLDivElement) => void;
+  renderTab: (tab: TabType, index: () => number) => JSX.Element;
+}
+
+const TabStrip: Component<TabStripProps> = (props) => {
+  const [isOverflowing, setIsOverflowing] = createSignal(false);
+  const [showDropdown, setShowDropdown] = createSignal(false);
+  let tabsContainerRef: HTMLDivElement | undefined;
+
   onMount(() => {
     if (!tabsContainerRef) return;
     const checkOverflow = () => {
@@ -218,7 +222,7 @@ const CenterTabBar: Component<{
     const observer = new ResizeObserver(checkOverflow);
     observer.observe(tabsContainerRef);
     createEffect(() => {
-      tabs();
+      props.tabs();
       checkOverflow();
     });
     onCleanup(() => observer.disconnect());
@@ -243,60 +247,49 @@ const CenterTabBar: Component<{
   });
 
   return (
-    <div
-      use:droppable
-      classList={{
-        'flex items-center h-9 bg-zinc-900 border-b border-zinc-800 relative': true,
-        'bg-blue-500/5': droppable.isActiveDroppable,
-      }}
-    >
+    <>
       <div
-        ref={tabsContainerRef}
+        ref={(el) => {
+          tabsContainerRef = el;
+          props.onTabsContainerRef?.(el);
+        }}
         class="flex-1 flex items-end gap-0.5 overflow-x-auto scrollbar-hide px-1 min-w-0 [scrollbar-width:none] [-ms-overflow-style:none]"
       >
-        <For each={tabs()}>
+        <For each={props.tabs()}>
           {(tab, i) => (
             <>
-              <Show when={insertIdx() === i()}>
+              <Show when={props.insertIdx() === i()}>
                 <InsertIndicator />
               </Show>
-              <TabItem
-                tab={tab}
-                draggableId={`tab:${props.groupId}:${tab.id}`}
-                draggableData={{ type: 'tab', tab, sourceGroupId: props.groupId }}
-                isActive={tab.id === activeTabId()}
-                isFocused={isFocused()}
-                onClick={() => windowActions.setActiveTab(props.groupId, tab.id)}
-                onClose={() => windowActions.removeTab(props.groupId, tab.id)}
-              />
+              {props.renderTab(tab, i)}
             </>
           )}
         </For>
-        <Show when={insertIdx() === tabs().length}>
+        <Show when={props.insertIdx() === props.tabs().length}>
           <InsertIndicator />
         </Show>
       </div>
-       <Show when={isOverflowing()}>
-         <div class="relative flex-shrink-0">
-           <button
-             class="flex-shrink-0 w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors"
-             onClick={(e) => { e.stopPropagation(); setShowDropdown(!showDropdown()); }}
-             title="Show all tabs"
-           >
-             <ChevronDown class="w-3.5 h-3.5" />
-           </button>
+      <Show when={isOverflowing()}>
+        <div class="relative flex-shrink-0">
+          <button
+            class="flex-shrink-0 w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors"
+            onClick={(e) => { e.stopPropagation(); setShowDropdown(!showDropdown()); }}
+            title="Show all tabs"
+          >
+            <ChevronDown class="w-3.5 h-3.5" />
+          </button>
           <Show when={showDropdown()}>
             <div class="absolute right-0 top-full mt-1 z-50 min-w-[160px] max-w-[280px] bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1 max-h-[300px] overflow-y-auto">
-              <For each={tabs()}>
+              <For each={props.tabs()}>
                 {(tab) => (
                   <button
                     class={`w-full px-3 py-1.5 text-left text-xs truncate transition-colors ${
-                      tab.id === activeTabId()
+                      tab.id === props.activeTabId()
                         ? 'bg-blue-500/20 text-blue-300 font-medium'
                         : 'text-zinc-300 hover:bg-zinc-700'
                     }`}
                     onClick={() => {
-                      windowActions.setActiveTab(props.groupId, tab.id);
+                      props.onSelectTab(tab.id);
                       setShowDropdown(false);
                       const tabEl = tabsContainerRef?.querySelector(`[data-tab-id="${tab.id}"]`);
                       tabEl?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
@@ -311,6 +304,62 @@ const CenterTabBar: Component<{
           </Show>
         </div>
       </Show>
+    </>
+  );
+};
+
+// ── Center TabBar ───────────────────────────────────────────────────────
+
+const CenterTabBar: Component<{
+  groupId: string;
+  paneId: string;
+  onPopOut?: () => void;
+}> = (props) => {
+  const group = () => windowStore.tabGroups[props.groupId];
+  const tabs = () => group()?.tabs ?? [];
+  const activeTabId = () => group()?.activeTabId ?? null;
+  const isFocused = () => windowStore.activePaneId === props.paneId && windowStore.focusedRegion === 'center';
+
+  let tabsContainerRef: HTMLDivElement | undefined;
+
+  const droppable = createDroppable(`tabgroup:${props.groupId}`, {
+    type: 'tabGroup',
+    groupId: props.groupId,
+  });
+
+  const { insertIdx } = useTabBarDnD({
+    groupId: () => props.groupId,
+    tabsContainerRef: () => tabsContainerRef,
+  });
+
+  return (
+    <div
+      use:droppable
+      classList={{
+        'flex items-center h-9 bg-zinc-900 border-b border-zinc-800 relative': true,
+        'bg-blue-500/5': droppable.isActiveDroppable,
+      }}
+    >
+      <TabStrip
+        tabs={tabs}
+        activeTabId={activeTabId}
+        insertIdx={insertIdx}
+        onSelectTab={(tabId) => windowActions.setActiveTab(props.groupId, tabId)}
+        onTabsContainerRef={(el) => {
+          tabsContainerRef = el;
+        }}
+        renderTab={(tab) => (
+          <TabItem
+            tab={tab}
+            draggableId={`tab:${props.groupId}:${tab.id}`}
+            draggableData={{ type: 'tab', tab, sourceGroupId: props.groupId }}
+            isActive={tab.id === activeTabId()}
+            isFocused={isFocused()}
+            onClick={() => windowActions.setActiveTab(props.groupId, tab.id)}
+            onClose={() => windowActions.removeTab(props.groupId, tab.id)}
+          />
+        )}
+      />
       <div class="flex-shrink-0 flex items-center gap-0.5 px-1">
         {props.onPopOut && tabs().length > 0 && (
           <button
@@ -340,9 +389,6 @@ const EdgeTabBar: Component<{
   const activeTabId = () => group()?.activeTabId ?? null;
   const isFocused = () => windowStore.focusedRegion === props.position;
 
-  const [isOverflowing, setIsOverflowing] = createSignal(false);
-  const [showDropdown, setShowDropdown] = createSignal(false);
-  const [insertIdx, setInsertIdx] = createSignal<number | null>(null);
   let containerRef: HTMLDivElement | undefined;
   let tabsContainerRef: HTMLDivElement | undefined;
 
@@ -351,95 +397,9 @@ const EdgeTabBar: Component<{
     panelId: props.position,
   });
 
-  const dndCtx = useDragDropContext();
-
-  const isSameBarDrag = () => {
-    const active = dndCtx?.[0]?.active?.draggable;
-    if (!active) return false;
-    const data = active.data as DragSource | undefined;
-    return data?.type === 'tab' && data.sourceGroupId === groupId();
-  };
-
-  const draggedTabId = () => {
-    const active = dndCtx?.[0]?.active?.draggable;
-    if (!active) return undefined;
-    const data = active.data as DragSource | undefined;
-    return data?.type === 'tab' ? data.tab.id : undefined;
-  };
-
-  // Read sensor coordinates reactively — onPointerMove doesn't fire during
-  // drag because the DragOverlay portal intercepts pointer events.
-  createEffect(() => {
-    if (!isSameBarDrag() || !tabsContainerRef) {
-      setInsertIdx(null);
-      setReorderState(null);
-      return;
-    }
-    const sensor = dndCtx?.[0]?.active?.sensor;
-    const x = sensor?.coordinates?.current?.x;
-    const y = sensor?.coordinates?.current?.y;
-    if (x != null && y != null) {
-      const rect = tabsContainerRef.getBoundingClientRect();
-      const VERTICAL_TOLERANCE = 8;
-      const inBounds = x >= rect.left && x <= rect.right &&
-                       y >= rect.top - VERTICAL_TOLERANCE && y <= rect.bottom + VERTICAL_TOLERANCE;
-      if (!inBounds) {
-        setInsertIdx(null);
-        setReorderState(null);
-        return;
-      }
-      const result = computeInsertIndex(tabsContainerRef, x, draggedTabId());
-      setInsertIdx(result?.display ?? null);
-      if (result != null) {
-        setReorderState({ groupId: groupId(), insertIndex: result.logical });
-        pendingReorder = { groupId: groupId(), insertIndex: result.logical };
-      }
-    } else {
-      setInsertIdx(null);
-      setReorderState(null);
-      pendingReorder = null;
-    }
-  });
-
-  createEffect(() => {
-    if (!dndCtx?.[0]?.active?.draggable) {
-      setInsertIdx(null);
-      setReorderState(null);
-    }
-  });
-
-  onMount(() => {
-    if (!tabsContainerRef) return;
-    const checkOverflow = () => {
-      if (tabsContainerRef) {
-        setIsOverflowing(tabsContainerRef.scrollWidth > tabsContainerRef.clientWidth);
-      }
-    };
-    const observer = new ResizeObserver(checkOverflow);
-    observer.observe(tabsContainerRef);
-    createEffect(() => {
-      tabs();
-      checkOverflow();
-    });
-    onCleanup(() => observer.disconnect());
-  });
-
-  createEffect(() => {
-    if (!showDropdown()) return;
-    const handleClickOutside = () => {
-      setShowDropdown(false);
-    };
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowDropdown(false);
-    };
-    setTimeout(() => {
-      document.addEventListener('click', handleClickOutside);
-      document.addEventListener('keydown', handleEscape);
-    }, 0);
-    onCleanup(() => {
-      document.removeEventListener('click', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
-    });
+  const { insertIdx } = useTabBarDnD({
+    groupId,
+    tabsContainerRef: () => tabsContainerRef,
   });
 
   return (
@@ -452,69 +412,28 @@ const EdgeTabBar: Component<{
         'bg-blue-500/5': droppable.isActiveDroppable,
       }}
     >
-      <div
-        ref={tabsContainerRef}
-        class="flex-1 flex items-end gap-0.5 overflow-x-auto scrollbar-hide px-1 min-w-0 [scrollbar-width:none] [-ms-overflow-style:none]"
-      >
-        <For each={tabs()}>
-          {(tab, i) => (
-            <>
-              <Show when={insertIdx() === i()}>
-                <InsertIndicator />
-              </Show>
-              <TabItem
-                tab={tab}
-                draggableId={`edgetab:${props.position}:${tab.id}`}
-                draggableData={{ type: 'tab', tab, sourceGroupId: groupId() }}
-                isActive={activeTabId() === tab.id}
-                isFocused={isFocused()}
-                onClick={() => windowActions.setActiveTab(groupId(), tab.id)}
-                onClose={() => windowActions.removeTab(groupId(), tab.id)}
-                testId={`edge-tab-${props.position}-${tab.id}`}
-                onDragStart={() => { if (windowStore.flyoutState?.isOpen) windowActions.closeFlyout(); }}
-              />
-            </>
-          )}
-        </For>
-        <Show when={insertIdx() === tabs().length}>
-          <InsertIndicator />
-        </Show>
-      </div>
-      <Show when={isOverflowing()}>
-        <div class="relative flex-shrink-0">
-          <button
-            class="flex-shrink-0 w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors"
-            onClick={(e) => { e.stopPropagation(); setShowDropdown(!showDropdown()); }}
-            title="Show all tabs"
-          >
-            <ChevronDown class="w-3.5 h-3.5" />
-          </button>
-          <Show when={showDropdown()}>
-            <div class="absolute right-0 top-full mt-1 z-50 min-w-[160px] max-w-[280px] bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1 max-h-[300px] overflow-y-auto">
-              <For each={tabs()}>
-                {(tab) => (
-                  <button
-                    class={`w-full px-3 py-1.5 text-left text-xs truncate transition-colors ${
-                      tab.id === activeTabId()
-                        ? 'bg-blue-500/20 text-blue-300 font-medium'
-                        : 'text-zinc-300 hover:bg-zinc-700'
-                    }`}
-                    onClick={() => {
-                      windowActions.setActiveTab(groupId(), tab.id);
-                      setShowDropdown(false);
-                      const tabEl = tabsContainerRef?.querySelector(`[data-tab-id="${tab.id}"]`);
-                      tabEl?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
-                    }}
-                  >
-                    {tab.title}
-                    {tab.isModified && <span class="ml-1 text-amber-500">●</span>}
-                  </button>
-                )}
-              </For>
-            </div>
-          </Show>
-        </div>
-      </Show>
+      <TabStrip
+        tabs={tabs}
+        activeTabId={activeTabId}
+        insertIdx={insertIdx}
+        onSelectTab={(tabId) => windowActions.setActiveTab(groupId(), tabId)}
+        onTabsContainerRef={(el) => {
+          tabsContainerRef = el;
+        }}
+        renderTab={(tab) => (
+          <TabItem
+            tab={tab}
+            draggableId={`edgetab:${props.position}:${tab.id}`}
+            draggableData={{ type: 'tab', tab, sourceGroupId: groupId() }}
+            isActive={activeTabId() === tab.id}
+            isFocused={isFocused()}
+            onClick={() => windowActions.setActiveTab(groupId(), tab.id)}
+            onClose={() => windowActions.removeTab(groupId(), tab.id)}
+            testId={`edge-tab-${props.position}-${tab.id}`}
+            onDragStart={() => { if (windowStore.flyoutState?.isOpen) windowActions.closeFlyout(); }}
+          />
+        )}
+      />
       {droppable.isActiveDroppable && (
         <div class="absolute inset-x-0 bottom-0 h-0.5 bg-blue-500" />
       )}
