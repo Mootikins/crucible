@@ -70,12 +70,25 @@ fn walk_ancestors_for_crucible() -> Option<PathBuf> {
     let cwd = std::env::current_dir().ok()?;
     let mut current: Option<&Path> = Some(&cwd);
     while let Some(dir) = current {
-        if dir.join(CRUCIBLE_DIR_NAME).is_dir() {
+        if !is_temp_directory(dir) && dir.join(CRUCIBLE_DIR_NAME).is_dir() {
             return Some(dir.to_path_buf());
         }
         current = dir.parent();
     }
     None
+}
+
+/// Returns true if the path is a well-known temp root directory (/tmp, /var/tmp, TMPDIR).
+/// A `.crucible` dir at these roots is always a daemon artifact, never an intentional kiln.
+/// Subdirectories of these roots are NOT excluded — tests and users may create kilns there.
+fn is_temp_directory(path: &Path) -> bool {
+    let path_str = path.to_string_lossy();
+    path_str == "/tmp"
+        || path_str == "/var/tmp"
+        || std::env::var("TMPDIR")
+            .ok()
+            .map(|t| path_str == *t)
+            .unwrap_or(false)
 }
 
 fn from_env_var() -> Option<PathBuf> {
