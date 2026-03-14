@@ -904,8 +904,8 @@ async fn daemon_create(
     // Parse recording_mode if provided
     let recording_mode_parsed = if let Some(mode_str) = recording_mode {
         match mode_str {
-            "granular" => Some("granular"),
-            "coarse" => Some("coarse"),
+            "granular" => Some("granular".to_string()),
+            "coarse" => Some("coarse".to_string()),
             _ => anyhow::bail!(
                 "Invalid recording mode: '{}'. Must be 'granular' or 'coarse'",
                 mode_str
@@ -916,14 +916,14 @@ async fn daemon_create(
     };
 
     let result = client
-        .session_create(
-            session_type,
-            &config.kiln_path,
-            None,
-            vec![],
-            recording_mode_parsed,
-            None,
-        )
+        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+            session_type: session_type.to_string(),
+            kiln: config.kiln_path.clone(),
+            workspace: None,
+            connect_kilns: vec![],
+            recording_mode: recording_mode_parsed,
+            recording_path: None,
+        })
         .await?;
 
     let session_id = result["session_id"].as_str().unwrap_or("unknown");

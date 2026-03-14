@@ -1,6 +1,8 @@
 import { Component, For, Show, createSignal } from 'solid-js';
 import { Bot, ArrowRightLeft, Check, X, Activity } from 'lucide-solid';
 import { useChatSafe } from '@/contexts/ChatContext';
+import { PanelShell } from './PanelShell';
+import { PanelHeader } from './PanelHeader';
 import type { SubagentEvent } from '@/lib/types';
 
 
@@ -198,15 +200,15 @@ export const ActivityPanel: Component = () => {
   };
 
   return (
-    <div class="h-full flex flex-col bg-neutral-900 text-neutral-100">
+    <PanelShell>
       {/* Header */}
-      <div class="p-3 border-b border-neutral-800">
+      <PanelHeader title="Activity">
         <div class="flex items-center gap-2">
           <Activity class="w-4 h-4 text-neutral-400" />
-          <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wide">Activity</h2>
         </div>
-      </div>
+      </PanelHeader>
 
+      {/* Summary bar */}
       {/* Summary bar */}
       <Show when={events().length > 0}>
         <TaskSummary events={events()} />
@@ -233,6 +235,6 @@ export const ActivityPanel: Component = () => {
           </div>
         </Show>
       </div>
-    </div>
+    </PanelShell>
   );
 };

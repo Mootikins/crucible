@@ -1,5 +1,5 @@
 // src/components/SettingsPanel.tsx
-import { Component, Show, For, ErrorBoundary, createSignal, onMount, onCleanup } from 'solid-js';
+import { Component, Show, For, ErrorBoundary, createSignal, onMount, onCleanup, type JSX } from 'solid-js';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import type { TranscriptionProvider } from '@/lib/settings';
@@ -32,6 +32,111 @@ const SectionHeader: Component<{ title: string; icon: string }> = (props) => (
       {props.title}
     </td>
   </tr>
+);
+
+// =============================================================================
+// Reusable Setting Row Primitives
+// =============================================================================
+
+/** Full-width status row for loading, error, empty, and informational messages. */
+const StatusRow: Component<{ variant?: 'error'; children: JSX.Element }> = (props) => (
+  <tr>
+    <td
+      colSpan={2}
+      class={
+        props.variant === 'error'
+          ? 'py-2 text-center text-red-400 text-xs'
+          : 'py-3 text-center text-neutral-500 text-sm'
+      }
+    >
+      {props.children}
+    </td>
+  </tr>
+);
+
+/** Setting row with label, optional description, and a control cell. */
+const SettingRow: Component<{
+  label: string;
+  description?: string;
+  controlClass?: string;
+  children: JSX.Element;
+}> = (props) => (
+  <tr class="border-b border-neutral-700">
+    <td class="py-3 text-neutral-300 text-sm">
+      <div>{props.label}</div>
+      <Show when={props.description}>
+        <div class="text-xs text-neutral-500">{props.description}</div>
+      </Show>
+    </td>
+    <td class={props.controlClass ?? 'py-3 text-right'}>
+      {props.children}
+    </td>
+  </tr>
+);
+
+/**
+ * Wrapper that handles the repeated async loading / error / no-session / empty
+ * scaffolding shared by Model, Plugins, and MCP subsections.
+ *
+ * Pass `requiresSession` + `hasSession` for sections gated on an active session.
+ * Pass `onRetry` to show a retry button alongside the error message.
+ * Pass `hideContentOnError` to suppress children when an error is present (MCP).
+ */
+const SettingsSectionState: Component<{
+  title: string;
+  icon: string;
+  loading: boolean;
+  error: string | null;
+  loadingMessage?: string;
+  requiresSession?: boolean;
+  hasSession?: boolean;
+  noSessionMessage?: string;
+  isEmpty?: boolean;
+  emptyMessage?: string;
+  onRetry?: () => void;
+  hideContentOnError?: boolean;
+  children: JSX.Element;
+}> = (props) => (
+  <>
+    <SectionHeader title={props.title} icon={props.icon} />
+
+    <Show when={props.requiresSession && !props.hasSession}>
+      <StatusRow>{props.noSessionMessage ?? 'No active session.'}</StatusRow>
+    </Show>
+
+    <Show when={!props.requiresSession || props.hasSession}>
+      <Show when={props.loading}>
+        <StatusRow>{props.loadingMessage ?? 'Loading…'}</StatusRow>
+      </Show>
+
+      <Show when={props.error}>
+        <tr>
+          <td colSpan={2} class="py-2">
+            <div class="text-center text-red-400 text-xs">{props.error}</div>
+            <Show when={props.onRetry}>
+              <div class="text-center mt-1">
+                <button
+                  onClick={props.onRetry}
+                  class="px-2 py-1 text-xs rounded bg-neutral-700 hover:bg-neutral-600 text-neutral-300 transition-colors"
+                >
+                  Retry
+                </button>
+              </div>
+            </Show>
+          </td>
+        </tr>
+      </Show>
+
+      <Show when={!props.loading && !(props.hideContentOnError && props.error)}>
+        <Show when={props.isEmpty}>
+          <StatusRow>{props.emptyMessage ?? 'No data available.'}</StatusRow>
+        </Show>
+        <Show when={!props.isEmpty}>
+          {props.children}
+        </Show>
+      </Show>
+    </Show>
+  </>
 );
 
 // =============================================================================
@@ -169,122 +274,75 @@ const ModelSettingsSection: Component = () => {
     }
   };
 
-  const labelClass = 'text-neutral-300 text-sm';
-
   return (
-    <>
-      <SectionHeader title="Model Settings" icon="🧠" />
+    <SettingsSectionState
+      title="Model Settings"
+      icon="🧠"
+      loading={loading()}
+      error={error()}
+      loadingMessage="Loading settings…"
+      requiresSession
+      hasSession={!!session.currentSession()}
+      noSessionMessage="No active session — start a chat to configure model settings."
+    >
+      <SettingRow label="Thinking Budget" description="0–32768 tokens">
+        <input
+          type="number"
+          min={0}
+          max={32768}
+          step={1024}
+          value={thinkingBudget() ?? ''}
+          onInput={handleBudgetChange}
+          class={`${inputClass} w-28 text-right`}
+          placeholder="Auto"
+        />
+      </SettingRow>
 
-      <Show when={!session.currentSession()}>
-        <tr>
-          <td colSpan={2} class="py-3 text-center text-neutral-500 text-sm">
-            No active session — start a chat to configure model settings.
-          </td>
-        </tr>
-      </Show>
+      <SettingRow
+        label="Temperature"
+        description={temperature().toFixed(1)}
+        controlClass="py-3 text-right flex items-center justify-end gap-2"
+      >
+        <span class="text-xs text-neutral-500">0</span>
+        <input
+          type="range"
+          min={0}
+          max={2}
+          step={0.1}
+          value={temperature()}
+          onInput={handleTemperatureChange}
+          class="w-32 accent-blue-500"
+        />
+        <span class="text-xs text-neutral-500">2</span>
+      </SettingRow>
 
-      <Show when={session.currentSession()}>
-        <Show when={loading()}>
-          <tr>
-            <td colSpan={2} class="py-3 text-center text-neutral-500 text-sm">
-              Loading settings…
-            </td>
-          </tr>
-        </Show>
+      <SettingRow label="Max Tokens" description="Empty = unlimited">
+        <input
+          type="number"
+          min={1}
+          value={maxTokensText()}
+          onBlur={handleMaxTokensChange}
+          onInput={(e) => setMaxTokensText((e.target as HTMLInputElement).value)}
+          class={`${inputClass} w-28 text-right`}
+          placeholder="Unlimited"
+        />
+      </SettingRow>
 
-        <Show when={error()}>
-          <tr>
-            <td colSpan={2} class="py-2 text-center text-red-400 text-xs">
-              {error()}
-            </td>
-          </tr>
-        </Show>
-
-        <Show when={!loading()}>
-          {/* Thinking Budget */}
-          <tr class="border-b border-neutral-700">
-            <td class={`py-3 ${labelClass}`}>
-              <div>Thinking Budget</div>
-              <div class="text-xs text-neutral-500">0–32768 tokens</div>
-            </td>
-            <td class="py-3 text-right">
-              <input
-                type="number"
-                min={0}
-                max={32768}
-                step={1024}
-                value={thinkingBudget() ?? ''}
-                onInput={handleBudgetChange}
-                class={`${inputClass} w-28 text-right`}
-                placeholder="Auto"
-              />
-            </td>
-          </tr>
-
-          {/* Temperature */}
-          <tr class="border-b border-neutral-700">
-            <td class={`py-3 ${labelClass}`}>
-              <div>Temperature</div>
-              <div class="text-xs text-neutral-500">{temperature().toFixed(1)}</div>
-            </td>
-            <td class="py-3 text-right flex items-center justify-end gap-2">
-              <span class="text-xs text-neutral-500">0</span>
-              <input
-                type="range"
-                min={0}
-                max={2}
-                step={0.1}
-                value={temperature()}
-                onInput={handleTemperatureChange}
-                class="w-32 accent-blue-500"
-              />
-              <span class="text-xs text-neutral-500">2</span>
-            </td>
-          </tr>
-
-          {/* Max Tokens */}
-          <tr class="border-b border-neutral-700">
-            <td class={`py-3 ${labelClass}`}>
-              <div>Max Tokens</div>
-              <div class="text-xs text-neutral-500">Empty = unlimited</div>
-            </td>
-            <td class="py-3 text-right">
-              <input
-                type="number"
-                min={1}
-                value={maxTokensText()}
-                onBlur={handleMaxTokensChange}
-                onInput={(e) => setMaxTokensText((e.target as HTMLInputElement).value)}
-                class={`${inputClass} w-28 text-right`}
-                placeholder="Unlimited"
-              />
-            </td>
-          </tr>
-
-          {/* Precognition */}
-          <tr class="border-b border-neutral-700">
-            <td class={`py-3 ${labelClass}`}>
-              <div>Precognition</div>
-              <div class="text-xs text-neutral-500">Auto-inject context</div>
-            </td>
-            <td class="py-3 text-right">
-              <button
-                onClick={handlePrecognitionToggle}
-                class={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  precognition() ? 'bg-blue-600' : 'bg-neutral-600'
-                }`}
-              >
-                <span
-                  class={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    precognition() ? 'translate-x-6' : 'translate-x-1'
-                  }`}
-                />
-              </button>
-            </td>
-          </tr>
-        </Show>
-      </Show>
-    </>
+      <SettingRow label="Precognition" description="Auto-inject context">
+        <button
+          onClick={handlePrecognitionToggle}
+          class={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+            precognition() ? 'bg-blue-600' : 'bg-neutral-600'
+          }`}
+        >
+          <span
+            class={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+              precognition() ? 'translate-x-6' : 'translate-x-1'
+            }`}
+          />
+        </button>
+      </SettingRow>
+    </SettingsSectionState>
   );
 };
 
@@ -334,77 +392,48 @@ const PluginsSection: Component = () => {
     }
   };
 
-  const labelClass = 'text-neutral-300 text-sm';
-
   return (
-    <>
-      <SectionHeader title="Plugins" icon="🔌" />
-
-      <Show when={!session.currentSession()}>
-        <tr>
-          <td colSpan={2} class="py-3 text-center text-neutral-500 text-sm">
-            No active session — start a chat to view plugins.
-          </td>
-        </tr>
-      </Show>
-
-      <Show when={session.currentSession()}>
-        <Show when={loading()}>
-          <tr>
-            <td colSpan={2} class="py-3 text-center text-neutral-500 text-sm">
-              Loading plugins…
+    <SettingsSectionState
+      title="Plugins"
+      icon="🔌"
+      loading={loading()}
+      error={error()}
+      loadingMessage="Loading plugins…"
+      requiresSession
+      hasSession={!!session.currentSession()}
+      noSessionMessage="No active session — start a chat to view plugins."
+      isEmpty={plugins().length === 0}
+      emptyMessage="No plugins discovered."
+    >
+      <For each={plugins()}>
+        {(plugin) => (
+          <tr class="border-b border-neutral-700">
+            <td class="py-2.5 text-neutral-300 text-sm">
+              <div class="flex items-center gap-2">
+                <span
+                  class={`inline-block w-2 h-2 rounded-full ${
+                    plugin.healthy === false ? 'bg-red-500' : 'bg-emerald-500'
+                  }`}
+                />
+                <div>
+                  <div class="text-sm">{plugin.name}</div>
+                  <div class="text-xs text-neutral-500">{plugin.plugin_type}</div>
+                </div>
+              </div>
+            </td>
+            <td class="py-2.5 text-right">
+              <button
+                onClick={() => handleReload(plugin.name)}
+                disabled={reloadingPlugin() === plugin.name}
+                class="px-2 py-1 text-xs rounded bg-neutral-700 hover:bg-neutral-600 text-neutral-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {reloadingPlugin() === plugin.name ? '↻' : 'Reload'}
+              </button>
             </td>
           </tr>
-        </Show>
-
-        <Show when={error()}>
-          <tr>
-            <td colSpan={2} class="py-2 text-center text-red-400 text-xs">
-              {error()}
-            </td>
-          </tr>
-        </Show>
-
-        <Show when={!loading() && plugins().length === 0}>
-          <tr>
-            <td colSpan={2} class="py-3 text-center text-neutral-500 text-sm">
-              No plugins discovered.
-            </td>
-          </tr>
-        </Show>
-
-        <Show when={!loading() && plugins().length > 0}>
-          <For each={plugins()}>
-            {(plugin) => (
-              <tr class="border-b border-neutral-700">
-                <td class={`py-2.5 ${labelClass}`}>
-                  <div class="flex items-center gap-2">
-                    <span
-                      class={`inline-block w-2 h-2 rounded-full ${
-                        plugin.healthy === false ? 'bg-red-500' : 'bg-emerald-500'
-                      }`}
-                    />
-                    <div>
-                      <div class="text-sm">{plugin.name}</div>
-                      <div class="text-xs text-neutral-500">{plugin.plugin_type}</div>
-                    </div>
-                  </div>
-                </td>
-                <td class="py-2.5 text-right">
-                  <button
-                    onClick={() => handleReload(plugin.name)}
-                    disabled={reloadingPlugin() === plugin.name}
-                    class="px-2 py-1 text-xs rounded bg-neutral-700 hover:bg-neutral-600 text-neutral-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {reloadingPlugin() === plugin.name ? '↻' : 'Reload'}
-                  </button>
-                </td>
-              </tr>
-            )}
-          </For>
-        </Show>
-      </Show>
-    </>
+        )}
+      </For>
+    </SettingsSectionState>
   );
 };
 
@@ -432,57 +461,29 @@ const McpStatusSection: Component = () => {
 
   onMount(loadStatus);
 
-  const labelClass = 'text-neutral-300 text-sm';
-
   return (
-    <>
-      <SectionHeader title="MCP Status" icon="🔗" />
-
-      <Show when={loading()}>
-        <tr>
-          <td colSpan={2} class="py-3 text-center text-neutral-500 text-sm">
-            Loading MCP status…
-          </td>
-        </tr>
-      </Show>
-
-      <Show when={error()}>
-        <tr>
-          <td colSpan={2} class="py-2">
-            <div class="text-center text-red-400 text-xs">{error()}</div>
-            <div class="text-center mt-1">
-              <button
-                onClick={loadStatus}
-                class="px-2 py-1 text-xs rounded bg-neutral-700 hover:bg-neutral-600 text-neutral-300 transition-colors"
-              >
-                Retry
-              </button>
-            </div>
-          </td>
-        </tr>
-      </Show>
-
-      <Show when={!loading() && !error() && status()}>
-        <For each={Object.entries(status()!)}>
-          {([key, value]) => (
-            <tr class="border-b border-neutral-700">
-              <td class={`py-2.5 ${labelClass}`}>{key}</td>
-              <td class="py-2.5 text-right text-sm text-neutral-400 max-w-[200px] truncate">
-                {typeof value === 'object' ? JSON.stringify(value) : String(value ?? '—')}
-              </td>
-            </tr>
-          )}
-        </For>
-      </Show>
-
-      <Show when={!loading() && !error() && !status()}>
-        <tr>
-          <td colSpan={2} class="py-3 text-center text-neutral-500 text-sm">
-            No MCP status available.
-          </td>
-        </tr>
-      </Show>
-    </>
+    <SettingsSectionState
+      title="MCP Status"
+      icon="🔗"
+      loading={loading()}
+      error={error()}
+      loadingMessage="Loading MCP status…"
+      onRetry={loadStatus}
+      hideContentOnError
+      isEmpty={!status()}
+      emptyMessage="No MCP status available."
+    >
+      <For each={Object.entries(status()!)}>
+        {([key, value]) => (
+          <tr class="border-b border-neutral-700">
+            <td class="py-2.5 text-neutral-300 text-sm">{key}</td>
+            <td class="py-2.5 text-right text-sm text-neutral-400 max-w-[200px] truncate">
+              {typeof value === 'object' ? JSON.stringify(value) : String(value ?? '—')}
+            </td>
+          </tr>
+        )}
+      </For>
+    </SettingsSectionState>
   );
 };
 

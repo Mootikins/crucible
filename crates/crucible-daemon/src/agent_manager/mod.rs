@@ -702,6 +702,7 @@ impl AgentManager {
     }
 }
 
+mod iter;
 mod messaging;
 mod models;
 mod precognition;

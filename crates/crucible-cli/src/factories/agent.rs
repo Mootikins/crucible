@@ -356,14 +356,14 @@ async fn create_new_daemon_session(
     recording_path: Option<&std::path::Path>,
 ) -> Result<String> {
     let result = client
-        .session_create(
-            "chat",
-            &config.kiln_path,
-            Some(workspace),
-            vec![],
-            recording_mode,
-            recording_path,
-        )
+        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+            session_type: "chat".to_string(),
+            kiln: config.kiln_path.clone(),
+            workspace: Some(workspace.to_path_buf()),
+            connect_kilns: vec![],
+            recording_mode: recording_mode.map(|m| m.to_string()),
+            recording_path: recording_path.map(|p| p.to_path_buf()),
+        })
         .await?;
 
     let session_id = result["session_id"]

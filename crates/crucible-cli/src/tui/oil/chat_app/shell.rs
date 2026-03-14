@@ -73,19 +73,7 @@ impl OilChatApp {
             ShellModalOutput::None => {}
             ShellModalOutput::Close(history_item) => {
                 self.save_shell_output();
-
-                self.message_queue.message_counter += 1;
-                self.container_list
-                    .add_shell_execution(CachedShellExecution::new(
-                        format!("shell-{}", self.message_queue.message_counter),
-                        &history_item.command,
-                        history_item.exit_code,
-                        history_item.output_tail,
-                        history_item.output_path,
-                    ));
-
-                self.shell_modal = None;
-                self.leave_alternate_screen();
+                self.finalize_shell_modal(history_item);
             }
             ShellModalOutput::InsertOutput { content, truncated } => {
                 let label = if truncated { " (truncated)" } else { "" };
@@ -202,17 +190,7 @@ impl OilChatApp {
 
     #[allow(dead_code)]
     pub(super) fn close_shell_modal_with_history(&mut self, history_item: ShellHistoryItem) {
-        self.message_queue.message_counter += 1;
-        self.container_list
-            .add_shell_execution(CachedShellExecution::new(
-                format!("shell-{}", self.message_queue.message_counter),
-                &history_item.command,
-                history_item.exit_code,
-                history_item.output_tail,
-                history_item.output_path,
-            ));
-        self.shell_modal = None;
-        self.leave_alternate_screen();
+        self.finalize_shell_modal(history_item);
     }
 
     pub(super) fn enter_alternate_screen(&mut self) {
@@ -226,6 +204,26 @@ impl OilChatApp {
         let _ = execute!(stdout, LeaveAlternateScreen, cursor::Show);
         let _ = std::io::Write::flush(&mut stdout);
         self.needs_full_redraw = true;
+    }
+
+    /// Update shell modal state after closing: increment counter, add execution.
+    fn update_shell_modal(&mut self, history_item: &ShellHistoryItem) {
+        self.message_queue.message_counter += 1;
+        self.container_list
+            .add_shell_execution(CachedShellExecution::new(
+                format!("shell-{}", self.message_queue.message_counter),
+                &history_item.command,
+                history_item.exit_code,
+                history_item.output_tail.clone(),
+                history_item.output_path.clone(),
+            ));
+    }
+
+    /// Finalize shell modal: update state and leave alternate screen.
+    fn finalize_shell_modal(&mut self, history_item: ShellHistoryItem) {
+        self.update_shell_modal(&history_item);
+        self.shell_modal = None;
+        self.leave_alternate_screen();
     }
 
     pub(super) fn save_shell_output(&mut self) -> Option<PathBuf> {

@@ -327,20 +327,19 @@ confirm_destructive = true
 verbose = false
 
 # =============================================================================
-# [database] - Database Configuration (Optional)
+# [storage] - Storage Configuration (Optional)
 # =============================================================================
-# Configure the SurrealDB database backend
+# The daemon is the only storage backend. Crucible uses SQLite for structured
+# data and LanceDB for vector storage. You typically don't need to configure
+# this section.
 #
-# By default, Crucible creates a database at KILN/.crucible/kiln.db
-# You typically don't need to configure this section.
+# Old `storage.mode` values (sqlite, lightweight, daemon) are silently
+# accepted for backward compatibility but have no effect.
 #
 # See Help/Config/storage.md for full documentation
 
-# [database]
-# type = "surrealdb"  # Only SurrealDB is currently supported
-# url = "rocksdb://KILN/.crucible/kiln.db"  # RocksDB backend (default)
-# max_connections = 10  # Connection pool size (optional)
-# timeout_seconds = 30  # Connection timeout (optional)
+# [storage]
+# idle_timeout_secs = 300  # Daemon auto-shutdown after idle (default: 5 min)
 
 # =============================================================================
 # [server] - Web Server Configuration (Optional)
@@ -393,7 +392,7 @@ verbose = false
 # [logging.component_levels]
 # crucible_core = "debug"
 # crucible_core::parser = "info"
-# crucible_surrealdb = "warn"
+# crucible_sqlite = "warn"
 #
 # # Formatting options
 # timestamps = true  # Include timestamps
@@ -414,7 +413,7 @@ verbose = false
 # =============================================================================
 # [discovery] - Discovery Paths Configuration (Optional)
 # =============================================================================
-# Configure where Crucible searches for Rune scripts (tools, hooks, events)
+# Configure where Crucible searches for Lua/Fennel scripts (tools, hooks, events)
 #
 # By default, Crucible searches:
 # - ~/.crucible/tools/, ~/.crucible/hooks/, ~/.crucible/events/
@@ -424,12 +423,12 @@ verbose = false
 # See examples/config/discovery.toml for detailed examples
 #
 # See Help/Extending/Custom Tools.md for writing custom tools
-# See Help/Extending/Creating Plugins.md for Rune scripting guide
+# See Help/Extending/Creating Plugins.md for Lua/Fennel scripting guide
 
 # [discovery]
 # # Configure discovery for each resource type (tools, hooks, events)
 #
-# # Tools: Rune scripts that expose MCP-compatible tools
+# # Tools: Lua/Fennel scripts that expose MCP-compatible tools
 # [discovery.type_configs.tools]
 # additional_paths = [
 #     "/opt/crucible/tools",           # System-wide tools
@@ -437,12 +436,12 @@ verbose = false
 # ]
 # use_defaults = true  # Also search default locations
 #
-# # Hooks: Rune scripts that intercept and transform tool operations
+# # Hooks: Lua/Fennel scripts that intercept and transform tool operations
 # [discovery.type_configs.hooks]
 # additional_paths = []
 # use_defaults = true
 #
-# # Events: Rune scripts that respond to system events
+# # Events: Lua/Fennel scripts that respond to system events
 # [discovery.type_configs.events]
 # additional_paths = []
 # use_defaults = true
@@ -608,7 +607,6 @@ verbose = false
 #
 # 4. **Testing**:
 #    - Use `cru config show` to see effective configuration
-#    - Use `cru config validate` to check for errors
 #    - Test changes with small datasets first
 #
 # 5. **Profiles**:

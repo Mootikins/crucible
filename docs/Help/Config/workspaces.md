@@ -28,13 +28,13 @@ Project-level settings:
 - Attached kilns
 - Provider restrictions
 
-### Kiln (`.crucible/config.toml` inside kiln)
+### Kiln (`.crucible/kiln.toml`)
 
-Content preferences only:
-- Embedding settings
-- LLM preferences
-- Hooks and discovery
+Kiln identity and metadata:
+- Kiln name
+- Data classification
 
+> **Backward compatibility:** Crucible still reads `.crucible/workspace.toml` as a read-only fallback if neither `project.toml` nor `kiln.toml` exists. New setups should use the split config files.
 ## Workspaces vs Kilns
 
 A **workspace** is where work happens—a project directory, repository, or development environment. It owns security policies.
