@@ -17,6 +17,7 @@ import type {
   ContextUsage,
   ChatMode,
 } from '@/lib/types';
+import type { ChatContextValue } from '@/lib/types/context';
 import {
   sendChatMessage,
   subscribeToEvents,
@@ -32,24 +33,6 @@ import { windowActions } from '@/stores/windowStore';
 import { createChatEventReducer } from './chatEventReducer';
 import { bootstrapSessionWithFallback } from './sessionBootstrap';
 
-export interface ChatContextValue {
-  messages: Accessor<Message[]>;
-  isLoading: Accessor<boolean>;
-  isStreaming: Accessor<boolean>;
-  pendingInteraction: Accessor<InteractionRequest | null>;
-  error: Accessor<string | null>;
-  activeTools: Accessor<ToolCallDisplay[]>;
-  subagentEvents: Accessor<SubagentEvent[]>;
-  contextUsage: Accessor<ContextUsage | null>;
-  chatMode: Accessor<ChatMode>;
-  isLoadingHistory: Accessor<boolean>;
-  setChatMode: (mode: ChatMode) => void;
-  sendMessage: (content: string) => Promise<void>;
-  respondToInteraction: (response: InteractionResponse) => Promise<void>;
-  clearMessages: () => void;
-  cancelStream: () => Promise<void>;
-  addSystemMessage: (content: string) => void;
-}
 
 interface ChatProviderProps {
   sessionId: string;

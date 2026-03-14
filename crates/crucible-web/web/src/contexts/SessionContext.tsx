@@ -8,6 +8,7 @@ import {
 } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import type { Session, CreateSessionParams, ProviderInfo } from '@/lib/types';
+import type { SessionContextValue } from '@/lib/types/context';
 import {
   createSession as apiCreateSession,
   listSessions as apiListSessions,
@@ -29,30 +30,6 @@ import { notificationActions } from '@/stores/notificationStore';
 import { findTabBySessionId } from '@/lib/session-actions';
 import { windowActions } from '@/stores/windowStore';
 
-export interface SessionContextValue {
-  currentSession: Accessor<Session | null>;
-  sessions: Accessor<Session[]>;
-  isLoading: Accessor<boolean>;
-  error: Accessor<string | null>;
-  availableModels: Accessor<string[]>;
-  providers: Accessor<ProviderInfo[]>;
-  selectedProvider: Accessor<ProviderInfo | null>;
-  createSession: (params: CreateSessionParams) => Promise<Session>;
-  selectSession: (id: string) => Promise<void>;
-  refreshSessions: (filters?: { kiln?: string; workspace?: string; includeArchived?: boolean }) => Promise<void>;
-  pauseSession: () => Promise<void>;
-  resumeSession: () => Promise<void>;
-  endSession: () => Promise<void>;
-  cancelCurrentOperation: () => Promise<boolean>;
-  switchModel: (modelId: string) => Promise<void>;
-  refreshModels: () => Promise<void>;
-  setSessionTitle: (title: string) => Promise<void>;
-  refreshProviders: () => Promise<void>;
-  selectProvider: (providerType: string) => void;
-  deleteSession: (sessionId: string) => Promise<void>;
-  archiveSession: (sessionId: string) => Promise<void>;
-  unarchiveSession: (sessionId: string) => Promise<void>;
-}
 
 interface SessionProviderProps {
   initialKiln?: string;
