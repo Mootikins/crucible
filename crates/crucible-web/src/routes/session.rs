@@ -68,7 +68,6 @@ fn default_session_type() -> String {
     "chat".to_string()
 }
 
-
 /// Validate that an endpoint URL is safe (no SSRF to internal networks).
 fn validate_endpoint(endpoint: &str) -> Result<(), WebError> {
     let url = reqwest::Url::parse(endpoint)
@@ -139,11 +138,7 @@ async fn create_session(
         (Some(p), Some(m)) => (p, m),
         (p_opt, m_opt) => {
             // Resolve from detected providers
-            let providers = state
-                .daemon
-                .list_providers(None)
-                .await
-                .unwrap_or_default();
+            let providers = state.daemon.list_providers(None).await.unwrap_or_default();
             let first = providers.into_iter().find(|p| p.available);
             let default_p = first
                 .as_ref()
@@ -919,7 +914,6 @@ async fn execute_command(
 struct ListProvidersQuery {
     kiln: Option<PathBuf>,
 }
-
 
 async fn list_providers(
     State(state): State<AppState>,

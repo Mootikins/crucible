@@ -707,7 +707,9 @@ async fn test_list_models_includes_env_discovered_providers() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn test_list_models_classification_filters_env_providers() {
-    use crucible_config::{BackendType, DataClassification, LlmConfig, LlmProviderConfig, TrustLevel};
+    use crucible_config::{
+        BackendType, DataClassification, LlmConfig, LlmProviderConfig, TrustLevel,
+    };
     use std::collections::HashMap;
 
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
