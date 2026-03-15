@@ -550,7 +550,20 @@ impl OilChatRunner {
                 }
 
                 Some(interaction_event) = Self::next_interaction_event(&mut params.interaction_rx) => {
-                    Self::handle_interaction_event(params.app, interaction_event);
+                    let action = Self::handle_interaction_event(params.app, interaction_event);
+                    // Process autoconfirm actions through the async path so
+                    // interaction_respond is called on the agent handle.
+                    if matches!(action, Action::Send(_)) {
+                        let _ = self.process_action(ProcessActionParams {
+                            action,
+                            app: params.app,
+                            agent: params.agent,
+                            bridge: params.bridge,
+                            active_stream: &mut active_stream,
+                            msg_tx: &params.msg_tx,
+                            background_tasks: params.background_tasks,
+                        }).await;
+                    }
                     EventLoopSelectOutcome::Continue
                 }
 
@@ -862,7 +875,7 @@ impl OilChatRunner {
     fn handle_interaction_event(
         app: &mut OilChatApp,
         interaction_event: crucible_core::interaction::InteractionEvent,
-    ) {
+    ) -> Action<ChatAppMsg> {
         tracing::info!(
             request_id = %interaction_event.request_id,
             kind = %interaction_event.request.kind(),
@@ -873,7 +886,9 @@ impl OilChatRunner {
             request: interaction_event.request,
         };
         if let Some(msg) = Self::handle_session_event(session_event) {
-            let _ = app.on_message(msg);
+            app.on_message(msg)
+        } else {
+            Action::Continue
         }
     }
 
