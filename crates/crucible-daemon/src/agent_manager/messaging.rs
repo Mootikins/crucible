@@ -1074,6 +1074,31 @@ impl AgentManager {
                     }
                 }
                 Err(e) => {
+                    // When continue_with_tool_results is not supported (e.g. ACP agents)
+                    // and we already have accumulated response text, treat it as a graceful
+                    // completion rather than an error.
+                    if matches!(&e, crucible_core::traits::chat::ChatError::NotSupported(_))
+                        && !accumulated_response.trim().is_empty()
+                    {
+                        warn!(
+                            session_id = %stream_ctx.session_id,
+                            error = %e,
+                            "Tool continuation not supported, completing with accumulated response"
+                        );
+                        // Create a synthetic terminal chunk so message_complete is emitted
+                        terminal_chunk = Some(crucible_core::traits::chat::ChatChunk {
+                            delta: String::new(),
+                            done: true,
+                            reasoning: None,
+                            usage: None,
+                            tool_calls: None,
+                            tool_results: None,
+                            precognition_notes: None,
+                            precognition_notes_count: None,
+                            subagent_events: None,
+                        });
+                        break;
+                    }
                     error!(session_id = %stream_ctx.session_id, error = %e, "Agent stream error");
                     if !emit_event(
                         &stream_ctx.event_tx,
