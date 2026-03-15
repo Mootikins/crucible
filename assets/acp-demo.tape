@@ -16,6 +16,11 @@ Set Padding 20
 Set TypingSpeed 60ms
 Set PlaybackSpeed 4
 
+Type "cru chat -a claude"
+Hide
+Ctrl+U
 Type "cru chat --replay assets/fixtures/acp-demo.jsonl --replay-auto-exit 0"
 Enter
-Sleep 20s
+Sleep 3s
+Show
+Sleep 52s
