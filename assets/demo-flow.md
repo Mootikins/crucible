@@ -24,7 +24,7 @@
 Shows Crucible version and kiln statistics to establish what Crucible is.
 
 ```bash
-$ cru --version && cru stats -C assets/demo-config.toml --no-process
+$ cru --version && cru stats -C assets/demo-config.toml
 cru 0.1.0
 📊 Kiln Statistics
 📁 Total files: 189
@@ -37,39 +37,41 @@ cru 0.1.0
 **What it demonstrates:**
 - Crucible CLI version and basic commands
 - Kiln statistics (155 markdown files in docs/)
-- Quick startup with `--no-process` flag
+- Quick startup
 
 ---
 
 ### Scene 2: Hero / Chat (`demo.tape` → `demo.gif`)
 
-**Duration:** ~18.48s | **Size:** 1.76MB | **Config:** `demo-config.toml`
+**Duration:** ~16s | **Size:** 1.76MB | **Config:** `demo-config.toml`
 
-Interactive chat session with internal Rig agent asking about wikilinks and knowledge graphs.
+Multi-turn feature showcase: 3 exchanges covering wikilinks/knowledge graph, semantic search, and Lua plugins.
 
 ```bash
-$ cru chat -C assets/demo-config.toml --no-process
+$ cru chat -C assets/demo-config.toml
 > How does Crucible use wikilinks to build a knowledge graph?
+> Show me how semantic search works in Crucible
+> What can Lua plugins do in Crucible?
 ```
 
 **What it demonstrates:**
 - Chat TUI launching with NORMAL mode
-- Streaming markdown response from LLM
-- Knowledge graph explanation with wikilink syntax examples
+- Streaming markdown responses from LLM across 3 exchanges
+- Knowledge graph, semantic search, and plugin explanations
 - Session persistence and response formatting
 
-**Agent:** Internal Rig agent (Ollama `qwen3-4b-instruct-2507-q8_0`) — the default when no `-a` flag is provided
+**Agent:** Internal Rig agent (`glm-4.7-flash-iq4` via OpenAI-compatible endpoint) — the default when no `-a` flag is provided
 
 ---
 
 ### Scene 3: ACP Agent (`acp-demo.tape` → `acp-demo.gif`)
 
-**Duration:** ~19.8s | **Size:** 86KB | **Config:** `demo-acp-config.toml`
+**Duration:** ~48s | **Size:** 86KB | **Config:** `demo-acp-config.toml`
 
 Crucible chat with Claude Code via Agent Context Protocol (ACP), demonstrating external agent integration.
 
 ```bash
-$ cru chat -a claude --no-process --set perm.autoconfirm_session
+$ cru chat -a claude -C assets/demo-acp-config.toml --set perm.autoconfirm_session
 > How does ACP differ from MCP, and how does Crucible use both?
 ```
 
@@ -85,22 +87,22 @@ $ cru chat -a claude --no-process --set perm.autoconfirm_session
 
 ### Scene 4: Cross-Agent Delegation (`delegation-demo.tape` → `delegation-demo.gif`)
 
-**Duration:** ~18.6s | **Size:** 104KB | **Config:** `demo-acp-config.toml`
+**Duration:** ~48s | **Size:** 104KB | **Config:** `demo-acp-config.toml`
 
-Claude delegating a task to Cursor via the `delegate_session` tool, demonstrating multi-agent orchestration.
+Claude delegating a task to OpenCode via the `delegate_session` tool, demonstrating multi-agent orchestration.
 
 ```bash
-$ cru chat -a claude -C assets/demo-acp-config.toml --no-process --set perm.autoconfirm_session
-> Use the delegate_session tool to ask cursor to explain what the Agent Client Protocol is based on the codebase.
+$ cru chat -a claude -C assets/demo-acp-config.toml --set perm.autoconfirm_session
+> Use the delegate_session tool to ask opencode to explain what the Agent Client Protocol is based on the codebase.
 ```
 
 **What it demonstrates:**
 - Multi-agent orchestration via delegation
-- Claude using `delegate_session` tool to spawn Cursor
+- Claude using `delegate_session` tool to spawn OpenCode
 - Cross-agent knowledge graph access
 - ACP delegation configuration in `demo-acp-config.toml`
 
-**Agents:** Claude Code (primary) → Cursor (delegated)
+**Agents:** Claude Code (primary) → OpenCode (delegated)
 
 ---
 
@@ -111,9 +113,9 @@ $ cru chat -a claude -C assets/demo-acp-config.toml --no-process --set perm.auto
 Used by Scene 1 and Scene 2 (internal chat).
 
 - **Kiln:** `docs/` (155 markdown files)
-- **LLM:** `qwen3-4b-instruct-2507-q8_0` via Ollama at `https://llm.example.com`
+- **LLM:** `glm-4.7-flash-iq4` via `openai` provider type (OpenAI-compatible endpoint at `https://llm.example.com/v1`)
 - **Storage:** Embedded (no daemon needed)
-- **Flags:** `--no-process` for faster startup (skips file embedding)
+- **Flags:** None (Precognition enabled by default)
 
 ### `demo-acp-config.toml`
 
@@ -121,8 +123,8 @@ Used by Scene 3 and Scene 4 (ACP agents).
 
 - **Kiln:** `docs/` (155 markdown files)
 - **ACP Agents:** Claude Code with delegation settings
-- **Delegation:** `[acp.agents.claude.delegation]` configured for Cursor
-- **Flags:** `--no-process` for faster startup
+- **Delegation:** `[acp.agents.claude.delegation]` configured for OpenCode
+- **Flags:** None (Precognition enabled by default)
 
 ---
 
@@ -147,11 +149,11 @@ cru chat --record assets/fixtures/demo.jsonl -C assets/demo-config.toml
 # Note: Precognition requires pre-processed kiln. Run `cru process -C assets/demo-config.toml` before recording if vectors don't exist.
 
 # Record acp-demo fixture (Claude Code via ACP)
-cru chat --record assets/fixtures/acp-demo.jsonl -a claude --no-process --set perm.autoconfirm_session
+cru chat --record assets/fixtures/acp-demo.jsonl -a claude -C assets/demo-acp-config.toml --set perm.autoconfirm_session
 # Type your query and press Ctrl+C
 
-# Record delegation-demo fixture (Claude delegating to Cursor)
-cru chat --record assets/fixtures/delegation-demo.jsonl -a claude -C assets/demo-acp-config.toml --no-process --set perm.autoconfirm_session
+# Record delegation-demo fixture (Claude delegating to OpenCode)
+cru chat --record assets/fixtures/delegation-demo.jsonl -a claude -C assets/demo-acp-config.toml --set perm.autoconfirm_session
 # Type your delegation query and press Ctrl+C
 ```
 
@@ -159,7 +161,6 @@ The recording is saved directly to the specified path and ready for GIF generati
 
 **Notes on recording:**
 - `--record <path>` records the session to the specified JSONL file
-- `--no-process` skips file embedding on startup (faster recording)
 - `--set perm.autoconfirm_session` auto-confirms session creation for unattended recording
 - Fixtures must exist before GIF generation (see below)
 
@@ -191,9 +192,20 @@ This runs VHS on each `.tape` file, which replays the corresponding JSONL fixtur
 
 **Notes:**
 - GIF generation is deterministic once fixtures are recorded
-- If the Ollama endpoint is unavailable, overview GIF still works (`--no-process`)
-- The `--no-process` flag skips file embedding on startup (faster, but no Precognition/auto-RAG)
-- To enable Precognition context injection, remove `--no-process` from recording (adds ~20s startup for 155 files)
+- If the Ollama endpoint is unavailable, overview GIF still works
+- Precognition is enabled by default (embeddings must be pre-processed via `cru process`)
+- To skip Precognition context injection, omit the kiln config
+
+### Hide/Show Pattern
+
+VHS tapes use `Hide`/`Show` to mask the `--replay` flag. The viewer sees `cru chat` being typed; the actual replay command is hidden. This keeps the demo looking natural while ensuring deterministic playback.
+
+## Validation
+
+Run `just demo-validate` to check all fixtures for quality:
+- Response completeness (message_complete events present)
+- Expected keywords present (golden reference files in `assets/fixtures/golden/`)
+- No factual negation patterns detected
 
 ## Regenerating Assets (Legacy)
 
