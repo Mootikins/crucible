@@ -17,9 +17,9 @@ This makes demo recording **deterministic** — no waiting for LLM latency, no v
 
 | Fixture | Demo | Description |
 |---------|------|-------------|
-| `demo.jsonl` | `demo.gif` | Internal Rig agent explaining wikilinks and knowledge graphs |
+| `demo.jsonl` | `demo.gif` | Multi-turn feature showcase: wikilinks/knowledge graph, semantic search, and Lua plugins (3 exchanges) |
 | `acp-demo.jsonl` | `acp-demo.gif` | Claude Code via ACP discussing ACP vs MCP |
-| `delegation-demo.jsonl` | `delegation-demo.gif` | Claude delegating to Cursor via `delegate_session` tool |
+| `delegation-demo.jsonl` | `delegation-demo.gif` | Claude delegating to OpenCode via `delegate_session` tool |
 
 ## Recording New Fixtures
 
@@ -121,10 +121,23 @@ If you need to update a fixture (e.g., to fix a response or add new content):
    just demo <name>
    ```
 
+## Validation
+
+Use `just demo-validate` to verify fixture quality:
+
+```bash
+just demo-validate
+```
+
+This checks all fixtures for:
+- `message_complete` events (response completeness)
+- Expected keywords (from `assets/fixtures/golden/*.keywords`)
+- No factual negation patterns
+
 ## Notes
 
 - Fixtures must exist **before** running VHS to generate GIFs
 - Recording requires a working LLM provider (Ollama, Claude, etc.)
 - Fixture file sizes vary based on response length and tool usage
 - Fixtures are version-controlled in git (they're deterministic snapshots)
-- To enable Precognition (auto-RAG), remove `--no-process` from the tape's launch command
+- Precognition is enabled by default (embeddings must be pre-processed via `cru process`)
