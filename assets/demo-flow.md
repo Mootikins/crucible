@@ -1,19 +1,74 @@
 # Crucible Demo Flow
 
 > Reproducible demo scenarios for README and documentation.
-> All assets generated with [VHS](https://github.com/charmbracelet/vhs) v0.10.0.
+> All assets generated with the **programmatic session pipeline** and **asciinema+agg** (VHS deprecated).
 
-## Terminal Settings
+## Recording Pipeline
+
+### Programmatic Session Recording
+
+Demos are recorded using a **programmatic pipeline** that creates sessions, sends messages, and captures recordings deterministically:
+
+```bash
+# Step 1: Create session with recording enabled
+export OPENAI_API_KEY=dummy
+SESSION_ID=$(cru session create --recording-mode granular -C assets/demo-config.toml 2>&1 | grep "Created session" | awk '{print $NF}')
+
+# Step 2: Configure agent (if not auto-configured by -C flag)
+cru session configure "$SESSION_ID" --provider openai --model qwen3-32b-ud-q4_k_xl --endpoint https://llama.krohnos.io/v1
+
+# Step 3: Send message (blocks until complete)
+cru session send "$SESSION_ID" "How does the wikilink knowledge graph work in Crucible?" --raw
+
+# Step 4: Extract recording
+RECORDING=$(find docs/.crucible/sessions/$SESSION_ID -name "recording.jsonl")
+cp "$RECORDING" assets/fixtures/demo.jsonl
+
+# Step 5: Capture GIF from fixture
+bash scripts/record-gif.sh assets/fixtures/demo.jsonl assets/demo.gif --speed 5
+```
+
+**Key points:**
+- Sessions are created with `--recording-mode granular` to capture all events
+- Recording file is written to `docs/.crucible/sessions/<session-id>/recording.jsonl` (inside the kiln directory)
+- `cru session send` blocks until the message is complete, ensuring full response is captured
+- Fixtures are copied to `assets/fixtures/` for version control and reproducible GIF generation
+- GIF capture uses `scripts/record-gif.sh` which wraps tmux + asciinema + agg
+
+### GIF Capture Tool
+
+The `scripts/record-gif.sh` script replaces VHS (which hangs on Chrome 145 with go-rod). It uses:
+
+- **asciinema**: Records terminal session to `.cast` format
+- **agg**: Converts `.cast` to GIF with dracula theme
+- **tmux**: Provides real PTY for TUI rendering
+
+```bash
+bash scripts/record-gif.sh <fixture.jsonl> <output.gif> [--speed N]
+```
+
+**Example:**
+```bash
+bash scripts/record-gif.sh assets/fixtures/demo.jsonl assets/demo.gif --speed 5
+```
+
+**Terminal settings:**
+- Size: 120x35 characters
+- Font size: 16px
+- Theme: dracula (dark, matches docs-site)
+- Idle timeout: 3 seconds
+
+## Terminal Settings (Legacy VHS Reference)
 
 | Setting | Value |
 |---------|-------|
-| Emulator | VHS v0.10.0 (headless ttyd) |
-| Width | 1200px (overview: 960px) |
-| Height | 700px (overview: 540px) |
-| Font Size | 16px (overview: 18px) |
-| Theme | Firewatch |
-| Window Bar | Colorful (macOS-style traffic lights) |
+| Emulator | asciinema + agg (replaces VHS v0.10.0) |
+| Width | 120 chars (1200px equivalent) |
+| Height | 35 chars (700px equivalent) |
+| Font Size | 16px |
+| Theme | dracula |
 | Shell | bash |
+| Recording | Programmatic session pipeline |
 
 ## Demo Scenes
 
@@ -45,24 +100,23 @@ cru 0.1.0
 
 **Duration:** ~30s | **Size:** ~2MB | **Config:** `demo-config.toml`
 
-Multi-turn feature showcase: 3 exchanges covering wikilinks/knowledge graph, semantic search, and Lua plugins.
+Single-turn feature showcase: wikilink knowledge graph with Precognition context injection.
 
 ```bash
 $ cru chat -C assets/demo-config.toml
-> How does the wikilink knowledge graph work?
-> How does block-level semantic search work?
-> What can I build with the Lua plugin system?
+> How does the wikilink knowledge graph work in Crucible?
 ```
 
 **What it demonstrates:**
 - Chat TUI launching with NORMAL mode
-- Streaming markdown responses from LLM across 3 exchanges
-- Knowledge graph, semantic search, and plugin explanations
+- Streaming markdown response from LLM
+- **Precognition context injection** — top-5 relevant notes from knowledge graph automatically injected before LLM call
+- Knowledge graph structure and semantic search capabilities
 - Session persistence and response formatting
 
 **Agent:** Internal Rig agent (`qwen3-32b-ud-q4_k_xl` via OpenAI-compatible endpoint) — the default when no `-a` flag is provided
 
-**Replay timing:** Fixture is ~252s real-time, compressed via `--replay-speed 5` during VHS capture for a readable GIF duration.
+**Recording:** Programmatic session pipeline (see above). Fixture: `assets/fixtures/demo.jsonl` (39KB, 1 exchange, 1 precognition_complete, 71 text_delta, 188 thinking events). Recorded 2026-03-15.
 
 ---
 
@@ -80,10 +134,13 @@ $ cru chat -a claude -C assets/demo-acp-config.toml --set perm.autoconfirm_sessi
 **What it demonstrates:**
 - ACP agent integration (Claude Code)
 - External LLM with access to Crucible's knowledge base
+- Tool calls (Claude can read files and search knowledge graph)
 - Streaming response from Claude
 - Session auto-confirmation for unattended recording
 
 **Agent:** Claude Code (via ACP)
+
+**Recording:** Programmatic session pipeline. Fixture: `assets/fixtures/acp-demo.jsonl` (65KB, 1 exchange, 4 tool_call, 1 precognition_complete, 227 text_delta).
 
 ---
 
@@ -106,6 +163,8 @@ $ cru chat -a claude -C assets/demo-acp-config.toml --set perm.autoconfirm_sessi
 
 **Agents:** Claude Code (primary) → OpenCode (delegated)
 
+**Recording:** Programmatic session pipeline. Fixture: `assets/fixtures/delegation-demo.jsonl` (4.2KB, 1 exchange, 1 tool_call, 18 text_delta).
+
 ---
 
 ## Configuration Files
@@ -117,6 +176,7 @@ Used by Scene 1 and Scene 2 (internal chat).
 - **Kiln:** `docs/` (155 markdown files)
 - **LLM:** `qwen3-32b-ud-q4_k_xl` via `openai` provider type (OpenAI-compatible endpoint at `https://llama.krohnos.io/v1`)
 - **Storage:** Embedded (no daemon needed)
+- **Recording:** Sessions recorded to `docs/.crucible/sessions/<id>/recording.jsonl`
 - **Flags:** None (Precognition enabled by default)
 
 ### `demo-acp-config.toml`
@@ -126,44 +186,44 @@ Used by Scene 3 and Scene 4 (ACP agents).
 - **Kiln:** `docs/` (155 markdown files)
 - **ACP Agents:** Claude Code with delegation settings
 - **Delegation:** `[acp.agents.claude.delegation]` configured for OpenCode
+- **Recording:** Sessions recorded to `docs/.crucible/sessions/<id>/recording.jsonl`
 - **Flags:** None (Precognition enabled by default)
 
 ---
 
 ## Replay-Based Pipeline
 
-The demo GIFs are generated deterministically from pre-recorded JSONL fixtures using VHS. This replaces the old workflow of running live LLM sessions during recording.
+The demo GIFs are generated deterministically from pre-recorded JSONL fixtures using the programmatic session pipeline and asciinema+agg. This replaces the old workflow of running live LLM sessions during recording.
 
 ### Fixture Location
 
 Fixtures are stored in `assets/fixtures/` as JSONL files (one JSON object per line, representing recorded chat events).
 
-### Recording Fixtures
+### Recording Fixtures (Programmatic)
 
-The `--record` flag accepts a path argument and records the session directly to that file.
-
-To record a new fixture:
+The programmatic pipeline creates sessions, sends messages, and captures recordings:
 
 ```bash
-# Record demo fixture (internal Rig agent)
-cru chat --record assets/fixtures/demo.jsonl -C assets/demo-config.toml
-# Type your query, interact with the chat, and press Ctrl+C to stop recording
-# Note: Precognition requires pre-processed kiln. Run `cru process -C assets/demo-config.toml` before recording if vectors don't exist.
+# Create session with recording enabled
+export OPENAI_API_KEY=dummy
+SESSION_ID=$(cru session create --recording-mode granular -C assets/demo-config.toml 2>&1 | grep "Created session" | awk '{print $NF}')
 
-# Record acp-demo fixture (Claude Code via ACP)
-cru chat --record assets/fixtures/acp-demo.jsonl -a claude -C assets/demo-acp-config.toml --set perm.autoconfirm_session
-# Type your query and press Ctrl+C
+# Configure agent if needed
+cru session configure "$SESSION_ID" --provider openai --model qwen3-32b-ud-q4_k_xl --endpoint https://llama.krohnos.io/v1
 
-# Record delegation-demo fixture (Claude delegating to OpenCode)
-cru chat --record assets/fixtures/delegation-demo.jsonl -a claude -C assets/demo-acp-config.toml --set perm.autoconfirm_session
-# Type your delegation query and press Ctrl+C
+# Send message (blocks until complete)
+cru session send "$SESSION_ID" "Your query here" --raw
+
+# Extract recording
+RECORDING=$(find docs/.crucible/sessions/$SESSION_ID -name "recording.jsonl")
+cp "$RECORDING" assets/fixtures/demo.jsonl
 ```
 
-The recording is saved directly to the specified path and ready for GIF generation.
-
 **Notes on recording:**
-- `--record <path>` records the session to the specified JSONL file
-- `--set perm.autoconfirm_session` auto-confirms session creation for unattended recording
+- `--recording-mode granular` captures all events (user_message, text_delta, tool_call, precognition_complete, etc.)
+- Recording is written to `docs/.crucible/sessions/<id>/recording.jsonl` (inside the kiln directory)
+- `cru session send` blocks until the message is complete
+- `--raw` flag outputs raw JSON events (useful for debugging)
 - Fixtures must exist before GIF generation (see below)
 
 ### Headless Replay
@@ -180,11 +240,11 @@ cru session replay assets/fixtures/demo.jsonl --speed 0 --raw
 
 ### Replay Speed for GIF Generation
 
-The `--replay-speed` flag on `cru chat --replay` controls how fast events are emitted relative to real-time. This is separate from VHS's `PlaybackSpeed` which controls GIF frame rate.
+The `--replay-speed` flag on `cru chat --replay` controls how fast events are emitted relative to real-time. This is separate from agg's frame rate.
 
-For long fixtures, combine both:
-- `--replay-speed 5` compresses a 252s fixture to ~50s of real-time playback
-- VHS `PlaybackSpeed 2` then makes the GIF ~25s
+For long fixtures, use `--speed` parameter in `record-gif.sh`:
+- `--speed 5` compresses a 60s fixture to ~12s of real-time playback
+- agg then renders at normal frame rate
 
 ### Regenerating GIFs
 
@@ -192,13 +252,13 @@ Once fixtures are recorded, regenerate GIFs deterministically:
 
 ```bash
 # Generate a single GIF from its fixture
-just demo demo
+bash scripts/record-gif.sh assets/fixtures/demo.jsonl assets/demo.gif --speed 5
 
 # Generate all demo GIFs
 just demo-all
 ```
 
-This runs VHS on each `.tape` file, which replays the corresponding JSONL fixture and captures the terminal output as a GIF.
+This runs the programmatic pipeline: replay fixture → capture with asciinema → convert to GIF with agg.
 
 **Notes:**
 - GIF generation is deterministic once fixtures are recorded
@@ -206,7 +266,7 @@ This runs VHS on each `.tape` file, which replays the corresponding JSONL fixtur
 - Precognition is enabled by default (embeddings must be pre-processed via `cru process`)
 - To skip Precognition context injection, omit the kiln config
 
-### Hide/Show Pattern
+### Hide/Show Pattern (Legacy)
 
 VHS tapes use `Hide`/`Show` to mask the `--replay` flag. The viewer sees `cru chat` being typed; the actual replay command is hidden. This keeps the demo looking natural while ensuring deterministic playback.
 
@@ -222,20 +282,19 @@ bash scripts/validate-demos.sh
 - Expected keywords present (golden reference files in `assets/fixtures/golden/`)
 - No factual negation patterns detected
 
-## Regenerating Assets (Legacy)
+## Regenerating Assets (Legacy VHS)
 
-For manual VHS recording without fixtures:
+For reference, the old VHS-based workflow is no longer used:
 
 ```bash
-# Generate all GIFs (requires live LLM sessions)
+# OLD: Generate all GIFs with VHS (DEPRECATED — Chrome 145 hangs)
 vhs assets/overview.tape
 vhs assets/demo.tape
 vhs assets/acp-demo.tape
 vhs assets/delegation-demo.tape
 ```
 
-**Notes:**
-- LLM responses vary between recordings — timing may need adjustment
-- If the Ollama endpoint is unavailable, overview GIF still works
-
-
+**Why VHS was deprecated:**
+- Chrome 145 + go-rod timing issues (no bundled Chromium)
+- Unreliable terminal capture
+- Replaced by asciinema+agg pipeline

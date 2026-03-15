@@ -17,30 +17,35 @@ This makes demo recording **deterministic** — no waiting for LLM latency, no v
 
 | Fixture | Demo | Description |
 |---------|------|-------------|
-| `demo.jsonl` | `demo.gif` | Multi-turn feature showcase: wikilinks/knowledge graph, semantic search, and Lua plugins (3 exchanges) |
+| `demo.jsonl` | `demo.gif` | Single-turn feature showcase: wikilinks/knowledge graph with Precognition context injection (1 exchange) |
 | `acp-demo.jsonl` | `acp-demo.gif` | Claude Code via ACP discussing ACP vs MCP |
 | `delegation-demo.jsonl` | `delegation-demo.gif` | Claude delegating to OpenCode via `delegate_session` tool |
 
 ## Recording New Fixtures
 
-Recording is daemon-managed. The `--record` flag accepts a path argument and records the session to that file.
+Recording uses the **programmatic session pipeline**. Create a session, send a message, and extract the recording:
 
 ```bash
-# Start a chat session with recording enabled
-cru chat --record assets/fixtures/<name>.jsonl [agent flags]
+# Create session with recording enabled
+export OPENAI_API_KEY=dummy
+SESSION_ID=$(cru session create --recording-mode granular -C assets/demo-config.toml 2>&1 | grep "Created session" | awk '{print $NF}')
 
-# Example: Record with Claude Code
-cru chat --record assets/fixtures/demo.jsonl -a claude
+# Configure agent if needed
+cru session configure "$SESSION_ID" --provider openai --model qwen3-32b-ud-q4_k_xl --endpoint https://llama.krohnos.io/v1
 
-# Example: Record with internal Rig agent
-cru chat --record assets/fixtures/demo.jsonl -C assets/demo-config.toml
+# Send message (blocks until complete)
+cru session send "$SESSION_ID" "Your query here" --raw
+
+# Extract recording
+RECORDING=$(find docs/.crucible/sessions/$SESSION_ID -name "recording.jsonl")
+cp "$RECORDING" assets/fixtures/demo.jsonl
 ```
 
-Interact normally, type queries, use tools, etc. When you exit, the recording is saved to the specified path. You can then use it to regenerate GIFs:
+Then regenerate the GIF:
 
 ```bash
 # Regenerate GIF from the fixture
-just demo <name>
+bash scripts/record-gif.sh assets/fixtures/demo.jsonl assets/demo.gif --speed 5
 ```
 
 ## Regenerating GIFs
@@ -52,17 +57,12 @@ Once fixtures exist, regenerate GIFs deterministically:
 just demo-all
 
 # Regenerate a single demo
-just demo demo
-just demo acp-demo
-just demo delegation-demo
-
-# Or use VHS directly
-vhs assets/demo.tape
-vhs assets/acp-demo.tape
-vhs assets/delegation-demo.tape
+bash scripts/record-gif.sh assets/fixtures/demo.jsonl assets/demo.gif --speed 5
+bash scripts/record-gif.sh assets/fixtures/acp-demo.jsonl assets/acp-demo.gif --speed 5
+bash scripts/record-gif.sh assets/fixtures/delegation-demo.jsonl assets/delegation-demo.gif --speed 5
 ```
 
-The VHS tapes reference fixtures via `--replay` and `--replay-auto-exit`, ensuring consistent output across runs.
+The `record-gif.sh` script replays the fixture and captures the terminal output as a GIF using asciinema+agg.
 
 ## Fixture Format
 
@@ -108,17 +108,19 @@ If you need to update a fixture (e.g., to fix a response or add new content):
    rm assets/fixtures/<name>.jsonl
    ```
 
-2. **Record a new one:**
+2. **Record a new one using the programmatic pipeline:**
    ```bash
-   cru chat --record [agent flags]
-   # interact, then exit
-   cru session list
-   cp ~/.crucible/sessions/<session-id>/recording.jsonl assets/fixtures/<name>.jsonl
+   export OPENAI_API_KEY=dummy
+   SESSION_ID=$(cru session create --recording-mode granular -C assets/demo-config.toml 2>&1 | grep "Created session" | awk '{print $NF}')
+   cru session configure "$SESSION_ID" --provider openai --model qwen3-32b-ud-q4_k_xl --endpoint https://llama.krohnos.io/v1
+   cru session send "$SESSION_ID" "Your query" --raw
+   RECORDING=$(find docs/.crucible/sessions/$SESSION_ID -name "recording.jsonl")
+   cp "$RECORDING" assets/fixtures/<name>.jsonl
    ```
 
 3. **Regenerate the GIF:**
    ```bash
-   just demo <name>
+   bash scripts/record-gif.sh assets/fixtures/<name>.jsonl assets/<name>.gif --speed 5
    ```
 
 ## Validation
@@ -136,8 +138,9 @@ This checks all fixtures for:
 
 ## Notes
 
-- Fixtures must exist **before** running VHS to generate GIFs
+- Fixtures must exist **before** running GIF capture to generate GIFs
 - Recording requires a working LLM provider (Ollama, Claude, etc.)
 - Fixture file sizes vary based on response length and tool usage
 - Fixtures are version-controlled in git (they're deterministic snapshots)
 - Precognition is enabled by default (embeddings must be pre-processed via `cru process`)
+- Recording path: `docs/.crucible/sessions/<session-id>/recording.jsonl` (inside the kiln directory)
