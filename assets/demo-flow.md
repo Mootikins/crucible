@@ -11,7 +11,7 @@
 | Width | 1200px (overview: 960px) |
 | Height | 700px (overview: 540px) |
 | Font Size | 16px (overview: 18px) |
-| Theme | Catppuccin Mocha |
+| Theme | Firewatch |
 | Window Bar | Colorful (macOS-style traffic lights) |
 | Shell | bash |
 
@@ -43,15 +43,15 @@ cru 0.1.0
 
 ### Scene 2: Hero / Chat (`demo.tape` → `demo.gif`)
 
-**Duration:** ~16s | **Size:** 1.76MB | **Config:** `demo-config.toml`
+**Duration:** ~30s | **Size:** ~2MB | **Config:** `demo-config.toml`
 
 Multi-turn feature showcase: 3 exchanges covering wikilinks/knowledge graph, semantic search, and Lua plugins.
 
 ```bash
 $ cru chat -C assets/demo-config.toml
-> How does Crucible use wikilinks to build a knowledge graph?
-> Show me how semantic search works in Crucible
-> What can Lua plugins do in Crucible?
+> How does the wikilink knowledge graph work?
+> How does block-level semantic search work?
+> What can I build with the Lua plugin system?
 ```
 
 **What it demonstrates:**
@@ -60,7 +60,9 @@ $ cru chat -C assets/demo-config.toml
 - Knowledge graph, semantic search, and plugin explanations
 - Session persistence and response formatting
 
-**Agent:** Internal Rig agent (`glm-4.7-flash-iq4` via OpenAI-compatible endpoint) — the default when no `-a` flag is provided
+**Agent:** Internal Rig agent (`qwen3-32b-ud-q4_k_xl` via OpenAI-compatible endpoint) — the default when no `-a` flag is provided
+
+**Replay timing:** Fixture is ~252s real-time, compressed via `--replay-speed 5` during VHS capture for a readable GIF duration.
 
 ---
 
@@ -113,7 +115,7 @@ $ cru chat -a claude -C assets/demo-acp-config.toml --set perm.autoconfirm_sessi
 Used by Scene 1 and Scene 2 (internal chat).
 
 - **Kiln:** `docs/` (155 markdown files)
-- **LLM:** `glm-4.7-flash-iq4` via `openai` provider type (OpenAI-compatible endpoint at `https://llama.krohnos.io/v1`)
+- **LLM:** `qwen3-32b-ud-q4_k_xl` via `openai` provider type (OpenAI-compatible endpoint at `https://llama.krohnos.io/v1`)
 - **Storage:** Embedded (no daemon needed)
 - **Flags:** None (Precognition enabled by default)
 
@@ -176,6 +178,14 @@ cru session replay assets/fixtures/demo.jsonl
 cru session replay assets/fixtures/demo.jsonl --speed 0 --raw
 ```
 
+### Replay Speed for GIF Generation
+
+The `--replay-speed` flag on `cru chat --replay` controls how fast events are emitted relative to real-time. This is separate from VHS's `PlaybackSpeed` which controls GIF frame rate.
+
+For long fixtures, combine both:
+- `--replay-speed 5` compresses a 252s fixture to ~50s of real-time playback
+- VHS `PlaybackSpeed 2` then makes the GIF ~25s
+
 ### Regenerating GIFs
 
 Once fixtures are recorded, regenerate GIFs deterministically:
@@ -202,7 +212,12 @@ VHS tapes use `Hide`/`Show` to mask the `--replay` flag. The viewer sees `cru ch
 
 ## Validation
 
-Run `just demo-validate` to check all fixtures for quality:
+Run `scripts/validate-demos.sh` to check all fixtures for quality:
+
+```bash
+bash scripts/validate-demos.sh
+```
+
 - Response completeness (message_complete events present)
 - Expected keywords present (golden reference files in `assets/fixtures/golden/`)
 - No factual negation patterns detected
@@ -221,6 +236,6 @@ vhs assets/delegation-demo.tape
 
 **Notes:**
 - LLM responses vary between recordings — timing may need adjustment
-- If the Ollama endpoint is unavailable, overview GIF still works (`--no-process`)
-- The `--no-process` flag skips file embedding on startup (faster, but no Precognition/auto-RAG)
-- To enable Precognition context injection, remove `--no-process` (adds ~20s startup for 155 files)
+- If the Ollama endpoint is unavailable, overview GIF still works
+
+
