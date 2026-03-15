@@ -131,6 +131,10 @@ demo-all: (demo "demo") (demo "acp-demo") (demo "delegation-demo") (demo "overvi
 demo-record name *args:
     cargo run -p crucible-cli -- chat --record assets/fixtures/{{name}}.jsonl {{args}}
 
+# Validate demo fixture quality
+demo-validate:
+	scripts/validate-demos.sh
+
 # === MCP Server ===
 
 # Start MCP server (SSE on port 3847)
