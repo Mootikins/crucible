@@ -123,10 +123,10 @@ If you need to update a fixture (e.g., to fix a response or add new content):
 
 ## Validation
 
-Use `just demo-validate` to verify fixture quality:
+Use `scripts/validate-demos.sh` to verify fixture quality:
 
 ```bash
-just demo-validate
+bash scripts/validate-demos.sh
 ```
 
 This checks all fixtures for:
