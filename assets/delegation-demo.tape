@@ -1,5 +1,5 @@
-# Cross-Agent Delegation Demo — Claude delegating to Cursor
-# Requirements: Claude Code and cursor-acp both available
+# Cross-Agent Delegation Demo — Claude delegating to OpenCode
+# Requirements: Claude Code and opencode both available
 # Usage: vhs assets/delegation-demo.tape
 
 Output assets/delegation-demo.gif
@@ -17,6 +17,11 @@ Set Padding 20
 Set TypingSpeed 60ms
 Set PlaybackSpeed 4
 
+Type "cru chat -a claude"
+Hide
+Ctrl+U
 Type "cru chat --replay assets/fixtures/delegation-demo.jsonl --replay-auto-exit 0"
 Enter
-Sleep 20s
+Sleep 3s
+Show
+Sleep 16s
