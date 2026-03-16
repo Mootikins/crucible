@@ -254,6 +254,8 @@ fn render_assistant_blocks_with_graduation(
     render_state: &RenderState,
 ) -> Node {
     let mut nodes = Vec::new();
+    let mut has_hidden_thinking_spinner = false;
+    let t = crate::tui::oil::theme::active();
 
     // Render thinking block if present and enabled
     if render_state.show_thinking {
@@ -270,6 +272,30 @@ fn render_assistant_blocks_with_graduation(
                 [thinking_with_margin],
             ));
         }
+    } else if let Some(tb) = params.thinking {
+        let summary_style = Style::new()
+            .fg(t.resolve_color(t.colors.text_muted))
+            .italic();
+
+        let summary_node = if !params.complete && tb.token_count == 0 {
+            has_hidden_thinking_spinner = true;
+            row([
+                text(" "),
+                spinner(None, render_state.spinner_frame)
+                    .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
+                text(" Thinking…").with_style(summary_style),
+            ])
+        } else {
+            row([
+                text(" "),
+                text(format!("Thought for {} tokens", tb.token_count)).with_style(summary_style),
+            ])
+        };
+
+        nodes.push(summary_node.with_margin(Padding {
+            top: 1,
+            ..Default::default()
+        }));
     }
 
     // Determine how many blocks are "complete" (can graduate)
@@ -282,24 +308,20 @@ fn render_assistant_blocks_with_graduation(
     };
 
     // Show spinner when streaming and no text yet
-    if !params.complete && params.blocks.is_empty() {
+    if !params.complete && params.blocks.is_empty() && !has_hidden_thinking_spinner {
         let spinner_node = if params.thinking.is_some() && render_state.show_thinking {
             // Thinking is visible, show plain spinner below it
             row([
                 text(" "),
-                spinner(None, render_state.spinner_frame).with_style({
-                    let t = crate::tui::oil::theme::active();
-                    Style::new().fg(t.resolve_color(t.colors.text))
-                }),
+                spinner(None, render_state.spinner_frame)
+                    .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
             ])
         } else {
             // No content at all yet — show spinner as the only indicator
             row([
                 text(" "),
-                spinner(None, render_state.spinner_frame).with_style({
-                    let t = crate::tui::oil::theme::active();
-                    Style::new().fg(t.resolve_color(t.colors.text))
-                }),
+                spinner(None, render_state.spinner_frame)
+                    .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
             ])
         };
         nodes.push(spinner_node.with_margin(Padding {

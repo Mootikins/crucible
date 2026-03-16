@@ -1553,7 +1553,7 @@ fn extract_user_messages_from_recording(path: &std::path::Path) -> Result<Vec<St
     Ok(user_messages)
 }
 
-async fn replay_event_consumer(
+pub(crate) async fn replay_event_consumer(
     replay_session_id: String,
     mut event_rx: tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>,
     msg_tx: tokio::sync::mpsc::UnboundedSender<ChatAppMsg>,
@@ -1640,6 +1640,29 @@ async fn replay_event_consumer(
                 }
             }
             "message_complete" => Some(ChatAppMsg::StreamComplete),
+            "precognition_complete" => {
+                let notes_count = event
+                    .data
+                    .get("notes_count")
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as usize)
+                    .unwrap_or(0);
+                let notes = event
+                    .data
+                    .get("notes")
+                    .and_then(|v| {
+                        serde_json::from_value::<
+                            Vec<crucible_core::traits::chat::PrecognitionNoteInfo>,
+                        >(v.clone())
+                        .ok()
+                    })
+                    .unwrap_or_default();
+                if notes_count > 0 {
+                    Some(ChatAppMsg::PrecognitionResult { notes_count, notes })
+                } else {
+                    None
+                }
+            }
             "replay_complete" => {
                 let _ = msg_tx.send(ChatAppMsg::Status("Replay complete".to_string()));
                 return;
