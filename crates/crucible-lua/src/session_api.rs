@@ -496,7 +496,7 @@ pub mod tests {
                 temperature: Arc::new(std::sync::RwLock::new(Some(0.7))),
                 model: Arc::new(std::sync::RwLock::new(Some("test-model".to_string()))),
                 system_prompt: Arc::new(std::sync::RwLock::new(
-                    "You are a helpful assistant.".to_string(),
+                    crucible_core::prompts::LARGE_MODEL_PROMPT.to_string(),
                 )),
                 first_message_sent: Arc::new(std::sync::RwLock::new(false)),
                 variables: Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
@@ -719,7 +719,7 @@ pub mod tests {
             .load("return crucible.get_session().system_prompt")
             .eval()
             .unwrap();
-        assert_eq!(prompt, "You are a helpful assistant.");
+        assert_eq!(prompt, crucible_core::prompts::LARGE_MODEL_PROMPT);
     }
 
     #[test]

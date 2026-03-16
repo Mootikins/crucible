@@ -5,7 +5,11 @@ use super::ModelSize;
 /// Base system prompt for small models (< 4B)
 ///
 /// Minimal prompt - tools are provided via function calling schema
-pub const SMALL_MODEL_PROMPT: &str = r#"You are a helpful assistant.
+pub const SMALL_MODEL_PROMPT: &str = r#"Answer from the notes and context provided to you. If information isn't in your context, say so — do not fabricate. Reference notes by their title.
+
+Be concise. Respond in 2-3 short paragraphs unless asked for detail.
+
+Answer directly when possible. Use tools only for file operations or search.
 
 Only use tools when the task requires file/system operations.
 For questions and formatting: respond directly without tools.
@@ -17,7 +21,11 @@ IMPORTANT:
 /// Base system prompt for medium models (4-30B)
 ///
 /// Minimal prompt - tools are provided via function calling schema
-pub const MEDIUM_MODEL_PROMPT: &str = r#"You are a helpful assistant.
+pub const MEDIUM_MODEL_PROMPT: &str = r#"Answer from the notes and context provided to you. If information isn't in your context, say so — do not fabricate. Reference notes by their title.
+
+Be concise. Respond in 2-3 short paragraphs unless asked for detail.
+
+Answer directly when possible. Use tools only for file operations or search.
 
 Use tools for file operations and system tasks. Respond directly for questions and formatting.
 
@@ -28,7 +36,7 @@ IMPORTANT:
 /// Base system prompt for large models (> 30B)
 ///
 /// Minimal prompt - large models need no tool guidance
-pub const LARGE_MODEL_PROMPT: &str = "You are a helpful assistant.";
+pub const LARGE_MODEL_PROMPT: &str = "Answer from the notes and context provided to you. If information isn't in your context, say so — do not fabricate. Reference notes by their title.\n\nBe concise. Respond in 2-3 short paragraphs unless asked for detail.\n\nAnswer directly when possible. Use tools only for file operations or search.";
 
 /// Get the appropriate base prompt for a model size
 pub fn base_prompt_for_size(size: ModelSize) -> &'static str {
@@ -54,17 +62,17 @@ mod tests {
     #[test]
     fn test_medium_prompt_is_concise() {
         let prompt = base_prompt_for_size(ModelSize::Medium);
-        // Medium models get brief guidance, no tool listings
+        // Medium models get grounding-first base + tool guidance
         assert!(prompt.contains("tools"));
         assert!(!prompt.contains("write_file")); // No tool names in prompt
-        assert!(prompt.len() < 400); // Allow for anti-loop and format guidance
+        assert!(prompt.len() < 800); // Allow for grounding + anti-loop and format guidance
     }
 
     #[test]
     fn test_large_prompt_is_minimal() {
         let prompt = base_prompt_for_size(ModelSize::Large);
-        // Large models need no tool guidance - they get schemas via API
-        assert!(prompt.len() < 100);
-        assert!(!prompt.contains("tools")); // Truly minimal
+        // Large models get grounding-first prompt with no tool guidance
+        assert!(prompt.contains("do not fabricate"));
+        assert!(prompt.contains("Be concise"));
     }
 }
