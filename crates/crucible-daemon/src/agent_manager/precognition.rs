@@ -12,6 +12,100 @@ struct ExecuteMultiKilnSearchParams<'a> {
 use super::*;
 
 impl AgentManager {
+    fn format_with_precognition_runtime_hook(
+        session_id: &str,
+        original_content: &str,
+        results: &[crucible_core::SearchResult],
+        primary_kiln: &std::path::Path,
+        state: &SessionEventState,
+    ) -> String {
+        let custom_formatted = Self::execute_precognition_format_handlers(
+            session_id,
+            original_content,
+            results,
+            state,
+        );
+
+        if let Some(context_block) = custom_formatted {
+            format!("{}\n\n{}", context_block, original_content)
+        } else {
+            Self::format_precognition_context(original_content, results, primary_kiln)
+        }
+    }
+
+    fn execute_precognition_format_handlers(
+        session_id: &str,
+        original_content: &str,
+        results: &[crucible_core::SearchResult],
+        state: &SessionEventState,
+    ) -> Option<String> {
+        use crucible_lua::ScriptHandlerResult;
+
+        let handlers = state.registry.runtime_handlers_for("precognition_format");
+        if handlers.is_empty() {
+            return None;
+        }
+
+        let results_payload: Vec<serde_json::Value> = results
+            .iter()
+            .map(|r| {
+                let title = r
+                    .document_id
+                    .0
+                    .split('/')
+                    .next_back()
+                    .unwrap_or(&r.document_id.0)
+                    .trim_end_matches(".md")
+                    .to_string();
+
+                serde_json::json!({
+                    "title": title,
+                    "score": r.score,
+                    "snippet": r.snippet.clone().unwrap_or_default(),
+                    "kiln_path": r
+                        .kiln_path
+                        .as_ref()
+                        .and_then(|path| path.to_str())
+                        .unwrap_or_default(),
+                })
+            })
+            .collect();
+
+        let event = SessionEvent::Custom {
+            name: "precognition_format".to_string(),
+            payload: serde_json::json!({
+                "user_message": original_content,
+                "note_count": results.len(),
+                "results": results_payload,
+            }),
+        };
+
+        for handler in handlers {
+            match state
+                .registry
+                .execute_runtime_handler(&state.lua, &handler.name, &event)
+            {
+                Ok(ScriptHandlerResult::Transform(value)) => {
+                    if let Some(formatted) = value.as_str() {
+                        return Some(formatted.to_string());
+                    }
+                }
+                Ok(ScriptHandlerResult::PassThrough)
+                | Ok(ScriptHandlerResult::Cancel { .. })
+                | Ok(ScriptHandlerResult::Inject { .. }) => {}
+                Err(error) => {
+                    warn!(
+                        session_id = %session_id,
+                        error = %error,
+                        "precognition_format handler error (fail-open)"
+                    );
+                }
+            }
+        }
+
+        None
+    }
+
     /// Collect search sources from the primary kiln and any connected kilns.
     /// Connected kilns are skipped if they lack enrichment config or use a
     /// different embedding model than the primary kiln.
@@ -218,9 +312,18 @@ impl AgentManager {
             None => return original_content.to_string(),
         };
 
+        let enriched_prompt = {
+            let session_state = self.get_or_create_session_state(session_id);
+            let state = session_state.lock().await;
+            Self::format_with_precognition_runtime_hook(
+                session_id,
+                original_content,
+                &results,
+                &session.kiln,
+                &state,
+            )
+        };
         let note_info = extract_note_info(&results, &session.kiln);
-        let enriched_prompt =
-            Self::format_precognition_context(original_content, &results, &session.kiln);
 
         emit_precognition_event(
             event_tx,
@@ -433,5 +536,108 @@ mod format_precognition_context_tests {
         assert!(output.contains("<system>"));
         assert!(output.contains("</system>"));
         assert!(output.contains("## NoSnippet"));
+    }
+}
+
+#[cfg(test)]
+mod precognition_format_hook_tests {
+    use super::*;
+    use crucible_core::types::database::DocumentId;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+    use std::sync::{Arc, Mutex as StdMutex};
+
+    fn make_result(
+        doc_id: &str,
+        score: f64,
+        snippet: Option<&str>,
+        kiln: Option<&str>,
+    ) -> crucible_core::SearchResult {
+        crucible_core::SearchResult {
+            document_id: DocumentId(doc_id.to_string()),
+            score,
+            highlights: None,
+            snippet: snippet.map(|s| s.to_string()),
+            kiln_path: kiln.map(PathBuf::from),
+        }
+    }
+
+    fn make_session_event_state() -> SessionEventState {
+        let lua = mlua::Lua::new();
+        let registry = crucible_lua::LuaScriptHandlerRegistry::new();
+
+        register_crucible_on_api(
+            &lua,
+            registry.runtime_handlers(),
+            registry.handler_functions(),
+        )
+        .expect("register_crucible_on_api should succeed");
+
+        SessionEventState {
+            lua,
+            registry,
+            permission_hooks: Arc::new(StdMutex::new(Vec::new())),
+            permission_functions: Arc::new(StdMutex::new(HashMap::new())),
+            reactor: Reactor::new(),
+        }
+    }
+
+    #[test]
+    fn precognition_format_hook_customizes_output() {
+        let state = make_session_event_state();
+        state
+            .lua
+            .load(
+                r###"
+                crucible.on("precognition_format", function(ctx, event)
+                    return "## Custom Format\n" .. event.payload.user_message .. "\n" .. event.payload.results[1].title
+                end)
+            "###,
+            )
+            .exec()
+            .expect("Lua handler should load");
+
+        let results = vec![make_result(
+            "notes/Rust.md",
+            0.85,
+            Some("Rust is a systems programming language."),
+            Some("/home/user/notes"),
+        )];
+
+        let output = AgentManager::format_with_precognition_runtime_hook(
+            "session-1",
+            "What is Rust?",
+            &results,
+            std::path::Path::new("/home/user/notes"),
+            &state,
+        );
+
+        assert!(output.starts_with("## Custom Format"));
+        assert!(output.contains("What is Rust?"));
+        assert!(output.contains("Rust"));
+        assert!(!output.starts_with("<system>"));
+    }
+
+    #[test]
+    fn precognition_format_no_handler_uses_default() {
+        let state = make_session_event_state();
+        let results = vec![make_result(
+            "notes/Rust.md",
+            0.85,
+            Some("Rust is a systems programming language."),
+            Some("/home/user/notes"),
+        )];
+
+        let output = AgentManager::format_with_precognition_runtime_hook(
+            "session-1",
+            "What is Rust?",
+            &results,
+            std::path::Path::new("/home/user/notes"),
+            &state,
+        );
+
+        assert!(output.contains("<system>"));
+        assert!(output.contains("Found 1 relevant notes:"));
+        assert!(output.ends_with("What is Rust?"));
     }
 }
