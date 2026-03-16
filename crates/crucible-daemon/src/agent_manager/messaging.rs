@@ -424,29 +424,30 @@ impl AgentManager {
         stream_config: &AgentStreamConfig,
     ) -> Option<String> {
         let mut state = stream_ctx.session_state.lock().await;
+        let mut current_content = content;
         let pre_event = SessionEvent::internal(InternalSessionEvent::PreLlmCall {
-            prompt: content.clone(),
+            prompt: current_content.clone(),
             model: stream_config.model.clone(),
         });
 
-        match state.reactor.emit(pre_event).await {
+        current_content = match state.reactor.emit(pre_event).await {
             Ok(EmitResult::Completed { event, .. }) => {
                 if let SessionEvent::Internal(inner) = event {
                     if let InternalSessionEvent::PreLlmCall { prompt, .. } = inner.as_ref() {
-                        Some(prompt.clone())
+                        prompt.clone()
                     } else {
                         warn!(
                             session_id = %stream_ctx.session_id,
                             "PreLlmCall handler returned unexpected event type, using original prompt"
                         );
-                        Some(content)
+                        current_content
                     }
                 } else {
                     warn!(
                         session_id = %stream_ctx.session_id,
                         "PreLlmCall handler returned unexpected event type, using original prompt"
                     );
-                    Some(content)
+                    current_content
                 }
             }
             Ok(EmitResult::Cancelled { by_handler, .. }) => {
@@ -467,7 +468,7 @@ impl AgentManager {
                         "No subscribers for cancelled event"
                     );
                 }
-                None
+                return None;
             }
             Ok(EmitResult::Failed { handler, error, .. }) => {
                 warn!(
@@ -476,7 +477,7 @@ impl AgentManager {
                     error = %error,
                     "PreLlmCall handler failed, using original prompt (fail-open)"
                 );
-                Some(content)
+                current_content
             }
             Err(error) => {
                 warn!(
@@ -484,9 +485,48 @@ impl AgentManager {
                     error = %error,
                     "PreLlmCall emit failed, using original prompt (fail-open)"
                 );
-                Some(content)
+                current_content
+            }
+        };
+
+        let handlers = state.registry.runtime_handlers_for("pre_llm_call");
+        for handler in handlers {
+            let event = SessionEvent::Custom {
+                name: "pre_llm_call".to_string(),
+                payload: serde_json::json!({
+                    "prompt": &current_content,
+                    "model": &stream_config.model,
+                }),
+            };
+            match state
+                .registry
+                .execute_runtime_handler(&state.lua, &handler.name, &event)
+            {
+                Ok(crucible_lua::ScriptHandlerResult::Transform(val)) => {
+                    if let Some(prompt) = val.get("prompt").and_then(|v| v.as_str()) {
+                        current_content = prompt.to_string();
+                    }
+                }
+                Ok(crucible_lua::ScriptHandlerResult::Cancel { reason }) => {
+                    debug!(
+                        session_id = %stream_ctx.session_id,
+                        reason = %reason,
+                        "pre_llm_call handler cancelled"
+                    );
+                    break;
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    warn!(
+                        session_id = %stream_ctx.session_id,
+                        error = %error,
+                        "pre_llm_call handler error (fail-open)"
+                    );
+                }
             }
         }
+
+        Some(current_content)
     }
 
     async fn handle_permission_request(
@@ -761,6 +801,62 @@ impl AgentManager {
                         error = %error,
                         "PreToolCall emit failed, continuing (fail-open)"
                     );
+                }
+            }
+
+            for handler in state.registry.runtime_handlers_for("pre_tool_call") {
+                let event = SessionEvent::Custom {
+                    name: "pre_tool_call".to_string(),
+                    payload: serde_json::json!({
+                        "tool": &tool_call.name,
+                        "args": &args,
+                    }),
+                };
+                match state
+                    .registry
+                    .execute_runtime_handler(&state.lua, &handler.name, &event)
+                {
+                    Ok(crucible_lua::ScriptHandlerResult::Cancel { reason }) => {
+                        debug!(
+                            session_id = %stream_ctx.session_id,
+                            tool = %tool_call.name,
+                            handler = %handler.name,
+                            reason = %reason,
+                            "pre_tool_call handler cancelled"
+                        );
+                        let error_msg = format!("Tool blocked by crucible.on handler: {}", reason);
+                        if !emit_event(
+                            &stream_ctx.event_tx,
+                            SessionEventMessage::tool_result(
+                                &stream_ctx.session_id,
+                                &call_id,
+                                &tool_call.name,
+                                serde_json::json!({ "error": error_msg }),
+                            ),
+                        ) {
+                            warn!(
+                                session_id = %stream_ctx.session_id,
+                                tool = %tool_call.name,
+                                "No subscribers for handler denied tool_result event"
+                            );
+                        }
+                        return Some(crucible_core::traits::chat::ChatToolResult {
+                            name: tool_call.name.clone(),
+                            result: String::new(),
+                            error: Some(error_msg),
+                            call_id: Some(call_id.clone()),
+                        });
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        warn!(
+                            session_id = %stream_ctx.session_id,
+                            tool = %tool_call.name,
+                            handler = %handler.name,
+                            error = %error,
+                            "pre_tool_call handler error (fail-open)"
+                        );
+                    }
                 }
             }
         }
@@ -1211,8 +1307,8 @@ impl AgentManager {
 
         let mut state = stream_ctx.session_state.lock().await;
         let post_event = SessionEvent::internal(InternalSessionEvent::PostLlmCall {
-            response_summary,
-            model: stream_config.model,
+            response_summary: response_summary.clone(),
+            model: stream_config.model.clone(),
             duration_ms,
             token_count: None,
         });
@@ -1222,6 +1318,28 @@ impl AgentManager {
                 error = %e,
                 "PostLlmCall Reactor emit failed (fail-open)"
             );
+        }
+
+        for handler in state.registry.runtime_handlers_for("post_llm_call") {
+            let event = SessionEvent::Custom {
+                name: "post_llm_call".to_string(),
+                payload: serde_json::json!({
+                    "response_summary": &response_summary,
+                    "model": &stream_config.model,
+                    "duration_ms": duration_ms,
+                }),
+            };
+            if let Err(error) =
+                state
+                    .registry
+                    .execute_runtime_handler(&state.lua, &handler.name, &event)
+            {
+                warn!(
+                    session_id = %stream_ctx.session_id,
+                    error = %error,
+                    "post_llm_call handler error (fail-open)"
+                );
+            }
         }
     }
 
