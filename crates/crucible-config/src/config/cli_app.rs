@@ -885,7 +885,7 @@ verbose = false
 
     #[allow(missing_docs)]
     pub fn system_prompt(&self) -> String {
-        "Answer from the notes and context provided to you. If information isn't in your context, say so — do not fabricate. Reference notes by their title.\n\nBe concise. Respond in 2-3 short paragraphs unless asked for detail.\n\nAnswer directly when possible. Use tools only for file operations or search.".to_string()
+        "Answer from the notes and context provided to you. If information isn't in your context, say so — do not fabricate. Reference notes by their title.\n\nBe brief. Answer in plain prose — 3-5 sentences unless asked for detail. No headers, no bullet points, no numbered lists.\n\nAnswer directly when possible. Use tools only for file operations or search.".to_string()
     }
 
     #[allow(missing_docs)]

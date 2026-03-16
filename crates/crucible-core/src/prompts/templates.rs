@@ -7,7 +7,7 @@ use super::ModelSize;
 /// Minimal prompt - tools are provided via function calling schema
 pub const SMALL_MODEL_PROMPT: &str = r#"Answer from the notes and context provided to you. If information isn't in your context, say so — do not fabricate. Reference notes by their title.
 
-Be concise. Respond in 2-3 short paragraphs unless asked for detail.
+Be brief. Answer in plain prose — 3-5 sentences unless asked for detail. No headers, no bullet points, no numbered lists.
 
 Answer directly when possible. Use tools only for file operations or search.
 
@@ -23,7 +23,7 @@ IMPORTANT:
 /// Minimal prompt - tools are provided via function calling schema
 pub const MEDIUM_MODEL_PROMPT: &str = r#"Answer from the notes and context provided to you. If information isn't in your context, say so — do not fabricate. Reference notes by their title.
 
-Be concise. Respond in 2-3 short paragraphs unless asked for detail.
+Be brief. Answer in plain prose — 3-5 sentences unless asked for detail. No headers, no bullet points, no numbered lists.
 
 Answer directly when possible. Use tools only for file operations or search.
 
@@ -36,7 +36,7 @@ IMPORTANT:
 /// Base system prompt for large models (> 30B)
 ///
 /// Minimal prompt - large models need no tool guidance
-pub const LARGE_MODEL_PROMPT: &str = "Answer from the notes and context provided to you. If information isn't in your context, say so — do not fabricate. Reference notes by their title.\n\nBe concise. Respond in 2-3 short paragraphs unless asked for detail.\n\nAnswer directly when possible. Use tools only for file operations or search.";
+pub const LARGE_MODEL_PROMPT: &str = "Answer from the notes and context provided to you. If information isn't in your context, say so — do not fabricate. Reference notes by their title.\n\nBe brief. Answer in plain prose — 3-5 sentences unless asked for detail. No headers, no bullet points, no numbered lists.\n\nAnswer directly when possible. Use tools only for file operations or search.";
 
 /// Get the appropriate base prompt for a model size
 pub fn base_prompt_for_size(size: ModelSize) -> &'static str {

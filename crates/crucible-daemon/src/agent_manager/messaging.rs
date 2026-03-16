@@ -205,6 +205,10 @@ impl AgentManager {
 
         let session_for_factory = self.session_manager.get_session(session_id);
         let kiln_path = session_for_factory.as_ref().map(|s| s.kiln.as_path());
+        let connected_kilns = session_for_factory
+            .as_ref()
+            .map(|s| s.connected_kilns.clone())
+            .unwrap_or_default();
         let mut knowledge_repo = None;
         let mut embedding_provider = None;
 
@@ -233,6 +237,7 @@ impl AgentManager {
                 lua,
                 workspace,
                 kiln_path,
+                connected_kilns: &connected_kilns,
                 parent_session_id: Some(session_id),
                 background_spawner: Some(self.background_manager.clone()),
                 mcp_gateway: self.mcp_gateway.clone(),
@@ -248,6 +253,7 @@ impl AgentManager {
                 lua: None,
                 workspace,
                 kiln_path,
+                connected_kilns: &connected_kilns,
                 parent_session_id: Some(session_id),
                 background_spawner: Some(self.background_manager.clone()),
                 mcp_gateway: self.mcp_gateway.clone(),

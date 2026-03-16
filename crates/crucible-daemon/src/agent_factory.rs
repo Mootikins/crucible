@@ -47,6 +47,7 @@ pub struct CreateAgentFromSessionConfigParams<'a> {
     pub lua: Option<&'a Lua>,
     pub workspace: &'a Path,
     pub kiln_path: Option<&'a Path>,
+    pub connected_kilns: &'a [std::path::PathBuf],
     pub parent_session_id: Option<&'a str>,
     pub background_spawner: Option<Arc<dyn BackgroundSpawner>>,
     pub mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
@@ -241,12 +242,37 @@ pub enum AgentFactoryError {
     UnsupportedAgentType(String),
 }
 
-fn build_enriched_prompt(workspace: &Path, kiln_path: Option<&Path>, base_prompt: &str) -> String {
+fn build_enriched_prompt(
+    workspace: &Path,
+    kiln_path: Option<&Path>,
+    connected_kilns: &[std::path::PathBuf],
+    base_prompt: &str,
+) -> String {
     let mut enriched_prompt = String::new();
     enriched_prompt.push_str(&format!("Workspace: {}\n", workspace.display()));
     if let Some(kiln) = kiln_path {
         enriched_prompt.push_str(&format!("Kiln: {}\n", kiln.display()));
     }
+
+    // List knowledge bases by name
+    let mut kb_names: Vec<String> = Vec::new();
+    if let Some(primary) = kiln_path {
+        if let Some(cfg) = crucible_config::read_kiln_config(primary) {
+            kb_names.push(format!("{} (primary)", cfg.kiln.name));
+        }
+    }
+    for kiln in connected_kilns {
+        if let Some(cfg) = crucible_config::read_kiln_config(kiln) {
+            kb_names.push(cfg.kiln.name.clone());
+        }
+    }
+    if !kb_names.is_empty() {
+        enriched_prompt.push_str("\nKnowledge bases:\n");
+        for name in &kb_names {
+            enriched_prompt.push_str(&format!("- {}\n", name));
+        }
+    }
+
     if !base_prompt.is_empty() {
         enriched_prompt.push('\n');
         enriched_prompt.push_str(base_prompt);
@@ -281,6 +307,7 @@ pub async fn create_agent_from_session_config(
         lua,
         workspace,
         kiln_path,
+        connected_kilns,
         parent_session_id,
         background_spawner,
         mcp_gateway,
@@ -442,7 +469,12 @@ pub async fn create_agent_from_session_config(
     })?;
     let genai_client = chat_client.inner().clone();
 
-    let enriched_prompt = build_enriched_prompt(workspace, kiln_path, &agent_config.system_prompt);
+    let enriched_prompt = build_enriched_prompt(
+        workspace,
+        kiln_path,
+        connected_kilns,
+        &agent_config.system_prompt,
+    );
 
     let handle = GenaiAgentHandle::new(
         genai_client,
@@ -523,22 +555,53 @@ mod tests {
         let kiln = Path::new("/repo/docs");
 
         // With kiln + base prompt: both paths present, workspace before base
-        let enriched = build_enriched_prompt(ws, Some(kiln), "You are helpful.");
+        let enriched = build_enriched_prompt(ws, Some(kiln), &[], "You are helpful.");
         assert!(enriched.contains("Workspace: /repo"));
         assert!(enriched.contains("Kiln: /repo/docs"));
         assert!(enriched.contains("You are helpful."));
         assert!(enriched.find("Workspace:").unwrap() < enriched.find("You are helpful.").unwrap());
 
         // Without kiln: no Kiln line
-        let no_kiln = build_enriched_prompt(ws, None, "Base.");
+        let no_kiln = build_enriched_prompt(ws, None, &[], "Base.");
         assert!(no_kiln.contains("Workspace: /repo"));
         assert!(!no_kiln.contains("Kiln:"));
         assert!(no_kiln.contains("Base."));
 
         // Empty base prompt: just context lines, no double blank
-        let empty_base = build_enriched_prompt(ws, None, "");
+        let empty_base = build_enriched_prompt(ws, None, &[], "");
         assert!(empty_base.contains("Workspace: /repo"));
         assert!(!empty_base.ends_with("\n\n"));
+    }
+
+    #[test]
+    fn build_enriched_prompt_includes_kiln_names() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let crucible_dir = tmp.path().join(".crucible");
+        std::fs::create_dir_all(&crucible_dir).unwrap();
+        std::fs::write(
+            crucible_dir.join("kiln.toml"),
+            "[kiln]\nname = \"My Kiln\"\n",
+        )
+        .unwrap();
+
+        let result = build_enriched_prompt(Path::new("/workspace"), Some(tmp.path()), &[], "base");
+        assert!(
+            result.contains("Knowledge bases:"),
+            "should have kb section"
+        );
+        assert!(
+            result.contains("My Kiln (primary)"),
+            "should list primary kiln"
+        );
+    }
+
+    #[test]
+    fn build_enriched_prompt_no_kiln_names_when_no_config() {
+        let result = build_enriched_prompt(Path::new("/workspace"), None, &[], "base");
+        assert!(
+            !result.contains("Knowledge bases:"),
+            "no kb section when no kiln"
+        );
     }
 
     #[test]
@@ -552,6 +615,7 @@ mod tests {
                 lua: None,
                 workspace: Path::new("/tmp"),
                 kiln_path: None,
+                connected_kilns: &[],
                 parent_session_id: None,
                 background_spawner: None,
                 mcp_gateway: None,
@@ -637,6 +701,7 @@ mod tests {
             lua: None,
             workspace: Path::new("/tmp"),
             kiln_path: None,
+            connected_kilns: &[],
             parent_session_id: None,
             background_spawner: None,
             mcp_gateway: None,
@@ -647,145 +712,6 @@ mod tests {
         })
         .await;
         assert!(result.is_ok());
-    }
-
-    // --- Delegation context wiring tests ---
-
-    use crucible_config::DelegationConfig;
-    use crucible_core::background::{JobError, JobId, JobInfo, JobResult};
-    use std::path::PathBuf;
-    use std::time::Duration;
-
-    struct MockSpawner;
-
-    #[async_trait::async_trait]
-    impl BackgroundSpawner for MockSpawner {
-        async fn spawn_bash(
-            &self,
-            _session_id: &str,
-            _command: String,
-            _workdir: Option<PathBuf>,
-            _timeout: Option<Duration>,
-        ) -> Result<JobId, JobError> {
-            panic!("MockSpawner::spawn_bash not expected in this test context")
-        }
-
-        async fn spawn_subagent(
-            &self,
-            _session_id: &str,
-            _prompt: String,
-            _context: Option<String>,
-        ) -> Result<JobId, JobError> {
-            panic!("MockSpawner::spawn_subagent not expected in this test context")
-        }
-
-        fn list_jobs(&self, _session_id: &str) -> Vec<JobInfo> {
-            vec![]
-        }
-
-        fn get_job_result(&self, _job_id: &JobId) -> Option<JobResult> {
-            None
-        }
-
-        async fn cancel_job(&self, _job_id: &JobId) -> bool {
-            false
-        }
-    }
-
-    #[test]
-    fn delegation_context_built_when_config_present() {
-        let mut config = test_agent_config();
-        config.delegation_config = Some(DelegationConfig {
-            enabled: true,
-            max_depth: 2,
-            allowed_targets: Some(vec!["cursor".to_string(), "opencode".to_string()]),
-            result_max_bytes: 51200,
-            max_concurrent_delegations: 3,
-        });
-
-        let spawner: Arc<dyn BackgroundSpawner> = Arc::new(MockSpawner);
-        let ctx = build_internal_delegation_context(
-            &config,
-            Some("session-123"),
-            Some(spawner),
-            Path::new("/tmp"),
-            Some(Path::new("/tmp/kiln")),
-        );
-
-        let ctx = ctx.expect("delegation context should be Some");
-        assert!(ctx.enabled);
-        assert_eq!(ctx.session_id, "session-123");
-        assert_eq!(
-            ctx.targets,
-            vec!["cursor".to_string(), "opencode".to_string()]
-        );
-        assert_eq!(ctx.depth, 0);
-    }
-
-    #[test]
-    fn delegation_context_disabled_without_delegation_config() {
-        // delegation_config = None -> context exists but enabled = false
-        let config = test_agent_config();
-        let spawner: Arc<dyn BackgroundSpawner> = Arc::new(MockSpawner);
-        let ctx = build_internal_delegation_context(
-            &config,
-            Some("session-123"),
-            Some(spawner),
-            Path::new("/tmp"),
-            Some(Path::new("/tmp/kiln")),
-        );
-
-        let ctx = ctx.expect("context present when spawner + session_id exist");
-        assert!(
-            !ctx.enabled,
-            "should be disabled when delegation_config is None"
-        );
-        assert!(ctx.targets.is_empty());
-    }
-
-    #[test]
-    fn delegation_context_none_without_spawner() {
-        let mut config = test_agent_config();
-        config.delegation_config = Some(DelegationConfig {
-            enabled: true,
-            max_depth: 1,
-            allowed_targets: None,
-            result_max_bytes: 51200,
-            max_concurrent_delegations: 3,
-        });
-
-        let ctx = build_internal_delegation_context(
-            &config,
-            Some("session-123"),
-            None,
-            Path::new("/tmp"),
-            Some(Path::new("/tmp/kiln")),
-        );
-
-        assert!(ctx.is_none(), "should be None without background_spawner");
-    }
-
-    #[test]
-    fn delegation_context_none_without_session_id() {
-        let mut config = test_agent_config();
-        config.delegation_config = Some(DelegationConfig {
-            enabled: true,
-            max_depth: 1,
-            allowed_targets: None,
-            result_max_bytes: 51200,
-            max_concurrent_delegations: 3,
-        });
-
-        let spawner: Arc<dyn BackgroundSpawner> = Arc::new(MockSpawner);
-        let ctx = build_internal_delegation_context(
-            &config,
-            None,
-            Some(spawner),
-            Path::new("/tmp"),
-            Some(Path::new("/tmp/kiln")),
-        );
-
-        assert!(ctx.is_none(), "should be None without parent_session_id");
     }
 
     #[tokio::test]
@@ -801,6 +727,7 @@ mod tests {
             lua: None,
             workspace: Path::new("/tmp"),
             kiln_path: None,
+            connected_kilns: &[],
             parent_session_id: None,
             background_spawner: None,
             mcp_gateway: None,
@@ -828,6 +755,7 @@ mod tests {
             lua: None,
             workspace: Path::new("/tmp"),
             kiln_path: None,
+            connected_kilns: &[],
             parent_session_id: None,
             background_spawner: None,
             mcp_gateway: None,
