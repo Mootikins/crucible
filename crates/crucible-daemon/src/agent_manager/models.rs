@@ -346,7 +346,7 @@ impl AgentManager {
             || {
                 info!(
                     session_id = %session_id,
-                    "System prompt updated (agent cache invalidated)"
+                    "System prompt updated"
                 );
             },
         )

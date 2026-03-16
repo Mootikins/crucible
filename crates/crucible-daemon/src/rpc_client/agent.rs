@@ -565,7 +565,7 @@ impl AgentHandle for DaemonAgentHandle {
     }
 
     async fn set_system_prompt(&mut self, prompt: &str) -> ChatResult<()> {
-        tracing::info!(session_id = %self.session_id, "Setting system prompt via daemon");
+        tracing::debug!(session_id = %self.session_id, "Setting system prompt via daemon");
         self.client
             .session_set_system_prompt(&self.session_id, prompt)
             .await
