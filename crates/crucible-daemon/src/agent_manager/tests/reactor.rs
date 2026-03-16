@@ -171,6 +171,145 @@ async fn reactor_pre_tool_cancel_denies() {
 }
 
 #[tokio::test]
+async fn runtime_dispatch_pre_llm_call_transforms_prompt() {
+    let mut h = ReactorTestHarness::new().await;
+
+    let session_state = h.agent_manager.get_or_create_session_state(&h.session_id);
+    {
+        let state = session_state.lock().await;
+        state
+            .lua
+            .load(
+                r#"
+            crucible.on("pre_llm_call", function(ctx, event)
+                return { prompt = event.payload.prompt .. " [modified]" }
+            end)
+        "#,
+            )
+            .exec()
+            .unwrap();
+    }
+
+    let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_chunks());
+
+    h.send("hello").await;
+    h.wait_for("message_complete").await;
+
+    let prompt = received_prompt.lock().unwrap();
+    assert_eq!(prompt.as_deref(), Some("hello [modified]"));
+}
+
+#[tokio::test]
+async fn runtime_dispatch_pre_tool_call_cancels_execution() {
+    let mut h = ReactorTestHarness::new().await;
+
+    let session_state = h.agent_manager.get_or_create_session_state(&h.session_id);
+    {
+        let state = session_state.lock().await;
+        state
+            .lua
+            .load(
+                r#"
+            crucible.on("pre_tool_call", function(ctx, event)
+                return { cancel = true, reason = "blocked" }
+            end)
+        "#,
+            )
+            .exec()
+            .unwrap();
+    }
+
+    h.inject_streaming_agent(vec![
+        ChatChunk {
+            delta: String::new(),
+            done: false,
+            tool_calls: Some(vec![ChatToolCall {
+                name: "write".to_string(),
+                arguments: Some(serde_json::json!({ "path": "foo.txt", "content": "x" })),
+                id: Some("call-runtime-pre-tool-cancel".to_string()),
+            }]),
+            tool_results: None,
+            reasoning: None,
+            usage: None,
+            subagent_events: None,
+            precognition_notes_count: None,
+            precognition_notes: None,
+        },
+        ChatChunk {
+            delta: "done".to_string(),
+            done: true,
+            tool_calls: None,
+            tool_results: None,
+            reasoning: None,
+            usage: None,
+            subagent_events: None,
+            precognition_notes_count: None,
+            precognition_notes: None,
+        },
+    ]);
+
+    h.send("run tool").await;
+
+    let tool_result = h.wait_for("tool_result").await;
+    h.wait_for("message_complete").await;
+
+    assert_eq!(tool_result.data["tool"], "write");
+    assert!(tool_result.data["result"]["error"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("blocked"));
+}
+
+#[tokio::test]
+async fn runtime_dispatch_post_llm_call_fires_handler() {
+    let mut h = ReactorTestHarness::new().await;
+
+    let session_state = h.agent_manager.get_or_create_session_state(&h.session_id);
+    {
+        let state = session_state.lock().await;
+        state
+            .lua
+            .load(
+                r#"
+            post_llm_runtime_fired = false
+            crucible.on("post_llm_call", function(ctx, event)
+                post_llm_runtime_fired = true
+                return { cancel = true, reason = "ignored" }
+            end)
+        "#,
+            )
+            .exec()
+            .unwrap();
+    }
+
+    h.inject_streaming_agent(ReactorTestHarness::default_ok_chunks());
+
+    h.send("hello").await;
+
+    next_event_or_skip(&mut h.event_rx, "post_llm_call").await;
+
+    let fired = timeout(Duration::from_secs(2), async {
+        loop {
+            let state = session_state.lock().await;
+            let fired: bool = state
+                .lua
+                .load("return post_llm_runtime_fired")
+                .eval()
+                .unwrap();
+            drop(state);
+            if fired {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("timed out waiting for post_llm_call runtime handler");
+
+    assert!(fired);
+}
+
+#[tokio::test]
 async fn reactor_persists_across_messages() {
     let mut h = ReactorTestHarness::new().await;
 
