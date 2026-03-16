@@ -1,7 +1,7 @@
-# Exchange 1: Knowledge Graph
-knowledge graph
-tags
+# Exchange 1: Wikilinks
 wikilink
-# Exchange 2: Semantic Search
-semantic
-notes
+syntax
+link
+# Exchange 2: Note Connections
+note
+embed
