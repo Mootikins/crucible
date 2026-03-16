@@ -164,6 +164,12 @@ impl RpcDispatcher {
             "session.get_max_tokens" => {
                 to_response(id, self.handle_session_get_max_tokens(&req).await)
             }
+            "session.set_system_prompt" => {
+                to_response(id, self.handle_session_set_system_prompt(&req).await)
+            }
+            "session.get_system_prompt" => {
+                to_response(id, self.handle_session_get_system_prompt(&req).await)
+            }
             "session.set_precognition" => {
                 to_response(id, self.handle_session_set_precognition(&req).await)
             }
@@ -462,6 +468,29 @@ impl RpcDispatcher {
     async fn handle_session_get_max_tokens(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::session::handle_session_get_max_tokens(req.clone(), &self.ctx.agents)
+                .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_set_system_prompt(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_set_system_prompt(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_get_system_prompt(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
+        let resp =
+            crate::server::session::handle_session_get_system_prompt(req.clone(), &self.ctx.agents)
                 .await;
         map_server_resp(resp)
     }
