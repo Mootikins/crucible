@@ -73,6 +73,6 @@ mod tests {
         let prompt = base_prompt_for_size(ModelSize::Large);
         // Large models get grounding-first prompt with no tool guidance
         assert!(prompt.contains("do not fabricate"));
-        assert!(prompt.contains("Be concise"));
+        assert!(prompt.contains("Be brief"));
     }
 }

@@ -318,7 +318,7 @@ fn test_default_config_values() {
     assert_eq!(config.temperature(), 0.7);
     assert_eq!(config.max_tokens(), 2048);
     assert!(config.streaming());
-    assert_eq!(config.system_prompt(), "You are a helpful assistant.");
+    assert!(config.system_prompt().contains("do not fabricate"));
     // Default endpoint should be standard localhost for Ollama
     assert_eq!(config.ollama_endpoint(), "http://localhost:11434");
     assert_eq!(config.timeout(), 30);
