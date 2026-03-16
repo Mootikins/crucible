@@ -40,6 +40,7 @@ pub struct DaemonAgentHandle {
     cached_temperature: Option<f64>,
     cached_max_tokens: Option<u32>,
     cached_thinking_budget: Option<i64>,
+    cached_system_prompt: Option<String>,
     kiln_path: Option<PathBuf>,
     workspace: Option<PathBuf>,
     cached_agent_config: Option<SessionAgent>,
@@ -78,6 +79,7 @@ impl DaemonAgentHandle {
             cached_temperature: None,
             cached_max_tokens: None,
             cached_thinking_budget: None,
+            cached_system_prompt: None,
             kiln_path: None,
             workspace: None,
             cached_agent_config: None,
@@ -115,6 +117,11 @@ impl DaemonAgentHandle {
             .flatten();
         handle.cached_thinking_budget = client
             .session_get_thinking_budget(&session_id)
+            .await
+            .ok()
+            .flatten();
+        handle.cached_system_prompt = client
+            .session_get_system_prompt(&session_id)
             .await
             .ok()
             .flatten();
@@ -555,6 +562,20 @@ impl AgentHandle for DaemonAgentHandle {
 
     fn get_thinking_budget(&self) -> Option<i64> {
         self.cached_thinking_budget
+    }
+
+    async fn set_system_prompt(&mut self, prompt: &str) -> ChatResult<()> {
+        tracing::info!(session_id = %self.session_id, "Setting system prompt via daemon");
+        self.client
+            .session_set_system_prompt(&self.session_id, prompt)
+            .await
+            .map_err(|e| ChatError::Communication(format!("Failed to set system prompt: {}", e)))?;
+        self.cached_system_prompt = Some(prompt.to_string());
+        Ok(())
+    }
+
+    fn get_system_prompt(&self) -> Option<String> {
+        self.cached_system_prompt.clone()
     }
 
     async fn set_temperature(&mut self, temperature: f64) -> ChatResult<()> {

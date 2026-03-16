@@ -1455,11 +1455,18 @@ impl OilChatRunner {
             SessionCommand::ShowMessages => app.show_messages(),
             SessionCommand::HideMessages => app.hide_messages(),
             SessionCommand::ClearMessages => app.clear_messages(),
-            SessionCommand::GetSystemPrompt(_)
-            | SessionCommand::SetSystemPrompt(_, _)
-            | SessionCommand::MarkFirstMessageSent
-            | SessionCommand::SetVariable { .. }
-            | SessionCommand::GetVariable { .. } => {}
+            SessionCommand::GetSystemPrompt(reply) => {
+                let _ = reply.send(agent.get_system_prompt());
+            }
+            SessionCommand::SetSystemPrompt(prompt, reply) => {
+                let result = agent
+                    .set_system_prompt(&prompt)
+                    .await
+                    .map_err(|e| e.to_string());
+                let _ = reply.send(result);
+            }
+            SessionCommand::MarkFirstMessageSent => {}
+            SessionCommand::SetVariable { .. } | SessionCommand::GetVariable { .. } => {}
         }
     }
 

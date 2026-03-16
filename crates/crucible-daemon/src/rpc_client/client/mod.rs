@@ -435,6 +435,13 @@ pub struct SessionSetThinkingBudgetRequest {
     pub thinking_budget: Option<i64>,
 }
 
+/// Request for `session.set_system_prompt`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSetSystemPromptRequest {
+    pub session_id: String,
+    pub system_prompt: String,
+}
+
 /// Request for `session.set_precognition`.
 ///
 /// NOTE: The client sends `precognition_enabled` but the daemon handler reads `enabled`.
@@ -1972,6 +1979,27 @@ impl DaemonClient {
             session_id,
             "thinking_budget",
             |v| v.as_i64(),
+        )
+        .await
+    }
+
+    pub async fn session_set_system_prompt(&self, session_id: &str, prompt: &str) -> Result<()> {
+        self.typed_unit_call_with_retry(
+            "session.set_system_prompt",
+            SessionSetSystemPromptRequest {
+                session_id: session_id.to_string(),
+                system_prompt: prompt.to_string(),
+            },
+        )
+        .await
+    }
+
+    pub async fn session_get_system_prompt(&self, session_id: &str) -> Result<Option<String>> {
+        self.get_session_option(
+            "session.get_system_prompt",
+            session_id,
+            "system_prompt",
+            |v| v.as_str().map(|s| s.to_string()),
         )
         .await
     }

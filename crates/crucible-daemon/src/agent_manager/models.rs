@@ -322,6 +322,47 @@ impl AgentManager {
         Ok(agent_config.thinking_budget)
     }
 
+    pub async fn set_system_prompt(
+        &self,
+        session_id: &str,
+        prompt: &str,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        if self.agent_cache.get(session_id).is_some() {
+            return Err(AgentError::InvalidConfig(
+                "system_prompt is locked after the first message has been sent".to_string(),
+            ));
+        }
+        self.update_agent_config_and_emit(
+            session_id,
+            event_tx,
+            "system_prompt_changed",
+            serde_json::json!({ "system_prompt": prompt }),
+            "Failed to emit system_prompt_changed event (no subscribers)",
+            |agent_config| {
+                agent_config.system_prompt = prompt.to_string();
+                Ok(())
+            },
+            || {
+                info!(
+                    session_id = %session_id,
+                    "System prompt updated (agent cache invalidated)"
+                );
+            },
+        )
+        .await
+    }
+
+    pub fn get_system_prompt(&self, session_id: &str) -> Result<Option<String>, AgentError> {
+        let (_, agent_config) = self.get_session_with_agent(session_id)?;
+        let prompt = &agent_config.system_prompt;
+        if prompt.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(prompt.clone()))
+        }
+    }
+
     pub async fn set_precognition(
         &self,
         session_id: &str,

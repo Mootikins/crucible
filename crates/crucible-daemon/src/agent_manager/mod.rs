@@ -161,6 +161,9 @@ pub enum AgentError {
 
     #[error("Agent factory error: {0}")]
     Factory(#[from] AgentFactoryError),
+
+    #[error("Invalid configuration: {0}")]
+    InvalidConfig(String),
 }
 
 struct RequestState {
