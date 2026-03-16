@@ -31,7 +31,7 @@ export OPENAI_API_KEY=dummy
 
 # Start asciinema recording in tmux with the replay command
 tmux send-keys -t "$SESSION" \
-  "asciinema rec '$CAST_FILE' --overwrite -c 'COLORTERM=truecolor COLORFGBG=15;0 OPENAI_API_KEY=dummy cru chat --replay \"$FIXTURE\" --replay-speed $SPEED --replay-auto-exit 500 -C assets/demo-config.toml'; exit" \
+  "asciinema rec '$CAST_FILE' --overwrite -c 'COLORTERM=truecolor COLORFGBG=\"15;0\" OPENAI_API_KEY=dummy cru chat --replay \"$FIXTURE\" --replay-speed $SPEED --replay-auto-exit 500 -C assets/demo-config.toml'; exit" \
   Enter
 
 # Wait for tmux session to exit (replay complete)
