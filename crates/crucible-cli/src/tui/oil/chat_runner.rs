@@ -1455,6 +1455,11 @@ impl OilChatRunner {
             SessionCommand::ShowMessages => app.show_messages(),
             SessionCommand::HideMessages => app.hide_messages(),
             SessionCommand::ClearMessages => app.clear_messages(),
+            SessionCommand::GetSystemPrompt(_)
+            | SessionCommand::SetSystemPrompt(_, _)
+            | SessionCommand::MarkFirstMessageSent
+            | SessionCommand::SetVariable { .. }
+            | SessionCommand::GetVariable { .. } => {}
         }
     }
 
