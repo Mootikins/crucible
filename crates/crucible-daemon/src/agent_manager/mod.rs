@@ -635,13 +635,37 @@ impl AgentManager {
             error!(session_id = %session_id, error = %e, "Failed to register crucible.permissions API");
         }
 
+        if let Err(e) = lua.load(crucible_lua::BUILTIN_INIT_LUA).exec() {
+            warn!(session_id = %session_id, error = %e, "Failed to load built-in init.lua (fail-open)");
+        }
+
         let mut reactor = Reactor::new();
-        if let Some(kiln_path) = self
-            .session_manager
-            .get_session(session_id)
-            .map(|s| s.kiln.clone())
-        {
-            discover_and_register_lua_handlers(&mut reactor, &kiln_path, session_id);
+        if let Some(session) = self.session_manager.get_session(session_id) {
+            let user_init = session.workspace.join(".crucible/lua/init.lua");
+            if user_init.exists() {
+                match std::fs::read_to_string(&user_init) {
+                    Ok(source) => {
+                        if let Err(e) = lua.load(&source).set_name("user init.lua").exec() {
+                            warn!(
+                                session_id = %session_id,
+                                path = %user_init.display(),
+                                error = %e,
+                                "Failed to load user init.lua (fail-open)"
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        warn!(
+                            session_id = %session_id,
+                            path = %user_init.display(),
+                            error = %e,
+                            "Failed to read user init.lua (fail-open)"
+                        );
+                    }
+                }
+            }
+
+            discover_and_register_lua_handlers(&mut reactor, &session.kiln, session_id);
         }
 
         let state = Arc::new(Mutex::new(SessionEventState {
