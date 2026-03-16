@@ -22,6 +22,9 @@ show_progress = false
 confirm_destructive = true
 verbose = false
 
+[permissions]
+default = "allow"
+
 [storage]
 mode = "sqlite"
 
