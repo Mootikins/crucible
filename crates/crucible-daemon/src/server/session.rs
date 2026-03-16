@@ -1029,6 +1029,53 @@ pub(crate) async fn handle_session_get_thinking_budget(
     }
 }
 
+pub(crate) async fn handle_session_set_system_prompt(
+    req: Request,
+    am: &Arc<AgentManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    let session_id = require_param!(req, "session_id", as_str);
+    let prompt = require_param!(req, "system_prompt", as_str);
+
+    match am
+        .set_system_prompt(session_id, prompt, Some(event_tx))
+        .await
+    {
+        Ok(()) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "system_prompt": prompt,
+            }),
+        ),
+        Err(e) => agent_error_to_response(req.id, e),
+    }
+}
+
+pub(crate) async fn handle_session_get_system_prompt(
+    req: Request,
+    am: &Arc<AgentManager>,
+) -> Response {
+    let session_id = require_param!(req, "session_id", as_str);
+
+    match am.get_system_prompt(session_id) {
+        Ok(prompt) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "system_prompt": prompt,
+            }),
+        ),
+        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
+            session_not_found(req.id, &id)
+        }
+        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
+            agent_not_configured(req.id, &id)
+        }
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
 pub(crate) async fn handle_session_set_precognition(
     req: Request,
     am: &Arc<AgentManager>,

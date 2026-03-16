@@ -257,6 +257,14 @@ pub trait AgentHandle: Send + Sync {
         None
     }
 
+    async fn set_system_prompt(&mut self, _prompt: &str) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_system_prompt".into()))
+    }
+
+    fn get_system_prompt(&self) -> Option<String> {
+        None
+    }
+
     /// Cancel the current agent operation
     ///
     /// Propagates cancellation to the backend (e.g., daemon RPC).
@@ -404,6 +412,14 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
 
     fn get_thinking_budget(&self) -> Option<i64> {
         (**self).get_thinking_budget()
+    }
+
+    async fn set_system_prompt(&mut self, prompt: &str) -> ChatResult<()> {
+        (**self).set_system_prompt(prompt).await
+    }
+
+    fn get_system_prompt(&self) -> Option<String> {
+        (**self).get_system_prompt()
     }
 
     async fn cancel(&self) -> ChatResult<()> {
