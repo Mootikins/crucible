@@ -32,6 +32,13 @@ const EXPECTED_TOOLS: &[&str] = &[
     "list_jobs",
     "get_job_result",
     "cancel_job",
+    // Workspace tools (6)
+    "read_file",
+    "edit_file",
+    "write_file",
+    "bash",
+    "glob",
+    "grep",
 ];
 
 fn create_test_server() -> CrucibleMcpServer {
@@ -53,8 +60,8 @@ async fn test_mcp_server_exposes_13_tools() {
 
     let tool_count = server.tool_count();
     assert_eq!(
-        tool_count, 14,
-        "Should expose exactly 14 tools, got {}",
+        tool_count, 20,
+        "Should expose exactly 20 tools, got {}",
         tool_count
     );
 }
@@ -135,8 +142,8 @@ async fn test_server_info_metadata() {
     assert!(info.instructions.is_some());
     let instructions = info.instructions.unwrap();
     assert!(
-        instructions.contains("14 tools"),
-        "Instructions should mention 14 tools"
+        instructions.contains("20 tools"),
+        "Instructions should mention 20 tools"
     );
 
     // Verify tools capability is advertised

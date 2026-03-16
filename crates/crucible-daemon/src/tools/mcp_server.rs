@@ -27,7 +27,7 @@
 #![allow(missing_docs)]
 
 use super::helpers::{make_server_info, McpResultExt};
-use super::{KilnTools, NoteTools, SearchTools};
+use super::{KilnTools, NoteTools, SearchTools, WorkspaceTools};
 use crucible_config::{DataClassification, TrustLevel};
 use crucible_core::background::{BackgroundSpawner, JobStatus, SubagentBlockingConfig};
 use crucible_core::enrichment::EmbeddingProvider;
@@ -38,6 +38,7 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{model::CallToolResult, tool, tool_handler, tool_router, ServerHandler};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 // Re-export parameter types from individual modules
@@ -58,8 +59,60 @@ pub struct CrucibleMcpServer {
     note_tools: NoteTools,
     search_tools: SearchTools,
     kiln_tools: KilnTools,
+    workspace_path: PathBuf,
     delegation_context: Option<DelegationContext>,
     tool_router: ToolRouter<Self>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct ReadFileToolParams {
+    pub path: String,
+    #[serde(default)]
+    pub offset: Option<usize>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct EditFileToolParams {
+    pub path: String,
+    pub old_string: String,
+    pub new_string: String,
+    #[serde(default)]
+    pub replace_all: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct WriteFileToolParams {
+    pub path: String,
+    pub content: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct BashToolParams {
+    pub command: String,
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct GlobToolParams {
+    pub pattern: String,
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct GrepToolParams {
+    pub pattern: String,
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub glob: Option<String>,
+    #[serde(default)]
+    pub limit: Option<usize>,
 }
 
 #[derive(Clone)]
@@ -115,7 +168,14 @@ impl CrucibleMcpServer {
         knowledge_repo: Arc<dyn KnowledgeRepository>,
         embedding_provider: Arc<dyn EmbeddingProvider>,
     ) -> Self {
-        Self::new_with_delegation(kiln_path, knowledge_repo, embedding_provider, None)
+        let workspace_path = PathBuf::from(kiln_path.as_str());
+        Self::new_with_workspace_and_delegation(
+            kiln_path,
+            workspace_path,
+            knowledge_repo,
+            embedding_provider,
+            None,
+        )
     }
 
     pub fn new_with_delegation(
@@ -124,10 +184,28 @@ impl CrucibleMcpServer {
         embedding_provider: Arc<dyn EmbeddingProvider>,
         delegation_context: Option<DelegationContext>,
     ) -> Self {
+        let workspace_path = PathBuf::from(kiln_path.as_str());
+        Self::new_with_workspace_and_delegation(
+            kiln_path,
+            workspace_path,
+            knowledge_repo,
+            embedding_provider,
+            delegation_context,
+        )
+    }
+
+    pub fn new_with_workspace_and_delegation(
+        kiln_path: String,
+        workspace_path: PathBuf,
+        knowledge_repo: Arc<dyn KnowledgeRepository>,
+        embedding_provider: Arc<dyn EmbeddingProvider>,
+        delegation_context: Option<DelegationContext>,
+    ) -> Self {
         Self {
             note_tools: NoteTools::new(kiln_path.clone()),
             search_tools: SearchTools::new(kiln_path.clone(), knowledge_repo, embedding_provider),
             kiln_tools: KilnTools::new(kiln_path),
+            workspace_path,
             delegation_context,
             tool_router: Self::tool_router(),
         }
@@ -153,6 +231,7 @@ impl CrucibleMcpServer {
         note_store: Arc<dyn NoteStore>,
     ) -> Self {
         Self {
+            workspace_path: PathBuf::from(kiln_path.as_str()),
             note_tools: NoteTools::with_note_store(kiln_path.clone(), note_store.clone()),
             search_tools: SearchTools::with_note_store(
                 kiln_path.clone(),
@@ -201,6 +280,10 @@ impl CrucibleMcpServer {
     #[must_use]
     pub fn tool_count(&self) -> usize {
         self.tool_router.list_all().len()
+    }
+
+    fn workspace_tools(&self) -> WorkspaceTools {
+        WorkspaceTools::new(&self.workspace_path)
     }
 }
 
@@ -283,6 +366,76 @@ impl CrucibleMcpServer {
         params: Parameters<PropertySearchParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         self.search_tools.property_search(params).await
+    }
+
+    #[tool(description = "Read file contents. Returns content with line numbers.")]
+    pub async fn read_file(
+        &self,
+        params: Parameters<ReadFileToolParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        self.workspace_tools()
+            .read_file(params.path, params.offset, params.limit)
+            .await
+    }
+
+    #[tool(description = "Edit file by replacing text. old_string must match exactly.")]
+    pub async fn edit_file(
+        &self,
+        params: Parameters<EditFileToolParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        self.workspace_tools()
+            .edit_file(
+                params.path,
+                params.old_string,
+                params.new_string,
+                params.replace_all,
+            )
+            .await
+    }
+
+    #[tool(description = "Write content to file. Creates parent directories if needed.")]
+    pub async fn write_file(
+        &self,
+        params: Parameters<WriteFileToolParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        self.workspace_tools()
+            .write_file(params.path, params.content)
+            .await
+    }
+
+    #[tool(description = "Execute bash command in the workspace root.")]
+    pub async fn bash(
+        &self,
+        params: Parameters<BashToolParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        self.workspace_tools()
+            .bash(params.command, params.timeout_ms)
+            .await
+    }
+
+    #[tool(description = "Find files matching glob pattern (e.g., '**/*.rs').")]
+    pub async fn glob(
+        &self,
+        params: Parameters<GlobToolParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        self.workspace_tools()
+            .glob(params.pattern, params.path, params.limit)
+    }
+
+    #[tool(description = "Search file contents with regex. Uses ripgrep.")]
+    pub async fn grep(
+        &self,
+        params: Parameters<GrepToolParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        self.workspace_tools()
+            .grep(params.pattern, params.path, params.glob, params.limit)
+            .await
     }
 
     // ===== Kiln Tools (3) =====
@@ -492,10 +645,11 @@ impl CrucibleMcpServer {
 impl ServerHandler for CrucibleMcpServer {
     fn get_info(&self) -> rmcp::model::ServerInfo {
         make_server_info(
-            "Crucible knowledge management server with 14 tools. \
+            "Crucible knowledge management server with 20 tools. \
             Notes: create_note, read_note, update_note, delete_note, list_notes, \
             read_metadata. \
             Search: semantic_search, text_search, property_search. \
+            Workspace: read_file, edit_file, write_file, bash, glob, grep. \
             Kiln: get_kiln_info. \
             Delegation: delegate_session \
             \u{2014} hand off tasks to other agents when asked to delegate. \

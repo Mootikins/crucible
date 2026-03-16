@@ -244,6 +244,12 @@ proptest! {
         let viewport = strip_ansi(runtime.viewport_content());
         let combined = format!("{}{}", stdout, viewport);
 
+        prop_assert!(
+            combined.contains("Thought for 1 tokens"),
+            "Thinking summary should be present when show_thinking=false:\n{}",
+            combined
+        );
+
         let first_think_word = thinking.split_whitespace().next();
         if let Some(word) = first_think_word {
             if word.len() >= 4 && !response.contains(word) {

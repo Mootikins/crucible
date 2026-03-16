@@ -1033,4 +1033,74 @@ mod daemon_event_to_tui_tests {
         OilChatRunner::abort_background_tasks(&mut background_tasks);
         assert_eq!(background_tasks.len(), 0, "All tasks should be drained");
     }
+
+    /// Regression test for precognition_complete event handling in replay.
+    /// Ensures that demo GIF replays show the "Found N relevant notes" system message.
+    #[tokio::test]
+    async fn replay_event_consumer_handles_precognition_complete() {
+        use crate::tui::oil::chat_runner::replay_event_consumer;
+        use serde_json::json;
+        use tokio::sync::mpsc;
+        use tokio::time::{timeout, Duration};
+
+        let (msg_tx, mut msg_rx) = mpsc::unbounded_channel();
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
+
+        let replay_session_id = "test-session-123".to_string();
+        let session_id_clone = replay_session_id.clone();
+
+        // Spawn the replay_event_consumer in a task
+        let consumer_task = tokio::spawn(async move {
+            replay_event_consumer(session_id_clone, event_rx, msg_tx).await;
+        });
+
+        // Send a precognition_complete event
+        let precognition_event = crucible_daemon::SessionEvent {
+            session_id: replay_session_id.clone(),
+            event_type: "precognition_complete".to_string(),
+            data: json!({
+                "notes_count": 3,
+                "notes": [
+                    {"title": "Note 1", "kiln_label": null},
+                    {"title": "Note 2", "kiln_label": null},
+                    {"title": "Note 3", "kiln_label": null},
+                ]
+            }),
+        };
+
+        event_tx.send(precognition_event).unwrap();
+
+        // Receive the PrecognitionResult message with timeout
+        let msg = timeout(Duration::from_secs(1), msg_rx.recv())
+            .await
+            .expect("Timeout waiting for message")
+            .expect("Should receive a message");
+
+        match msg {
+            ChatAppMsg::PrecognitionResult { notes_count, notes } => {
+                assert_eq!(notes_count, 3, "Should have 3 notes");
+                assert_eq!(notes.len(), 3, "Notes vector should have 3 items");
+                assert_eq!(notes[0].title, "Note 1");
+                assert_eq!(notes[1].title, "Note 2");
+                assert_eq!(notes[2].title, "Note 3");
+            }
+            other => panic!("Expected PrecognitionResult, got {:?}", other),
+        }
+
+        // Send replay_complete to end the consumer
+        let complete_event = crucible_daemon::SessionEvent {
+            session_id: replay_session_id.clone(),
+            event_type: "replay_complete".to_string(),
+            data: json!({}),
+        };
+
+        event_tx.send(complete_event).unwrap();
+        drop(event_tx);
+
+        // Wait for consumer to finish with timeout
+        timeout(Duration::from_secs(1), consumer_task)
+            .await
+            .expect("Timeout waiting for consumer task")
+            .expect("Consumer task should complete");
+    }
 }

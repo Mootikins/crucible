@@ -114,14 +114,11 @@ pub fn render_user_prompt(content: &str, width: usize) -> Node {
     col(rows)
 }
 
-/// Render a thinking block with token count header.
-pub fn render_thinking_block(content: &str, token_count: usize, width: usize) -> Node {
+/// Render a thinking block with header.
+pub fn render_thinking_block(content: &str, _token_count: usize, width: usize) -> Node {
     let t = crate::tui::oil::theme::active();
     let header = styled(
-        format!(
-            "  \u{250C}{} thinking ({} tokens)",
-            t.decorations.divider_char, token_count
-        ),
+        format!("  \u{250C}{} thinking", t.decorations.divider_char),
         Style::new()
             .fg(t.resolve_color(t.colors.text_muted))
             .italic(),

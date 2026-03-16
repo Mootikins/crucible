@@ -349,8 +349,8 @@ async fn test_tools_list_over_http_returns_delegate_session() {
 
     assert_eq!(
         tools.len(),
-        14,
-        "Should have 14 tools, got: {:?}",
+        20,
+        "Should have 20 tools, got: {:?}",
         tool_names
     );
     assert!(
