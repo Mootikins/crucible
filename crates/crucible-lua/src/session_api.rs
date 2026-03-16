@@ -28,7 +28,7 @@
 //! command instead. This prevents plugins from unexpectedly changing models.
 
 use crate::error::LuaError;
-use mlua::{Lua, MetaMethod, UserData, UserDataMethods, Value};
+use mlua::{Lua, LuaSerdeExt, MetaMethod, UserData, UserDataMethods, Value};
 use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, oneshot};
 
@@ -82,6 +82,17 @@ pub trait SessionConfigRpc: Send + Sync {
     fn set_mode(&self, _mode: &str) -> Result<(), String> {
         Ok(())
     }
+    fn get_system_prompt(&self) -> Option<String> {
+        None
+    }
+    fn set_system_prompt(&self, _prompt: &str) -> Result<(), String> {
+        Err("system_prompt: not supported".to_string())
+    }
+    fn mark_first_message_sent(&self) {}
+    fn set_variable(&self, _key: &str, _value: serde_json::Value) {}
+    fn get_variable(&self, _key: &str) -> Option<serde_json::Value> {
+        None
+    }
     fn notify(&self, _notification: crucible_core::types::Notification) {}
     fn toggle_messages(&self) {}
     fn show_messages(&self) {}
@@ -103,6 +114,17 @@ pub enum SessionCommand {
     ListModels(oneshot::Sender<Vec<String>>),
     SetMode(String, oneshot::Sender<Result<(), String>>),
     GetMode(oneshot::Sender<String>),
+    GetSystemPrompt(oneshot::Sender<Option<String>>),
+    SetSystemPrompt(String, oneshot::Sender<Result<(), String>>),
+    MarkFirstMessageSent,
+    SetVariable {
+        key: String,
+        value: serde_json::Value,
+    },
+    GetVariable {
+        key: String,
+        response: oneshot::Sender<Option<serde_json::Value>>,
+    },
     Notify(crucible_core::types::Notification),
     ToggleMessages,
     ShowMessages,
@@ -195,6 +217,40 @@ impl SessionConfigRpc for ChannelSessionRpc {
         self.command(|tx| SessionCommand::SetMode(mode.to_string(), tx))
     }
 
+    fn get_system_prompt(&self) -> Option<String> {
+        self.query(SessionCommand::GetSystemPrompt)
+    }
+
+    fn set_system_prompt(&self, prompt: &str) -> Result<(), String> {
+        self.command(|tx| SessionCommand::SetSystemPrompt(prompt.to_string(), tx))
+    }
+
+    fn mark_first_message_sent(&self) {
+        let _ = self.tx.send(SessionCommand::MarkFirstMessageSent);
+    }
+
+    fn set_variable(&self, key: &str, value: serde_json::Value) {
+        let _ = self.tx.send(SessionCommand::SetVariable {
+            key: key.to_string(),
+            value,
+        });
+    }
+
+    fn get_variable(&self, key: &str) -> Option<serde_json::Value> {
+        let (tx, rx) = oneshot::channel();
+        if self
+            .tx
+            .send(SessionCommand::GetVariable {
+                key: key.to_string(),
+                response: tx,
+            })
+            .is_err()
+        {
+            return None;
+        }
+        rx.blocking_recv().ok().flatten()
+    }
+
     fn notify(&self, notification: crucible_core::types::Notification) {
         let _ = self.tx.send(SessionCommand::Notify(notification));
     }
@@ -279,6 +335,13 @@ impl UserData for Session {
                 "mode" => this
                     .with_rpc(|r| Ok(r.get_mode()))
                     .and_then(|s| lua.create_string(&s).map(Value::String)),
+                "system_prompt" => {
+                    this.with_rpc(|r| Ok(r.get_system_prompt()))
+                        .and_then(|v| match v {
+                            Some(s) => lua.create_string(&s).map(Value::String),
+                            None => Ok(Value::Nil),
+                        })
+                }
                 _ => Err(mlua::Error::runtime(format!("unknown property: {}", key))),
             }
         });
@@ -313,9 +376,38 @@ impl UserData for Session {
                     let mode: String = lua.unpack(val)?;
                     this.with_rpc(|r| r.set_mode(&mode))
                 }
+                "system_prompt" => {
+                    let prompt: String = lua.unpack(val)?;
+                    this.with_rpc(|r| r.set_system_prompt(&prompt))
+                }
                 _ => Err(mlua::Error::runtime(format!("cannot set session.{}", key))),
             },
         );
+
+        methods.add_method("set_variable", |lua, this, (key, val): (String, Value)| {
+            let json_val: serde_json::Value = lua.from_value(val).map_err(|_| {
+                mlua::Error::runtime("session variables must be JSON-serializable (cannot store functions, userdata, or recursive tables)")
+            })?;
+            this.with_rpc(|r| {
+                r.set_variable(&key, json_val);
+                Ok(())
+            })
+        });
+
+        methods.add_method("get_variable", |lua, this, key: String| {
+            let maybe_val = this.with_rpc(|r| Ok(r.get_variable(&key)))?;
+            match maybe_val {
+                None => Ok(Value::Nil),
+                Some(json) => lua.to_value(&json).map_err(mlua::Error::runtime),
+            }
+        });
+
+        methods.add_method("mark_first_message_sent", |_lua, this, ()| {
+            this.with_rpc(|r| {
+                r.mark_first_message_sent();
+                Ok(())
+            })
+        });
     }
 }
 
@@ -389,16 +481,25 @@ pub mod tests {
     use super::*;
     use crate::test_support::TestLuaBuilder;
 
+    #[derive(Clone)]
     pub struct MockRpc {
-        temperature: std::sync::RwLock<Option<f64>>,
-        model: std::sync::RwLock<Option<String>>,
+        temperature: Arc<std::sync::RwLock<Option<f64>>>,
+        model: Arc<std::sync::RwLock<Option<String>>>,
+        system_prompt: Arc<std::sync::RwLock<String>>,
+        first_message_sent: Arc<std::sync::RwLock<bool>>,
+        variables: Arc<std::sync::RwLock<std::collections::HashMap<String, serde_json::Value>>>,
     }
 
     impl MockRpc {
         pub fn new() -> Self {
             Self {
-                temperature: std::sync::RwLock::new(Some(0.7)),
-                model: std::sync::RwLock::new(Some("test-model".to_string())),
+                temperature: Arc::new(std::sync::RwLock::new(Some(0.7))),
+                model: Arc::new(std::sync::RwLock::new(Some("test-model".to_string()))),
+                system_prompt: Arc::new(std::sync::RwLock::new(
+                    "You are a helpful assistant.".to_string(),
+                )),
+                first_message_sent: Arc::new(std::sync::RwLock::new(false)),
+                variables: Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
             }
         }
     }
@@ -423,6 +524,28 @@ pub mod tests {
         }
         fn get_mode(&self) -> String {
             "act".to_string()
+        }
+        fn get_system_prompt(&self) -> Option<String> {
+            Some(self.system_prompt.read().unwrap().clone())
+        }
+        fn set_system_prompt(&self, prompt: &str) -> Result<(), String> {
+            if *self.first_message_sent.read().unwrap() {
+                return Err("system_prompt is locked after first message".to_string());
+            }
+            *self.system_prompt.write().unwrap() = prompt.to_string();
+            Ok(())
+        }
+        fn mark_first_message_sent(&self) {
+            *self.first_message_sent.write().unwrap() = true;
+        }
+        fn set_variable(&self, key: &str, value: serde_json::Value) {
+            self.variables
+                .write()
+                .unwrap()
+                .insert(key.to_string(), value);
+        }
+        fn get_variable(&self, key: &str) -> Option<serde_json::Value> {
+            self.variables.read().unwrap().get(key).cloned()
         }
     }
 
@@ -510,5 +633,131 @@ pub mod tests {
         let result: mlua::Result<()> = lua.load("crucible.get_session().temperature = 3.0").exec();
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("0.0-2.0"));
+    }
+
+    #[test]
+    fn test_session_variable_string() {
+        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+
+        let session = Session::new("s1".to_string());
+        session.bind(Box::new(MockRpc::new()));
+        mgr.set_current(session);
+
+        lua.load("crucible.get_session():set_variable('key', 'value')")
+            .exec()
+            .unwrap();
+
+        let result: String = lua
+            .load("return crucible.get_session():get_variable('key')")
+            .eval()
+            .unwrap();
+        assert_eq!(result, "value");
+    }
+
+    #[test]
+    fn test_session_variable_table() {
+        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+
+        let session = Session::new("s1".to_string());
+        session.bind(Box::new(MockRpc::new()));
+        mgr.set_current(session);
+
+        lua.load("crucible.get_session():set_variable('config', {nested = true, count = 42})")
+            .exec()
+            .unwrap();
+
+        let result: mlua::Table = lua
+            .load("return crucible.get_session():get_variable('config')")
+            .eval()
+            .unwrap();
+        let nested: bool = result.get("nested").unwrap();
+        let count: i64 = result.get("count").unwrap();
+        assert!(nested);
+        assert_eq!(count, 42);
+    }
+
+    #[test]
+    fn test_session_variable_nil_for_missing() {
+        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+
+        let session = Session::new("s1".to_string());
+        session.bind(Box::new(MockRpc::new()));
+        mgr.set_current(session);
+
+        let result: mlua::Value = lua
+            .load("return crucible.get_session():get_variable('nonexistent')")
+            .eval()
+            .unwrap();
+        assert!(result.is_nil());
+    }
+
+    #[test]
+    fn test_session_variable_reject_function() {
+        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+
+        let session = Session::new("s1".to_string());
+        session.bind(Box::new(MockRpc::new()));
+        mgr.set_current(session);
+
+        let result: mlua::Result<()> = lua
+            .load("crucible.get_session():set_variable('fn', function() end)")
+            .exec();
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("JSON-serializable"));
+    }
+
+    #[test]
+    fn test_session_system_prompt_read() {
+        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+
+        let session = Session::new("test-123".to_string());
+        session.bind(Box::new(MockRpc::new()));
+        mgr.set_current(session);
+
+        let prompt: String = lua
+            .load("return crucible.get_session().system_prompt")
+            .eval()
+            .unwrap();
+        assert_eq!(prompt, "You are a helpful assistant.");
+    }
+
+    #[test]
+    fn test_session_system_prompt_write() {
+        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+
+        let session = Session::new("s1".to_string());
+        session.bind(Box::new(MockRpc::new()));
+        mgr.set_current(session);
+
+        lua.load("local s = crucible.get_session(); s.system_prompt = 'custom prompt'")
+            .exec()
+            .unwrap();
+
+        let prompt: String = lua
+            .load("return crucible.get_session().system_prompt")
+            .eval()
+            .unwrap();
+        assert_eq!(prompt, "custom prompt");
+    }
+
+    #[test]
+    fn test_session_system_prompt_locked_after_send() {
+        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+
+        let session = Session::new("s1".to_string());
+        session.bind(Box::new(MockRpc::new()));
+        mgr.set_current(session);
+
+        lua.load("crucible.get_session():mark_first_message_sent()")
+            .exec()
+            .unwrap();
+
+        let result: mlua::Result<()> = lua
+            .load("crucible.get_session().system_prompt = 'new prompt'")
+            .exec();
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("locked"));
     }
 }
