@@ -148,11 +148,12 @@ impl AcpAgentHandle {
             })
         });
 
-        let mcp_host = if let Some(kiln) = kiln_path {
+        let mcp_host = if kiln_path.is_some() {
             let repo = knowledge_repo.unwrap_or_else(|| Arc::new(EmptyKnowledgeRepository));
             let embed = embedding_provider.unwrap_or_else(|| Arc::new(EmptyEmbeddingProvider));
 
-            match InProcessMcpHost::start(kiln.to_path_buf(), repo, embed, delegation_context).await
+            match InProcessMcpHost::start(workspace.to_path_buf(), repo, embed, delegation_context)
+                .await
             {
                 Ok(host) => {
                     info!(url = %host.mcp_url(), "In-process MCP server started");
