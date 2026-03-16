@@ -154,6 +154,8 @@ pub use vault::{
     register_vault_module_with_store,
 };
 pub use ws::register_ws_module;
+
+pub const BUILTIN_INIT_LUA: &str = include_str!("defaults/init.lua");
 // Handler system
 pub use handlers::{
     execute_handler, execute_permission_hooks, interpret_handler_result, register_crucible_on_api,
