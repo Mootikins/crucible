@@ -1,6 +1,9 @@
 use crate::common::daemon_client;
 use crate::tui::oil::commands::{validate_set_for_cli, SetEffect, SetError, SetRpcAction};
 
+/// Heuristic to distinguish a session ID from a KEY=VALUE setting.
+/// Crucible session IDs follow the `chat-YYYYMMDD-HHMM-xxxx` format (always contain
+/// hyphens, never contain `=`), while settings are `key=value` or bare `key`.
 fn is_session_id(s: &str) -> bool {
     s.contains('-') && !s.contains('=')
 }
