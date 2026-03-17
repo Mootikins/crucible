@@ -837,11 +837,8 @@ mod tests {
     #[tokio::test]
     async fn enrichment_config_none_skips_mismatch_check() {
         let (tx, mut rx) = broadcast::channel(16);
-        let km = KilnManager::with_event_tx(
-            tx,
-            None,
-            crucible_config::default_max_precognition_chars(),
-        );
+        let km =
+            KilnManager::with_event_tx(tx, None, crucible_config::default_max_precognition_chars());
         let tmp = TempDir::new().unwrap();
         let kiln_path = tmp.path().join("test_kiln");
 

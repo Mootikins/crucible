@@ -1254,7 +1254,8 @@ impl AgentManager {
                                         })
                                     } else {
                                         attempt = Some(tracker.record_call(&tool_call.name, &args));
-                                        Self::handle_tool_call_in_stream(&stream_ctx, tool_call).await
+                                        Self::handle_tool_call_in_stream(&stream_ctx, tool_call)
+                                            .await
                                     };
 
                                     let args_key = serde_json::to_string(&args)
@@ -1262,7 +1263,8 @@ impl AgentManager {
 
                                     if let Some(tool_result) = result.as_mut() {
                                         if let Some(error) = tool_result.error.as_mut() {
-                                            let failure_key = (tool_call.name.clone(), args_key.clone());
+                                            let failure_key =
+                                                (tool_call.name.clone(), args_key.clone());
                                             if last_failure_key.as_ref() == Some(&failure_key) {
                                                 consecutive_failure_count += 1;
                                             } else {
@@ -1271,8 +1273,11 @@ impl AgentManager {
                                             }
 
                                             if attempt.is_some_and(|attempt| attempt >= 3)
-                                                && tracker
-                                                    .is_repeat_failure(&tool_call.name, &args, 3)
+                                                && tracker.is_repeat_failure(
+                                                    &tool_call.name,
+                                                    &args,
+                                                    3,
+                                                )
                                             {
                                                 let attempt = attempt.unwrap_or_default();
                                                 let annotation = format!(
@@ -1321,16 +1326,18 @@ impl AgentManager {
                                 max_tool_depth = max_tool_depth,
                                 "max_tool_depth reached, forcing final response without tools"
                             );
-                            if let Some(forced_terminal) = Self::stream_forced_final_response_at_depth_limit(
-                                &mut agent_guard,
-                                &stream_ctx,
-                                accumulated_response,
-                            )
-                            .await
+                            if let Some(forced_terminal) =
+                                Self::stream_forced_final_response_at_depth_limit(
+                                    &mut agent_guard,
+                                    &stream_ctx,
+                                    accumulated_response,
+                                )
+                                .await
                             {
                                 terminal_chunk = Some(forced_terminal);
                             } else {
-                                Self::emit_max_tool_depth_hard_stop(&stream_ctx, max_tool_depth).await;
+                                Self::emit_max_tool_depth_hard_stop(&stream_ctx, max_tool_depth)
+                                    .await;
                             }
                             break;
                         }

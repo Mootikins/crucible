@@ -169,7 +169,7 @@ impl LiveProgress {
     ///
     /// Spawns a background task that updates the progress line every 100ms.
     /// The progress is displayed on a dedicated line above the prompt.
-    /// 
+    ///
     /// Suppresses output when stdout is not a terminal (piped/redirected).
     pub fn start(progress: BackgroundProgress) -> Self {
         use colored::Colorize;
