@@ -18,6 +18,8 @@ use streaming_mock::next_event;
 const SESSION_ID: &str = "tool-loop-test-session";
 const MESSAGE_ID: &str = "msg-tool-loop";
 const MAX_TOOL_DEPTH: usize = 10;
+const TOOL_DEPTH_LIMIT_FINAL_PROMPT: &str =
+    "You have reached the tool call limit. Please provide your final answer based on the information gathered so far.";
 
 fn make_tool_call(call_id: &str, path: &str) -> ToolCall {
     ToolCall::new(call_id, "read_file", json!({ "path": path }).to_string())
@@ -68,10 +70,48 @@ async fn execute_mock_tool_loop(
         if !tool_calls.is_empty() {
             tool_depth += 1;
             if tool_depth > MAX_TOOL_DEPTH {
-                let _ = event_tx.send(SessionEventMessage::ended(
-                    SESSION_ID,
-                    format!("max_tool_depth exceeded ({MAX_TOOL_DEPTH})"),
-                ));
+                let mut forced_messages = messages.clone();
+                forced_messages.push(ContextMessage::user(TOOL_DEPTH_LIMIT_FINAL_PROMPT));
+                let forced_request = BackendCompletionRequest::new("You are helpful.", forced_messages);
+                let mut forced_stream = backend.complete_stream(forced_request);
+
+                let before_forced_len = full_response.len();
+                let mut forced_done = false;
+
+                while let Some(chunk_result) = forced_stream.next().await {
+                    match chunk_result {
+                        Ok(chunk) => {
+                            if let Some(delta) = chunk.delta {
+                                full_response.push_str(&delta);
+                            }
+                            if chunk.done {
+                                forced_done = true;
+                                break;
+                            }
+                        }
+                        Err(err) => {
+                            let _ = event_tx.send(SessionEventMessage::ended(
+                                SESSION_ID,
+                                format!("error: {err}"),
+                            ));
+                            return;
+                        }
+                    }
+                }
+
+                if forced_done && full_response.len() > before_forced_len {
+                    let _ = event_tx.send(SessionEventMessage::message_complete(
+                        SESSION_ID,
+                        MESSAGE_ID,
+                        full_response,
+                        None,
+                    ));
+                } else {
+                    let _ = event_tx.send(SessionEventMessage::ended(
+                        SESSION_ID,
+                        format!("max_tool_depth exceeded ({MAX_TOOL_DEPTH})"),
+                    ));
+                }
                 return;
             }
 
@@ -135,6 +175,13 @@ async fn execute_mock_tool_loop(
                 } else {
                     last_failure_key = None;
                     consecutive_failure_count = 0;
+
+                    if tool_depth == MAX_TOOL_DEPTH.saturating_sub(2) {
+                        result_text.push_str(&format!(
+                            " [Note: You have used {} of {} available tool calls.]",
+                            tool_depth, MAX_TOOL_DEPTH
+                        ));
+                    }
                 }
 
                 let event_payload = if let Some(error) = &error_text {
@@ -251,20 +298,85 @@ async fn tool_loop_stops_when_max_tool_depth_exceeded() {
             Ok(crucible_core::traits::completion_backend::BackendCompletionChunk::finished(None)),
         ]);
     }
+    backend.push_text_response("final answer after tool limit");
 
     let (event_tx, mut event_rx) = broadcast::channel(256);
     execute_mock_tool_loop(&backend, "loop forever", &event_tx).await;
 
-    let ended = next_event(&mut event_rx, "ended").await;
-    let reason = ended.data["reason"]
-        .as_str()
-        .expect("ended reason should be string");
-    assert!(
-        reason.contains("max_tool_depth exceeded"),
-        "unexpected end reason: {reason}"
+    let complete = next_event(&mut event_rx, "message_complete").await;
+    assert_eq!(
+        complete.data["full_response"],
+        "final answer after tool limit"
     );
 
-    assert_eq!(backend.request_count(), 11);
+    assert_eq!(backend.request_count(), 12);
+}
+
+#[tokio::test]
+async fn graceful_depth_forces_message_complete_after_limit() {
+    std::fs::write("/tmp/test.txt", "graceful depth integration file")
+        .expect("write /tmp/test.txt");
+
+    let backend = MockCompletionBackend::new();
+    for idx in 0..11 {
+        backend.push_response_chunks(vec![
+            Ok(
+                crucible_core::traits::completion_backend::BackendCompletionChunk::tool_call(
+                    make_tool_call(&format!("call_{idx}"), "/tmp/test.txt"),
+                ),
+            ),
+            Ok(crucible_core::traits::completion_backend::BackendCompletionChunk::finished(None)),
+        ]);
+    }
+    backend.push_text_response("graceful depth final response");
+
+    let (event_tx, mut event_rx) = broadcast::channel(256);
+    execute_mock_tool_loop(&backend, "loop forever", &event_tx).await;
+
+    let complete = next_event(&mut event_rx, "message_complete").await;
+    assert_eq!(
+        complete.data["full_response"],
+        "graceful depth final response"
+    );
+}
+
+#[tokio::test]
+async fn graceful_depth_warns_two_before_limit_in_tool_result_content() {
+    std::fs::write("/tmp/test.txt", "graceful depth warning integration file")
+        .expect("write /tmp/test.txt");
+
+    let backend = MockCompletionBackend::new();
+    for idx in 0..8 {
+        backend.push_response_chunks(vec![
+            Ok(
+                crucible_core::traits::completion_backend::BackendCompletionChunk::tool_call(
+                    make_tool_call(&format!("call_{idx}"), "/tmp/test.txt"),
+                ),
+            ),
+            Ok(crucible_core::traits::completion_backend::BackendCompletionChunk::finished(None)),
+        ]);
+    }
+    backend.push_text_response("completed before hard limit");
+
+    let (event_tx, mut event_rx) = broadcast::channel(256);
+    execute_mock_tool_loop(&backend, "loop near limit", &event_tx).await;
+
+    let mut eighth_result = String::new();
+    for idx in 0..8 {
+        let _ = next_event(&mut event_rx, "tool_call").await;
+        let result_event = next_event(&mut event_rx, "tool_result").await;
+        if idx == 7 {
+            eighth_result = result_event.data["result"]["result"]
+                .as_str()
+                .expect("eighth tool result should contain result text")
+                .to_string();
+        }
+    }
+
+    assert!(
+        eighth_result.contains("You have used 8 of 10 available tool calls."),
+        "expected depth warning annotation in 8th tool result, got: {eighth_result}"
+    );
 }
 
 #[tokio::test]

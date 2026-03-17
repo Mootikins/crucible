@@ -296,7 +296,7 @@ impl AgentManager {
             .await;
         let kilns_searched = sources.len();
 
-        let results = match self
+        let mut results = match self
             .execute_multi_kiln_search(ExecuteMultiKilnSearchParams {
                 session_id,
                 sources: &sources,
@@ -311,6 +311,8 @@ impl AgentManager {
             Some(r) => r,
             None => return original_content.to_string(),
         };
+
+        apply_precognition_char_cap(&mut results, self.kiln_manager.max_precognition_chars());
 
         let enriched_prompt = {
             let session_state = self.get_or_create_session_state(session_id);
@@ -335,6 +337,29 @@ impl AgentManager {
             Some(note_info),
         );
         enriched_prompt
+    }
+}
+
+fn apply_precognition_char_cap(results: &mut [crucible_core::SearchResult], cap: usize) {
+    if results.is_empty() {
+        return;
+    }
+
+    let total_chars: usize = results
+        .iter()
+        .map(|result| result.snippet.as_deref().unwrap_or_default().chars().count())
+        .sum();
+
+    if total_chars <= cap {
+        return;
+    }
+
+    let per_snippet_cap = cap / results.len();
+
+    for result in results {
+        if let Some(snippet) = &mut result.snippet {
+            *snippet = snippet.chars().take(per_snippet_cap).collect();
+        }
     }
 }
 
@@ -536,6 +561,102 @@ mod format_precognition_context_tests {
         assert!(output.contains("<system>"));
         assert!(output.contains("</system>"));
         assert!(output.contains("## NoSnippet"));
+    }
+
+    #[test]
+    fn precognition_context_cap_truncates_when_aggregate_exceeds_limit() {
+        let mut results = vec![
+            make_result(
+                "notes/One.md",
+                0.9,
+                Some(&"a".repeat(800)),
+                Some("/home/user/notes"),
+            ),
+            make_result(
+                "notes/Two.md",
+                0.8,
+                Some(&"b".repeat(800)),
+                Some("/home/user/notes"),
+            ),
+            make_result(
+                "notes/Three.md",
+                0.7,
+                Some(&"c".repeat(800)),
+                Some("/home/user/notes"),
+            ),
+            make_result(
+                "notes/Four.md",
+                0.6,
+                Some(&"d".repeat(800)),
+                Some("/home/user/notes"),
+            ),
+            make_result(
+                "notes/Five.md",
+                0.5,
+                Some(&"e".repeat(800)),
+                Some("/home/user/notes"),
+            ),
+        ];
+
+        apply_precognition_char_cap(&mut results, 3000);
+
+        let total_chars: usize = results
+            .iter()
+            .map(|result| result.snippet.as_deref().unwrap_or_default().chars().count())
+            .sum();
+
+        assert_eq!(total_chars, 3000);
+        assert!(results
+            .iter()
+            .all(|result| result.snippet.as_deref().unwrap_or_default().chars().count() <= 600));
+    }
+
+    #[test]
+    fn precognition_context_cap_does_not_truncate_when_under_limit() {
+        let mut results = vec![
+            make_result(
+                "notes/One.md",
+                0.9,
+                Some(&"a".repeat(200)),
+                Some("/home/user/notes"),
+            ),
+            make_result(
+                "notes/Two.md",
+                0.8,
+                Some(&"b".repeat(200)),
+                Some("/home/user/notes"),
+            ),
+            make_result(
+                "notes/Three.md",
+                0.7,
+                Some(&"c".repeat(200)),
+                Some("/home/user/notes"),
+            ),
+            make_result(
+                "notes/Four.md",
+                0.6,
+                Some(&"d".repeat(200)),
+                Some("/home/user/notes"),
+            ),
+            make_result(
+                "notes/Five.md",
+                0.5,
+                Some(&"e".repeat(200)),
+                Some("/home/user/notes"),
+            ),
+        ];
+
+        apply_precognition_char_cap(&mut results, 3000);
+
+        let total_chars: usize = results
+            .iter()
+            .map(|result| result.snippet.as_deref().unwrap_or_default().chars().count())
+            .sum();
+
+        assert_eq!(total_chars, 1000);
+        assert!(results.iter().all(|result| {
+            result.snippet.as_deref().unwrap_or_default().chars().count() == 200
+        }));
     }
 }
 

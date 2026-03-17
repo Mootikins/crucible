@@ -68,6 +68,11 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
             auto_archive_hours: config.server.as_ref().and_then(|s| s.auto_archive_hours),
             llm_config: Some(config.llm.clone()),
             enrichment_config: config.enrichment.as_ref().map(|e| e.provider.clone()),
+            max_precognition_chars: config
+                .enrichment
+                .as_ref()
+                .map(|e| e.pipeline.max_precognition_chars)
+                .unwrap_or_else(crucible_config::default_max_precognition_chars),
             acp_config: Some(config.acp.clone()),
             permission_config: config.permissions.clone(),
             web_config: None,

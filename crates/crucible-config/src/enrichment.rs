@@ -14,6 +14,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
 
+pub fn default_max_precognition_chars() -> usize {
+    3000
+}
+
 /// Main enrichment configuration
 ///
 /// This configuration encompasses all settings related to document enrichment,
@@ -650,6 +654,9 @@ pub struct PipelineConfig {
     /// Circuit breaker timeout in milliseconds
     #[serde(default = "PipelineConfig::default_circuit_breaker_timeout_ms")]
     pub circuit_breaker_timeout_ms: u64,
+
+    #[serde(default = "default_max_precognition_chars")]
+    pub max_precognition_chars: usize,
 }
 
 impl PipelineConfig {
@@ -728,6 +735,7 @@ impl Default for PipelineConfig {
             retry_delay_ms: Self::default_retry_delay_ms(),
             circuit_breaker_threshold: Self::default_circuit_breaker_threshold(),
             circuit_breaker_timeout_ms: Self::default_circuit_breaker_timeout_ms(),
+            max_precognition_chars: default_max_precognition_chars(),
         }
     }
 }
@@ -1190,6 +1198,12 @@ mod tests {
 
         let resources = PipelineConfig::optimize_for_resources();
         assert_eq!(resources.worker_count, 1);
+    }
+
+    #[test]
+    fn test_pipeline_default_max_precognition_chars() {
+        let pipeline = PipelineConfig::default();
+        assert_eq!(pipeline.max_precognition_chars, 3000);
     }
 
     #[test]

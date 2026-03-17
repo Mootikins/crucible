@@ -154,6 +154,18 @@ pub async fn execute(params: ExecuteParams) -> Result<()> {
 
     let mut config = config;
 
+    // If no explicit query but stdin is piped, read query from stdin (oneshot mode)
+    let query = match query {
+        Some(q) => Some(q),
+        None if crate::commands::stdin::stdin_is_piped() => {
+            match crate::commands::stdin::read_stdin_message() {
+                Ok(msg) => Some(msg),
+                Err(_) => None,
+            }
+        }
+        None => None,
+    };
+
     if query.is_none() {
         run_preflight_checks(&mut config).await?;
     }
