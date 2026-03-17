@@ -1302,7 +1302,48 @@ async fn daemon_load(client: &DaemonClient, config: &CliConfig, session_id: &str
 mod tests {
     use super::*;
     use crucible_daemon::{SessionType, SessionWriter};
+    use std::sync::{Mutex, OnceLock};
     use tempfile::TempDir;
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    #[test]
+    fn session_id_resolver_explicit_wins_over_env() {
+        let _guard = env_lock().lock().unwrap();
+        std::env::set_var("CRU_SESSION", "chat-from-env");
+
+        let resolved = resolve_session_id(Some("chat-explicit".to_string())).unwrap();
+        assert_eq!(resolved, "chat-explicit");
+
+        std::env::remove_var("CRU_SESSION");
+    }
+
+    #[test]
+    fn session_id_resolver_uses_env_when_explicit_missing() {
+        let _guard = env_lock().lock().unwrap();
+        std::env::set_var("CRU_SESSION", "chat-from-env");
+
+        let resolved = resolve_session_id(None).unwrap();
+        assert_eq!(resolved, "chat-from-env");
+
+        std::env::remove_var("CRU_SESSION");
+    }
+
+    #[test]
+    fn session_id_resolver_errors_when_no_source_available() {
+        let _guard = env_lock().lock().unwrap();
+        std::env::remove_var("CRU_SESSION");
+
+        let result = resolve_session_id(None);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("No session specified"));
+    }
 
     async fn setup_test_session(sessions_dir: &std::path::Path) -> SessionId {
         let mut writer = SessionWriter::create(sessions_dir, SessionType::Chat)

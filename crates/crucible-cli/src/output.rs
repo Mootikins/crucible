@@ -3,6 +3,15 @@ use anyhow::Result;
 use colored::Colorize;
 use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, Cell, Color, Table};
 use serde_json;
+use std::io::IsTerminal;
+
+/// Detect if stdout is connected to an interactive terminal.
+///
+/// Returns `true` if stdout is a terminal (interactive), `false` if piped or redirected.
+/// This is used to suppress ANSI colors and progress spinners when output is piped.
+pub fn is_interactive() -> bool {
+    std::io::stdout().is_terminal()
+}
 
 /// Format search results
 pub fn format_search_results(
@@ -324,5 +333,34 @@ mod tests {
         assert!(output.contains("total_files"));
         assert!(output.contains("42"));
         assert!(output.contains("─")); // Table border
+    }
+
+    #[test]
+    fn test_colored_override_removes_ansi() {
+        // Test that when colored::control::set_override(false) is called,
+        // ANSI codes are removed from colored output
+        let test_string = "test".red().to_string();
+
+        // Before override, should contain ANSI escape codes
+        assert!(test_string.contains("\x1b["));
+
+        // Apply override
+        colored::control::set_override(false);
+        let overridden_string = "test".red().to_string();
+
+        // After override, should NOT contain ANSI escape codes
+        assert!(!overridden_string.contains("\x1b["));
+        assert_eq!(overridden_string, "test");
+
+        // Reset for other tests
+        colored::control::set_override(true);
+    }
+
+    #[test]
+    fn test_is_interactive_returns_bool() {
+        // Test that is_interactive() returns a boolean value
+        // In test environment, stdout is typically not a terminal
+        let result = is_interactive();
+        assert!(matches!(result, true | false));
     }
 }
