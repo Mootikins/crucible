@@ -23,28 +23,8 @@ pub fn resolve_session_id(explicit: Option<String>) -> anyhow::Result<String> {
         })
 }
 
-/// Print a deprecation warning to stderr. Old form is described by `old`,
-/// the preferred replacement by `new`.
-#[allow(dead_code)]
 fn warn_deprecated(old: &str, new: &str) {
     eprintln!("warning: '{}' is deprecated, use '{}' instead", old, new);
-}
-
-/// Route output to JSON or human-readable based on `format`.
-///
-/// When `format == "json"`, serializes `value` as pretty-printed JSON to stdout.
-/// Otherwise calls `human_fn` to render human-readable output.
-#[allow(dead_code)]
-fn print_json_or_text(
-    value: &serde_json::Value,
-    format: &str,
-    human_fn: impl FnOnce(&serde_json::Value),
-) {
-    if format == "json" {
-        println!("{}", serde_json::to_string_pretty(value).unwrap_or_else(|_| "{}".to_string()));
-    } else {
-        human_fn(value);
-    }
 }
 
 fn resolve_send_inputs(
@@ -528,22 +508,20 @@ async fn search(config: CliConfig, query: String, limit: u32, format: String) ->
                 .unwrap_or_default();
             if matches.is_empty() {
                 if format == "json" {
-                    println!("{}", serde_json::json!({"matches": []}).to_string());
+                    println!("{}", serde_json::json!({"matches": []}));
                 } else {
                     println!("No sessions matching '{}' found.", query);
                 }
+            } else if format == "json" {
+                println!("{}", serde_json::json!({"matches": matches}));
             } else {
-                if format == "json" {
-                    println!("{}", serde_json::json!({"matches": matches}).to_string());
-                } else {
-                    println!("Sessions matching '{}':\n", query);
-                    for m in &matches {
-                        let session_id = m["session_id"].as_str().unwrap_or("");
-                        let line = m["line"].as_u64().unwrap_or(0);
-                        let context = m["context"].as_str().unwrap_or("");
-                        println!("  {} (line {})", session_id, line);
-                        println!("    {}\n", context);
-                    }
+                println!("Sessions matching '{}':\n", query);
+                for m in &matches {
+                    let session_id = m["session_id"].as_str().unwrap_or("");
+                    let line = m["line"].as_u64().unwrap_or(0);
+                    let context = m["context"].as_str().unwrap_or("");
+                    println!("  {} (line {})", session_id, line);
+                    println!("    {}\n", context);
                 }
             }
             return Ok(());
@@ -554,7 +532,7 @@ async fn search(config: CliConfig, query: String, limit: u32, format: String) ->
     let sessions_path = sessions_dir(&config);
     if !sessions_path.exists() {
         if format == "json" {
-            println!("{}", serde_json::json!({"matches": []}).to_string());
+            println!("{}", serde_json::json!({"matches": []}));
         } else {
             println!("No sessions found.");
         }
@@ -572,7 +550,7 @@ async fn search(config: CliConfig, query: String, limit: u32, format: String) ->
     };
     if matches.is_empty() {
         if format == "json" {
-            println!("{}", serde_json::json!({"matches": []}).to_string());
+            println!("{}", serde_json::json!({"matches": []}));
         } else {
             println!("No sessions matching '{}' found.", query);
         }
@@ -589,7 +567,7 @@ async fn search(config: CliConfig, query: String, limit: u32, format: String) ->
                 })
             })
             .collect();
-        println!("{}", serde_json::json!({"matches": json_matches}).to_string());
+        println!("{}", serde_json::json!({"matches": json_matches}));
     } else {
         println!("Sessions matching '{}':\n", query);
         for (session_id, line_num, context) in matches {
@@ -1040,6 +1018,7 @@ async fn daemon_list(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn daemon_create(
     client: &DaemonClient,
     config: &CliConfig,
@@ -1345,7 +1324,7 @@ async fn daemon_configure(
             "model": model,
             "endpoint": endpoint
         });
-        println!("{}", json_output.to_string());
+        println!("{}", json_output);
     } else {
         println!("Configured agent: {} / {}", provider, model);
     }
@@ -1914,28 +1893,6 @@ mod tests {
     #[test]
     fn test_warn_deprecated_message_format() {
         warn_deprecated("--old-flag", "positional argument");
-    }
-
-    #[test]
-    fn test_print_json_or_text_json_path() {
-        let value = serde_json::json!({"key": "value", "num": 42});
-        let mut captured = String::new();
-        let json_str = serde_json::to_string_pretty(&value).unwrap();
-        captured.push_str(&json_str);
-        let parsed: serde_json::Value = serde_json::from_str(&captured).unwrap();
-        assert_eq!(parsed["key"], "value");
-        assert_eq!(parsed["num"], 42);
-    }
-
-    #[test]
-    fn test_print_json_or_text_text_path_calls_human_fn() {
-        let value = serde_json::json!({"session_id": "chat-123"});
-        let mut called = false;
-        print_json_or_text(&value, "text", |v| {
-            called = true;
-            assert_eq!(v["session_id"], "chat-123");
-        });
-        assert!(called, "human_fn should have been called for text format");
     }
 
     #[test]
