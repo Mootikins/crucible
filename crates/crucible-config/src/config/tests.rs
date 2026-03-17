@@ -397,7 +397,6 @@ fn test_effective_llm_provider_without_llm_default_returns_error() {
             temperature: Some(0.8),
             max_tokens: Some(4096),
             timeout_secs: Some(60),
-            size_aware_prompts: true,
             show_thinking: false,
         }),
         ..Config::default()

@@ -36,15 +36,6 @@ pub struct ChatConfig {
     pub max_tokens: Option<u32>,
     /// API timeout in seconds
     pub timeout_secs: Option<u64>,
-    /// Enable size-aware prompts and tool filtering for small models
-    ///
-    /// When enabled (default), small models (<4B params) get:
-    /// - Explicit tool usage guidance to prevent loops
-    /// - Read-only tools only (read_file, glob, grep)
-    ///
-    /// When disabled, all models get standard prompts and all tools.
-    #[serde(default = "default_true")]
-    pub size_aware_prompts: bool,
     /// Show thinking/reasoning tokens from models that support it
     ///
     /// When enabled, thinking tokens are streamed in a quote block below the
@@ -64,7 +55,6 @@ impl Default for ChatConfig {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            size_aware_prompts: true,
             show_thinking: false,
         }
     }
@@ -102,35 +92,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_size_aware_prompts_default_enabled() {
-        let config = ChatConfig::default();
-        assert!(config.size_aware_prompts);
-    }
-
-    #[test]
-    fn test_size_aware_prompts_deserialize_disabled() {
+    fn test_backward_compat_size_aware_prompts_in_config() {
+        // Verify that existing configs with size_aware_prompts = true still parse
+        // after the field is removed (serde silently ignores unknown fields)
         let toml = r#"
-            size_aware_prompts = false
-        "#;
-        let config: ChatConfig = toml::from_str(toml).unwrap();
-        assert!(!config.size_aware_prompts);
-    }
-
-    #[test]
-    fn test_size_aware_prompts_deserialize_enabled() {
-        let toml = r#"
+            model = "test-model"
             size_aware_prompts = true
         "#;
         let config: ChatConfig = toml::from_str(toml).unwrap();
-        assert!(config.size_aware_prompts);
-    }
-
-    #[test]
-    fn test_size_aware_prompts_missing_defaults_to_true() {
-        let toml = r#"
-            model = "test-model"
-        "#;
-        let config: ChatConfig = toml::from_str(toml).unwrap();
-        assert!(config.size_aware_prompts);
+        assert_eq!(config.model, Some("test-model".to_string()));
     }
 }

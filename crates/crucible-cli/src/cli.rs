@@ -205,7 +205,11 @@ pub enum Commands {
     #[command(
         long_about = "Display comprehensive kiln statistics including note count, embeddings status, and storage metrics.\n\nShows overview of your knowledge base with format options for different output styles.\n\nExamples:\n  # Show statistics in table format\n  cru stats\n\n  # JSON output for scripting\n  cru stats -f json\n\n  # CSV format for spreadsheets\n  cru stats -f csv"
     )]
-    Stats,
+    Stats {
+        /// Output format (table, json, plain)
+        #[arg(short = 'f', long, default_value = "table")]
+        format: String,
+    },
 
     /// List available models from configured LLM provider
     #[command(
@@ -667,21 +671,6 @@ pub enum ConfigCommands {
 pub enum StorageCommands {
     /// Show current storage mode and quick status
     Mode,
-
-    /// Show detailed storage statistics
-    Stats {
-        /// Output format (table, json, plain)
-        #[arg(short = 'f', long, default_value = "table")]
-        format: String,
-
-        /// Show per-backend breakdown
-        #[arg(long)]
-        by_backend: bool,
-
-        /// Include deduplication statistics
-        #[arg(long)]
-        deduplication: bool,
-    },
 
     /// Verify content integrity
     Verify {

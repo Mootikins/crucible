@@ -290,7 +290,6 @@ fn build_enriched_prompt(
 /// `Box<dyn AgentHandle>`. Unlike the CLI factory, this doesn't need to:
 /// - Discover skills (already in system_prompt)
 /// - Load rules files (already in system_prompt)
-/// - Apply size-aware prompts (client chose the prompt)
 ///
 /// # Arguments
 ///
