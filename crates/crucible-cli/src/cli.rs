@@ -558,8 +558,9 @@ pub enum SessionCommands {
         #[arg(long = "session", value_name = "SESSION_ID")]
         session_id: Option<String>,
 
-        /// Message to send
-        message: String,
+        /// Message to send (reads from stdin if not provided and stdin is piped)
+        #[arg(value_name = "MESSAGE")]
+        message: Option<String>,
 
         /// Show raw events instead of formatted output
         #[arg(long)]
