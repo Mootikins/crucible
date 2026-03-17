@@ -18,9 +18,7 @@ use tokio::fs;
 pub fn resolve_session_id(explicit: Option<String>) -> anyhow::Result<String> {
     explicit
         .or_else(|| std::env::var("CRU_SESSION").ok())
-        .ok_or_else(|| {
-            anyhow!("No session specified. Pass session ID or set CRU_SESSION env var.")
-        })
+        .ok_or_else(|| anyhow!("No session specified. Pass session ID or set CRU_SESSION env var."))
 }
 
 fn warn_deprecated(old: &str, new: &str) {
@@ -56,15 +54,19 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             state,
             all,
         } => list(config, limit, session_type, format, state, all).await,
-        SessionCommands::Search { query, limit, format } => search(config, query, limit, format).await,
+        SessionCommands::Search {
+            query,
+            limit,
+            format,
+        } => search(config, query, limit, format).await,
         SessionCommands::Show { id, format } => {
             let session_id = resolve_session_id(id)?;
             show(config, session_id, format).await
-        },
+        }
         SessionCommands::Open { id } => {
             let session_id = resolve_session_id(id)?;
             resume(config, session_id).await
-        },
+        }
         SessionCommands::Export {
             id,
             output,
@@ -72,7 +74,7 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
         } => {
             let session_id = resolve_session_id(id)?;
             export(config, session_id, output, timestamps).await
-        },
+        }
         SessionCommands::Reindex { force } => reindex(config, force).await,
         SessionCommands::Cleanup {
             older_than,
@@ -148,7 +150,7 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
                 }
             };
             rpc::send(&config, &session_id, &message, raw).await
-        },
+        }
         SessionCommands::Configure {
             session_id,
             provider,
@@ -359,7 +361,15 @@ async fn list(
 ) -> Result<()> {
     let client = daemon_client().await?;
 
-    rpc::list(&client, &config, session_type.as_deref(), state.as_deref(), &format, Some(limit)).await?;
+    rpc::list(
+        &client,
+        &config,
+        session_type.as_deref(),
+        state.as_deref(),
+        &format,
+        Some(limit),
+    )
+    .await?;
 
     if all {
         println!();
@@ -937,10 +947,7 @@ mod rpc {
             .session_list(Some(&config.kiln_path), None, session_type, state, None)
             .await?;
 
-        let mut sessions = result["sessions"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default();
+        let mut sessions = result["sessions"].as_array().cloned().unwrap_or_default();
 
         if sessions.is_empty() {
             println!("No daemon sessions found.");
@@ -1074,7 +1081,11 @@ mod rpc {
         Ok(())
     }
 
-    pub(super) async fn resume(client: &DaemonClient, session_id: &str, format: &str) -> Result<()> {
+    pub(super) async fn resume(
+        client: &DaemonClient,
+        session_id: &str,
+        format: &str,
+    ) -> Result<()> {
         let result = client.session_resume(session_id).await?;
         if format == "json" {
             println!(
@@ -1111,7 +1122,12 @@ mod rpc {
         Ok(())
     }
 
-    pub(super) async fn send(config: &CliConfig, session_id: &str, message: &str, raw: bool) -> Result<()> {
+    pub(super) async fn send(
+        config: &CliConfig,
+        session_id: &str,
+        message: &str,
+        raw: bool,
+    ) -> Result<()> {
         use crucible_daemon::DaemonClient;
         use std::io::Write;
 
@@ -1414,7 +1430,11 @@ mod rpc {
         Ok(())
     }
 
-    pub(super) async fn load(client: &DaemonClient, config: &CliConfig, session_id: &str) -> Result<()> {
+    pub(super) async fn load(
+        client: &DaemonClient,
+        config: &CliConfig,
+        session_id: &str,
+    ) -> Result<()> {
         let result = client
             .session_resume_from_storage(session_id, &config.kiln_path, None, None)
             .await?;
@@ -1499,8 +1519,11 @@ mod tests {
         let _guard = env_lock().lock().unwrap();
         std::env::remove_var("CRU_SESSION");
 
-        let (session_id, message, used_deprecated_flag) =
-            resolve_send_inputs(Some("chat-123".to_string()), Some("hello".to_string()), None);
+        let (session_id, message, used_deprecated_flag) = resolve_send_inputs(
+            Some("chat-123".to_string()),
+            Some("hello".to_string()),
+            None,
+        );
 
         assert_eq!(session_id, Some("chat-123".to_string()));
         assert_eq!(message, Some("hello".to_string()));
@@ -1662,7 +1685,13 @@ mod tests {
         assert!(result.is_ok());
 
         // Should not find session with "nonexistent"
-        let result = search(config, "nonexistent_term_xyz".to_string(), 10, "text".to_string()).await;
+        let result = search(
+            config,
+            "nonexistent_term_xyz".to_string(),
+            10,
+            "text".to_string(),
+        )
+        .await;
         assert!(result.is_ok());
     }
 
@@ -1828,6 +1857,4 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Invalid recording mode"));
     }
-
-
 }

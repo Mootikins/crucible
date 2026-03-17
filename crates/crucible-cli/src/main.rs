@@ -299,7 +299,9 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             recent,
         }) => commands::status::execute(config, path, format, detailed, recent).await?,
 
-        Some(Commands::Doctor { format }) => commands::doctor::execute(cli_config_path, &format).await?,
+        Some(Commands::Doctor { format }) => {
+            commands::doctor::execute(cli_config_path, &format).await?
+        }
 
         Some(Commands::Storage(cmd)) => commands::storage::execute(config, cmd).await?,
 
@@ -342,7 +344,10 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             commands::auth::execute(command).await?;
         }
 
-        Some(Commands::Set { args, session_id_flag }) => {
+        Some(Commands::Set {
+            args,
+            session_id_flag,
+        }) => {
             commands::set::execute(args, session_id_flag).await?;
         }
 

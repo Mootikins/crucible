@@ -137,10 +137,7 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: &str) -> Res
         results.push(DoctorCheckResult {
             check_name: "Kiln".to_string(),
             status: "fail".to_string(),
-            message: format!(
-                "Kiln path is not a directory: {}",
-                display_path(&kiln_path)
-            ),
+            message: format!("Kiln path is not a directory: {}", display_path(&kiln_path)),
         });
     } else if is_writable_dir(&kiln_path) {
         results.push(DoctorCheckResult {
