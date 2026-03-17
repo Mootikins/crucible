@@ -255,11 +255,11 @@ fn error_invalid_subcommand_shows_suggestion() {
 fn error_missing_required_arg_shows_help() {
     let mut cmd = Command::cargo_bin("cru").unwrap();
     cmd.arg("session").arg("resume");
+    cmd.env_remove("CRU_SESSION");
 
     cmd.assert()
         .failure()
-        .stderr(predicates::str::contains("required arguments"))
-        .stderr(predicates::str::contains("Usage:"));
+        .stderr(predicates::str::contains("No session specified"));
 }
 
 #[test]

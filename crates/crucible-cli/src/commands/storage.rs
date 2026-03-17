@@ -14,6 +14,7 @@ use crucible_daemon::DaemonClient;
 pub async fn execute(config: CliConfig, command: StorageCommands) -> Result<()> {
     match command {
         StorageCommands::Mode => execute_mode(&config).await,
+        StorageCommands::Stats { format, .. } => execute_stats(config, format).await,
         StorageCommands::Verify { path, .. } => {
             let kiln = path.unwrap_or_else(|| config.kiln_path.clone());
             rpc_stub("Verifying storage integrity...", |c| async move {
