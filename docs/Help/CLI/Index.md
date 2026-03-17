@@ -36,7 +36,7 @@ Complete reference for all Crucible CLI commands.
 
 | Command | Description |
 |---------|-------------|
-| `cru session` | Manage chat sessions (list, show, resume, export, search) |
+| `cru session` | Manage chat sessions (create, send, pause, resume, end, list, show, search) |
 | `cru config` | Manage Crucible configuration (initialize, view, export) |
 | `cru auth` | Manage LLM provider credentials (login, logout, list) |
 | `cru set` | Configure a running session's settings (same syntax as TUI :set) |

@@ -25,6 +25,12 @@ This enables an **episodic memory pattern**: instead of starting every conversat
 
 ## Usage
 
+All `search` output defaults to plain text. Pass `-f json` for structured output that works well with `jq`:
+
+```bash
+cru session search "authentication" -f json | jq '.[].session_id'
+```
+
 ### Basic Search
 
 ```bash
