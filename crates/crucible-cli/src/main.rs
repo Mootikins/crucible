@@ -342,8 +342,8 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             commands::auth::execute(command).await?;
         }
 
-        Some(Commands::Set { settings, session }) => {
-            commands::set::execute(settings, session).await?;
+        Some(Commands::Set { args, session_id_flag }) => {
+            commands::set::execute(args, session_id_flag).await?;
         }
 
         Some(Commands::Completions { shell }) => {

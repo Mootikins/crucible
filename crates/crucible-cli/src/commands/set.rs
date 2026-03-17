@@ -1,12 +1,29 @@
 use crate::common::daemon_client;
 use crate::tui::oil::commands::{validate_set_for_cli, SetEffect, SetError, SetRpcAction};
 
-#[cfg(test)]
-fn resolve_session_id(
-    explicit_session_id: Option<String>,
-    env_session_id: Option<String>,
-) -> Option<String> {
-    explicit_session_id.or(env_session_id)
+fn is_session_id(s: &str) -> bool {
+    s.contains('-') && !s.contains('=')
+}
+
+fn resolve_set_inputs(
+    args: Vec<String>,
+    session_id_flag: Option<String>,
+) -> (Option<String>, Vec<String>, bool) {
+    if let Some(flag_id) = session_id_flag {
+        return (Some(flag_id), args, true);
+    }
+
+    if args.is_empty() {
+        return (None, args, false);
+    }
+
+    if is_session_id(&args[0]) {
+        let session_id = args[0].clone();
+        let settings = args[1..].to_vec();
+        return (Some(session_id), settings, false);
+    }
+
+    (None, args, false)
 }
 
 #[cfg(test)]
@@ -34,7 +51,21 @@ fn collect_rpc_actions(
     Ok(rpc_actions)
 }
 
-pub async fn execute(settings: Vec<String>, session_id: Option<String>) -> anyhow::Result<()> {
+pub async fn execute(
+    args: Vec<String>,
+    session_id_flag: Option<String>,
+) -> anyhow::Result<()> {
+    let (resolved_session_id, settings, used_deprecated) = resolve_set_inputs(args, session_id_flag);
+
+    if used_deprecated {
+        eprintln!("warning: --session flag is deprecated. Use positional SESSION_ID instead: cru set <SESSION_ID> <SETTINGS>");
+    }
+
+    if settings.is_empty() {
+        eprintln!("error: no settings provided. Use KEY=VALUE syntax (e.g. model=llama3).");
+        std::process::exit(1);
+    }
+
     let mut rpc_actions: Vec<(String, SetRpcAction)> = Vec::new();
     for setting in &settings {
         match validate_set_for_cli(setting) {
@@ -72,11 +103,11 @@ pub async fn execute(settings: Vec<String>, session_id: Option<String>) -> anyho
         }
     }
 
-    let session_id = session_id
+    let session_id = resolved_session_id
         .or_else(|| std::env::var("CRU_SESSION").ok())
         .unwrap_or_else(|| {
             eprintln!(
-                "error: no session specified. Use --session <ID> or set CRU_SESSION env var.\n\
+                "error: no session specified. Use positional SESSION_ID or set CRU_SESSION env var.\n\
                  \n\
                  Tip: find session IDs with `cru session list`"
             );
@@ -204,28 +235,6 @@ mod tests {
     }
 
     #[test]
-    fn resolve_session_id_prefers_argument_over_env() {
-        let session = resolve_session_id(
-            Some("arg-session".to_string()),
-            Some("env-session".to_string()),
-        )
-        .unwrap();
-        assert_eq!(session, "arg-session");
-    }
-
-    #[test]
-    fn resolve_session_id_uses_cru_session_env() {
-        let session = resolve_session_id(None, Some("env-session".to_string())).unwrap();
-        assert_eq!(session, "env-session");
-    }
-
-    #[test]
-    fn resolve_session_id_without_any_source_errors() {
-        let err = resolve_session_id(None, None);
-        assert!(err.is_none());
-    }
-
-    #[test]
     fn collect_rpc_actions_rejects_tui_local_key() {
         let err = collect_rpc_actions(&["verbose=true".to_string()]).unwrap_err();
         assert!(
@@ -239,5 +248,55 @@ mod tests {
         assert!(
             matches!(err, (input, SetError::InvalidValue { key, .. }) if input == "model" && key == "model")
         );
+    }
+
+    #[test]
+    fn is_session_id_with_dashes() {
+        assert!(is_session_id("chat-123"));
+        assert!(is_session_id("chat-20260217-1030"));
+        assert!(is_session_id("session-abc-def"));
+    }
+
+    #[test]
+    fn is_session_id_rejects_settings() {
+        assert!(!is_session_id("model=llama3"));
+        assert!(!is_session_id("temperature=0.5"));
+        assert!(!is_session_id("thinking"));
+    }
+
+    #[test]
+    fn resolve_set_inputs_with_positional_session_id() {
+        let args = vec!["chat-123".to_string(), "model=llama3".to_string()];
+        let (session_id, settings, used_deprecated) = resolve_set_inputs(args, None);
+        assert_eq!(session_id, Some("chat-123".to_string()));
+        assert!(!used_deprecated);
+        assert_eq!(settings, vec!["model=llama3"]);
+    }
+
+    #[test]
+    fn resolve_set_inputs_with_deprecated_flag() {
+        let args = vec!["model=llama3".to_string()];
+        let (session_id, settings, used_deprecated) = resolve_set_inputs(args, Some("chat-456".to_string()));
+        assert_eq!(session_id, Some("chat-456".to_string()));
+        assert!(used_deprecated);
+        assert_eq!(settings, vec!["model=llama3"]);
+    }
+
+    #[test]
+    fn resolve_set_inputs_treats_setting_as_first_arg() {
+        let args = vec!["model=llama3".to_string(), "temperature=0.5".to_string()];
+        let (session_id, settings, used_deprecated) = resolve_set_inputs(args, None);
+        assert_eq!(session_id, None);
+        assert!(!used_deprecated);
+        assert_eq!(settings, vec!["model=llama3".to_string(), "temperature=0.5".to_string()]);
+    }
+
+    #[test]
+    fn resolve_set_inputs_flag_takes_precedence() {
+        let args = vec!["chat-123".to_string(), "model=llama3".to_string()];
+        let (session_id, settings, used_deprecated) = resolve_set_inputs(args, Some("chat-456".to_string()));
+        assert_eq!(session_id, Some("chat-456".to_string()));
+        assert!(used_deprecated);
+        assert_eq!(settings, vec!["chat-123".to_string(), "model=llama3".to_string()]);
     }
 }

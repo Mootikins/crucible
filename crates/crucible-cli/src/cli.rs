@@ -399,16 +399,16 @@ Examples:
     ///   CRU_SESSION=chat-20260217-1030 cru set temperature=0.5
     #[command(
         name = "set",
-        long_about = "Configure a running session's settings remotely (same syntax as TUI :set).\n\nRequires an explicit session target via --session flag or CRU_SESSION env var.\nOnly daemon-synced settings (model, temperature, thinkingbudget, maxtokens) are supported.\nTUI-local settings (verbose, thinking, theme, etc.) must be set via `cru chat --set`.\n\nExamples:\n  # Switch model on a running session\n  cru set model=llama3 --session chat-20260217-1030\n\n  # Set temperature using env var for session\n  CRU_SESSION=chat-20260217-1030 cru set temperature=0.5\n\n  # Set multiple settings at once\n  cru set model=llama3 temperature=0.7 --session chat-20260217-1030"
+        long_about = "Configure a running session's settings remotely (same syntax as TUI :set).\n\nRequires session targeting via positional SESSION_ID or CRU_SESSION env var.\nOnly daemon-synced settings (model, temperature, thinkingbudget, maxtokens) are supported.\nTUI-local settings (verbose, thinking, theme, etc.) must be set via `cru chat --set`.\n\nExamples:\n  # Switch model on a running session\n  cru set chat-20260217-1030 model=llama3\n\n  # Set temperature using env var for session\n  CRU_SESSION=chat-20260217-1030 cru set temperature=0.5\n\n  # Set multiple settings at once\n  cru set chat-20260217-1030 model=llama3 temperature=0.7"
     )]
     Set {
-        /// Settings to apply (same syntax as TUI :set, can be repeated)
-        #[arg(required = true, value_name = "KEY[=VALUE]")]
-        settings: Vec<String>,
+        /// Session ID and/or settings (positional args, or use CRU_SESSION env var)
+        #[arg(value_name = "SESSION_ID|SETTING", num_args = 1..)]
+        args: Vec<String>,
 
-        /// Target session ID (or use CRU_SESSION env var)
-        #[arg(long, value_name = "SESSION_ID")]
-        session: Option<String>,
+        /// [DEPRECATED] Use positional SESSION_ID instead
+        #[arg(long = "session", value_name = "SESSION_ID", hide = true)]
+        session_id_flag: Option<String>,
     },
 
     /// Generate shell completion scripts (bash, zsh)
