@@ -47,7 +47,6 @@ fn resolve_send_inputs(
     (session_id_pos, message, false)
 }
 
-/// Execute a session subcommand
 pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
     match cmd {
         SessionCommands::List {
@@ -92,13 +91,15 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             daemon_create(
                 &client,
                 &config,
-                &session_type,
-                agent.as_deref(),
-                recording_mode.as_deref(),
-                quiet,
-                &format,
-                title.as_deref(),
-                workspace.as_deref(),
+                DaemonCreateParams {
+                    session_type: &session_type,
+                    agent: agent.as_deref(),
+                    recording_mode: recording_mode.as_deref(),
+                    quiet,
+                    format: &format,
+                    title: title.as_deref(),
+                    workspace: workspace.as_deref(),
+                },
             )
             .await
         }
@@ -110,13 +111,13 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
         SessionCommands::Resume { session_id, format } => {
             let session_id = resolve_session_id(session_id)?;
             let client = daemon_client().await?;
-            unpause(&client, &session_id, &format).await
+            daemon_resume(&client, &session_id, &format).await
         }
         SessionCommands::Unpause { session_id } => {
             let session_id = resolve_session_id(session_id)?;
             warn_deprecated("unpause", "resume");
             let client = daemon_client().await?;
-            unpause(&client, &session_id, "text").await
+            daemon_resume(&client, &session_id, "text").await
         }
         SessionCommands::End { session_id, format } => {
             let session_id = resolve_session_id(session_id)?;
@@ -184,14 +185,10 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
     }
 }
 
-/// Get the sessions directory path
 fn sessions_dir(config: &CliConfig) -> PathBuf {
     config.kiln_path.join(".crucible").join("sessions")
 }
 
-/// Read events from a session directory's JSONL file (local fallback).
-///
-/// Used when daemon RPC is unavailable for backward compatibility.
 async fn read_session_events(session_dir: &std::path::Path) -> Result<Vec<LogEvent>> {
     let jsonl_path = session_dir.join("session.jsonl");
     let content = fs::read_to_string(&jsonl_path)
@@ -210,7 +207,6 @@ async fn read_session_events(session_dir: &std::path::Path) -> Result<Vec<LogEve
     Ok(events)
 }
 
-/// List session directory names under a sessions base path (local fallback).
 async fn list_session_dirs(sessions_path: &std::path::Path) -> Result<Vec<String>> {
     let mut entries = fs::read_dir(sessions_path).await?;
     let mut dirs = Vec::new();
@@ -225,7 +221,6 @@ async fn list_session_dirs(sessions_path: &std::path::Path) -> Result<Vec<String
     Ok(dirs)
 }
 
-/// Simple markdown rendering of events (local fallback).
 fn format_events_markdown(events: &[LogEvent], _include_timestamps: bool) -> String {
     use std::fmt::Write;
     let mut md = String::new();
@@ -257,7 +252,6 @@ fn format_events_markdown(events: &[LogEvent], _include_timestamps: bool) -> Str
     md
 }
 
-/// Display events in text format.
 fn display_events_text(id: &str, events: &[LogEvent]) {
     println!("Session: {}\n", id);
     println!("Events: {}\n", events.len());
@@ -355,7 +349,6 @@ fn display_events_text(id: &str, events: &[LogEvent]) {
     }
 }
 
-/// List recent sessions
 async fn list(
     config: CliConfig,
     limit: u32,
@@ -391,7 +384,6 @@ async fn list_persisted(
         return Ok(());
     }
 
-    // Try daemon RPC first
     if let Ok(client) = daemon_client().await {
         if let Ok(result) = client
             .session_list_persisted(
@@ -430,10 +422,8 @@ async fn list_persisted(
         }
     }
 
-    // Fallback: read session directories locally
     let mut ids = list_session_dirs(&sessions_path).await?;
 
-    // Filter by type if specified
     if let Some(type_filter) = session_type {
         let filter_type: SessionType = type_filter
             .parse()
@@ -445,7 +435,6 @@ async fn list_persisted(
         });
     }
 
-    // Reverse to show newest first, then take limit
     ids.reverse();
     ids.truncate(limit as usize);
 
@@ -472,14 +461,7 @@ async fn list_persisted(
                 let title = events
                     .iter()
                     .find_map(|e| match e {
-                        LogEvent::User { content, .. } => {
-                            let preview = content.chars().take(50).collect::<String>();
-                            if content.len() > 50 {
-                                Some(format!("{}...", preview))
-                            } else {
-                                Some(preview)
-                            }
-                        }
+                        LogEvent::User { content, .. } => Some(truncate(content, 50)),
                         _ => None,
                     })
                     .unwrap_or_else(|| "(empty)".to_string());
@@ -493,9 +475,7 @@ async fn list_persisted(
     Ok(())
 }
 
-/// Search sessions by title/content via daemon RPC (with local fallback)
 async fn search(config: CliConfig, query: String, limit: u32, format: String) -> Result<()> {
-    // Try daemon RPC first
     if let Ok(client) = daemon_client().await {
         if let Ok(result) = client
             .session_search(&query, Some(&config.kiln_path), Some(limit as usize))
@@ -528,7 +508,6 @@ async fn search(config: CliConfig, query: String, limit: u32, format: String) ->
         }
     }
 
-    // Fallback: local filesystem search
     let sessions_path = sessions_dir(&config);
     if !sessions_path.exists() {
         if format == "json" {
@@ -578,7 +557,6 @@ async fn search(config: CliConfig, query: String, limit: u32, format: String) ->
     Ok(())
 }
 
-/// Search using ripgrep for fast text search
 async fn search_with_ripgrep(
     sessions_path: &PathBuf,
     query: &str,
@@ -586,35 +564,32 @@ async fn search_with_ripgrep(
 ) -> Result<Vec<(String, usize, String)>> {
     use std::process::Command;
 
-    // Check if ripgrep is available
     let rg_check = Command::new("rg").arg("--version").output();
     if rg_check.is_err() {
         return Err(anyhow!("ripgrep not found"));
     }
 
-    // Run ripgrep with JSON output
     let output = Command::new("rg")
         .arg("--json")
         .arg("--max-count")
         .arg(limit.to_string())
         .arg("--context")
-        .arg("2") // 2 lines before/after
+        .arg("2")
         .arg("--glob")
-        .arg("*.jsonl") // Only search JSONL files
+        .arg("*.jsonl")
         .arg(query)
         .arg(sessions_path)
         .output()
         .map_err(|e| anyhow!("Failed to run ripgrep: {}", e))?;
 
     if !output.status.success() {
-        // Exit code 1 means no matches (not an error)
+        // Exit code 1 means no matches, not a failure
         if output.status.code() == Some(1) {
             return Ok(vec![]);
         }
         return Err(anyhow!("ripgrep failed with status: {}", output.status));
     }
 
-    // Parse ripgrep JSON output
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut results = Vec::new();
 
@@ -622,26 +597,15 @@ async fn search_with_ripgrep(
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
             if json["type"] == "match" {
                 if let Some(data) = json["data"].as_object() {
-                    // Extract session ID from path
                     let path = data["path"]["text"].as_str().unwrap_or("");
                     let session_id = extract_session_id_from_path(path);
-
-                    // Extract line number
                     let line_num = data["line_number"].as_u64().unwrap_or(0) as usize;
-
-                    // Extract matching line
                     let content = data["lines"]["text"]
                         .as_str()
                         .unwrap_or("")
                         .trim()
                         .to_string();
-
-                    // Truncate long lines
-                    let content = if content.len() > 100 {
-                        format!("{}...", content.chars().take(100).collect::<String>())
-                    } else {
-                        content
-                    };
+                    let content = truncate(&content, 100);
 
                     results.push((session_id, line_num, content));
 
@@ -656,7 +620,6 @@ async fn search_with_ripgrep(
     Ok(results)
 }
 
-/// Fallback in-memory search when ripgrep is not available
 async fn search_in_memory(
     sessions_path: &Path,
     query: &str,
@@ -667,29 +630,19 @@ async fn search_in_memory(
     let mut results = Vec::new();
 
     for id in ids {
-        let session_dir = sessions_path.join(id.as_str());
-        let jsonl_path = session_dir.join("session.jsonl");
-
+        let jsonl_path = sessions_path.join(id.as_str()).join("session.jsonl");
         if !jsonl_path.exists() {
             continue;
         }
 
-        // Read JSONL file
         let content = match fs::read_to_string(&jsonl_path).await {
             Ok(c) => c,
             Err(_) => continue,
         };
 
-        // Search line by line
         for (line_num, line) in content.lines().enumerate() {
             if line.to_lowercase().contains(&query_lower) {
-                let preview = if line.len() > 100 {
-                    format!("{}...", line.chars().take(100).collect::<String>())
-                } else {
-                    line.to_string()
-                };
-
-                results.push((id.to_string(), line_num + 1, preview));
+                results.push((id.to_string(), line_num + 1, truncate(line, 100)));
 
                 if results.len() >= limit as usize {
                     return Ok(results);
@@ -701,7 +654,6 @@ async fn search_in_memory(
     Ok(results)
 }
 
-/// Extract session ID from a file path
 fn extract_session_id_from_path(path: &str) -> String {
     // Path format: .../sessions/{session_id}/session.jsonl
     std::path::Path::new(path)
@@ -712,11 +664,9 @@ fn extract_session_id_from_path(path: &str) -> String {
         .to_string()
 }
 
-/// Show session details
 async fn show(config: CliConfig, id: String, format: String) -> Result<()> {
     let client = daemon_client().await.ok();
 
-    // Check for live daemon session first
     if let Some(client) = &client {
         if let Ok(result) = client.session_get(&id).await {
             match format.as_str() {
@@ -742,7 +692,6 @@ async fn show(config: CliConfig, id: String, format: String) -> Result<()> {
         }
     }
 
-    // Load persisted session
     let sessions_path = sessions_dir(&config);
     let session_id = SessionId::parse(&id)?;
     let session_dir = sessions_path.join(session_id.as_str());
@@ -752,7 +701,6 @@ async fn show(config: CliConfig, id: String, format: String) -> Result<()> {
         anyhow::bail!("Session not found: {}", id);
     }
 
-    // Try daemon RPC for persisted session data
     if let Some(client) = &client {
         let loaded = match format.as_str() {
             "json" => {
@@ -793,7 +741,6 @@ async fn show(config: CliConfig, id: String, format: String) -> Result<()> {
         }
     }
 
-    // Fallback: read events from filesystem directly
     let events = read_session_events(&session_dir).await?;
 
     match format.as_str() {
@@ -813,9 +760,7 @@ async fn show(config: CliConfig, id: String, format: String) -> Result<()> {
     Ok(())
 }
 
-/// Resume a previous session
 async fn resume(config: CliConfig, id: String) -> Result<()> {
-    // Validate session exists before launching chat
     let session_id = SessionId::parse(&id)?;
     let sessions_path = sessions_dir(&config);
     let session_dir = sessions_path.join(session_id.as_str());
@@ -845,7 +790,6 @@ async fn resume(config: CliConfig, id: String) -> Result<()> {
     .await
 }
 
-/// Export session to markdown
 async fn export(
     config: CliConfig,
     id: String,
@@ -861,7 +805,6 @@ async fn export(
         anyhow::bail!("Session not found: {}", id);
     }
 
-    // Try daemon RPC first
     if let Ok(client) = daemon_client().await {
         if let Ok(output_path_str) = client
             .session_export_to_file(&session_dir, output.as_deref(), Some(timestamps))
@@ -872,7 +815,6 @@ async fn export(
         }
     }
 
-    // Fallback: read events and render locally
     let events = read_session_events(&session_dir).await?;
     let md = format_events_markdown(&events, timestamps);
     let output_path = output.unwrap_or_else(|| session_dir.join("session.md"));
@@ -882,7 +824,6 @@ async fn export(
     Ok(())
 }
 
-/// Rebuild session index by extracting content and upserting into NoteStore
 async fn reindex(config: CliConfig, force: bool) -> Result<()> {
     let sessions_path = sessions_dir(&config);
 
@@ -891,7 +832,6 @@ async fn reindex(config: CliConfig, force: bool) -> Result<()> {
         return Ok(());
     }
 
-    // Quick check for empty directory
     let dirs = list_session_dirs(&sessions_path).await?;
     if dirs.is_empty() {
         println!("No sessions found.");
@@ -914,7 +854,6 @@ async fn reindex(config: CliConfig, force: bool) -> Result<()> {
     Ok(())
 }
 
-/// Clean up old sessions
 async fn cleanup(config: CliConfig, older_than: u32, dry_run: bool) -> Result<()> {
     let sessions_path = sessions_dir(&config);
 
@@ -963,7 +902,6 @@ fn truncate(s: &str, max_len: usize) -> String {
     }
 }
 
-/// List daemon sessions
 async fn daemon_list(
     client: &DaemonClient,
     config: &CliConfig,
@@ -1018,36 +956,36 @@ async fn daemon_list(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+struct DaemonCreateParams<'a> {
+    session_type: &'a str,
+    agent: Option<&'a str>,
+    recording_mode: Option<&'a str>,
+    quiet: bool,
+    format: &'a str,
+    title: Option<&'a str>,
+    workspace: Option<&'a std::path::Path>,
+}
+
 async fn daemon_create(
     client: &DaemonClient,
     config: &CliConfig,
-    session_type: &str,
-    agent: Option<&str>,
-    recording_mode: Option<&str>,
-    quiet: bool,
-    format: &str,
-    title: Option<&str>,
-    workspace: Option<&std::path::Path>,
+    params: DaemonCreateParams<'_>,
 ) -> Result<()> {
-    let recording_mode_parsed = if let Some(mode_str) = recording_mode {
-        match mode_str {
-            "granular" => Some("granular".to_string()),
-            "coarse" => Some("coarse".to_string()),
-            _ => anyhow::bail!(
-                "Invalid recording mode: '{}'. Must be 'granular' or 'coarse'",
-                mode_str
-            ),
-        }
-    } else {
-        None
+    let recording_mode_parsed = match params.recording_mode {
+        Some("granular") => Some("granular".to_string()),
+        Some("coarse") => Some("coarse".to_string()),
+        Some(other) => anyhow::bail!(
+            "Invalid recording mode: '{}'. Must be 'granular' or 'coarse'",
+            other
+        ),
+        None => None,
     };
 
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
-            session_type: session_type.to_string(),
+            session_type: params.session_type.to_string(),
             kiln: config.kiln_path.clone(),
-            workspace: workspace.map(|p| p.to_path_buf()),
+            workspace: params.workspace.map(|p| p.to_path_buf()),
             connect_kilns: vec![],
             recording_mode: recording_mode_parsed,
             recording_path: None,
@@ -1056,7 +994,7 @@ async fn daemon_create(
 
     let session_id = result["session_id"].as_str().unwrap_or("unknown");
 
-    if let Some(agent_name) = agent {
+    if let Some(agent_name) = params.agent {
         let profile = resolve_acp_profile(client, agent_name)
             .await
             .map_err(|e| anyhow!("Failed to resolve ACP agent profile: {}", e))?;
@@ -1066,35 +1004,35 @@ async fn daemon_create(
             .await?;
     }
 
-    if let Some(t) = title {
+    if let Some(t) = params.title {
         client.session_set_title(session_id, t).await?;
     }
 
-    let is_quiet = quiet || !crate::output::is_interactive();
+    let is_quiet = params.quiet || !crate::output::is_interactive();
 
     if is_quiet {
         println!("{}", session_id);
-    } else if format == "json" {
+    } else if params.format == "json" {
         let json = serde_json::json!({
             "session_id": session_id,
-            "type": session_type,
+            "type": params.session_type,
             "kiln": config.kiln_path.to_string_lossy(),
-            "agent": agent,
-            "title": title,
+            "agent": params.agent,
+            "title": params.title,
         });
         println!("{}", serde_json::to_string_pretty(&json)?);
     } else {
         println!("Created session: {}", session_id);
         println!("\nTo use this session: export CRU_SESSION={}", session_id);
-        println!("Type: {}", session_type);
+        println!("Type: {}", params.session_type);
         println!("Kiln: {}", config.kiln_path.display());
-        if let Some(mode) = recording_mode {
+        if let Some(mode) = params.recording_mode {
             println!("Recording mode: {}", mode);
         }
-        if let Some(agent_name) = agent {
+        if let Some(agent_name) = params.agent {
             println!("Configured agent: {} (acp)", agent_name);
         }
-        if let Some(t) = title {
+        if let Some(t) = params.title {
             println!("Title: {}", t);
         }
     }
@@ -1112,7 +1050,6 @@ async fn resolve_acp_profile(
     Ok(profile)
 }
 
-/// Pause a daemon session
 async fn daemon_pause(client: &DaemonClient, session_id: &str, format: &str) -> Result<()> {
     let result = client.session_pause(session_id).await?;
     if format == "json" {
@@ -1134,7 +1071,7 @@ async fn daemon_pause(client: &DaemonClient, session_id: &str, format: &str) -> 
     Ok(())
 }
 
-async fn unpause(client: &DaemonClient, session_id: &str, format: &str) -> Result<()> {
+async fn daemon_resume(client: &DaemonClient, session_id: &str, format: &str) -> Result<()> {
     let result = client.session_resume(session_id).await?;
     if format == "json" {
         println!(
@@ -1155,7 +1092,6 @@ async fn unpause(client: &DaemonClient, session_id: &str, format: &str) -> Resul
     Ok(())
 }
 
-/// End a daemon session
 async fn daemon_end(client: &DaemonClient, session_id: &str, format: &str) -> Result<()> {
     client.session_end(session_id).await?;
     if format == "json" {
@@ -1278,7 +1214,6 @@ async fn daemon_send(config: &CliConfig, session_id: &str, message: &str, raw: b
     Ok(())
 }
 
-/// Configure agent for a session
 async fn daemon_configure(
     client: &DaemonClient,
     config: &CliConfig,
@@ -1890,78 +1825,5 @@ mod tests {
         assert!(result.unwrap_err().contains("Invalid recording mode"));
     }
 
-    #[test]
-    fn test_warn_deprecated_message_format() {
-        warn_deprecated("--old-flag", "positional argument");
-    }
 
-    #[test]
-    fn test_daemon_list_limit_applied() {
-        let sessions = vec![
-            serde_json::json!({"session_id": "chat-1", "type": "chat", "state": "active", "started_at": "2024-01-01"}),
-            serde_json::json!({"session_id": "chat-2", "type": "chat", "state": "paused", "started_at": "2024-01-02"}),
-            serde_json::json!({"session_id": "chat-3", "type": "chat", "state": "active", "started_at": "2024-01-03"}),
-        ];
-
-        let mut limited = sessions.clone();
-        if let Some(n) = Some(2u32) {
-            limited.truncate(n as usize);
-        }
-
-        assert_eq!(limited.len(), 2);
-        assert_eq!(limited[0]["session_id"], "chat-1");
-        assert_eq!(limited[1]["session_id"], "chat-2");
-    }
-
-    #[test]
-    fn test_daemon_list_json_format() {
-        let sessions = vec![
-            serde_json::json!({"session_id": "chat-1", "type": "chat", "state": "active", "started_at": "2024-01-01"}),
-            serde_json::json!({"session_id": "chat-2", "type": "chat", "state": "paused", "started_at": "2024-01-02"}),
-        ];
-
-        let json_output = serde_json::json!({"sessions": sessions});
-        let json_str = serde_json::to_string_pretty(&json_output).unwrap();
-
-        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
-        assert!(parsed["sessions"].is_array());
-        assert_eq!(parsed["sessions"].as_array().unwrap().len(), 2);
-        assert_eq!(parsed["sessions"][0]["session_id"], "chat-1");
-        assert_eq!(parsed["sessions"][1]["session_id"], "chat-2");
-    }
-
-    #[test]
-    fn test_session_configure_with_format_json() {
-        let json_output = serde_json::json!({
-            "session_id": "test-session",
-            "provider": "openai",
-            "model": "gpt-4",
-            "endpoint": null
-        });
-        let json_str = json_output.to_string();
-
-        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
-        assert_eq!(parsed["session_id"], "test-session");
-        assert_eq!(parsed["provider"], "openai");
-        assert_eq!(parsed["model"], "gpt-4");
-        assert!(parsed["endpoint"].is_null());
-    }
-
-    #[test]
-    fn test_session_search_with_format_json() {
-        let matches = vec![
-            serde_json::json!({"session_id": "chat-1", "line": 5, "context": "test context"}),
-            serde_json::json!({"session_id": "chat-2", "line": 10, "context": "another context"}),
-        ];
-        let json_output = serde_json::json!({"matches": matches});
-        let json_str = json_output.to_string();
-
-        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
-        assert!(parsed["matches"].is_array());
-        assert_eq!(parsed["matches"].as_array().unwrap().len(), 2);
-        assert_eq!(parsed["matches"][0]["session_id"], "chat-1");
-        assert_eq!(parsed["matches"][0]["line"], 5);
-        assert_eq!(parsed["matches"][1]["session_id"], "chat-2");
-        assert_eq!(parsed["matches"][1]["line"], 10);
-    }
 }
