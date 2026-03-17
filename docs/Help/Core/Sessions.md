@@ -18,7 +18,7 @@ Sessions follow Crucible's "plaintext first" philosophy:
 
 - **Markdown is truth** — Each session saves as a markdown file
 - **Daemon manages state** — the daemon tracks active sessions via RPC
-- **Resume anytime** — Pick up previous sessions with `cru session resume`
+- **Resume anytime** — Pick up previous sessions with `cru session open`
 
 ### Daemon Integration
 
@@ -49,7 +49,7 @@ Sessions are managed by the daemon (`cru daemon serve`):
 - `session.unarchive` — Restore an archived session to active
 - `session.delete` — Permanently delete a session
 
-> **`resume` vs `unpause`**: These are different operations. `session.resume` opens the session in the interactive TUI for human use. `session.unpause` reactivates a paused daemon session programmatically, without opening a TUI. Scripts and automation tools should use `unpause`; humans picking up a conversation should use `resume`.
+> **CLI naming vs RPC methods**: The daemon RPC methods are `session.resume` (open in TUI) and `session.unpause` (reactivate programmatically). The CLI commands use clearer names: `cru session open` maps to `session.resume`, and `cru session resume` maps to `session.unpause`. The old `cru session unpause` still works as a deprecated alias. Scripts should use `cru session resume`; humans picking up a conversation should use `cru session open`.
 
 ## Session Storage
 
@@ -126,10 +126,10 @@ cru session show chat-20250102-1430-a1b2
 
 Display details for a specific session, including model, message count, and timestamps.
 
-#### Resume a Session (Interactive TUI)
+#### Open a Session (Interactive TUI)
 
 ```bash
-cru session resume chat-20250102-1430-a1b2
+cru session open chat-20250102-1430-a1b2
 ```
 
 Opens the session in the interactive TUI. The conversation history loads and you can continue chatting. This is the command humans use to pick up where they left off.
@@ -165,11 +165,14 @@ These commands control sessions at the daemon level. They're designed for script
 #### Create a Session
 
 ```bash
-cru session create
-cru session create --agent claude
+cru session create                        # Basic creation
+cru session create --agent claude         # With agent profile
+cru session create --title "Auth refactor" --workspace /path/to/project
+ID=$(cru session create -q)               # Capture session ID for scripting
+cru session create -f json                # Structured JSON output
 ```
 
-Create a new daemon session. Optionally specify an agent profile.
+Create a new daemon session. The `-q`/`--quiet` flag prints only the session ID, which is handy for capturing in shell variables. Use `--title` to give the session a human-readable name and `--workspace` to pin it to a specific project directory.
 
 #### Pause a Session
 
@@ -179,13 +182,13 @@ cru session pause chat-20250102-1430-a1b2
 
 Pause a running daemon session. The session stays in memory but stops processing.
 
-#### Unpause a Session
+#### Resume a Session (Daemon)
 
 ```bash
-cru session unpause chat-20250102-1430-a1b2
+cru session resume chat-20250102-1430-a1b2
 ```
 
-Unpause a paused daemon session. This reactivates the session programmatically without opening a TUI. Use this in scripts and automation workflows. For interactive use, prefer `cru session resume` instead.
+Reactivate a paused daemon session without opening a TUI. Use this in scripts and automation workflows. For interactive use, prefer `cru session open` instead. The old `cru session unpause` still works as a deprecated alias.
 
 #### End a Session
 
@@ -199,17 +202,25 @@ End a daemon session. The session is finalized and persisted.
 
 ```bash
 cru session send chat-20250102-1430-a1b2 "Analyze the auth module"
+# Or with env var:
+CRU_SESSION=chat-20250102-1430-a1b2 cru session send "Analyze the auth module"
+# Or pipe from stdin:
+echo "Analyze the auth module" | cru session send chat-20250102-1430-a1b2
 ```
 
-Send a message to a session and stream the response. Useful for non-interactive, scripted interactions with an agent.
+Send a message to a session and stream the response. Both the session ID and message are positional arguments. If you set `CRU_SESSION`, you can omit the ID entirely.
 
 #### Configure Agent
 
 ```bash
-cru session configure chat-20250102-1430-a1b2 --model gpt-4o
+cru session configure chat-20250102-1430-a1b2 -p openai -m gpt-4o
 ```
 
-Configure the agent for a session (model, temperature, tools, etc.).
+Configure the agent backend for a session: provider, model, and endpoint. For runtime parameter tweaks (temperature, thinking budget), use `cru set` instead:
+
+```bash
+cru set chat-20250102-1430-a1b2 temperature=0.7
+```
 
 #### Load a Session
 
@@ -218,6 +229,36 @@ cru session load chat-20250102-1430-a1b2
 ```
 
 Load a persisted session from storage into daemon memory. This doesn't open a TUI; it just makes the session available for daemon operations like `send`, `pause`, or `configure`.
+
+#### Scripting Patterns
+
+A full programmatic lifecycle, start to finish:
+
+```bash
+# Create, configure, use, and tear down a session
+ID=$(cru session create -q --title "Code review" --agent claude)
+cru session configure "$ID" -p anthropic -m claude-sonnet-4-20250514
+cru session send "$ID" "Review the auth module for security issues"
+cru session pause "$ID"
+# ... later ...
+cru session resume "$ID"
+cru session send "$ID" "Now check the database layer"
+cru session end "$ID"
+```
+
+All lifecycle commands accept `-f json` for structured output, which pairs well with `jq`:
+
+```bash
+cru session pause "$ID" -f json | jq .previous_state
+cru session list -f json | jq '.sessions[].session_id'
+cru session search "auth" -f json | jq '.[].session_id'
+```
+
+### Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `CRU_SESSION` | Default session ID for `send` and `cru set` when no positional ID is given |
 
 ### Start a New Chat
 
