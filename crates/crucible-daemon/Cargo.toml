@@ -35,7 +35,7 @@ crucible-acp = { path = "../crucible-acp" }
 crucible-llm = { path = "../crucible-llm", default-features = false }
 genai = "0.5"
 async-stream = "0.3"
-agent-client-protocol = "0.9.5"
+agent-client-protocol = "0.10.2"
 gix = { version = "0.80", default-features = false, features = ["blocking-network-client"] }
 mlua = { workspace = true }
 notify = { workspace = true }
@@ -51,11 +51,11 @@ blake3 = "1.8"
 walkdir = "2.5"
 sha2 = "0.10"
 serde_yaml = { workspace = true }
-rusqlite = { version = "0.38", features = ["bundled"], optional = true }
+rusqlite = { version = "0.39", features = ["bundled"], optional = true }
 rand = { workspace = true }
 
 # Tools dependencies (absorbed from crucible-tools)
-rmcp = { version = "1.1", features = ["macros", "server", "client", "transport-io", "transport-streamable-http-server", "transport-child-process", "transport-streamable-http-client-reqwest"] }
+rmcp = { version = "1.2", features = ["macros", "server", "client", "transport-io", "transport-streamable-http-server", "transport-child-process", "transport-streamable-http-client-reqwest"] }
 axum = "0.8"
 schemars = { workspace = true }
 regex = { workspace = true }
