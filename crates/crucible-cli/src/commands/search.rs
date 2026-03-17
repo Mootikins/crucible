@@ -3,6 +3,8 @@
 //! Supports semantic search (via embeddings + vector search), text search
 //! (title/name matching), or both combined.
 
+use std::path::{Path, PathBuf};
+
 use anyhow::{Context, Result};
 
 use crate::common::daemon_client;
@@ -63,55 +65,78 @@ pub async fn execute(
         .await
         .context("Failed to open kiln in daemon")?;
 
+    // Collect all kilns to search: primary + any others registered with the daemon
+    let all_kilns = collect_search_kilns(&client, kiln_path).await;
+
     let mode = SearchMode::parse(search_type);
     let mut results: Vec<SearchResultWithScore> = Vec::new();
 
     // --- Text search: match query against note names/titles/paths ---
     if mode.includes_text() {
-        let notes = client.list_notes(kiln_path, None).await?;
         let query_lower = query.to_lowercase();
 
-        for (name, path, title, _tags, _updated) in notes {
-            let display_title = title.as_deref().unwrap_or(&name);
-            if display_title.to_lowercase().contains(&query_lower)
-                || name.to_lowercase().contains(&query_lower)
-                || path.to_lowercase().contains(&query_lower)
-            {
-                results.push(SearchResultWithScore {
-                    id: path,
-                    title: display_title.to_string(),
-                    content: String::new(),
-                    score: 1.0, // text matches have no numeric score
-                });
+        for kiln in &all_kilns {
+            let notes = match client.list_notes(kiln, None).await {
+                Ok(n) => n,
+                Err(e) => {
+                    output::warning(&format!(
+                        "Failed to list notes from {}: {e:#}",
+                        kiln.display()
+                    ));
+                    continue;
+                }
+            };
+
+            for (name, path, title, _tags, _updated) in notes {
+                let display_title = title.as_deref().unwrap_or(&name);
+                if display_title.to_lowercase().contains(&query_lower)
+                    || name.to_lowercase().contains(&query_lower)
+                    || path.to_lowercase().contains(&query_lower)
+                {
+                    if !results.iter().any(|r| r.id == path) {
+                        let content = extract_snippet(kiln, &path, 200);
+                        results.push(SearchResultWithScore {
+                            id: path,
+                            title: display_title.to_string(),
+                            content,
+                            score: 1.0, // text matches have no numeric score
+                        });
+                    }
+                }
             }
         }
     }
 
     // --- Semantic search: embed query → vector search ---
     if mode.includes_semantic() {
-        match run_semantic_search(&config, &client, kiln_path, query, limit).await {
-            Ok(semantic_hits) => {
-                for (doc_id, score) in semantic_hits {
-                    // De-duplicate against text results
-                    if !results.iter().any(|r| r.id == doc_id) {
-                        let title = doc_id
-                            .split('/')
-                            .next_back()
-                            .unwrap_or(&doc_id)
-                            .trim_end_matches(".md")
-                            .to_string();
-                        results.push(SearchResultWithScore {
-                            id: doc_id,
-                            title,
-                            content: String::new(),
-                            score,
-                        });
+        for kiln in &all_kilns {
+            match run_semantic_search(&config, &client, kiln, query, limit).await {
+                Ok(semantic_hits) => {
+                    for (doc_id, score) in semantic_hits {
+                        // De-duplicate against text results
+                        if !results.iter().any(|r| r.id == doc_id) {
+                            let title = doc_id
+                                .split('/')
+                                .next_back()
+                                .unwrap_or(&doc_id)
+                                .trim_end_matches(".md")
+                                .to_string();
+                            let content = extract_snippet(kiln, &doc_id, 200);
+                            results.push(SearchResultWithScore {
+                                id: doc_id,
+                                title,
+                                content,
+                                score,
+                            });
+                        }
                     }
                 }
-            }
-            Err(e) => {
-                // Degrade gracefully — warn but don't fail the whole command
-                output::warning(&format!("Semantic search unavailable: {e:#}"));
+                Err(e) => {
+                    output::warning(&format!(
+                        "Semantic search unavailable for {}: {e:#}",
+                        kiln.display()
+                    ));
+                }
             }
         }
     }
@@ -135,6 +160,62 @@ pub async fn execute(
     println!("{formatted}");
 
     Ok(())
+}
+
+/// Collect all kiln paths to search: the primary kiln plus any other
+/// kilns currently registered with the daemon.
+async fn collect_search_kilns(
+    client: &crucible_daemon::DaemonClient,
+    primary_kiln: &Path,
+) -> Vec<PathBuf> {
+    let mut kilns = vec![primary_kiln.to_path_buf()];
+
+    if let Ok(registered) = client.kiln_list().await {
+        for kiln_info in registered {
+            if let Some(path_str) = kiln_info.get("path").and_then(|v| v.as_str()) {
+                let path = PathBuf::from(path_str);
+                if path != primary_kiln {
+                    kilns.push(path);
+                }
+            }
+        }
+    }
+
+    kilns
+}
+
+/// Read first few non-frontmatter lines from a note file as a snippet preview.
+fn extract_snippet(kiln_path: &Path, note_path: &str, max_chars: usize) -> String {
+    let full_path = kiln_path.join(note_path);
+    let content = match std::fs::read_to_string(&full_path) {
+        Ok(c) => c,
+        Err(_) => return String::new(),
+    };
+
+    // Skip YAML frontmatter (lines between --- delimiters)
+    let body = if content.starts_with("---") {
+        if let Some(end) = content[3..].find("\n---") {
+            content[3 + end + 4..].trim_start()
+        } else {
+            content.as_str()
+        }
+    } else {
+        content.as_str()
+    };
+
+    let snippet: String = body
+        .lines()
+        .filter(|line| !line.is_empty())
+        .take(3)
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if snippet.chars().count() > max_chars {
+        let truncated: String = snippet.chars().take(max_chars).collect();
+        format!("{truncated}...")
+    } else {
+        snippet
+    }
 }
 
 /// Generate query embedding and call `search_vectors` on the daemon.
@@ -295,5 +376,52 @@ mod tests {
         assert!(SearchMode::parse("both").includes_text());
         assert!(SearchMode::parse("both").includes_semantic());
         assert!(SearchMode::parse("anything").includes_text()); // defaults to both
+    }
+
+    // ---- extract_snippet ----
+
+    #[test]
+    fn search_command_extract_snippet_plain_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("note.md"), "First line\nSecond line\n").unwrap();
+        let snippet = extract_snippet(dir.path(), "note.md", 200);
+        assert_eq!(snippet, "First line Second line");
+    }
+
+    #[test]
+    fn search_command_extract_snippet_skips_frontmatter() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("note.md"),
+            "---\ntitle: Test\ntags: [a]\n---\nBody content here\n",
+        )
+        .unwrap();
+        let snippet = extract_snippet(dir.path(), "note.md", 200);
+        assert_eq!(snippet, "Body content here");
+    }
+
+    #[test]
+    fn search_command_extract_snippet_truncates_long_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let long = "a".repeat(300);
+        std::fs::write(dir.path().join("note.md"), &long).unwrap();
+        let snippet = extract_snippet(dir.path(), "note.md", 50);
+        assert!(snippet.ends_with("..."));
+        assert!(snippet.len() <= 54); // 50 chars + "..."
+    }
+
+    #[test]
+    fn search_command_extract_snippet_missing_file_returns_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let snippet = extract_snippet(dir.path(), "nonexistent.md", 200);
+        assert!(snippet.is_empty());
+    }
+
+    #[test]
+    fn search_command_extract_snippet_skips_empty_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("note.md"), "\n\nFirst\n\nSecond\n").unwrap();
+        let snippet = extract_snippet(dir.path(), "note.md", 200);
+        assert_eq!(snippet, "First Second");
     }
 }
