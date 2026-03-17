@@ -57,6 +57,7 @@ crucible-web = { path = "../crucible-web", optional = true }
 
 # CLI framework
 clap = { workspace = true, features = ["derive", "env", "string"] }
+clap_complete = "4"
 
 # Async runtime
 tokio = { workspace = true }

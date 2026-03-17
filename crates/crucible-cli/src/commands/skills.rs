@@ -3,22 +3,33 @@
 //! Provides CLI commands for listing, showing, and searching skills.
 
 use anyhow::Result;
+use serde::Serialize;
 
 use crate::cli::SkillsCommands;
 use crate::common::daemon_client;
 use crate::config::CliConfig;
+use crate::formatting::OutputFormat;
+
+#[derive(Debug, Serialize)]
+pub struct SkillOutput {
+    pub name: String,
+    pub scope: String,
+    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shadowed_count: Option<u64>,
+}
 
 /// Execute skills subcommand
 pub async fn execute(config: CliConfig, command: SkillsCommands) -> Result<()> {
     match command {
-        SkillsCommands::List { scope } => list(&config, scope).await,
+        SkillsCommands::List { scope, format } => list(&config, scope, &format).await,
         SkillsCommands::Show { name } => show(&config, name).await,
         SkillsCommands::Search { query, limit } => search(&config, query, limit).await,
     }
 }
 
 /// List discovered skills
-async fn list(config: &CliConfig, scope_filter: Option<String>) -> Result<()> {
+async fn list(config: &CliConfig, scope_filter: Option<String>, format: &str) -> Result<()> {
     let client = daemon_client().await?;
     let response = client
         .skills_list(&config.kiln_path, scope_filter.as_deref())
@@ -35,20 +46,38 @@ async fn list(config: &CliConfig, scope_filter: Option<String>) -> Result<()> {
         return Ok(());
     }
 
-    println!("Discovered {} skill(s):\n", skills.len());
+    let output_format = OutputFormat::from(format);
 
-    for skill in skills {
-        let name = skill["name"].as_str().unwrap_or("unknown");
-        let scope = skill["scope"].as_str().unwrap_or("unknown");
-        let description = skill["description"].as_str().unwrap_or("");
-        let shadowed_count = skill["shadowed_count"].as_u64().unwrap_or(0);
-
-        println!("  {} [{}]", name, scope);
-        println!("    {}", description);
-        if shadowed_count > 0 {
-            println!("    (shadows {} other(s))", shadowed_count);
+    match output_format {
+        OutputFormat::Json => {
+            let output: Vec<SkillOutput> = skills
+                .iter()
+                .map(|skill| SkillOutput {
+                    name: skill["name"].as_str().unwrap_or("unknown").to_string(),
+                    scope: skill["scope"].as_str().unwrap_or("unknown").to_string(),
+                    description: skill["description"].as_str().unwrap_or("").to_string(),
+                    shadowed_count: skill["shadowed_count"].as_u64(),
+                })
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&output)?);
         }
-        println!();
+        _ => {
+            println!("Discovered {} skill(s):\n", skills.len());
+
+            for skill in skills {
+                let name = skill["name"].as_str().unwrap_or("unknown");
+                let scope = skill["scope"].as_str().unwrap_or("unknown");
+                let description = skill["description"].as_str().unwrap_or("");
+                let shadowed_count = skill["shadowed_count"].as_u64().unwrap_or(0);
+
+                println!("  {} [{}]", name, scope);
+                println!("    {}", description);
+                if shadowed_count > 0 {
+                    println!("    (shadows {} other(s))", shadowed_count);
+                }
+                println!();
+            }
+        }
     }
 
     Ok(())
