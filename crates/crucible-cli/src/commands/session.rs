@@ -103,6 +103,10 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             session_type,
             agent,
             recording_mode,
+            quiet,
+            format,
+            title,
+            workspace,
         } => {
             let client = daemon_client().await?;
             daemon_create(
@@ -111,6 +115,10 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
                 &session_type,
                 agent.as_deref(),
                 recording_mode.as_deref(),
+                quiet,
+                &format,
+                title.as_deref(),
+                workspace.as_deref(),
             )
             .await
         }
@@ -1000,15 +1008,17 @@ async fn daemon_list(
     Ok(())
 }
 
-/// Create a new daemon session
 async fn daemon_create(
     client: &DaemonClient,
     config: &CliConfig,
     session_type: &str,
     agent: Option<&str>,
     recording_mode: Option<&str>,
+    quiet: bool,
+    format: &str,
+    title: Option<&str>,
+    workspace: Option<&std::path::Path>,
 ) -> Result<()> {
-    // Parse recording_mode if provided
     let recording_mode_parsed = if let Some(mode_str) = recording_mode {
         match mode_str {
             "granular" => Some("granular".to_string()),
@@ -1026,7 +1036,7 @@ async fn daemon_create(
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: session_type.to_string(),
             kiln: config.kiln_path.clone(),
-            workspace: None,
+            workspace: workspace.map(|p| p.to_path_buf()),
             connect_kilns: vec![],
             recording_mode: recording_mode_parsed,
             recording_path: None,
@@ -1045,15 +1055,37 @@ async fn daemon_create(
             .await?;
     }
 
-    println!("Created session: {}", session_id);
-    println!("\nTo use this session: export CRU_SESSION={}", session_id);
-    println!("Type: {}", session_type);
-    println!("Kiln: {}", config.kiln_path.display());
-    if let Some(mode) = recording_mode {
-        println!("Recording mode: {}", mode);
+    if let Some(t) = title {
+        client.session_set_title(session_id, t).await?;
     }
-    if let Some(agent_name) = agent {
-        println!("Configured agent: {} (acp)", agent_name);
+
+    let is_quiet = quiet || !crate::output::is_interactive();
+
+    if is_quiet {
+        println!("{}", session_id);
+    } else if format == "json" {
+        let json = serde_json::json!({
+            "session_id": session_id,
+            "type": session_type,
+            "kiln": config.kiln_path.to_string_lossy(),
+            "agent": agent,
+            "title": title,
+        });
+        println!("{}", serde_json::to_string_pretty(&json)?);
+    } else {
+        println!("Created session: {}", session_id);
+        println!("\nTo use this session: export CRU_SESSION={}", session_id);
+        println!("Type: {}", session_type);
+        println!("Kiln: {}", config.kiln_path.display());
+        if let Some(mode) = recording_mode {
+            println!("Recording mode: {}", mode);
+        }
+        if let Some(agent_name) = agent {
+            println!("Configured agent: {} (acp)", agent_name);
+        }
+        if let Some(t) = title {
+            println!("Title: {}", t);
+        }
     }
 
     Ok(())

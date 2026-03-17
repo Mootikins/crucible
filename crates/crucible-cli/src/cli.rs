@@ -530,6 +530,22 @@ pub enum SessionCommands {
         /// Recording mode (granular, coarse)
         #[arg(long)]
         recording_mode: Option<String>,
+
+        /// Output only the session ID (for scripting). Auto-enabled when stdout is not a TTY.
+        #[arg(short = 'q', long)]
+        quiet: bool,
+
+        /// Output format (text, json)
+        #[arg(short = 'f', long, default_value = "text", value_parser = ["text", "json"])]
+        format: String,
+
+        /// Set a title for the new session
+        #[arg(long)]
+        title: Option<String>,
+
+        /// Working directory for the session (defaults to current directory)
+        #[arg(long)]
+        workspace: Option<std::path::PathBuf>,
     },
 
     /// Pause a daemon session
@@ -1371,11 +1387,19 @@ mod tests {
             session_type,
             agent,
             recording_mode,
+            quiet,
+            format,
+            title,
+            workspace,
         })) = cli.command
         {
             assert_eq!(session_type, "chat");
             assert_eq!(agent, None);
             assert_eq!(recording_mode, None);
+            assert!(!quiet);
+            assert_eq!(format, "text");
+            assert_eq!(title, None);
+            assert_eq!(workspace, None);
         } else {
             panic!("Expected Session Create command");
         }
@@ -1388,11 +1412,19 @@ mod tests {
             session_type,
             agent,
             recording_mode,
+            quiet,
+            format,
+            title,
+            workspace,
         })) = cli.command
         {
             assert_eq!(session_type, "workflow");
             assert_eq!(agent, None);
             assert_eq!(recording_mode, None);
+            assert!(!quiet);
+            assert_eq!(format, "text");
+            assert_eq!(title, None);
+            assert_eq!(workspace, None);
         } else {
             panic!("Expected Session Create command");
         }
@@ -1401,15 +1433,49 @@ mod tests {
     #[test]
     fn test_session_create_accepts_mcp_type() {
         let cli = Cli::try_parse_from(["cru", "session", "create", "-t", "mcp"]).unwrap();
-        if let Some(Commands::Session(SessionCommands::Create {
-            session_type,
-            agent,
-            recording_mode,
-        })) = cli.command
-        {
+        if let Some(Commands::Session(SessionCommands::Create { session_type, .. })) = cli.command {
             assert_eq!(session_type, "mcp");
-            assert_eq!(agent, None);
-            assert_eq!(recording_mode, None);
+        } else {
+            panic!("Expected Session Create command");
+        }
+    }
+
+    #[test]
+    fn test_session_create_with_quiet_flag() {
+        let cli = Cli::try_parse_from(["cru", "session", "create", "-q"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Create { quiet, .. })) = cli.command {
+            assert!(quiet);
+        } else {
+            panic!("Expected Session Create command");
+        }
+    }
+
+    #[test]
+    fn test_session_create_with_format_json() {
+        let cli = Cli::try_parse_from(["cru", "session", "create", "-f", "json"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Create { format, .. })) = cli.command {
+            assert_eq!(format, "json");
+        } else {
+            panic!("Expected Session Create command");
+        }
+    }
+
+    #[test]
+    fn test_session_create_with_title() {
+        let cli =
+            Cli::try_parse_from(["cru", "session", "create", "--title", "My Session"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Create { title, .. })) = cli.command {
+            assert_eq!(title, Some("My Session".to_string()));
+        } else {
+            panic!("Expected Session Create command");
+        }
+    }
+
+    #[test]
+    fn test_session_create_with_workspace() {
+        let cli = Cli::try_parse_from(["cru", "session", "create", "--workspace", "/tmp"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Create { workspace, .. })) = cli.command {
+            assert_eq!(workspace, Some(std::path::PathBuf::from("/tmp")));
         } else {
             panic!("Expected Session Create command");
         }
