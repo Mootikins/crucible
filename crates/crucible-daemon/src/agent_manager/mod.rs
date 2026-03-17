@@ -734,6 +734,7 @@ mod messaging;
 mod models;
 mod precognition;
 pub mod providers;
+pub mod tool_tracking;
 
 #[cfg(test)]
 mod tests;
