@@ -8,6 +8,8 @@ use crate::common::daemon_client;
 #[derive(Debug, Serialize)]
 pub struct ModelOutput {
     pub name: String,
+    pub provider: Option<String>,
+    pub parameter_count: Option<u64>,
 }
 
 pub async fn execute(config: CliConfig, format: &str) -> Result<()> {
@@ -35,7 +37,11 @@ pub async fn execute(config: CliConfig, format: &str) -> Result<()> {
         OutputFormat::Json => {
             let output: Vec<ModelOutput> = models
                 .iter()
-                .map(|m| ModelOutput { name: m.clone() })
+                .map(|m| ModelOutput {
+                    name: m.clone(),
+                    provider: None,
+                    parameter_count: None,
+                })
                 .collect();
             println!("{}", serde_json::to_string_pretty(&output)?);
         }
