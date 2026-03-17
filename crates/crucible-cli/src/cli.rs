@@ -374,10 +374,10 @@ Examples:
         personal: bool,
     },
 
-    /// Manage chat sessions (list, show, resume, export, search)
+    /// Manage chat sessions (create, configure, send, pause, resume, end)
     #[command(
         subcommand,
-        long_about = "Manage chat sessions - list, show details, resume, export, and search.\n\nExamples:\n  # List recent sessions\n  cru session list\n\n  # Show session details\n  cru session show chat-20250102-1430-a1b2\n\n  # Resume a session\n  cru session resume chat-20250102-1430-a1b2\n\n  # Export session to markdown\n  cru session export chat-20250102-1430-a1b2 -o session.md\n\n  # Search sessions\n  cru session search \"rust\"",
+        long_about = "Manage chat sessions through their full lifecycle.\n\nLifecycle: create -> configure -> send -> pause -> resume -> end\n\nExamples:\n  cru session create --title \"My task\"           # Create and name a session\n  cru session configure <id> -p openai -m gpt-4  # Set backend\n  cru session send <id> \"message\"                 # Send and stream response\n  cru session pause <id>                          # Pause\n  cru session resume <id>                         # Resume from paused\n  cru session end <id>                            # End when done\n\n  cru session list                                # List recent sessions\n  cru session show <id>                           # Show session details\n  cru session open <id>                           # Open in TUI\n  cru session export <id> -o session.md           # Export to markdown\n  cru session search \"rust\"                       # Search by title\n\nScripting (non-interactive):\n  ID=$(cru session create -q)                     # Capture session ID\n  CRU_SESSION=$ID cru session send \"hello\"        # Use env var",
         visible_aliases = ["s", "sess"]
     )]
     Session(SessionCommands),

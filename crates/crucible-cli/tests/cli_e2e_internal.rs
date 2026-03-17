@@ -33,8 +33,10 @@ fn session_help_shows_flat_internal_lifecycle_subcommands() {
         .stdout(predicate::str::contains("pause"))
         .stdout(predicate::str::contains("resume"))
         .stdout(predicate::str::contains("open"))
+        .stdout(predicate::str::contains("configure"))
+        .stdout(predicate::str::contains("end"))
         .stdout(predicate::str::contains("unpause").not())
-        .stdout(predicate::str::contains("end"));
+        .stdout(predicate::str::contains("subscribe").not());
 }
 
 #[test]
@@ -53,7 +55,10 @@ fn session_create_help_shows_agent_flag() {
         .args(["session", "create", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("-a, --agent"));
+        .stdout(predicate::str::contains("-a, --agent"))
+        .stdout(predicate::str::contains("-q, --quiet"))
+        .stdout(predicate::str::contains("--title"))
+        .stdout(predicate::str::contains("-f, --format"));
 }
 
 #[test]
