@@ -1167,6 +1167,7 @@ impl AgentManager {
         forced_terminal_chunk
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn execute_agent_stream(
         agent: Arc<Mutex<BoxedAgentHandle>>,
         content: String,
