@@ -512,8 +512,8 @@ pub enum SessionCommands {
 
     /// Send a message to a session and stream response
     Send {
-        /// Session ID
-        #[arg(value_name = "SESSION_ID")]
+        /// Session ID (or set CRU_SESSION env var)
+        #[arg(long = "session", value_name = "SESSION_ID")]
         session_id: Option<String>,
 
         /// Message to send
@@ -680,6 +680,21 @@ pub enum ConfigCommands {
 pub enum StorageCommands {
     /// Show current storage mode and quick status
     Mode,
+
+    /// Show detailed storage statistics
+    Stats {
+        /// Output format (table, json, plain)
+        #[arg(short = 'f', long, default_value = "table")]
+        format: String,
+
+        /// Show per-backend breakdown
+        #[arg(long)]
+        by_backend: bool,
+
+        /// Include deduplication statistics
+        #[arg(long)]
+        deduplication: bool,
+    },
 
     /// Verify content integrity
     Verify {
@@ -1163,7 +1178,7 @@ mod tests {
         let cli =
             Cli::try_parse_from(["cru", "session", "show", "chat-20260104-1530-a1b2"]).unwrap();
         if let Some(Commands::Session(SessionCommands::Show { id, .. })) = cli.command {
-            assert_eq!(id, "chat-20260104-1530-a1b2");
+            assert_eq!(id, Some("chat-20260104-1530-a1b2".to_string()));
         } else {
             panic!("Expected Session Show command");
         }
@@ -1174,7 +1189,7 @@ mod tests {
         let cli =
             Cli::try_parse_from(["cru", "session", "resume", "chat-20260104-1530-a1b2"]).unwrap();
         if let Some(Commands::Session(SessionCommands::Resume { id })) = cli.command {
-            assert_eq!(id, "chat-20260104-1530-a1b2");
+            assert_eq!(id, Some("chat-20260104-1530-a1b2".to_string()));
         } else {
             panic!("Expected Session Resume command");
         }
@@ -1192,7 +1207,7 @@ mod tests {
         .unwrap();
         if let Some(Commands::Session(SessionCommands::Export { id, timestamps, .. })) = cli.command
         {
-            assert_eq!(id, "chat-20260104-1530-a1b2");
+            assert_eq!(id, Some("chat-20260104-1530-a1b2".to_string()));
             assert!(timestamps);
         } else {
             panic!("Expected Session Export command");
@@ -1299,7 +1314,7 @@ mod tests {
     fn test_session_pause_parses() {
         let cli = Cli::try_parse_from(["cru", "session", "pause", "session-123"]).unwrap();
         if let Some(Commands::Session(SessionCommands::Pause { session_id })) = cli.command {
-            assert_eq!(session_id, "session-123");
+            assert_eq!(session_id, Some("session-123".to_string()));
         } else {
             panic!("Expected Session Pause command");
         }
@@ -1309,7 +1324,7 @@ mod tests {
     fn test_session_unpause_parses() {
         let cli = Cli::try_parse_from(["cru", "session", "unpause", "session-123"]).unwrap();
         if let Some(Commands::Session(SessionCommands::Unpause { session_id })) = cli.command {
-            assert_eq!(session_id, "session-123");
+            assert_eq!(session_id, Some("session-123".to_string()));
         } else {
             panic!("Expected Session Unpause command");
         }
@@ -1319,7 +1334,7 @@ mod tests {
     fn test_session_end_parses() {
         let cli = Cli::try_parse_from(["cru", "session", "end", "session-123"]).unwrap();
         if let Some(Commands::Session(SessionCommands::End { session_id })) = cli.command {
-            assert_eq!(session_id, "session-123");
+            assert_eq!(session_id, Some("session-123".to_string()));
         } else {
             panic!("Expected Session End command");
         }
