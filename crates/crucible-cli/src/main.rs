@@ -34,6 +34,11 @@ fn main() -> Result<()> {
     // Parse CLI before entering the async runtime so we can set env vars safely.
     let cli = Cli::parse();
 
+    // Detect if stdout is a terminal and suppress ANSI colors if piped
+    if !crucible_cli::output::is_interactive() {
+        colored::control::set_override(false);
+    }
+
     // Standalone mode: configure the socket path BEFORE spawning any threads.
     // set_var is not thread-safe, so it must happen before the tokio runtime starts.
     let standalone_sock = if cli.standalone {
@@ -269,7 +274,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
                 .await?
         }
 
-        Some(Commands::Stats) => commands::stats::execute(config).await?,
+        Some(Commands::Stats { format }) => commands::stats::execute(config, &format).await?,
 
         Some(Commands::Models) => commands::models::execute(config).await?,
 
