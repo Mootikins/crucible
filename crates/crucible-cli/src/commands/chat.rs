@@ -158,10 +158,7 @@ pub async fn execute(params: ExecuteParams) -> Result<()> {
     let query = match query {
         Some(q) => Some(q),
         None if crate::commands::stdin::stdin_is_piped() => {
-            match crate::commands::stdin::read_stdin_message() {
-                Ok(msg) => Some(msg),
-                Err(_) => None,
-            }
+            crate::commands::stdin::read_stdin_message().ok()
         }
         None => None,
     };
