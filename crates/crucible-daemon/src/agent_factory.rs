@@ -262,6 +262,10 @@ fn build_enriched_prompt(
         }
     }
     for kiln in connected_kilns {
+        // Skip if same as primary kiln to avoid duplicate listing
+        if kiln_path.is_some_and(|p| p == kiln.as_path()) {
+            continue;
+        }
         if let Some(cfg) = crucible_config::read_kiln_config(kiln) {
             kb_names.push(cfg.kiln.name.clone());
         }
