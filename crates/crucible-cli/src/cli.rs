@@ -476,9 +476,10 @@ pub enum SessionCommands {
         format: String,
     },
 
-    /// Resume a previous session
-    Resume {
-        /// Session ID to resume
+    /// Open a previous session in the TUI (same as `cru chat --resume`)
+    #[command(name = "open")]
+    Open {
+        /// Session ID to open
         #[arg(value_name = "SESSION_ID")]
         id: Option<String>,
     },
@@ -538,7 +539,16 @@ pub enum SessionCommands {
         session_id: Option<String>,
     },
 
-    /// Unpause a paused daemon session
+    /// Resume a paused daemon session
+    #[command(name = "resume")]
+    Resume {
+        /// Session ID
+        #[arg(value_name = "SESSION_ID")]
+        session_id: Option<String>,
+    },
+
+    /// [DEPRECATED] Use `resume` instead
+    #[command(name = "unpause", hide = true)]
     Unpause {
         /// Session ID
         #[arg(value_name = "SESSION_ID")]
@@ -1242,11 +1252,22 @@ mod tests {
     }
 
     #[test]
+    fn test_session_open_parses() {
+        let cli =
+            Cli::try_parse_from(["cru", "session", "open", "chat-20260104-1530-a1b2"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Open { id })) = cli.command {
+            assert_eq!(id, Some("chat-20260104-1530-a1b2".to_string()));
+        } else {
+            panic!("Expected Session Open command");
+        }
+    }
+
+    #[test]
     fn test_session_resume_parses() {
         let cli =
             Cli::try_parse_from(["cru", "session", "resume", "chat-20260104-1530-a1b2"]).unwrap();
-        if let Some(Commands::Session(SessionCommands::Resume { id })) = cli.command {
-            assert_eq!(id, Some("chat-20260104-1530-a1b2".to_string()));
+        if let Some(Commands::Session(SessionCommands::Resume { session_id })) = cli.command {
+            assert_eq!(session_id, Some("chat-20260104-1530-a1b2".to_string()));
         } else {
             panic!("Expected Session Resume command");
         }
