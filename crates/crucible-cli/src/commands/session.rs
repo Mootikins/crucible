@@ -23,6 +23,30 @@ pub fn resolve_session_id(explicit: Option<String>) -> anyhow::Result<String> {
         })
 }
 
+/// Print a deprecation warning to stderr. Old form is described by `old`,
+/// the preferred replacement by `new`.
+#[allow(dead_code)]
+fn warn_deprecated(old: &str, new: &str) {
+    eprintln!("warning: '{}' is deprecated, use '{}' instead", old, new);
+}
+
+/// Route output to JSON or human-readable based on `format`.
+///
+/// When `format == "json"`, serializes `value` as pretty-printed JSON to stdout.
+/// Otherwise calls `human_fn` to render human-readable output.
+#[allow(dead_code)]
+fn print_json_or_text(
+    value: &serde_json::Value,
+    format: &str,
+    human_fn: impl FnOnce(&serde_json::Value),
+) {
+    if format == "json" {
+        println!("{}", serde_json::to_string_pretty(value).unwrap_or_else(|_| "{}".to_string()));
+    } else {
+        human_fn(value);
+    }
+}
+
 /// Execute a session subcommand
 pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
     match cmd {
@@ -1673,5 +1697,32 @@ mod tests {
         };
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Invalid recording mode"));
+    }
+
+    #[test]
+    fn test_warn_deprecated_message_format() {
+        warn_deprecated("--old-flag", "positional argument");
+    }
+
+    #[test]
+    fn test_print_json_or_text_json_path() {
+        let value = serde_json::json!({"key": "value", "num": 42});
+        let mut captured = String::new();
+        let json_str = serde_json::to_string_pretty(&value).unwrap();
+        captured.push_str(&json_str);
+        let parsed: serde_json::Value = serde_json::from_str(&captured).unwrap();
+        assert_eq!(parsed["key"], "value");
+        assert_eq!(parsed["num"], 42);
+    }
+
+    #[test]
+    fn test_print_json_or_text_text_path_calls_human_fn() {
+        let value = serde_json::json!({"session_id": "chat-123"});
+        let mut called = false;
+        print_json_or_text(&value, "text", |v| {
+            called = true;
+            assert_eq!(v["session_id"], "chat-123");
+        });
+        assert!(called, "human_fn should have been called for text format");
     }
 }

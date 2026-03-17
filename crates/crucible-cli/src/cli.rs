@@ -438,12 +438,12 @@ pub enum SessionCommands {
         #[arg(short = 'n', long, default_value = "20")]
         limit: u32,
 
-        /// Filter by session type (chat, workflow, mcp)
-        #[arg(short = 't', long)]
+        /// Filter by session type (chat, workflow, mcp, agent)
+        #[arg(short = 't', long, value_parser = ["chat", "workflow", "mcp", "agent"])]
         session_type: Option<String>,
 
-        /// Output format (table, json)
-        #[arg(short = 'f', long, default_value = "table")]
+        /// Output format (text, json)
+        #[arg(short = 'f', long, default_value = "text")]
         format: String,
 
         /// Filter by daemon state (active, paused, ended)
@@ -518,8 +518,8 @@ pub enum SessionCommands {
 
     /// Create a new daemon session
     Create {
-        /// Session type (chat, agent, workflow)
-        #[arg(short = 't', long, default_value = "chat")]
+        /// Session type (chat, workflow, mcp, agent)
+        #[arg(short = 't', long, default_value = "chat", value_parser = ["chat", "workflow", "mcp", "agent"])]
         session_type: String,
 
         /// ACP agent profile to configure for the new session
@@ -1212,11 +1212,13 @@ mod tests {
         if let Some(Commands::Session(SessionCommands::List {
             limit,
             session_type,
+            format,
             ..
         })) = cli.command
         {
             assert_eq!(limit, 10);
             assert_eq!(session_type, Some("chat".to_string()));
+            assert_eq!(format, "text");
         } else {
             panic!("Expected Session List command");
         }
@@ -1326,6 +1328,16 @@ mod tests {
     }
 
     #[test]
+    fn test_session_list_accepts_agent_type() {
+        let cli = Cli::try_parse_from(["cru", "session", "list", "-t", "agent"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::List { session_type, .. })) = cli.command {
+            assert_eq!(session_type, Some("agent".to_string()));
+        } else {
+            panic!("Expected Session List command");
+        }
+    }
+
+    #[test]
     fn test_session_create_parses() {
         let cli = Cli::try_parse_from(["cru", "session", "create"]).unwrap();
         if let Some(Commands::Session(SessionCommands::Create {
@@ -1352,6 +1364,23 @@ mod tests {
         })) = cli.command
         {
             assert_eq!(session_type, "workflow");
+            assert_eq!(agent, None);
+            assert_eq!(recording_mode, None);
+        } else {
+            panic!("Expected Session Create command");
+        }
+    }
+
+    #[test]
+    fn test_session_create_accepts_mcp_type() {
+        let cli = Cli::try_parse_from(["cru", "session", "create", "-t", "mcp"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Create {
+            session_type,
+            agent,
+            recording_mode,
+        })) = cli.command
+        {
+            assert_eq!(session_type, "mcp");
             assert_eq!(agent, None);
             assert_eq!(recording_mode, None);
         } else {
