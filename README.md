@@ -167,11 +167,15 @@ See the [plugin guide](./docs/Help/Concepts/Scripting%20Languages.md) for the fu
 | `cru session create` | | Create a new session (add `--agent <profile>` for ACP) |
 | `cru session list` | `s` | List sessions (live by default, `--all` includes persisted) |
 | `cru session show <id>` | | Show session details (daemon first, file fallback) |
-| `cru session resume <id>` | | Resume a previous session in the TUI |
+| `cru session open <id>` | | Open a previous session in the TUI |
+| `cru session send <id> "msg"` | | Send a message and stream the response |
+| `cru session configure <id>` | | Set agent backend (provider, model, endpoint) |
 | `cru session pause <id>` | | Pause a running daemon session |
-| `cru session unpause <id>` | | Unpause a paused daemon session |
+| `cru session resume <id>` | | Resume a paused daemon session |
+| `cru session end <id>` | | End a daemon session |
 | `cru session export <id>` | | Export session to markdown |
 | `cru session search <q>` | | Search sessions by title |
+| `cru set <id> key=val` | | Tweak runtime settings (model, temperature, etc.) |
 | `cru stats` | | Display kiln statistics |
 | `cru status` | | Storage status and metrics |
 | `cru models` | | List available LLM models |
