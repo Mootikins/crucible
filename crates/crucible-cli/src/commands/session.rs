@@ -47,6 +47,26 @@ fn print_json_or_text(
     }
 }
 
+fn resolve_send_inputs(
+    session_id_pos: Option<String>,
+    message: Option<String>,
+    session_id_flag: Option<String>,
+) -> (Option<String>, Option<String>, bool) {
+    if let Some(flag_id) = session_id_flag {
+        return (Some(flag_id), session_id_pos, true);
+    }
+
+    if session_id_pos.is_some() && message.is_some() {
+        return (session_id_pos, message, false);
+    }
+
+    if session_id_pos.is_some() && std::env::var("CRU_SESSION").is_ok() {
+        return (None, session_id_pos, false);
+    }
+
+    (session_id_pos, message, false)
+}
+
 /// Execute a session subcommand
 pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
     match cmd {
@@ -110,12 +130,19 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             daemon_end(&client, &session_id).await
         }
         SessionCommands::Send {
-            session_id,
+            session_id_pos,
             message,
+            session_id_flag,
             raw,
         } => {
-            let session_id = resolve_session_id(session_id)?;
-            let message = match message {
+            let (resolved_session_id, resolved_message_arg, used_deprecated_flag) =
+                resolve_send_inputs(session_id_pos, message, session_id_flag);
+            if used_deprecated_flag {
+                warn_deprecated("--session", "positional SESSION_ID");
+            }
+
+            let session_id = resolve_session_id(resolved_session_id)?;
+            let message = match resolved_message_arg {
                 Some(msg) => crate::commands::stdin::resolve_message(&msg)?,
                 None => {
                     if crate::commands::stdin::stdin_is_piped() {
@@ -1418,6 +1445,63 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("No session specified"));
+    }
+
+    #[test]
+    fn resolve_send_inputs_uses_deprecated_session_flag_and_warns() {
+        let _guard = env_lock().lock().unwrap();
+        std::env::remove_var("CRU_SESSION");
+
+        let (session_id, message, used_deprecated_flag) = resolve_send_inputs(
+            Some("hello".to_string()),
+            None,
+            Some("chat-123".to_string()),
+        );
+
+        assert_eq!(session_id, Some("chat-123".to_string()));
+        assert_eq!(message, Some("hello".to_string()));
+        assert!(used_deprecated_flag);
+    }
+
+    #[test]
+    fn resolve_send_inputs_treats_two_positionals_as_session_and_message() {
+        let _guard = env_lock().lock().unwrap();
+        std::env::remove_var("CRU_SESSION");
+
+        let (session_id, message, used_deprecated_flag) =
+            resolve_send_inputs(Some("chat-123".to_string()), Some("hello".to_string()), None);
+
+        assert_eq!(session_id, Some("chat-123".to_string()));
+        assert_eq!(message, Some("hello".to_string()));
+        assert!(!used_deprecated_flag);
+    }
+
+    #[test]
+    fn resolve_send_inputs_treats_single_positional_as_message_when_env_set() {
+        let _guard = env_lock().lock().unwrap();
+        std::env::set_var("CRU_SESSION", "chat-from-env");
+
+        let (session_id, message, used_deprecated_flag) =
+            resolve_send_inputs(Some("hello".to_string()), None, None);
+
+        assert_eq!(session_id, None);
+        assert_eq!(message, Some("hello".to_string()));
+        assert!(!used_deprecated_flag);
+
+        std::env::remove_var("CRU_SESSION");
+    }
+
+    #[test]
+    fn resolve_send_inputs_single_positional_without_env_uses_stdin_for_message() {
+        let _guard = env_lock().lock().unwrap();
+        std::env::remove_var("CRU_SESSION");
+
+        let (session_id, message, used_deprecated_flag) =
+            resolve_send_inputs(Some("chat-123".to_string()), None, None);
+
+        assert_eq!(session_id, Some("chat-123".to_string()));
+        assert_eq!(message, None);
+        assert!(!used_deprecated_flag);
     }
 
     async fn setup_test_session(sessions_dir: &std::path::Path) -> SessionId {

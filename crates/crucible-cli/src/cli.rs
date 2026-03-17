@@ -554,13 +554,19 @@ pub enum SessionCommands {
 
     /// Send a message to a session and stream response
     Send {
-        /// Session ID (or set CRU_SESSION env var)
-        #[arg(long = "session", value_name = "SESSION_ID")]
-        session_id: Option<String>,
+        /// Session ID (positional, or set CRU_SESSION env var)
+        /// If only one positional is given without CRU_SESSION set, it is treated as the session ID.
+        /// If CRU_SESSION is set, the single positional is treated as the message.
+        #[arg(value_name = "SESSION_ID", hide = true, required = false)]
+        session_id_pos: Option<String>,
 
         /// Message to send (reads from stdin if not provided and stdin is piped)
         #[arg(value_name = "MESSAGE")]
         message: Option<String>,
+
+        /// [DEPRECATED] Use positional SESSION_ID instead
+        #[arg(long = "session", value_name = "SESSION_ID", hide = true)]
+        session_id_flag: Option<String>,
 
         /// Show raw events instead of formatted output
         #[arg(long)]
@@ -1415,6 +1421,64 @@ mod tests {
             assert_eq!(session_id, Some("session-123".to_string()));
         } else {
             panic!("Expected Session End command");
+        }
+    }
+
+    #[test]
+    fn test_session_send_positional_id_and_message() {
+        let cli = Cli::try_parse_from(["cru", "session", "send", "chat-123", "hello"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Send {
+            session_id_pos,
+            message,
+            session_id_flag,
+            raw,
+        })) = cli.command
+        {
+            assert_eq!(session_id_pos, Some("chat-123".to_string()));
+            assert_eq!(message, Some("hello".to_string()));
+            assert_eq!(session_id_flag, None);
+            assert!(!raw);
+        } else {
+            panic!("Expected Session Send command");
+        }
+    }
+
+    #[test]
+    fn test_session_send_deprecated_session_flag() {
+        let cli = Cli::try_parse_from(["cru", "session", "send", "--session", "chat-123", "hello"])
+            .unwrap();
+        if let Some(Commands::Session(SessionCommands::Send {
+            session_id_pos,
+            message,
+            session_id_flag,
+            raw,
+        })) = cli.command
+        {
+            assert_eq!(session_id_pos, Some("hello".to_string()));
+            assert_eq!(message, None);
+            assert_eq!(session_id_flag, Some("chat-123".to_string()));
+            assert!(!raw);
+        } else {
+            panic!("Expected Session Send command");
+        }
+    }
+
+    #[test]
+    fn test_session_send_single_positional_message_only() {
+        let cli = Cli::try_parse_from(["cru", "session", "send", "hello"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Send {
+            session_id_pos,
+            message,
+            session_id_flag,
+            raw,
+        })) = cli.command
+        {
+            assert_eq!(session_id_pos, Some("hello".to_string()));
+            assert_eq!(message, None);
+            assert_eq!(session_id_flag, None);
+            assert!(!raw);
+        } else {
+            panic!("Expected Session Send command");
         }
     }
 }
