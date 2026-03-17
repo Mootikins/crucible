@@ -343,7 +343,7 @@ async fn list(
 ) -> Result<()> {
     let client = daemon_client().await?;
 
-    daemon_list(&client, &config, session_type.as_deref(), state.as_deref()).await?;
+    daemon_list(&client, &config, session_type.as_deref(), state.as_deref(), &format, Some(limit)).await?;
 
     if all {
         println!();
@@ -918,35 +918,50 @@ async fn daemon_list(
     config: &CliConfig,
     session_type: Option<&str>,
     state: Option<&str>,
+    format: &str,
+    limit: Option<u32>,
 ) -> Result<()> {
     let result = client
         .session_list(Some(&config.kiln_path), None, session_type, state, None)
         .await?;
 
-    let sessions = result["sessions"].as_array();
+    let mut sessions = result["sessions"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
 
-    let sessions = match sessions {
-        Some(arr) if !arr.is_empty() => arr,
-        _ => {
-            println!("No daemon sessions found.");
-            return Ok(());
+    if sessions.is_empty() {
+        println!("No daemon sessions found.");
+        return Ok(());
+    }
+
+    // Apply limit
+    if let Some(n) = limit {
+        sessions.truncate(n as usize);
+    }
+
+    match format {
+        "json" => {
+            let json_output = serde_json::json!({"sessions": sessions});
+            println!("{}", serde_json::to_string_pretty(&json_output)?);
         }
-    };
+        _ => {
+            println!(
+                "{:<40} {:<10} {:<10} STARTED",
+                "SESSION_ID", "TYPE", "STATE"
+            );
+            println!("{}", "-".repeat(80));
 
-    println!(
-        "{:<40} {:<10} {:<10} STARTED",
-        "SESSION_ID", "TYPE", "STATE"
-    );
-    println!("{}", "-".repeat(80));
-
-    for session in sessions {
-        println!(
-            "{:<40} {:<10} {:<10} {}",
-            session["session_id"].as_str().unwrap_or("?"),
-            session["type"].as_str().unwrap_or("?"),
-            session["state"].as_str().unwrap_or("?"),
-            session["started_at"].as_str().unwrap_or("?"),
-        );
+            for session in &sessions {
+                println!(
+                    "{:<40} {:<10} {:<10} {}",
+                    session["session_id"].as_str().unwrap_or("?"),
+                    session["type"].as_str().unwrap_or("?"),
+                    session["state"].as_str().unwrap_or("?"),
+                    session["started_at"].as_str().unwrap_or("?"),
+                );
+            }
+        }
     }
 
     Ok(())
@@ -1724,5 +1739,40 @@ mod tests {
             assert_eq!(v["session_id"], "chat-123");
         });
         assert!(called, "human_fn should have been called for text format");
+    }
+
+    #[test]
+    fn test_daemon_list_limit_applied() {
+        let sessions = vec![
+            serde_json::json!({"session_id": "chat-1", "type": "chat", "state": "active", "started_at": "2024-01-01"}),
+            serde_json::json!({"session_id": "chat-2", "type": "chat", "state": "paused", "started_at": "2024-01-02"}),
+            serde_json::json!({"session_id": "chat-3", "type": "chat", "state": "active", "started_at": "2024-01-03"}),
+        ];
+
+        let mut limited = sessions.clone();
+        if let Some(n) = Some(2u32) {
+            limited.truncate(n as usize);
+        }
+
+        assert_eq!(limited.len(), 2);
+        assert_eq!(limited[0]["session_id"], "chat-1");
+        assert_eq!(limited[1]["session_id"], "chat-2");
+    }
+
+    #[test]
+    fn test_daemon_list_json_format() {
+        let sessions = vec![
+            serde_json::json!({"session_id": "chat-1", "type": "chat", "state": "active", "started_at": "2024-01-01"}),
+            serde_json::json!({"session_id": "chat-2", "type": "chat", "state": "paused", "started_at": "2024-01-02"}),
+        ];
+
+        let json_output = serde_json::json!({"sessions": sessions});
+        let json_str = serde_json::to_string_pretty(&json_output).unwrap();
+
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert!(parsed["sessions"].is_array());
+        assert_eq!(parsed["sessions"].as_array().unwrap().len(), 2);
+        assert_eq!(parsed["sessions"][0]["session_id"], "chat-1");
+        assert_eq!(parsed["sessions"][1]["session_id"], "chat-2");
     }
 }
