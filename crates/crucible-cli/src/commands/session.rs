@@ -88,10 +88,10 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             workspace,
         } => {
             let client = daemon_client().await?;
-            daemon_create(
+            rpc::create(
                 &client,
                 &config,
-                DaemonCreateParams {
+                rpc::CreateParams {
                     session_type: &session_type,
                     agent: agent.as_deref(),
                     recording_mode: recording_mode.as_deref(),
@@ -106,23 +106,23 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
         SessionCommands::Pause { session_id, format } => {
             let session_id = resolve_session_id(session_id)?;
             let client = daemon_client().await?;
-            daemon_pause(&client, &session_id, &format).await
+            rpc::pause(&client, &session_id, &format).await
         }
         SessionCommands::Resume { session_id, format } => {
             let session_id = resolve_session_id(session_id)?;
             let client = daemon_client().await?;
-            daemon_resume(&client, &session_id, &format).await
+            rpc::resume(&client, &session_id, &format).await
         }
         SessionCommands::Unpause { session_id } => {
             let session_id = resolve_session_id(session_id)?;
             warn_deprecated("unpause", "resume");
             let client = daemon_client().await?;
-            daemon_resume(&client, &session_id, "text").await
+            rpc::resume(&client, &session_id, "text").await
         }
         SessionCommands::End { session_id, format } => {
             let session_id = resolve_session_id(session_id)?;
             let client = daemon_client().await?;
-            daemon_end(&client, &session_id, &format).await
+            rpc::end(&client, &session_id, &format).await
         }
         SessionCommands::Send {
             session_id_pos,
@@ -147,7 +147,7 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
                     }
                 }
             };
-            daemon_send(&config, &session_id, &message, raw).await
+            rpc::send(&config, &session_id, &message, raw).await
         },
         SessionCommands::Configure {
             session_id,
@@ -160,7 +160,7 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             let provider_type = BackendType::from_str(&provider)
                 .map_err(|e| anyhow!("Invalid provider '{}': {}", provider, e))?;
             let client = daemon_client().await?;
-            daemon_configure(
+            rpc::configure(
                 &client,
                 &config,
                 &session_id,
@@ -171,17 +171,17 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             )
             .await
         }
-        SessionCommands::Subscribe { session_ids } => daemon_subscribe(&session_ids).await,
+        SessionCommands::Subscribe { session_ids } => rpc::subscribe(&session_ids).await,
         SessionCommands::Load { session_id } => {
             let session_id = resolve_session_id(session_id)?;
             let client = daemon_client().await?;
-            daemon_load(&client, &config, &session_id).await
+            rpc::load(&client, &config, &session_id).await
         }
         SessionCommands::Replay {
             recording_path,
             speed,
             raw,
-        } => daemon_replay(&config, &recording_path, speed, raw).await,
+        } => rpc::replay(&config, &recording_path, speed, raw).await,
     }
 }
 
@@ -359,7 +359,7 @@ async fn list(
 ) -> Result<()> {
     let client = daemon_client().await?;
 
-    daemon_list(&client, &config, session_type.as_deref(), state.as_deref(), &format, Some(limit)).await?;
+    rpc::list(&client, &config, session_type.as_deref(), state.as_deref(), &format, Some(limit)).await?;
 
     if all {
         println!();
@@ -902,144 +902,6 @@ fn truncate(s: &str, max_len: usize) -> String {
     }
 }
 
-async fn daemon_list(
-    client: &DaemonClient,
-    config: &CliConfig,
-    session_type: Option<&str>,
-    state: Option<&str>,
-    format: &str,
-    limit: Option<u32>,
-) -> Result<()> {
-    let result = client
-        .session_list(Some(&config.kiln_path), None, session_type, state, None)
-        .await?;
-
-    let mut sessions = result["sessions"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
-
-    if sessions.is_empty() {
-        println!("No daemon sessions found.");
-        return Ok(());
-    }
-
-    // Apply limit
-    if let Some(n) = limit {
-        sessions.truncate(n as usize);
-    }
-
-    match format {
-        "json" => {
-            let json_output = serde_json::json!({"sessions": sessions});
-            println!("{}", serde_json::to_string_pretty(&json_output)?);
-        }
-        _ => {
-            println!(
-                "{:<40} {:<10} {:<10} STARTED",
-                "SESSION_ID", "TYPE", "STATE"
-            );
-            println!("{}", "-".repeat(80));
-
-            for session in &sessions {
-                println!(
-                    "{:<40} {:<10} {:<10} {}",
-                    session["session_id"].as_str().unwrap_or("?"),
-                    session["type"].as_str().unwrap_or("?"),
-                    session["state"].as_str().unwrap_or("?"),
-                    session["started_at"].as_str().unwrap_or("?"),
-                );
-            }
-        }
-    }
-
-    Ok(())
-}
-
-struct DaemonCreateParams<'a> {
-    session_type: &'a str,
-    agent: Option<&'a str>,
-    recording_mode: Option<&'a str>,
-    quiet: bool,
-    format: &'a str,
-    title: Option<&'a str>,
-    workspace: Option<&'a std::path::Path>,
-}
-
-async fn daemon_create(
-    client: &DaemonClient,
-    config: &CliConfig,
-    params: DaemonCreateParams<'_>,
-) -> Result<()> {
-    let recording_mode_parsed = match params.recording_mode {
-        Some("granular") => Some("granular".to_string()),
-        Some("coarse") => Some("coarse".to_string()),
-        Some(other) => anyhow::bail!(
-            "Invalid recording mode: '{}'. Must be 'granular' or 'coarse'",
-            other
-        ),
-        None => None,
-    };
-
-    let result = client
-        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
-            session_type: params.session_type.to_string(),
-            kiln: config.kiln_path.clone(),
-            workspace: params.workspace.map(|p| p.to_path_buf()),
-            connect_kilns: vec![],
-            recording_mode: recording_mode_parsed,
-            recording_path: None,
-        })
-        .await?;
-
-    let session_id = result["session_id"].as_str().unwrap_or("unknown");
-
-    if let Some(agent_name) = params.agent {
-        let profile = resolve_acp_profile(client, agent_name)
-            .await
-            .map_err(|e| anyhow!("Failed to resolve ACP agent profile: {}", e))?;
-        let session_agent = SessionAgent::from_profile(&profile, agent_name);
-        client
-            .session_configure_agent(session_id, &session_agent)
-            .await?;
-    }
-
-    if let Some(t) = params.title {
-        client.session_set_title(session_id, t).await?;
-    }
-
-    let is_quiet = params.quiet || !crate::output::is_interactive();
-
-    if is_quiet {
-        println!("{}", session_id);
-    } else if params.format == "json" {
-        let json = serde_json::json!({
-            "session_id": session_id,
-            "type": params.session_type,
-            "kiln": config.kiln_path.to_string_lossy(),
-            "agent": params.agent,
-            "title": params.title,
-        });
-        println!("{}", serde_json::to_string_pretty(&json)?);
-    } else {
-        println!("Created session: {}", session_id);
-        println!("\nTo use this session: export CRU_SESSION={}", session_id);
-        println!("Type: {}", params.session_type);
-        println!("Kiln: {}", config.kiln_path.display());
-        if let Some(mode) = params.recording_mode {
-            println!("Recording mode: {}", mode);
-        }
-        if let Some(agent_name) = params.agent {
-            println!("Configured agent: {} (acp)", agent_name);
-        }
-        if let Some(t) = params.title {
-            println!("Title: {}", t);
-        }
-    }
-
-    Ok(())
-}
-
 async fn resolve_acp_profile(
     client: &DaemonClient,
     agent_name: &str,
@@ -1050,381 +912,523 @@ async fn resolve_acp_profile(
     Ok(profile)
 }
 
-async fn daemon_pause(client: &DaemonClient, session_id: &str, format: &str) -> Result<()> {
-    let result = client.session_pause(session_id).await?;
-    if format == "json" {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&serde_json::json!({
-                "session_id": session_id,
-                "previous_state": result["previous_state"].as_str().unwrap_or("?"),
-                "current_state": "paused",
-            }))?
-        );
-    } else {
-        println!("Paused session: {}", session_id);
-        println!(
-            "Previous state: {}",
-            result["previous_state"].as_str().unwrap_or("?")
-        );
+mod rpc {
+    use super::*;
+
+    pub(super) struct CreateParams<'a> {
+        pub session_type: &'a str,
+        pub agent: Option<&'a str>,
+        pub recording_mode: Option<&'a str>,
+        pub quiet: bool,
+        pub format: &'a str,
+        pub title: Option<&'a str>,
+        pub workspace: Option<&'a std::path::Path>,
     }
-    Ok(())
-}
 
-async fn daemon_resume(client: &DaemonClient, session_id: &str, format: &str) -> Result<()> {
-    let result = client.session_resume(session_id).await?;
-    if format == "json" {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&serde_json::json!({
-                "session_id": session_id,
-                "previous_state": result["previous_state"].as_str().unwrap_or("?"),
-                "current_state": "active",
-            }))?
-        );
-    } else {
-        println!("Resumed session: {}", session_id);
-        println!(
-            "Previous state: {}",
-            result["previous_state"].as_str().unwrap_or("?")
-        );
-    }
-    Ok(())
-}
+    pub(super) async fn list(
+        client: &DaemonClient,
+        config: &CliConfig,
+        session_type: Option<&str>,
+        state: Option<&str>,
+        format: &str,
+        limit: Option<u32>,
+    ) -> Result<()> {
+        let result = client
+            .session_list(Some(&config.kiln_path), None, session_type, state, None)
+            .await?;
 
-async fn daemon_end(client: &DaemonClient, session_id: &str, format: &str) -> Result<()> {
-    client.session_end(session_id).await?;
-    if format == "json" {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&serde_json::json!({
-                "session_id": session_id,
-                "ended": true,
-            }))?
-        );
-    } else {
-        println!("Ended session: {}", session_id);
-    }
-    Ok(())
-}
+        let mut sessions = result["sessions"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
 
-async fn daemon_send(config: &CliConfig, session_id: &str, message: &str, raw: bool) -> Result<()> {
-    use crucible_daemon::DaemonClient;
-    use std::io::Write;
-
-    let (client, mut event_rx) = DaemonClient::connect_or_start_with_events().await?;
-
-    client.session_subscribe(&[session_id]).await?;
-
-    // Try to send - if session not found, load from storage and retry
-    let message_id = match client.session_send_message(session_id, message).await {
-        Ok(id) => id,
-        Err(e) if e.to_string().contains("not found") => {
-            eprintln!("Session not in memory, loading from storage...");
-            client
-                .session_resume_from_storage(session_id, &config.kiln_path, None, None)
-                .await?;
-            client.session_send_message(session_id, message).await?
+        if sessions.is_empty() {
+            println!("No daemon sessions found.");
+            return Ok(());
         }
-        Err(e) => return Err(e),
-    };
 
-    if !raw {
-        eprintln!("--- Message {} ---", message_id);
+        // Apply limit
+        if let Some(n) = limit {
+            sessions.truncate(n as usize);
+        }
+
+        match format {
+            "json" => {
+                let json_output = serde_json::json!({"sessions": sessions});
+                println!("{}", serde_json::to_string_pretty(&json_output)?);
+            }
+            _ => {
+                println!(
+                    "{:<40} {:<10} {:<10} STARTED",
+                    "SESSION_ID", "TYPE", "STATE"
+                );
+                println!("{}", "-".repeat(80));
+
+                for session in &sessions {
+                    println!(
+                        "{:<40} {:<10} {:<10} {}",
+                        session["session_id"].as_str().unwrap_or("?"),
+                        session["type"].as_str().unwrap_or("?"),
+                        session["state"].as_str().unwrap_or("?"),
+                        session["started_at"].as_str().unwrap_or("?"),
+                    );
+                }
+            }
+        }
+
+        Ok(())
     }
 
-    loop {
-        match event_rx.recv().await {
-            Some(event) => {
-                if event.session_id != session_id {
-                    continue;
-                }
+    pub(super) async fn create(
+        client: &DaemonClient,
+        config: &CliConfig,
+        params: CreateParams<'_>,
+    ) -> Result<()> {
+        let recording_mode_parsed = match params.recording_mode {
+            Some("granular") => Some("granular".to_string()),
+            Some("coarse") => Some("coarse".to_string()),
+            Some(other) => anyhow::bail!(
+                "Invalid recording mode: '{}'. Must be 'granular' or 'coarse'",
+                other
+            ),
+            None => None,
+        };
 
-                if raw {
-                    println!(
-                        "{}",
-                        serde_json::json!({
-                            "session_id": event.session_id,
-                            "event_type": event.event_type,
-                            "data": event.data,
-                        })
-                    );
-                } else {
-                    match event.event_type.as_str() {
-                        "text_delta" => {
-                            if let Some(content) =
-                                event.data.get("content").and_then(|v| v.as_str())
-                            {
-                                print!("{}", content);
-                                std::io::stdout().flush().ok();
+        let result = client
+            .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+                session_type: params.session_type.to_string(),
+                kiln: config.kiln_path.clone(),
+                workspace: params.workspace.map(|p| p.to_path_buf()),
+                connect_kilns: vec![],
+                recording_mode: recording_mode_parsed,
+                recording_path: None,
+            })
+            .await?;
+
+        let session_id = result["session_id"].as_str().unwrap_or("unknown");
+
+        if let Some(agent_name) = params.agent {
+            let profile = super::resolve_acp_profile(client, agent_name)
+                .await
+                .map_err(|e| anyhow!("Failed to resolve ACP agent profile: {}", e))?;
+            let session_agent = SessionAgent::from_profile(&profile, agent_name);
+            client
+                .session_configure_agent(session_id, &session_agent)
+                .await?;
+        }
+
+        if let Some(t) = params.title {
+            client.session_set_title(session_id, t).await?;
+        }
+
+        let is_quiet = params.quiet || !crate::output::is_interactive();
+
+        if is_quiet {
+            println!("{}", session_id);
+        } else if params.format == "json" {
+            let json = serde_json::json!({
+                "session_id": session_id,
+                "type": params.session_type,
+                "kiln": config.kiln_path.to_string_lossy(),
+                "agent": params.agent,
+                "title": params.title,
+            });
+            println!("{}", serde_json::to_string_pretty(&json)?);
+        } else {
+            println!("Created session: {}", session_id);
+            println!("\nTo use this session: export CRU_SESSION={}", session_id);
+            println!("Type: {}", params.session_type);
+            println!("Kiln: {}", config.kiln_path.display());
+            if let Some(mode) = params.recording_mode {
+                println!("Recording mode: {}", mode);
+            }
+            if let Some(agent_name) = params.agent {
+                println!("Configured agent: {} (acp)", agent_name);
+            }
+            if let Some(t) = params.title {
+                println!("Title: {}", t);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(super) async fn pause(client: &DaemonClient, session_id: &str, format: &str) -> Result<()> {
+        let result = client.session_pause(session_id).await?;
+        if format == "json" {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "session_id": session_id,
+                    "previous_state": result["previous_state"].as_str().unwrap_or("?"),
+                    "current_state": "paused",
+                }))?
+            );
+        } else {
+            println!("Paused session: {}", session_id);
+            println!(
+                "Previous state: {}",
+                result["previous_state"].as_str().unwrap_or("?")
+            );
+        }
+        Ok(())
+    }
+
+    pub(super) async fn resume(client: &DaemonClient, session_id: &str, format: &str) -> Result<()> {
+        let result = client.session_resume(session_id).await?;
+        if format == "json" {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "session_id": session_id,
+                    "previous_state": result["previous_state"].as_str().unwrap_or("?"),
+                    "current_state": "active",
+                }))?
+            );
+        } else {
+            println!("Resumed session: {}", session_id);
+            println!(
+                "Previous state: {}",
+                result["previous_state"].as_str().unwrap_or("?")
+            );
+        }
+        Ok(())
+    }
+
+    pub(super) async fn end(client: &DaemonClient, session_id: &str, format: &str) -> Result<()> {
+        client.session_end(session_id).await?;
+        if format == "json" {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "session_id": session_id,
+                    "ended": true,
+                }))?
+            );
+        } else {
+            println!("Ended session: {}", session_id);
+        }
+        Ok(())
+    }
+
+    pub(super) async fn send(config: &CliConfig, session_id: &str, message: &str, raw: bool) -> Result<()> {
+        use crucible_daemon::DaemonClient;
+        use std::io::Write;
+
+        let (client, mut event_rx) = DaemonClient::connect_or_start_with_events().await?;
+
+        client.session_subscribe(&[session_id]).await?;
+
+        // Try to send - if session not found, load from storage and retry
+        let message_id = match client.session_send_message(session_id, message).await {
+            Ok(id) => id,
+            Err(e) if e.to_string().contains("not found") => {
+                eprintln!("Session not in memory, loading from storage...");
+                client
+                    .session_resume_from_storage(session_id, &config.kiln_path, None, None)
+                    .await?;
+                client.session_send_message(session_id, message).await?
+            }
+            Err(e) => return Err(e),
+        };
+
+        if !raw {
+            eprintln!("--- Message {} ---", message_id);
+        }
+
+        loop {
+            match event_rx.recv().await {
+                Some(event) => {
+                    if event.session_id != session_id {
+                        continue;
+                    }
+
+                    if raw {
+                        println!(
+                            "{}",
+                            serde_json::json!({
+                                "session_id": event.session_id,
+                                "event_type": event.event_type,
+                                "data": event.data,
+                            })
+                        );
+                    } else {
+                        match event.event_type.as_str() {
+                            "text_delta" => {
+                                if let Some(content) =
+                                    event.data.get("content").and_then(|v| v.as_str())
+                                {
+                                    print!("{}", content);
+                                    std::io::stdout().flush().ok();
+                                }
                             }
-                        }
-                        "thinking" => {
-                            if let Some(content) =
-                                event.data.get("content").and_then(|v| v.as_str())
-                            {
-                                eprintln!("[thinking] {}", content);
+                            "thinking" => {
+                                if let Some(content) =
+                                    event.data.get("content").and_then(|v| v.as_str())
+                                {
+                                    eprintln!("[thinking] {}", content);
+                                }
                             }
-                        }
-                        "tool_call" => {
-                            let tool = event
-                                .data
-                                .get("tool")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("?");
-                            eprintln!("[tool_call] {}", tool);
-                        }
-                        "tool_result" => {
-                            let tool = event
-                                .data
-                                .get("tool")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("?");
-                            eprintln!("[tool_result] {}", tool);
-                        }
-                        "message_complete" => {
-                            println!();
-                            eprintln!("[complete]");
-                        }
-                        "ended" => {
-                            let reason = event
-                                .data
-                                .get("reason")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("unknown");
-                            eprintln!("[ended] {}", reason);
-                        }
-                        other => {
-                            eprintln!("[{}] {:?}", other, event.data);
+                            "tool_call" => {
+                                let tool = event
+                                    .data
+                                    .get("tool")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("?");
+                                eprintln!("[tool_call] {}", tool);
+                            }
+                            "tool_result" => {
+                                let tool = event
+                                    .data
+                                    .get("tool")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("?");
+                                eprintln!("[tool_result] {}", tool);
+                            }
+                            "message_complete" => {
+                                println!();
+                                eprintln!("[complete]");
+                            }
+                            "ended" => {
+                                let reason = event
+                                    .data
+                                    .get("reason")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("unknown");
+                                eprintln!("[ended] {}", reason);
+                            }
+                            other => {
+                                eprintln!("[{}] {:?}", other, event.data);
+                            }
                         }
                     }
-                }
 
-                if event.event_type == "message_complete" || event.event_type == "ended" {
+                    if event.event_type == "message_complete" || event.event_type == "ended" {
+                        break;
+                    }
+                }
+                None => {
+                    eprintln!("Event channel closed");
                     break;
                 }
             }
-            None => {
-                eprintln!("Event channel closed");
-                break;
-            }
         }
+
+        Ok(())
     }
 
-    Ok(())
-}
+    pub(super) async fn configure(
+        client: &DaemonClient,
+        config: &CliConfig,
+        session_id: &str,
+        provider: BackendType,
+        model: &str,
+        endpoint: Option<String>,
+        format: &str,
+    ) -> Result<()> {
+        let mcp_servers = config
+            .mcp
+            .as_ref()
+            .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
+            .unwrap_or_default();
 
-async fn daemon_configure(
-    client: &DaemonClient,
-    config: &CliConfig,
-    session_id: &str,
-    provider: BackendType,
-    model: &str,
-    endpoint: Option<String>,
-    format: &str,
-) -> Result<()> {
-    let mcp_servers = config
-        .mcp
-        .as_ref()
-        .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
-        .unwrap_or_default();
+        let agent = crucible_core::session::SessionAgent {
+            agent_type: "internal".to_string(),
+            agent_name: None,
+            provider_key: Some(provider.to_string()),
+            provider,
+            model: model.to_string(),
+            system_prompt: String::new(),
+            temperature: None,
+            max_tokens: None,
+            max_context_tokens: None,
+            thinking_budget: None,
+            endpoint: endpoint.clone(),
+            env_overrides: std::collections::HashMap::new(),
+            mcp_servers,
+            agent_card_name: None,
+            capabilities: None,
+            agent_description: None,
+            delegation_config: None,
+            precognition_enabled: true,
+        };
 
-    let agent = crucible_core::session::SessionAgent {
-        agent_type: "internal".to_string(),
-        agent_name: None,
-        provider_key: Some(provider.to_string()),
-        provider,
-        model: model.to_string(),
-        system_prompt: String::new(),
-        temperature: None,
-        max_tokens: None,
-        max_context_tokens: None,
-        thinking_budget: None,
-        endpoint: endpoint.clone(),
-        env_overrides: std::collections::HashMap::new(),
-        mcp_servers,
-        agent_card_name: None,
-        capabilities: None,
-        agent_description: None,
-        delegation_config: None,
-        precognition_enabled: true,
-    };
+        client.session_configure_agent(session_id, &agent).await?;
 
-    client.session_configure_agent(session_id, &agent).await?;
-
-    if format == "json" {
-        let json_output = serde_json::json!({
-            "session_id": session_id,
-            "provider": provider.to_string(),
-            "model": model,
-            "endpoint": endpoint
-        });
-        println!("{}", json_output);
-    } else {
-        println!("Configured agent: {} / {}", provider, model);
-    }
-
-    Ok(())
-}
-
-async fn daemon_subscribe(session_ids: &[String]) -> Result<()> {
-    use crucible_daemon::DaemonClient;
-
-    let (client, mut event_rx) = DaemonClient::connect_or_start_with_events().await?;
-
-    let refs: Vec<&str> = session_ids.iter().map(|s| s.as_str()).collect();
-    client.session_subscribe(&refs).await?;
-
-    println!(
-        "Subscribed to {} session(s). Press Ctrl+C to exit.",
-        session_ids.len()
-    );
-
-    loop {
-        match event_rx.recv().await {
-            Some(event) => {
-                println!(
-                    "[{}] {} {}",
-                    event.session_id,
-                    event.event_type,
-                    serde_json::to_string(&event.data)?
-                );
-            }
-            None => {
-                eprintln!("Event channel closed");
-                break;
-            }
+        if format == "json" {
+            let json_output = serde_json::json!({
+                "session_id": session_id,
+                "provider": provider.to_string(),
+                "model": model,
+                "endpoint": endpoint
+            });
+            println!("{}", json_output);
+        } else {
+            println!("Configured agent: {} / {}", provider, model);
         }
+
+        Ok(())
     }
 
-    Ok(())
-}
+    pub(super) async fn subscribe(session_ids: &[String]) -> Result<()> {
+        use crucible_daemon::DaemonClient;
 
-async fn daemon_replay(
-    _config: &CliConfig,
-    recording_path: &str,
-    speed: f64,
-    raw: bool,
-) -> Result<()> {
-    use crucible_daemon::DaemonClient;
-    use std::io::Write;
-    use std::path::Path;
+        let (client, mut event_rx) = DaemonClient::connect_or_start_with_events().await?;
 
-    let (client, mut event_rx) = DaemonClient::connect_or_start_with_events().await?;
+        let refs: Vec<&str> = session_ids.iter().map(|s| s.as_str()).collect();
+        client.session_subscribe(&refs).await?;
 
-    let result = client
-        .session_replay(Path::new(recording_path), speed)
-        .await?;
-
-    let session_id = result["session_id"]
-        .as_str()
-        .ok_or_else(|| anyhow!("Missing session_id in replay response"))?;
-
-    client.session_subscribe(&[session_id]).await?;
-
-    if !raw {
-        eprintln!(
-            "Replaying {} at {}x speed (session: {})",
-            recording_path, speed, session_id
+        println!(
+            "Subscribed to {} session(s). Press Ctrl+C to exit.",
+            session_ids.len()
         );
+
+        loop {
+            match event_rx.recv().await {
+                Some(event) => {
+                    println!(
+                        "[{}] {} {}",
+                        event.session_id,
+                        event.event_type,
+                        serde_json::to_string(&event.data)?
+                    );
+                }
+                None => {
+                    eprintln!("Event channel closed");
+                    break;
+                }
+            }
+        }
+
+        Ok(())
     }
 
-    loop {
-        match event_rx.recv().await {
-            Some(event) => {
-                if event.session_id != session_id {
-                    continue;
-                }
+    pub(super) async fn replay(
+        _config: &CliConfig,
+        recording_path: &str,
+        speed: f64,
+        raw: bool,
+    ) -> Result<()> {
+        use crucible_daemon::DaemonClient;
+        use std::io::Write;
+        use std::path::Path;
 
-                if event.event_type == "replay_complete" {
+        let (client, mut event_rx) = DaemonClient::connect_or_start_with_events().await?;
+
+        let result = client
+            .session_replay(Path::new(recording_path), speed)
+            .await?;
+
+        let session_id = result["session_id"]
+            .as_str()
+            .ok_or_else(|| anyhow!("Missing session_id in replay response"))?;
+
+        client.session_subscribe(&[session_id]).await?;
+
+        if !raw {
+            eprintln!(
+                "Replaying {} at {}x speed (session: {})",
+                recording_path, speed, session_id
+            );
+        }
+
+        loop {
+            match event_rx.recv().await {
+                Some(event) => {
+                    if event.session_id != session_id {
+                        continue;
+                    }
+
+                    if event.event_type == "replay_complete" {
+                        if !raw {
+                            eprintln!("[replay complete]");
+                        }
+                        break;
+                    }
+
+                    if raw {
+                        println!(
+                            "{}",
+                            serde_json::json!({
+                                "session_id": event.session_id,
+                                "event_type": event.event_type,
+                                "data": event.data,
+                            })
+                        );
+                    } else {
+                        match event.event_type.as_str() {
+                            "text_delta" => {
+                                if let Some(content) =
+                                    event.data.get("content").and_then(|v| v.as_str())
+                                {
+                                    print!("{}", content);
+                                    std::io::stdout().flush().ok();
+                                }
+                            }
+                            "thinking" => {
+                                if let Some(content) =
+                                    event.data.get("content").and_then(|v| v.as_str())
+                                {
+                                    eprintln!("[thinking] {}", content);
+                                }
+                            }
+                            "tool_call" => {
+                                let tool = event
+                                    .data
+                                    .get("tool")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("?");
+                                eprintln!("[tool_call] {}", tool);
+                            }
+                            "tool_result" => {
+                                let tool = event
+                                    .data
+                                    .get("tool")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("?");
+                                eprintln!("[tool_result] {}", tool);
+                            }
+                            "message_complete" => {
+                                println!();
+                                eprintln!("[complete]");
+                            }
+                            "ended" => {
+                                eprintln!("[ended]");
+                                break;
+                            }
+                            other => {
+                                eprintln!("[{}]", other);
+                            }
+                        }
+                    }
+                }
+                None => {
                     if !raw {
                         eprintln!("[replay complete]");
                     }
                     break;
                 }
-
-                if raw {
-                    println!(
-                        "{}",
-                        serde_json::json!({
-                            "session_id": event.session_id,
-                            "event_type": event.event_type,
-                            "data": event.data,
-                        })
-                    );
-                } else {
-                    match event.event_type.as_str() {
-                        "text_delta" => {
-                            if let Some(content) =
-                                event.data.get("content").and_then(|v| v.as_str())
-                            {
-                                print!("{}", content);
-                                std::io::stdout().flush().ok();
-                            }
-                        }
-                        "thinking" => {
-                            if let Some(content) =
-                                event.data.get("content").and_then(|v| v.as_str())
-                            {
-                                eprintln!("[thinking] {}", content);
-                            }
-                        }
-                        "tool_call" => {
-                            let tool = event
-                                .data
-                                .get("tool")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("?");
-                            eprintln!("[tool_call] {}", tool);
-                        }
-                        "tool_result" => {
-                            let tool = event
-                                .data
-                                .get("tool")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("?");
-                            eprintln!("[tool_result] {}", tool);
-                        }
-                        "message_complete" => {
-                            println!();
-                            eprintln!("[complete]");
-                        }
-                        "ended" => {
-                            eprintln!("[ended]");
-                            break;
-                        }
-                        other => {
-                            eprintln!("[{}]", other);
-                        }
-                    }
-                }
-            }
-            None => {
-                if !raw {
-                    eprintln!("[replay complete]");
-                }
-                break;
             }
         }
+
+        Ok(())
     }
 
-    Ok(())
-}
+    pub(super) async fn load(client: &DaemonClient, config: &CliConfig, session_id: &str) -> Result<()> {
+        let result = client
+            .session_resume_from_storage(session_id, &config.kiln_path, None, None)
+            .await?;
 
-async fn daemon_load(client: &DaemonClient, config: &CliConfig, session_id: &str) -> Result<()> {
-    let result = client
-        .session_resume_from_storage(session_id, &config.kiln_path, None, None)
-        .await?;
+        println!("Loaded session: {}", session_id);
+        if let Some(events) = result.get("events_loaded").and_then(|v| v.as_u64()) {
+            println!("Events loaded: {}", events);
+        }
+        if let Some(state) = result.get("state").and_then(|v| v.as_str()) {
+            println!("State: {}", state);
+        }
 
-    println!("Loaded session: {}", session_id);
-    if let Some(events) = result.get("events_loaded").and_then(|v| v.as_u64()) {
-        println!("Events loaded: {}", events);
+        Ok(())
     }
-    if let Some(state) = result.get("state").and_then(|v| v.as_str()) {
-        println!("State: {}", state);
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
