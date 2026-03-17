@@ -158,7 +158,7 @@ impl GenaiAgentHandle {
             mode_state,
             current_mode_id,
             mode_context_sent: false,
-            max_tool_depth: 10,
+            max_tool_depth: usize::MAX,
             thinking_budget,
         }
     }
@@ -192,7 +192,7 @@ impl GenaiAgentHandle {
             mode_state,
             current_mode_id,
             mode_context_sent: false,
-            max_tool_depth: 0,
+            max_tool_depth: usize::MAX,
             thinking_budget: None,
         }
     }

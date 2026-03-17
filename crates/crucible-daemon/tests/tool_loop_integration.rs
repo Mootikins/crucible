@@ -2,9 +2,11 @@ use crucible_core::protocol::SessionEventMessage;
 use crucible_core::traits::completion_backend::{BackendCompletionRequest, CompletionBackend};
 use crucible_core::traits::context_ops::ContextMessage;
 use crucible_core::traits::llm::ToolCall;
+use crucible_daemon::agent_manager::tool_tracking::ToolCallTracker;
 use crucible_daemon::test_support::MockCompletionBackend;
 use futures::StreamExt;
 use serde_json::json;
+use std::collections::HashSet;
 use std::path::Path;
 use tokio::sync::broadcast;
 use tokio::time::{timeout, Duration};
@@ -21,6 +23,10 @@ fn make_tool_call(call_id: &str, path: &str) -> ToolCall {
     ToolCall::new(call_id, "read_file", json!({ "path": path }).to_string())
 }
 
+fn make_named_tool_call(call_id: &str, tool_name: &str, args: serde_json::Value) -> ToolCall {
+    ToolCall::new(call_id, tool_name, args.to_string())
+}
+
 async fn execute_mock_tool_loop(
     backend: &MockCompletionBackend,
     user_message: &str,
@@ -29,6 +35,10 @@ async fn execute_mock_tool_loop(
     let mut messages = vec![ContextMessage::user(user_message)];
     let mut full_response = String::new();
     let mut tool_depth = 0usize;
+    let mut tracker = ToolCallTracker::new();
+    let mut blocked_tools: HashSet<String> = HashSet::new();
+    let mut last_failure_key: Option<(String, String)> = None;
+    let mut consecutive_failure_count = 0usize;
 
     loop {
         let request = BackendCompletionRequest::new("You are helpful.", messages.clone());
@@ -80,17 +90,70 @@ async fn execute_mock_tool_loop(
                     args.clone(),
                 ));
 
-                let result_text = execute_workspace_tool(&tool_name, &args)
-                    .unwrap_or_else(|e| format!("tool error: {e}"));
+                let mut result_text = String::new();
+                let mut error_text = if blocked_tools.contains(&tool_name) {
+                    Some(format!(
+                        "Tool '{tool_name}' is blocked for this stream after repeated failures."
+                    ))
+                } else {
+                    match execute_workspace_tool(&tool_name, &args) {
+                        Ok(value) => {
+                            result_text = value;
+                            None
+                        }
+                        Err(e) => Some(format!("tool error: {e}")),
+                    }
+                };
+
+                let attempt = tracker.record_call(&tool_name, &args);
+                let args_key = serde_json::to_string(&args).unwrap_or_else(|_| "null".to_string());
+
+                if let Some(error) = error_text.as_mut() {
+                    let failure_key = (tool_name.clone(), args_key.clone());
+                    if last_failure_key.as_ref() == Some(&failure_key) {
+                        consecutive_failure_count += 1;
+                    } else {
+                        consecutive_failure_count = 1;
+                        last_failure_key = Some(failure_key);
+                    }
+
+                    if attempt >= 3 && tracker.is_repeat_failure(&tool_name, &args, 3) {
+                        let annotation = format!(
+                            "Attempt {attempt}. This tool has failed {attempt} times with identical arguments. Try a different approach."
+                        );
+                        if !error.contains(&annotation) {
+                            if !error.is_empty() {
+                                error.push(' ');
+                            }
+                            error.push_str(&annotation);
+                        }
+                    }
+
+                    if consecutive_failure_count >= 3 {
+                        blocked_tools.insert(tool_name.clone());
+                    }
+                } else {
+                    last_failure_key = None;
+                    consecutive_failure_count = 0;
+                }
+
+                let event_payload = if let Some(error) = &error_text {
+                    json!({ "error": error })
+                } else {
+                    json!({ "result": result_text.clone() })
+                };
 
                 let _ = event_tx.send(SessionEventMessage::tool_result(
                     SESSION_ID,
                     call_id.clone(),
                     tool_name,
-                    json!(result_text.clone()),
+                    event_payload,
                 ));
 
-                messages.push(ContextMessage::tool_result(call_id, result_text));
+                messages.push(ContextMessage::tool_result(
+                    call_id,
+                    error_text.unwrap_or(result_text),
+                ));
             }
 
             continue;
@@ -111,16 +174,28 @@ async fn execute_mock_tool_loop(
 }
 
 fn execute_workspace_tool(tool_name: &str, args: &serde_json::Value) -> Result<String, String> {
-    if tool_name != "read_file" {
-        return Err(format!("unsupported tool: {tool_name}"));
+    match tool_name {
+        "read_file" => {
+            let path = args
+                .get("path")
+                .and_then(|value| value.as_str())
+                .ok_or_else(|| "missing path argument".to_string())?;
+
+            std::fs::read_to_string(Path::new(path)).map_err(|e| e.to_string())
+        }
+        "glob" => {
+            let pattern = args
+                .get("pattern")
+                .and_then(|value| value.as_str())
+                .ok_or_else(|| "missing pattern argument".to_string())?;
+            if Path::new(pattern).exists() {
+                Ok(pattern.to_string())
+            } else {
+                Err(format!("glob pattern did not match: {pattern}"))
+            }
+        }
+        _ => Err(format!("unsupported tool: {tool_name}")),
     }
-
-    let path = args
-        .get("path")
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| "missing path argument".to_string())?;
-
-    std::fs::read_to_string(Path::new(path)).map_err(|e| e.to_string())
 }
 
 #[tokio::test]
@@ -219,4 +294,101 @@ async fn tool_loop_without_tool_calls_streams_normal_response() {
         "unexpected tool_call event in plain response flow"
     );
     assert_eq!(backend.request_count(), 1);
+}
+
+#[tokio::test]
+async fn tool_loop_blocks_tool_after_three_identical_failures() {
+    let backend = MockCompletionBackend::new();
+    for idx in 0..4 {
+        backend.push_response_chunks(vec![
+            Ok(
+                crucible_core::traits::completion_backend::BackendCompletionChunk::tool_call(
+                    make_tool_call(&format!("call_{idx}"), "/tmp/does-not-exist"),
+                ),
+            ),
+            Ok(crucible_core::traits::completion_backend::BackendCompletionChunk::finished(None)),
+        ]);
+    }
+    backend.push_text_response("done");
+
+    let (event_tx, mut event_rx) = broadcast::channel(256);
+    execute_mock_tool_loop(&backend, "loop failing tool", &event_tx).await;
+
+    let mut fourth_error: Option<String> = None;
+    for idx in 0..4 {
+        let _ = next_event(&mut event_rx, "tool_call").await;
+        let result_event = next_event(&mut event_rx, "tool_result").await;
+        let error = result_event.data["result"]["error"]
+            .as_str()
+            .expect("tool_result should contain error")
+            .to_string();
+        if idx == 3 {
+            fourth_error = Some(error);
+        }
+    }
+
+    let fourth_error = fourth_error.expect("expected fourth tool error");
+    assert!(
+        fourth_error.contains("Attempt 4"),
+        "expected attempt annotation on fourth failure, got: {fourth_error}"
+    );
+    assert!(
+        fourth_error.contains("blocked"),
+        "expected blocked marker on fourth failure, got: {fourth_error}"
+    );
+
+    let complete = next_event(&mut event_rx, "message_complete").await;
+    assert_eq!(complete.data["full_response"], "done");
+}
+
+#[tokio::test]
+async fn tool_loop_different_successful_tools_have_no_retry_annotation() {
+    std::fs::write("/tmp/tool-loop-alpha.txt", "alpha").expect("write alpha fixture");
+    std::fs::write("/tmp/tool-loop-beta.txt", "beta").expect("write beta fixture");
+
+    let backend = MockCompletionBackend::new();
+    backend.push_response_chunks(vec![
+        Ok(
+            crucible_core::traits::completion_backend::BackendCompletionChunk::tool_call(
+                make_tool_call("call_alpha", "/tmp/tool-loop-alpha.txt"),
+            ),
+        ),
+        Ok(crucible_core::traits::completion_backend::BackendCompletionChunk::finished(None)),
+    ]);
+    backend.push_response_chunks(vec![
+        Ok(
+            crucible_core::traits::completion_backend::BackendCompletionChunk::tool_call(
+                make_named_tool_call(
+                    "call_beta",
+                    "glob",
+                    json!({ "pattern": "/tmp/tool-loop-beta.txt" }),
+                ),
+            ),
+        ),
+        Ok(crucible_core::traits::completion_backend::BackendCompletionChunk::finished(None)),
+    ]);
+    backend.push_text_response("all tools succeeded");
+
+    let (event_tx, mut event_rx) = broadcast::channel(256);
+    execute_mock_tool_loop(&backend, "run distinct tools", &event_tx).await;
+
+    for _ in 0..2 {
+        let _ = next_event(&mut event_rx, "tool_call").await;
+        let result_event = next_event(&mut event_rx, "tool_result").await;
+
+        let maybe_error = result_event.data["result"]["error"].as_str();
+        assert!(
+            maybe_error.is_none(),
+            "did not expect tool error for successful distinct tools"
+        );
+
+        let serialized = result_event.data.to_string();
+        assert!(
+            !serialized.contains("Attempt "),
+            "did not expect retry annotation for successful tools: {serialized}"
+        );
+    }
+
+    let complete = next_event(&mut event_rx, "message_complete").await;
+    assert_eq!(complete.data["full_response"], "all tools succeeded");
 }

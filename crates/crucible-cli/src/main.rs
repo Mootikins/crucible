@@ -276,7 +276,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
 
         Some(Commands::Stats { format }) => commands::stats::execute(config, &format).await?,
 
-        Some(Commands::Models) => commands::models::execute(config).await?,
+        Some(Commands::Models { format }) => commands::models::execute(config, &format).await?,
 
         Some(Commands::Config(cmd)) => commands::config::execute(cmd).await?,
 
@@ -332,6 +332,10 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
 
         Some(Commands::Set { settings, session }) => {
             commands::set::execute(settings, session).await?;
+        }
+
+        Some(Commands::Completions { shell }) => {
+            commands::completions::execute(&shell)?;
         }
 
         #[cfg(feature = "web")]

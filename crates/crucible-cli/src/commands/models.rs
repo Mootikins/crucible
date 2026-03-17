@@ -1,9 +1,16 @@
 use crate::config::CliConfig;
+use crate::formatting::OutputFormat;
 use anyhow::{Context, Result};
+use serde::Serialize;
 
 use crate::common::daemon_client;
 
-pub async fn execute(config: CliConfig) -> Result<()> {
+#[derive(Debug, Serialize)]
+pub struct ModelOutput {
+    pub name: String,
+}
+
+pub async fn execute(config: CliConfig, format: &str) -> Result<()> {
     eprintln!("Fetching models from daemon...");
 
     let client = daemon_client().await?;
@@ -22,13 +29,26 @@ pub async fn execute(config: CliConfig) -> Result<()> {
         return Ok(());
     }
 
-    println!("\nAvailable models ({}):\n", models.len());
-    for model in &models {
-        println!("  {}", model);
-    }
+    let output_format = OutputFormat::from(format);
 
-    println!("\nSwitch model in chat with: :model <name>");
-    println!("Or start chat with: cru chat --model <name>");
+    match output_format {
+        OutputFormat::Json => {
+            let output: Vec<ModelOutput> = models
+                .iter()
+                .map(|m| ModelOutput { name: m.clone() })
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&output)?);
+        }
+        _ => {
+            println!("\nAvailable models ({}):\n", models.len());
+            for model in &models {
+                println!("  {}", model);
+            }
+
+            println!("\nSwitch model in chat with: :model <name>");
+            println!("Or start chat with: cru chat --model <name>");
+        }
+    }
 
     Ok(())
 }

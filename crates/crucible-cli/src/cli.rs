@@ -215,7 +215,11 @@ pub enum Commands {
     #[command(
         long_about = "List available models from the configured LLM provider.\n\nQueries the provider (Ollama, OpenAI, Anthropic, etc.) to show available models and their capabilities.\n\nExamples:\n  # List models from configured provider\n  cru models\n\n  # JSON output for scripting\n  cru models -f json\n\n  # CSV format for spreadsheets\n  cru models -f csv"
     )]
-    Models,
+    Models {
+        /// Output format (table, json, plain)
+        #[arg(short = 'f', long, default_value = "table")]
+        format: String,
+    },
 
     /// Manage Crucible configuration (initialize, view, export)
     #[command(
@@ -377,6 +381,16 @@ Examples:
         /// Target session ID (or use CRU_SESSION env var)
         #[arg(long, value_name = "SESSION_ID")]
         session: Option<String>,
+    },
+
+    /// Generate shell completion scripts (bash, zsh)
+    #[command(
+        long_about = "Generate shell completion scripts for bash and zsh.\n\nOutput completion script to stdout for installation in your shell configuration.\n\nExamples:\n  # Generate bash completions\n  cru completions bash\n\n  # Generate zsh completions\n  cru completions zsh\n\n  # Install bash completions\n  cru completions bash | sudo tee /etc/bash_completion.d/cru\n\n  # Install zsh completions\n  cru completions zsh | sudo tee /usr/share/zsh/site-functions/_cru"
+    )]
+    Completions {
+        /// Shell type (bash or zsh)
+        #[arg(value_name = "SHELL")]
+        shell: String,
     },
 
     /// Start the web UI server for browser-based chat
@@ -785,6 +799,9 @@ pub enum SkillsCommands {
         /// Filter by scope (personal, workspace, kiln)
         #[arg(long)]
         scope: Option<String>,
+        /// Output format (table, json, plain)
+        #[arg(short = 'f', long, default_value = "table")]
+        format: String,
     },
     /// Show skill details
     Show {
@@ -808,6 +825,9 @@ pub enum ToolsCommands {
         /// Output in permission rule format (tool:pattern)
         #[arg(long)]
         permissions: bool,
+        /// Output format (table, json, plain)
+        #[arg(short = 'f', long, default_value = "table")]
+        format: String,
     },
 }
 

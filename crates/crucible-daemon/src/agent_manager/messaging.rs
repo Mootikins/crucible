@@ -1,5 +1,7 @@
 use super::*;
+use crate::agent_manager::tool_tracking::ToolCallTracker;
 use crucible_core::events::InternalSessionEvent;
+use std::collections::HashSet;
 
 const DEFAULT_MAX_TOOL_DEPTH: usize = 10;
 
@@ -113,6 +115,7 @@ impl AgentManager {
                     stream_config,
                     &mut accumulated_response,
                     false,
+                    0,
                     DEFAULT_MAX_TOOL_DEPTH,
                 ) => {}
             }
@@ -1100,6 +1103,7 @@ impl AgentManager {
         stream_config: AgentStreamConfig,
         accumulated_response: &mut String,
         is_continuation: bool,
+        mut tool_depth: usize,
         max_tool_depth: usize,
     ) {
         let Some(content) =
@@ -1111,7 +1115,10 @@ impl AgentManager {
         let stream_start = Instant::now();
         let mut agent_guard = agent.lock().await;
         let mut stream = agent_guard.send_message_stream(content);
-        let mut tool_depth = 0usize;
+        let mut tracker = ToolCallTracker::new();
+        let mut blocked_tools: HashSet<String> = HashSet::new();
+        let mut last_failure_key: Option<(String, String)> = None;
+        let mut consecutive_failure_count = 0usize;
         let mut tool_calls_dispatched = false;
         let mut terminal_chunk: Option<crucible_core::traits::chat::ChatChunk> = None;
 
@@ -1135,10 +1142,87 @@ impl AgentManager {
                                 tool_depth += 1;
                                 let mut tool_results = Vec::new();
                                 for tool_call in &tool_calls {
-                                    if let Some(result) =
-                                        Self::handle_tool_call_in_stream(&stream_ctx, tool_call)
-                                            .await
-                                    {
+                                    let args = tool_call
+                                        .arguments
+                                        .clone()
+                                        .unwrap_or(serde_json::Value::Null);
+
+                                    let mut result = if blocked_tools.contains(&tool_call.name) {
+                                        let call_id = tool_call
+                                            .id
+                                            .clone()
+                                            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+                                        let blocked_error = format!(
+                                            "Tool '{}' is blocked for this stream after repeated failures.",
+                                            tool_call.name
+                                        );
+
+                                        if !emit_event(
+                                            &stream_ctx.event_tx,
+                                            SessionEventMessage::tool_result(
+                                                &stream_ctx.session_id,
+                                                &call_id,
+                                                &tool_call.name,
+                                                serde_json::json!({ "error": blocked_error }),
+                                            ),
+                                        ) {
+                                            warn!(
+                                                session_id = %stream_ctx.session_id,
+                                                tool = %tool_call.name,
+                                                "No subscribers for blocked tool_result event"
+                                            );
+                                        }
+
+                                        Some(crucible_core::traits::chat::ChatToolResult {
+                                            name: tool_call.name.clone(),
+                                            result: String::new(),
+                                            error: Some(blocked_error),
+                                            call_id: Some(call_id),
+                                        })
+                                    } else {
+                                        Self::handle_tool_call_in_stream(&stream_ctx, tool_call).await
+                                    };
+
+                                    let attempt = tracker.record_call(&tool_call.name, &args);
+                                    let args_key = serde_json::to_string(&args)
+                                        .unwrap_or_else(|_| "null".to_string());
+
+                                    if let Some(tool_result) = result.as_mut() {
+                                        if let Some(error) = tool_result.error.as_mut() {
+                                            let failure_key = (tool_call.name.clone(), args_key.clone());
+                                            if last_failure_key.as_ref() == Some(&failure_key) {
+                                                consecutive_failure_count += 1;
+                                            } else {
+                                                consecutive_failure_count = 1;
+                                                last_failure_key = Some(failure_key.clone());
+                                            }
+
+                                            if attempt >= 3
+                                                && tracker
+                                                    .is_repeat_failure(&tool_call.name, &args, 3)
+                                            {
+                                                let annotation = format!(
+                                                    "Attempt {}. This tool has failed {} times with identical arguments. Try a different approach.",
+                                                    attempt, attempt
+                                                );
+                                                if !error.contains(&annotation) {
+                                                    if !error.is_empty() {
+                                                        error.push(' ');
+                                                    }
+                                                    error.push_str(&annotation);
+                                                }
+                                            }
+
+                                            if consecutive_failure_count >= 3 {
+                                                blocked_tools.insert(tool_call.name.clone());
+                                            }
+                                        } else {
+                                            last_failure_key = None;
+                                            consecutive_failure_count = 0;
+                                        }
+                                    }
+
+                                    if let Some(result) = result {
                                         tool_results.push(result);
                                     }
                                 }
@@ -1276,6 +1360,7 @@ impl AgentManager {
                     stream_config.clone(),
                     accumulated_response,
                     true,
+                    tool_depth,
                     max_tool_depth,
                 ))
                 .await;
