@@ -77,7 +77,7 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             state,
             all,
         } => list(config, limit, session_type, format, state, all).await,
-        SessionCommands::Search { query, limit } => search(config, query, limit).await,
+        SessionCommands::Search { query, limit, format } => search(config, query, limit, format).await,
         SessionCommands::Show { id, format } => {
             let session_id = resolve_session_id(id)?;
             show(config, session_id, format).await
@@ -173,6 +173,7 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             provider,
             model,
             endpoint,
+            format,
         } => {
             let session_id = resolve_session_id(session_id)?;
             let provider_type = BackendType::from_str(&provider)
@@ -185,6 +186,7 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
                 provider_type,
                 &model,
                 endpoint,
+                &format,
             )
             .await
         }
@@ -512,7 +514,7 @@ async fn list_persisted(
 }
 
 /// Search sessions by title/content via daemon RPC (with local fallback)
-async fn search(config: CliConfig, query: String, limit: u32) -> Result<()> {
+async fn search(config: CliConfig, query: String, limit: u32, format: String) -> Result<()> {
     // Try daemon RPC first
     if let Ok(client) = daemon_client().await {
         if let Ok(result) = client
@@ -525,15 +527,23 @@ async fn search(config: CliConfig, query: String, limit: u32) -> Result<()> {
                 .cloned()
                 .unwrap_or_default();
             if matches.is_empty() {
-                println!("No sessions matching '{}' found.", query);
+                if format == "json" {
+                    println!("{}", serde_json::json!({"matches": []}).to_string());
+                } else {
+                    println!("No sessions matching '{}' found.", query);
+                }
             } else {
-                println!("Sessions matching '{}':\n", query);
-                for m in &matches {
-                    let session_id = m["session_id"].as_str().unwrap_or("");
-                    let line = m["line"].as_u64().unwrap_or(0);
-                    let context = m["context"].as_str().unwrap_or("");
-                    println!("  {} (line {})", session_id, line);
-                    println!("    {}\n", context);
+                if format == "json" {
+                    println!("{}", serde_json::json!({"matches": matches}).to_string());
+                } else {
+                    println!("Sessions matching '{}':\n", query);
+                    for m in &matches {
+                        let session_id = m["session_id"].as_str().unwrap_or("");
+                        let line = m["line"].as_u64().unwrap_or(0);
+                        let context = m["context"].as_str().unwrap_or("");
+                        println!("  {} (line {})", session_id, line);
+                        println!("    {}\n", context);
+                    }
                 }
             }
             return Ok(());
@@ -543,7 +553,11 @@ async fn search(config: CliConfig, query: String, limit: u32) -> Result<()> {
     // Fallback: local filesystem search
     let sessions_path = sessions_dir(&config);
     if !sessions_path.exists() {
-        println!("No sessions found.");
+        if format == "json" {
+            println!("{}", serde_json::json!({"matches": []}).to_string());
+        } else {
+            println!("No sessions found.");
+        }
         return Ok(());
     }
     let matches = match search_with_ripgrep(&sessions_path, &query, limit).await {
@@ -557,13 +571,31 @@ async fn search(config: CliConfig, query: String, limit: u32) -> Result<()> {
         }
     };
     if matches.is_empty() {
-        println!("No sessions matching '{}' found.", query);
+        if format == "json" {
+            println!("{}", serde_json::json!({"matches": []}).to_string());
+        } else {
+            println!("No sessions matching '{}' found.", query);
+        }
         return Ok(());
     }
-    println!("Sessions matching '{}':\n", query);
-    for (session_id, line_num, context) in matches {
-        println!("  {} (line {})", session_id, line_num);
-        println!("    {}\n", context);
+    if format == "json" {
+        let json_matches: Vec<serde_json::Value> = matches
+            .iter()
+            .map(|(session_id, line_num, context)| {
+                serde_json::json!({
+                    "session_id": session_id,
+                    "line": line_num,
+                    "context": context
+                })
+            })
+            .collect();
+        println!("{}", serde_json::json!({"matches": json_matches}).to_string());
+    } else {
+        println!("Sessions matching '{}':\n", query);
+        for (session_id, line_num, context) in matches {
+            println!("  {} (line {})", session_id, line_num);
+            println!("    {}\n", context);
+        }
     }
     Ok(())
 }
@@ -1275,6 +1307,7 @@ async fn daemon_configure(
     provider: BackendType,
     model: &str,
     endpoint: Option<String>,
+    format: &str,
 ) -> Result<()> {
     let mcp_servers = config
         .mcp
@@ -1293,7 +1326,7 @@ async fn daemon_configure(
         max_tokens: None,
         max_context_tokens: None,
         thinking_budget: None,
-        endpoint,
+        endpoint: endpoint.clone(),
         env_overrides: std::collections::HashMap::new(),
         mcp_servers,
         agent_card_name: None,
@@ -1305,7 +1338,17 @@ async fn daemon_configure(
 
     client.session_configure_agent(session_id, &agent).await?;
 
-    println!("Configured agent: {} / {}", provider, model);
+    if format == "json" {
+        let json_output = serde_json::json!({
+            "session_id": session_id,
+            "provider": provider.to_string(),
+            "model": model,
+            "endpoint": endpoint
+        });
+        println!("{}", json_output.to_string());
+    } else {
+        println!("Configured agent: {} / {}", provider, model);
+    }
 
     Ok(())
 }
@@ -1697,11 +1740,11 @@ mod tests {
         };
 
         // Should find session with "hello"
-        let result = search(config.clone(), "hello".to_string(), 10).await;
+        let result = search(config.clone(), "hello".to_string(), 10, "text".to_string()).await;
         assert!(result.is_ok());
 
         // Should not find session with "nonexistent"
-        let result = search(config, "nonexistent_term_xyz".to_string(), 10).await;
+        let result = search(config, "nonexistent_term_xyz".to_string(), 10, "text".to_string()).await;
         assert!(result.is_ok());
     }
 
@@ -1928,5 +1971,40 @@ mod tests {
         assert_eq!(parsed["sessions"].as_array().unwrap().len(), 2);
         assert_eq!(parsed["sessions"][0]["session_id"], "chat-1");
         assert_eq!(parsed["sessions"][1]["session_id"], "chat-2");
+    }
+
+    #[test]
+    fn test_session_configure_with_format_json() {
+        let json_output = serde_json::json!({
+            "session_id": "test-session",
+            "provider": "openai",
+            "model": "gpt-4",
+            "endpoint": null
+        });
+        let json_str = json_output.to_string();
+
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed["session_id"], "test-session");
+        assert_eq!(parsed["provider"], "openai");
+        assert_eq!(parsed["model"], "gpt-4");
+        assert!(parsed["endpoint"].is_null());
+    }
+
+    #[test]
+    fn test_session_search_with_format_json() {
+        let matches = vec![
+            serde_json::json!({"session_id": "chat-1", "line": 5, "context": "test context"}),
+            serde_json::json!({"session_id": "chat-2", "line": 10, "context": "another context"}),
+        ];
+        let json_output = serde_json::json!({"matches": matches});
+        let json_str = json_output.to_string();
+
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert!(parsed["matches"].is_array());
+        assert_eq!(parsed["matches"].as_array().unwrap().len(), 2);
+        assert_eq!(parsed["matches"][0]["session_id"], "chat-1");
+        assert_eq!(parsed["matches"][0]["line"], 5);
+        assert_eq!(parsed["matches"][1]["session_id"], "chat-2");
+        assert_eq!(parsed["matches"][1]["line"], 10);
     }
 }
