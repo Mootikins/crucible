@@ -1,6 +1,8 @@
 use crate::config::CliConfig;
+use crate::formatting::OutputFormat;
 use anyhow::{anyhow, Result};
 use crucible_core::EXCLUDED_DIRS;
+use serde::Serialize;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -11,6 +13,14 @@ pub struct KilnStats {
     pub total_files: u64,
     pub markdown_files: u64,
     pub total_size_bytes: u64,
+}
+
+/// Output format for stats (JSON serializable)
+#[derive(Debug, Serialize)]
+pub struct StatsOutput {
+    pub file_count: u64,
+    pub markdown_count: u64,
+    pub size_bytes: u64,
 }
 
 /// Abstraction over the source of kiln statistics so tests can stub results.
@@ -85,14 +95,15 @@ impl KilnStatsService for FileSystemKilnStatsService {
     }
 }
 
-pub async fn execute(config: CliConfig) -> Result<()> {
+pub async fn execute(config: CliConfig, format: &str) -> Result<()> {
     let service: Arc<dyn KilnStatsService> = Arc::new(FileSystemKilnStatsService);
-    execute_with_service(service, config).await
+    execute_with_service(service, config, format).await
 }
 
 pub async fn execute_with_service(
     service: Arc<dyn KilnStatsService>,
     config: CliConfig,
+    format: &str,
 ) -> Result<()> {
     let kiln_path = &config.kiln_path;
 
@@ -103,13 +114,26 @@ pub async fn execute_with_service(
     }
 
     let stats = service.collect(kiln_path)?;
+    let output_format = OutputFormat::from(format);
 
-    println!("📊 Kiln Statistics\n");
-    println!("📁 Total files: {}", stats.total_files);
-    println!("📝 Markdown files: {}", stats.markdown_files);
-    println!("💾 Total size: {} KB", stats.total_size_bytes / 1024);
-    println!("🗂️  Kiln path: {}", kiln_path.display());
-    println!("\n✅ Kiln scan completed successfully.");
+    match output_format {
+        OutputFormat::Json => {
+            let output = StatsOutput {
+                file_count: stats.total_files,
+                markdown_count: stats.markdown_files,
+                size_bytes: stats.total_size_bytes,
+            };
+            println!("{}", serde_json::to_string_pretty(&output)?);
+        }
+        _ => {
+            println!("📊 Kiln Statistics\n");
+            println!("📁 Total files: {}", stats.total_files);
+            println!("📝 Markdown files: {}", stats.markdown_files);
+            println!("💾 Total size: {} KB", stats.total_size_bytes / 1024);
+            println!("🗂️  Kiln path: {}", kiln_path.display());
+            println!("\n✅ Kiln scan completed successfully.");
+        }
+    }
 
     Ok(())
 }
@@ -257,7 +281,7 @@ mod tests {
             },
         };
 
-        let result = execute_with_service(Arc::new(mock), config).await;
+        let result = execute_with_service(Arc::new(mock), config, "table").await;
         assert!(result.is_ok());
     }
 
@@ -272,7 +296,7 @@ mod tests {
             stats: KilnStats::default(),
         };
 
-        let result = execute_with_service(Arc::new(mock), config).await;
+        let result = execute_with_service(Arc::new(mock), config, "table").await;
         assert!(result.is_err());
     }
 
@@ -284,7 +308,24 @@ mod tests {
             ..Default::default()
         };
 
-        let result = execute_with_service(Arc::new(ErrorStatsService), config).await;
+        let result = execute_with_service(Arc::new(ErrorStatsService), config, "table").await;
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_stats_output_json_serialization() {
+        let output = StatsOutput {
+            file_count: 42,
+            markdown_count: 10,
+            size_bytes: 1024 * 100,
+        };
+
+        let json_str = serde_json::to_string(&output).expect("Failed to serialize");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json_str).expect("Failed to parse JSON");
+
+        assert_eq!(parsed["file_count"], 42);
+        assert_eq!(parsed["markdown_count"], 10);
+        assert_eq!(parsed["size_bytes"], 1024 * 100);
     }
 }
