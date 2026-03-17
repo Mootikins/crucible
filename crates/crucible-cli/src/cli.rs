@@ -201,6 +201,27 @@ pub enum Commands {
         parallel: Option<usize>,
     },
 
+    /// Search kiln notes using semantic and/or text search
+    #[command(
+        long_about = "Search kiln notes using semantic similarity, text matching, or both.\n\nExamples:\n  # Search with default (semantic + text)\n  cru search \"wikilinks\"\n\n  # Semantic search only\n  cru search \"how do links work\" --type semantic\n\n  # Text search only, JSON output\n  cru search \"wikilink\" --type text -f json\n\n  # Limit results\n  cru search \"architecture\" --limit 5"
+    )]
+    Search {
+        /// Search query
+        query: String,
+
+        /// Maximum number of results
+        #[arg(short = 'n', long, default_value = "10")]
+        limit: usize,
+
+        /// Search type: semantic, text, or both
+        #[arg(long, default_value = "both")]
+        r#type: String,
+
+        /// Output format (table, json, plain)
+        #[arg(short = 'f', long, default_value = "table")]
+        format: String,
+    },
+
     /// Display kiln statistics
     #[command(
         long_about = "Display comprehensive kiln statistics including note count, embeddings status, and storage metrics.\n\nShows overview of your knowledge base with format options for different output styles.\n\nExamples:\n  # Show statistics in table format\n  cru stats\n\n  # JSON output for scripting\n  cru stats -f json\n\n  # CSV format for spreadsheets\n  cru stats -f csv"

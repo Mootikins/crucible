@@ -10,6 +10,7 @@ pub mod mcp;
 pub mod models;
 pub mod plugin;
 pub mod process;
+pub mod search;
 pub mod session;
 pub mod set;
 pub mod skills;
