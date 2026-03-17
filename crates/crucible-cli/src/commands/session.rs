@@ -91,7 +91,16 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             raw,
         } => {
             let session_id = resolve_session_id(session_id)?;
-            let message = crate::commands::stdin::resolve_message(&message)?;
+            let message = match message {
+                Some(msg) => crate::commands::stdin::resolve_message(&msg)?,
+                None => {
+                    if crate::commands::stdin::stdin_is_piped() {
+                        crate::commands::stdin::read_stdin_message()?
+                    } else {
+                        anyhow::bail!("No message provided. Pass a message or pipe stdin.")
+                    }
+                }
+            };
             daemon_send(&config, &session_id, &message, raw).await
         },
         SessionCommands::Configure {

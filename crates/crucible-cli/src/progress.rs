@@ -111,6 +111,11 @@ impl StatusLine {
         use colored::Colorize;
         use std::io::{self, Write};
 
+        // Suppress output when stdout is piped
+        if !crate::output::is_interactive() {
+            return;
+        }
+
         // Clear previous line
         print!("\r{}\r", " ".repeat(self.last_len));
 
@@ -126,6 +131,11 @@ impl StatusLine {
     pub fn success(&mut self, message: &str) {
         use colored::Colorize;
         use std::io::{self, Write};
+
+        // Suppress output when stdout is piped
+        if !crate::output::is_interactive() {
+            return;
+        }
 
         // Clear previous line
         print!("\r{}\r", " ".repeat(self.last_len));
@@ -159,12 +169,39 @@ impl LiveProgress {
     ///
     /// Spawns a background task that updates the progress line every 100ms.
     /// The progress is displayed on a dedicated line above the prompt.
+    /// 
+    /// Suppresses output when stdout is not a terminal (piped/redirected).
     pub fn start(progress: BackgroundProgress) -> Self {
         use colored::Colorize;
         use std::io::Write;
 
         let (stop_tx, mut stop_rx) = watch::channel(false);
         let progress_clone = progress.clone();
+
+        // Suppress progress display when stdout is piped
+        if !crate::output::is_interactive() {
+            let handle = tokio::spawn(async move {
+                loop {
+                    if *stop_rx.borrow() {
+                        break;
+                    }
+                    tokio::select! {
+                        _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {},
+                        _ = stop_rx.changed() => {
+                            if *stop_rx.borrow() {
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+
+            return Self {
+                progress,
+                stop_tx,
+                handle: Some(handle),
+            };
+        }
 
         // Print initial progress line (will be updated in place)
         if let Some(status) = progress.status_string() {
@@ -249,6 +286,11 @@ impl LiveProgress {
         // Wait for task to finish
         if let Some(handle) = self.handle.take() {
             let _ = handle.await;
+        }
+
+        // Suppress final output when stdout is piped
+        if !crate::output::is_interactive() {
+            return;
         }
 
         // Update the progress line with final status if still showing

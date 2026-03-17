@@ -411,6 +411,90 @@ fn test_storage_restore_help() {
 }
 
 // ============================================================================
+// Completions Command Tests
+// ============================================================================
+
+#[test]
+fn test_bash_completions_syntax_valid() {
+    use std::io::Write;
+    use std::process::Command as StdCommand;
+    use tempfile::NamedTempFile;
+
+    // Generate bash completions
+    let mut cmd = Command::cargo_bin("cru").unwrap();
+    cmd.arg("completions").arg("bash");
+
+    let output = cmd.output().expect("Failed to run completions command");
+    assert!(
+        output.status.success(),
+        "completions command failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let completions_script =
+        String::from_utf8(output.stdout).expect("completions output is not valid UTF-8");
+
+    // Write to temp file
+    let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    temp_file
+        .write_all(completions_script.as_bytes())
+        .expect("Failed to write completions to temp file");
+
+    // Validate syntax with bash -n
+    let mut bash_check = StdCommand::new("bash");
+    bash_check.arg("-n").arg(temp_file.path());
+
+    let status = bash_check
+        .status()
+        .expect("Failed to run bash syntax check");
+
+    assert!(
+        status.success(),
+        "bash completions script has syntax errors (bash -n failed)"
+    );
+}
+
+#[test]
+fn test_zsh_completions_syntax_valid() {
+    use std::io::Write;
+    use std::process::Command as StdCommand;
+    use tempfile::NamedTempFile;
+
+    // Generate zsh completions
+    let mut cmd = Command::cargo_bin("cru").unwrap();
+    cmd.arg("completions").arg("zsh");
+
+    let output = cmd.output().expect("Failed to run completions command");
+    assert!(
+        output.status.success(),
+        "completions command failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let completions_script =
+        String::from_utf8(output.stdout).expect("completions output is not valid UTF-8");
+
+    // Write to temp file
+    let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    temp_file
+        .write_all(completions_script.as_bytes())
+        .expect("Failed to write completions to temp file");
+
+    // Validate syntax with bash -n (zsh syntax is mostly bash-compatible for basic checks)
+    let mut bash_check = StdCommand::new("bash");
+    bash_check.arg("-n").arg(temp_file.path());
+
+    let status = bash_check
+        .status()
+        .expect("Failed to run bash syntax check");
+
+    assert!(
+        status.success(),
+        "zsh completions script has syntax errors (bash -n failed)"
+    );
+}
+
+// ============================================================================
 // Edge Cases and Error Scenarios
 // ============================================================================
 
