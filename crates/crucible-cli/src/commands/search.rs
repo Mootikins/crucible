@@ -140,7 +140,11 @@ pub async fn execute(
     }
 
     // Sort by score descending, then truncate
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     results.truncate(limit);
 
     // --- Output ---
@@ -153,8 +157,7 @@ pub async fn execute(
         return Ok(());
     }
 
-    let formatted =
-        output::format_search_results(&results, format, mode.show_scores(), false)?;
+    let formatted = output::format_search_results(&results, format, mode.show_scores(), false)?;
     println!("{formatted}");
 
     Ok(())

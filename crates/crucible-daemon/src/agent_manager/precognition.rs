@@ -347,7 +347,14 @@ fn apply_precognition_char_cap(results: &mut [crucible_core::SearchResult], cap:
 
     let total_chars: usize = results
         .iter()
-        .map(|result| result.snippet.as_deref().unwrap_or_default().chars().count())
+        .map(|result| {
+            result
+                .snippet
+                .as_deref()
+                .unwrap_or_default()
+                .chars()
+                .count()
+        })
         .sum();
 
     if total_chars <= cap {
@@ -602,13 +609,24 @@ mod format_precognition_context_tests {
 
         let total_chars: usize = results
             .iter()
-            .map(|result| result.snippet.as_deref().unwrap_or_default().chars().count())
+            .map(|result| {
+                result
+                    .snippet
+                    .as_deref()
+                    .unwrap_or_default()
+                    .chars()
+                    .count()
+            })
             .sum();
 
         assert_eq!(total_chars, 3000);
-        assert!(results
-            .iter()
-            .all(|result| result.snippet.as_deref().unwrap_or_default().chars().count() <= 600));
+        assert!(results.iter().all(|result| result
+            .snippet
+            .as_deref()
+            .unwrap_or_default()
+            .chars()
+            .count()
+            <= 600));
     }
 
     #[test]
@@ -650,12 +668,25 @@ mod format_precognition_context_tests {
 
         let total_chars: usize = results
             .iter()
-            .map(|result| result.snippet.as_deref().unwrap_or_default().chars().count())
+            .map(|result| {
+                result
+                    .snippet
+                    .as_deref()
+                    .unwrap_or_default()
+                    .chars()
+                    .count()
+            })
             .sum();
 
         assert_eq!(total_chars, 1000);
         assert!(results.iter().all(|result| {
-            result.snippet.as_deref().unwrap_or_default().chars().count() == 200
+            result
+                .snippet
+                .as_deref()
+                .unwrap_or_default()
+                .chars()
+                .count()
+                == 200
         }));
     }
 }

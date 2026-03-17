@@ -14,7 +14,10 @@ pub struct ToolOutput {
 
 pub async fn execute(_config: CliConfig, command: ToolsCommands) -> Result<()> {
     match command {
-        ToolsCommands::List { permissions, format } => list(permissions, &format).await,
+        ToolsCommands::List {
+            permissions,
+            format,
+        } => list(permissions, &format).await,
     }
 }
 

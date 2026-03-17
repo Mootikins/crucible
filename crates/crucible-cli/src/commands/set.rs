@@ -54,11 +54,9 @@ fn collect_rpc_actions(
     Ok(rpc_actions)
 }
 
-pub async fn execute(
-    args: Vec<String>,
-    session_id_flag: Option<String>,
-) -> anyhow::Result<()> {
-    let (resolved_session_id, settings, used_deprecated) = resolve_set_inputs(args, session_id_flag);
+pub async fn execute(args: Vec<String>, session_id_flag: Option<String>) -> anyhow::Result<()> {
+    let (resolved_session_id, settings, used_deprecated) =
+        resolve_set_inputs(args, session_id_flag);
 
     if used_deprecated {
         eprintln!("warning: --session flag is deprecated. Use positional SESSION_ID instead: cru set <SESSION_ID> <SETTINGS>");
@@ -279,7 +277,8 @@ mod tests {
     #[test]
     fn resolve_set_inputs_with_deprecated_flag() {
         let args = vec!["model=llama3".to_string()];
-        let (session_id, settings, used_deprecated) = resolve_set_inputs(args, Some("chat-456".to_string()));
+        let (session_id, settings, used_deprecated) =
+            resolve_set_inputs(args, Some("chat-456".to_string()));
         assert_eq!(session_id, Some("chat-456".to_string()));
         assert!(used_deprecated);
         assert_eq!(settings, vec!["model=llama3"]);
@@ -291,15 +290,22 @@ mod tests {
         let (session_id, settings, used_deprecated) = resolve_set_inputs(args, None);
         assert_eq!(session_id, None);
         assert!(!used_deprecated);
-        assert_eq!(settings, vec!["model=llama3".to_string(), "temperature=0.5".to_string()]);
+        assert_eq!(
+            settings,
+            vec!["model=llama3".to_string(), "temperature=0.5".to_string()]
+        );
     }
 
     #[test]
     fn resolve_set_inputs_flag_takes_precedence() {
         let args = vec!["chat-123".to_string(), "model=llama3".to_string()];
-        let (session_id, settings, used_deprecated) = resolve_set_inputs(args, Some("chat-456".to_string()));
+        let (session_id, settings, used_deprecated) =
+            resolve_set_inputs(args, Some("chat-456".to_string()));
         assert_eq!(session_id, Some("chat-456".to_string()));
         assert!(used_deprecated);
-        assert_eq!(settings, vec!["chat-123".to_string(), "model=llama3".to_string()]);
+        assert_eq!(
+            settings,
+            vec!["chat-123".to_string(), "model=llama3".to_string()]
+        );
     }
 }

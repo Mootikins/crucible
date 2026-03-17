@@ -73,7 +73,8 @@ async fn execute_mock_tool_loop(
             if tool_depth > MAX_TOOL_DEPTH {
                 let mut forced_messages = messages.clone();
                 forced_messages.push(ContextMessage::user(TOOL_DEPTH_LIMIT_FINAL_PROMPT));
-                let forced_request = BackendCompletionRequest::new("You are helpful.", forced_messages);
+                let forced_request =
+                    BackendCompletionRequest::new("You are helpful.", forced_messages);
                 let mut forced_stream = backend.complete_stream(forced_request);
 
                 let before_forced_len = full_response.len();
@@ -488,11 +489,7 @@ async fn tool_loop_different_successful_tools_have_no_retry_annotation() {
     backend.push_response_chunks(vec![
         Ok(
             crucible_core::traits::completion_backend::BackendCompletionChunk::tool_call(
-                make_named_tool_call(
-                    "call_beta",
-                    "glob",
-                    json!({ "pattern": beta_path }),
-                ),
+                make_named_tool_call("call_beta", "glob", json!({ "pattern": beta_path })),
             ),
         ),
         Ok(crucible_core::traits::completion_backend::BackendCompletionChunk::finished(None)),

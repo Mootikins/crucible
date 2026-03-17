@@ -13,8 +13,8 @@ pub mod process;
 pub mod search;
 pub mod session;
 pub mod set;
-pub mod stdin;
 pub mod skills;
+pub mod stdin;
 pub mod tasks;
 pub mod tools;
 #[cfg(feature = "web")]
