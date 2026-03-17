@@ -1318,7 +1318,12 @@ impl AgentManager {
                                 max_tool_depth = max_tool_depth,
                                 "max_tool_depth reached, forcing final response without tools"
                             );
-                            drop(stream);
+                            stream = Box::pin(futures::stream::empty::<
+                                crucible_core::traits::chat::ChatResult<
+                                    crucible_core::traits::chat::ChatChunk,
+                                >,
+                            >());
+                            let _ = stream.as_mut();
 
                             if let Some(forced_terminal) = Self::stream_forced_final_response_at_depth_limit(
                                 &mut agent_guard,
