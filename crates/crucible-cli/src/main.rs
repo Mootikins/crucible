@@ -274,6 +274,13 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
                 .await?
         }
 
+        Some(Commands::Search {
+            query,
+            limit,
+            r#type,
+            format,
+        }) => commands::search::execute(config, &query, limit, &r#type, &format).await?,
+
         Some(Commands::Stats { format }) => commands::stats::execute(config, &format).await?,
 
         Some(Commands::Models { format }) => commands::models::execute(config, &format).await?,
