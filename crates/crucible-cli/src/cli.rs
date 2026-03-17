@@ -426,7 +426,8 @@ pub enum SessionCommands {
     /// Show session details
     Show {
         /// Session ID
-        id: String,
+        #[arg(value_name = "SESSION_ID")]
+        id: Option<String>,
 
         /// Output format (text, json, markdown)
         #[arg(short = 'f', long, default_value = "text")]
@@ -436,13 +437,15 @@ pub enum SessionCommands {
     /// Resume a previous session
     Resume {
         /// Session ID to resume
-        id: String,
+        #[arg(value_name = "SESSION_ID")]
+        id: Option<String>,
     },
 
     /// Export session to markdown file
     Export {
         /// Session ID
-        id: String,
+        #[arg(value_name = "SESSION_ID")]
+        id: Option<String>,
 
         /// Output file (defaults to session.md in session directory)
         #[arg(short = 'o', long)]
@@ -489,25 +492,29 @@ pub enum SessionCommands {
     /// Pause a daemon session
     Pause {
         /// Session ID
-        session_id: String,
+        #[arg(value_name = "SESSION_ID")]
+        session_id: Option<String>,
     },
 
     /// Unpause a paused daemon session
     Unpause {
         /// Session ID
-        session_id: String,
+        #[arg(value_name = "SESSION_ID")]
+        session_id: Option<String>,
     },
 
     /// End a daemon session
     End {
         /// Session ID
-        session_id: String,
+        #[arg(value_name = "SESSION_ID")]
+        session_id: Option<String>,
     },
 
     /// Send a message to a session and stream response
     Send {
         /// Session ID
-        session_id: String,
+        #[arg(value_name = "SESSION_ID")]
+        session_id: Option<String>,
 
         /// Message to send
         message: String,
@@ -520,7 +527,8 @@ pub enum SessionCommands {
     /// Configure agent for a session
     Configure {
         /// Session ID
-        session_id: String,
+        #[arg(value_name = "SESSION_ID")]
+        session_id: Option<String>,
 
         /// Provider (ollama, openai, anthropic)
         #[arg(short, long)]
@@ -545,7 +553,8 @@ pub enum SessionCommands {
     /// Load a persisted session from storage into daemon memory
     Load {
         /// Session ID to load
-        session_id: String,
+        #[arg(value_name = "SESSION_ID")]
+        session_id: Option<String>,
     },
 
     /// Replay a recorded session
