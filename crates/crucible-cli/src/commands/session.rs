@@ -15,6 +15,14 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use tokio::fs;
 
+pub fn resolve_session_id(explicit: Option<String>) -> anyhow::Result<String> {
+    explicit
+        .or_else(|| std::env::var("CRU_SESSION").ok())
+        .ok_or_else(|| {
+            anyhow!("No session specified. Pass session ID or set CRU_SESSION env var.")
+        })
+}
+
 /// Execute a session subcommand
 pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
     match cmd {
@@ -26,13 +34,22 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             all,
         } => list(config, limit, session_type, format, state, all).await,
         SessionCommands::Search { query, limit } => search(config, query, limit).await,
-        SessionCommands::Show { id, format } => show(config, id, format).await,
-        SessionCommands::Resume { id } => resume(config, id).await,
+        SessionCommands::Show { id, format } => {
+            let session_id = resolve_session_id(id)?;
+            show(config, session_id, format).await
+        },
+        SessionCommands::Resume { id } => {
+            let session_id = resolve_session_id(id)?;
+            resume(config, session_id).await
+        },
         SessionCommands::Export {
             id,
             output,
             timestamps,
-        } => export(config, id, output, timestamps).await,
+        } => {
+            let session_id = resolve_session_id(id)?;
+            export(config, session_id, output, timestamps).await
+        },
         SessionCommands::Reindex { force } => reindex(config, force).await,
         SessionCommands::Cleanup {
             older_than,
@@ -54,14 +71,17 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             .await
         }
         SessionCommands::Pause { session_id } => {
+            let session_id = resolve_session_id(session_id)?;
             let client = daemon_client().await?;
             daemon_pause(&client, &session_id).await
         }
         SessionCommands::Unpause { session_id } => {
+            let session_id = resolve_session_id(session_id)?;
             let client = daemon_client().await?;
             unpause(&client, &session_id).await
         }
         SessionCommands::End { session_id } => {
+            let session_id = resolve_session_id(session_id)?;
             let client = daemon_client().await?;
             daemon_end(&client, &session_id).await
         }
@@ -69,13 +89,17 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             session_id,
             message,
             raw,
-        } => daemon_send(&config, &session_id, &message, raw).await,
+        } => {
+            let session_id = resolve_session_id(session_id)?;
+            daemon_send(&config, &session_id, &message, raw).await
+        },
         SessionCommands::Configure {
             session_id,
             provider,
             model,
             endpoint,
         } => {
+            let session_id = resolve_session_id(session_id)?;
             let provider_type = BackendType::from_str(&provider)
                 .map_err(|e| anyhow!("Invalid provider '{}': {}", provider, e))?;
             let client = daemon_client().await?;
@@ -91,6 +115,7 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
         }
         SessionCommands::Subscribe { session_ids } => daemon_subscribe(&session_ids).await,
         SessionCommands::Load { session_id } => {
+            let session_id = resolve_session_id(session_id)?;
             let client = daemon_client().await?;
             daemon_load(&client, &config, &session_id).await
         }
@@ -939,6 +964,7 @@ async fn daemon_create(
     }
 
     println!("Created session: {}", session_id);
+    println!("\nTo use this session: export CRU_SESSION={}", session_id);
     println!("Type: {}", session_type);
     println!("Kiln: {}", config.kiln_path.display());
     if let Some(mode) = recording_mode {
