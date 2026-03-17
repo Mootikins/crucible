@@ -1219,6 +1219,7 @@ impl AgentManager {
                                         .clone()
                                         .unwrap_or(serde_json::Value::Null);
 
+                                    let mut attempt: Option<usize> = None;
                                     let mut result = if blocked_tools.contains(&tool_call.name) {
                                         let call_id = tool_call
                                             .id
@@ -1252,10 +1253,10 @@ impl AgentManager {
                                             call_id: Some(call_id),
                                         })
                                     } else {
+                                        attempt = Some(tracker.record_call(&tool_call.name, &args));
                                         Self::handle_tool_call_in_stream(&stream_ctx, tool_call).await
                                     };
 
-                                    let attempt = tracker.record_call(&tool_call.name, &args);
                                     let args_key = serde_json::to_string(&args)
                                         .unwrap_or_else(|_| "null".to_string());
 
@@ -1269,10 +1270,11 @@ impl AgentManager {
                                                 last_failure_key = Some(failure_key.clone());
                                             }
 
-                                            if attempt >= 3
+                                            if attempt.is_some_and(|attempt| attempt >= 3)
                                                 && tracker
                                                     .is_repeat_failure(&tool_call.name, &args, 3)
                                             {
+                                                let attempt = attempt.unwrap_or_default();
                                                 let annotation = format!(
                                                     "Attempt {}. This tool has failed {} times with identical arguments. Try a different approach.",
                                                     attempt, attempt
@@ -1294,7 +1296,7 @@ impl AgentManager {
 
                                             if tool_depth == max_tool_depth.saturating_sub(2) {
                                                 tool_result.result.push_str(&format!(
-                                                    " [Note: You have used {} of {} available tool calls.]",
+                                                    " [Note: You have used {} of {} available tool turns.]",
                                                     tool_depth, max_tool_depth
                                                 ));
                                             }
@@ -1319,13 +1321,6 @@ impl AgentManager {
                                 max_tool_depth = max_tool_depth,
                                 "max_tool_depth reached, forcing final response without tools"
                             );
-                            stream = Box::pin(futures::stream::empty::<
-                                crucible_core::traits::chat::ChatResult<
-                                    crucible_core::traits::chat::ChatChunk,
-                                >,
-                            >());
-                            let _ = stream.as_mut();
-
                             if let Some(forced_terminal) = Self::stream_forced_final_response_at_depth_limit(
                                 &mut agent_guard,
                                 &stream_ctx,

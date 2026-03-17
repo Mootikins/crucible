@@ -284,12 +284,6 @@ fn provider_health_url(backend: BackendType, endpoint: &str) -> std::result::Res
 
     let mut url = Url::parse(&normalized).map_err(|e| e.to_string())?;
     if backend == BackendType::Ollama {
-        let path = url.path().trim_end_matches('/').to_string();
-        if path.ends_with("/v1") {
-            let trimmed = path.trim_end_matches("/v1");
-            let updated = if trimmed.is_empty() { "/" } else { trimmed };
-            url.set_path(updated);
-        }
         url.set_path("/api/tags");
     }
 

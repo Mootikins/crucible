@@ -8,6 +8,7 @@ use futures::StreamExt;
 use serde_json::json;
 use std::collections::HashSet;
 use std::path::Path;
+use tempfile::NamedTempFile;
 use tokio::sync::broadcast;
 use tokio::time::{timeout, Duration};
 
@@ -178,7 +179,7 @@ async fn execute_mock_tool_loop(
 
                     if tool_depth == MAX_TOOL_DEPTH.saturating_sub(2) {
                         result_text.push_str(&format!(
-                            " [Note: You have used {} of {} available tool calls.]",
+                            " [Note: You have used {} of {} available tool turns.]",
                             tool_depth, MAX_TOOL_DEPTH
                         ));
                     }
@@ -247,13 +248,15 @@ fn execute_workspace_tool(tool_name: &str, args: &serde_json::Value) -> Result<S
 
 #[tokio::test]
 async fn tool_loop_single_call_executes_tool_and_continues() {
-    std::fs::write("/tmp/test.txt", "tool loop integration file").expect("write /tmp/test.txt");
+    let test_file = NamedTempFile::new().expect("create temp file");
+    std::fs::write(test_file.path(), "tool loop integration file").expect("write temp test file");
+    let test_path = test_file.path().to_string_lossy().into_owned();
 
     let backend = MockCompletionBackend::new();
     backend.push_response_chunks(vec![
         Ok(
             crucible_core::traits::completion_backend::BackendCompletionChunk::tool_call(
-                make_tool_call("call_1", "/tmp/test.txt"),
+                make_tool_call("call_1", &test_path),
             ),
         ),
         Ok(crucible_core::traits::completion_backend::BackendCompletionChunk::finished(None)),
@@ -285,14 +288,16 @@ async fn tool_loop_single_call_executes_tool_and_continues() {
 
 #[tokio::test]
 async fn tool_loop_stops_when_max_tool_depth_exceeded() {
-    std::fs::write("/tmp/test.txt", "max depth integration file").expect("write /tmp/test.txt");
+    let test_file = NamedTempFile::new().expect("create temp file");
+    std::fs::write(test_file.path(), "max depth integration file").expect("write temp test file");
+    let test_path = test_file.path().to_string_lossy().into_owned();
 
     let backend = MockCompletionBackend::new();
     for idx in 0..11 {
         backend.push_response_chunks(vec![
             Ok(
                 crucible_core::traits::completion_backend::BackendCompletionChunk::tool_call(
-                    make_tool_call(&format!("call_{idx}"), "/tmp/test.txt"),
+                    make_tool_call(&format!("call_{idx}"), &test_path),
                 ),
             ),
             Ok(crucible_core::traits::completion_backend::BackendCompletionChunk::finished(None)),
@@ -314,15 +319,17 @@ async fn tool_loop_stops_when_max_tool_depth_exceeded() {
 
 #[tokio::test]
 async fn graceful_depth_forces_message_complete_after_limit() {
-    std::fs::write("/tmp/test.txt", "graceful depth integration file")
-        .expect("write /tmp/test.txt");
+    let test_file = NamedTempFile::new().expect("create temp file");
+    std::fs::write(test_file.path(), "graceful depth integration file")
+        .expect("write temp test file");
+    let test_path = test_file.path().to_string_lossy().into_owned();
 
     let backend = MockCompletionBackend::new();
     for idx in 0..11 {
         backend.push_response_chunks(vec![
             Ok(
                 crucible_core::traits::completion_backend::BackendCompletionChunk::tool_call(
-                    make_tool_call(&format!("call_{idx}"), "/tmp/test.txt"),
+                    make_tool_call(&format!("call_{idx}"), &test_path),
                 ),
             ),
             Ok(crucible_core::traits::completion_backend::BackendCompletionChunk::finished(None)),
@@ -342,15 +349,17 @@ async fn graceful_depth_forces_message_complete_after_limit() {
 
 #[tokio::test]
 async fn graceful_depth_warns_two_before_limit_in_tool_result_content() {
-    std::fs::write("/tmp/test.txt", "graceful depth warning integration file")
-        .expect("write /tmp/test.txt");
+    let test_file = NamedTempFile::new().expect("create temp file");
+    std::fs::write(test_file.path(), "graceful depth warning integration file")
+        .expect("write temp test file");
+    let test_path = test_file.path().to_string_lossy().into_owned();
 
     let backend = MockCompletionBackend::new();
     for idx in 0..8 {
         backend.push_response_chunks(vec![
             Ok(
                 crucible_core::traits::completion_backend::BackendCompletionChunk::tool_call(
-                    make_tool_call(&format!("call_{idx}"), "/tmp/test.txt"),
+                    make_tool_call(&format!("call_{idx}"), &test_path),
                 ),
             ),
             Ok(crucible_core::traits::completion_backend::BackendCompletionChunk::finished(None)),
@@ -374,7 +383,7 @@ async fn graceful_depth_warns_two_before_limit_in_tool_result_content() {
     }
 
     assert!(
-        eighth_result.contains("You have used 8 of 10 available tool calls."),
+        eighth_result.contains("You have used 8 of 10 available tool turns."),
         "expected depth warning annotation in 8th tool result, got: {eighth_result}"
     );
 }
@@ -410,12 +419,16 @@ async fn tool_loop_without_tool_calls_streams_normal_response() {
 
 #[tokio::test]
 async fn tool_loop_blocks_tool_after_three_identical_failures() {
+    let missing_file = NamedTempFile::new().expect("create temp file");
+    let missing_path = missing_file.path().with_file_name("does-not-exist.txt");
+    let missing_path = missing_path.to_string_lossy().into_owned();
+
     let backend = MockCompletionBackend::new();
     for idx in 0..4 {
         backend.push_response_chunks(vec![
             Ok(
                 crucible_core::traits::completion_backend::BackendCompletionChunk::tool_call(
-                    make_tool_call(&format!("call_{idx}"), "/tmp/does-not-exist"),
+                    make_tool_call(&format!("call_{idx}"), &missing_path),
                 ),
             ),
             Ok(crucible_core::traits::completion_backend::BackendCompletionChunk::finished(None)),
@@ -455,14 +468,19 @@ async fn tool_loop_blocks_tool_after_three_identical_failures() {
 
 #[tokio::test]
 async fn tool_loop_different_successful_tools_have_no_retry_annotation() {
-    std::fs::write("/tmp/tool-loop-alpha.txt", "alpha").expect("write alpha fixture");
-    std::fs::write("/tmp/tool-loop-beta.txt", "beta").expect("write beta fixture");
+    let alpha_file = NamedTempFile::new().expect("create alpha temp file");
+    std::fs::write(alpha_file.path(), "alpha").expect("write alpha fixture");
+    let alpha_path = alpha_file.path().to_string_lossy().into_owned();
+
+    let beta_file = NamedTempFile::new().expect("create beta temp file");
+    std::fs::write(beta_file.path(), "beta").expect("write beta fixture");
+    let beta_path = beta_file.path().to_string_lossy().into_owned();
 
     let backend = MockCompletionBackend::new();
     backend.push_response_chunks(vec![
         Ok(
             crucible_core::traits::completion_backend::BackendCompletionChunk::tool_call(
-                make_tool_call("call_alpha", "/tmp/tool-loop-alpha.txt"),
+                make_tool_call("call_alpha", &alpha_path),
             ),
         ),
         Ok(crucible_core::traits::completion_backend::BackendCompletionChunk::finished(None)),
@@ -473,7 +491,7 @@ async fn tool_loop_different_successful_tools_have_no_retry_annotation() {
                 make_named_tool_call(
                     "call_beta",
                     "glob",
-                    json!({ "pattern": "/tmp/tool-loop-beta.txt" }),
+                    json!({ "pattern": beta_path }),
                 ),
             ),
         ),

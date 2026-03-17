@@ -53,8 +53,7 @@ pub async fn execute(
 
     // Verify a kiln is configured
     if !kiln_path.join(".crucible").join("kiln.toml").exists() {
-        output::error("No kiln is open. Run `cru init` to create one.");
-        std::process::exit(1);
+        anyhow::bail!("No kiln is open. Run `cru init` to create one.");
     }
 
     let client = daemon_client().await?;

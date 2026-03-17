@@ -355,12 +355,4 @@ mod tests {
         // Reset — unset the override to restore automatic terminal detection
         colored::control::unset_override();
     }
-
-    #[test]
-    fn test_is_interactive_returns_bool() {
-        // Test that is_interactive() returns a boolean value
-        // In test environment, stdout is typically not a terminal
-        let result = is_interactive();
-        assert!(matches!(result, true | false));
-    }
 }
