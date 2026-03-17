@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
 
+/// Default maximum aggregate character count for precognition context injection.
 pub fn default_max_precognition_chars() -> usize {
     3000
 }
@@ -655,6 +656,7 @@ pub struct PipelineConfig {
     #[serde(default = "PipelineConfig::default_circuit_breaker_timeout_ms")]
     pub circuit_breaker_timeout_ms: u64,
 
+    /// Maximum aggregate character count for precognition context snippets (default: 3000).
     #[serde(default = "default_max_precognition_chars")]
     pub max_precognition_chars: usize,
 }
