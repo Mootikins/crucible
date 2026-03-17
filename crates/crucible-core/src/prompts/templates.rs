@@ -1,78 +1,26 @@
-//! Size-based system prompt templates
+//! Default system prompt template
 
-use super::ModelSize;
-
-/// Base system prompt for small models (< 4B)
-///
-/// Minimal prompt - tools are provided via function calling schema
-pub const SMALL_MODEL_PROMPT: &str = r#"Answer from the notes and context provided to you. If information isn't in your context, say so — do not fabricate. Reference notes by their title.
-
-Be brief. Answer in plain prose — 3-5 sentences unless asked for detail. No headers, no bullet points, no numbered lists.
-
-Answer directly when possible. Use tools only for file operations or search.
-
-Only use tools when the task requires file/system operations.
-For questions and formatting: respond directly without tools.
-
-IMPORTANT:
-- After using tools, provide a final answer. Do not keep calling tools repeatedly.
-- Use ONLY the native function calling format. NEVER output <tool_call>, <function>, or XML-style tool invocations as text."#;
-
-/// Base system prompt for medium models (4-30B)
-///
-/// Minimal prompt - tools are provided via function calling schema
-pub const MEDIUM_MODEL_PROMPT: &str = r#"Answer from the notes and context provided to you. If information isn't in your context, say so — do not fabricate. Reference notes by their title.
-
-Be brief. Answer in plain prose — 3-5 sentences unless asked for detail. No headers, no bullet points, no numbered lists.
-
-Answer directly when possible. Use tools only for file operations or search.
-
-Use tools for file operations and system tasks. Respond directly for questions and formatting.
-
-IMPORTANT:
-- After using tools to gather information, provide a final answer. Do not loop on tool calls.
-- Use ONLY the native function calling format. NEVER output <tool_call>, <function>, or XML-style tool invocations as text."#;
-
-/// Base system prompt for large models (> 30B)
-///
-/// Minimal prompt - large models need no tool guidance
-pub const LARGE_MODEL_PROMPT: &str = "Answer from the notes and context provided to you. If information isn't in your context, say so — do not fabricate. Reference notes by their title.\n\nBe brief. Answer in plain prose — 3-5 sentences unless asked for detail. No headers, no bullet points, no numbered lists.\n\nAnswer directly when possible. Use tools only for file operations or search.";
-
-/// Get the appropriate base prompt for a model size
-pub fn base_prompt_for_size(size: ModelSize) -> &'static str {
-    match size {
-        ModelSize::Small => SMALL_MODEL_PROMPT,
-        ModelSize::Medium => MEDIUM_MODEL_PROMPT,
-        ModelSize::Large => LARGE_MODEL_PROMPT,
-    }
-}
+/// Minimal fallback system prompt — used when Lua init.lua hasn't set one.
+/// The real default is in `crates/crucible-lua/src/defaults/init.lua`.
+pub const DEFAULT_SYSTEM_PROMPT: &str = "Answer from the notes and context provided to you. If information isn't in your context, say so — do not fabricate. Be brief.";
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_small_prompt_has_tool_guidance() {
-        let prompt = base_prompt_for_size(ModelSize::Small);
-        // Small models get guidance about when to use tools vs respond directly
-        assert!(prompt.contains("tools"));
-        assert!(prompt.contains("respond directly"));
+    fn test_default_prompt_has_grounding() {
+        assert!(DEFAULT_SYSTEM_PROMPT.contains("do not fabricate"));
     }
 
     #[test]
-    fn test_medium_prompt_is_concise() {
-        let prompt = base_prompt_for_size(ModelSize::Medium);
-        // Medium models get grounding-first base + tool guidance
-        assert!(prompt.contains("tools"));
-        assert!(!prompt.contains("write_file")); // No tool names in prompt
-        assert!(prompt.len() < 800); // Allow for grounding + anti-loop and format guidance
+    fn test_default_prompt_has_brevity() {
+        assert!(DEFAULT_SYSTEM_PROMPT.contains("Be brief"));
     }
 
     #[test]
-    fn test_large_prompt_is_minimal() {
-        let prompt = base_prompt_for_size(ModelSize::Large);
-        // Large models get grounding-first prompt with no tool guidance
-        assert!(prompt.contains("do not fabricate"));
-        assert!(prompt.contains("Be brief"));
+    fn test_default_prompt_no_product_name() {
+        assert!(!DEFAULT_SYSTEM_PROMPT.contains("Crucible"));
+        assert!(!DEFAULT_SYSTEM_PROMPT.contains("helpful assistant"));
     }
 }
