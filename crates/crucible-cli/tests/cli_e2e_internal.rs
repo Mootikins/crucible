@@ -3,7 +3,7 @@
 //! These tests validate flat `cru session ...` command behavior in non-interactive mode,
 //! including help output, graceful failures when daemon connectivity is unavailable, and
 //! a real daemon-backed lifecycle flow (`create -> list -> show -> send -> pause ->
-//! unpause -> end`) using isolated sockets.
+//! resume -> end`) using isolated sockets.
 
 mod cli_e2e_helpers;
 
@@ -31,7 +31,9 @@ fn session_help_shows_flat_internal_lifecycle_subcommands() {
         .stdout(predicate::str::contains("show"))
         .stdout(predicate::str::contains("send"))
         .stdout(predicate::str::contains("pause"))
-        .stdout(predicate::str::contains("unpause"))
+        .stdout(predicate::str::contains("resume"))
+        .stdout(predicate::str::contains("open"))
+        .stdout(predicate::str::contains("unpause").not())
         .stdout(predicate::str::contains("end"));
 }
 
@@ -154,7 +156,7 @@ fn session_internal_lifecycle_with_real_daemon() {
 
     daemon
         .command()
-        .args(["session", "unpause", &session_id])
+        .args(["session", "resume", &session_id])
         .assert()
         .success()
         .stdout(predicate::str::contains("Resumed session"));

@@ -82,7 +82,7 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             let session_id = resolve_session_id(id)?;
             show(config, session_id, format).await
         },
-        SessionCommands::Resume { id } => {
+        SessionCommands::Open { id } => {
             let session_id = resolve_session_id(id)?;
             resume(config, session_id).await
         },
@@ -119,8 +119,14 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             let client = daemon_client().await?;
             daemon_pause(&client, &session_id).await
         }
+        SessionCommands::Resume { session_id } => {
+            let session_id = resolve_session_id(session_id)?;
+            let client = daemon_client().await?;
+            unpause(&client, &session_id).await
+        }
         SessionCommands::Unpause { session_id } => {
             let session_id = resolve_session_id(session_id)?;
+            warn_deprecated("unpause", "resume");
             let client = daemon_client().await?;
             unpause(&client, &session_id).await
         }
