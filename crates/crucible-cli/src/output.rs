@@ -337,23 +337,23 @@ mod tests {
 
     #[test]
     fn test_colored_override_removes_ansi() {
-        // Test that when colored::control::set_override(false) is called,
-        // ANSI codes are removed from colored output
+        // Force colors ON first (tests run without a terminal, so colored defaults to no ANSI)
+        colored::control::set_override(true);
         let test_string = "test".red().to_string();
 
-        // Before override, should contain ANSI escape codes
+        // With override(true), should contain ANSI escape codes
         assert!(test_string.contains("\x1b["));
 
-        // Apply override
+        // Apply override to disable
         colored::control::set_override(false);
         let overridden_string = "test".red().to_string();
 
-        // After override, should NOT contain ANSI escape codes
+        // After override(false), should NOT contain ANSI escape codes
         assert!(!overridden_string.contains("\x1b["));
         assert_eq!(overridden_string, "test");
 
-        // Reset for other tests
-        colored::control::set_override(true);
+        // Reset — unset the override to restore automatic terminal detection
+        colored::control::unset_override();
     }
 
     #[test]
