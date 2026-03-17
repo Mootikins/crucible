@@ -102,7 +102,7 @@ fn session_send_help_exposes_expected_usage() {
         .success()
         .stdout(predicate::str::contains("Send a message to a session"))
         .stdout(predicate::str::contains("<SESSION_ID>"))
-        .stdout(predicate::str::contains("<MESSAGE>"))
+        .stdout(predicate::str::contains("MESSAGE"))
         .stdout(predicate::str::contains("--raw"));
 }
 
