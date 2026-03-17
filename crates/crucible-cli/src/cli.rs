@@ -553,6 +553,9 @@ pub enum SessionCommands {
         /// Session ID
         #[arg(value_name = "SESSION_ID")]
         session_id: Option<String>,
+        /// Output format (text, json)
+        #[arg(short = 'f', long, default_value = "text", value_parser = ["text", "json"])]
+        format: String,
     },
 
     /// Resume a paused daemon session
@@ -561,6 +564,9 @@ pub enum SessionCommands {
         /// Session ID
         #[arg(value_name = "SESSION_ID")]
         session_id: Option<String>,
+        /// Output format (text, json)
+        #[arg(short = 'f', long, default_value = "text", value_parser = ["text", "json"])]
+        format: String,
     },
 
     /// [DEPRECATED] Use `resume` instead
@@ -576,6 +582,9 @@ pub enum SessionCommands {
         /// Session ID
         #[arg(value_name = "SESSION_ID")]
         session_id: Option<String>,
+        /// Output format (text, json)
+        #[arg(short = 'f', long, default_value = "text", value_parser = ["text", "json"])]
+        format: String,
     },
 
     /// Send a message to a session and stream response
@@ -1282,8 +1291,10 @@ mod tests {
     fn test_session_resume_parses() {
         let cli =
             Cli::try_parse_from(["cru", "session", "resume", "chat-20260104-1530-a1b2"]).unwrap();
-        if let Some(Commands::Session(SessionCommands::Resume { session_id })) = cli.command {
+        if let Some(Commands::Session(SessionCommands::Resume { session_id, format })) = cli.command
+        {
             assert_eq!(session_id, Some("chat-20260104-1530-a1b2".to_string()));
+            assert_eq!(format, "text");
         } else {
             panic!("Expected Session Resume command");
         }
@@ -1484,8 +1495,10 @@ mod tests {
     #[test]
     fn test_session_pause_parses() {
         let cli = Cli::try_parse_from(["cru", "session", "pause", "session-123"]).unwrap();
-        if let Some(Commands::Session(SessionCommands::Pause { session_id })) = cli.command {
+        if let Some(Commands::Session(SessionCommands::Pause { session_id, format })) = cli.command
+        {
             assert_eq!(session_id, Some("session-123".to_string()));
+            assert_eq!(format, "text");
         } else {
             panic!("Expected Session Pause command");
         }
@@ -1504,8 +1517,54 @@ mod tests {
     #[test]
     fn test_session_end_parses() {
         let cli = Cli::try_parse_from(["cru", "session", "end", "session-123"]).unwrap();
-        if let Some(Commands::Session(SessionCommands::End { session_id })) = cli.command {
+        if let Some(Commands::Session(SessionCommands::End { session_id, format })) = cli.command {
             assert_eq!(session_id, Some("session-123".to_string()));
+            assert_eq!(format, "text");
+        } else {
+            panic!("Expected Session End command");
+        }
+    }
+
+    #[test]
+    fn test_session_pause_with_format_json() {
+        let cli =
+            Cli::try_parse_from(["cru", "session", "pause", "session-123", "-f", "json"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Pause { session_id, format })) = cli.command
+        {
+            assert_eq!(session_id, Some("session-123".to_string()));
+            assert_eq!(format, "json");
+        } else {
+            panic!("Expected Session Pause command");
+        }
+    }
+
+    #[test]
+    fn test_session_resume_with_format_json() {
+        let cli = Cli::try_parse_from([
+            "cru",
+            "session",
+            "resume",
+            "chat-20260104-1530-a1b2",
+            "-f",
+            "json",
+        ])
+        .unwrap();
+        if let Some(Commands::Session(SessionCommands::Resume { session_id, format })) = cli.command
+        {
+            assert_eq!(session_id, Some("chat-20260104-1530-a1b2".to_string()));
+            assert_eq!(format, "json");
+        } else {
+            panic!("Expected Session Resume command");
+        }
+    }
+
+    #[test]
+    fn test_session_end_with_format_json() {
+        let cli =
+            Cli::try_parse_from(["cru", "session", "end", "session-123", "-f", "json"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::End { session_id, format })) = cli.command {
+            assert_eq!(session_id, Some("session-123".to_string()));
+            assert_eq!(format, "json");
         } else {
             panic!("Expected Session End command");
         }

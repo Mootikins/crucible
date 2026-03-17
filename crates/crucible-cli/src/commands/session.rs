@@ -122,26 +122,26 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             )
             .await
         }
-        SessionCommands::Pause { session_id } => {
+        SessionCommands::Pause { session_id, format } => {
             let session_id = resolve_session_id(session_id)?;
             let client = daemon_client().await?;
-            daemon_pause(&client, &session_id).await
+            daemon_pause(&client, &session_id, &format).await
         }
-        SessionCommands::Resume { session_id } => {
+        SessionCommands::Resume { session_id, format } => {
             let session_id = resolve_session_id(session_id)?;
             let client = daemon_client().await?;
-            unpause(&client, &session_id).await
+            unpause(&client, &session_id, &format).await
         }
         SessionCommands::Unpause { session_id } => {
             let session_id = resolve_session_id(session_id)?;
             warn_deprecated("unpause", "resume");
             let client = daemon_client().await?;
-            unpause(&client, &session_id).await
+            unpause(&client, &session_id, "text").await
         }
-        SessionCommands::End { session_id } => {
+        SessionCommands::End { session_id, format } => {
             let session_id = resolve_session_id(session_id)?;
             let client = daemon_client().await?;
-            daemon_end(&client, &session_id).await
+            daemon_end(&client, &session_id, &format).await
         }
         SessionCommands::Send {
             session_id_pos,
@@ -1102,30 +1102,62 @@ async fn resolve_acp_profile(
 }
 
 /// Pause a daemon session
-async fn daemon_pause(client: &DaemonClient, session_id: &str) -> Result<()> {
+async fn daemon_pause(client: &DaemonClient, session_id: &str, format: &str) -> Result<()> {
     let result = client.session_pause(session_id).await?;
-    println!("Paused session: {}", session_id);
-    println!(
-        "Previous state: {}",
-        result["previous_state"].as_str().unwrap_or("?")
-    );
+    if format == "json" {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "session_id": session_id,
+                "previous_state": result["previous_state"].as_str().unwrap_or("?"),
+                "current_state": "paused",
+            }))?
+        );
+    } else {
+        println!("Paused session: {}", session_id);
+        println!(
+            "Previous state: {}",
+            result["previous_state"].as_str().unwrap_or("?")
+        );
+    }
     Ok(())
 }
 
-async fn unpause(client: &DaemonClient, session_id: &str) -> Result<()> {
+async fn unpause(client: &DaemonClient, session_id: &str, format: &str) -> Result<()> {
     let result = client.session_resume(session_id).await?;
-    println!("Resumed session: {}", session_id);
-    println!(
-        "Previous state: {}",
-        result["previous_state"].as_str().unwrap_or("?")
-    );
+    if format == "json" {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "session_id": session_id,
+                "previous_state": result["previous_state"].as_str().unwrap_or("?"),
+                "current_state": "active",
+            }))?
+        );
+    } else {
+        println!("Resumed session: {}", session_id);
+        println!(
+            "Previous state: {}",
+            result["previous_state"].as_str().unwrap_or("?")
+        );
+    }
     Ok(())
 }
 
 /// End a daemon session
-async fn daemon_end(client: &DaemonClient, session_id: &str) -> Result<()> {
+async fn daemon_end(client: &DaemonClient, session_id: &str, format: &str) -> Result<()> {
     client.session_end(session_id).await?;
-    println!("Ended session: {}", session_id);
+    if format == "json" {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "session_id": session_id,
+                "ended": true,
+            }))?
+        );
+    } else {
+        println!("Ended session: {}", session_id);
+    }
     Ok(())
 }
 
