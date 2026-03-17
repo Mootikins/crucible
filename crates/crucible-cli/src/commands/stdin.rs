@@ -67,10 +67,4 @@ mod tests {
     fn max_stdin_bytes_is_one_megabyte() {
         assert_eq!(MAX_STDIN_BYTES, 1_048_576);
     }
-
-    #[test]
-    fn stdin_is_piped_returns_bool() {
-        let result = stdin_is_piped();
-        assert!(matches!(result, true | false));
-    }
 }
