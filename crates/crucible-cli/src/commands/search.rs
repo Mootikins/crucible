@@ -89,19 +89,18 @@ pub async fn execute(
 
             for (name, path, title, _tags, _updated) in notes {
                 let display_title = title.as_deref().unwrap_or(&name);
-                if display_title.to_lowercase().contains(&query_lower)
+                if (display_title.to_lowercase().contains(&query_lower)
                     || name.to_lowercase().contains(&query_lower)
-                    || path.to_lowercase().contains(&query_lower)
+                    || path.to_lowercase().contains(&query_lower))
+                    && !results.iter().any(|r| r.id == path)
                 {
-                    if !results.iter().any(|r| r.id == path) {
-                        let content = extract_snippet(kiln, &path, 200);
-                        results.push(SearchResultWithScore {
-                            id: path,
-                            title: display_title.to_string(),
-                            content,
-                            score: 1.0, // text matches have no numeric score
-                        });
-                    }
+                    let content = extract_snippet(kiln, &path, 200);
+                    results.push(SearchResultWithScore {
+                        id: path,
+                        title: display_title.to_string(),
+                        content,
+                        score: 1.0,
+                    });
                 }
             }
         }
@@ -193,9 +192,9 @@ fn extract_snippet(kiln_path: &Path, note_path: &str, max_chars: usize) -> Strin
     };
 
     // Skip YAML frontmatter (lines between --- delimiters)
-    let body = if content.starts_with("---") {
-        if let Some(end) = content[3..].find("\n---") {
-            content[3 + end + 4..].trim_start()
+    let body = if let Some(rest) = content.strip_prefix("---") {
+        if let Some(end) = rest.find("\n---") {
+            rest[end + 4..].trim_start()
         } else {
             content.as_str()
         }
