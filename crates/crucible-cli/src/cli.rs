@@ -280,9 +280,16 @@ Examples:
   # Run all doctor checks
   cru doctor
 
+  # Output as JSON
+  cru doctor -f json
+
   # Show help for diagnostics
   cru doctor --help")]
-    Doctor,
+    Doctor {
+        /// Output format (table, json)
+        #[arg(short = 'f', long, default_value = "table")]
+        format: String,
+    },
 
     /// Manage storage operations (migration, verification, backup, cleanup)
     #[command(

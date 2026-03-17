@@ -173,6 +173,7 @@ pub struct KilnManager {
     connections: RwLock<HashMap<PathBuf, KilnConnection>>,
     event_tx: Option<broadcast::Sender<SessionEventMessage>>,
     enrichment_config: Option<EmbeddingProviderConfig>,
+    max_precognition_chars: usize,
 }
 
 impl KilnManager {
@@ -181,22 +182,29 @@ impl KilnManager {
             connections: RwLock::new(HashMap::new()),
             event_tx: None,
             enrichment_config: None,
+            max_precognition_chars: crucible_config::default_max_precognition_chars(),
         }
     }
 
     pub fn with_event_tx(
         event_tx: broadcast::Sender<SessionEventMessage>,
         enrichment_config: Option<EmbeddingProviderConfig>,
+        max_precognition_chars: usize,
     ) -> Self {
         Self {
             connections: RwLock::new(HashMap::new()),
             event_tx: Some(event_tx),
             enrichment_config,
+            max_precognition_chars,
         }
     }
 
     pub fn enrichment_config(&self) -> Option<&EmbeddingProviderConfig> {
         self.enrichment_config.as_ref()
+    }
+
+    pub fn max_precognition_chars(&self) -> usize {
+        self.max_precognition_chars
     }
 
     /// Open a connection to a kiln (or return existing)
@@ -818,14 +826,22 @@ mod tests {
     #[tokio::test]
     async fn enrichment_config_wiring_with_config_enables_enrichment() {
         let (tx, _rx) = broadcast::channel(1);
-        let km = KilnManager::with_event_tx(tx, Some(EmbeddingProviderConfig::mock(Some(384))));
+        let km = KilnManager::with_event_tx(
+            tx,
+            Some(EmbeddingProviderConfig::mock(Some(384))),
+            crucible_config::default_max_precognition_chars(),
+        );
         assert!(km.enrichment_config().is_some());
     }
 
     #[tokio::test]
     async fn enrichment_config_none_skips_mismatch_check() {
         let (tx, mut rx) = broadcast::channel(16);
-        let km = KilnManager::with_event_tx(tx, None);
+        let km = KilnManager::with_event_tx(
+            tx,
+            None,
+            crucible_config::default_max_precognition_chars(),
+        );
         let tmp = TempDir::new().unwrap();
         let kiln_path = tmp.path().join("test_kiln");
 

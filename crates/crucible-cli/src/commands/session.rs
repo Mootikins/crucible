@@ -91,6 +91,7 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             raw,
         } => {
             let session_id = resolve_session_id(session_id)?;
+            let message = crate::commands::stdin::resolve_message(&message)?;
             daemon_send(&config, &session_id, &message, raw).await
         },
         SessionCommands::Configure {

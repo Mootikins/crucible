@@ -4,6 +4,8 @@ use crucible_core::events::InternalSessionEvent;
 use std::collections::HashSet;
 
 const DEFAULT_MAX_TOOL_DEPTH: usize = 10;
+const TOOL_DEPTH_LIMIT_FINAL_PROMPT: &str =
+    "You have reached the tool call limit. Please provide your final answer based on the information gathered so far.";
 
 impl AgentManager {
     pub async fn send_message(
@@ -1096,6 +1098,75 @@ impl AgentManager {
         injection
     }
 
+    async fn emit_max_tool_depth_hard_stop(stream_ctx: &StreamContext, max_tool_depth: usize) {
+        warn!(
+            session_id = %stream_ctx.session_id,
+            max_tool_depth = max_tool_depth,
+            "max_tool_depth exceeded"
+        );
+        if !emit_event(
+            &stream_ctx.event_tx,
+            SessionEventMessage::ended(&stream_ctx.session_id, "error: max_tool_depth exceeded"),
+        ) {
+            warn!(
+                session_id = %stream_ctx.session_id,
+                "No subscribers for max_tool_depth ended event"
+            );
+        }
+    }
+
+    async fn stream_forced_final_response_at_depth_limit(
+        agent_guard: &mut tokio::sync::MutexGuard<'_, BoxedAgentHandle>,
+        stream_ctx: &StreamContext,
+        accumulated_response: &mut String,
+    ) -> Option<crucible_core::traits::chat::ChatChunk> {
+        let response_len_before = accumulated_response.len();
+        let mut forced_terminal_chunk: Option<crucible_core::traits::chat::ChatChunk> = None;
+        let mut forced_stream =
+            agent_guard.send_message_stream(TOOL_DEPTH_LIMIT_FINAL_PROMPT.to_string());
+
+        while let Some(forced_result) = forced_stream.next().await {
+            match forced_result {
+                Ok(chunk) => {
+                    let mut forced_chunk = chunk.clone();
+                    forced_chunk.tool_calls = None;
+                    forced_chunk.tool_results = None;
+                    Self::emit_stream_events(stream_ctx, &forced_chunk, accumulated_response).await;
+
+                    if forced_chunk.done {
+                        forced_terminal_chunk = Some(forced_chunk);
+                        break;
+                    }
+                }
+                Err(e) => {
+                    error!(
+                        session_id = %stream_ctx.session_id,
+                        error = %e,
+                        "Forced final response stream failed at tool depth limit"
+                    );
+                    return None;
+                }
+            }
+        }
+
+        if accumulated_response.len() == response_len_before {
+            warn!(
+                session_id = %stream_ctx.session_id,
+                "Forced final response produced no text at tool depth limit"
+            );
+            return None;
+        }
+
+        if forced_terminal_chunk.is_none() {
+            warn!(
+                session_id = %stream_ctx.session_id,
+                "Forced final response stream ended without terminal chunk"
+            );
+        }
+
+        forced_terminal_chunk
+    }
+
     async fn execute_agent_stream(
         agent: Arc<Mutex<BoxedAgentHandle>>,
         content: String,
@@ -1219,6 +1290,13 @@ impl AgentManager {
                                         } else {
                                             last_failure_key = None;
                                             consecutive_failure_count = 0;
+
+                                            if tool_depth == max_tool_depth.saturating_sub(2) {
+                                                tool_result.result.push_str(&format!(
+                                                    " [Note: You have used {} of {} available tool calls.]",
+                                                    tool_depth, max_tool_depth
+                                                ));
+                                            }
                                         }
                                     }
 
@@ -1238,19 +1316,20 @@ impl AgentManager {
                             warn!(
                                 session_id = %stream_ctx.session_id,
                                 max_tool_depth = max_tool_depth,
-                                "max_tool_depth exceeded"
+                                "max_tool_depth reached, forcing final response without tools"
                             );
-                            if !emit_event(
-                                &stream_ctx.event_tx,
-                                SessionEventMessage::ended(
-                                    &stream_ctx.session_id,
-                                    "error: max_tool_depth exceeded",
-                                ),
-                            ) {
-                                warn!(
-                                    session_id = %stream_ctx.session_id,
-                                    "No subscribers for max_tool_depth ended event"
-                                );
+                            drop(stream);
+
+                            if let Some(forced_terminal) = Self::stream_forced_final_response_at_depth_limit(
+                                &mut agent_guard,
+                                &stream_ctx,
+                                accumulated_response,
+                            )
+                            .await
+                            {
+                                terminal_chunk = Some(forced_terminal);
+                            } else {
+                                Self::emit_max_tool_depth_hard_stop(&stream_ctx, max_tool_depth).await;
                             }
                             break;
                         }
@@ -1338,7 +1417,6 @@ impl AgentManager {
             .await;
 
             if let Some((injected_content, _)) = injection {
-                drop(stream);
                 drop(agent_guard);
 
                 accumulated_response.clear();

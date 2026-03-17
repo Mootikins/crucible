@@ -99,6 +99,7 @@ pub struct BindWithPluginConfigParams {
     pub auto_archive_hours: Option<u64>,
     pub llm_config: Option<crucible_config::LlmConfig>,
     pub enrichment_config: Option<crucible_config::EmbeddingProviderConfig>,
+    pub max_precognition_chars: usize,
     pub acp_config: Option<crucible_config::components::acp::AcpConfig>,
     pub permission_config: Option<crucible_config::components::permissions::PermissionConfig>,
     pub web_config: Option<crucible_config::WebConfig>,
@@ -119,6 +120,7 @@ impl Server {
             auto_archive_hours: None,
             llm_config: None,
             enrichment_config: None,
+            max_precognition_chars: crucible_config::default_max_precognition_chars(),
             acp_config: None,
             permission_config: None,
             web_config: None,
@@ -179,6 +181,7 @@ impl Server {
         let kiln_manager = Arc::new(KilnManager::with_event_tx(
             event_tx.clone(),
             params.enrichment_config.clone(),
+            params.max_precognition_chars,
         ));
         let session_manager = Arc::new(SessionManager::new());
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));

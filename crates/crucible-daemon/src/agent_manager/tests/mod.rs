@@ -426,6 +426,7 @@ fn create_test_agent_manager_with_enrichment(
         kiln_manager: Arc::new(KilnManager::with_event_tx(
             event_tx,
             Some(enrichment_config),
+            crucible_config::default_max_precognition_chars(),
         )),
         session_manager,
         background_manager,

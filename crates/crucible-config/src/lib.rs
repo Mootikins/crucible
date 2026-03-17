@@ -72,9 +72,9 @@ pub use credentials::{
     CredentialStore, ProviderSecrets, SecretsFile, SecretsFileContent,
 };
 pub use enrichment::{
-    BurnBackendConfig, BurnEmbedConfig, CohereConfig, CustomConfig, EmbeddingProviderConfig,
-    EnrichmentConfig, FastEmbedConfig, MockConfig, OllamaConfig, OpenAIConfig, PipelineConfig,
-    VertexAIConfig,
+    default_max_precognition_chars, BurnBackendConfig, BurnEmbedConfig, CohereConfig,
+    CustomConfig, EmbeddingProviderConfig, EnrichmentConfig, FastEmbedConfig, MockConfig,
+    OllamaConfig, OpenAIConfig, PipelineConfig, VertexAIConfig,
 };
 pub use global::GlobalConfig;
 pub use includes::{process_file_references, IncludeConfig, IncludeError, ResolveMode};

@@ -1,5 +1,6 @@
 use anyhow::Result;
 use reqwest::Url;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -17,123 +18,222 @@ struct ProviderCheck {
     detail: Option<String>,
 }
 
-pub async fn execute(config_path_override: Option<PathBuf>) -> Result<()> {
-    output::header("Crucible Doctor - Installation Health Check");
+/// A single doctor check result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DoctorCheckResult {
+    pub check_name: String,
+    pub status: String, // "pass", "fail", "warn"
+    pub message: String,
+}
 
-    let mut failures = 0usize;
-    let mut warnings = 0usize;
+pub async fn execute(config_path_override: Option<PathBuf>, format: &str) -> Result<()> {
+    let mut results = Vec::new();
 
+    // Check 1: Daemon
     match DaemonClient::connect().await {
-        Ok(_) => output::success("Daemon running"),
+        Ok(_) => {
+            results.push(DoctorCheckResult {
+                check_name: "Daemon".to_string(),
+                status: "pass".to_string(),
+                message: "Daemon running".to_string(),
+            });
+        }
         Err(_) => {
-            output::error("Daemon not running");
-            println!("    Try: `cru daemon start`");
-            failures += 1;
+            results.push(DoctorCheckResult {
+                check_name: "Daemon".to_string(),
+                status: "fail".to_string(),
+                message: "Daemon not running. Try: `cru daemon start`".to_string(),
+            });
         }
     }
 
     let config_path = config_path_override.unwrap_or_else(CliConfig::default_config_path);
     let mut loaded_config: Option<CliConfig> = None;
 
+    // Check 2: Config
     if !config_path.exists() {
-        output::error(&format!("Config missing at {}", display_path(&config_path)));
-        println!("    Try: `cru config init`");
-        failures += 1;
+        results.push(DoctorCheckResult {
+            check_name: "Config".to_string(),
+            status: "fail".to_string(),
+            message: format!(
+                "Config missing at {}. Try: `cru config init`",
+                display_path(&config_path)
+            ),
+        });
     } else {
         match CliConfig::load(Some(config_path.clone()), None, None) {
             Ok(config) => {
-                output::success(&format!("Config found at {}", display_path(&config_path)));
+                results.push(DoctorCheckResult {
+                    check_name: "Config".to_string(),
+                    status: "pass".to_string(),
+                    message: format!("Config found at {}", display_path(&config_path)),
+                });
                 loaded_config = Some(config);
             }
             Err(err) => {
-                output::warning(&format!("Config has errors: {}", err));
-                println!("    Try: `cru config init` to repair your configuration");
-                warnings += 1;
+                results.push(DoctorCheckResult {
+                    check_name: "Config".to_string(),
+                    status: "warn".to_string(),
+                    message: format!(
+                        "Config has errors: {}. Try: `cru config init` to repair",
+                        err
+                    ),
+                });
             }
         }
     }
 
+    // Check 3: Providers
     let provider_checks = check_providers(loaded_config.as_ref()).await;
     if provider_checks.is_empty() {
-        output::warning("No LLM providers configured");
-        println!("    Try: `cru config init`");
-        warnings += 1;
+        results.push(DoctorCheckResult {
+            check_name: "Providers".to_string(),
+            status: "warn".to_string(),
+            message: "No LLM providers configured. Try: `cru config init`".to_string(),
+        });
     } else {
+        let mut all_reachable = true;
         for provider in &provider_checks {
             let label = format!("{} ({})", provider.key, provider.backend.as_str());
-            if provider.reachable {
-                output::success(&format!("Provider reachable: {}", label));
-            } else {
-                if let Some(detail) = &provider.detail {
-                    output::error(&format!("Provider unreachable: {} ({})", label, detail));
-                } else {
-                    output::error(&format!("Provider unreachable: {}", label));
-                }
-                failures += 1;
+            if !provider.reachable {
+                all_reachable = false;
+                let detail = provider
+                    .detail
+                    .as_ref()
+                    .map(|d| format!(" ({})", d))
+                    .unwrap_or_default();
+                results.push(DoctorCheckResult {
+                    check_name: format!("Provider: {}", label),
+                    status: "fail".to_string(),
+                    message: format!("Provider unreachable{}", detail),
+                });
             }
+        }
+        if all_reachable {
+            results.push(DoctorCheckResult {
+                check_name: "Providers".to_string(),
+                status: "pass".to_string(),
+                message: format!("All {} provider(s) reachable", provider_checks.len()),
+            });
         }
     }
 
+    // Check 4: Kiln
     let kiln_path = loaded_config
         .as_ref()
         .map(|cfg| cfg.kiln_path.clone())
         .unwrap_or_else(|| CliConfig::default().kiln_path);
 
     if !kiln_path.exists() {
-        output::error(&format!("Kiln missing at {}", display_path(&kiln_path)));
-        println!("    Try: `cru init`");
-        failures += 1;
+        results.push(DoctorCheckResult {
+            check_name: "Kiln".to_string(),
+            status: "fail".to_string(),
+            message: format!(
+                "Kiln missing at {}. Try: `cru init`",
+                display_path(&kiln_path)
+            ),
+        });
     } else if !kiln_path.is_dir() {
-        output::error(&format!(
-            "Kiln path is not a directory: {}",
-            display_path(&kiln_path)
-        ));
-        failures += 1;
+        results.push(DoctorCheckResult {
+            check_name: "Kiln".to_string(),
+            status: "fail".to_string(),
+            message: format!(
+                "Kiln path is not a directory: {}",
+                display_path(&kiln_path)
+            ),
+        });
     } else if is_writable_dir(&kiln_path) {
-        output::success(&format!("Kiln accessible at {}", display_path(&kiln_path)));
+        results.push(DoctorCheckResult {
+            check_name: "Kiln".to_string(),
+            status: "pass".to_string(),
+            message: format!("Kiln accessible at {}", display_path(&kiln_path)),
+        });
     } else {
-        output::warning(&format!(
-            "Kiln is read-only at {}",
-            display_path(&kiln_path)
-        ));
-        warnings += 1;
+        results.push(DoctorCheckResult {
+            check_name: "Kiln".to_string(),
+            status: "warn".to_string(),
+            message: format!("Kiln is read-only at {}", display_path(&kiln_path)),
+        });
     }
 
+    // Check 5: Embeddings
     let ollama_embedding_available = provider_checks
         .iter()
         .any(|p| p.backend == BackendType::Ollama && p.reachable);
 
     if cfg!(feature = "fastembed") {
-        output::success("Embeddings available (fastembed)");
+        results.push(DoctorCheckResult {
+            check_name: "Embeddings".to_string(),
+            status: "pass".to_string(),
+            message: "Embeddings available (fastembed)".to_string(),
+        });
     } else if ollama_embedding_available {
-        output::success("Embeddings available (ollama)");
+        results.push(DoctorCheckResult {
+            check_name: "Embeddings".to_string(),
+            status: "pass".to_string(),
+            message: "Embeddings available (ollama)".to_string(),
+        });
     } else {
-        output::warning("No embedding backend available (semantic search disabled)");
-        warnings += 1;
+        results.push(DoctorCheckResult {
+            check_name: "Embeddings".to_string(),
+            status: "warn".to_string(),
+            message: "No embedding backend available (semantic search disabled)".to_string(),
+        });
     }
 
-    println!();
-    if failures == 0 {
-        if warnings == 0 {
-            output::success("All 5 checks passed.");
-        } else {
-            output::warning(&format!(
-                "All checks passed with {} warning{}.",
+    // Output results based on format
+    match format {
+        "json" => {
+            println!("{}", serde_json::to_string_pretty(&results)?);
+        }
+        _ => {
+            // Default table format
+            output::header("Crucible Doctor - Installation Health Check");
+
+            let mut failures = 0usize;
+            let mut warnings = 0usize;
+
+            for result in &results {
+                match result.status.as_str() {
+                    "pass" => output::success(&result.message),
+                    "fail" => {
+                        output::error(&result.message);
+                        failures += 1;
+                    }
+                    "warn" => {
+                        output::warning(&result.message);
+                        warnings += 1;
+                    }
+                    _ => {}
+                }
+            }
+
+            println!();
+            if failures == 0 {
+                if warnings == 0 {
+                    output::success("All 5 checks passed.");
+                } else {
+                    output::warning(&format!(
+                        "All checks passed with {} warning{}.",
+                        warnings,
+                        if warnings == 1 { "" } else { "s" }
+                    ));
+                }
+                return Ok(());
+            }
+
+            output::error(&format!(
+                "{} check{} failed, {} warning{}.",
+                failures,
+                if failures == 1 { "" } else { "s" },
                 warnings,
                 if warnings == 1 { "" } else { "s" }
             ));
+            std::process::exit(1);
         }
-        return Ok(());
     }
 
-    output::error(&format!(
-        "{} check{} failed, {} warning{}.",
-        failures,
-        if failures == 1 { "" } else { "s" },
-        warnings,
-        if warnings == 1 { "" } else { "s" }
-    ));
-    std::process::exit(1);
+    Ok(())
 }
 
 async fn check_providers(config: Option<&CliConfig>) -> Vec<ProviderCheck> {
@@ -213,4 +313,48 @@ fn is_writable_dir(path: &Path) -> bool {
 
 fn display_path(path: &Path) -> String {
     path.to_string_lossy().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_doctor_check_result_serializes_to_json() {
+        let result = DoctorCheckResult {
+            check_name: "Daemon".to_string(),
+            status: "pass".to_string(),
+            message: "Daemon running".to_string(),
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        let parsed: DoctorCheckResult = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.check_name, "Daemon");
+        assert_eq!(parsed.status, "pass");
+        assert_eq!(parsed.message, "Daemon running");
+    }
+
+    #[test]
+    fn test_doctor_results_array_serializes_to_json() {
+        let results = vec![
+            DoctorCheckResult {
+                check_name: "Daemon".to_string(),
+                status: "pass".to_string(),
+                message: "Daemon running".to_string(),
+            },
+            DoctorCheckResult {
+                check_name: "Config".to_string(),
+                status: "fail".to_string(),
+                message: "Config missing".to_string(),
+            },
+        ];
+
+        let json = serde_json::to_string_pretty(&results).unwrap();
+        let parsed: Vec<DoctorCheckResult> = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].status, "pass");
+        assert_eq!(parsed[1].status, "fail");
+    }
 }

@@ -72,7 +72,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
     );
 
     let config = match (&cli.command, config_result) {
-        (Some(Commands::Doctor), Err(err)) => {
+        (Some(Commands::Doctor { .. }), Err(err)) => {
             tracing::warn!(
                 "doctor proceeding with default config after load error: {}",
                 err
@@ -93,6 +93,11 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
                 auto_archive_hours: config.server.as_ref().and_then(|s| s.auto_archive_hours),
                 llm_config: Some(config.llm.clone()),
                 enrichment_config: config.enrichment.as_ref().map(|e| e.provider.clone()),
+                max_precognition_chars: config
+                    .enrichment
+                    .as_ref()
+                    .map(|e| e.pipeline.max_precognition_chars)
+                    .unwrap_or_else(crucible_config::default_max_precognition_chars),
                 acp_config: Some(config.acp.clone()),
                 permission_config: None,
                 web_config: None,
@@ -294,7 +299,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             recent,
         }) => commands::status::execute(config, path, format, detailed, recent).await?,
 
-        Some(Commands::Doctor) => commands::doctor::execute(cli_config_path).await?,
+        Some(Commands::Doctor { format }) => commands::doctor::execute(cli_config_path, &format).await?,
 
         Some(Commands::Storage(cmd)) => commands::storage::execute(config, cmd).await?,
 
