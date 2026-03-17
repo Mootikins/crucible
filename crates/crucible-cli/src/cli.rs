@@ -463,6 +463,10 @@ pub enum SessionCommands {
         /// Maximum number of results
         #[arg(short = 'n', long, default_value = "20")]
         limit: u32,
+
+        /// Output format (text, json)
+        #[arg(short = 'f', long, default_value = "text", value_parser = ["text", "json"])]
+        format: String,
     },
 
     /// Show session details
@@ -608,7 +612,8 @@ pub enum SessionCommands {
         raw: bool,
     },
 
-    /// Configure agent for a session
+    /// Configure agent backend (provider + model + endpoint) for a session.
+    /// Use `cru set` for runtime parameter tweaks (temperature, thinking_budget, etc.)
     Configure {
         /// Session ID
         #[arg(value_name = "SESSION_ID")]
@@ -625,6 +630,10 @@ pub enum SessionCommands {
         /// Custom endpoint URL
         #[arg(short, long)]
         endpoint: Option<String>,
+
+        /// Output format (text, json)
+        #[arg(short = 'f', long, default_value = "text", value_parser = ["text", "json"])]
+        format: String,
     },
 
     /// Subscribe to session events (for debugging)

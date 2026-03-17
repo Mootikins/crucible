@@ -88,10 +88,11 @@ fn session_configure_help_exposes_expected_flags() {
         .args(["session", "configure", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Configure agent for a session"))
+        .stdout(predicate::str::contains("Configure agent backend"))
         .stdout(predicate::str::contains("--provider"))
         .stdout(predicate::str::contains("--model"))
-        .stdout(predicate::str::contains("--endpoint"));
+        .stdout(predicate::str::contains("--endpoint"))
+        .stdout(predicate::str::contains("--format"));
 }
 
 #[test]
