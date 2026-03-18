@@ -125,7 +125,16 @@ pub fn render_thinking_block(content: &str, _token_count: usize, width: usize) -
     );
 
     let display_content: Cow<'_, str> = if content.len() > 1200 {
-        let start = content.len() - 1200;
+        let char_count = content.chars().count();
+        let start = if char_count > 1200 {
+            content
+                .char_indices()
+                .nth(char_count - 1200)
+                .map(|(i, _)| i)
+                .unwrap_or(0)
+        } else {
+            0
+        };
         let boundary = content[start..]
             .find(char::is_whitespace)
             .map(|i| start + i + 1)
@@ -211,6 +220,54 @@ mod tests {
     fn render_thinking_block_over_1200_chars() {
         let content_over_1200 = "a".repeat(1201);
         let node = render_thinking_block(&content_over_1200, 100, 80);
+        let plain = render_to_plain_text(&node, 80);
+        assert!(plain.contains("thinking"));
+        assert!(plain.contains("…"));
+    }
+
+    #[test]
+    fn render_thinking_block_cjk_does_not_panic() {
+        // CJK characters: "你好世界" = 4 chars, 12 bytes each = 48 bytes per repeat
+        // 125 repeats = 500 chars, 1500 bytes (> 1200 byte limit)
+        let content_cjk = "你好世界".repeat(125);
+        assert!(
+            content_cjk.len() > 1200,
+            "CJK content should exceed 1200 bytes"
+        );
+        // This should not panic on UTF-8 boundary
+        let node = render_thinking_block(&content_cjk, 100, 80);
+        let plain = render_to_plain_text(&node, 80);
+        assert!(plain.contains("thinking"));
+        assert!(plain.contains("…"));
+    }
+
+    #[test]
+    fn render_thinking_block_emoji_boundary() {
+        // Emoji: "🔥🌊⚡" = 3 chars, 4 bytes each = 12 bytes per repeat
+        // 200 repeats = 600 chars, 2400 bytes (> 1200 byte limit)
+        let content_emoji = "🔥🌊⚡".repeat(200);
+        assert!(
+            content_emoji.len() > 1200,
+            "Emoji content should exceed 1200 bytes"
+        );
+        // This should not panic on UTF-8 boundary
+        let node = render_thinking_block(&content_emoji, 100, 80);
+        let plain = render_to_plain_text(&node, 80);
+        assert!(plain.contains("thinking"));
+        assert!(plain.contains("…"));
+    }
+
+    #[test]
+    fn render_thinking_block_mixed_utf8() {
+        // Mixed: "Hello 你好 🔥 " = 13 chars, 27 bytes per repeat
+        // 200 repeats = 2600 chars, 5400 bytes (> 1200 byte limit)
+        let content_mixed = "Hello 你好 🔥 ".repeat(200);
+        assert!(
+            content_mixed.len() > 1200,
+            "Mixed content should exceed 1200 bytes"
+        );
+        // This should not panic on UTF-8 boundary
+        let node = render_thinking_block(&content_mixed, 100, 80);
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("thinking"));
         assert!(plain.contains("…"));
