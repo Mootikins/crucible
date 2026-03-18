@@ -1279,6 +1279,51 @@ fn snapshot_delegation_completed() {
     assert_snapshot!(render_app(&app));
 }
 
+#[test]
+fn snapshot_delegation_failed() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Analyze auth module".to_string()));
+    app.on_message(ChatAppMsg::DelegationSpawned {
+        id: "deleg-fail-1".to_string(),
+        prompt: "Analyze auth module".to_string(),
+        target_agent: Some("opencode".to_string()),
+    });
+    app.on_message(ChatAppMsg::DelegationFailed {
+        id: "deleg-fail-1".to_string(),
+        error: "Connection timeout".to_string(),
+    });
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
+fn snapshot_multiple_concurrent_delegations() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage(
+        "Research multiple topics".to_string(),
+    ));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Delegating to multiple agents...".to_string(),
+    ));
+    // Two concurrent delegations
+    app.on_message(ChatAppMsg::DelegationSpawned {
+        id: "deleg-multi-1".to_string(),
+        prompt: "Search for auth patterns".to_string(),
+        target_agent: Some("cursor".to_string()),
+    });
+    app.on_message(ChatAppMsg::DelegationSpawned {
+        id: "deleg-multi-2".to_string(),
+        prompt: "Analyze security module".to_string(),
+        target_agent: Some("opencode".to_string()),
+    });
+    // Complete first delegation
+    app.on_message(ChatAppMsg::DelegationCompleted {
+        id: "deleg-multi-1".to_string(),
+        summary: "Found 5 auth patterns".to_string(),
+    });
+    // Second still running
+    assert_snapshot!(render_app(&app));
+}
+
 // =============================================================================
 // Precognition Result Snapshot Tests
 // =============================================================================
