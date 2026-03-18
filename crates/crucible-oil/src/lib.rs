@@ -17,6 +17,7 @@
 //! ```
 
 pub mod ansi;
+pub mod bounded;
 pub mod cell_grid;
 pub mod components;
 pub mod decrypt;
@@ -38,6 +39,7 @@ pub mod template;
 pub mod terminal;
 pub mod viewport;
 
+pub use bounded::{bounded, bounded_head};
 pub use cell_grid::{CellGrid, StyledCell};
 pub use components::{
     clamp_input_lines, popup_item, popup_item_full, popup_item_with_desc, wrap_content, Drawer,
