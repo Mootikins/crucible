@@ -87,6 +87,8 @@ pub struct CachedToolCall {
     pub description: Option<Arc<str>>,
     /// Optional source provenance for display (e.g., "[Crucible]" badge).
     pub source: Option<ToolSourceDisplay>,
+    /// Optional primary argument from Lua tool display hook.
+    pub lua_primary_arg: Option<Arc<str>>,
 }
 
 impl CachedToolCall {
@@ -105,6 +107,7 @@ impl CachedToolCall {
             superseded: false,
             description: None,
             source: None,
+            lua_primary_arg: None,
         }
     }
 

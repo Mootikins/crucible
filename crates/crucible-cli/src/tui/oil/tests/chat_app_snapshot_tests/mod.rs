@@ -120,6 +120,7 @@ fn snapshot_tool_call_pending() {
         call_id: None,
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     assert_snapshot!(render_app(&app));
 }
@@ -134,6 +135,7 @@ fn snapshot_tool_call_complete() {
         call_id: None,
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -157,6 +159,7 @@ fn snapshot_tool_output_many_lines_shows_count() {
         call_id: None,
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     let output = "file1.txt\nfile2.txt\nfile3.txt\nfile4.txt\nfile5.txt\n\
                   file6.txt\nfile7.txt\nfile8.txt\nfile9.txt\nfile10.txt";
@@ -182,6 +185,7 @@ fn snapshot_read_tool_preserves_closing_bracket() {
         call_id: None,
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     let output = "<file>\n00001| fn main() {\n00002|     println!(\"hello\");\n00003| }\n</file>\n\n[Directory Context: /home/user/project]";
     app.on_message(ChatAppMsg::ToolResultDelta {
@@ -210,6 +214,7 @@ fn snapshot_multiple_tools_no_gaps() {
         call_id: None,
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "bash".to_string(),
@@ -228,6 +233,7 @@ fn snapshot_multiple_tools_no_gaps() {
         call_id: None,
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -246,6 +252,7 @@ fn snapshot_multiple_tools_no_gaps() {
         call_id: None,
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "bash".to_string(),
@@ -281,6 +288,7 @@ fn snapshot_text_tool_text_spacing() {
         call_id: None,
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "bash".to_string(),
@@ -319,6 +327,7 @@ fn snapshot_sequential_tool_calls_with_text() {
         call_id: None,
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "bash".to_string(),
@@ -342,6 +351,7 @@ fn snapshot_sequential_tool_calls_with_text() {
         call_id: None,
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -426,6 +436,7 @@ fn snapshot_numbered_list_across_tool_boundary() {
         call_id: None,
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -471,6 +482,7 @@ fn snapshot_bullet_list_across_tool_boundary() {
         call_id: None,
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -539,6 +551,7 @@ fn snapshot_sequential_tools_mid_stream() {
         call_id: None,
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "bash".to_string(),
@@ -562,6 +575,7 @@ fn snapshot_sequential_tools_mid_stream() {
         call_id: None,
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
 
     // Snapshot mid-stream: second tool is pending
@@ -585,6 +599,7 @@ fn snapshot_sequential_tools_all_complete_still_streaming() {
         call_id: None,
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "bash".to_string(),
@@ -608,6 +623,7 @@ fn snapshot_sequential_tools_all_complete_still_streaming() {
         call_id: None,
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -641,6 +657,7 @@ fn snapshot_parallel_tool_calls_same_name() {
         call_id: Some("call-readme".to_string()),
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolCall {
         name: "read_file".to_string(),
@@ -648,6 +665,7 @@ fn snapshot_parallel_tool_calls_same_name() {
         call_id: Some("call-cargo".to_string()),
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
 
     // Results for first tool (README.md) — matched by call_id
@@ -692,6 +710,7 @@ fn snapshot_back_to_back_tools_no_text() {
         call_id: None,
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -710,6 +729,7 @@ fn snapshot_back_to_back_tools_no_text() {
         call_id: None,
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -728,6 +748,7 @@ fn snapshot_back_to_back_tools_no_text() {
         call_id: None,
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -1207,6 +1228,7 @@ fn snapshot_delegate_session_tool_call_suppressed() {
         call_id: Some("call-deleg-1".to_string()),
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::DelegationSpawned {
         id: "deleg-suppress-1".to_string(),
@@ -1226,6 +1248,7 @@ fn snapshot_non_delegate_tool_calls_not_suppressed_by_delegation() {
         call_id: Some("call-bash-1".to_string()),
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "bash".to_string(),
@@ -1259,6 +1282,7 @@ fn snapshot_delegate_session_suppressed_when_delegation_arrives_first() {
         call_id: Some("call-deleg-race-1".to_string()),
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     assert_snapshot!(render_app(&app));
 }
@@ -1383,6 +1407,7 @@ fn snapshot_multi_turn_with_tool_calls() {
         call_id: Some("call-1".to_string()),
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -1407,6 +1432,7 @@ fn snapshot_multi_turn_with_tool_calls() {
         call_id: Some("call-2".to_string()),
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "edit_file".to_string(),
@@ -1489,6 +1515,7 @@ fn snapshot_raw_tool_call_pending() {
         call_id: None,
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     assert_snapshot!(render_app_raw(&app));
 }
@@ -1503,6 +1530,7 @@ fn snapshot_raw_tool_call_complete() {
         call_id: None,
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -1613,6 +1641,7 @@ fn snapshot_tool_with_description_only() {
         call_id: None,
         description: Some("Search notes by semantic similarity".to_string()),
         source: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "semantic_search".to_string(),
@@ -1636,6 +1665,7 @@ fn snapshot_tool_with_source_only() {
         call_id: None,
         description: None,
         source: Some("Crucible".to_string()),
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -1659,6 +1689,7 @@ fn snapshot_tool_with_description_and_source() {
         call_id: None,
         description: Some("Search notes by semantic similarity".to_string()),
         source: Some("Crucible".to_string()),
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "semantic_search".to_string(),
@@ -1682,6 +1713,7 @@ fn snapshot_tool_with_mcp_source() {
         call_id: None,
         description: Some("List open issues from repository".to_string()),
         source: Some("Mcp:github".to_string()),
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "list_issues".to_string(),
@@ -1705,6 +1737,7 @@ fn snapshot_tool_without_metadata_unchanged() {
         call_id: None,
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -1728,6 +1761,7 @@ fn snapshot_tool_pending_with_metadata() {
         call_id: None,
         description: Some("Search notes by semantic similarity".to_string()),
         source: Some("Crucible".to_string()),
+        lua_primary_arg: None,
     });
     assert_snapshot!(render_app(&app));
 }

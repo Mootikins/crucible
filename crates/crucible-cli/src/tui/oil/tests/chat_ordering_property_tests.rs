@@ -111,6 +111,7 @@ proptest! {
                         call_id: None,
                         description: None,
                         source: None,
+                lua_primary_arg: None,
                     });
                 }
                 StreamEvent::ToolResultDelta { name, delta } => {

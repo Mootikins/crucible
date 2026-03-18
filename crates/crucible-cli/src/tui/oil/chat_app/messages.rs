@@ -70,6 +70,8 @@ pub enum ChatAppMsg {
         description: Option<String>,
         /// Source provenance string (e.g. "Core", "Crucible", "Mcp:github").
         source: Option<String>,
+        /// Primary argument from Lua tool display hook.
+        lua_primary_arg: Option<String>,
     },
     /// **Event** (daemon → TUI): Streaming delta of tool result output.
     ToolResultDelta {

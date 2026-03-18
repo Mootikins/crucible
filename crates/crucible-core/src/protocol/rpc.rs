@@ -143,7 +143,7 @@ impl SessionEventMessage {
         tool: impl Into<String>,
         args: Value,
     ) -> Self {
-        Self::tool_call_with_metadata(session_id, call_id, tool, args, None, None)
+        Self::tool_call_with_metadata(session_id, call_id, tool, args, None, None, None)
     }
 
     pub fn tool_call_with_metadata(
@@ -153,6 +153,7 @@ impl SessionEventMessage {
         args: Value,
         description: Option<String>,
         source: Option<String>,
+        lua_primary_arg: Option<String>,
     ) -> Self {
         let mut data = serde_json::json!({
             "call_id": call_id.into(),
@@ -164,6 +165,9 @@ impl SessionEventMessage {
         }
         if let Some(source) = source {
             data["source"] = serde_json::json!(source);
+        }
+        if let Some(pa) = lua_primary_arg {
+            data["lua_primary_arg"] = serde_json::json!(pa);
         }
 
         Self::new(session_id, "tool_call", data)

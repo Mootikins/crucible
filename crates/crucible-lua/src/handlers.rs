@@ -729,11 +729,16 @@ pub struct ToolDisplayStartEvent {
 pub struct ToolDisplayStartHints {
     pub label: Option<String>,
     pub detail: Option<String>,
+    pub primary_arg: Option<String>,
+    pub max_lines: Option<usize>,
 }
 
 impl ToolDisplayStartHints {
     fn is_empty(&self) -> bool {
-        self.label.is_none() && self.detail.is_none()
+        self.label.is_none()
+            && self.detail.is_none()
+            && self.primary_arg.is_none()
+            && self.max_lines.is_none()
     }
 }
 
@@ -747,11 +752,12 @@ pub struct ToolDisplayCompleteEvent {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ToolDisplayCompleteHints {
     pub summary: Option<String>,
+    pub max_lines: Option<usize>,
 }
 
 impl ToolDisplayCompleteHints {
     fn is_empty(&self) -> bool {
-        self.summary.is_none()
+        self.summary.is_none() && self.max_lines.is_none()
     }
 }
 
@@ -830,6 +836,14 @@ fn parse_display_start_hints(payload: &JsonValue) -> ToolDisplayStartHints {
             .get("detail")
             .and_then(JsonValue::as_str)
             .map(ToString::to_string),
+        primary_arg: payload
+            .get("primary_arg")
+            .and_then(JsonValue::as_str)
+            .map(ToString::to_string),
+        max_lines: payload
+            .get("max_lines")
+            .and_then(JsonValue::as_u64)
+            .map(|n| n as usize),
     }
 }
 
@@ -839,6 +853,10 @@ fn parse_display_complete_hints(payload: &JsonValue) -> ToolDisplayCompleteHints
             .get("summary")
             .and_then(JsonValue::as_str)
             .map(ToString::to_string),
+        max_lines: payload
+            .get("max_lines")
+            .and_then(JsonValue::as_u64)
+            .map(|n| n as usize),
     }
 }
 
@@ -2729,6 +2747,8 @@ end
             Some(ToolDisplayStartHints {
                 label: Some("Custom semantic_search".to_string()),
                 detail: Some("custom_detail".to_string()),
+                primary_arg: None,
+                max_lines: None,
             })
         );
     }
@@ -2768,6 +2788,7 @@ end
             result,
             Some(ToolDisplayCompleteHints {
                 summary: Some("Result for semantic_search".to_string()),
+                max_lines: None,
             })
         );
     }
