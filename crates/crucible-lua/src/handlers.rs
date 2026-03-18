@@ -57,6 +57,9 @@ use std::sync::{Arc, Mutex};
 use tracing::{debug, warn};
 use walkdir::WalkDir;
 
+pub const TOOL_DISPLAY_START_EVENT: &str = "tool:display_start";
+pub const TOOL_DISPLAY_COMPLETE_EVENT: &str = "tool:display_complete";
+
 /// Result of script handler execution
 ///
 /// Represents the possible outcomes from a Lua handler function:
@@ -714,6 +717,151 @@ pub enum PermissionHookResult {
     Deny,
     /// Hook returned nil or other - show normal prompt
     Prompt,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolDisplayStartEvent {
+    pub name: String,
+    pub args: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ToolDisplayStartHints {
+    pub label: Option<String>,
+    pub detail: Option<String>,
+}
+
+impl ToolDisplayStartHints {
+    fn is_empty(&self) -> bool {
+        self.label.is_none() && self.detail.is_none()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolDisplayCompleteEvent {
+    pub name: String,
+    pub args: String,
+    pub result: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ToolDisplayCompleteHints {
+    pub summary: Option<String>,
+}
+
+impl ToolDisplayCompleteHints {
+    fn is_empty(&self) -> bool {
+        self.summary.is_none()
+    }
+}
+
+pub fn execute_tool_display_start_hooks(
+    lua: &Lua,
+    registry: &LuaScriptHandlerRegistry,
+    event: &ToolDisplayStartEvent,
+) -> LuaResult<Option<ToolDisplayStartHints>> {
+    let handlers = registry.runtime_handlers_for(TOOL_DISPLAY_START_EVENT);
+    if handlers.is_empty() {
+        return Ok(None);
+    }
+
+    let payload = serde_json::json!({
+        "name": event.name,
+        "args": event.args,
+    });
+
+    for handler in handlers {
+        match execute_runtime_json_handler(lua, registry, &handler.name, payload.clone())? {
+            ScriptHandlerResult::Transform(payload) => {
+                let hints = parse_display_start_hints(&payload);
+                if !hints.is_empty() {
+                    return Ok(Some(hints));
+                }
+            }
+            ScriptHandlerResult::PassThrough
+            | ScriptHandlerResult::Cancel { .. }
+            | ScriptHandlerResult::Inject { .. } => {}
+        }
+    }
+
+    Ok(None)
+}
+
+pub fn execute_tool_display_complete_hooks(
+    lua: &Lua,
+    registry: &LuaScriptHandlerRegistry,
+    event: &ToolDisplayCompleteEvent,
+) -> LuaResult<Option<ToolDisplayCompleteHints>> {
+    let handlers = registry.runtime_handlers_for(TOOL_DISPLAY_COMPLETE_EVENT);
+    if handlers.is_empty() {
+        return Ok(None);
+    }
+
+    let payload = serde_json::json!({
+        "name": event.name,
+        "args": event.args,
+        "result": event.result,
+    });
+
+    for handler in handlers {
+        match execute_runtime_json_handler(lua, registry, &handler.name, payload.clone())? {
+            ScriptHandlerResult::Transform(payload) => {
+                let hints = parse_display_complete_hints(&payload);
+                if !hints.is_empty() {
+                    return Ok(Some(hints));
+                }
+            }
+            ScriptHandlerResult::PassThrough
+            | ScriptHandlerResult::Cancel { .. }
+            | ScriptHandlerResult::Inject { .. } => {}
+        }
+    }
+
+    Ok(None)
+}
+
+fn parse_display_start_hints(payload: &JsonValue) -> ToolDisplayStartHints {
+    ToolDisplayStartHints {
+        label: payload
+            .get("label")
+            .and_then(JsonValue::as_str)
+            .map(ToString::to_string),
+        detail: payload
+            .get("detail")
+            .and_then(JsonValue::as_str)
+            .map(ToString::to_string),
+    }
+}
+
+fn parse_display_complete_hints(payload: &JsonValue) -> ToolDisplayCompleteHints {
+    ToolDisplayCompleteHints {
+        summary: payload
+            .get("summary")
+            .and_then(JsonValue::as_str)
+            .map(ToString::to_string),
+    }
+}
+
+fn execute_runtime_json_handler(
+    lua: &Lua,
+    registry: &LuaScriptHandlerRegistry,
+    name: &str,
+    payload: JsonValue,
+) -> LuaResult<ScriptHandlerResult> {
+    let handler_functions = registry
+        .handler_functions
+        .lock()
+        .expect("handler_functions: poisoned while executing Lua display handler");
+    let key = handler_functions
+        .get(name)
+        .ok_or_else(|| mlua::Error::RuntimeError(format!("Handler not found: {}", name)))?;
+    let handler: Function = lua.registry_value(key)?;
+
+    let ctx_table = lua.create_table()?;
+    let payload_val = lua.to_value(&payload)?;
+    let result: Value = handler.call((ctx_table, payload_val))?;
+
+    interpret_handler_result(&result)
 }
 
 /// A permission request passed to Lua hooks
@@ -2543,5 +2691,84 @@ end
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), PermissionHookResult::Allow);
+    }
+
+    #[test]
+    fn lua_display_start_hook_returns_label_and_detail() {
+        let lua = Lua::new();
+        let registry = LuaScriptHandlerRegistry::new();
+
+        register_crucible_on_api(
+            &lua,
+            registry.runtime_handlers.clone(),
+            registry.handler_functions.clone(),
+        )
+        .unwrap();
+
+        lua.load(
+            r#"
+            crucible.on("tool:display_start", function(ctx, event)
+                return {
+                    label = "Custom " .. event.name,
+                    detail = "custom_detail"
+                }
+            end)
+        "#,
+        )
+        .exec()
+        .unwrap();
+
+        let event = ToolDisplayStartEvent {
+            name: "semantic_search".to_string(),
+            args: "{}".to_string(),
+        };
+
+        let result = execute_tool_display_start_hooks(&lua, &registry, &event).unwrap();
+        assert_eq!(
+            result,
+            Some(ToolDisplayStartHints {
+                label: Some("Custom semantic_search".to_string()),
+                detail: Some("custom_detail".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn lua_display_complete_hook_returns_summary() {
+        let lua = Lua::new();
+        let registry = LuaScriptHandlerRegistry::new();
+
+        register_crucible_on_api(
+            &lua,
+            registry.runtime_handlers.clone(),
+            registry.handler_functions.clone(),
+        )
+        .unwrap();
+
+        lua.load(
+            r#"
+            crucible.on("tool:display_complete", function(ctx, event)
+                return {
+                    summary = "Result for " .. event.name
+                }
+            end)
+        "#,
+        )
+        .exec()
+        .unwrap();
+
+        let event = ToolDisplayCompleteEvent {
+            name: "semantic_search".to_string(),
+            args: "{}".to_string(),
+            result: "Found 5 notes about authentication".to_string(),
+        };
+
+        let result = execute_tool_display_complete_hooks(&lua, &registry, &event).unwrap();
+        assert_eq!(
+            result,
+            Some(ToolDisplayCompleteHints {
+                summary: Some("Result for semantic_search".to_string()),
+            })
+        );
     }
 }
