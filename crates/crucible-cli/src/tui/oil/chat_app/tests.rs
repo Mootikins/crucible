@@ -222,7 +222,7 @@ fn test_tool_call_renders_with_result() {
     let output = render_to_string(&node, 80);
 
     assert!(output.contains("Read File"), "should show tool name");
-    assert!(output.contains("path="), "should show args");
+    assert!(output.contains("README.md"), "should show primary arg");
 
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),

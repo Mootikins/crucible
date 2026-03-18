@@ -1,5 +1,6 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
+assertion_line: 1732
 expression: render_app(&app)
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
@@ -9,7 +10,7 @@ expression: render_app(&app)
                                                                                 
                                                                                 
                                                                                 
- ⠋ Semantic Search [crucible](query="patterns")                                 
+ ⠋ Semantic Search [crucible] patterns                                          
     Search notes by semantic similarity                                         
                                                                                 
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
