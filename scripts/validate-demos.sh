@@ -127,9 +127,191 @@ validate_fixture() {
   echo
 }
 
+# === SUPER STRICT Recording Quality Checks ===
+check_strict_recording_quality() {
+  local fixture="$1"
+  local name=$(basename "$fixture" .jsonl)
+  
+  echo "=== Strict Recording Quality: $name ==="
+  
+  if [[ ! -f "$fixture" ]]; then
+    echo "  FAIL: Fixture not found: $fixture"
+    ((FAIL++)) || true; ((TOTAL++)) || true; return
+  fi
+  
+  # Check 1: user_message content doesn't contain prompt engineering
+  local user_msgs
+  user_msgs=$(grep '"user_message"' "$fixture" | jq -r '.data.content // empty' 2>/dev/null)
+  if echo "$user_msgs" | grep -qiE 'use the|call the tool|delegate_session'; then
+    echo "  FAIL: user_message contains prompt engineering phrases"
+    ((FAIL++)) || true; ((TOTAL++)) || true
+  else
+    echo "  PASS: user_message clean (no prompt engineering)"
+    ((PASS++)) || true; ((TOTAL++)) || true
+  fi
+  
+  # Check 2: message_complete full_response length is 100-2000 chars
+  local responses
+  responses=$(grep '"message_complete"' "$fixture" | jq -r '.data.full_response // empty' 2>/dev/null)
+  local resp_len
+  resp_len=$(echo "$responses" | wc -c)
+  if (( resp_len < 100 || resp_len > 2000 )); then
+    echo "  FAIL: message_complete full_response length out of range ($resp_len chars, need 100-2000)"
+    ((FAIL++)) || true; ((TOTAL++)) || true
+  else
+    echo "  PASS: message_complete full_response length valid ($resp_len chars)"
+    ((PASS++)) || true; ((TOTAL++)) || true
+  fi
+  
+  # Check 3: seq numbers are monotonically increasing
+  local seq_nums
+  seq_nums=$(grep '"seq"' "$fixture" | jq -r '.seq' 2>/dev/null | tr '\n' ' ')
+  local prev_seq=0
+  local seq_valid=true
+  for seq in $seq_nums; do
+    if (( seq <= prev_seq )); then
+      seq_valid=false
+      break
+    fi
+    prev_seq=$seq
+  done
+  if [[ "$seq_valid" == "false" ]]; then
+    echo "  FAIL: seq numbers not monotonically increasing"
+    ((FAIL++)) || true; ((TOTAL++)) || true
+  else
+    echo "  PASS: seq numbers monotonically increasing"
+    ((PASS++)) || true; ((TOTAL++)) || true
+  fi
+  
+  # Check 4: ts timestamps are non-decreasing (ISO 8601 string comparison)
+  local ts_list
+  ts_list=$(grep '"ts"' "$fixture" | jq -r '.ts' 2>/dev/null | tr '\n' ' ')
+  local prev_ts=""
+  local ts_valid=true
+  for ts in $ts_list; do
+    if [[ -n "$prev_ts" && "$ts" < "$prev_ts" ]]; then
+      ts_valid=false
+      break
+    fi
+    prev_ts="$ts"
+  done
+  if [[ "$ts_valid" == "false" ]]; then
+    echo "  FAIL: ts timestamps not monotonically increasing"
+    ((FAIL++)) || true; ((TOTAL++)) || true
+  else
+    echo "  PASS: ts timestamps monotonically increasing"
+    ((PASS++)) || true; ((TOTAL++)) || true
+  fi
+  
+  # Check 5: no empty event type strings
+  local empty_events
+  empty_events=$(grep '"event":""' "$fixture" 2>/dev/null | wc -l) || empty_events=0
+  if (( empty_events > 0 )); then
+    echo "  FAIL: $empty_events event(s) with empty type string"
+    ((FAIL++)) || true; ((TOTAL++)) || true
+  else
+    echo "  PASS: no empty event type strings"
+    ((PASS++)) || true; ((TOTAL++)) || true
+  fi
+  
+  # Check 6: footer total_events matches actual event count
+  local footer_total
+  footer_total=$(tail -1 "$fixture" | jq -r '.total_events // empty' 2>/dev/null)
+  local actual_events
+  actual_events=$(grep -c '"event"' "$fixture" 2>/dev/null || echo 0)
+  if [[ -n "$footer_total" && "$footer_total" != "$actual_events" ]]; then
+    echo "  FAIL: footer total_events ($footer_total) doesn't match actual events ($actual_events)"
+    ((FAIL++)) || true; ((TOTAL++)) || true
+  else
+    echo "  PASS: footer total_events matches actual events ($actual_events)"
+    ((PASS++)) || true; ((TOTAL++)) || true
+  fi
+  
+  echo
+}
+
+# === Delegation-Specific Checks ===
+check_delegation_fixture() {
+  local fixture="$1"
+  
+  echo "=== Delegation-Specific Checks ==="
+  
+  if [[ ! -f "$fixture" ]]; then
+    echo "  FAIL: Fixture not found: $fixture"
+    ((FAIL++)) || true; ((TOTAL++)) || true; return
+  fi
+  
+  python3 << 'PYEOF'
+import json, sys
+
+try:
+    with open("assets/fixtures/delegation-demo.jsonl") as f:
+        lines = f.readlines()
+    
+    data = [json.loads(line) for line in lines]
+    events = [d for d in data if 'event' in d]
+    
+    # Check 1: delegation_spawned event present with target_agent
+    spawned = [e for e in events if e.get('event') == 'delegation_spawned']
+    if not spawned:
+        print("  FAIL: delegation_spawned event missing")
+        sys.exit(1)
+    
+    if not spawned[0].get('data', {}).get('target_agent'):
+        print("  FAIL: delegation_spawned missing target_agent")
+        sys.exit(1)
+    
+    print(f"  PASS: delegation_spawned event present with target_agent='{spawned[0]['data']['target_agent']}'")
+    
+    # Check 2: delegation_completed with rich summary (> 50 chars)
+    completed = [e for e in events if e.get('event') == 'delegation_completed']
+    if not completed:
+        print("  FAIL: delegation_completed event missing")
+        sys.exit(1)
+    
+    summary = completed[0].get('data', {}).get('result_summary', '')
+    if len(summary) < 50:
+        print(f"  FAIL: delegation result_summary too short ({len(summary)} chars, need > 50)")
+        sys.exit(1)
+    
+    print(f"  PASS: delegation_completed with result_summary ({len(summary)} chars)")
+    
+    # Check 3: tool_call has non-empty tool_name
+    tool_calls = [e for e in events if e.get('event') == 'tool_call']
+    if tool_calls:
+        tool_name = tool_calls[0].get('data', {}).get('tool_name', '')
+        if not tool_name:
+            print("  FAIL: tool_call event has empty tool_name")
+            sys.exit(1)
+        print(f"  PASS: tool_call has tool_name='{tool_name}'")
+    
+    print("  PASS: All delegation-specific checks passed")
+    
+except Exception as e:
+    print(f"  FAIL: {e}")
+    sys.exit(1)
+PYEOF
+  
+  if (( $? == 0 )); then
+    ((PASS++)) || true; ((TOTAL++)) || true
+  else
+    ((FAIL++)) || true; ((TOTAL++)) || true
+  fi
+  
+  echo
+}
+
 validate_fixture "demo"
 validate_fixture "acp-demo"
 validate_fixture "delegation-demo"
+
+# Run strict quality checks on all fixtures
+check_strict_recording_quality "assets/fixtures/demo.jsonl"
+check_strict_recording_quality "assets/fixtures/acp-demo.jsonl"
+check_strict_recording_quality "assets/fixtures/delegation-demo.jsonl"
+
+# Run delegation-specific checks
+check_delegation_fixture "assets/fixtures/delegation-demo.jsonl"
 
 echo "=== Summary ==="
 echo "PASS: $PASS / WARN: $WARN / FAIL: $FAIL / TOTAL: $TOTAL"
