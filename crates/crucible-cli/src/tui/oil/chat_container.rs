@@ -240,148 +240,144 @@ struct RenderBlocksParams<'a> {
     pub is_continuation: bool,
 }
 
-/// Render assistant text blocks with graduation support.
+/// Render assistant blocks with graduation support.
 ///
-/// Each completed block (all but the last if streaming) gets its own scrollback
-/// to enable incremental graduation. The in-progress block stays in the viewport.
+/// Blocks are rendered in stream-arrival order: thinking blocks appear at their
+/// natural position (between text blocks), not always at the top.
+/// Ctrl+T toggles display density (full vs bounded tail), not position.
 ///
-/// If `is_continuation` is true, no bullet is shown (it's a continuation after a tool call).
+/// Each completed block gets its own scrollback to enable incremental graduation.
+/// The in-progress block stays in the viewport.
 fn render_assistant_blocks_with_graduation(
     params: &RenderBlocksParams,
     render_state: &RenderState,
 ) -> Node {
     let mut nodes = Vec::new();
-    let mut has_hidden_thinking_spinner = false;
     let t = crate::tui::oil::theme::active();
-    let mut text_blocks: Vec<&str> = Vec::new();
-    let mut thinking_blocks: Vec<&ThinkingBlock> = Vec::new();
 
-    for block in params.blocks {
-        match block {
-            ContentBlock::Text(content) => text_blocks.push(content),
-            ContentBlock::Thinking(tb) => thinking_blocks.push(tb),
-        }
-    }
-
-    let has_thinking = !thinking_blocks.is_empty();
-
-    if render_state.show_thinking {
-        for (i, tb) in thinking_blocks.iter().enumerate() {
-            let thinking_node =
-                render_thinking_block(&tb.content, tb.token_count, render_state.width());
-            let thinking_with_margin = thinking_node.with_margin(Padding {
-                top: 1,
-                ..Default::default()
-            });
-            // Thinking gets its own scrollback key
-            nodes.push(scrollback(
-                if i == 0 {
-                    format!("{}-thinking", params.container_id)
-                } else {
-                    format!("{}-thinking-{}", params.container_id, i)
-                },
-                [thinking_with_margin],
-            ));
-        }
-    } else {
-        for tb in &thinking_blocks {
-            let summary_style = Style::new()
-                .fg(t.resolve_color(t.colors.text_muted))
-                .italic();
-
-            let summary_node = if !params.complete && tb.token_count == 0 {
-                has_hidden_thinking_spinner = true;
-                row([
-                    text(" "),
-                    spinner(None, render_state.spinner_frame)
-                        .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
-                    text(" Thinking…").with_style(summary_style),
-                ])
+    let text_blocks: Vec<&str> = params
+        .blocks
+        .iter()
+        .filter_map(|b| {
+            if let ContentBlock::Text(s) = b {
+                Some(s.as_str())
             } else {
-                row([
-                    text(" "),
-                    text(format!("Thought for {} tokens", tb.token_count))
-                        .with_style(summary_style),
-                ])
-            };
+                None
+            }
+        })
+        .collect();
+    let has_thinking = params
+        .blocks
+        .iter()
+        .any(|b| matches!(b, ContentBlock::Thinking(_)));
 
-            nodes.push(summary_node.with_margin(Padding {
-                top: 1,
-                ..Default::default()
-            }));
-        }
-    }
-
-    // Determine how many blocks are "complete" (can graduate)
-    // If streaming (!complete), all but the last block are complete
-    // If complete, all blocks are complete
-    let complete_block_count = if params.complete || text_blocks.is_empty() {
+    let complete_text_count = if params.complete || text_blocks.is_empty() {
         text_blocks.len()
     } else {
         text_blocks.len().saturating_sub(1)
     };
 
-    // Show spinner when streaming and no text yet
-    if !params.complete && text_blocks.is_empty() && !has_hidden_thinking_spinner {
-        let spinner_node = if has_thinking && render_state.show_thinking {
-            // Thinking is visible, show plain spinner below it
-            row([
-                text(" "),
-                spinner(None, render_state.spinner_frame)
-                    .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
-            ])
-        } else {
-            // No content at all yet — show spinner as the only indicator
-            row([
-                text(" "),
-                spinner(None, render_state.spinner_frame)
-                    .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
-            ])
-        };
-        nodes.push(spinner_node.with_margin(Padding {
-            top: 1,
-            ..Default::default()
-        }));
+    let mut text_block_idx = 0usize;
+    let mut thinking_block_idx = 0usize;
+    let mut has_hidden_thinking_spinner = false;
+
+    for block in params.blocks {
+        match block {
+            ContentBlock::Thinking(tb) => {
+                if render_state.show_thinking {
+                    let thinking_node =
+                        render_thinking_block(&tb.content, tb.token_count, render_state.width());
+                    let thinking_with_margin = thinking_node.with_margin(Padding {
+                        top: 1,
+                        ..Default::default()
+                    });
+
+                    nodes.push(scrollback(
+                        format!("{}-thinking-{thinking_block_idx}", params.container_id),
+                        [thinking_with_margin],
+                    ));
+                } else {
+                    let thinking_node =
+                        render_thinking_block(&tb.content, tb.token_count, render_state.width());
+                    let thinking_with_margin = thinking_node.with_margin(Padding {
+                        top: 1,
+                        ..Default::default()
+                    });
+                    let display_node = crucible_oil::bounded::bounded(thinking_with_margin, 3);
+
+                    if !params.complete && tb.token_count == 0 {
+                        has_hidden_thinking_spinner = true;
+                        let summary_style = Style::new()
+                            .fg(t.resolve_color(t.colors.text_muted))
+                            .italic();
+                        let summary_node = row([
+                            text(" "),
+                            spinner(None, render_state.spinner_frame)
+                                .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
+                            text(" Thinking…").with_style(summary_style),
+                        ]);
+                        nodes.push(summary_node.with_margin(Padding {
+                            top: 1,
+                            ..Default::default()
+                        }));
+                    } else {
+                        nodes.push(display_node);
+                    }
+                }
+                thinking_block_idx += 1;
+            }
+            ContentBlock::Text(content) => {
+                if content.is_empty() {
+                    text_block_idx += 1;
+                    continue;
+                }
+
+                let margins = if params.is_continuation || text_block_idx > 0 || has_thinking {
+                    Margins::assistant_continuation()
+                } else {
+                    Margins::assistant()
+                };
+                let style = RenderStyle::natural_with_margins(render_state.width(), margins);
+                let md_node = markdown_to_node_styled(content, style);
+
+                let padding = if text_block_idx == 0 {
+                    Padding::xy(0, 1)
+                } else {
+                    Padding {
+                        bottom: 1,
+                        ..Default::default()
+                    }
+                };
+                let block_node = md_node.with_margin(padding);
+
+                // Wrap completed blocks in scrollback for graduation
+                if text_block_idx < complete_text_count {
+                    nodes.push(scrollback(
+                        format!("{}-block-{text_block_idx}", params.container_id),
+                        [block_node],
+                    ));
+                } else {
+                    // In-progress block - no scrollback, stays in viewport
+                    nodes.push(block_node);
+                }
+                text_block_idx += 1;
+            }
+        }
     }
 
-    // Render text blocks
-    for (i, block) in text_blocks.iter().enumerate() {
-        // Skip empty blocks
-        if block.is_empty() {
-            continue;
-        }
-
-        // Use continuation margins (no bullet) if this is a continuation response
-        // or if this is a subsequent block within the response
-        let margins = if params.is_continuation || i > 0 || has_thinking {
-            Margins::assistant_continuation()
-        } else {
-            Margins::assistant()
-        };
-        let style = RenderStyle::natural_with_margins(render_state.width(), margins);
-        let md_node = markdown_to_node_styled(block, style);
-
-        // First block gets top margin, all get bottom margin
-        let padding = if i == 0 {
-            Padding::xy(0, 1)
-        } else {
-            Padding {
-                bottom: 1,
+    // Show spinner when streaming and no text yet
+    if !params.complete && text_blocks.is_empty() && !has_hidden_thinking_spinner {
+        nodes.push(
+            row([
+                text(" "),
+                spinner(None, render_state.spinner_frame)
+                    .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
+            ])
+            .with_margin(Padding {
+                top: 1,
                 ..Default::default()
-            }
-        };
-        let block_node = md_node.with_margin(padding);
-
-        // Wrap completed blocks in scrollback for graduation
-        if i < complete_block_count {
-            nodes.push(scrollback(
-                format!("{}-block-{}", params.container_id, i),
-                [block_node],
-            ));
-        } else {
-            // In-progress block - no scrollback, stays in viewport
-            nodes.push(block_node);
-        }
+            }),
+        );
     }
 
     // Show spinner after text blocks while still streaming
@@ -392,7 +388,7 @@ fn render_assistant_blocks_with_graduation(
                 let t = crate::tui::oil::theme::active();
                 Style::new().fg(t.resolve_color(t.colors.text))
             }),
-        ]))
+        ]));
     }
 
     col(nodes)
@@ -1794,5 +1790,116 @@ mod tests {
         ));
         assert!(!super::ends_with_ordered_list_item("Just text"));
         assert!(!super::ends_with_ordered_list_item(""));
+    }
+
+    #[test]
+    fn thinking_renders_at_arrival_position() {
+        use crucible_oil::render::render_to_plain_text;
+
+        let blocks = vec![
+            ContentBlock::Text("First paragraph".to_string()),
+            ContentBlock::Thinking(ThinkingBlock {
+                content: "my deep thought".to_string(),
+                token_count: 5,
+            }),
+            ContentBlock::Text("Second paragraph".to_string()),
+        ];
+
+        let params = super::RenderBlocksParams {
+            container_id: "test-1",
+            blocks: &blocks,
+            complete: true,
+            is_continuation: false,
+        };
+        let render_state = super::RenderState {
+            terminal_width: 80,
+            spinner_frame: 0,
+            show_thinking: true,
+        };
+
+        let node = super::render_assistant_blocks_with_graduation(&params, &render_state);
+        let output = render_to_plain_text(&node, 80);
+
+        let first_pos = output.find("First paragraph").expect("first text missing");
+        let think_pos = output.find("my deep thought").expect("thinking missing");
+        let second_pos = output
+            .find("Second paragraph")
+            .expect("second text missing");
+
+        assert!(
+            first_pos < think_pos,
+            "thinking should appear after first text"
+        );
+        assert!(
+            think_pos < second_pos,
+            "thinking should appear before second text"
+        );
+    }
+
+    #[test]
+    fn ctrl_t_toggles_display_density() {
+        use crucible_oil::render::render_to_plain_text;
+
+        let lines = [
+            "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india",
+            "juliet",
+        ];
+        let long_thinking = lines.join("\n");
+        let blocks = vec![
+            ContentBlock::Thinking(ThinkingBlock {
+                content: long_thinking,
+                token_count: 50,
+            }),
+            ContentBlock::Text("Response text".to_string()),
+        ];
+
+        let params = super::RenderBlocksParams {
+            container_id: "test-2",
+            blocks: &blocks,
+            complete: true,
+            is_continuation: false,
+        };
+
+        let full = super::render_assistant_blocks_with_graduation(
+            &params,
+            &super::RenderState {
+                terminal_width: 80,
+                spinner_frame: 0,
+                show_thinking: true,
+            },
+        );
+        let full_output = render_to_plain_text(&full, 80);
+
+        let bounded_node = super::render_assistant_blocks_with_graduation(
+            &params,
+            &super::RenderState {
+                terminal_width: 80,
+                spinner_frame: 0,
+                show_thinking: false,
+            },
+        );
+        let bounded_output = render_to_plain_text(&bounded_node, 80);
+
+        assert!(
+            full_output.contains("alpha"),
+            "full mode should show all lines"
+        );
+        assert!(
+            full_output.contains("juliet"),
+            "full mode should show all lines"
+        );
+
+        assert!(
+            !bounded_output.contains("alpha"),
+            "bounded mode should hide early lines:\n{bounded_output}"
+        );
+        assert!(
+            bounded_output.contains("juliet"),
+            "bounded mode should show tail lines:\n{bounded_output}"
+        );
+        assert!(
+            bounded_output.contains("more lines"),
+            "bounded mode should show overflow indicator:\n{bounded_output}"
+        );
     }
 }
