@@ -8,6 +8,7 @@ use crate::tui::oil::style::Style;
 use crate::tui::oil::utils::{terminal_width, truncate_to_chars};
 use crate::tui::oil::viewport_cache::CachedToolCall;
 use crucible_oil::ansi::visible_width;
+use crucible_oil::bounded::bounded;
 use crucible_oil::truncate_to_width;
 use std::time::Duration;
 
@@ -451,11 +452,23 @@ pub fn format_streaming_output(output: &str) -> Node {
 pub fn format_output_tail(output: &str, prefix: &str) -> Node {
     let width = terminal_width();
     let all_lines: Vec<&str> = output.lines().collect();
-    let lines: Vec<&str> = all_lines.iter().rev().take(3).rev().copied().collect();
-    let hidden_count = all_lines.len().saturating_sub(3);
     let t = crate::tui::oil::theme::active();
     let bar_prefix = format!("{}{} ", prefix, t.decorations.separator_char);
     let truncate_at = width.saturating_sub(visible_width(&bar_prefix) + 1);
+
+    // Use bounded() to determine which lines to show (tail view, max 3 lines)
+    let plain_content = crucible_oil::text(all_lines.join("\n"));
+    let bounded_node = bounded(plain_content, 3);
+
+    // Extract the bounded result to get the visible lines and hidden count
+    use crucible_oil::render::render_to_plain_text;
+    let bounded_plain = render_to_plain_text(&bounded_node, 4096);
+    let bounded_lines: Vec<&str> = bounded_plain.lines().collect();
+
+    // Determine hidden count for the indicator
+    let hidden_count = all_lines.len().saturating_sub(3);
+
+    // Build the styled output with bar_prefix on each line
     col(std::iter::once(if hidden_count > 0 {
         styled(
             format!("{}({} more lines)", bar_prefix, hidden_count),
@@ -464,18 +477,23 @@ pub fn format_output_tail(output: &str, prefix: &str) -> Node {
     } else {
         Node::Empty
     })
-    .chain(lines.iter().map(|line| {
-        let display = if visible_width(line) > truncate_at {
-            format!(
-                "{}{}…",
-                bar_prefix,
-                truncate_to_width(line, truncate_at, false)
-            )
-        } else {
-            format!("{}{}", bar_prefix, line)
-        };
-        styled(display, Style::new().fg(t.resolve_color(t.colors.text_dim)))
-    })))
+    .chain(
+        bounded_lines
+            .iter()
+            .filter(|l| !l.contains("more lines"))
+            .map(|line| {
+                let display = if visible_width(line) > truncate_at {
+                    format!(
+                        "{}{}…",
+                        bar_prefix,
+                        truncate_to_width(line, truncate_at, false)
+                    )
+                } else {
+                    format!("{}{}", bar_prefix, line)
+                };
+                styled(display, Style::new().fg(t.resolve_color(t.colors.text_dim)))
+            }),
+    ))
 }
 
 /// Unwraps JSON-encoded strings and `{"result": "..."}` objects.
@@ -648,6 +666,43 @@ mod tests {
             !first_line.contains("…"),
             "Should not have ellipsis, just parenthetical: {:?}",
             first_line
+        );
+    }
+
+    #[test]
+    fn tool_result_bounded_overflow_indicator() {
+        let long_output = (1..=10)
+            .map(|i| format!("line{}", i))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let node = format_output_tail(&long_output, "   ");
+        let plain = render_to_plain_text(&node, 80);
+        assert!(
+            plain.contains("(7 more lines)"),
+            "Long output should show overflow indicator: {:?}",
+            plain
+        );
+        assert!(
+            plain.contains("line8") && plain.contains("line9") && plain.contains("line10"),
+            "Should show last 3 lines: {:?}",
+            plain
+        );
+    }
+
+    #[test]
+    fn tool_result_short_no_cap() {
+        let short_output = "line1\nline2\nline3";
+        let node = format_output_tail(short_output, "   ");
+        let plain = render_to_plain_text(&node, 80);
+        assert!(
+            !plain.contains("more lines"),
+            "Short output should not show indicator: {:?}",
+            plain
+        );
+        assert!(
+            plain.contains("line1") && plain.contains("line2") && plain.contains("line3"),
+            "All lines should be visible: {:?}",
+            plain
         );
     }
 
