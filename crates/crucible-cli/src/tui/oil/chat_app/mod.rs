@@ -20,6 +20,7 @@ use crucible_core::interaction::{
     PermResponse, PermissionScope,
 };
 use std::cell::Cell;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -117,6 +118,7 @@ pub struct OilChatApp {
     attached_context: Vec<String>,
     /// When true, discard incoming TextDelta events (stale events after cancel).
     drop_stream_deltas: bool,
+    pending_delegate_supersessions: HashSet<String>,
 
     // ─── I/O / Lifecycle (tech debt — future extraction) ──────────────
     // Callbacks, filesystem state, and registries that ideally move
@@ -556,6 +558,7 @@ impl OilChatApp {
         self.context_total = 0;
         self.status = "Ready".to_string();
         self.notification_area.clear();
+        self.pending_delegate_supersessions.clear();
         self.needs_full_redraw = true;
     }
 

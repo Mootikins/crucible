@@ -1195,6 +1195,75 @@ fn snapshot_delegation_spawned_without_target() {
 }
 
 #[test]
+fn snapshot_delegate_session_tool_call_suppressed() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Explain ACP".to_string()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Delegating to opencode...".to_string(),
+    ));
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "delegate_session".to_string(),
+        args: r#"{"target":"opencode","prompt":"Explain ACP"}"#.to_string(),
+        call_id: Some("call-deleg-1".to_string()),
+        description: None,
+        source: None,
+    });
+    app.on_message(ChatAppMsg::DelegationSpawned {
+        id: "deleg-suppress-1".to_string(),
+        prompt: "Explain ACP".to_string(),
+        target_agent: Some("opencode".to_string()),
+    });
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
+fn snapshot_non_delegate_tool_calls_not_suppressed_by_delegation() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Analyze auth".to_string()));
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "bash".to_string(),
+        args: r#"{"command":"ls"}"#.to_string(),
+        call_id: Some("call-bash-1".to_string()),
+        description: None,
+        source: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "bash".to_string(),
+        delta: "src\nCargo.toml".to_string(),
+        call_id: Some("call-bash-1".to_string()),
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "bash".to_string(),
+        call_id: Some("call-bash-1".to_string()),
+    });
+    app.on_message(ChatAppMsg::DelegationSpawned {
+        id: "deleg-no-suppress-1".to_string(),
+        prompt: "Analyze auth patterns".to_string(),
+        target_agent: Some("cursor".to_string()),
+    });
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
+fn snapshot_delegate_session_suppressed_when_delegation_arrives_first() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Explain ACP".to_string()));
+    app.on_message(ChatAppMsg::DelegationSpawned {
+        id: "deleg-race-1".to_string(),
+        prompt: "Explain ACP".to_string(),
+        target_agent: Some("opencode".to_string()),
+    });
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "delegate_session".to_string(),
+        args: r#"{"target":"opencode","prompt":"Explain ACP"}"#.to_string(),
+        call_id: Some("call-deleg-race-1".to_string()),
+        description: None,
+        source: None,
+    });
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
 fn snapshot_delegation_completed() {
     let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::UserMessage("Research patterns".to_string()));

@@ -1016,6 +1016,22 @@ impl ContainerList {
         None
     }
 
+    pub fn supersede_most_recent_tool(&mut self, name: &str) -> bool {
+        for container in self.containers.iter_mut().rev() {
+            if let ChatContainer::ToolGroup { tools, .. } = container {
+                if let Some(tool) = tools
+                    .iter_mut()
+                    .rev()
+                    .find(|t| t.name.as_ref() == name && !t.superseded)
+                {
+                    tool.superseded = true;
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     /// Check whether a tool's output should be spilled to a file.
     pub fn tool_should_spill(&self, name: &str) -> bool {
         self.find_tool(name)
@@ -1225,6 +1241,7 @@ mod tests {
             error: None,
             started_at: Instant::now(),
             complete: true,
+            superseded: false,
             description: None,
             source: None,
         };
@@ -1318,6 +1335,7 @@ mod tests {
             error: None,
             started_at: Instant::now(),
             complete: false,
+            superseded: false,
             description: None,
             source: None,
         };
@@ -1566,6 +1584,7 @@ mod tests {
             error: None,
             started_at: Instant::now(),
             complete: false,
+            superseded: false,
             description: None,
             source: None,
         };

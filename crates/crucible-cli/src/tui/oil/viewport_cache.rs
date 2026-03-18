@@ -81,6 +81,8 @@ pub struct CachedToolCall {
     pub error: Option<String>,
     pub started_at: std::time::Instant,
     pub complete: bool,
+    /// Set to true when a delegation supersedes this tool call visually.
+    pub superseded: bool,
     /// Optional human-readable description of what the tool does.
     pub description: Option<Arc<str>>,
     /// Optional source provenance for display (e.g., "[Crucible]" badge).
@@ -100,6 +102,7 @@ impl CachedToolCall {
             error: None,
             started_at: std::time::Instant::now(),
             complete: false,
+            superseded: false,
             description: None,
             source: None,
         }
@@ -333,6 +336,7 @@ mod tests {
     #[test]
     fn cached_tool_call_new_metadata_defaults_to_none() {
         let tool = CachedToolCall::new("t1", "my_tool", "{}");
+        assert!(!tool.superseded);
         assert!(tool.description.is_none());
         assert!(tool.source.is_none());
     }
