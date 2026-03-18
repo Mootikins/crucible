@@ -236,6 +236,14 @@ impl CachedSubagent {
     pub fn elapsed(&self) -> std::time::Duration {
         self.started_at.elapsed()
     }
+
+    /// Whether the subagent has reached a terminal state (completed or failed).
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self.status,
+            SubagentStatus::Completed | SubagentStatus::Failed
+        )
+    }
 }
 
 #[derive(Debug, Clone)]

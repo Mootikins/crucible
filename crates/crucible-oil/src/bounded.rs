@@ -10,56 +10,53 @@ use crate::node::{col, styled, text, Node};
 use crate::render::render_to_plain_text;
 use crate::style::Style;
 
+/// Pre-render content and collect lines. Returns `None` if content fits within `max_lines`.
+fn pre_render_lines(content: &Node, max_lines: usize) -> Option<(Vec<String>, usize)> {
+    let plain = render_to_plain_text(content, 4096);
+    let all_lines: Vec<String> = plain.lines().map(String::from).collect();
+    let total = all_lines.len();
+    if total <= max_lines {
+        None
+    } else {
+        let hidden = total - max_lines;
+        Some((all_lines, hidden))
+    }
+}
+
+fn overflow_indicator(hidden: usize) -> Node {
+    styled(format!("({hidden} more lines)"), Style::new().dim())
+}
+
 /// Cap rendered content to show the **last** `max_lines` visible lines (tail view).
 ///
 /// If content exceeds `max_lines`, a dimmed `(N more lines)` indicator appears at the top.
-/// Used for tool results where the latest output matters most.
 pub fn bounded(content: Node, max_lines: usize) -> Node {
     if max_lines == 0 {
         return styled("(all content hidden)", Style::new().dim());
     }
 
-    let plain = render_to_plain_text(&content, 4096);
-    let all_lines: Vec<&str> = plain.lines().collect();
-    let total = all_lines.len();
-
-    if total <= max_lines {
+    let Some((all_lines, hidden)) = pre_render_lines(&content, max_lines) else {
         return content;
-    }
+    };
 
-    let hidden = total - max_lines;
-    let visible = &all_lines[hidden..];
-
-    let indicator = styled(format!("({hidden} more lines)"), Style::new().dim());
-    let body = text(visible.join("\n"));
-
-    col([indicator, body])
+    let body = text(all_lines[hidden..].join("\n"));
+    col([overflow_indicator(hidden), body])
 }
 
 /// Cap rendered content to show the **first** `max_lines` visible lines (head view).
 ///
 /// If content exceeds `max_lines`, a dimmed `(N more lines)` indicator appears at the bottom.
-/// Used for Lua templates and contexts where the first lines matter most.
 pub fn bounded_head(content: Node, max_lines: usize) -> Node {
     if max_lines == 0 {
         return styled("(all content hidden)", Style::new().dim());
     }
 
-    let plain = render_to_plain_text(&content, 4096);
-    let all_lines: Vec<&str> = plain.lines().collect();
-    let total = all_lines.len();
-
-    if total <= max_lines {
+    let Some((all_lines, hidden)) = pre_render_lines(&content, max_lines) else {
         return content;
-    }
+    };
 
-    let hidden = total - max_lines;
-    let visible = &all_lines[..max_lines];
-
-    let body = text(visible.join("\n"));
-    let indicator = styled(format!("({hidden} more lines)"), Style::new().dim());
-
-    col([body, indicator])
+    let body = text(all_lines[..max_lines].join("\n"));
+    col([body, overflow_indicator(hidden)])
 }
 
 #[cfg(test)]

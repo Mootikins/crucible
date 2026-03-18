@@ -110,20 +110,8 @@ impl ChatContainer {
             Self::UserMessage { .. } => true,
             Self::AssistantResponse { .. } => false,
             Self::ToolGroup { tools, .. } => tools.iter().all(|t| t.complete),
-            Self::Subagent { subagent, .. } => {
-                use crate::tui::oil::viewport_cache::SubagentStatus;
-                matches!(
-                    subagent.status,
-                    SubagentStatus::Completed | SubagentStatus::Failed
-                )
-            }
-            Self::Delegation { delegation, .. } => {
-                matches!(
-                    delegation.status,
-                    crate::tui::oil::viewport_cache::SubagentStatus::Completed
-                        | crate::tui::oil::viewport_cache::SubagentStatus::Failed
-                )
-            }
+            Self::Subagent { subagent, .. } => subagent.is_terminal(),
+            Self::Delegation { delegation, .. } => delegation.is_terminal(),
             Self::ShellExecution { .. } => true,
             Self::SystemMessage { .. } => true,
         }
@@ -189,31 +177,11 @@ impl ChatContainer {
             }
 
             Self::Subagent { id, subagent } => {
-                let content = render_subagent(subagent, params.render_state.spinner_frame);
-                use crate::tui::oil::viewport_cache::SubagentStatus;
-                let is_complete = matches!(
-                    subagent.status,
-                    SubagentStatus::Completed | SubagentStatus::Failed
-                );
-                if is_complete {
-                    scrollback(id.clone(), [content])
-                } else {
-                    content
-                }
+                render_subagent_container(id, subagent, params.render_state.spinner_frame)
             }
 
             Self::Delegation { id, delegation } => {
-                let content = render_subagent(delegation, params.render_state.spinner_frame);
-                let is_complete = matches!(
-                    delegation.status,
-                    crate::tui::oil::viewport_cache::SubagentStatus::Completed
-                        | crate::tui::oil::viewport_cache::SubagentStatus::Failed
-                );
-                if is_complete {
-                    scrollback(id.clone(), [content])
-                } else {
-                    content
-                }
+                render_subagent_container(id, delegation, params.render_state.spinner_frame)
             }
 
             Self::ShellExecution { id, shell } => {
@@ -284,45 +252,37 @@ fn render_assistant_blocks_with_graduation(
     for block in params.blocks {
         match block {
             ContentBlock::Thinking(tb) => {
-                if render_state.show_thinking {
-                    let thinking_node =
-                        render_thinking_block(&tb.content, tb.token_count, render_state.width());
-                    let thinking_with_margin = thinking_node.with_margin(Padding {
-                        top: 1,
-                        ..Default::default()
-                    });
-
-                    nodes.push(scrollback(
-                        format!("{}-thinking-{thinking_block_idx}", params.container_id),
-                        [thinking_with_margin],
-                    ));
-                } else {
-                    let thinking_node =
-                        render_thinking_block(&tb.content, tb.token_count, render_state.width());
-                    let thinking_with_margin = thinking_node.with_margin(Padding {
-                        top: 1,
-                        ..Default::default()
-                    });
-                    let display_node = crucible_oil::bounded::bounded(thinking_with_margin, 3);
-
-                    if !params.complete && tb.token_count == 0 {
-                        has_hidden_thinking_spinner = true;
-                        let summary_style = Style::new()
-                            .fg(t.resolve_color(t.colors.text_muted))
-                            .italic();
-                        let summary_node = row([
-                            text(" "),
-                            spinner(None, render_state.spinner_frame)
-                                .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
-                            text(" Thinking…").with_style(summary_style),
-                        ]);
-                        nodes.push(summary_node.with_margin(Padding {
+                let thinking_node =
+                    render_thinking_block(&tb.content, tb.token_count, render_state.width())
+                        .with_margin(Padding {
                             top: 1,
                             ..Default::default()
-                        }));
-                    } else {
-                        nodes.push(display_node);
-                    }
+                        });
+
+                if render_state.show_thinking {
+                    nodes.push(scrollback(
+                        format!("{}-thinking-{thinking_block_idx}", params.container_id),
+                        [thinking_node],
+                    ));
+                } else if !params.complete && tb.token_count == 0 {
+                    // Thinking just started — show inline spinner instead of content
+                    has_hidden_thinking_spinner = true;
+                    let summary_node = row([
+                        text(" "),
+                        spinner(None, render_state.spinner_frame)
+                            .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
+                        text(" Thinking…").with_style(
+                            Style::new()
+                                .fg(t.resolve_color(t.colors.text_muted))
+                                .italic(),
+                        ),
+                    ]);
+                    nodes.push(summary_node.with_margin(Padding {
+                        top: 1,
+                        ..Default::default()
+                    }));
+                } else {
+                    nodes.push(crucible_oil::bounded::bounded(thinking_node, 3));
                 }
                 thinking_block_idx += 1;
             }
@@ -384,14 +344,21 @@ fn render_assistant_blocks_with_graduation(
     if !params.complete && !text_blocks.is_empty() {
         nodes.push(row([
             text(" "),
-            spinner(None, render_state.spinner_frame).with_style({
-                let t = crate::tui::oil::theme::active();
-                Style::new().fg(t.resolve_color(t.colors.text))
-            }),
+            spinner(None, render_state.spinner_frame)
+                .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
         ]));
     }
 
     col(nodes)
+}
+
+fn render_subagent_container(id: &str, subagent: &CachedSubagent, spinner_frame: usize) -> Node {
+    let content = render_subagent(subagent, spinner_frame);
+    if subagent.is_terminal() {
+        scrollback(id.to_owned(), [content])
+    } else {
+        content
+    }
 }
 
 /// Render a group of tool calls compactly.
@@ -979,20 +946,8 @@ impl ContainerList {
             Some(ChatContainer::AssistantResponse { .. }) => false,
             // ToolGroup with any pending tool already shows braille spinners
             Some(ChatContainer::ToolGroup { tools, .. }) => tools.iter().all(|t| t.complete),
-            Some(ChatContainer::Subagent { subagent, .. }) => {
-                use crate::tui::oil::viewport_cache::SubagentStatus;
-                matches!(
-                    subagent.status,
-                    SubagentStatus::Completed | SubagentStatus::Failed
-                )
-            }
-            Some(ChatContainer::Delegation { delegation, .. }) => {
-                matches!(
-                    delegation.status,
-                    crate::tui::oil::viewport_cache::SubagentStatus::Completed
-                        | crate::tui::oil::viewport_cache::SubagentStatus::Failed
-                )
-            }
+            Some(ChatContainer::Subagent { subagent, .. }) => subagent.is_terminal(),
+            Some(ChatContainer::Delegation { delegation, .. }) => delegation.is_terminal(),
             _ => true,
         }
     }
