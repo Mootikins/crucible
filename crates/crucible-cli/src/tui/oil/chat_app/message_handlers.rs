@@ -64,6 +64,14 @@ impl OilChatApp {
                 tool.call_id = call_id;
                 tool.description = description.map(Arc::from);
                 tool.source = source.and_then(|s| parse_tool_source(&s));
+                if name == "delegate_session" && !self.pending_delegate_supersessions.is_empty() {
+                    tool.superseded = true;
+                    if let Some(pending_id) =
+                        self.pending_delegate_supersessions.iter().next().cloned()
+                    {
+                        self.pending_delegate_supersessions.remove(&pending_id);
+                    }
+                }
                 self.container_list.add_tool_call(tool);
                 Action::Continue
             }
@@ -210,9 +218,15 @@ impl OilChatApp {
                 if !self.container_list.is_streaming() {
                     self.container_list.mark_turn_active();
                 }
-                let mut delegation = CachedSubagent::new(id, &prompt, "delegation");
+                let mut delegation = CachedSubagent::new(id.clone(), &prompt, "delegation");
                 delegation.target_agent = target_agent.clone();
                 self.container_list.add_delegation(delegation);
+                if !self
+                    .container_list
+                    .supersede_most_recent_tool("delegate_session")
+                {
+                    self.pending_delegate_supersessions.insert(id);
+                }
                 Action::Continue
             }
             ChatAppMsg::DelegationCompleted { id, summary } => {

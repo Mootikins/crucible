@@ -18,6 +18,10 @@ pub fn render_tool_call(tool: &CachedToolCall) -> Node {
 
 /// Render a tool call with specified spinner frame for animation.
 pub fn render_tool_call_with_frame(tool: &CachedToolCall, spinner_frame: usize) -> Node {
+    if tool.superseded {
+        return Node::Empty;
+    }
+
     let display_name = display_tool_name(&tool.name);
     let args_formatted = format_tool_args(&tool.args);
     let result_str = tool.result();

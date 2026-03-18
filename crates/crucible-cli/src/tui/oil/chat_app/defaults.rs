@@ -43,6 +43,7 @@ impl Default for OilChatApp {
             message_queue: MessageQueueState::default(),
             attached_context: Vec::new(),
             drop_stream_deltas: false,
+            pending_delegate_supersessions: std::collections::HashSet::new(),
 
             // I/O / Lifecycle
             on_submit: None,
