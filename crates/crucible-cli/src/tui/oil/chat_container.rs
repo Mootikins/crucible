@@ -1225,6 +1225,8 @@ mod tests {
             error: None,
             started_at: Instant::now(),
             complete: true,
+            description: None,
+            source: None,
         };
 
         list.add_tool_call(tool);
@@ -1316,6 +1318,8 @@ mod tests {
             error: None,
             started_at: Instant::now(),
             complete: false,
+            description: None,
+            source: None,
         };
 
         list.add_tool_call(tool);
@@ -1558,6 +1562,8 @@ mod tests {
             error: None,
             started_at: Instant::now(),
             complete: false,
+            description: None,
+            source: None,
         };
         list.add_tool_call(tool);
 
