@@ -31,13 +31,13 @@ export OPENAI_API_KEY=dummy
 SESSION_ID=$(cru session create --recording-mode granular -C assets/demo-config.toml 2>&1 | grep "Created session" | awk '{print $NF}')
 
 # Configure agent if needed
-cru session configure "$SESSION_ID" --provider openai --model qwen3-32b-ud-q4_k_xl --endpoint https://llm.example.com/v1
+cru session configure "$SESSION_ID" --provider openai --model glm-4.7-flash-iq4 --endpoint https://llm.example.com/v1
 
 # Send message (blocks until complete)
 cru session send "$SESSION_ID" "Your query here" --raw
 
 # Extract recording
-RECORDING=$(find docs/.crucible/sessions/$SESSION_ID -name "recording.jsonl")
+RECORDING=$(find ./docs/.crucible/sessions/$SESSION_ID -name "recording.jsonl")
 cp "$RECORDING" assets/fixtures/demo.jsonl
 ```
 
@@ -109,14 +109,14 @@ If you need to update a fixture (e.g., to fix a response or add new content):
    ```
 
 2. **Record a new one using the programmatic pipeline:**
-   ```bash
-   export OPENAI_API_KEY=dummy
-   SESSION_ID=$(cru session create --recording-mode granular -C assets/demo-config.toml 2>&1 | grep "Created session" | awk '{print $NF}')
-   cru session configure "$SESSION_ID" --provider openai --model qwen3-32b-ud-q4_k_xl --endpoint https://llm.example.com/v1
-   cru session send "$SESSION_ID" "Your query" --raw
-   RECORDING=$(find docs/.crucible/sessions/$SESSION_ID -name "recording.jsonl")
-   cp "$RECORDING" assets/fixtures/<name>.jsonl
-   ```
+    ```bash
+    export OPENAI_API_KEY=dummy
+    SESSION_ID=$(cru session create --recording-mode granular -C assets/demo-config.toml 2>&1 | grep "Created session" | awk '{print $NF}')
+    cru session configure "$SESSION_ID" --provider openai --model glm-4.7-flash-iq4 --endpoint https://llm.example.com/v1
+    cru session send "$SESSION_ID" "Your query" --raw
+    RECORDING=$(find ./docs/.crucible/sessions/$SESSION_ID -name "recording.jsonl")
+    cp "$RECORDING" assets/fixtures/<name>.jsonl
+    ```
 
 3. **Regenerate the GIF:**
    ```bash
@@ -143,4 +143,5 @@ This checks all fixtures for:
 - Fixture file sizes vary based on response length and tool usage
 - Fixtures are version-controlled in git (they're deterministic snapshots)
 - Precognition is enabled by default (embeddings must be pre-processed via `cru process`)
-- Recording path: `docs/.crucible/sessions/<session-id>/recording.jsonl` (inside the kiln directory)
+- Recording path: `./docs/.crucible/sessions/<session-id>/recording.jsonl` (inside the kiln directory)
+- Config files: `demo-config.toml.example` and `demo-acp-config.toml.example` are templates. Copy to local `.toml` files and customize for your environment.
