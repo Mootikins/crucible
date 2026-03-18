@@ -28,7 +28,7 @@ The crucible-core crate follows **Dependency Inversion** architecture where trai
 ## Critical Issues
 
 - [ ] **Large Unused Traits: RelationalDB, GraphDB, DocumentDB**
-  - Location: `./crucible/crates/crucible-core/src/database.rs`
+  - Location: `./crates/crucible-core/src/database.rs`
   - Issue: Comprehensive trait definitions (100+ lines each), but Storage trait is what's actually used
   - Recommendation: Verify usage. If unused, consider moving to experimental/examples or removing
 
