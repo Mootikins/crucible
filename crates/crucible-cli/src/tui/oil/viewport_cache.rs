@@ -46,6 +46,27 @@ impl CachedMessage {
 pub const TOOL_OUTPUT_MAX_TAIL_LINES: usize = 50;
 pub const TOOL_OUTPUT_FILE_THRESHOLD_BYTES: usize = 10 * 1024;
 
+/// Display-only representation of tool source, for rendering provenance badges.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ToolSourceDisplay {
+    Core,
+    Crucible,
+    Mcp { server: Arc<str> },
+    Plugin { name: Arc<str> },
+}
+
+impl ToolSourceDisplay {
+    /// Returns the display label for this source.
+    pub fn label(&self) -> String {
+        match self {
+            Self::Core => "core".to_string(),
+            Self::Crucible => "crucible".to_string(),
+            Self::Mcp { server } => format!("mcp:{server}"),
+            Self::Plugin { name } => format!("plugin:{name}"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CachedToolCall {
     pub id: String,
@@ -60,6 +81,10 @@ pub struct CachedToolCall {
     pub error: Option<String>,
     pub started_at: std::time::Instant,
     pub complete: bool,
+    /// Optional human-readable description of what the tool does.
+    pub description: Option<Arc<str>>,
+    /// Optional source provenance for display (e.g., "[Crucible]" badge).
+    pub source: Option<ToolSourceDisplay>,
 }
 
 impl CachedToolCall {
@@ -75,6 +100,8 @@ impl CachedToolCall {
             error: None,
             started_at: std::time::Instant::now(),
             complete: false,
+            description: None,
+            source: None,
         }
     }
 
@@ -296,5 +323,37 @@ impl CachedChatItem {
             CachedChatItem::Delegation(d) => Some(d),
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cached_tool_call_new_metadata_defaults_to_none() {
+        let tool = CachedToolCall::new("t1", "my_tool", "{}");
+        assert!(tool.description.is_none());
+        assert!(tool.source.is_none());
+    }
+
+    #[test]
+    fn tool_source_display_label() {
+        assert_eq!(ToolSourceDisplay::Core.label(), "core");
+        assert_eq!(ToolSourceDisplay::Crucible.label(), "crucible");
+        assert_eq!(
+            ToolSourceDisplay::Mcp {
+                server: Arc::from("gmail")
+            }
+            .label(),
+            "mcp:gmail"
+        );
+        assert_eq!(
+            ToolSourceDisplay::Plugin {
+                name: Arc::from("my_plugin")
+            }
+            .label(),
+            "plugin:my_plugin"
+        );
     }
 }
