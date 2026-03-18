@@ -1,5 +1,6 @@
 ---
-source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests.rs
+source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
+assertion_line: 1423
 expression: render_app(&app)
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
@@ -8,8 +9,8 @@ expression: render_app(&app)
 
  ● Let me read that for you.
 
- ✓ Read File(path="config.toml") → [kiln]                                       
-                                 path = "~/notes"                               
+ ✓ Read File config.toml → [kiln]                                               
+                         path = "~/notes"                                       
 
    Your config sets the kiln path to ~/notes.
 
@@ -19,7 +20,7 @@ expression: render_app(&app)
 
  ● I'll update that now.
 
- ✓ Edit File(path="config.toml", content="[kiln]↵path = "~/vault"") → File updat
+ ✓ Edit File config.toml → File updated successfully
 
    Done! Config updated.
                                                                                 

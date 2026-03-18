@@ -7,7 +7,7 @@ expression: render_app(&app)
  > Analyze auth                                                                 
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
 
- ✓ Bash(command="ls")
+ ✓ Bash ls
    │ src
    │ Cargo.toml
 

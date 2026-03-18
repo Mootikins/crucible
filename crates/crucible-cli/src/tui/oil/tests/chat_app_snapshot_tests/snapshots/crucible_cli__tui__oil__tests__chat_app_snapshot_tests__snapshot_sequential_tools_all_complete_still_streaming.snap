@@ -1,5 +1,6 @@
 ---
-source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests.rs
+source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
+assertion_line: 623
 expression: render_app(&app)
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
@@ -8,7 +9,7 @@ expression: render_app(&app)
 
  ● Starting analysis.
 
- ✓ Bash(command="ls -la")
+ ✓ Bash ls -la
    │ total 42
    │ drwxr-xr-x  5 user
 
@@ -27,8 +28,8 @@ expression: render_app(&app)
                                                                                 
                                                                                 
                                                                                 
- ✓ Read File(path="Cargo.toml") → [package]                                     
-                                name = "myproject"                              
+ ✓ Read File Cargo.toml → [package]                                             
+                        name = "myproject"                                      
                                                                                 
  ◐                                                                              
                                                                                 

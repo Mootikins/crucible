@@ -1,5 +1,6 @@
 ---
-source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests.rs
+source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
+assertion_line: 450
 expression: render_app(&app)
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
@@ -11,10 +12,10 @@ expression: render_app(&app)
    1. Read the failing test
    2. Identify the root cause
 
- ✓ Read File(path="tests/regression.rs") → [test]                               
-                                         fn test_regression() {                 
-                                             assert!(false);                    
-                                         }                                      
+ ✓ Read File tests/regression.rs → [test]                                       
+                                 fn test_regression() {                         
+                                     assert!(false);                            
+                                 }                                              
 
    Now I can see the issue. Continuing:
 

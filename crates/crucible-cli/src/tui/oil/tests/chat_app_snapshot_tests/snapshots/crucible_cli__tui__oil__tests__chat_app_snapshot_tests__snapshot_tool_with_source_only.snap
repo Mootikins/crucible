@@ -1,5 +1,6 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
+assertion_line: 1649
 expression: render_app(&app)
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
@@ -9,7 +10,7 @@ expression: render_app(&app)
                                                                                 
                                                                                 
                                                                                 
- ✓ Read File [crucible](path="README.md") → 2 lines                             
+ ✓ Read File [crucible] README.md → 2 lines                                     
                                                                                 
  ◐                                                                              
                                                                                 

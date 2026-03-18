@@ -1,5 +1,6 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
+assertion_line: 1695
 expression: render_app(&app)
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
@@ -9,7 +10,7 @@ expression: render_app(&app)
                                                                                 
                                                                                 
                                                                                 
- ✓ List Issues [mcp:github](repo="crucible")                                    
+ ✓ List Issues [mcp:github] crucible                                            
    │ Issue #1: Fix auth                                                         
    │ Issue #2: Add tests                                                        
     List open issues from repository                                            

@@ -1,5 +1,6 @@
 ---
-source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests.rs
+source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
+assertion_line: 676
 expression: render_app(&app)
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
@@ -8,8 +9,8 @@ expression: render_app(&app)
 
  ● I'll read both files in parallel.
 
- ✓ Read File(path="README.md") → 1 lines
- ✓ Read File(path="Cargo.toml") → [package]
+ ✓ Read File README.md → 1 lines
+ ✓ Read File Cargo.toml → [package]
                                                                                 
                                                                                 
                                                                                 

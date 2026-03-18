@@ -23,18 +23,18 @@ pub fn render_tool_call_with_frame(tool: &CachedToolCall, spinner_frame: usize) 
     }
 
     let display_name = display_tool_name(&tool.name);
-    let args_formatted = format_tool_args(&tool.args);
+    let primary_arg = format_primary_arg(&tool.args);
     let result_str = tool.result();
 
     let inner = if let Some(ref error) = tool.error {
-        render_tool_error(tool, &display_name, &args_formatted, error)
+        render_tool_error(tool, &display_name, &primary_arg, error)
     } else if tool.complete {
-        render_tool_complete(tool, &display_name, &args_formatted, &result_str)
+        render_tool_complete(tool, &display_name, &primary_arg, &result_str)
     } else {
         render_tool_running(
             tool,
             &display_name,
-            &args_formatted,
+            &primary_arg,
             &result_str,
             spinner_frame,
         )
@@ -75,23 +75,23 @@ fn render_source_badge(tool: &CachedToolCall) -> Node {
 fn render_tool_error(
     tool: &CachedToolCall,
     display_name: &str,
-    args_formatted: &str,
+    primary_arg: &str,
     error: &str,
 ) -> Node {
     let t = crate::tui::oil::theme::active();
     let icon = format!(" {} ", t.decorations.tool_error_icon);
     let source_badge = render_source_badge(tool);
-    let args_part = format!("({}) ", args_formatted);
-    // Calculate prefix width: icon + display_name + args
+    let arg_part = if primary_arg.is_empty() {
+        " ".to_string()
+    } else {
+        format!(" {} ", primary_arg)
+    };
     let prefix_width =
-        visible_width(&icon) + visible_width(display_name) + visible_width(&args_part);
+        visible_width(&icon) + visible_width(display_name) + visible_width(&arg_part);
     let term_width = terminal_width();
-    // Remaining width for inline error (after prefix + arrow prefix)
     let remaining = term_width.saturating_sub(prefix_width + 2).max(10);
-    // Get first line of error for display
     let error_first_line = error.lines().next().unwrap_or(error);
     let error_visible = visible_width(error_first_line);
-    // If error fits inline, show on same line; otherwise show on second line
     if error_visible <= remaining {
         row([
             styled(icon, Style::new().fg(t.resolve_color(t.colors.error))),
@@ -101,7 +101,7 @@ fn render_tool_error(
             ),
             source_badge,
             styled(
-                args_part,
+                arg_part,
                 Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
             ),
             styled(
@@ -118,7 +118,7 @@ fn render_tool_error(
             ),
             source_badge,
             styled(
-                args_part,
+                arg_part,
                 Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
             ),
         ]);
@@ -133,7 +133,7 @@ fn render_tool_error(
 fn render_tool_complete(
     tool: &CachedToolCall,
     display_name: &str,
-    args_formatted: &str,
+    primary_arg: &str,
     result_str: &str,
 ) -> Node {
     let result_summary = if !result_str.is_empty() {
@@ -161,6 +161,23 @@ fn render_tool_complete(
     };
 
     let source_badge = render_source_badge(tool);
+    let arg_node = if primary_arg.is_empty() {
+        if has_arrow_suffix {
+            styled(" ", Style::new())
+        } else {
+            Node::Empty
+        }
+    } else if has_arrow_suffix {
+        styled(
+            format!(" {} ", primary_arg),
+            Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+        )
+    } else {
+        styled(
+            format!(" {}", primary_arg),
+            Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+        )
+    };
     let header = row([
         styled(
             format!(" {} ", t.decorations.tool_success_icon),
@@ -171,19 +188,7 @@ fn render_tool_complete(
             Style::new().fg(t.resolve_color(t.colors.text_dim)),
         ),
         source_badge,
-        if args_formatted.is_empty() {
-            Node::Empty
-        } else if has_arrow_suffix {
-            styled(
-                format!("({}) ", args_formatted),
-                Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
-            )
-        } else {
-            styled(
-                format!("({})", args_formatted),
-                Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
-            )
-        },
+        arg_node,
         arrow_suffix,
     ]);
 
@@ -203,7 +208,7 @@ fn render_tool_complete(
 fn render_tool_running(
     tool: &CachedToolCall,
     display_name: &str,
-    args_formatted: &str,
+    primary_arg: &str,
     result_str: &str,
     spinner_frame: usize,
 ) -> Node {
@@ -217,6 +222,14 @@ fn render_tool_running(
             .style_variant(SpinnerStyle::Braille),
     );
     let source_badge = render_source_badge(tool);
+    let arg_node = if primary_arg.is_empty() {
+        Node::Empty
+    } else {
+        styled(
+            format!(" {}", primary_arg),
+            Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+        )
+    };
     let header = row([
         styled(" ", Style::new()),
         spinner,
@@ -226,10 +239,7 @@ fn render_tool_running(
             Style::new().fg(t.resolve_color(t.colors.text_dim)),
         ),
         source_badge,
-        styled(
-            format!("({})", args_formatted),
-            Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
-        ),
+        arg_node,
         if show_elapsed {
             styled(
                 format!("  {}", format_elapsed(elapsed)),
@@ -332,6 +342,61 @@ pub fn format_tool_args(args: &str) -> String {
         oneline
     } else {
         format!("{}…", truncate_to_chars(&oneline, 57, false))
+    }
+}
+
+const PRIMARY_ARG_KEYS: &[&str] = &[
+    "path",
+    "file_path",
+    "filePath",
+    "query",
+    "command",
+    "url",
+    "pattern",
+    "code",
+    "content",
+    "text",
+    "prompt",
+];
+
+pub fn format_primary_arg(args: &str) -> String {
+    if args.is_empty() || args == "{}" {
+        return String::new();
+    }
+
+    let parsed = match serde_json::from_str::<serde_json::Value>(args) {
+        Ok(v) => v,
+        Err(_) => return String::new(),
+    };
+
+    let obj = match parsed.as_object() {
+        Some(o) => o,
+        None => return String::new(),
+    };
+
+    let value = PRIMARY_ARG_KEYS
+        .iter()
+        .find_map(|key| obj.get(*key))
+        .or_else(|| obj.values().next());
+
+    match value {
+        Some(serde_json::Value::String(s)) => {
+            let collapsed = s.replace('\n', " ").replace('\r', "");
+            if collapsed.chars().count() > 40 {
+                format!("{}…", truncate_to_chars(&collapsed, 39, false))
+            } else {
+                collapsed
+            }
+        }
+        Some(other) => {
+            let s = other.to_string();
+            if s.chars().count() > 40 {
+                format!("{}…", truncate_to_chars(&s, 39, false))
+            } else {
+                s
+            }
+        }
+        None => String::new(),
     }
 }
 
@@ -825,19 +890,13 @@ mod tests {
 
     #[test]
     fn short_error_fully_visible_at_wide_terminal() {
-        // Test that a long error is fully visible at width=120 (not truncated to hardcoded 50)
         let mut tool = test_tool("mcp_bash", r#"{"command": "test"}"#, false);
-        // This error is 80+ chars, so it will be truncated to 50 with the bug
         let error = "Connection refused: port 8080 is already in use by another process running on this machine";
         tool.set_error(error.to_string());
 
-        // Render at width=120 (wide terminal)
         let node = render_tool_call(&tool);
         let plain = render_to_plain_text(&node, 120);
 
-        // The full error should be visible (not truncated to hardcoded 50)
-        // With the bug, it's truncated to 50 chars, so the last part is missing
-        // With the fix, it should be fully visible
         assert!(
             plain.contains("Connection refused"),
             "Error start should be visible: {}",
@@ -846,6 +905,123 @@ mod tests {
         assert!(
             plain.contains("running on this machine"),
             "Error end should be visible (not truncated to 50): {}",
+            plain
+        );
+    }
+
+    #[test]
+    fn format_primary_arg_empty() {
+        assert_eq!(format_primary_arg(""), "");
+        assert_eq!(format_primary_arg("{}"), "");
+    }
+
+    #[test]
+    fn format_primary_arg_path() {
+        let args = r#"{"path": "src/lib.rs"}"#;
+        assert_eq!(format_primary_arg(args), "src/lib.rs");
+    }
+
+    #[test]
+    fn format_primary_arg_file_path_camel() {
+        let args = r#"{"filePath": "/home/user/test.rs"}"#;
+        assert_eq!(format_primary_arg(args), "/home/user/test.rs");
+    }
+
+    #[test]
+    fn format_primary_arg_command() {
+        let args = r#"{"command": "ls -la", "timeout": 5000}"#;
+        assert_eq!(format_primary_arg(args), "ls -la");
+    }
+
+    #[test]
+    fn format_primary_arg_query() {
+        let args = r#"{"query": "auth patterns", "limit": 10}"#;
+        assert_eq!(format_primary_arg(args), "auth patterns");
+    }
+
+    #[test]
+    fn format_primary_arg_priority_over_first_key() {
+        let args = r#"{"limit": 10, "path": "src/main.rs"}"#;
+        assert_eq!(format_primary_arg(args), "src/main.rs");
+    }
+
+    #[test]
+    fn format_primary_arg_fallback_to_first_value() {
+        let args = r#"{"repo": "crucible"}"#;
+        assert_eq!(format_primary_arg(args), "crucible");
+    }
+
+    #[test]
+    fn format_primary_arg_truncates_long_value() {
+        let long_path = "a".repeat(60);
+        let args = format!(r#"{{"path": "{}"}}"#, long_path);
+        let result = format_primary_arg(&args);
+        assert!(result.contains("…"), "Should truncate: {}", result);
+        assert!(result.chars().count() <= 41);
+    }
+
+    #[test]
+    fn format_primary_arg_non_string_value() {
+        let args = r#"{"count": 42}"#;
+        assert_eq!(format_primary_arg(args), "42");
+    }
+
+    #[test]
+    fn compact_read_file_shows_path() {
+        let tool = test_tool_with_output("mcp_read", r#"{"path": "src/lib.rs"}"#, "content", true);
+        let node = render_tool_call(&tool);
+        let plain = render_to_plain_text(&node, 80);
+        assert!(plain.contains("✓"), "Should show checkmark: {:?}", plain);
+        assert!(plain.contains("Read"), "Should show tool name: {:?}", plain);
+        assert!(
+            plain.contains("src/lib.rs"),
+            "Should show path inline: {:?}",
+            plain
+        );
+        assert!(
+            !plain.contains("path="),
+            "Should NOT show key=value format: {:?}",
+            plain
+        );
+        assert!(
+            !plain.contains('(') || !plain.contains(')'),
+            "Should NOT have parens around args: {:?}",
+            plain
+        );
+    }
+
+    #[test]
+    fn compact_bash_shows_command() {
+        let tool =
+            test_tool_with_output("mcp_bash", r#"{"command": "ls -la"}"#, "file1\nfile2", true);
+        let node = render_tool_call(&tool);
+        let plain = render_to_plain_text(&node, 80);
+        assert!(plain.contains("Bash"), "Should show tool name: {:?}", plain);
+        assert!(
+            plain.contains("ls -la"),
+            "Should show command inline: {:?}",
+            plain
+        );
+        assert!(
+            !plain.contains("command="),
+            "Should NOT show key=value: {:?}",
+            plain
+        );
+    }
+
+    #[test]
+    fn compact_no_args_no_parens() {
+        let tool = test_tool_with_output("get_kiln_info", "{}", "kiln data", true);
+        let node = render_tool_call(&tool);
+        let plain = render_to_plain_text(&node, 80);
+        assert!(
+            plain.contains("Get Kiln Info"),
+            "Should show tool name: {:?}",
+            plain
+        );
+        assert!(
+            !plain.contains("()"),
+            "Should NOT have empty parens: {:?}",
             plain
         );
     }

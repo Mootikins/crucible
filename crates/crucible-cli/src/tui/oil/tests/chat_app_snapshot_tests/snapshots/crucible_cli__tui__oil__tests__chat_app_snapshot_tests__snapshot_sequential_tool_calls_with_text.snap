@@ -1,5 +1,6 @@
 ---
-source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests.rs
+source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
+assertion_line: 362
 expression: render_app(&app)
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
@@ -8,13 +9,13 @@ expression: render_app(&app)
 
  ● Let me check the project structure.
 
- ✓ Bash(command="ls src/")
+ ✓ Bash ls src/
    │ main.rs
    │ lib.rs
 
    Found two source files. Let me read the main one.
 
- ✓ Read File(path="src/main.rs") → 3 lines
+ ✓ Read File src/main.rs → 3 lines
 
    The project has a simple main function that prints hello.
                                                                                 
