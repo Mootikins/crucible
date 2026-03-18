@@ -228,6 +228,8 @@ proptest! {
                 name: tool.clone(),
                 args: r#"{"x": 1}"#.to_string(),
                 call_id: None,
+                description: None,
+                source: None,
             });
             app.on_message(ChatAppMsg::ToolResultDelta {
                 name: tool.clone(),
@@ -496,6 +498,8 @@ mod e2e_edge_cases {
             name: "empty_tool".to_string(),
             args: "{}".to_string(),
             call_id: None,
+            description: None,
+            source: None,
         });
         app.on_message(ChatAppMsg::ToolResultComplete {
             name: "empty_tool".to_string(),

@@ -3,13 +3,29 @@
 //! Groups the four `handle_*_msg` methods that dispatch incoming `ChatAppMsg`
 //! variants to the appropriate state update logic.
 
+use std::sync::Arc;
+
 use crate::tui::oil::app::Action;
-use crate::tui::oil::viewport_cache::{CachedSubagent, CachedToolCall};
+use crate::tui::oil::viewport_cache::{CachedSubagent, CachedToolCall, ToolSourceDisplay};
 
 use super::messages::ChatAppMsg;
 use super::model_state::ModelListState;
 use super::state::AutocompleteKind;
 use super::OilChatApp;
+
+fn parse_tool_source(s: &str) -> Option<ToolSourceDisplay> {
+    match s {
+        "Core" => Some(ToolSourceDisplay::Core),
+        "Crucible" => Some(ToolSourceDisplay::Crucible),
+        s if s.starts_with("Mcp:") => Some(ToolSourceDisplay::Mcp {
+            server: Arc::from(&s[4..]),
+        }),
+        s if s.starts_with("Plugin:") => Some(ToolSourceDisplay::Plugin {
+            name: Arc::from(&s[7..]),
+        }),
+        _ => None,
+    }
+}
 
 impl OilChatApp {
     pub(super) fn handle_stream_msg(&mut self, msg: ChatAppMsg) -> Action<ChatAppMsg> {
@@ -29,6 +45,8 @@ impl OilChatApp {
                 name,
                 args,
                 call_id,
+                description,
+                source,
             } => {
                 if !self.container_list.is_streaming() {
                     self.container_list.mark_turn_active();
@@ -44,6 +62,8 @@ impl OilChatApp {
                 );
                 let mut tool = CachedToolCall::new(tool_id, &name, &args);
                 tool.call_id = call_id;
+                tool.description = description.map(Arc::from);
+                tool.source = source.and_then(|s| parse_tool_source(&s));
                 self.container_list.add_tool_call(tool);
                 Action::Continue
             }

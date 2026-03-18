@@ -66,6 +66,10 @@ pub enum ChatAppMsg {
         args: String,
         /// LLM-assigned call ID for correlating results with the correct tool
         call_id: Option<String>,
+        /// Human-readable description of what the tool does (from registry).
+        description: Option<String>,
+        /// Source provenance string (e.g. "Core", "Crucible", "Mcp:github").
+        source: Option<String>,
     },
     /// **Event** (daemon → TUI): Streaming delta of tool result output.
     ToolResultDelta {

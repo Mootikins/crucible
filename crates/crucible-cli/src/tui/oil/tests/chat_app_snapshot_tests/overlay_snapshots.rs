@@ -178,6 +178,8 @@ fn snapshot_tool_call_visible_under_permission_prompt() {
         name: "bash".to_string(),
         args: r#"{"command":"cargo build"}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
 
     let request = crucible_core::interaction::InteractionRequest::Permission(
