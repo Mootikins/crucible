@@ -15,13 +15,13 @@ export OPENAI_API_KEY=dummy
 SESSION_ID=$(cru session create --recording-mode granular -C assets/demo-config.toml 2>&1 | grep "Created session" | awk '{print $NF}')
 
 # Step 2: Configure agent (if not auto-configured by -C flag)
-cru session configure "$SESSION_ID" --provider openai --model qwen3-32b-ud-q4_k_xl --endpoint https://llm.example.com/v1
+cru session configure "$SESSION_ID" --provider openai --model glm-4.7-flash-iq4 --endpoint https://llm.example.com/v1
 
 # Step 3: Send message (blocks until complete)
-cru session send "$SESSION_ID" "How does the wikilink knowledge graph work in Crucible?" --raw
+cru session send "$SESSION_ID" "What is a kiln in Crucible?" --raw
 
 # Step 4: Extract recording
-RECORDING=$(find docs/.crucible/sessions/$SESSION_ID -name "recording.jsonl")
+RECORDING=$(find ./docs/.crucible/sessions/$SESSION_ID -name "recording.jsonl")
 cp "$RECORDING" assets/fixtures/demo.jsonl
 
 # Step 5: Capture GIF from fixture
@@ -30,7 +30,7 @@ bash scripts/record-gif.sh assets/fixtures/demo.jsonl assets/demo.gif --speed 5
 
 **Key points:**
 - Sessions are created with `--recording-mode granular` to capture all events
-- Recording file is written to `docs/.crucible/sessions/<session-id>/recording.jsonl` (inside the kiln directory)
+- Recording file is written to `./docs/.crucible/sessions/<session-id>/recording.jsonl` (inside the kiln directory)
 - `cru session send` blocks until the message is complete, ensuring full response is captured
 - Fixtures are copied to `assets/fixtures/` for version control and reproducible GIF generation
 - GIF capture uses `scripts/record-gif.sh` which wraps tmux + asciinema + agg
@@ -98,13 +98,13 @@ cru 0.1.0
 
 ### Scene 2: Hero / Chat (`demo.tape` → `demo.gif`)
 
-**Duration:** ~30s | **Size:** ~2MB | **Config:** `demo-config.toml`
+**Duration:** ~30s | **Size:** ~2MB | **Config:** `demo-config.toml.example`
 
 Single-turn feature showcase: wikilink knowledge graph with Precognition context injection.
 
 ```bash
 $ cru chat -C assets/demo-config.toml
-> How does the wikilink knowledge graph work in Crucible?
+> What is a kiln in Crucible?
 ```
 
 **What it demonstrates:**
@@ -114,21 +114,21 @@ $ cru chat -C assets/demo-config.toml
 - Knowledge graph structure and semantic search capabilities
 - Session persistence and response formatting
 
-**Agent:** Internal Rig agent (`qwen3-32b-ud-q4_k_xl` via OpenAI-compatible endpoint) — the default when no `-a` flag is provided
+**Agent:** Internal Rig agent (`glm-4.7-flash-iq4` via OpenAI-compatible endpoint) — the default when no `-a` flag is provided
 
-**Recording:** Programmatic session pipeline (see above). Fixture: `assets/fixtures/demo.jsonl` (39KB, 1 exchange, 1 precognition_complete, 71 text_delta, 188 thinking events). Recorded 2026-03-15.
+**Recording:** Programmatic session pipeline (see above). Fixture: `assets/fixtures/demo.jsonl` (39KB, 1 exchange, 1 precognition_complete, 255 text_delta, 99 thinking events). Recorded 2026-03-17.
 
 ---
 
 ### Scene 3: ACP Agent (`acp-demo.tape` → `acp-demo.gif`)
 
-**Duration:** ~48s | **Size:** 86KB | **Config:** `demo-acp-config.toml`
+**Duration:** ~48s | **Size:** 86KB | **Config:** `demo-acp-config.toml.example`
 
 Crucible chat with Claude Code via Agent Context Protocol (ACP), demonstrating external agent integration.
 
 ```bash
 $ cru chat -a claude -C assets/demo-acp-config.toml --set perm.autoconfirm_session
-> How does ACP differ from MCP, and how does Crucible use both?
+> Compare ACP and MCP in two sentences each. Use only the context provided to you.
 ```
 
 **What it demonstrates:**
@@ -140,13 +140,13 @@ $ cru chat -a claude -C assets/demo-acp-config.toml --set perm.autoconfirm_sessi
 
 **Agent:** Claude Code (via ACP)
 
-**Recording:** Programmatic session pipeline. Fixture: `assets/fixtures/acp-demo.jsonl` (65KB, 1 exchange, 4 tool_call, 1 precognition_complete, 227 text_delta).
+**Recording:** Programmatic session pipeline. Fixture: `assets/fixtures/acp-demo.jsonl` (65KB, 1 exchange, 0 tool_call, 1 precognition_complete, 68 text_delta).
 
 ---
 
 ### Scene 4: Cross-Agent Delegation (`delegation-demo.tape` → `delegation-demo.gif`)
 
-**Duration:** ~48s | **Size:** 104KB | **Config:** `demo-acp-config.toml`
+**Duration:** ~48s | **Size:** 104KB | **Config:** `demo-acp-config.toml.example`
 
 Claude delegating a task to OpenCode via the `delegate_session` tool, demonstrating multi-agent orchestration.
 
@@ -159,7 +159,7 @@ $ cru chat -a claude -C assets/demo-acp-config.toml --set perm.autoconfirm_sessi
 - Multi-agent orchestration via delegation
 - Claude using `delegate_session` tool to spawn OpenCode
 - Cross-agent knowledge graph access
-- ACP delegation configuration in `demo-acp-config.toml`
+- ACP delegation configuration in `demo-acp-config.toml.example`
 
 **Agents:** Claude Code (primary) → OpenCode (delegated)
 
@@ -169,24 +169,24 @@ $ cru chat -a claude -C assets/demo-acp-config.toml --set perm.autoconfirm_sessi
 
 ## Configuration Files
 
-### `demo-config.toml`
+### `demo-config.toml.example`
 
-Used by Scene 1 and Scene 2 (internal chat).
+Used by Scene 1 and Scene 2 (internal chat). Copy to `demo-config.toml` locally and customize.
 
-- **Kiln:** `docs/` (155 markdown files)
-- **LLM:** `qwen3-32b-ud-q4_k_xl` via `openai` provider type (OpenAI-compatible endpoint at `https://llm.example.com/v1`)
+- **Kiln:** `./docs/` (155 markdown files)
+- **LLM:** `glm-4.7-flash-iq4` via `openai` provider type (OpenAI-compatible endpoint at `https://llm.example.com/v1`)
 - **Storage:** Embedded (no daemon needed)
-- **Recording:** Sessions recorded to `docs/.crucible/sessions/<id>/recording.jsonl`
+- **Recording:** Sessions recorded to `./docs/.crucible/sessions/<id>/recording.jsonl`
 - **Flags:** None (Precognition enabled by default)
 
-### `demo-acp-config.toml`
+### `demo-acp-config.toml.example`
 
-Used by Scene 3 and Scene 4 (ACP agents).
+Used by Scene 3 and Scene 4 (ACP agents). Copy to `demo-acp-config.toml` locally and customize.
 
-- **Kiln:** `docs/` (155 markdown files)
+- **Kiln:** `./docs/` (155 markdown files)
 - **ACP Agents:** Claude Code with delegation settings
 - **Delegation:** `[acp.agents.claude.delegation]` configured for OpenCode
-- **Recording:** Sessions recorded to `docs/.crucible/sessions/<id>/recording.jsonl`
+- **Recording:** Sessions recorded to `./docs/.crucible/sessions/<id>/recording.jsonl`
 - **Flags:** None (Precognition enabled by default)
 
 ---
@@ -209,19 +209,19 @@ export OPENAI_API_KEY=dummy
 SESSION_ID=$(cru session create --recording-mode granular -C assets/demo-config.toml 2>&1 | grep "Created session" | awk '{print $NF}')
 
 # Configure agent if needed
-cru session configure "$SESSION_ID" --provider openai --model qwen3-32b-ud-q4_k_xl --endpoint https://llm.example.com/v1
+cru session configure "$SESSION_ID" --provider openai --model glm-4.7-flash-iq4 --endpoint https://llm.example.com/v1
 
 # Send message (blocks until complete)
 cru session send "$SESSION_ID" "Your query here" --raw
 
 # Extract recording
-RECORDING=$(find docs/.crucible/sessions/$SESSION_ID -name "recording.jsonl")
+RECORDING=$(find ./docs/.crucible/sessions/$SESSION_ID -name "recording.jsonl")
 cp "$RECORDING" assets/fixtures/demo.jsonl
 ```
 
 **Notes on recording:**
 - `--recording-mode granular` captures all events (user_message, text_delta, tool_call, precognition_complete, etc.)
-- Recording is written to `docs/.crucible/sessions/<id>/recording.jsonl` (inside the kiln directory)
+- Recording is written to `./docs/.crucible/sessions/<id>/recording.jsonl` (inside the kiln directory)
 - `cru session send` blocks until the message is complete
 - `--raw` flag outputs raw JSON events (useful for debugging)
 - Fixtures must exist before GIF generation (see below)
