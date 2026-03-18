@@ -718,19 +718,19 @@ impl CrucibleAcpClient {
     /// 1. Spawn agent process (or use pre-connected transport)
     /// 2. Send InitializeRequest — reads agent capabilities
     /// 3. Choose transport (priority order):
-    ///    - SSE if `mcp_url` is provided AND agent reports `mcp_capabilities.sse == true`
-    ///    - HTTP if `mcp_url` is provided AND agent reports `mcp_capabilities.http == true`
+    ///    - HTTP (Streamable HTTP) if `mcp_url` is provided AND agent reports `mcp_capabilities.http == true`
     ///    - Stdio otherwise (all agents MUST support stdio per ACP spec)
     /// 4. Create session with chosen transport
+    ///
+    /// Note: `McpServer::Sse` means legacy SSE transport (GET /sse → endpoint event),
+    /// which our `StreamableHttpService` does not speak. We skip it entirely.
     ///
     /// # Arguments
     ///
     /// * `mcp_url` - Optional URL to an in-process MCP server. If `None` or if
-    ///   the agent doesn't support SSE or HTTP, falls back to stdio transport.
+    ///   the agent doesn't support HTTP, falls back to stdio transport.
     pub async fn connect_with_best_mcp(&mut self, mcp_url: Option<&str>) -> Result<AcpSession> {
-        use agent_client_protocol::{
-            InitializeRequest, McpServer, McpServerHttp, McpServerSse, NewSessionRequest,
-        };
+        use agent_client_protocol::{InitializeRequest, McpServer, McpServerHttp, NewSessionRequest};
 
         tracing::debug!(agent = %self.agent_name, mcp_url = ?mcp_url, "Starting capability-aware ACP handshake");
 
@@ -742,16 +742,9 @@ impl CrucibleAcpClient {
         let _init_response = self.initialize(init_request).await?;
 
         // 3. Choose transport based on agent capabilities
-        // Priority: SSE > HTTP > Stdio (all agents MUST support stdio per ACP spec)
+        // Priority: HTTP (Streamable HTTP) > Stdio (all agents MUST support stdio per ACP spec)
         let crucible_mcp_server = if let Some(url) = mcp_url {
-            if self.agent_supports_sse_mcp() {
-                tracing::info!(
-                    agent = %self.agent_name,
-                    url = %url,
-                    "Agent supports SSE MCP — using Server-Sent Events transport"
-                );
-                McpServer::Sse(McpServerSse::new("crucible", url))
-            } else if self.agent_supports_http_mcp() {
+            if self.agent_supports_http_mcp() {
                 tracing::info!(
                     agent = %self.agent_name,
                     url = %url,
@@ -759,9 +752,12 @@ impl CrucibleAcpClient {
                 );
                 McpServer::Http(McpServerHttp::new("crucible", url))
             } else {
-                tracing::warn!(
+                // Agent doesn't support Streamable HTTP (may only support legacy SSE
+                // or nothing). Our server uses StreamableHttpService which only speaks
+                // Streamable HTTP, not legacy SSE. Fall back to stdio.
+                tracing::info!(
                     agent = %self.agent_name,
-                    "Agent does not support SSE or HTTP MCP, falling back to stdio transport"
+                    "Agent lacks Streamable HTTP support, falling back to stdio transport"
                 );
                 Self::build_stdio_mcp_server()
             }
