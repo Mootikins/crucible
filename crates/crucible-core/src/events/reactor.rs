@@ -683,6 +683,8 @@ mod tests {
         let event = SessionEvent::ToolCalled {
             name: "search".into(),
             args: serde_json::json!({}),
+            description: None,
+            source: None,
         };
 
         let result = reactor.emit(event).await.unwrap();

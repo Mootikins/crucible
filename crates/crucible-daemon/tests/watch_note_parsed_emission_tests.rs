@@ -289,6 +289,8 @@ async fn test_handle_event_ignores_other_events() {
         SessionEvent::ToolCalled {
             name: "test".to_string(),
             args: serde_json::json!({}),
+            description: None,
+            source: None,
         },
         SessionEvent::Internal(Box::new(InternalSessionEvent::EntityStored {
             entity_id: "test".to_string(),

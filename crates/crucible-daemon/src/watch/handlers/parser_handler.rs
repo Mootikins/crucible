@@ -429,6 +429,8 @@ mod tests {
             SessionEvent::ToolCalled {
                 name: "test".to_string(),
                 args: serde_json::json!({}),
+                description: None,
+                source: None,
             },
         ];
 

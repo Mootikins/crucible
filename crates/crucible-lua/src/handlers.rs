@@ -1126,6 +1126,8 @@ mod tests {
         let event = SessionEvent::ToolCalled {
             name: "search".to_string(),
             args: serde_json::json!({}),
+            description: None,
+            source: None,
         };
 
         assert!(handler.matches(&event));
@@ -1174,6 +1176,8 @@ mod tests {
         let event = SessionEvent::ToolCalled {
             name: "test".to_string(),
             args: serde_json::json!({"key": "value"}),
+            description: None,
+            source: None,
         };
 
         let result = handler.execute(&lua, &event);
@@ -1198,6 +1202,8 @@ mod tests {
         let event = SessionEvent::ToolCalled {
             name: "test".to_string(),
             args: serde_json::json!({}),
+            description: None,
+            source: None,
         };
 
         let result = handler.execute(&lua, &event);
@@ -1219,6 +1225,8 @@ mod tests {
         let event = SessionEvent::ToolCalled {
             name: "test".to_string(),
             args: serde_json::json!({}),
+            description: None,
+            source: None,
         };
 
         let result = handler.execute(&lua, &event);
@@ -1314,6 +1322,8 @@ mod tests {
         let event = SessionEvent::ToolCalled {
             name: "test".to_string(),
             args: serde_json::json!({}),
+            description: None,
+            source: None,
         };
 
         let ok_result = HandlerExecutionResult::ok("my_handler", event.clone());
@@ -1419,6 +1429,8 @@ mod tests {
         let matching_event = SessionEvent::ToolCalled {
             name: "search".to_string(),
             args: serde_json::json!({}),
+            description: None,
+            source: None,
         };
 
         // Create a non-matching event
@@ -1595,6 +1607,8 @@ end
         let event = SessionEvent::ToolCalled {
             name: "search".to_string(),
             args: serde_json::json!({"query": "test"}),
+            description: None,
+            source: None,
         };
 
         let result = handler.execute(&lua, &event).unwrap();
@@ -1619,6 +1633,8 @@ end
         let event = SessionEvent::ToolCalled {
             name: "search".to_string(),
             args: serde_json::json!({}),
+            description: None,
+            source: None,
         };
 
         let result = handler.execute(&lua, &event).unwrap();
@@ -1642,6 +1658,8 @@ end
         let event = SessionEvent::ToolCalled {
             name: "dangerous_tool".to_string(),
             args: serde_json::json!({}),
+            description: None,
+            source: None,
         };
 
         let result = handler.execute(&lua, &event);
@@ -1667,6 +1685,8 @@ end
         let event = SessionEvent::ToolCalled {
             name: "test".to_string(),
             args: serde_json::json!({}),
+            description: None,
+            source: None,
         };
 
         let result = handler.execute(&lua, &event);
@@ -1689,6 +1709,8 @@ end
         let event = SessionEvent::ToolCalled {
             name: "test".to_string(),
             args: serde_json::json!({}),
+            description: None,
+            source: None,
         };
 
         let result = handler.execute(&lua, &event);
@@ -1814,6 +1836,8 @@ end
         let event = SessionEvent::ToolCalled {
             name: "original".to_string(),
             args: serde_json::json!({"key": "value"}),
+            description: None,
+            source: None,
         };
 
         let handlers = [&h1, &h2];
@@ -2104,6 +2128,8 @@ end
         let event = SessionEvent::ToolCalled {
             name: "test".to_string(),
             args: serde_json::json!({}),
+            description: None,
+            source: None,
         };
 
         let result = handler.execute(&lua, &event);
@@ -2127,6 +2153,8 @@ end
         let event = SessionEvent::ToolCalled {
             name: "test".to_string(),
             args: serde_json::json!({}),
+            description: None,
+            source: None,
         };
 
         let result = handler.execute(&lua, &event);

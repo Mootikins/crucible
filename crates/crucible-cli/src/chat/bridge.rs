@@ -70,6 +70,8 @@ impl AgentEventBridge {
                     self.ring.push(SessionEvent::ToolCalled {
                         name: tool_call.name.clone(),
                         args: tool_call.args.clone(),
+                        description: None,
+                        source: None,
                     });
 
                     accumulated_tool_calls.push(tool_call);
@@ -384,7 +386,7 @@ mod tests {
             .expect("Should have ToolCalled event");
 
         match tool_event.as_ref() {
-            SessionEvent::ToolCalled { name, args } => {
+            SessionEvent::ToolCalled { name, args, .. } => {
                 assert_eq!(name, "read_file");
                 assert_eq!(args["path"], "test.txt");
             }

@@ -326,6 +326,8 @@ impl LuaSessionHandle {
         self.send(SessionEvent::ToolCalled {
             name: name.into(),
             args,
+            description: None,
+            source: None,
         })
         .await
     }
