@@ -2,6 +2,10 @@ use super::*;
 use crate::agent_manager::tool_tracking::ToolCallTracker;
 use crucible_core::events::InternalSessionEvent;
 use crucible_core::types::ToolSource;
+use crucible_lua::{
+    execute_tool_display_complete_hooks, execute_tool_display_start_hooks, ToolDisplayCompleteEvent,
+    ToolDisplayStartEvent,
+};
 use std::collections::HashSet;
 
 const DEFAULT_MAX_TOOL_DEPTH: usize = 10;
@@ -896,30 +900,56 @@ impl AgentManager {
             });
         }
 
+        let args_str = serde_json::to_string(&args).unwrap_or_else(|_| "null".to_string());
+        let (mut description, mut source) = stream_ctx
+            .tool_dispatcher
+            .get_tool_ref(&tool_call.name)
+            .and_then(|tool_ref| match &tool_ref.source {
+                ToolSource::Core | ToolSource::Crucible => Some((
+                    tool_ref.definition.description.map(|d| d.to_string()),
+                    Some(Self::format_tool_source(&tool_ref.source)),
+                )),
+                ToolSource::Mcp { .. } | ToolSource::Plugin { .. } => None,
+            })
+            .unwrap_or((None, None));
+
+        {
+            let state = stream_ctx.session_state.lock().await;
+            let hook_event = ToolDisplayStartEvent {
+                name: tool_call.name.clone(),
+                args: args_str.clone(),
+            };
+            match execute_tool_display_start_hooks(&state.lua, &state.registry, &hook_event) {
+                Ok(Some(hints)) => {
+                    if let Some(label) = hints.label {
+                        description = Some(label);
+                    }
+                    if let Some(detail) = hints.detail {
+                        source = Some(detail);
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    warn!(
+                        session_id = %stream_ctx.session_id,
+                        tool = %tool_call.name,
+                        error = %error,
+                        "Lua tool:display_start hook error, falling back to default metadata"
+                    );
+                }
+            }
+        }
+
         if !emit_event(
             &stream_ctx.event_tx,
-            {
-                let (description, source) = stream_ctx
-                    .tool_dispatcher
-                    .get_tool_ref(&tool_call.name)
-                    .and_then(|tool_ref| match &tool_ref.source {
-                        ToolSource::Core | ToolSource::Crucible => Some((
-                            tool_ref.definition.description.map(|d| d.to_string()),
-                            Some(Self::format_tool_source(&tool_ref.source)),
-                        )),
-                        ToolSource::Mcp { .. } | ToolSource::Plugin { .. } => None,
-                    })
-                    .unwrap_or((None, None));
-
-                SessionEventMessage::tool_call_with_metadata(
-                    &stream_ctx.session_id,
-                    &call_id,
-                    &tool_call.name,
-                    args.clone(),
-                    description,
-                    source,
-                )
-            },
+            SessionEventMessage::tool_call_with_metadata(
+                &stream_ctx.session_id,
+                &call_id,
+                &tool_call.name,
+                args.clone(),
+                description,
+                source,
+            ),
         ) {
             warn!(
                 session_id = %stream_ctx.session_id,
@@ -947,11 +977,36 @@ impl AgentManager {
             ),
         };
 
-        let event_result = if let Some(error) = &error_str {
+        let mut event_result = if let Some(error) = &error_str {
             serde_json::json!({ "error": error })
         } else {
             serde_json::json!({ "result": result_str })
         };
+
+        {
+            let state = stream_ctx.session_state.lock().await;
+            let hook_event = ToolDisplayCompleteEvent {
+                name: tool_call.name.clone(),
+                args: args_str,
+                result: error_str.clone().unwrap_or_else(|| result_str.clone()),
+            };
+            match execute_tool_display_complete_hooks(&state.lua, &state.registry, &hook_event) {
+                Ok(Some(hints)) => {
+                    if let Some(summary) = hints.summary {
+                        event_result["summary"] = serde_json::json!(summary);
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    warn!(
+                        session_id = %stream_ctx.session_id,
+                        tool = %tool_call.name,
+                        error = %error,
+                        "Lua tool:display_complete hook error, falling back to default metadata"
+                    );
+                }
+            }
+        }
 
         if !emit_event(
             &stream_ctx.event_tx,

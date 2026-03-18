@@ -255,6 +255,108 @@ async fn send_message_emits_tool_call_and_tool_result_events() {
 }
 
 #[tokio::test]
+async fn display_hook_lua_tool_enriches_tool_call_metadata() {
+    let tmp = TempDir::new().unwrap();
+    std::fs::write(tmp.path().join("test.md"), "content").unwrap();
+
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let agent_manager = create_test_agent_manager(session_manager.clone());
+    agent_manager
+        .configure_agent(&session.id, test_agent())
+        .await
+        .unwrap();
+
+    {
+        let session_state = agent_manager.get_or_create_session_state(&session.id);
+        let state = session_state.lock().await;
+        state
+            .lua
+            .load(
+                r#"
+            crucible.on("tool:display_start", function(ctx, event)
+                return {
+                    label = "Custom " .. event.name,
+                    detail = "LuaStart"
+                }
+            end)
+
+            crucible.on("tool:display_complete", function(ctx, event)
+                return {
+                    summary = "Summary " .. event.name
+                }
+            end)
+        "#,
+            )
+            .exec()
+            .unwrap();
+    }
+
+    agent_manager.agent_cache.insert(
+        session.id.clone(),
+        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+            chunks: vec![
+                ChatChunk {
+                    delta: String::new(),
+                    done: false,
+                    tool_calls: Some(vec![ChatToolCall {
+                        name: "read_file".to_string(),
+                        arguments: Some(serde_json::json!({ "path": "test.md" })),
+                        id: Some("call-display-hook".to_string()),
+                    }]),
+                    tool_results: None,
+                    reasoning: None,
+                    usage: None,
+                    subagent_events: None,
+                    precognition_notes_count: None,
+                    precognition_notes: None,
+                },
+                ChatChunk {
+                    delta: "Done.".to_string(),
+                    done: true,
+                    tool_calls: None,
+                    tool_results: None,
+                    reasoning: None,
+                    usage: None,
+                    subagent_events: None,
+                    precognition_notes_count: None,
+                    precognition_notes: None,
+                },
+            ],
+        }))),
+    );
+
+    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    agent_manager
+        .send_message(&session.id, "test".to_string(), &event_tx)
+        .await
+        .unwrap();
+
+    let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+
+    let tool_call = next_event_or_skip(&mut event_rx, "tool_call").await;
+    assert_eq!(tool_call.data["tool"], "read_file");
+    assert_eq!(tool_call.data["description"], "Custom read_file");
+    assert_eq!(tool_call.data["source"], "LuaStart");
+
+    let tool_result = next_event_or_skip(&mut event_rx, "tool_result").await;
+    assert_eq!(tool_result.data["tool"], "read_file");
+    assert_eq!(tool_result.data["result"]["summary"], "Summary read_file");
+}
+
+#[tokio::test]
 async fn test_execute_agent_stream_empty_response_emits_error_event() {
     let tmp = TempDir::new().unwrap();
     let storage = Arc::new(FileSessionStorage::new());
@@ -458,6 +560,10 @@ impl crate::tool_dispatch::ToolDispatcher for HangingToolDispatcher {
 
     fn has_tool(&self, _name: &str) -> bool {
         true
+    }
+
+    fn get_tool_ref(&self, _name: &str) -> Option<crucible_core::types::ToolRef> {
+        None
     }
 }
 
