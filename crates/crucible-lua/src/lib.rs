@@ -158,10 +158,13 @@ pub use ws::register_ws_module;
 pub const BUILTIN_INIT_LUA: &str = include_str!("defaults/init.lua");
 // Handler system
 pub use handlers::{
-    execute_handler, execute_permission_hooks, interpret_handler_result, register_crucible_on_api,
+    execute_handler, execute_permission_hooks, execute_tool_display_complete_hooks,
+    execute_tool_display_start_hooks, interpret_handler_result, register_crucible_on_api,
     register_permission_hook_api, run_handler_chain, HandlerExecutionResult, LuaScriptHandler,
     LuaScriptHandlerRegistry, PermissionHook, PermissionHookResult, PermissionRequest,
-    RuntimeHandler, ScriptHandlerResult,
+    RuntimeHandler, ScriptHandlerResult, ToolDisplayCompleteEvent, ToolDisplayCompleteHints,
+    ToolDisplayStartEvent, ToolDisplayStartHints, TOOL_DISPLAY_COMPLETE_EVENT,
+    TOOL_DISPLAY_START_EVENT,
 };
 pub use lifecycle::{
     load_plugin_spec, load_plugin_spec_from_source, CommandBuilder, HandlerBuilder, LifecycleError,
