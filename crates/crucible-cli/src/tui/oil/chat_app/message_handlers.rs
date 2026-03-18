@@ -47,6 +47,7 @@ impl OilChatApp {
                 call_id,
                 description,
                 source,
+                lua_primary_arg,
             } => {
                 if !self.container_list.is_streaming() {
                     self.container_list.mark_turn_active();
@@ -64,6 +65,7 @@ impl OilChatApp {
                 tool.call_id = call_id;
                 tool.description = description.map(Arc::from);
                 tool.source = source.and_then(|s| parse_tool_source(&s));
+                tool.lua_primary_arg = lua_primary_arg.map(Arc::from);
                 if name == "delegate_session" && !self.pending_delegate_supersessions.is_empty() {
                     tool.superseded = true;
                     if let Some(pending_id) =

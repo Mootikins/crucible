@@ -180,6 +180,7 @@ fn snapshot_tool_call_visible_under_permission_prompt() {
         call_id: None,
         description: None,
         source: None,
+        lua_primary_arg: None,
     });
 
     let request = crucible_core::interaction::InteractionRequest::Permission(

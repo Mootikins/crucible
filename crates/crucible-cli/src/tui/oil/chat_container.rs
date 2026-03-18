@@ -1338,6 +1338,7 @@ mod tests {
             superseded: false,
             description: None,
             source: None,
+            lua_primary_arg: None,
         };
 
         list.add_tool_call(tool);
@@ -1432,6 +1433,7 @@ mod tests {
             superseded: false,
             description: None,
             source: None,
+            lua_primary_arg: None,
         };
 
         list.add_tool_call(tool);
@@ -1481,6 +1483,7 @@ mod tests {
             call_id: None,
             description: None,
             source: None,
+            lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "___".to_string(),
@@ -1545,6 +1548,7 @@ mod tests {
                 call_id: None,
                 description: None,
                 source: None,
+            lua_primary_arg: None,
             }),
             ("ToolResultDelta ___", ChatAppMsg::ToolResultDelta {
                 name: "___".to_string(),
@@ -1681,6 +1685,7 @@ mod tests {
             superseded: false,
             description: None,
             source: None,
+            lua_primary_arg: None,
         };
         list.add_tool_call(tool);
 

@@ -34,6 +34,7 @@ pub fn apply_rpc_event(app: &mut OilChatApp, event: &RpcEvent) {
                 call_id: None,
                 description: None,
                 source: None,
+                lua_primary_arg: None,
             });
         }
         RpcEvent::ToolResultDelta { name, delta } => {

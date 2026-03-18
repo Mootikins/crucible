@@ -345,6 +345,7 @@ fn app_handles_tool_call_from_stream() {
         call_id: None,
         description: None,
         source: None,
+                lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -422,6 +423,7 @@ mod daemon_event_to_tui_tests {
                     call_id: None,
                     description: None,
                     source: None,
+                lua_primary_arg: None,
                 });
             }
         }
@@ -537,6 +539,7 @@ mod daemon_event_to_tui_tests {
             call_id: None,
             description: None,
             source: None,
+                lua_primary_arg: None,
         });
 
         let chunk = ChatChunk {
@@ -745,6 +748,7 @@ mod daemon_event_to_tui_tests {
             call_id: None,
             description: None,
             source: None,
+                lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "glob".to_string(),
@@ -797,6 +801,7 @@ mod daemon_event_to_tui_tests {
             call_id: None,
             description: None,
             source: None,
+                lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "read_file".to_string(),

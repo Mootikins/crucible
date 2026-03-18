@@ -24,7 +24,12 @@ pub fn render_tool_call_with_frame(tool: &CachedToolCall, spinner_frame: usize) 
     }
 
     let display_name = display_tool_name(&tool.name);
-    let primary_arg = format_primary_arg(&tool.args);
+    let auto_primary = format_primary_arg(&tool.args);
+    let primary_arg: &str = tool
+        .lua_primary_arg
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&auto_primary);
     let result_str = tool.result();
 
     let inner = if let Some(ref error) = tool.error {

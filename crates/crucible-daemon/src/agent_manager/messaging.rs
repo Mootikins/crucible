@@ -913,6 +913,8 @@ impl AgentManager {
             })
             .unwrap_or((None, None));
 
+        let mut lua_primary_arg: Option<String> = None;
+
         {
             let state = stream_ctx.session_state.lock().await;
             let hook_event = ToolDisplayStartEvent {
@@ -926,6 +928,9 @@ impl AgentManager {
                     }
                     if let Some(detail) = hints.detail {
                         source = Some(detail);
+                    }
+                    if let Some(pa) = hints.primary_arg {
+                        lua_primary_arg = Some(pa);
                     }
                 }
                 Ok(None) => {}
@@ -949,6 +954,7 @@ impl AgentManager {
                 args.clone(),
                 description,
                 source,
+                lua_primary_arg,
             ),
         ) {
             warn!(
