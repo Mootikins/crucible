@@ -1,5 +1,5 @@
 use super::*;
-use crate::tui::oil::chat_container::ChatContainer;
+use crate::tui::oil::chat_container::{ChatContainer, ContentBlock};
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::render::render_to_string;
 use crucible_core::traits::chat::PrecognitionNoteInfo;
@@ -58,7 +58,14 @@ fn test_streaming_flow() {
     let containers = app.container_list().all_containers();
     assert_eq!(containers.len(), 1);
     if let ChatContainer::AssistantResponse { blocks, .. } = &containers[0] {
-        let combined = blocks.join("");
+        let combined = blocks
+            .iter()
+            .filter_map(|block| match block {
+                ContentBlock::Text(content) => Some(content.as_str()),
+                ContentBlock::Thinking(_) => None,
+            })
+            .collect::<Vec<_>>()
+            .join("");
         assert_eq!(combined, "Hello World");
     } else {
         panic!("Expected AssistantResponse");

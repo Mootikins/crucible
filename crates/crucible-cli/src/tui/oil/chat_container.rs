@@ -37,6 +37,12 @@ pub struct ThinkingBlock {
     pub token_count: usize,
 }
 
+#[derive(Debug, Clone)]
+pub enum ContentBlock {
+    Text(String),
+    Thinking(ThinkingBlock),
+}
+
 /// Semantic container for chat content.
 ///
 /// Each container is a graduation unit - it graduates and drops as a whole.
@@ -50,10 +56,7 @@ pub enum ChatContainer {
     /// Assistant response, may contain multiple text blocks and optional thinking
     AssistantResponse {
         id: String,
-        /// Text blocks separated by double newlines
-        blocks: Vec<String>,
-        /// Associated thinking block (shown if enabled)
-        thinking: Option<ThinkingBlock>,
+        blocks: Vec<ContentBlock>,
     },
 
     /// Group of consecutive tool calls (rendered compactly)
@@ -160,15 +163,10 @@ impl ChatContainer {
                 scrollback(id.clone(), [content_node])
             }
 
-            Self::AssistantResponse {
-                id,
-                blocks,
-                thinking,
-            } => render_assistant_blocks_with_graduation(
+            Self::AssistantResponse { id, blocks } => render_assistant_blocks_with_graduation(
                 &RenderBlocksParams {
                     container_id: id,
                     blocks,
-                    thinking: thinking.as_ref(),
                     complete: params.is_complete,
                     is_continuation: params.is_continuation,
                 },
@@ -237,8 +235,7 @@ impl ChatContainer {
 #[derive(Debug, Clone)]
 struct RenderBlocksParams<'a> {
     pub container_id: &'a str,
-    pub blocks: &'a [String],
-    pub thinking: Option<&'a ThinkingBlock>,
+    pub blocks: &'a [ContentBlock],
     pub complete: bool,
     pub is_continuation: bool,
 }
@@ -256,10 +253,20 @@ fn render_assistant_blocks_with_graduation(
     let mut nodes = Vec::new();
     let mut has_hidden_thinking_spinner = false;
     let t = crate::tui::oil::theme::active();
+    let mut text_blocks: Vec<&str> = Vec::new();
+    let mut thinking_blocks: Vec<&ThinkingBlock> = Vec::new();
 
-    // Render thinking block if present and enabled
+    for block in params.blocks {
+        match block {
+            ContentBlock::Text(content) => text_blocks.push(content),
+            ContentBlock::Thinking(tb) => thinking_blocks.push(tb),
+        }
+    }
+
+    let has_thinking = !thinking_blocks.is_empty();
+
     if render_state.show_thinking {
-        if let Some(tb) = params.thinking {
+        for (i, tb) in thinking_blocks.iter().enumerate() {
             let thinking_node =
                 render_thinking_block(&tb.content, tb.token_count, render_state.width());
             let thinking_with_margin = thinking_node.with_margin(Padding {
@@ -268,48 +275,55 @@ fn render_assistant_blocks_with_graduation(
             });
             // Thinking gets its own scrollback key
             nodes.push(scrollback(
-                format!("{}-thinking", params.container_id),
+                if i == 0 {
+                    format!("{}-thinking", params.container_id)
+                } else {
+                    format!("{}-thinking-{}", params.container_id, i)
+                },
                 [thinking_with_margin],
             ));
         }
-    } else if let Some(tb) = params.thinking {
-        let summary_style = Style::new()
-            .fg(t.resolve_color(t.colors.text_muted))
-            .italic();
+    } else {
+        for tb in &thinking_blocks {
+            let summary_style = Style::new()
+                .fg(t.resolve_color(t.colors.text_muted))
+                .italic();
 
-        let summary_node = if !params.complete && tb.token_count == 0 {
-            has_hidden_thinking_spinner = true;
-            row([
-                text(" "),
-                spinner(None, render_state.spinner_frame)
-                    .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
-                text(" Thinking…").with_style(summary_style),
-            ])
-        } else {
-            row([
-                text(" "),
-                text(format!("Thought for {} tokens", tb.token_count)).with_style(summary_style),
-            ])
-        };
+            let summary_node = if !params.complete && tb.token_count == 0 {
+                has_hidden_thinking_spinner = true;
+                row([
+                    text(" "),
+                    spinner(None, render_state.spinner_frame)
+                        .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
+                    text(" Thinking…").with_style(summary_style),
+                ])
+            } else {
+                row([
+                    text(" "),
+                    text(format!("Thought for {} tokens", tb.token_count))
+                        .with_style(summary_style),
+                ])
+            };
 
-        nodes.push(summary_node.with_margin(Padding {
-            top: 1,
-            ..Default::default()
-        }));
+            nodes.push(summary_node.with_margin(Padding {
+                top: 1,
+                ..Default::default()
+            }));
+        }
     }
 
     // Determine how many blocks are "complete" (can graduate)
     // If streaming (!complete), all but the last block are complete
     // If complete, all blocks are complete
-    let complete_block_count = if params.complete || params.blocks.is_empty() {
-        params.blocks.len()
+    let complete_block_count = if params.complete || text_blocks.is_empty() {
+        text_blocks.len()
     } else {
-        params.blocks.len().saturating_sub(1)
+        text_blocks.len().saturating_sub(1)
     };
 
     // Show spinner when streaming and no text yet
-    if !params.complete && params.blocks.is_empty() && !has_hidden_thinking_spinner {
-        let spinner_node = if params.thinking.is_some() && render_state.show_thinking {
+    if !params.complete && text_blocks.is_empty() && !has_hidden_thinking_spinner {
+        let spinner_node = if has_thinking && render_state.show_thinking {
             // Thinking is visible, show plain spinner below it
             row([
                 text(" "),
@@ -331,7 +345,7 @@ fn render_assistant_blocks_with_graduation(
     }
 
     // Render text blocks
-    for (i, block) in params.blocks.iter().enumerate() {
+    for (i, block) in text_blocks.iter().enumerate() {
         // Skip empty blocks
         if block.is_empty() {
             continue;
@@ -339,7 +353,7 @@ fn render_assistant_blocks_with_graduation(
 
         // Use continuation margins (no bullet) if this is a continuation response
         // or if this is a subsequent block within the response
-        let margins = if params.is_continuation || i > 0 || params.thinking.is_some() {
+        let margins = if params.is_continuation || i > 0 || has_thinking {
             Margins::assistant_continuation()
         } else {
             Margins::assistant()
@@ -371,7 +385,7 @@ fn render_assistant_blocks_with_graduation(
     }
 
     // Show spinner after text blocks while still streaming
-    if !params.complete && !params.blocks.is_empty() {
+    if !params.complete && !text_blocks.is_empty() {
         nodes.push(row([
             text(" "),
             spinner(None, render_state.spinner_frame).with_style({
@@ -499,14 +513,13 @@ impl ContainerList {
             .push(ChatContainer::UserMessage { id, content });
     }
 
-    /// Remove the last container if it's an empty AssistantResponse (no text, no thinking).
+    /// Remove the last container if it's an empty AssistantResponse.
     /// This avoids "gap" containers that block graduation.
     fn remove_empty_trailing_response(&mut self) {
         let should_remove = matches!(
             self.containers.last(),
             Some(ChatContainer::AssistantResponse {
                 blocks,
-                thinking: None,
                 ..
             }) if blocks.is_empty()
         );
@@ -529,7 +542,6 @@ impl ContainerList {
         self.containers.push(ChatContainer::AssistantResponse {
             id,
             blocks: Vec::new(),
-            thinking: None,
         });
         self.turn_active = true;
         self.containers.len() - 1
@@ -541,7 +553,6 @@ impl ContainerList {
         self.containers.push(ChatContainer::AssistantResponse {
             id,
             blocks: Vec::new(),
-            thinking: None,
         });
         self.turn_active = true;
         self.containers
@@ -557,57 +568,69 @@ impl ContainerList {
 
         if let ChatContainer::AssistantResponse { blocks, .. } = &mut self.containers[response_idx]
         {
+            let trailing_text_start = blocks
+                .iter()
+                .rposition(|b| !matches!(b, ContentBlock::Text(_)))
+                .map_or(0, |i| i + 1);
+            let mut text_blocks: Vec<String> = blocks[trailing_text_start..]
+                .iter()
+                .filter_map(|b| match b {
+                    ContentBlock::Text(content) => Some(content.clone()),
+                    ContentBlock::Thinking(_) => None,
+                })
+                .collect();
+
             // Check if text contains block separators
             let parts: Vec<&str> = text.split("\n\n").collect();
 
-            if blocks.is_empty() {
+            if text_blocks.is_empty() {
                 // First content - add first part as new block
                 if let Some((first, rest)) = parts.split_first() {
                     if !first.is_empty() {
-                        blocks.push(first.to_string());
+                        text_blocks.push(first.to_string());
                     }
                     // Add remaining parts, merging ordered list continuations
                     for part in rest {
                         if !part.is_empty() {
                             if is_ordered_list_continuation(part)
-                                && blocks
+                                && text_blocks
                                     .last()
                                     .map(|b| ends_with_ordered_list_item(b))
                                     .unwrap_or(false)
                             {
                                 // Merge with previous block to preserve list numbering
-                                if let Some(last) = blocks.last_mut() {
+                                if let Some(last) = text_blocks.last_mut() {
                                     last.push_str("\n\n");
                                     last.push_str(part);
                                 }
                             } else {
-                                blocks.push(part.to_string());
+                                text_blocks.push(part.to_string());
                             }
                         }
                     }
                     // Text ended with \n\n — push empty placeholder so next delta
                     // starts a fresh block instead of appending to the current one
-                    if text.ends_with("\n\n") && !blocks.is_empty() {
-                        blocks.push(String::new());
+                    if text.ends_with("\n\n") && !text_blocks.is_empty() {
+                        text_blocks.push(String::new());
                     }
                 }
             } else if parts.len() == 1 {
                 // No separator in this text
                 // Check if we should merge a list continuation into the previous block
                 // (the last block is an empty placeholder from a prior \n\n split)
-                let should_merge_list = blocks.len() >= 2
-                    && blocks.last().map(|b| b.is_empty()).unwrap_or(false)
+                let should_merge_list = text_blocks.len() >= 2
+                    && text_blocks.last().map(|b| b.is_empty()).unwrap_or(false)
                     && is_ordered_list_continuation(text)
-                    && ends_with_ordered_list_item(&blocks[blocks.len() - 2]);
+                    && ends_with_ordered_list_item(&text_blocks[text_blocks.len() - 2]);
 
                 if should_merge_list {
                     // Remove empty placeholder, merge into previous block
-                    blocks.pop();
-                    if let Some(prev) = blocks.last_mut() {
+                    text_blocks.pop();
+                    if let Some(prev) = text_blocks.last_mut() {
                         prev.push_str("\n\n");
                         prev.push_str(text);
                     }
-                } else if let Some(last) = blocks.last_mut() {
+                } else if let Some(last) = text_blocks.last_mut() {
                     if last.is_empty() {
                         // Replace placeholder with content
                         *last = text.to_string();
@@ -635,14 +658,14 @@ impl ContainerList {
                 if let Some((first, rest)) = parts.split_first() {
                     // Check if last block is an empty placeholder and first part is a
                     // list continuation that should merge with the block before it
-                    let merged_list = if blocks.len() >= 2
-                        && blocks.last().map(|b| b.is_empty()).unwrap_or(false)
+                    let merged_list = if text_blocks.len() >= 2
+                        && text_blocks.last().map(|b| b.is_empty()).unwrap_or(false)
                         && !first.is_empty()
                         && is_ordered_list_continuation(first)
-                        && ends_with_ordered_list_item(&blocks[blocks.len() - 2])
+                        && ends_with_ordered_list_item(&text_blocks[text_blocks.len() - 2])
                     {
-                        blocks.pop();
-                        if let Some(prev) = blocks.last_mut() {
+                        text_blocks.pop();
+                        if let Some(prev) = text_blocks.last_mut() {
                             prev.push_str("\n\n");
                             prev.push_str(first);
                         }
@@ -652,7 +675,7 @@ impl ContainerList {
                     };
 
                     if !merged_list {
-                        if let Some(last) = blocks.last_mut() {
+                        if let Some(last) = text_blocks.last_mut() {
                             // If the first part is a list continuation and the current block
                             // ends with a list item, preserve the \n\n separator
                             if !first.is_empty()
@@ -668,34 +691,40 @@ impl ContainerList {
                     for part in rest {
                         if !part.is_empty()
                             && is_ordered_list_continuation(part)
-                            && blocks
+                            && text_blocks
                                 .last()
                                 .map(|b| ends_with_ordered_list_item(b))
                                 .unwrap_or(false)
                         {
-                            if let Some(last) = blocks.last_mut() {
+                            if let Some(last) = text_blocks.last_mut() {
                                 last.push_str("\n\n");
                                 last.push_str(part);
                             }
                         } else {
-                            blocks.push(part.to_string());
+                            text_blocks.push(part.to_string());
                         }
                     }
                 }
             }
+
+            blocks.truncate(trailing_text_start);
+            blocks.extend(text_blocks.into_iter().map(ContentBlock::Text));
         }
     }
 
     /// Set thinking content for the current assistant response.
     pub fn set_thinking(&mut self, content: String, token_count: usize) {
         let idx = self.ensure_open_response();
-        if let Some(ChatContainer::AssistantResponse { thinking, .. }) =
-            self.containers.get_mut(idx)
+        if let Some(ChatContainer::AssistantResponse { blocks, .. }) = self.containers.get_mut(idx)
         {
-            *thinking = Some(ThinkingBlock {
+            let thinking = ThinkingBlock {
                 content,
                 token_count,
-            });
+            };
+            match blocks.last_mut() {
+                Some(ContentBlock::Thinking(last)) => *last = thinking,
+                _ => blocks.push(ContentBlock::Thinking(thinking)),
+            }
         }
     }
 
@@ -704,19 +733,18 @@ impl ContainerList {
     pub fn append_thinking(&mut self, delta: &str) {
         let response_idx = self.ensure_open_response();
 
-        if let ChatContainer::AssistantResponse { thinking, .. } =
-            &mut self.containers[response_idx]
+        if let ChatContainer::AssistantResponse { blocks, .. } = &mut self.containers[response_idx]
         {
-            match thinking {
-                Some(tb) => {
+            match blocks.last_mut() {
+                Some(ContentBlock::Thinking(tb)) => {
                     tb.content.push_str(delta);
                     tb.token_count += 1;
                 }
-                None => {
-                    *thinking = Some(ThinkingBlock {
+                _ => {
+                    blocks.push(ContentBlock::Thinking(ThinkingBlock {
                         content: delta.to_string(),
                         token_count: 1,
-                    });
+                    }));
                 }
             }
         }
@@ -1090,9 +1118,9 @@ mod tests {
 
         if let Some(ChatContainer::AssistantResponse { blocks, .. }) = list.containers.last() {
             assert_eq!(blocks.len(), 3);
-            assert_eq!(blocks[0], "Block 1");
-            assert_eq!(blocks[1], "Block 2");
-            assert_eq!(blocks[2], "Block 3");
+            assert!(matches!(blocks[0], ContentBlock::Text(ref s) if s == "Block 1"));
+            assert!(matches!(blocks[1], ContentBlock::Text(ref s) if s == "Block 2"));
+            assert!(matches!(blocks[2], ContentBlock::Text(ref s) if s == "Block 3"));
         } else {
             panic!("Expected AssistantResponse");
         }
@@ -1109,11 +1137,74 @@ mod tests {
 
         if let Some(ChatContainer::AssistantResponse { blocks, .. }) = list.containers.last() {
             assert_eq!(blocks.len(), 2);
-            assert_eq!(blocks[0], "First part");
-            assert_eq!(blocks[1], "Second part");
+            assert!(matches!(blocks[0], ContentBlock::Text(ref s) if s == "First part"));
+            assert!(matches!(blocks[1], ContentBlock::Text(ref s) if s == "Second part"));
         } else {
             panic!("Expected AssistantResponse");
         }
+    }
+
+    #[test]
+    fn content_block_thinking_coalesces() {
+        let mut list = ContainerList::new();
+        list.start_assistant_response();
+        list.append_thinking("plan ");
+        list.append_thinking("more");
+
+        let blocks = match list.containers.last() {
+            Some(ChatContainer::AssistantResponse { blocks, .. }) => blocks,
+            _ => panic!("Expected AssistantResponse"),
+        };
+
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Thinking(tb) => {
+                assert_eq!(tb.content, "plan more");
+                assert_eq!(tb.token_count, 2);
+            }
+            _ => panic!("Expected thinking block"),
+        }
+    }
+
+    #[test]
+    fn content_block_interleaving_order() {
+        let mut list = ContainerList::new();
+        list.start_assistant_response();
+        list.append_text("first");
+        list.append_thinking("thought");
+        list.append_text("second");
+
+        let blocks = match list.containers.last() {
+            Some(ChatContainer::AssistantResponse { blocks, .. }) => blocks,
+            _ => panic!("Expected AssistantResponse"),
+        };
+
+        assert_eq!(blocks.len(), 3);
+        assert!(matches!(blocks[0], ContentBlock::Text(ref s) if s == "first"));
+        assert!(matches!(
+            blocks[1],
+            ContentBlock::Thinking(ThinkingBlock {
+                content: ref s,
+                token_count: 1
+            }) if s == "thought"
+        ));
+        assert!(matches!(blocks[2], ContentBlock::Text(ref s) if s == "second"));
+    }
+
+    #[test]
+    fn content_block_text_coalesces() {
+        let mut list = ContainerList::new();
+        list.start_assistant_response();
+        list.append_text("Hello");
+        list.append_text(" world");
+
+        let blocks = match list.containers.last() {
+            Some(ChatContainer::AssistantResponse { blocks, .. }) => blocks,
+            _ => panic!("Expected AssistantResponse"),
+        };
+
+        assert_eq!(blocks.len(), 1);
+        assert!(matches!(blocks[0], ContentBlock::Text(ref s) if s == "Hello world"));
     }
 
     /// Reproduces exact append_text sequence captured from cursor-acp duplication bug.
@@ -1142,7 +1233,14 @@ mod tests {
         };
 
         // The full concatenated text across all blocks
-        let full_text: String = blocks.join("\n\n");
+        let full_text: String = blocks
+            .iter()
+            .filter_map(|block| match block {
+                ContentBlock::Text(content) => Some(content.as_str()),
+                ContentBlock::Thinking(_) => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n");
 
         // The greeting text must appear exactly ONCE
         let greeting = "Hello \u{2014} I'm here to help with the Crucible codebase or anything else you're working on.";
@@ -1609,9 +1707,14 @@ mod tests {
                 "List items should not be split: {:?}",
                 blocks
             );
-            assert!(blocks[0].contains("1. First item"));
-            assert!(blocks[0].contains("2. Second item"));
-            assert!(blocks[0].contains("3. Third item"));
+            match &blocks[0] {
+                ContentBlock::Text(content) => {
+                    assert!(content.contains("1. First item"));
+                    assert!(content.contains("2. Second item"));
+                    assert!(content.contains("3. Third item"));
+                }
+                _ => panic!("Expected text block"),
+            }
         } else {
             panic!("Expected AssistantResponse");
         }
@@ -1633,9 +1736,14 @@ mod tests {
                 "Streamed list items should merge: {:?}",
                 blocks
             );
-            assert!(blocks[0].contains("1. First item"));
-            assert!(blocks[0].contains("2. Second item"));
-            assert!(blocks[0].contains("3. Third item"));
+            match &blocks[0] {
+                ContentBlock::Text(content) => {
+                    assert!(content.contains("1. First item"));
+                    assert!(content.contains("2. Second item"));
+                    assert!(content.contains("3. Third item"));
+                }
+                _ => panic!("Expected text block"),
+            }
         } else {
             panic!("Expected AssistantResponse");
         }
@@ -1655,9 +1763,14 @@ mod tests {
                 "Paragraph should be separate: {:?}",
                 blocks
             );
-            assert!(blocks[0].contains("1. First item"));
-            assert!(blocks[0].contains("2. Second item"));
-            assert_eq!(blocks[1], "Some paragraph after the list");
+            assert!(matches!(
+                blocks[0],
+                ContentBlock::Text(ref s) if s.contains("1. First item") && s.contains("2. Second item")
+            ));
+            assert!(matches!(
+                blocks[1],
+                ContentBlock::Text(ref s) if s == "Some paragraph after the list"
+            ));
         } else {
             panic!("Expected AssistantResponse");
         }
