@@ -2,7 +2,7 @@
 
 use crate::tui::oil::app::{Action, App, ViewContext};
 use crate::tui::oil::chat_app::{ChatAppMsg, ChatMode, OilChatApp};
-use crate::tui::oil::chat_runner::OilChatRunner;
+use crate::tui::oil::chat_runner::{OilChatRunner, replay_event_consumer};
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::render::render_to_string;
 use crate::tui::oil::terminal::Terminal;
@@ -1102,5 +1102,97 @@ mod daemon_event_to_tui_tests {
             .await
             .expect("Timeout waiting for consumer task")
             .expect("Consumer task should complete");
+    }
+
+    /// Guardrail test: ensures replay_event_consumer handles all event types that
+    /// handle_session_event handles. When adding a new SessionEvent variant to
+    /// handle_session_event, add it here too.
+    ///
+    /// How to update: add the new event type and minimal valid data to `must_handle` below.
+    #[tokio::test]
+    async fn replay_consumer_handles_all_live_event_types() {
+        use serde_json::json;
+        use std::time::Duration;
+        use tokio::time::timeout;
+
+        // These are all event types that handle_session_event returns Some() for.
+        // The replay consumer MUST handle all of them.
+        // MAINTENANCE: When you add a new variant to handle_session_event, add it here.
+        let must_handle: &[(&str, serde_json::Value)] = &[
+            ("delegation_spawned", json!({
+                "delegation_id": "d1",
+                "prompt": "test prompt",
+                "target_agent": "claude"
+            })),
+            ("delegation_completed", json!({
+                "delegation_id": "d1",
+                "result_summary": "completed successfully"
+            })),
+            ("delegation_failed", json!({
+                "delegation_id": "d1",
+                "error": "test error message"
+            })),
+        ];
+
+        for (event_type, data) in must_handle {
+            let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
+            let (msg_tx, mut msg_rx) = tokio::sync::mpsc::unbounded_channel();
+
+            let replay_session_id = "test-session".to_string();
+            let session_id_clone = replay_session_id.clone();
+
+            // Spawn the replay_event_consumer in a task
+            let consumer_task = tokio::spawn(async move {
+                replay_event_consumer(session_id_clone, event_rx, msg_tx).await;
+            });
+
+            // Send the event
+            let event = crucible_daemon::SessionEvent {
+                session_id: replay_session_id.clone(),
+                event_type: event_type.to_string(),
+                data: data.clone(),
+            };
+
+            event_tx.send(event).unwrap();
+
+            // Receive the message with timeout
+            let msg = timeout(Duration::from_secs(1), msg_rx.recv())
+                .await
+                .expect(&format!("Timeout waiting for message for event type '{}'", event_type))
+                .expect(&format!("Should receive a message for event type '{}'", event_type));
+
+            // Verify we got a message (not None)
+            match msg {
+                ChatAppMsg::DelegationSpawned { .. } => {
+                    assert_eq!(*event_type, "delegation_spawned");
+                }
+                ChatAppMsg::DelegationCompleted { .. } => {
+                    assert_eq!(*event_type, "delegation_completed");
+                }
+                ChatAppMsg::DelegationFailed { .. } => {
+                    assert_eq!(*event_type, "delegation_failed");
+                }
+                other => panic!(
+                    "Event type '{}' produced unexpected message: {:?}",
+                    event_type, other
+                ),
+            }
+
+            // Send replay_complete to end the consumer
+            let complete_event = crucible_daemon::SessionEvent {
+                session_id: replay_session_id.clone(),
+                event_type: "replay_complete".to_string(),
+                data: json!({}),
+            };
+
+            event_tx.send(complete_event).unwrap();
+            drop(event_tx);
+
+            // Wait for consumer to finish with timeout
+            timeout(Duration::from_secs(1), consumer_task)
+                .await
+                .expect("Timeout waiting for consumer task")
+                .expect("Consumer task should complete");
+        }
     }
 }
