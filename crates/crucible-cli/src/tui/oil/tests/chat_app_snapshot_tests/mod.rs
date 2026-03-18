@@ -1082,6 +1082,113 @@ fn snapshot_thinking_then_text_response() {
 }
 
 // =============================================================================
+// Thinking Positional & Density Snapshot Tests (T7)
+// =============================================================================
+
+/// T7: Thinking block renders at its arrival position between text blocks,
+/// not always at the top. Text → Thinking → More Text should preserve order.
+#[test]
+fn snapshot_thinking_renders_between_text() {
+    let mut app = OilChatApp::default();
+    app.set_show_thinking(true);
+    app.on_message(ChatAppMsg::UserMessage("Explain ownership".to_string()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Let me explain Rust's ownership model.".to_string(),
+    ));
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "I should cover the three rules:\n1. Each value has one owner\n2. Only one owner at a time\n3. Value dropped when owner goes out of scope"
+            .to_string(),
+    ));
+    app.on_message(ChatAppMsg::TextDelta(
+        " The key insight is that ownership prevents data races at compile time.".to_string(),
+    ));
+    app.on_message(ChatAppMsg::StreamComplete);
+    assert_snapshot!(render_app(&app));
+}
+
+/// T7: With show_thinking=false, thinking shows bounded tail preview (last 3 lines)
+/// instead of the full thinking content. Uses phonetic alphabet for unique line markers.
+#[test]
+fn snapshot_thinking_preview_mode_shows_bounded() {
+    let mut app = OilChatApp::default();
+    app.set_show_thinking(false);
+    app.on_message(ChatAppMsg::UserMessage("Think deeply".to_string()));
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "Alpha: first line of reasoning.\n\
+         Bravo: exploring the constraints.\n\
+         Charlie: considering edge cases.\n\
+         Delta: narrowing down approach.\n\
+         Echo: validating the hypothesis.\n\
+         Foxtrot: confirming the conclusion."
+            .to_string(),
+    ));
+    app.on_message(ChatAppMsg::TextDelta(
+        "After careful analysis, the answer is 42.".to_string(),
+    ));
+    app.on_message(ChatAppMsg::StreamComplete);
+    assert_snapshot!(render_app(&app));
+}
+
+/// T7: Compare full thinking (show_thinking=true) vs preview mode (show_thinking=false).
+/// Uses named snapshots to capture both states for the same content.
+#[test]
+fn snapshot_thinking_full_vs_preview() {
+    let setup = |show: bool| -> String {
+        let mut app = OilChatApp::default();
+        app.set_show_thinking(show);
+        app.on_message(ChatAppMsg::UserMessage("Analyze this".to_string()));
+        app.on_message(ChatAppMsg::ThinkingDelta(
+            "Alpha: initial assessment.\n\
+             Bravo: deeper analysis.\n\
+             Charlie: cross-referencing data.\n\
+             Delta: forming conclusion.\n\
+             Echo: final verification."
+                .to_string(),
+        ));
+        app.on_message(ChatAppMsg::TextDelta(
+            "Based on my analysis, here are the findings.".to_string(),
+        ));
+        app.on_message(ChatAppMsg::StreamComplete);
+        render_app(&app)
+    };
+
+    assert_snapshot!("thinking_full_mode", setup(true));
+    assert_snapshot!("thinking_preview_mode", setup(false));
+}
+
+// =============================================================================
+// Lua Primary Arg Override Snapshot Tests (T8)
+// =============================================================================
+
+/// T8: lua_primary_arg overrides auto-detected primary arg from tool args JSON.
+/// Without lua_primary_arg, would show "SELECT * FROM users" (auto from query key).
+/// With lua_primary_arg, shows "users table" instead.
+#[test]
+fn snapshot_tool_with_lua_primary_arg() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Query the database".to_string()));
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "sql_query".to_string(),
+        args: r#"{"query":"SELECT * FROM users WHERE active = true","database":"main.db"}"#
+            .to_string(),
+        call_id: None,
+        description: None,
+        source: None,
+        lua_primary_arg: Some("users table".to_string()),
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "sql_query".to_string(),
+        delta: "id | name | active\n1 | Alice | true\n2 | Bob | true".to_string(),
+        call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "sql_query".to_string(),
+        call_id: None,
+    });
+    assert_snapshot!(render_app(&app));
+}
+
+// =============================================================================
 // Context Usage Display Snapshot Tests
 // =============================================================================
 
