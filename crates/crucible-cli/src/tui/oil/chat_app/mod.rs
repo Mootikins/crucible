@@ -184,7 +184,7 @@ impl App for OilChatApp {
         match event {
             Event::Key(key) => self.handle_key(key),
             Event::Tick => {
-                self.spinner_frame = (self.spinner_frame + 1) % 4;
+                self.spinner_frame = self.spinner_frame.wrapping_add(1);
                 self.tick_shell_modal();
                 self.notification_area.expire_toasts();
                 if self.notification_area.is_empty() {
