@@ -231,11 +231,13 @@ fn mock_agent_reports_no_http_by_default() {
 // ---------------------------------------------------------------------------
 
 /// Test 8: Each built-in profile gets appropriate transport when MCP URL is provided.
+/// With SSE priority, agents supporting SSE should report SSE support.
 #[tokio::test]
 async fn each_builtin_profile_gets_valid_mcp_transport() {
     struct TestCase {
         name: &'static str,
         config: MockStdioAgentConfig,
+        expects_sse: bool,
         expects_http: bool,
     }
 
@@ -243,21 +245,25 @@ async fn each_builtin_profile_gets_valid_mcp_transport() {
         TestCase {
             name: "opencode",
             config: MockStdioAgentConfig::opencode(),
+            expects_sse: false,
             expects_http: true,
         },
         TestCase {
             name: "claude_acp",
             config: MockStdioAgentConfig::claude_acp(),
+            expects_sse: false,
             expects_http: true,
         },
         TestCase {
             name: "gemini",
             config: MockStdioAgentConfig::gemini(),
+            expects_sse: false,
             expects_http: false,
         },
         TestCase {
             name: "codex",
             config: MockStdioAgentConfig::codex(),
+            expects_sse: false,
             expects_http: true,
         },
     ];
@@ -273,6 +279,13 @@ async fn each_builtin_profile_gets_valid_mcp_transport() {
         assert!(
             !session.id().is_empty(),
             "{}: Session ID should be non-empty",
+            case.name
+        );
+
+        assert_eq!(
+            client.agent_supports_sse_mcp(),
+            case.expects_sse,
+            "{}: SSE MCP support mismatch",
             case.name
         );
 
