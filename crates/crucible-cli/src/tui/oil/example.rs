@@ -68,7 +68,7 @@ impl App for ChatApp {
                 Action::Continue
             }
             Event::Tick => {
-                self.spinner_frame = (self.spinner_frame + 1) % 4;
+                self.spinner_frame = self.spinner_frame.wrapping_add(1);
                 Action::Continue
             }
             Event::Resize { .. } => Action::Continue,

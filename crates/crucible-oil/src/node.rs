@@ -826,6 +826,65 @@ mod tests {
     }
 
     #[test]
+    fn spinner_all_braille_frames_reachable() {
+        use std::collections::HashSet;
+
+        let mut unique_chars = HashSet::new();
+        for frame in 0..20 {
+            let spinner = SpinnerNode {
+                label: None,
+                style: Style::default(),
+                frame,
+                style_variant: Some(SpinnerStyle::Braille),
+            };
+            unique_chars.insert(spinner.current_char());
+        }
+
+        assert_eq!(unique_chars.len(), 10, "should reach all 10 braille frames");
+    }
+
+    #[test]
+    fn spinner_frame_overflow_never_panics() {
+        let test_frames = vec![0, 4, 10, 100, usize::MAX];
+
+        for frame in test_frames {
+            let spinner = SpinnerNode {
+                label: None,
+                style: Style::default(),
+                frame,
+                style_variant: Some(SpinnerStyle::Braille),
+            };
+            // Should not panic
+            let _ = spinner.current_char();
+        }
+    }
+
+    #[test]
+    fn spinner_cycles_all_braille_frames_in_10_ticks() {
+        let mut chars = Vec::new();
+        for frame in 0..10 {
+            let spinner = SpinnerNode {
+                label: None,
+                style: Style::default(),
+                frame,
+                style_variant: Some(SpinnerStyle::Braille),
+            };
+            chars.push(spinner.current_char());
+        }
+
+        let unique_count = chars.iter().collect::<std::collections::HashSet<_>>().len();
+        assert_eq!(
+            unique_count, 10,
+            "10 consecutive frames should produce 10 unique chars"
+        );
+        assert_eq!(
+            chars,
+            BRAILLE_SPINNER_FRAMES.to_vec(),
+            "should cycle through all braille frames in order"
+        );
+    }
+
+    #[test]
     fn test_popup_viewport_offset() {
         let items = vec![
             popup_item("a"),
