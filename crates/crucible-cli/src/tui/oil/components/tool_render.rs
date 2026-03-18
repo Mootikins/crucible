@@ -22,31 +22,61 @@ pub fn render_tool_call_with_frame(tool: &CachedToolCall, spinner_frame: usize) 
     let args_formatted = format_tool_args(&tool.args);
     let result_str = tool.result();
 
-    if let Some(ref error) = tool.error {
-        return render_tool_error(tool, &display_name, &args_formatted, error);
-    }
+    let inner = if let Some(ref error) = tool.error {
+        render_tool_error(tool, &display_name, &args_formatted, error)
+    } else if tool.complete {
+        render_tool_complete(tool, &display_name, &args_formatted, &result_str)
+    } else {
+        render_tool_running(
+            tool,
+            &display_name,
+            &args_formatted,
+            &result_str,
+            spinner_frame,
+        )
+    };
 
-    if tool.complete {
-        return render_tool_complete(tool, &display_name, &args_formatted, &result_str);
+    let description_node = render_tool_description(tool);
+    if matches!(description_node, Node::Empty) {
+        inner
+    } else {
+        col([inner, description_node])
     }
+}
 
-    render_tool_running(
-        tool,
-        &display_name,
-        &args_formatted,
-        &result_str,
-        spinner_frame,
+fn render_tool_description(tool: &CachedToolCall) -> Node {
+    let desc = match tool.description.as_deref() {
+        Some(d) if !d.is_empty() => d,
+        _ => return Node::Empty,
+    };
+    let t = crate::tui::oil::theme::active();
+    styled(
+        format!("    {}", desc),
+        Style::new().fg(t.resolve_color(t.colors.text_muted)).dim(),
+    )
+}
+
+fn render_source_badge(tool: &CachedToolCall) -> Node {
+    let source = match tool.source {
+        Some(ref s) => s,
+        None => return Node::Empty,
+    };
+    let t = crate::tui::oil::theme::active();
+    styled(
+        format!(" [{}]", source.label()),
+        Style::new().fg(t.resolve_color(t.colors.text_muted)).dim(),
     )
 }
 
 fn render_tool_error(
-    _tool: &CachedToolCall,
+    tool: &CachedToolCall,
     display_name: &str,
     args_formatted: &str,
     error: &str,
 ) -> Node {
     let t = crate::tui::oil::theme::active();
     let icon = format!(" {} ", t.decorations.tool_error_icon);
+    let source_badge = render_source_badge(tool);
     let args_part = format!("({}) ", args_formatted);
     // Calculate prefix width: icon + display_name + args
     let prefix_width =
@@ -65,6 +95,7 @@ fn render_tool_error(
                 display_name,
                 Style::new().fg(t.resolve_color(t.colors.text_dim)),
             ),
+            source_badge,
             styled(
                 args_part,
                 Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
@@ -75,13 +106,13 @@ fn render_tool_error(
             ),
         ])
     } else {
-        // Error is too long for inline: show on second line at full terminal width
         let header = row([
             styled(icon, Style::new().fg(t.resolve_color(t.colors.error))),
             styled(
                 display_name,
                 Style::new().fg(t.resolve_color(t.colors.text_dim)),
             ),
+            source_badge,
             styled(
                 args_part,
                 Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
@@ -125,6 +156,7 @@ fn render_tool_complete(
         Node::Empty
     };
 
+    let source_badge = render_source_badge(tool);
     let header = row([
         styled(
             format!(" {} ", t.decorations.tool_success_icon),
@@ -134,6 +166,7 @@ fn render_tool_complete(
             display_name,
             Style::new().fg(t.resolve_color(t.colors.text_dim)),
         ),
+        source_badge,
         if args_formatted.is_empty() {
             Node::Empty
         } else if has_arrow_suffix {
@@ -179,6 +212,7 @@ fn render_tool_running(
             .style(Style::new().fg(t.resolve_color(t.colors.text_dim)))
             .style_variant(SpinnerStyle::Braille),
     );
+    let source_badge = render_source_badge(tool);
     let header = row([
         styled(" ", Style::new()),
         spinner,
@@ -187,6 +221,7 @@ fn render_tool_running(
             display_name,
             Style::new().fg(t.resolve_color(t.colors.text_dim)),
         ),
+        source_badge,
         styled(
             format!("({})", args_formatted),
             Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),

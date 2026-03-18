@@ -506,6 +506,8 @@ fn rendering_is_idempotent_with_tool_calls() {
         name: "test_tool".to_string(),
         args: r#"{"arg": "value"}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "test_tool".to_string(),

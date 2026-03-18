@@ -118,6 +118,8 @@ fn snapshot_tool_call_pending() {
         name: "read_file".to_string(),
         args: r#"{"path":"README.md","offset":1,"limit":100}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     assert_snapshot!(render_app(&app));
 }
@@ -130,6 +132,8 @@ fn snapshot_tool_call_complete() {
         name: "read_file".to_string(),
         args: r#"{"path":"README.md"}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -151,6 +155,8 @@ fn snapshot_tool_output_many_lines_shows_count() {
         name: "mcp_bash".to_string(),
         args: r#"{"command":"ls -la"}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     let output = "file1.txt\nfile2.txt\nfile3.txt\nfile4.txt\nfile5.txt\n\
                   file6.txt\nfile7.txt\nfile8.txt\nfile9.txt\nfile10.txt";
@@ -174,6 +180,8 @@ fn snapshot_read_tool_preserves_closing_bracket() {
         name: "mcp_read".to_string(),
         args: r#"{"filePath":"/home/user/test.rs"}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     let output = "<file>\n00001| fn main() {\n00002|     println!(\"hello\");\n00003| }\n</file>\n\n[Directory Context: /home/user/project]";
     app.on_message(ChatAppMsg::ToolResultDelta {
@@ -200,6 +208,8 @@ fn snapshot_multiple_tools_no_gaps() {
         name: "bash".to_string(),
         args: r#"{"command":"ls -la"}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "bash".to_string(),
@@ -216,6 +226,8 @@ fn snapshot_multiple_tools_no_gaps() {
         name: "read_file".to_string(),
         args: r#"{"path":"README.md"}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -232,6 +244,8 @@ fn snapshot_multiple_tools_no_gaps() {
         name: "bash".to_string(),
         args: r#"{"command":"cat Cargo.toml"}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "bash".to_string(),
@@ -265,6 +279,8 @@ fn snapshot_text_tool_text_spacing() {
         name: "bash".to_string(),
         args: r#"{"command":"ls"}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "bash".to_string(),
@@ -301,6 +317,8 @@ fn snapshot_sequential_tool_calls_with_text() {
         name: "bash".to_string(),
         args: r#"{"command":"ls src/"}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "bash".to_string(),
@@ -322,6 +340,8 @@ fn snapshot_sequential_tool_calls_with_text() {
         name: "read_file".to_string(),
         args: r#"{"path":"src/main.rs"}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -404,6 +424,8 @@ fn snapshot_numbered_list_across_tool_boundary() {
         name: "read_file".to_string(),
         args: r#"{"path":"tests/regression.rs"}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -447,6 +469,8 @@ fn snapshot_bullet_list_across_tool_boundary() {
         name: "read_file".to_string(),
         args: r#"{"path":"src/main.rs"}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -513,6 +537,8 @@ fn snapshot_sequential_tools_mid_stream() {
         name: "bash".to_string(),
         args: r#"{"command":"ls"}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "bash".to_string(),
@@ -534,6 +560,8 @@ fn snapshot_sequential_tools_mid_stream() {
         name: "read_file".to_string(),
         args: r#"{"path":"src/main.rs"}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
 
     // Snapshot mid-stream: second tool is pending
@@ -555,6 +583,8 @@ fn snapshot_sequential_tools_all_complete_still_streaming() {
         name: "bash".to_string(),
         args: r#"{"command":"ls -la"}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "bash".to_string(),
@@ -576,6 +606,8 @@ fn snapshot_sequential_tools_all_complete_still_streaming() {
         name: "read_file".to_string(),
         args: r#"{"path":"Cargo.toml"}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -607,11 +639,15 @@ fn snapshot_parallel_tool_calls_same_name() {
         name: "read_file".to_string(),
         args: r#"{"path":"README.md"}"#.to_string(),
         call_id: Some("call-readme".to_string()),
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolCall {
         name: "read_file".to_string(),
         args: r#"{"path":"Cargo.toml"}"#.to_string(),
         call_id: Some("call-cargo".to_string()),
+        description: None,
+        source: None,
     });
 
     // Results for first tool (README.md) — matched by call_id
@@ -654,6 +690,8 @@ fn snapshot_back_to_back_tools_no_text() {
         name: "read_file".to_string(),
         args: r#"{"path":"README.md"}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -670,6 +708,8 @@ fn snapshot_back_to_back_tools_no_text() {
         name: "read_file".to_string(),
         args: r#"{"path":"Cargo.toml"}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -686,6 +726,8 @@ fn snapshot_back_to_back_tools_no_text() {
         name: "read_file".to_string(),
         args: r#"{"path":"src/main.rs"}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -1225,6 +1267,8 @@ fn snapshot_multi_turn_with_tool_calls() {
         name: "read_file".to_string(),
         args: r#"{"path":"config.toml"}"#.to_string(),
         call_id: Some("call-1".to_string()),
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -1247,6 +1291,8 @@ fn snapshot_multi_turn_with_tool_calls() {
         name: "edit_file".to_string(),
         args: r#"{"path":"config.toml","content":"[kiln]\npath = \"~/vault\""}"#.to_string(),
         call_id: Some("call-2".to_string()),
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "edit_file".to_string(),
@@ -1327,6 +1373,8 @@ fn snapshot_raw_tool_call_pending() {
         name: "read_file".to_string(),
         args: r#"{"path":"README.md","offset":1,"limit":100}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     assert_snapshot!(render_app_raw(&app));
 }
@@ -1339,6 +1387,8 @@ fn snapshot_raw_tool_call_complete() {
         name: "read_file".to_string(),
         args: r#"{"path":"README.md"}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -1433,4 +1483,137 @@ fn snapshot_raw_perm_modal_bash_command() {
     );
     app.open_interaction("perm-bash".to_string(), request);
     assert_snapshot!(render_app_raw(&app));
+}
+
+// =============================================================================
+// Tool Metadata (description + source) Snapshot Tests
+// =============================================================================
+
+#[test]
+fn snapshot_tool_with_description_only() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Search notes".to_string()));
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "semantic_search".to_string(),
+        args: r#"{"query":"authentication"}"#.to_string(),
+        call_id: None,
+        description: Some("Search notes by semantic similarity".to_string()),
+        source: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "semantic_search".to_string(),
+        delta: "Found 5 relevant notes".to_string(),
+        call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "semantic_search".to_string(),
+        call_id: None,
+    });
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
+fn snapshot_tool_with_source_only() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Read file".to_string()));
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "read_file".to_string(),
+        args: r#"{"path":"README.md"}"#.to_string(),
+        call_id: None,
+        description: None,
+        source: Some("Crucible".to_string()),
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "read_file".to_string(),
+        delta: "# README\nProject docs".to_string(),
+        call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "read_file".to_string(),
+        call_id: None,
+    });
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
+fn snapshot_tool_with_description_and_source() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Search notes".to_string()));
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "semantic_search".to_string(),
+        args: r#"{"query":"auth"}"#.to_string(),
+        call_id: None,
+        description: Some("Search notes by semantic similarity".to_string()),
+        source: Some("Crucible".to_string()),
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "semantic_search".to_string(),
+        delta: "Found 5 results".to_string(),
+        call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "semantic_search".to_string(),
+        call_id: None,
+    });
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
+fn snapshot_tool_with_mcp_source() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("List issues".to_string()));
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "list_issues".to_string(),
+        args: r#"{"repo":"crucible"}"#.to_string(),
+        call_id: None,
+        description: Some("List open issues from repository".to_string()),
+        source: Some("Mcp:github".to_string()),
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "list_issues".to_string(),
+        delta: "Issue #1: Fix auth\nIssue #2: Add tests".to_string(),
+        call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "list_issues".to_string(),
+        call_id: None,
+    });
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
+fn snapshot_tool_without_metadata_unchanged() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Read a file".to_string()));
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "read_file".to_string(),
+        args: r#"{"path":"src/lib.rs"}"#.to_string(),
+        call_id: None,
+        description: None,
+        source: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "read_file".to_string(),
+        delta: "pub mod core;".to_string(),
+        call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "read_file".to_string(),
+        call_id: None,
+    });
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
+fn snapshot_tool_pending_with_metadata() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Search".to_string()));
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "semantic_search".to_string(),
+        args: r#"{"query":"patterns"}"#.to_string(),
+        call_id: None,
+        description: Some("Search notes by semantic similarity".to_string()),
+        source: Some("Crucible".to_string()),
+    });
+    assert_snapshot!(render_app(&app));
 }

@@ -343,6 +343,8 @@ fn app_handles_tool_call_from_stream() {
         name: "read_file".to_string(),
         args: r#"{"path":"test.txt"}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -418,6 +420,8 @@ mod daemon_event_to_tui_tests {
                     name: tc.name,
                     args: args_val.to_string(),
                     call_id: None,
+                    description: None,
+                    source: None,
                 });
             }
         }
@@ -531,6 +535,8 @@ mod daemon_event_to_tui_tests {
             name: "read_file".to_string(),
             args: r#"{"path":"test.rs"}"#.to_string(),
             call_id: None,
+            description: None,
+            source: None,
         });
 
         let chunk = ChatChunk {
@@ -737,6 +743,8 @@ mod daemon_event_to_tui_tests {
             name: "glob".to_string(),
             args: r#"{"pattern":"*.rs"}"#.to_string(),
             call_id: None,
+            description: None,
+            source: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "glob".to_string(),
@@ -787,6 +795,8 @@ mod daemon_event_to_tui_tests {
             name: "read_file".to_string(),
             args: r#"{"path":"test.rs"}"#.to_string(),
             call_id: None,
+            description: None,
+            source: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "read_file".to_string(),

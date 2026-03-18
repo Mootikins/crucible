@@ -108,7 +108,9 @@ proptest! {
                     app.on_message(ChatAppMsg::ToolCall {
                         name: name.clone(),
                         args: args.clone(),
-                call_id: None,
+                        call_id: None,
+                        description: None,
+                        source: None,
                     });
                 }
                 StreamEvent::ToolResultDelta { name, delta } => {

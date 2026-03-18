@@ -332,6 +332,8 @@ fn overflow_graduation_does_not_duplicate_content() {
         name: "bash".to_string(),
         args: r#"{"command":"ls -la"}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     let tree = view_with_default_ctx(&app);
     runtime.render(&tree);
@@ -401,6 +403,8 @@ fn incremental_text_after_tool_no_duplication() {
         name: "bash".to_string(),
         args: "{}".to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     let tree = view_with_default_ctx(&app);
     runtime.render(&tree);

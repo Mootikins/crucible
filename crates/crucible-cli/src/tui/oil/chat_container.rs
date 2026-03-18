@@ -1367,6 +1367,8 @@ mod tests {
             name: "___".to_string(),
             args: r#"{"query": "test"}"#.to_string(),
             call_id: None,
+            description: None,
+            source: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "___".to_string(),
@@ -1429,6 +1431,8 @@ mod tests {
                 name: "___".to_string(),
                 args: r#"{"query": "test"}"#.to_string(),
                 call_id: None,
+                description: None,
+                source: None,
             }),
             ("ToolResultDelta ___", ChatAppMsg::ToolResultDelta {
                 name: "___".to_string(),

@@ -73,6 +73,8 @@ fn test_tool_call_flow() {
         name: "Read".to_string(),
         args: r#"{"path":"file.md","offset":10}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     let tool = app.container_list().find_tool("Read").unwrap();
     assert_eq!(tool.name.as_ref(), "Read");
@@ -203,6 +205,8 @@ fn test_tool_call_renders_with_result() {
         name: "read_file".to_string(),
         args: r#"{"path":"README.md","offset":1,"limit":200}"#.to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
 
     let focus = FocusContext::new();
@@ -1218,6 +1222,8 @@ fn tool_result_error_strips_prefix_chains() {
         name: "read".to_string(),
         args: "{}".to_string(),
         call_id: Some("c1".to_string()),
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolResultError {
         name: "read".to_string(),
@@ -1239,6 +1245,8 @@ fn tool_result_error_strips_mixed_prefixes() {
         name: "search".to_string(),
         args: "{}".to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolResultError {
         name: "search".to_string(),
@@ -1260,6 +1268,8 @@ fn tool_result_error_preserves_clean_errors() {
         name: "bash".to_string(),
         args: "{}".to_string(),
         call_id: None,
+        description: None,
+        source: None,
     });
     app.on_message(ChatAppMsg::ToolResultError {
         name: "bash".to_string(),

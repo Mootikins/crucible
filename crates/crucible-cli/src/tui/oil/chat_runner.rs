@@ -742,6 +742,8 @@ impl OilChatRunner {
                                 name: tc.name.clone(),
                                 args: args_str,
                                 call_id: tc.id.clone(),
+                                description: None,
+                                source: None,
                             })
                             .is_err()
                         {
@@ -1608,10 +1610,22 @@ pub(crate) async fn replay_event_consumer(
                     .get("call_id")
                     .and_then(|v| v.as_str())
                     .map(String::from);
+                let description = event
+                    .data
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let source = event
+                    .data
+                    .get("source")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
                 Some(ChatAppMsg::ToolCall {
                     name,
                     args,
                     call_id,
+                    description,
+                    source,
                 })
             }
             "tool_result" => {
