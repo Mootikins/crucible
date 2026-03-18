@@ -251,7 +251,7 @@ async fn each_builtin_profile_gets_valid_mcp_transport() {
         TestCase {
             name: "claude_acp",
             config: MockStdioAgentConfig::claude_acp(),
-            expects_sse: false,
+            expects_sse: true,
             expects_http: true,
         },
         TestCase {
@@ -296,6 +296,49 @@ async fn each_builtin_profile_gets_valid_mcp_transport() {
             case.name
         );
     }
+}
+
+/// Test 10: Agent with SSE-only support gets stdio fallback (we don't serve legacy SSE)
+#[tokio::test]
+async fn agent_with_sse_only_gets_stdio_fallback() {
+    let config = MockStdioAgentConfig {
+        mcp_http: false,
+        mcp_sse: true,
+        ..MockStdioAgentConfig::opencode()
+    };
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
+
+    // Agent supports SSE but NOT HTTP.
+    // We don't serve legacy SSE, so should fall back to stdio.
+    let session = client
+        .connect_with_best_mcp(Some("http://127.0.0.1:9999/mcp"))
+        .await
+        .expect("should succeed with stdio fallback");
+
+    assert!(!session.id().is_empty());
+    assert!(!client.agent_supports_http_mcp(), "should NOT report HTTP");
+    assert!(client.agent_supports_sse_mcp(), "should report SSE");
+}
+
+/// Test 11: Agent with both HTTP and SSE gets HTTP (Streamable HTTP), not SSE (legacy)
+#[tokio::test]
+async fn agent_with_both_http_and_sse_gets_http_not_sse() {
+    let config = MockStdioAgentConfig {
+        mcp_http: true,
+        mcp_sse: true,
+        ..MockStdioAgentConfig::opencode()
+    };
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
+
+    let session = client
+        .connect_with_best_mcp(Some("http://127.0.0.1:9999/mcp"))
+        .await
+        .expect("should succeed with HTTP transport");
+
+    assert!(!session.id().is_empty());
+    assert!(client.agent_supports_http_mcp());
+    assert!(client.agent_supports_sse_mcp());
+    // Key: HTTP was chosen (not SSE) because we serve Streamable HTTP
 }
 
 /// Test 9: Stdio fallback always creates valid session for all profiles.

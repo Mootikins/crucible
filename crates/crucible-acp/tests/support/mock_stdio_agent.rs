@@ -92,7 +92,7 @@ impl MockStdioAgentConfig {
         Self {
             behavior: AgentBehavior::ClaudeAcp,
             protocol_version: 1,
-            requires_auth: true, // Claude typically requires API key
+            requires_auth: true,
             response_delay_ms: None,
             inject_errors: false,
             capabilities: vec![
@@ -102,7 +102,7 @@ impl MockStdioAgentConfig {
                 "loadSession".to_string(),
             ],
             mcp_http: true,
-            mcp_sse: false,
+            mcp_sse: true,
         }
     }
 
