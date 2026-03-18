@@ -21,7 +21,7 @@ fn workspace_root() -> PathBuf {
 
 #[test]
 fn demo_config_parses_without_error() {
-    let config_path = workspace_root().join("assets/demo-config.toml");
+    let config_path = workspace_root().join("assets/demo-config.toml.example");
 
     assert!(
         config_path.exists(),
@@ -49,7 +49,7 @@ fn demo_config_parses_without_error() {
 
 #[test]
 fn demo_acp_config_parses_without_error() {
-    let config_path = workspace_root().join("assets/demo-acp-config.toml");
+    let config_path = workspace_root().join("assets/demo-acp-config.toml.example");
 
     assert!(
         config_path.exists(),
@@ -77,7 +77,7 @@ fn demo_acp_config_parses_without_error() {
 
 #[test]
 fn demo_acp_config_has_valid_delegation_config() {
-    let config_path = workspace_root().join("assets/demo-acp-config.toml");
+    let config_path = workspace_root().join("assets/demo-acp-config.toml.example");
 
     let config = CliAppConfig::load(Some(config_path), None, None)
         .expect("demo-acp-config.toml should parse");
@@ -131,7 +131,7 @@ fn demo_acp_config_has_valid_delegation_config() {
 
 #[test]
 fn demo_acp_config_no_legacy_providers_section() {
-    let config_path = workspace_root().join("assets/demo-acp-config.toml");
+    let config_path = workspace_root().join("assets/demo-acp-config.toml.example");
 
     // This test verifies that the config file doesn't have the legacy [providers] section
     // by ensuring it parses successfully (the parser rejects [providers] with an error)
@@ -145,7 +145,7 @@ fn demo_acp_config_no_legacy_providers_section() {
 
 #[test]
 fn demo_acp_config_no_legacy_chat_provider_field() {
-    let config_path = workspace_root().join("assets/demo-acp-config.toml");
+    let config_path = workspace_root().join("assets/demo-acp-config.toml.example");
 
     // This test verifies that the config file doesn't have the legacy chat.provider field
     // by ensuring it parses successfully (the parser rejects chat.provider with an error)
