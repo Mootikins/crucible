@@ -188,10 +188,10 @@ Integration-style tests demonstrate:
 
 ## Related Code
 
-- **Factory Implementation**: `./crucible/crates/crucible-cli/src/factories/agent.rs`
-- **Config Components**: `./crucible/crates/crucible-config/src/components/`
-- **LLM Providers**: `./crucible/crates/crucible-llm/src/`
-- **Agent Handle**: `./crucible/crates/crucible-agents/src/handle.rs`
+- **Factory Implementation**: `./crates/crucible-cli/src/factories/agent.rs`
+- **Config Components**: `./crates/crucible-config/src/components/`
+- **LLM Providers**: `./crates/crucible-llm/src/`
+- **Agent Handle**: `./crates/crucible-agents/src/handle.rs`
 
 ## Adding New Tests
 
