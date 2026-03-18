@@ -1,6 +1,7 @@
 use super::*;
 use crate::agent_manager::tool_tracking::ToolCallTracker;
 use crucible_core::events::InternalSessionEvent;
+use crucible_core::types::ToolSource;
 use std::collections::HashSet;
 
 const DEFAULT_MAX_TOOL_DEPTH: usize = 10;
@@ -8,6 +9,15 @@ const TOOL_DEPTH_LIMIT_FINAL_PROMPT: &str =
     "You have reached the tool call limit. Please provide your final answer based on the information gathered so far.";
 
 impl AgentManager {
+    fn format_tool_source(source: &ToolSource) -> String {
+        match source {
+            ToolSource::Core => "Core".to_string(),
+            ToolSource::Crucible => "Crucible".to_string(),
+            ToolSource::Mcp { server } => format!("Mcp:{server}"),
+            ToolSource::Plugin { name } => format!("Plugin:{name}"),
+        }
+    }
+
     pub async fn send_message(
         &self,
         session_id: &str,
@@ -888,12 +898,28 @@ impl AgentManager {
 
         if !emit_event(
             &stream_ctx.event_tx,
-            SessionEventMessage::tool_call(
-                &stream_ctx.session_id,
-                &call_id,
-                &tool_call.name,
-                args.clone(),
-            ),
+            {
+                let (description, source) = stream_ctx
+                    .tool_dispatcher
+                    .get_tool_ref(&tool_call.name)
+                    .and_then(|tool_ref| match &tool_ref.source {
+                        ToolSource::Core | ToolSource::Crucible => Some((
+                            tool_ref.definition.description.map(|d| d.to_string()),
+                            Some(Self::format_tool_source(&tool_ref.source)),
+                        )),
+                        ToolSource::Mcp { .. } | ToolSource::Plugin { .. } => None,
+                    })
+                    .unwrap_or((None, None));
+
+                SessionEventMessage::tool_call_with_metadata(
+                    &stream_ctx.session_id,
+                    &call_id,
+                    &tool_call.name,
+                    args.clone(),
+                    description,
+                    source,
+                )
+            },
         ) {
             warn!(
                 session_id = %stream_ctx.session_id,

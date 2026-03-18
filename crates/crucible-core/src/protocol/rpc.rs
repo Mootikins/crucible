@@ -143,15 +143,30 @@ impl SessionEventMessage {
         tool: impl Into<String>,
         args: Value,
     ) -> Self {
-        Self::new(
-            session_id,
-            "tool_call",
-            serde_json::json!({
-                "call_id": call_id.into(),
-                "tool": tool.into(),
-                "args": args,
-            }),
-        )
+        Self::tool_call_with_metadata(session_id, call_id, tool, args, None, None)
+    }
+
+    pub fn tool_call_with_metadata(
+        session_id: impl Into<String>,
+        call_id: impl Into<String>,
+        tool: impl Into<String>,
+        args: Value,
+        description: Option<String>,
+        source: Option<String>,
+    ) -> Self {
+        let mut data = serde_json::json!({
+            "call_id": call_id.into(),
+            "tool": tool.into(),
+            "args": args,
+        });
+        if let Some(description) = description {
+            data["description"] = serde_json::json!(description);
+        }
+        if let Some(source) = source {
+            data["source"] = serde_json::json!(source);
+        }
+
+        Self::new(session_id, "tool_call", data)
     }
 
     pub fn tool_result(

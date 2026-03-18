@@ -124,6 +124,10 @@ pub enum SessionEvent {
         name: String,
         /// Arguments passed to the tool.
         args: JsonValue,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        source: Option<String>,
     },
 
     /// Tool execution completed.
@@ -451,6 +455,8 @@ impl SessionEvent {
     /// let event = SessionEvent::ToolCalled {
     ///     name: "search".into(),
     ///     args: JsonValue::Null,
+    ///     description: None,
+    ///     source: None,
     /// };
     /// assert_eq!(event.type_name(), "ToolCalled");
     /// ```
@@ -492,6 +498,8 @@ impl SessionEvent {
     /// let event = SessionEvent::ToolCalled {
     ///     name: "search".into(),
     ///     args: JsonValue::String("query".into()),
+    ///     description: None,
+    ///     source: None,
     /// };
     /// let summary = event.summary(100);
     /// assert!(summary.contains("tool=search"));
@@ -517,7 +525,7 @@ impl SessionEvent {
             Self::AgentThinking { thought } => {
                 format!("thought_len={}", thought.len())
             }
-            Self::ToolCalled { name, args } => {
+            Self::ToolCalled { name, args, .. } => {
                 format!("tool={}, args_size={}", name, args.to_string().len())
             }
             Self::ToolCompleted {
@@ -1214,7 +1222,9 @@ mod tests {
         assert_eq!(
             SessionEvent::ToolCalled {
                 name: "".into(),
-                args: JsonValue::Null
+                args: JsonValue::Null,
+                description: None,
+                source: None,
             }
             .event_type(),
             "tool_called"
@@ -1337,6 +1347,8 @@ mod tests {
         let event = SessionEvent::ToolCalled {
             name: "search".into(),
             args: JsonValue::Null,
+            description: None,
+            source: None,
         };
         assert_eq!(event.identifier(), "search");
 
@@ -1461,7 +1473,9 @@ mod tests {
         // Tool events
         assert!(SessionEvent::ToolCalled {
             name: "".into(),
-            args: JsonValue::Null
+            args: JsonValue::Null,
+            description: None,
+            source: None,
         }
         .is_tool_event());
         assert!(SessionEvent::ToolCompleted {
@@ -1495,7 +1509,9 @@ mod tests {
         .is_note_event());
         assert!(!SessionEvent::ToolCalled {
             name: "".into(),
-            args: JsonValue::Null
+            args: JsonValue::Null,
+            description: None,
+            source: None,
         }
         .is_note_event());
 
@@ -1696,6 +1712,55 @@ mod tests {
     }
 
     #[test]
+    fn tool_called_with_metadata_round_trips() {
+        let event = SessionEvent::ToolCalled {
+            name: "search".to_string(),
+            args: serde_json::json!({"query": "rust"}),
+            description: Some("Search notes".to_string()),
+            source: Some("Crucible".to_string()),
+        };
+
+        let json = serde_json::to_string(&event).unwrap();
+        let parsed: SessionEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(event, parsed);
+
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["description"], "Search notes");
+        assert_eq!(value["source"], "Crucible");
+    }
+
+    #[test]
+    fn tool_called_without_metadata_backward_compat() {
+        let json = r#"{"type":"tool_called","name":"test","args":{}}"#;
+        let parsed: SessionEvent = serde_json::from_str(json).unwrap();
+
+        match parsed {
+            SessionEvent::ToolCalled {
+                name,
+                args,
+                description,
+                source,
+            } => {
+                assert_eq!(name, "test");
+                assert_eq!(args, serde_json::json!({}));
+                assert_eq!(description, None);
+                assert_eq!(source, None);
+            }
+            _ => panic!("Expected ToolCalled"),
+        }
+
+        let event = SessionEvent::ToolCalled {
+            name: "test".to_string(),
+            args: serde_json::json!({}),
+            description: None,
+            source: None,
+        };
+        let reserialized = serde_json::to_string(&event).unwrap();
+        assert!(!reserialized.contains("\"description\""));
+        assert!(!reserialized.contains("\"source\""));
+    }
+
+    #[test]
     fn test_all_variants_serialize() {
         let events = vec![
             SessionEvent::MessageReceived {
@@ -1712,6 +1777,8 @@ mod tests {
             SessionEvent::ToolCalled {
                 name: "tool".into(),
                 args: serde_json::json!({}),
+                description: None,
+                source: None,
             },
             SessionEvent::ToolCompleted {
                 name: "tool".into(),
@@ -2138,6 +2205,8 @@ mod tests {
         let tool_called = SessionEvent::ToolCalled {
             name: "search".into(),
             args: JsonValue::Null,
+            description: None,
+            source: None,
         };
         assert_eq!(tool_called.priority(), Priority::Normal);
 
@@ -2524,7 +2593,9 @@ mod tests {
         assert_eq!(
             SessionEvent::ToolCalled {
                 name: "".into(),
-                args: JsonValue::Null
+                args: JsonValue::Null,
+                description: None,
+                source: None,
             }
             .type_name(),
             "ToolCalled"
@@ -2563,6 +2634,8 @@ mod tests {
         let event = SessionEvent::ToolCalled {
             name: "search".into(),
             args: serde_json::json!({"query": "test"}),
+            description: None,
+            source: None,
         };
         let summary = event.summary(100);
         assert!(summary.contains("tool=search"));
@@ -2818,6 +2891,10 @@ enum SessionEventHelper {
     ToolCalled {
         name: String,
         args: JsonValue,
+        #[serde(default)]
+        description: Option<String>,
+        #[serde(default)]
+        source: Option<String>,
     },
     ToolCompleted {
         name: String,
@@ -2886,9 +2963,17 @@ impl From<SessionEventHelper> for SessionEvent {
             SessionEventHelper::AgentThinking { thought } => {
                 SessionEvent::AgentThinking { thought }
             }
-            SessionEventHelper::ToolCalled { name, args } => {
-                SessionEvent::ToolCalled { name, args }
-            }
+            SessionEventHelper::ToolCalled {
+                name,
+                args,
+                description,
+                source,
+            } => SessionEvent::ToolCalled {
+                name,
+                args,
+                description,
+                source,
+            },
             SessionEventHelper::ToolCompleted {
                 name,
                 result,

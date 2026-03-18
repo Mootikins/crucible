@@ -383,6 +383,8 @@ impl ExtendedMcpServer {
         let pre_event = SessionEvent::ToolCalled {
             name: name.to_string(),
             args: arguments.clone(),
+            description: None,
+            source: None,
         };
         let (modified_event, cancelled) = self.emit_event(pre_event).await;
 
@@ -479,6 +481,8 @@ impl ExtendedMcpServer {
         let pre_event = SessionEvent::ToolCalled {
             name: name.to_string(),
             args: arguments.clone(),
+            description: None,
+            source: None,
         };
         let (modified_event, cancelled) = self.emit_event(pre_event).await;
 

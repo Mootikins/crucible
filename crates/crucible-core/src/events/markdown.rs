@@ -79,7 +79,7 @@ impl SessionEvent {
 
             SessionEvent::AgentThinking { thought } => format_agent_thinking(thought),
 
-            SessionEvent::ToolCalled { name, args } => format_tool_called(name, args),
+            SessionEvent::ToolCalled { name, args, .. } => format_tool_called(name, args),
 
             SessionEvent::ToolCompleted {
                 name,
@@ -707,7 +707,12 @@ fn parse_tool_called(body: &str) -> MarkdownParseResult<SessionEvent> {
     let name = extract_inline_code_field(body, "**Tool:**")?;
     let args = extract_json_block(body, "**Arguments:**")?;
 
-    Ok(SessionEvent::ToolCalled { name, args })
+    Ok(SessionEvent::ToolCalled {
+        name,
+        args,
+        description: None,
+        source: None,
+    })
 }
 
 /// Parse ToolCompleted event from body.
@@ -1189,6 +1194,8 @@ mod tests {
         let event = SessionEvent::ToolCalled {
             name: "test".into(),
             args: json!({}),
+            description: None,
+            source: None,
         };
         assert_eq!(event.event_type_name(), "ToolCalled");
     }
@@ -1241,6 +1248,8 @@ mod tests {
         let event = SessionEvent::ToolCalled {
             name: "read_file".into(),
             args: json!({"path": path_str}),
+            description: None,
+            source: None,
         };
 
         let md = event.to_markdown_block(Some(TEST_TIMESTAMP_MS));
@@ -1738,13 +1747,15 @@ mod tests {
         let original = SessionEvent::ToolCalled {
             name: "read_file".into(),
             args: json!({"path": path_str}),
+            description: None,
+            source: None,
         };
 
         let md = original.to_markdown_block(Some(TEST_TIMESTAMP_MS));
         let (parsed, _) = SessionEvent::from_markdown_block(&md).unwrap();
 
         match parsed {
-            SessionEvent::ToolCalled { name, args } => {
+            SessionEvent::ToolCalled { name, args, .. } => {
                 assert_eq!(name, "read_file");
                 assert_eq!(args["path"], path_str.as_ref());
             }

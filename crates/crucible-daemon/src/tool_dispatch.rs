@@ -2,11 +2,12 @@ use async_trait::async_trait;
 use crucible_core::traits::tools::{
     ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult,
 };
+use crucible_core::types::{ToolRef, ToolSource};
 use futures::FutureExt;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::RawContent;
+use rmcp::model::{RawContent, Tool};
 use serde::de::DeserializeOwned;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -33,20 +34,28 @@ pub trait ToolDispatcher: Send + Sync {
         args: serde_json::Value,
     ) -> Result<serde_json::Value, String>;
     fn has_tool(&self, name: &str) -> bool;
+    fn get_tool_ref(&self, name: &str) -> Option<ToolRef>;
 }
 
 pub struct DaemonToolDispatcher {
     providers: Vec<Arc<dyn ToolExecutor>>,
     tool_names: RwLock<HashSet<String>>,
     tool_names_hydrated: AtomicBool,
+    tool_refs: RwLock<HashMap<String, ToolRef>>,
+    tool_refs_hydrated: AtomicBool,
 }
 
 impl DaemonToolDispatcher {
     pub fn new(providers: Vec<Arc<dyn ToolExecutor>>) -> Self {
         let mut tool_names = HashSet::new();
+        let mut tool_refs = HashMap::new();
         for provider in &providers {
             if let Some(Ok(defs)) = provider.list_tools().now_or_never() {
-                tool_names.extend(defs.into_iter().map(|def| def.name));
+                for def in defs {
+                    tool_names.insert(def.name.clone());
+                    let tool_ref = Self::tool_ref_from_definition(&def);
+                    tool_refs.entry(def.name).or_insert(tool_ref);
+                }
             }
         }
 
@@ -54,6 +63,42 @@ impl DaemonToolDispatcher {
             providers,
             tool_names: RwLock::new(tool_names),
             tool_names_hydrated: AtomicBool::new(false),
+            tool_refs: RwLock::new(tool_refs),
+            tool_refs_hydrated: AtomicBool::new(false),
+        }
+    }
+
+    fn is_core_tool_name(name: &str) -> bool {
+        matches!(
+            name,
+            "read_file" | "edit_file" | "write_file" | "bash" | "glob" | "grep"
+        )
+    }
+
+    fn tool_ref_from_definition(def: &ToolDefinition) -> ToolRef {
+        let schema = def
+            .parameters
+            .clone()
+            .and_then(|v| v.as_object().cloned())
+            .unwrap_or_default();
+        let description = if def.description.is_empty() {
+            "No description".to_string()
+        } else {
+            def.description.clone()
+        };
+        let tool = Tool::new(def.name.clone(), description, Arc::new(schema));
+        let source = if Self::is_core_tool_name(&def.name) {
+            ToolSource::Core
+        } else {
+            ToolSource::Crucible
+        };
+
+        ToolRef {
+            name: def.name.clone(),
+            source,
+            definition: tool,
+            tags: Vec::new(),
+            always_available: true,
         }
     }
 
@@ -63,9 +108,14 @@ impl DaemonToolDispatcher {
         }
 
         let mut discovered_names = HashSet::new();
+        let mut discovered_refs = HashMap::new();
         for provider in &self.providers {
             if let Ok(defs) = provider.list_tools().await {
-                discovered_names.extend(defs.into_iter().map(|def| def.name));
+                for def in defs {
+                    discovered_names.insert(def.name.clone());
+                    let tool_ref = Self::tool_ref_from_definition(&def);
+                    discovered_refs.entry(def.name).or_insert(tool_ref);
+                }
             }
         }
 
@@ -78,7 +128,12 @@ impl DaemonToolDispatcher {
             .write()
             .expect("tool_names lock poisoned")
             .extend(discovered_names);
+        self.tool_refs
+            .write()
+            .expect("tool_refs lock poisoned")
+            .extend(discovered_refs);
         self.tool_names_hydrated.store(true, Ordering::Release);
+        self.tool_refs_hydrated.store(true, Ordering::Release);
     }
 
     fn hydrate_tool_names_blocking(&self) {
@@ -87,23 +142,28 @@ impl DaemonToolDispatcher {
         }
 
         let providers = self.providers.clone();
-        let discovered_names = std::thread::spawn(move || {
+        let (discovered_names, discovered_refs) = std::thread::spawn(move || {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build();
             let mut names = HashSet::new();
+            let mut refs = HashMap::new();
 
             if let Ok(runtime) = runtime {
                 runtime.block_on(async {
                     for provider in &providers {
                         if let Ok(defs) = provider.list_tools().await {
-                            names.extend(defs.into_iter().map(|def| def.name));
+                            for def in defs {
+                                names.insert(def.name.clone());
+                                let tool_ref = DaemonToolDispatcher::tool_ref_from_definition(&def);
+                                refs.entry(def.name).or_insert(tool_ref);
+                            }
                         }
                     }
                 });
             }
 
-            names
+            (names, refs)
         })
         .join()
         .unwrap_or_default();
@@ -115,7 +175,22 @@ impl DaemonToolDispatcher {
                 .extend(discovered_names);
         }
 
+        if !discovered_refs.is_empty() {
+            self.tool_refs
+                .write()
+                .expect("tool_refs lock poisoned")
+                .extend(discovered_refs);
+        }
+
         self.tool_names_hydrated.store(true, Ordering::Release);
+        self.tool_refs_hydrated.store(true, Ordering::Release);
+    }
+
+    fn hydrate_tool_refs_blocking(&self) {
+        if self.tool_refs_hydrated.load(Ordering::Acquire) {
+            return;
+        }
+        self.hydrate_tool_names_blocking();
     }
 }
 
@@ -337,6 +412,18 @@ impl ToolDispatcher for DaemonToolDispatcher {
             .read()
             .expect("tool_names lock poisoned")
             .contains(name)
+    }
+
+    fn get_tool_ref(&self, name: &str) -> Option<ToolRef> {
+        if !self.tool_refs_hydrated.load(Ordering::Acquire) {
+            self.hydrate_tool_refs_blocking();
+        }
+
+        self.tool_refs
+            .read()
+            .expect("tool_refs lock poisoned")
+            .get(name)
+            .cloned()
     }
 }
 
