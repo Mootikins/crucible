@@ -96,7 +96,13 @@ async fn test_precognition_skipped_for_search_command() {
 
     let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
     agent_manager
-        .send_message(&session.id, "/search rust".to_string(), &event_tx, true, None)
+        .send_message(
+            &session.id,
+            "/search rust".to_string(),
+            &event_tx,
+            true,
+            None,
+        )
         .await
         .unwrap();
 
@@ -204,7 +210,13 @@ async fn test_precognition_complete_event_emitted_when_enrichment_runs() {
 
     let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
     agent_manager
-        .send_message(&session.id, "hello precognition".to_string(), &event_tx, true, None)
+        .send_message(
+            &session.id,
+            "hello precognition".to_string(),
+            &event_tx,
+            true,
+            None,
+        )
         .await
         .unwrap();
 

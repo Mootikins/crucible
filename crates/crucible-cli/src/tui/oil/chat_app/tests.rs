@@ -82,7 +82,7 @@ fn test_tool_call_flow() {
         call_id: None,
         description: None,
         source: None,
-            lua_primary_arg: None,
+        lua_primary_arg: None,
     });
     let tool = app.container_list().find_tool("Read").unwrap();
     assert_eq!(tool.name.as_ref(), "Read");
@@ -215,7 +215,7 @@ fn test_tool_call_renders_with_result() {
         call_id: None,
         description: None,
         source: None,
-            lua_primary_arg: None,
+        lua_primary_arg: None,
     });
 
     let focus = FocusContext::new();
@@ -1233,7 +1233,7 @@ fn tool_result_error_strips_prefix_chains() {
         call_id: Some("c1".to_string()),
         description: None,
         source: None,
-            lua_primary_arg: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultError {
         name: "read".to_string(),
@@ -1257,7 +1257,7 @@ fn tool_result_error_strips_mixed_prefixes() {
         call_id: None,
         description: None,
         source: None,
-            lua_primary_arg: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultError {
         name: "search".to_string(),
@@ -1281,7 +1281,7 @@ fn tool_result_error_preserves_clean_errors() {
         call_id: None,
         description: None,
         source: None,
-            lua_primary_arg: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultError {
         name: "bash".to_string(),

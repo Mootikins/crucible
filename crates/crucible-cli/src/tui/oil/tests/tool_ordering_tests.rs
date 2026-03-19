@@ -52,7 +52,7 @@ mod chat_app_message_handling {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
 
         assert!(app.is_streaming(), "Should be in streaming state");
@@ -75,7 +75,7 @@ mod chat_app_message_handling {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "read_file".to_string(),
@@ -108,7 +108,7 @@ mod chat_app_message_handling {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::TextDelta("AFTER_TOOL".to_string()));
 
@@ -128,7 +128,7 @@ mod chat_app_message_handling {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "my_tool".to_string(),
@@ -165,7 +165,7 @@ mod chat_app_message_handling {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::ToolResultComplete {
             name: "tool_alpha".to_string(),
@@ -180,7 +180,7 @@ mod chat_app_message_handling {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::ToolResultComplete {
             name: "tool_beta".to_string(),
@@ -212,7 +212,7 @@ mod tool_completion_visibility {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
 
         let output = render_app(&app);
@@ -233,7 +233,7 @@ mod tool_completion_visibility {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::ToolResultComplete {
             name: "completed_tool".to_string(),
@@ -259,7 +259,7 @@ mod tool_completion_visibility {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "result_tool".to_string(),
@@ -290,7 +290,7 @@ mod tool_completion_visibility {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::ToolResultComplete {
             name: "different_tool".to_string(),
@@ -327,7 +327,7 @@ mod realistic_scenarios {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "read_file".to_string(),
@@ -372,7 +372,7 @@ mod realistic_scenarios {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "glob".to_string(),
@@ -394,7 +394,7 @@ mod realistic_scenarios {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "read_file".to_string(),
@@ -452,7 +452,7 @@ mod graduation_tracking {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
         let snap2 = render_app(&app);
         let pos2 = positions(&snap2, &["BEFORE_TOOL_TEXT", "Read File"]);
@@ -571,7 +571,7 @@ mod graduation_tracking {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::ToolResultComplete {
             name: "test_tool".to_string(),
@@ -650,7 +650,7 @@ mod duplicate_content_prevention {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::ToolResultComplete {
             name: "my_tool".to_string(),
@@ -691,7 +691,7 @@ mod duplicate_content_prevention {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::ToolResultComplete {
             name: "example_tool".to_string(),
@@ -739,7 +739,7 @@ mod duplicate_content_prevention {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::ToolResultComplete {
             name: "tool1".to_string(),
@@ -822,7 +822,7 @@ mod duplicate_content_prevention {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::ToolResultComplete {
             name: "test_tool".to_string(),
@@ -865,7 +865,7 @@ mod duplicate_content_prevention {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::ToolResultComplete {
             name: "tool1".to_string(),
@@ -895,7 +895,7 @@ mod duplicate_content_prevention {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::ToolResultComplete {
             name: "tool1".to_string(),

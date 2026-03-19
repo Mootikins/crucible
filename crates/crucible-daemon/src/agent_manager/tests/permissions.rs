@@ -818,8 +818,8 @@ mod resolve_agent_profile_tests {
         );
         let available = default_agent_profiles();
 
-        let resolved = resolve_agent_profile("my-claude", &configured, &available)
-            .expect("should resolve");
+        let resolved =
+            resolve_agent_profile("my-claude", &configured, &available).expect("should resolve");
         let perms = resolved.permissions.expect("should have permissions");
         assert_eq!(perms.default, PermissionMode::Ask);
     }
@@ -832,8 +832,8 @@ mod resolve_agent_profile_tests {
         configured.insert("my-opencode".to_string(), p);
         let available = default_agent_profiles();
 
-        let resolved = resolve_agent_profile("my-opencode", &configured, &available)
-            .expect("should resolve");
+        let resolved =
+            resolve_agent_profile("my-opencode", &configured, &available).expect("should resolve");
         assert!(resolved.permissions.is_none());
     }
 }

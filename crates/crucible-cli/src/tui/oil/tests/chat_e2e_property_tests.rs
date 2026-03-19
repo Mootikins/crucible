@@ -501,7 +501,7 @@ mod e2e_edge_cases {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::ToolResultComplete {
             name: "empty_tool".to_string(),

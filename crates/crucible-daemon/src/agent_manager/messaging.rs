@@ -4,8 +4,8 @@ use crucible_config::components::permissions::{PermissionConfig, PermissionMode}
 use crucible_core::events::InternalSessionEvent;
 use crucible_core::types::ToolSource;
 use crucible_lua::{
-    execute_tool_display_complete_hooks, execute_tool_display_start_hooks, ToolDisplayCompleteEvent,
-    ToolDisplayStartEvent,
+    execute_tool_display_complete_hooks, execute_tool_display_start_hooks,
+    ToolDisplayCompleteEvent, ToolDisplayStartEvent,
 };
 use std::collections::HashSet;
 
@@ -168,7 +168,14 @@ impl AgentManager {
 
         // Build the agent handle from configuration
         let (agent, resolved_config) = self
-            .build_agent_from_config(session_id, agent_config, workspace, event_tx, is_interactive, permission_override)
+            .build_agent_from_config(
+                session_id,
+                agent_config,
+                workspace,
+                event_tx,
+                is_interactive,
+                permission_override,
+            )
             .await?;
 
         // Register delegation/permission handlers if configured
@@ -228,8 +235,7 @@ impl AgentManager {
         let agent_permissions = resolved_config.agent_name.as_deref().and_then(|name| {
             self.acp_config.as_ref().and_then(|acp| {
                 let available = crucible_acp::discovery::default_agent_profiles();
-                resolve_agent_profile(name, &acp.agents, &available)
-                    .and_then(|p| p.permissions)
+                resolve_agent_profile(name, &acp.agents, &available).and_then(|p| p.permissions)
             })
         });
 

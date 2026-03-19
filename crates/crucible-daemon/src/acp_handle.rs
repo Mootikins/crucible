@@ -172,10 +172,7 @@ impl AcpAgentHandle {
         };
 
         let mcp_url = mcp_host.as_ref().map(|h| h.mcp_url());
-        let (session, mcp_host) = match client
-            .connect_with_best_mcp(mcp_url.as_deref())
-            .await
-        {
+        let (session, mcp_host) = match client.connect_with_best_mcp(mcp_url.as_deref()).await {
             Ok(s) => (s, mcp_host),
             Err(e) if mcp_host.is_some() => {
                 // HTTP MCP transport failed (e.g. agent rejects `type: "http"` at

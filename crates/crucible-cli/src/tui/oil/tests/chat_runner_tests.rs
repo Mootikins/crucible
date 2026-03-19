@@ -2,7 +2,7 @@
 
 use crate::tui::oil::app::{Action, App, ViewContext};
 use crate::tui::oil::chat_app::{ChatAppMsg, ChatMode, OilChatApp};
-use crate::tui::oil::chat_runner::{OilChatRunner, replay_event_consumer};
+use crate::tui::oil::chat_runner::{replay_event_consumer, OilChatRunner};
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::render::render_to_string;
 use crate::tui::oil::terminal::Terminal;
@@ -345,7 +345,7 @@ fn app_handles_tool_call_from_stream() {
         call_id: None,
         description: None,
         source: None,
-                lua_primary_arg: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
@@ -423,7 +423,7 @@ mod daemon_event_to_tui_tests {
                     call_id: None,
                     description: None,
                     source: None,
-                lua_primary_arg: None,
+                    lua_primary_arg: None,
                 });
             }
         }
@@ -539,7 +539,7 @@ mod daemon_event_to_tui_tests {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
 
         let chunk = ChatChunk {
@@ -748,7 +748,7 @@ mod daemon_event_to_tui_tests {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "glob".to_string(),
@@ -801,7 +801,7 @@ mod daemon_event_to_tui_tests {
             call_id: None,
             description: None,
             source: None,
-                lua_primary_arg: None,
+            lua_primary_arg: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "read_file".to_string(),
@@ -1134,19 +1134,28 @@ mod daemon_event_to_tui_tests {
         // The replay consumer MUST handle all of them.
         // MAINTENANCE: When you add a new variant to handle_session_event, add it here.
         let must_handle: &[(&str, serde_json::Value)] = &[
-            ("delegation_spawned", json!({
-                "delegation_id": "d1",
-                "prompt": "test prompt",
-                "target_agent": "claude"
-            })),
-            ("delegation_completed", json!({
-                "delegation_id": "d1",
-                "result_summary": "completed successfully"
-            })),
-            ("delegation_failed", json!({
-                "delegation_id": "d1",
-                "error": "test error message"
-            })),
+            (
+                "delegation_spawned",
+                json!({
+                    "delegation_id": "d1",
+                    "prompt": "test prompt",
+                    "target_agent": "claude"
+                }),
+            ),
+            (
+                "delegation_completed",
+                json!({
+                    "delegation_id": "d1",
+                    "result_summary": "completed successfully"
+                }),
+            ),
+            (
+                "delegation_failed",
+                json!({
+                    "delegation_id": "d1",
+                    "error": "test error message"
+                }),
+            ),
         ];
 
         for (event_type, data) in must_handle {
@@ -1173,8 +1182,12 @@ mod daemon_event_to_tui_tests {
             // Receive the message with timeout
             let msg = timeout(Duration::from_secs(1), msg_rx.recv())
                 .await
-                .expect(&format!("Timeout waiting for message for event type '{}'", event_type))
-                .expect(&format!("Should receive a message for event type '{}'", event_type));
+                .unwrap_or_else(|_| {
+                    panic!("Timeout waiting for message for event type '{event_type}'")
+                })
+                .unwrap_or_else(|| {
+                    panic!("Should receive a message for event type '{event_type}'")
+                });
 
             // Verify we got a message (not None)
             match msg {

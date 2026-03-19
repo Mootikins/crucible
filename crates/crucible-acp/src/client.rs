@@ -736,7 +736,9 @@ impl CrucibleAcpClient {
     /// * `mcp_url` - Optional URL to an in-process MCP server. If `None` or if
     ///   the agent doesn't support HTTP, falls back to stdio transport.
     pub async fn connect_with_best_mcp(&mut self, mcp_url: Option<&str>) -> Result<AcpSession> {
-        use agent_client_protocol::{InitializeRequest, McpServer, McpServerHttp, NewSessionRequest};
+        use agent_client_protocol::{
+            InitializeRequest, McpServer, McpServerHttp, NewSessionRequest,
+        };
 
         tracing::debug!(agent = %self.agent_name, mcp_url = ?mcp_url, "Starting capability-aware ACP handshake");
 
@@ -813,13 +815,11 @@ impl CrucibleAcpClient {
             .map(|p| p.join("cru"))
             .unwrap_or_else(|| PathBuf::from("cru"));
 
-        McpServer::Stdio(
-            McpServerStdio::new("crucible", cru_command).args(vec![
-                "mcp".to_string(),
-                "--stdio".to_string(),
-                "--standalone".to_string(),
-            ]),
-        )
+        McpServer::Stdio(McpServerStdio::new("crucible", cru_command).args(vec![
+            "mcp".to_string(),
+            "--stdio".to_string(),
+            "--standalone".to_string(),
+        ]))
     }
 
     /// Write a JSON request to the agent's stdin
