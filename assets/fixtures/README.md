@@ -45,7 +45,7 @@ Then regenerate the GIF:
 
 ```bash
 # Regenerate GIF from the fixture
-bash scripts/record-gif.sh assets/fixtures/demo.jsonl assets/demo.gif --speed 5
+just demo demo
 ```
 
 ## Regenerating GIFs
@@ -57,12 +57,12 @@ Once fixtures exist, regenerate GIFs deterministically:
 just demo-all
 
 # Regenerate a single demo
-bash scripts/record-gif.sh assets/fixtures/demo.jsonl assets/demo.gif --speed 5
-bash scripts/record-gif.sh assets/fixtures/acp-demo.jsonl assets/acp-demo.gif --speed 5
-bash scripts/record-gif.sh assets/fixtures/delegation-demo.jsonl assets/delegation-demo.gif --speed 5
+just demo demo
+just demo acp-demo
+just demo delegation-demo
 ```
 
-The `record-gif.sh` script replays the fixture and captures the terminal output as a GIF using asciinema+agg.
+Each demo has a corresponding VHS tape file (`assets/<name>.tape`) that defines the terminal recording and GIF output.
 
 ## Fixture Format
 
@@ -120,7 +120,7 @@ If you need to update a fixture (e.g., to fix a response or add new content):
 
 3. **Regenerate the GIF:**
    ```bash
-   bash scripts/record-gif.sh assets/fixtures/<name>.jsonl assets/<name>.gif --speed 5
+   just demo <name>
    ```
 
 ## Validation
