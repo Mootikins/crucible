@@ -52,7 +52,7 @@ async fn concurrent_send_to_same_session_returns_error() {
 
     let (event_tx, _event_rx) = broadcast::channel::<SessionEventMessage>(64);
     let result = agent_manager
-        .send_message(&session.id, "hello".to_string(), &event_tx)
+        .send_message(&session.id, "hello".to_string(), &event_tx, true)
         .await;
 
     assert!(
@@ -92,7 +92,7 @@ async fn cancel_during_streaming_emits_ended_event() {
 
     let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
     let _message_id = agent_manager
-        .send_message(&session.id, "test".to_string(), &event_tx)
+        .send_message(&session.id, "test".to_string(), &event_tx, true)
         .await
         .unwrap();
 
@@ -139,7 +139,7 @@ async fn empty_stream_without_done_cleans_up_request_state() {
 
     let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
     let _message_id = agent_manager
-        .send_message(&session.id, "test".to_string(), &event_tx)
+        .send_message(&session.id, "test".to_string(), &event_tx, true)
         .await
         .unwrap();
 

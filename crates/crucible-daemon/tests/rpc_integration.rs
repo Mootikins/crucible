@@ -962,7 +962,7 @@ async fn test_session_send_message_returns_message_id() {
         .expect("session_id should be string")
         .to_string();
 
-    let result = client.session_send_message(&session_id, "Hello!").await;
+    let result = client.session_send_message(&session_id, "Hello!", true).await;
 
     match result {
         Ok(message_id) => {
@@ -1288,7 +1288,7 @@ async fn test_daemon_agent_error_produces_chat_error() {
         .expect("Failed to connect with events");
 
     let result = client
-        .session_send_message("nonexistent-session-id", "Hello")
+        .session_send_message("nonexistent-session-id", "Hello", true)
         .await;
 
     assert!(

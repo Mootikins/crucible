@@ -63,7 +63,7 @@ async fn test_send_message_no_agent() {
     let (event_tx, _) = broadcast::channel(16);
 
     let result = agent_manager
-        .send_message(&session.id, "hello".to_string(), &event_tx)
+        .send_message(&session.id, "hello".to_string(), &event_tx, true)
         .await;
 
     assert!(matches!(result, Err(AgentError::NoAgentConfigured(_))));

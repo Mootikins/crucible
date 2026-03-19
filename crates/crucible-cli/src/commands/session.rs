@@ -1136,14 +1136,14 @@ mod rpc {
         client.session_subscribe(&[session_id]).await?;
 
         // Try to send - if session not found, load from storage and retry
-        let message_id = match client.session_send_message(session_id, message).await {
+        let message_id = match client.session_send_message(session_id, message, false).await {
             Ok(id) => id,
             Err(e) if e.to_string().contains("not found") => {
                 eprintln!("Session not in memory, loading from storage...");
                 client
                     .session_resume_from_storage(session_id, &config.kiln_path, None, None)
                     .await?;
-                client.session_send_message(session_id, message).await?
+                client.session_send_message(session_id, message, false).await?
             }
             Err(e) => return Err(e),
         };

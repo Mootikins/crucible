@@ -107,6 +107,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn non_interactive_ask_with_callback_never_calls_callback() {
+        let called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let called_clone = called.clone();
+        let callback: PermissionPromptCallback = Arc::new(move |_| {
+            called_clone.store(true, std::sync::atomic::Ordering::SeqCst);
+            Box::pin(async { PermResponse::allow() })
+        });
+        let gate = DaemonPermissionGate::new(None, false).with_prompt_callback(callback);
+        let request = PermRequest::tool("dangerous_tool", serde_json::json!({}));
+        let response = gate.request_permission(request).await;
+        assert!(!response.allowed, "should be denied");
+        assert!(
+            !called.load(std::sync::atomic::Ordering::SeqCst),
+            "callback must NOT be called"
+        );
+    }
+
+    #[tokio::test]
     async fn bash_command_not_safe() {
         let gate = DaemonPermissionGate::new(None, false);
         let request = PermRequest::bash(["rm", "-rf", "/tmp/test"]);
