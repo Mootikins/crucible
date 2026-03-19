@@ -1,73 +1,67 @@
-{"version":1,"session_id":"chat-2026-03-16T0250-pwu5v4","recording_mode":"granular","started_at":"2026-03-16T02:50:49.466861473Z"}
-{"ts":"2026-03-16T02:50:52.137357710Z","seq":1,"event":"user_message","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"message_id":"msg-6d10d73f-6d5a-4f91-a5eb-2073b8439664","content":"Compare ACP and MCP in two sentences each. Use only the context provided to you."}}
-{"ts":"2026-03-16T02:50:52.151507372Z","seq":2,"event":"precognition_complete","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"notes_count":5,"query_summary":"Compare ACP and MCP in two sentences each. Use only the context provided to you.","notes":[{"title":"Tool Embedding Strategies","kiln_label":null},{"title":"search","kiln_label":null},{"title":"Kiln Specialist","kiln_label":null},{"title":"Precognition","kiln_label":null},{"title":"Query System","kiln_label":null}]}}
-{"ts":"2026-03-16T02:50:54.394177671Z","seq":3,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":"\n\n**"}}
-{"ts":"2026-03-16T02:50:54.888689264Z","seq":4,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":"ACP ("}}
-{"ts":"2026-03-16T02:50:54.888865448Z","seq":5,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":"Agent Context Protocol)"}}
-{"ts":"2026-03-16T02:50:54.888874708Z","seq":6,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":":**"}}
-{"ts":"2026-03-16T02:50:54.889059903Z","seq":7,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" Crucible delegates"}}
-{"ts":"2026-03-16T02:50:54.889110751Z","seq":8,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" tasks"}}
-{"ts":"2026-03-16T02:50:54.889660484Z","seq":9,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" to external"}}
-{"ts":"2026-03-16T02:50:54.890132150Z","seq":10,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" AI agents"}}
-{"ts":"2026-03-16T02:50:54.890476570Z","seq":11,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" ("}}
-{"ts":"2026-03-16T02:50:55.323239348Z","seq":12,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":"Claude"}}
-{"ts":"2026-03-16T02:50:55.323481401Z","seq":13,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" Code"}}
-{"ts":"2026-03-16T02:50:55.323717583Z","seq":14,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":","}}
-{"ts":"2026-03-16T02:50:55.324285686Z","seq":15,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" Cursor"}}
-{"ts":"2026-03-16T02:50:55.324433522Z","seq":16,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":", Open"}}
-{"ts":"2026-03-16T02:50:55.325390243Z","seq":17,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":"Code"}}
-{"ts":"2026-03-16T02:50:55.326151260Z","seq":18,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":","}}
-{"ts":"2026-03-16T02:50:55.328418061Z","seq":19,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" Gem"}}
-{"ts":"2026-03-16T02:50:55.767656864Z","seq":20,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":"ini CLI"}}
-{"ts":"2026-03-16T02:50:55.768317594Z","seq":21,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":")"}}
-{"ts":"2026-03-16T02:50:55.768324703Z","seq":22,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" by"}}
-{"ts":"2026-03-16T02:50:55.770151558Z","seq":23,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" spaw"}}
-{"ts":"2026-03-16T02:50:55.770262345Z","seq":24,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":"ning their"}}
-{"ts":"2026-03-16T02:50:55.770277784Z","seq":25,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" processes"}}
-{"ts":"2026-03-16T02:50:55.770938804Z","seq":26,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":","}}
-{"ts":"2026-03-16T02:50:55.771077940Z","seq":27,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" providing"}}
-{"ts":"2026-03-16T02:50:56.207708641Z","seq":28,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" tools"}}
-{"ts":"2026-03-16T02:50:56.207921334Z","seq":29,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" and"}}
-{"ts":"2026-03-16T02:50:56.207941774Z","seq":30,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" knowledge"}}
-{"ts":"2026-03-16T02:50:56.210704360Z","seq":31,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" graph"}}
-{"ts":"2026-03-16T02:50:56.210825577Z","seq":32,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" access, and streaming"}}
-{"ts":"2026-03-16T02:50:56.211030291Z","seq":33,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" results back."}}
-{"ts":"2026-03-16T02:50:56.211054990Z","seq":34,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" Trust"}}
-{"ts":"2026-03-16T02:50:56.211291103Z","seq":35,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" boundaries"}}
-{"ts":"2026-03-16T02:50:56.647624103Z","seq":36,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" and"}}
-{"ts":"2026-03-16T02:50:56.647703341Z","seq":37,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" delegation"}}
-{"ts":"2026-03-16T02:50:56.648042881Z","seq":38,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" depth"}}
-{"ts":"2026-03-16T02:50:56.648066280Z","seq":39,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" are controlled"}}
-{"ts":"2026-03-16T02:50:56.651298012Z","seq":40,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" via"}}
-{"ts":"2026-03-16T02:50:56.651464037Z","seq":41,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" `"}}
-{"ts":"2026-03-16T02:50:56.651474247Z","seq":42,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":"delegation"}}
-{"ts":"2026-03-16T02:50:56.651479277Z","seq":43,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":"_config"}}
-{"ts":"2026-03-16T02:50:57.107594129Z","seq":44,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":"`"}}
-{"ts":"2026-03-16T02:50:57.107899950Z","seq":45,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" in `crucible."}}
-{"ts":"2026-03-16T02:50:57.107927479Z","seq":46,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":"toml`.\n\n**MCP ("}}
-{"ts":"2026-03-16T02:50:57.107937939Z","seq":47,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":"Model Context Protocol):** Crucible"}}
-{"ts":"2026-03-16T02:50:57.107946418Z","seq":48,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" exp"}}
-{"ts":"2026-03-16T02:50:57.107954008Z","seq":49,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":"oses itself"}}
-{"ts":"2026-03-16T02:50:57.108566280Z","seq":50,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" as an M"}}
-{"ts":"2026-03-16T02:50:57.109419824Z","seq":51,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":"CP server for"}}
-{"ts":"2026-03-16T02:50:57.547978737Z","seq":52,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" external"}}
-{"ts":"2026-03-16T02:50:57.548011516Z","seq":53,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" agent"}}
-{"ts":"2026-03-16T02:50:57.548273728Z","seq":54,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" integration"}}
-{"ts":"2026-03-16T02:50:57.548294958Z","seq":55,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":","}}
-{"ts":"2026-03-16T02:50:57.548303588Z","seq":56,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" allowing"}}
-{"ts":"2026-03-16T02:50:57.548641907Z","seq":57,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" other"}}
-{"ts":"2026-03-16T02:50:57.548899900Z","seq":58,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" tools"}}
-{"ts":"2026-03-16T02:50:57.548922799Z","seq":59,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" to access"}}
-{"ts":"2026-03-16T02:50:58.067994140Z","seq":60,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" Crucible's capabilities."}}
-{"ts":"2026-03-16T02:50:58.069564932Z","seq":61,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" References"}}
-{"ts":"2026-03-16T02:50:58.073501904Z","seq":62,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" exist"}}
-{"ts":"2026-03-16T02:50:58.075131924Z","seq":63,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" in `docs"}}
-{"ts":"2026-03-16T02:50:58.076589780Z","seq":64,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":"/Help/Concepts/Model Context"}}
-{"ts":"2026-03-16T02:50:58.079269639Z","seq":65,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" Protocol.md` but"}}
-{"ts":"2026-03-16T02:50:58.081504862Z","seq":66,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" detailed"}}
-{"ts":"2026-03-16T02:50:58.083803372Z","seq":67,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" specification"}}
-{"ts":"2026-03-16T02:50:58.227535751Z","seq":68,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" isn"}}
-{"ts":"2026-03-16T02:50:58.227648968Z","seq":69,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":"'t included"}}
-{"ts":"2026-03-16T02:50:58.228639658Z","seq":70,"event":"text_delta","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"content":" in the provided context."}}
-{"ts":"2026-03-16T02:51:07.753765864Z","seq":71,"event":"message_complete","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"message_id":"msg-6d10d73f-6d5a-4f91-a5eb-2073b8439664","full_response":"\n\n**ACP (Agent Context Protocol):** Crucible delegates tasks to external AI agents (Claude Code, Cursor, OpenCode, Gemini CLI) by spawning their processes, providing tools and knowledge graph access, and streaming results back. Trust boundaries and delegation depth are controlled via `delegation_config` in `crucible.toml`.\n\n**MCP (Model Context Protocol):** Crucible exposes itself as an MCP server for external agent integration, allowing other tools to access Crucible's capabilities. References exist in `docs/Help/Concepts/Model Context Protocol.md` but detailed specification isn't included in the provided context."}}
-{"ts":"2026-03-16T02:51:07.754213560Z","seq":72,"event":"post_llm_call","session_id":"chat-2026-03-16T0250-pwu5v4","data":{"response_summary":"\n\n**ACP (Agent Context Protocol):** Crucible delegates tasks to external AI agents (Claude Code, Cursor, OpenCode, Gemini CLI) by spawning their processes, providing tools and knowledge graph access, ","model":"claude","duration_ms":15601,"token_count":null}}
+{"version":1,"session_id":"chat-2026-03-19T2148-nv20w4","recording_mode":"granular","started_at":"2026-03-19T21:48:42.202986960Z"}
+{"ts":"2026-03-19T21:48:50.922056915Z","seq":1,"event":"user_message","session_id":"chat-2026-03-19T2148-nv20w4","data":{"message_id":"msg-4104beef-34d1-483f-9667-bda4dd2e7ec1","content":"Compare ACP and MCP in two sentences each. Use only the context provided to you."}}
+{"ts":"2026-03-19T21:48:51.170560645Z","seq":2,"event":"precognition_complete","session_id":"chat-2026-03-19T2148-nv20w4","data":{"notes_count":5,"query_summary":"Compare ACP and MCP in two sentences each. Use only the context provided to you.","notes":[{"title":"Tool Embedding Strategies","kiln_label":null},{"title":"Tool Embedding Strategies","kiln_label":null},{"title":"search","kiln_label":null},{"title":"search","kiln_label":null},{"title":"Kiln Specialist","kiln_label":null}]}}
+{"ts":"2026-03-19T21:48:53.395248748Z","seq":3,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":"\n\n**"}}
+{"ts":"2026-03-19T21:48:53.894413082Z","seq":4,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":"ACP ("}}
+{"ts":"2026-03-19T21:48:53.894864308Z","seq":5,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":"Agent Context Protocol)"}}
+{"ts":"2026-03-19T21:48:53.894994934Z","seq":6,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":":**"}}
+{"ts":"2026-03-19T21:48:53.895005394Z","seq":7,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" Crucible's protocol"}}
+{"ts":"2026-03-19T21:48:53.895010524Z","seq":8,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" for deleg"}}
+{"ts":"2026-03-19T21:48:53.895347794Z","seq":9,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":"ating tasks"}}
+{"ts":"2026-03-19T21:48:53.895684953Z","seq":10,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" to external"}}
+{"ts":"2026-03-19T21:48:53.896640994Z","seq":11,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" AI"}}
+{"ts":"2026-03-19T21:48:54.333515573Z","seq":12,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" agents like"}}
+{"ts":"2026-03-19T21:48:54.333708987Z","seq":13,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" Claude Code"}}
+{"ts":"2026-03-19T21:48:54.333775175Z","seq":14,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":","}}
+{"ts":"2026-03-19T21:48:54.335020448Z","seq":15,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" Cursor"}}
+{"ts":"2026-03-19T21:48:54.335339238Z","seq":16,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":", or"}}
+{"ts":"2026-03-19T21:48:54.336099985Z","seq":17,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" Gem"}}
+{"ts":"2026-03-19T21:48:54.336151843Z","seq":18,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":"ini CLI"}}
+{"ts":"2026-03-19T21:48:54.337539421Z","seq":19,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":","}}
+{"ts":"2026-03-19T21:48:54.775144058Z","seq":20,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" where"}}
+{"ts":"2026-03-19T21:48:54.775398380Z","seq":21,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" the daemon"}}
+{"ts":"2026-03-19T21:48:54.775567645Z","seq":22,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" spaw"}}
+{"ts":"2026-03-19T21:48:54.775737300Z","seq":23,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":"ns the"}}
+{"ts":"2026-03-19T21:48:54.775749359Z","seq":24,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" agent process"}}
+{"ts":"2026-03-19T21:48:54.776237045Z","seq":25,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" and streams"}}
+{"ts":"2026-03-19T21:48:54.776310882Z","seq":26,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" results"}}
+{"ts":"2026-03-19T21:48:54.776372691Z","seq":27,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" back."}}
+{"ts":"2026-03-19T21:48:55.217257898Z","seq":28,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" It"}}
+{"ts":"2026-03-19T21:48:55.217433433Z","seq":29,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" enfor"}}
+{"ts":"2026-03-19T21:48:55.217496521Z","seq":30,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":"ces trust"}}
+{"ts":"2026-03-19T21:48:55.217765763Z","seq":31,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" boundaries,"}}
+{"ts":"2026-03-19T21:48:55.217853260Z","seq":32,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" delegation"}}
+{"ts":"2026-03-19T21:48:55.218147291Z","seq":33,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" depth"}}
+{"ts":"2026-03-19T21:48:55.219051214Z","seq":34,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" limits, and allowed"}}
+{"ts":"2026-03-19T21:48:55.219126451Z","seq":35,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" tool"}}
+{"ts":"2026-03-19T21:48:55.658362788Z","seq":36,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" sets"}}
+{"ts":"2026-03-19T21:48:55.659026138Z","seq":37,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" via"}}
+{"ts":"2026-03-19T21:48:55.659090236Z","seq":38,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" `"}}
+{"ts":"2026-03-19T21:48:55.660169984Z","seq":39,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":"delegation"}}
+{"ts":"2026-03-19T21:48:55.661974879Z","seq":40,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":"_config"}}
+{"ts":"2026-03-19T21:48:55.663231971Z","seq":41,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":"`"}}
+{"ts":"2026-03-19T21:48:55.664195772Z","seq":42,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" in"}}
+{"ts":"2026-03-19T21:48:55.664422035Z","seq":43,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" `cruc"}}
+{"ts":"2026-03-19T21:48:56.110757137Z","seq":44,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":"ible."}}
+{"ts":"2026-03-19T21:48:56.110931892Z","seq":45,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":"toml`.\n\n**MCP ("}}
+{"ts":"2026-03-19T21:48:56.110945802Z","seq":46,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":"Model Context Protocol):** A protocol for"}}
+{"ts":"2026-03-19T21:48:56.110951571Z","seq":47,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" expos"}}
+{"ts":"2026-03-19T21:48:56.111108947Z","seq":48,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":"ing"}}
+{"ts":"2026-03-19T21:48:56.111322520Z","seq":49,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" Crucible's tools"}}
+{"ts":"2026-03-19T21:48:56.112465826Z","seq":50,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" and knowledge"}}
+{"ts":"2026-03-19T21:48:56.112500115Z","seq":51,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" graph"}}
+{"ts":"2026-03-19T21:48:56.555721591Z","seq":52,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" to external agents"}}
+{"ts":"2026-03-19T21:48:56.556039962Z","seq":53,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" as"}}
+{"ts":"2026-03-19T21:48:56.556052831Z","seq":54,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" an"}}
+{"ts":"2026-03-19T21:48:56.556060581Z","seq":55,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" M"}}
+{"ts":"2026-03-19T21:48:56.556067891Z","seq":56,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":"CP server. It"}}
+{"ts":"2026-03-19T21:48:56.557039301Z","seq":57,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" provides standard"}}
+{"ts":"2026-03-19T21:48:56.557130279Z","seq":58,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":"ized tool"}}
+{"ts":"2026-03-19T21:48:56.557520937Z","seq":59,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" discovery"}}
+{"ts":"2026-03-19T21:48:56.842185352Z","seq":60,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" and"}}
+{"ts":"2026-03-19T21:48:56.842456834Z","seq":61,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" invocation endpoints"}}
+{"ts":"2026-03-19T21:48:56.842489223Z","seq":62,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" over"}}
+{"ts":"2026-03-19T21:48:56.842502522Z","seq":63,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":" HTTP"}}
+{"ts":"2026-03-19T21:48:56.842513602Z","seq":64,"event":"text_delta","session_id":"chat-2026-03-19T2148-nv20w4","data":{"content":"."}}
+{"ts":"2026-03-19T21:49:21.708255733Z","seq":65,"event":"message_complete","session_id":"chat-2026-03-19T2148-nv20w4","data":{"message_id":"msg-4104beef-34d1-483f-9667-bda4dd2e7ec1","full_response":"\n\n**ACP (Agent Context Protocol):** Crucible's protocol for delegating tasks to external AI agents like Claude Code, Cursor, or Gemini CLI, where the daemon spawns the agent process and streams results back. It enforces trust boundaries, delegation depth limits, and allowed tool sets via `delegation_config` in `crucible.toml`.\n\n**MCP (Model Context Protocol):** A protocol for exposing Crucible's tools and knowledge graph to external agents as an MCP server. It provides standardized tool discovery and invocation endpoints over HTTP."}}
+{"ts":"2026-03-19T21:49:21.708964352Z","seq":66,"event":"post_llm_call","session_id":"chat-2026-03-19T2148-nv20w4","data":{"response_summary":"\n\n**ACP (Agent Context Protocol):** Crucible's protocol for delegating tasks to external AI agents like Claude Code, Cursor, or Gemini CLI, where the daemon spawns the agent process and streams result","model":"claude","duration_ms":30536,"token_count":null}}

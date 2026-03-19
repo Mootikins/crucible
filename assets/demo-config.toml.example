@@ -9,7 +9,7 @@ default = "demo"
 
 [llm.providers.demo]
 type = "openai"
-endpoint = "https://llm.example.com/v1"
+endpoint = "{env:CRUCIBLE_DEMO_ENDPOINT}"
 default_model = "glm-4.7-flash-iq4"
 temperature = 0.3
 max_tokens = 2048

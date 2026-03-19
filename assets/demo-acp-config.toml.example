@@ -1,6 +1,6 @@
 # Crucible ACP Demo Configuration
-# Extends demo-config.toml with delegation settings for cross-agent demos.
-# Used by delegation-demo.tape for recording Claude → Cursor delegation.
+# Copy to demo-acp-config.toml and set your environment variables.
+# Used for recording ACP and delegation demo fixtures.
 
 kiln_path = "./docs"
 
@@ -9,7 +9,7 @@ default = "demo"
 
 [llm.providers.demo]
 type = "openai"
-endpoint = "https://llm.example.com/v1"
+endpoint = "{env:CRUCIBLE_DEMO_ENDPOINT}"
 default_model = "glm-4.7-flash-iq4"
 temperature = 0.3
 max_tokens = 2048
@@ -24,9 +24,6 @@ verbose = false
 
 [permissions]
 default = "allow"
-
-[storage]
-mode = "sqlite"
 
 [enrichment.provider]
 type = "fastembed"
@@ -45,6 +42,7 @@ retry_delay_ms = 1000
 # ACP Agent Profiles with Delegation Configuration
 [acp.agents.claude]
 extends = "claude"
+env = { CLAUDE_CONFIG_DIR = "/tmp/crucible-demo-claude" }
 
 [acp.agents.claude.delegation]
 enabled = true
