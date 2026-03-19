@@ -987,6 +987,105 @@ async fn test_session_send_message_returns_message_id() {
 }
 
 #[tokio::test]
+async fn test_send_message_with_is_interactive_false_accepted() {
+    let server = TestServer::start().await.expect("Failed to start server");
+    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+
+    let client = DaemonClient::connect_to(&server.socket_path)
+        .await
+        .expect("Failed to connect");
+
+    let result = client
+        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+            session_type: "chat".to_string(),
+            kiln: kiln_dir.path().to_path_buf(),
+            workspace: None,
+            connect_kilns: vec![],
+            recording_mode: None,
+            recording_path: None,
+        })
+        .await
+        .expect("session_create failed");
+
+    let session_id = result["session_id"]
+        .as_str()
+        .expect("session_id should be string")
+        .to_string();
+
+    let result = client
+        .session_send_message(&session_id, "Hello from headless!", false)
+        .await;
+
+    match result {
+        Ok(_message_id) => {}
+        Err(e) => {
+            let err_str = e.to_string();
+            assert!(
+                err_str.contains("agent")
+                    || err_str.contains("not configured")
+                    || err_str.contains("error"),
+                "Error should be about agent config, not about is_interactive param: {}",
+                err_str
+            );
+        }
+    }
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn test_send_message_with_permission_override_accepted() {
+    let server = TestServer::start().await.expect("Failed to start server");
+    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+
+    let client = DaemonClient::connect_to(&server.socket_path)
+        .await
+        .expect("Failed to connect");
+
+    let result = client
+        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+            session_type: "chat".to_string(),
+            kiln: kiln_dir.path().to_path_buf(),
+            workspace: None,
+            connect_kilns: vec![],
+            recording_mode: None,
+            recording_path: None,
+        })
+        .await
+        .expect("session_create failed");
+
+    let session_id = result["session_id"]
+        .as_str()
+        .expect("session_id should be string")
+        .to_string();
+
+    let result = client
+        .session_send_message_with_permissions(
+            &session_id,
+            "Hello with allow override!",
+            false,
+            Some("allow".to_string()),
+        )
+        .await;
+
+    match result {
+        Ok(_message_id) => {}
+        Err(e) => {
+            let err_str = e.to_string();
+            assert!(
+                err_str.contains("agent")
+                    || err_str.contains("not configured")
+                    || err_str.contains("error"),
+                "Error should be about agent config, not about permission_mode param: {}",
+                err_str
+            );
+        }
+    }
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn test_session_cancel() {
     let server = TestServer::start().await.expect("Failed to start server");
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
