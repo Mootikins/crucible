@@ -265,7 +265,10 @@ async fn test_streamable_http_accept_header_without_sse_still_succeeds() {
     host.shutdown().await;
 }
 
-/// Test that tools/list over HTTP returns all tools (excluding delegate_session without delegation context)
+/// Test that tools/list over HTTP returns all 20 tools including delegate_session.
+/// Note: The MCP HTTP endpoint uses the rmcp tool_router directly (all tools),
+/// not the filtered list_tools() helper. delegate_session is always present in
+/// the HTTP endpoint; filtering only applies to the Rust API (list_tools() method).
 #[tokio::test]
 async fn test_tools_list_over_http_returns_delegate_session() {
     let temp = TempDir::new().unwrap();
