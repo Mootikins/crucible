@@ -139,6 +139,7 @@ pub fn default_agent_profiles() -> HashMap<String, AgentProfile> {
                 description: description.map(|d| d.to_string()),
                 capabilities: None,
                 delegation: None,
+                permissions: None,
             },
         );
     }
@@ -707,6 +708,7 @@ mod tests {
                 description: None,
                 capabilities: None,
                 delegation: None,
+                permissions: None,
             },
         );
 
@@ -737,14 +739,15 @@ mod tests {
         agents.insert(
             "my-agent".to_string(),
             AgentProfile {
-                extends: None,
-                command: Some("/usr/local/bin/my-agent".to_string()),
-                args: Some(vec!["--mode".to_string(), "acp".to_string()]),
-                env: HashMap::new(),
-                description: None,
-                capabilities: None,
-                delegation: None,
-            },
+                            extends: None,
+                            command: Some("/usr/local/bin/my-agent".to_string()),
+                            args: Some(vec!["--mode".to_string(), "acp".to_string()]),
+                            env: HashMap::new(),
+                            description: None,
+                            capabilities: None,
+                            delegation: None,
+                            permissions: None,
+                        },
         );
 
         let config = AcpConfig {
@@ -820,14 +823,15 @@ mod tests {
         agents.insert(
             "opencode".to_string(),
             AgentProfile {
-                extends: None,
-                command: Some("cargo".to_string()),
-                args: None,
-                env: HashMap::new(),
-                description: None,
-                capabilities: None,
-                delegation: None,
-            },
+                            extends: None,
+                            command: Some("cargo".to_string()),
+                            args: None,
+                            env: HashMap::new(),
+                            description: None,
+                            capabilities: None,
+                            delegation: None,
+                            permissions: None,
+                        },
         );
 
         let config = AcpConfig {
@@ -846,14 +850,15 @@ mod tests {
         agents.insert(
             "my-claude".to_string(),
             AgentProfile {
-                extends: Some("claude".to_string()),
-                command: None,
-                args: None,
-                env: HashMap::new(),
-                description: None,
-                capabilities: None,
-                delegation: None,
-            },
+                            extends: Some("claude".to_string()),
+                            command: None,
+                            args: None,
+                            env: HashMap::new(),
+                            description: None,
+                            capabilities: None,
+                            delegation: None,
+                            permissions: None,
+                        },
         );
 
         let config = AcpConfig {
@@ -888,14 +893,15 @@ mod tests {
         agents.insert(
             "opencode".to_string(),
             AgentProfile {
-                extends: None,
-                command: Some("cargo".to_string()),
-                args: Some(vec!["--version".to_string()]),
-                env: HashMap::new(),
-                description: Some("Overridden".to_string()),
-                capabilities: None,
-                delegation: None,
-            },
+                            extends: None,
+                            command: Some("cargo".to_string()),
+                            args: Some(vec!["--version".to_string()]),
+                            env: HashMap::new(),
+                            description: Some("Overridden".to_string()),
+                            capabilities: None,
+                            delegation: None,
+                            permissions: None,
+                        },
         );
 
         let config = AcpConfig {
@@ -920,14 +926,15 @@ mod tests {
         agents.insert(
             "cargo-agent".to_string(),
             AgentProfile {
-                extends: None,
-                command: Some("cargo".to_string()),
-                args: Some(vec!["--version".to_string()]),
-                env: HashMap::new(),
-                description: Some("Cargo-backed profile".to_string()),
-                capabilities: None,
-                delegation: None,
-            },
+                            extends: None,
+                            command: Some("cargo".to_string()),
+                            args: Some(vec!["--version".to_string()]),
+                            env: HashMap::new(),
+                            description: Some("Cargo-backed profile".to_string()),
+                            capabilities: None,
+                            delegation: None,
+                            permissions: None,
+                        },
         );
 
         let config = AcpConfig {

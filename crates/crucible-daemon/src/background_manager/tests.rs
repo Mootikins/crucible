@@ -119,14 +119,15 @@ fn default_enabled_delegation_config() -> DelegationConfig {
 
 fn test_agent_profile(command: &str, args: &[&str]) -> AgentProfile {
     AgentProfile {
-        extends: None,
-        command: Some(command.to_string()),
-        args: Some(args.iter().map(|arg| arg.to_string()).collect()),
-        env: HashMap::new(),
-        description: Some("delegation test target".to_string()),
-        capabilities: None,
-        delegation: None,
-    }
+            extends: None,
+            command: Some(command.to_string()),
+            args: Some(args.iter().map(|arg| arg.to_string()).collect()),
+            env: HashMap::new(),
+            description: Some("delegation test target".to_string()),
+            capabilities: None,
+            delegation: None,
+            permissions: None,
+        }
 }
 
 fn make_subagent_manager_with_factory_and_identity(

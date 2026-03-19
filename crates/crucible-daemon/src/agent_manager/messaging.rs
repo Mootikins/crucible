@@ -1,6 +1,6 @@
 use super::*;
 use crate::agent_manager::tool_tracking::ToolCallTracker;
-use crucible_config::components::permissions::PermissionMode;
+use crucible_config::components::permissions::{PermissionConfig, PermissionMode};
 use crucible_core::events::InternalSessionEvent;
 use crucible_core::types::ToolSource;
 use crucible_lua::{
@@ -225,8 +225,22 @@ impl AgentManager {
             "Creating new agent"
         );
 
+        let agent_permissions = resolved_config.agent_name.as_deref().and_then(|name| {
+            self.acp_config.as_ref().and_then(|acp| {
+                let available = crucible_acp::discovery::default_agent_profiles();
+                resolve_agent_profile(name, &acp.agents, &available)
+                    .and_then(|p| p.permissions)
+            })
+        });
+
         let acp_permission_handler = if resolved_config.agent_type == "acp" {
-            Some(self.build_acp_permission_handler(session_id, event_tx, is_interactive, permission_override))
+            Some(self.build_acp_permission_handler(
+                session_id,
+                event_tx,
+                is_interactive,
+                permission_override,
+                agent_permissions,
+            ))
         } else {
             None
         };
@@ -331,6 +345,7 @@ impl AgentManager {
         event_tx: &broadcast::Sender<SessionEventMessage>,
         is_interactive: bool,
         permission_override: Option<PermissionMode>,
+        agent_permissions: Option<PermissionConfig>,
     ) -> crucible_acp::client::PermissionRequestHandler {
         let pending_permissions = self.pending_permissions.clone();
         let session_id_owned = session_id.to_string();
@@ -394,15 +409,15 @@ impl AgentManager {
             })
         });
 
-        // If a permission override is specified, create a config with that default mode.
-        // This replaces the daemon's default without mutating shared state.
+        // Priority: CLI override (mode only) > agent-specific > global config
+        let base_config = agent_permissions.or_else(|| self.permission_config.clone());
         let effective_config = match permission_override {
             Some(mode) => {
-                let mut config = self.permission_config.clone().unwrap_or_default();
+                let mut config = base_config.unwrap_or_default();
                 config.default = mode;
                 Some(config)
             }
-            None => self.permission_config.clone(),
+            None => base_config,
         };
 
         let gate: Arc<dyn PermissionGate> = Arc::new(

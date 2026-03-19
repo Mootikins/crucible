@@ -1446,7 +1446,7 @@ mod tests {
             format,
             title,
             workspace,
-            permissions,
+            permissions: _,
         })) = cli.command
         {
             assert_eq!(session_type, "workflow");
@@ -1641,7 +1641,7 @@ mod tests {
             message,
             session_id_flag,
             raw,
-            permissions,
+            permissions: _,
         })) = cli.command
         {
             assert_eq!(session_id_pos, Some("hello".to_string()));
