@@ -696,9 +696,14 @@ pub(crate) async fn handle_session_send_message(
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
     let content = require_param!(req, "content", as_str);
+    let is_interactive = req
+        .params
+        .get("is_interactive")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
 
     match am
-        .send_message(session_id, content.to_string(), event_tx)
+        .send_message(session_id, content.to_string(), event_tx, is_interactive)
         .await
     {
         Ok(message_id) => Response::success(

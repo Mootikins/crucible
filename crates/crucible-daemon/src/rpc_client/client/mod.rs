@@ -403,6 +403,7 @@ pub struct SessionConfigureAgentRequest {
 pub struct SessionSendMessageRequest {
     pub session_id: String,
     pub content: String,
+    pub is_interactive: bool,
 }
 
 /// Request for `session.interaction_respond`.
@@ -1825,13 +1826,19 @@ impl DaemonClient {
         .await
     }
 
-    pub async fn session_send_message(&self, session_id: &str, content: &str) -> Result<String> {
+    pub async fn session_send_message(
+        &self,
+        session_id: &str,
+        content: &str,
+        is_interactive: bool,
+    ) -> Result<String> {
         let resp: SessionSendMessageResponse = self
             .typed_call(
                 "session.send_message",
                 SessionSendMessageRequest {
                     session_id: session_id.to_string(),
                     content: content.to_string(),
+                    is_interactive,
                 },
             )
             .await?;

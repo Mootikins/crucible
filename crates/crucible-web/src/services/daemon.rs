@@ -453,7 +453,11 @@ impl ReconnectingDaemon {
         self.call_with_reconnect("session.send_message", move |daemon| {
             let session_id = session_id.clone();
             let content = content.clone();
-            Box::pin(async move { daemon.session_send_message(&session_id, &content).await })
+            Box::pin(async move {
+                daemon
+                    .session_send_message(&session_id, &content, true)
+                    .await
+            })
         })
         .await
     }

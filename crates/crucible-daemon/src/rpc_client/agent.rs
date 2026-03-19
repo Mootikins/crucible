@@ -373,7 +373,9 @@ impl AgentHandle for DaemonAgentHandle {
         Box::pin(async_stream::stream! {
             tracing::debug!(session_id = %session_id, "Sending message to daemon");
 
-            let send_result = client.session_send_message(&session_id, &message).await;
+            let send_result = client
+                .session_send_message(&session_id, &message, true)
+                .await;
             if let Err(e) = send_result {
                 tracing::error!(error = %e, "Failed to send message to daemon");
                 yield Err(ChatError::Communication(format!("Failed to send message: {}", e)));

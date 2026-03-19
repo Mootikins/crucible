@@ -199,7 +199,7 @@ async fn test_complete_user_flow() {
     // We verify the RPC round-trip works and the error is about the provider,
     // not an RPC/protocol failure.
     let send_result = client
-        .session_send_message(&session_id, "Hello, this is a test message!")
+        .session_send_message(&session_id, "Hello, this is a test message!", true)
         .await;
 
     match &send_result {
