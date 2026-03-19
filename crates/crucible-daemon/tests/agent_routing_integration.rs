@@ -114,7 +114,7 @@ async fn unsupported_agent_type_fails_at_send_message_time() {
 
     let (event_tx, _) = broadcast::channel(16);
     let result = agent_manager
-        .send_message(&session.id, "test message".to_string(), &event_tx, true)
+        .send_message(&session.id, "test message".to_string(), &event_tx, true, None)
         .await;
 
     assert!(

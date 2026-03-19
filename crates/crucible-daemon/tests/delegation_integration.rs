@@ -457,7 +457,7 @@ async fn test_root_session_delegation_succeeds() {
         .expect("agent should be configured");
 
     let _ = agent_manager
-        .send_message(&session.id, "prime agent cache".to_string(), &event_tx, true)
+        .send_message(&session.id, "prime agent cache".to_string(), &event_tx, true, None)
         .await
         .expect("agent handle should be created");
 
@@ -544,7 +544,7 @@ async fn test_delegation_to_acp_agent_creates_acp_session() {
         .expect("agent should be configured");
 
     let _ = agent_manager
-        .send_message(&session.id, "prime agent cache".to_string(), &event_tx, true)
+        .send_message(&session.id, "prime agent cache".to_string(), &event_tx, true, None)
         .await
         .expect("agent handle should be created");
 

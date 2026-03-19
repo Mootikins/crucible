@@ -1,5 +1,6 @@
 use super::*;
 use crate::agent_manager::tool_tracking::ToolCallTracker;
+use crucible_config::components::permissions::PermissionMode;
 use crucible_core::events::InternalSessionEvent;
 use crucible_core::types::ToolSource;
 use crucible_lua::{
@@ -28,6 +29,7 @@ impl AgentManager {
         content: String,
         event_tx: &broadcast::Sender<SessionEventMessage>,
         is_interactive: bool,
+        permission_override: Option<PermissionMode>,
     ) -> Result<String, AgentError> {
         let session = self
             .session_manager
@@ -63,6 +65,7 @@ impl AgentManager {
                 &session.workspace,
                 &event_tx_clone,
                 is_interactive,
+                permission_override,
             )
             .await
         {
@@ -155,6 +158,7 @@ impl AgentManager {
         workspace: &std::path::Path,
         event_tx: &broadcast::Sender<SessionEventMessage>,
         is_interactive: bool,
+        permission_override: Option<PermissionMode>,
     ) -> Result<Arc<Mutex<BoxedAgentHandle>>, AgentError> {
         // Check cache first
         if let Some(cached) = self.agent_cache.get(session_id) {
@@ -164,7 +168,7 @@ impl AgentManager {
 
         // Build the agent handle from configuration
         let (agent, resolved_config) = self
-            .build_agent_from_config(session_id, agent_config, workspace, event_tx, is_interactive)
+            .build_agent_from_config(session_id, agent_config, workspace, event_tx, is_interactive, permission_override)
             .await?;
 
         // Register delegation/permission handlers if configured
@@ -190,6 +194,7 @@ impl AgentManager {
         workspace: &std::path::Path,
         event_tx: &broadcast::Sender<SessionEventMessage>,
         is_interactive: bool,
+        permission_override: Option<PermissionMode>,
     ) -> Result<(BoxedAgentHandle, SessionAgent), AgentError> {
         let resolved_config = if agent_config.endpoint.is_none() {
             let provider_key = agent_config
@@ -221,7 +226,7 @@ impl AgentManager {
         );
 
         let acp_permission_handler = if resolved_config.agent_type == "acp" {
-            Some(self.build_acp_permission_handler(session_id, event_tx, is_interactive))
+            Some(self.build_acp_permission_handler(session_id, event_tx, is_interactive, permission_override))
         } else {
             None
         };
@@ -325,6 +330,7 @@ impl AgentManager {
         session_id: &str,
         event_tx: &broadcast::Sender<SessionEventMessage>,
         is_interactive: bool,
+        permission_override: Option<PermissionMode>,
     ) -> crucible_acp::client::PermissionRequestHandler {
         let pending_permissions = self.pending_permissions.clone();
         let session_id_owned = session_id.to_string();
@@ -388,8 +394,19 @@ impl AgentManager {
             })
         });
 
+        // If a permission override is specified, create a config with that default mode.
+        // This replaces the daemon's default without mutating shared state.
+        let effective_config = match permission_override {
+            Some(mode) => {
+                let mut config = self.permission_config.clone().unwrap_or_default();
+                config.default = mode;
+                Some(config)
+            }
+            None => self.permission_config.clone(),
+        };
+
         let gate: Arc<dyn PermissionGate> = Arc::new(
-            DaemonPermissionGate::new(self.permission_config.clone(), is_interactive)
+            DaemonPermissionGate::new(effective_config, is_interactive)
                 .with_prompt_callback(ask_callback),
         );
 

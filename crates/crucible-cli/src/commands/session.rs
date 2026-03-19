@@ -15,6 +15,21 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use tokio::fs;
 
+fn resolve_permission_mode(flag: Option<&str>) -> anyhow::Result<Option<String>> {
+    if let Some(p) = flag {
+        let _validated: crucible_config::components::permissions::PermissionMode =
+            p.parse().map_err(|e: String| anyhow::anyhow!("{}", e))?;
+        return Ok(Some(p.to_string()));
+    }
+    if let Ok(env_val) = std::env::var("CRUCIBLE_PERMISSIONS") {
+        let _validated: crucible_config::components::permissions::PermissionMode = env_val
+            .parse()
+            .map_err(|e: String| anyhow::anyhow!("Invalid CRUCIBLE_PERMISSIONS='{}': {}", env_val, e))?;
+        return Ok(Some(env_val));
+    }
+    Ok(None)
+}
+
 pub fn resolve_session_id(explicit: Option<String>) -> anyhow::Result<String> {
     explicit
         .or_else(|| std::env::var("CRU_SESSION").ok())
@@ -88,7 +103,9 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             format,
             title,
             workspace,
+            permissions,
         } => {
+            let permission_mode = resolve_permission_mode(permissions.as_deref())?;
             let client = daemon_client().await?;
             rpc::create(
                 &client,
@@ -101,6 +118,7 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
                     format: &format,
                     title: title.as_deref(),
                     workspace: workspace.as_deref(),
+                    permission_mode,
                 },
             )
             .await
@@ -131,7 +149,9 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             message,
             session_id_flag,
             raw,
+            permissions,
         } => {
+            let permission_mode = resolve_permission_mode(permissions.as_deref())?;
             let (resolved_session_id, resolved_message_arg, used_deprecated_flag) =
                 resolve_send_inputs(session_id_pos, message, session_id_flag);
             if used_deprecated_flag {
@@ -149,7 +169,7 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
                     }
                 }
             };
-            rpc::send(&config, &session_id, &message, raw).await
+            rpc::send(&config, &session_id, &message, raw, permission_mode).await
         }
         SessionCommands::Configure {
             session_id,
@@ -933,6 +953,7 @@ mod rpc {
         pub format: &'a str,
         pub title: Option<&'a str>,
         pub workspace: Option<&'a std::path::Path>,
+        pub permission_mode: Option<String>,
     }
 
     pub(super) async fn list(
@@ -1055,6 +1076,9 @@ mod rpc {
             if let Some(t) = params.title {
                 println!("Title: {}", t);
             }
+            if let Some(ref mode) = params.permission_mode {
+                println!("Permission mode: {}", mode);
+            }
         }
 
         Ok(())
@@ -1127,6 +1151,7 @@ mod rpc {
         session_id: &str,
         message: &str,
         raw: bool,
+        permission_mode: Option<String>,
     ) -> Result<()> {
         use crucible_daemon::DaemonClient;
         use std::io::Write;
@@ -1135,15 +1160,19 @@ mod rpc {
 
         client.session_subscribe(&[session_id]).await?;
 
-        // Try to send - if session not found, load from storage and retry
-        let message_id = match client.session_send_message(session_id, message, false).await {
+        let message_id = match client
+            .session_send_message_with_permissions(session_id, message, false, permission_mode.clone())
+            .await
+        {
             Ok(id) => id,
             Err(e) if e.to_string().contains("not found") => {
                 eprintln!("Session not in memory, loading from storage...");
                 client
                     .session_resume_from_storage(session_id, &config.kiln_path, None, None)
                     .await?;
-                client.session_send_message(session_id, message, false).await?
+                client
+                    .session_send_message_with_permissions(session_id, message, false, permission_mode)
+                    .await?
             }
             Err(e) => return Err(e),
         };

@@ -550,6 +550,10 @@ pub enum SessionCommands {
         /// Working directory for the session (defaults to current directory)
         #[arg(long)]
         workspace: Option<std::path::PathBuf>,
+
+        /// Override permission mode (allow, deny, or ask). Overrides CRUCIBLE_PERMISSIONS env var.
+        #[arg(long, value_name = "MODE", value_parser = ["allow", "deny", "ask"])]
+        permissions: Option<String>,
     },
 
     /// Pause a daemon session
@@ -610,6 +614,10 @@ pub enum SessionCommands {
         /// Show raw events instead of formatted output
         #[arg(long)]
         raw: bool,
+
+        /// Override permission mode (allow, deny, or ask). Overrides CRUCIBLE_PERMISSIONS env var.
+        #[arg(long, value_name = "MODE", value_parser = ["allow", "deny", "ask"])]
+        permissions: Option<String>,
     },
 
     /// Configure agent backend (provider + model + endpoint) for a session.
@@ -1411,6 +1419,7 @@ mod tests {
             format,
             title,
             workspace,
+            permissions,
         })) = cli.command
         {
             assert_eq!(session_type, "chat");
@@ -1420,6 +1429,7 @@ mod tests {
             assert_eq!(format, "text");
             assert_eq!(title, None);
             assert_eq!(workspace, None);
+            assert_eq!(permissions, None);
         } else {
             panic!("Expected Session Create command");
         }
@@ -1436,6 +1446,7 @@ mod tests {
             format,
             title,
             workspace,
+            permissions,
         })) = cli.command
         {
             assert_eq!(session_type, "workflow");
@@ -1587,12 +1598,14 @@ mod tests {
             message,
             session_id_flag,
             raw,
+            permissions,
         })) = cli.command
         {
             assert_eq!(session_id_pos, Some("chat-123".to_string()));
             assert_eq!(message, Some("hello".to_string()));
             assert_eq!(session_id_flag, None);
             assert!(!raw);
+            assert_eq!(permissions, None);
         } else {
             panic!("Expected Session Send command");
         }
@@ -1607,12 +1620,14 @@ mod tests {
             message,
             session_id_flag,
             raw,
+            permissions,
         })) = cli.command
         {
             assert_eq!(session_id_pos, Some("hello".to_string()));
             assert_eq!(message, None);
             assert_eq!(session_id_flag, Some("chat-123".to_string()));
             assert!(!raw);
+            assert_eq!(permissions, None);
         } else {
             panic!("Expected Session Send command");
         }
@@ -1626,6 +1641,7 @@ mod tests {
             message,
             session_id_flag,
             raw,
+            permissions,
         })) = cli.command
         {
             assert_eq!(session_id_pos, Some("hello".to_string()));

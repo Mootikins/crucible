@@ -153,4 +153,26 @@ mod tests {
         fn assert_send_sync<T: Send + Sync + 'static>() {}
         assert_send_sync::<DaemonPermissionGate>();
     }
+
+    #[tokio::test]
+    async fn permission_override_allow_approves_ask_tools() {
+        use crucible_config::components::permissions::{PermissionConfig, PermissionMode};
+        let mut config = PermissionConfig::default();
+        config.default = PermissionMode::Allow;
+        let gate = DaemonPermissionGate::new(Some(config), false);
+        let request = PermRequest::tool("dangerous_tool", json!({}));
+        let response = gate.request_permission(request).await;
+        assert!(response.allowed, "with allow default, tool should be allowed");
+    }
+
+    #[tokio::test]
+    async fn permission_override_deny_blocks_all_tools() {
+        use crucible_config::components::permissions::{PermissionConfig, PermissionMode};
+        let mut config = PermissionConfig::default();
+        config.default = PermissionMode::Deny;
+        let gate = DaemonPermissionGate::new(Some(config), false);
+        let request = PermRequest::tool("dangerous_tool", json!({}));
+        let response = gate.request_permission(request).await;
+        assert!(!response.allowed, "with deny default, tool should be denied");
+    }
 }
