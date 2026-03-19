@@ -464,4 +464,38 @@ mod tests {
         let delegation: DelegationConfig = serde_json::from_str(json).expect("should parse");
         assert_eq!(delegation.max_concurrent_delegations, 3);
     }
+
+    #[test]
+    fn agent_profile_deserializes_permissions() {
+        let toml = r#"
+            [agents.claude]
+            extends = "claude"
+
+            [agents.claude.permissions]
+            default = "ask"
+            deny = ["bash:rm *", "write:*"]
+        "#;
+        let config: AcpConfig = toml::from_str(toml).expect("should parse");
+        let profile = config.agents.get("claude").expect("claude agent");
+        let perms = profile
+            .permissions
+            .as_ref()
+            .expect("should have permissions");
+        assert_eq!(
+            perms.default,
+            super::super::permissions::PermissionMode::Ask
+        );
+        assert_eq!(perms.deny, vec!["bash:rm *", "write:*"]);
+    }
+
+    #[test]
+    fn agent_profile_without_permissions_deserializes_to_none() {
+        let toml = r#"
+            [agents.opencode]
+            extends = "opencode"
+        "#;
+        let config: AcpConfig = toml::from_str(toml).expect("should parse");
+        let profile = config.agents.get("opencode").expect("opencode agent");
+        assert!(profile.permissions.is_none());
+    }
 }
