@@ -404,6 +404,8 @@ pub struct SessionSendMessageRequest {
     pub session_id: String,
     pub content: String,
     pub is_interactive: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<String>,
 }
 
 /// Request for `session.interaction_respond`.
@@ -1832,6 +1834,17 @@ impl DaemonClient {
         content: &str,
         is_interactive: bool,
     ) -> Result<String> {
+        self.session_send_message_with_permissions(session_id, content, is_interactive, None)
+            .await
+    }
+
+    pub async fn session_send_message_with_permissions(
+        &self,
+        session_id: &str,
+        content: &str,
+        is_interactive: bool,
+        permission_mode: Option<String>,
+    ) -> Result<String> {
         let resp: SessionSendMessageResponse = self
             .typed_call(
                 "session.send_message",
@@ -1839,6 +1852,7 @@ impl DaemonClient {
                     session_id: session_id.to_string(),
                     content: content.to_string(),
                     is_interactive,
+                    permission_mode,
                 },
             )
             .await?;

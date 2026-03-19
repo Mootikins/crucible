@@ -26,6 +26,31 @@ pub enum PermissionMode {
     Ask,
 }
 
+impl std::str::FromStr for PermissionMode {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "allow" => Ok(PermissionMode::Allow),
+            "deny" => Ok(PermissionMode::Deny),
+            "ask" => Ok(PermissionMode::Ask),
+            other => Err(format!(
+                "Invalid permission mode: '{}'. Must be allow, deny, or ask",
+                other
+            )),
+        }
+    }
+}
+
+impl std::fmt::Display for PermissionMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PermissionMode::Allow => write!(f, "allow"),
+            PermissionMode::Deny => write!(f, "deny"),
+            PermissionMode::Ask => write!(f, "ask"),
+        }
+    }
+}
+
 /// Parsed permission rule with tool, optional server, and pattern
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedRule {
@@ -1482,6 +1507,44 @@ ask:
 
         let decision = engine.evaluate("write", "src/../secret.txt", true);
         assert!(matches!(decision, PermissionDecision::Deny { .. }));
+    }
+
+    #[test]
+    fn permission_mode_from_str_valid() {
+        assert_eq!(
+            "allow".parse::<PermissionMode>().unwrap(),
+            PermissionMode::Allow
+        );
+        assert_eq!(
+            "deny".parse::<PermissionMode>().unwrap(),
+            PermissionMode::Deny
+        );
+        assert_eq!(
+            "ask".parse::<PermissionMode>().unwrap(),
+            PermissionMode::Ask
+        );
+        assert_eq!(
+            "ALLOW".parse::<PermissionMode>().unwrap(),
+            PermissionMode::Allow
+        );
+        assert_eq!(
+            "Allow".parse::<PermissionMode>().unwrap(),
+            PermissionMode::Allow
+        );
+    }
+
+    #[test]
+    fn permission_mode_from_str_invalid() {
+        let err = "bogus".parse::<PermissionMode>().unwrap_err();
+        assert!(err.contains("Invalid permission mode"));
+        assert!(err.contains("bogus"));
+    }
+
+    #[test]
+    fn permission_mode_display_roundtrip() {
+        assert_eq!(PermissionMode::Allow.to_string(), "allow");
+        assert_eq!(PermissionMode::Deny.to_string(), "deny");
+        assert_eq!(PermissionMode::Ask.to_string(), "ask");
     }
 
     #[test]

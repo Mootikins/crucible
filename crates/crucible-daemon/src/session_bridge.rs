@@ -133,7 +133,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
             self.agent_manager,
             self.event_tx,
             |am, event_tx| async move {
-                am.send_message(&session_id, content, &event_tx, true)
+                am.send_message(&session_id, content, &event_tx, true, None)
                     .await
                     .map_err(|e| e.to_string())
             }
@@ -281,7 +281,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
             let mut broadcast_rx = event_tx.subscribe();
 
             let _msg_id = am
-                .send_message(&session_id, content, &event_tx, true)
+                .send_message(&session_id, content, &event_tx, true, None)
                 .await
                 .map_err(|e| e.to_string())?;
 

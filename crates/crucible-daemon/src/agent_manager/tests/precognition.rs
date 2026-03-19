@@ -44,7 +44,7 @@ async fn test_precognition_skipped_when_disabled() {
 
     let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
     agent_manager
-        .send_message(&session.id, "hello".to_string(), &event_tx, true)
+        .send_message(&session.id, "hello".to_string(), &event_tx, true, None)
         .await
         .unwrap();
 
@@ -96,7 +96,7 @@ async fn test_precognition_skipped_for_search_command() {
 
     let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
     agent_manager
-        .send_message(&session.id, "/search rust".to_string(), &event_tx, true)
+        .send_message(&session.id, "/search rust".to_string(), &event_tx, true, None)
         .await
         .unwrap();
 
@@ -147,7 +147,7 @@ async fn test_precognition_skipped_when_no_kiln() {
 
     let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
     agent_manager
-        .send_message(&session.id, "hello".to_string(), &event_tx, true)
+        .send_message(&session.id, "hello".to_string(), &event_tx, true, None)
         .await
         .unwrap();
 
@@ -204,7 +204,7 @@ async fn test_precognition_complete_event_emitted_when_enrichment_runs() {
 
     let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
     agent_manager
-        .send_message(&session.id, "hello precognition".to_string(), &event_tx, true)
+        .send_message(&session.id, "hello precognition".to_string(), &event_tx, true, None)
         .await
         .unwrap();
 
