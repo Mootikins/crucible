@@ -108,7 +108,7 @@ pub fn is_safe(tool_name: &str) -> bool {
     )
 }
 
-fn resolve_agent_profile(
+pub(crate) fn resolve_agent_profile(
     name: &str,
     configured: &HashMap<String, AgentProfile>,
     available: &HashMap<String, AgentProfile>,
@@ -133,6 +133,9 @@ fn resolve_agent_profile(
     }
     if let Some(delegation) = &profile.delegation {
         resolved.delegation = Some(delegation.clone());
+    }
+    if let Some(permissions) = &profile.permissions {
+        resolved.permissions = Some(permissions.clone());
     }
 
     resolved.env.extend(profile.env.clone());

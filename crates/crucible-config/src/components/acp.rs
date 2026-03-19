@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::components::permissions::PermissionConfig;
 use crate::serde_helpers::default_true;
 
 /// ACP configuration - practical settings for agent communication
@@ -85,6 +86,13 @@ pub struct AgentProfile {
     /// Delegation configuration for this agent
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delegation: Option<DelegationConfig>,
+    /// Per-agent permission configuration. When set, overrides the global
+    /// `[permissions]` config for sessions using this agent profile.
+    /// Use this to give different agents different trust levels, e.g.
+    /// Claude (restrictive, `default = "ask"`) vs OpenCode (permissive,
+    /// `default = "allow"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permissions: Option<PermissionConfig>,
 }
 
 fn default_session_timeout() -> u64 {
