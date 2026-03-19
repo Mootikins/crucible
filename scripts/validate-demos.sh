@@ -313,6 +313,249 @@ check_strict_recording_quality "assets/fixtures/delegation-demo.jsonl"
 # Run delegation-specific checks
 check_delegation_fixture "assets/fixtures/delegation-demo.jsonl"
 
+# === Content Validation Checks ===
+
+# Check: Duplicate paragraph detection
+check_duplicate_paragraphs() {
+  local fixture="$1"
+  local name=$(basename "$fixture" .jsonl)
+
+  echo "=== Duplicate Paragraph Check: $name ==="
+
+  if [[ ! -f "$fixture" ]]; then
+    echo "  FAIL: Fixture not found: $fixture"
+    ((FAIL++)) || true; ((TOTAL++)) || true; return
+  fi
+
+  python3 -c "
+import json, sys
+
+fixture = '$fixture'
+with open(fixture) as f:
+    lines = f.readlines()
+
+data = [json.loads(line) for line in lines]
+events = [d for d in data if d.get('event') == 'message_complete']
+
+found_dup = False
+for evt in events:
+    full_response = evt.get('data', {}).get('full_response', '')
+    if not full_response:
+        continue
+    paragraphs = [p.strip() for p in full_response.split('\n\n') if p.strip()]
+    seen = set()
+    for p in paragraphs:
+        if p in seen:
+            print(f'  FAIL: Duplicate paragraph detected: {p[:80]}...')
+            found_dup = True
+            break
+        seen.add(p)
+    if found_dup:
+        break
+
+if found_dup:
+    sys.exit(1)
+else:
+    print('  PASS: No duplicate paragraphs')
+    sys.exit(0)
+"
+  if (( $? == 0 )); then
+    ((PASS++)) || true; ((TOTAL++)) || true
+  else
+    ((FAIL++)) || true; ((TOTAL++)) || true
+  fi
+
+  echo
+}
+
+# Check: Text delta consistency
+check_text_delta_consistency() {
+  local fixture="$1"
+  local name=$(basename "$fixture" .jsonl)
+
+  echo "=== Text Delta Consistency: $name ==="
+
+  if [[ ! -f "$fixture" ]]; then
+    echo "  FAIL: Fixture not found: $fixture"
+    ((FAIL++)) || true; ((TOTAL++)) || true; return
+  fi
+
+  python3 -c "
+import json, sys
+
+fixture = '$fixture'
+with open(fixture) as f:
+    lines = f.readlines()
+
+data = [json.loads(line) for line in lines]
+events = [d for d in data if 'event' in d]
+
+# Walk events: accumulate text_delta content between user_message and message_complete
+# For delegation fixtures, tool_call/tool_result events split the response into phases.
+# full_response only contains the final post-tool text, so we reset assembly on tool events.
+assembling = False
+assembled = ''
+all_ok = True
+
+for evt in events:
+    etype = evt.get('event', '')
+    if etype == 'user_message':
+        assembling = True
+        assembled = ''
+    elif etype in ('tool_call', 'delegation_spawned') and assembling:
+        # Reset: text before tool calls is not in full_response
+        assembled = ''
+    elif etype == 'text_delta' and assembling:
+        # Skip thinking events
+        if evt.get('data', {}).get('event_type') == 'thinking':
+            continue
+        assembled += evt.get('data', {}).get('content', '')
+    elif etype == 'message_complete' and assembling:
+        assembling = False
+        full_response = evt.get('data', {}).get('full_response', '')
+        if assembled and full_response and assembled != full_response:
+            print(f'  FAIL: Assembled text_delta ({len(assembled)} chars) != full_response ({len(full_response)} chars)')
+            # Show first divergence point
+            for i, (a, b) in enumerate(zip(assembled, full_response)):
+                if a != b:
+                    print(f'         First diff at char {i}: delta={repr(a)} vs response={repr(b)}')
+                    break
+            all_ok = False
+            break
+
+if all_ok:
+    print('  PASS: Text deltas match full_response')
+    sys.exit(0)
+else:
+    sys.exit(1)
+"
+  if (( $? == 0 )); then
+    ((PASS++)) || true; ((TOTAL++)) || true
+  else
+    ((FAIL++)) || true; ((TOTAL++)) || true
+  fi
+
+  echo
+}
+
+# Check: Personal config leakage
+check_config_leakage() {
+  local fixture="$1"
+  local name=$(basename "$fixture" .jsonl)
+
+  echo "=== Config Leakage Check: $name ==="
+
+  if [[ ! -f "$fixture" ]]; then
+    echo "  FAIL: Fixture not found: $fixture"
+    ((FAIL++)) || true; ((TOTAL++)) || true; return
+  fi
+
+  local leaked=false
+
+  # Check for home directory paths
+  if grep -qE '"/home/[a-zA-Z]|"/Users/[a-zA-Z]' "$fixture" 2>/dev/null; then
+    echo "  FAIL: Home directory path leaked in fixture"
+    leaked=true
+  fi
+
+  # Check for API key patterns
+  if grep -qE 'sk-[a-zA-Z0-9]{20,}|ANTHROPIC_API_KEY=' "$fixture" 2>/dev/null; then
+    echo "  FAIL: API key pattern detected in fixture"
+    leaked=true
+  fi
+
+  # Check for personal config references
+  if grep -qE '~/.claude|~/.config/crucible' "$fixture" 2>/dev/null; then
+    echo "  FAIL: Personal config path reference in fixture"
+    leaked=true
+  fi
+
+  if [[ "$leaked" == "true" ]]; then
+    ((FAIL++)) || true; ((TOTAL++)) || true
+  else
+    echo "  PASS: No personal config leakage detected"
+    ((PASS++)) || true; ((TOTAL++)) || true
+  fi
+
+  echo
+}
+
+# Check: Event ordering sanity
+check_event_ordering() {
+  local fixture="$1"
+  local name=$(basename "$fixture" .jsonl)
+
+  echo "=== Event Ordering Check: $name ==="
+
+  if [[ ! -f "$fixture" ]]; then
+    echo "  FAIL: Fixture not found: $fixture"
+    ((FAIL++)) || true; ((TOTAL++)) || true; return
+  fi
+
+  python3 -c "
+import json, sys
+
+fixture = '$fixture'
+with open(fixture) as f:
+    lines = f.readlines()
+
+data = [json.loads(line) for line in lines]
+events = [d for d in data if 'event' in d]
+
+if not events:
+    print('  FAIL: No events found')
+    sys.exit(1)
+
+errors = []
+
+# Check 1: First event after header must be user_message
+# Header lines lack 'event' key, so events[0] is the first real event
+first_event = events[0].get('event', '')
+if first_event != 'user_message':
+    errors.append(f'First event is \"{first_event}\", expected \"user_message\"')
+
+# Check 2: Last event must be message_complete or post_llm_call
+# Footer lines lack 'event' key, so events[-1] is the last real event
+last_event = events[-1].get('event', '')
+if last_event not in ('message_complete', 'post_llm_call'):
+    errors.append(f'Last event is \"{last_event}\", expected \"message_complete\" or \"post_llm_call\"')
+
+# Check 3: No text_delta after message_complete for the same message_id
+completed_ids = set()
+for evt in events:
+    etype = evt.get('event', '')
+    mid = evt.get('data', {}).get('message_id', evt.get('message_id', ''))
+    if etype == 'message_complete':
+        completed_ids.add(mid)
+    elif etype == 'text_delta' and mid in completed_ids:
+        errors.append(f'text_delta after message_complete for message_id={mid}')
+        break
+
+if errors:
+    for e in errors:
+        print(f'  FAIL: {e}')
+    sys.exit(1)
+else:
+    print('  PASS: Event ordering is valid')
+    sys.exit(0)
+"
+  if (( $? == 0 )); then
+    ((PASS++)) || true; ((TOTAL++)) || true
+  else
+    ((FAIL++)) || true; ((TOTAL++)) || true
+  fi
+
+  echo
+}
+
+# Run content validation checks on all fixtures
+for fx in assets/fixtures/demo.jsonl assets/fixtures/acp-demo.jsonl assets/fixtures/delegation-demo.jsonl; do
+  check_duplicate_paragraphs "$fx"
+  check_text_delta_consistency "$fx"
+  check_config_leakage "$fx"
+  check_event_ordering "$fx"
+done
+
 echo "=== Summary ==="
 echo "PASS: $PASS / WARN: $WARN / FAIL: $FAIL / TOTAL: $TOTAL"
 
