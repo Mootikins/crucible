@@ -334,7 +334,7 @@ fn overflow_graduation_does_not_duplicate_content() {
         call_id: None,
         description: None,
         source: None,
-                lua_primary_arg: None,
+        lua_primary_arg: None,
     });
     let tree = view_with_default_ctx(&app);
     runtime.render(&tree);
@@ -406,7 +406,7 @@ fn incremental_text_after_tool_no_duplication() {
         call_id: None,
         description: None,
         source: None,
-                lua_primary_arg: None,
+        lua_primary_arg: None,
     });
     let tree = view_with_default_ctx(&app);
     runtime.render(&tree);

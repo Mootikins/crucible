@@ -343,7 +343,13 @@ impl ReactorTestHarness {
 
     async fn send(&mut self, msg: &str) {
         self.agent_manager
-            .send_message(&self.session_id, msg.to_string(), &self.event_tx, true, None)
+            .send_message(
+                &self.session_id,
+                msg.to_string(),
+                &self.event_tx,
+                true,
+                None,
+            )
             .await
             .unwrap();
     }

@@ -162,7 +162,10 @@ mod tests {
         let gate = DaemonPermissionGate::new(Some(config), false);
         let request = PermRequest::tool("dangerous_tool", json!({}));
         let response = gate.request_permission(request).await;
-        assert!(response.allowed, "with allow default, tool should be allowed");
+        assert!(
+            response.allowed,
+            "with allow default, tool should be allowed"
+        );
     }
 
     #[tokio::test]
@@ -173,6 +176,9 @@ mod tests {
         let gate = DaemonPermissionGate::new(Some(config), false);
         let request = PermRequest::tool("dangerous_tool", json!({}));
         let response = gate.request_permission(request).await;
-        assert!(!response.allowed, "with deny default, tool should be denied");
+        assert!(
+            !response.allowed,
+            "with deny default, tool should be denied"
+        );
     }
 }

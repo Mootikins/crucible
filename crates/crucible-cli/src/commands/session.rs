@@ -22,9 +22,10 @@ fn resolve_permission_mode(flag: Option<&str>) -> anyhow::Result<Option<String>>
         return Ok(Some(p.to_string()));
     }
     if let Ok(env_val) = std::env::var("CRUCIBLE_PERMISSIONS") {
-        let _validated: crucible_config::components::permissions::PermissionMode = env_val
-            .parse()
-            .map_err(|e: String| anyhow::anyhow!("Invalid CRUCIBLE_PERMISSIONS='{}': {}", env_val, e))?;
+        let _validated: crucible_config::components::permissions::PermissionMode =
+            env_val.parse().map_err(|e: String| {
+                anyhow::anyhow!("Invalid CRUCIBLE_PERMISSIONS='{}': {}", env_val, e)
+            })?;
         return Ok(Some(env_val));
     }
     Ok(None)
@@ -1161,7 +1162,12 @@ mod rpc {
         client.session_subscribe(&[session_id]).await?;
 
         let message_id = match client
-            .session_send_message_with_permissions(session_id, message, false, permission_mode.clone())
+            .session_send_message_with_permissions(
+                session_id,
+                message,
+                false,
+                permission_mode.clone(),
+            )
             .await
         {
             Ok(id) => id,
@@ -1171,7 +1177,12 @@ mod rpc {
                     .session_resume_from_storage(session_id, &config.kiln_path, None, None)
                     .await?;
                 client
-                    .session_send_message_with_permissions(session_id, message, false, permission_mode)
+                    .session_send_message_with_permissions(
+                        session_id,
+                        message,
+                        false,
+                        permission_mode,
+                    )
                     .await?
             }
             Err(e) => return Err(e),

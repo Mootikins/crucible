@@ -241,8 +241,10 @@ proptest! {
         let all_content: String = chunks.iter().take(cancel_at).cloned().collect();
         let first_word = all_content.split_whitespace().next();
         if let Some(word) = first_word {
-            if word.len() >= 3 {
-                let prefix = &word[..3.min(word.len())];
+            // Only check words that are purely alphabetic (avoid markdown-
+            // interpreted content like "00." which becomes a list item)
+            if word.len() >= 3 && word.chars().all(|c| c.is_alphabetic()) {
+                let prefix = &word[..3];
                 prop_assert!(
                     stdout.contains(prefix),
                     "Cancelled content should have prefix '{}' in stdout:\n{}",

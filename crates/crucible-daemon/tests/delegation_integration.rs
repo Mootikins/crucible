@@ -457,7 +457,13 @@ async fn test_root_session_delegation_succeeds() {
         .expect("agent should be configured");
 
     let _ = agent_manager
-        .send_message(&session.id, "prime agent cache".to_string(), &event_tx, true, None)
+        .send_message(
+            &session.id,
+            "prime agent cache".to_string(),
+            &event_tx,
+            true,
+            None,
+        )
         .await
         .expect("agent handle should be created");
 
@@ -496,15 +502,15 @@ async fn test_delegation_to_acp_agent_creates_acp_session() {
     acp_config.agents.insert(
         "opencode".to_string(),
         AgentProfile {
-                extends: None,
-                command: Some("opencode".to_string()),
-                args: Some(vec!["acp".to_string()]),
-                env: HashMap::new(),
-                description: Some("OpenCode ACP".to_string()),
-                capabilities: None,
-                delegation: None,
-                permissions: None,
-            },
+            extends: None,
+            command: Some("opencode".to_string()),
+            args: Some(vec!["acp".to_string()]),
+            env: HashMap::new(),
+            description: Some("OpenCode ACP".to_string()),
+            capabilities: None,
+            delegation: None,
+            permissions: None,
+        },
     );
 
     let agent_manager = AgentManager::new(AgentManagerParams {
@@ -545,7 +551,13 @@ async fn test_delegation_to_acp_agent_creates_acp_session() {
         .expect("agent should be configured");
 
     let _ = agent_manager
-        .send_message(&session.id, "prime agent cache".to_string(), &event_tx, true, None)
+        .send_message(
+            &session.id,
+            "prime agent cache".to_string(),
+            &event_tx,
+            true,
+            None,
+        )
         .await
         .expect("agent handle should be created");
 
@@ -665,28 +677,28 @@ async fn test_delegation_unknown_target_lists_available() {
     available_agents.insert(
         "claude".to_string(),
         AgentProfile {
-                extends: None,
-                command: Some("claude".to_string()),
-                args: Some(vec!["acp".to_string()]),
-                env: HashMap::new(),
-                description: Some("Claude ACP".to_string()),
-                capabilities: None,
-                delegation: None,
-                permissions: None,
-            },
+            extends: None,
+            command: Some("claude".to_string()),
+            args: Some(vec!["acp".to_string()]),
+            env: HashMap::new(),
+            description: Some("Claude ACP".to_string()),
+            capabilities: None,
+            delegation: None,
+            permissions: None,
+        },
     );
     available_agents.insert(
         "opencode".to_string(),
         AgentProfile {
-                extends: None,
-                command: Some("opencode".to_string()),
-                args: Some(vec!["acp".to_string()]),
-                env: HashMap::new(),
-                description: Some("OpenCode ACP".to_string()),
-                capabilities: None,
-                delegation: None,
-                permissions: None,
-            },
+            extends: None,
+            command: Some("opencode".to_string()),
+            args: Some(vec!["acp".to_string()]),
+            env: HashMap::new(),
+            description: Some("OpenCode ACP".to_string()),
+            capabilities: None,
+            delegation: None,
+            permissions: None,
+        },
     );
 
     manager.register_subagent_context(

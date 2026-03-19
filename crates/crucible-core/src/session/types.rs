@@ -978,19 +978,19 @@ mod tests {
         use crucible_config::AgentProfile;
 
         let profile = AgentProfile {
-                extends: Some("claude".to_string()),
-                command: None,
-                args: None,
-                env: {
-                    let mut map = HashMap::new();
-                    map.insert("ANTHROPIC_API_KEY".to_string(), "key123".to_string());
-                    map
-                },
-                description: Some("Claude via profile".to_string()),
-                capabilities: Some(vec!["chat".to_string(), "reasoning".to_string()]),
-                delegation: None,
-                permissions: None,
-            };
+            extends: Some("claude".to_string()),
+            command: None,
+            args: None,
+            env: {
+                let mut map = HashMap::new();
+                map.insert("ANTHROPIC_API_KEY".to_string(), "key123".to_string());
+                map
+            },
+            description: Some("Claude via profile".to_string()),
+            capabilities: Some(vec!["chat".to_string(), "reasoning".to_string()]),
+            delegation: None,
+            permissions: None,
+        };
 
         let agent = SessionAgent::from_profile(&profile, "claude-custom");
 
@@ -1019,20 +1019,20 @@ mod tests {
         use crucible_config::AgentProfile;
 
         let profile = AgentProfile {
-                extends: None,
-                command: None,
-                args: None,
-                env: {
-                    let mut map = HashMap::new();
-                    map.insert("CUSTOM_VAR".to_string(), "custom_value".to_string());
-                    map.insert("ANOTHER_VAR".to_string(), "another_value".to_string());
-                    map
-                },
-                description: None,
-                capabilities: None,
-                delegation: None,
-                permissions: None,
-            };
+            extends: None,
+            command: None,
+            args: None,
+            env: {
+                let mut map = HashMap::new();
+                map.insert("CUSTOM_VAR".to_string(), "custom_value".to_string());
+                map.insert("ANOTHER_VAR".to_string(), "another_value".to_string());
+                map
+            },
+            description: None,
+            capabilities: None,
+            delegation: None,
+            permissions: None,
+        };
 
         let agent = SessionAgent::from_profile(&profile, "test-agent");
 
@@ -1062,15 +1062,15 @@ mod tests {
         };
 
         let profile = AgentProfile {
-                extends: Some("opencode".to_string()),
-                command: None,
-                args: None,
-                env: HashMap::new(),
-                description: Some("Delegating agent".to_string()),
-                capabilities: Some(vec!["delegate".to_string()]),
-                delegation: Some(delegation),
-                permissions: None,
-            };
+            extends: Some("opencode".to_string()),
+            command: None,
+            args: None,
+            env: HashMap::new(),
+            description: Some("Delegating agent".to_string()),
+            capabilities: Some(vec!["delegate".to_string()]),
+            delegation: Some(delegation),
+            permissions: None,
+        };
 
         let agent = SessionAgent::from_profile(&profile, "delegator");
 

@@ -113,8 +113,13 @@ async fn agent_specific_permissions_override_global() {
     agent_config.default = PermissionMode::Allow;
 
     let gate = DaemonPermissionGate::new(Some(agent_config), false);
-    let response = gate.request_permission(PermRequest::tool("some_tool", json!({}))).await;
-    assert!(response.allowed, "agent-specific allow should override global ask");
+    let response = gate
+        .request_permission(PermRequest::tool("some_tool", json!({})))
+        .await;
+    assert!(
+        response.allowed,
+        "agent-specific allow should override global ask"
+    );
 }
 
 #[tokio::test]
@@ -123,7 +128,9 @@ async fn agent_without_permissions_falls_back_to_global() {
     global.default = PermissionMode::Allow;
 
     let gate = DaemonPermissionGate::new(Some(global), false);
-    let response = gate.request_permission(PermRequest::tool("some_tool", json!({}))).await;
+    let response = gate
+        .request_permission(PermRequest::tool("some_tool", json!({})))
+        .await;
     assert!(response.allowed, "global allow config should permit tool");
 }
 
@@ -136,8 +143,13 @@ async fn cli_permissions_override_agent_specific_default() {
     override_config.default = PermissionMode::Deny;
 
     let gate = DaemonPermissionGate::new(Some(override_config), false);
-    let response = gate.request_permission(PermRequest::tool("some_tool", json!({}))).await;
-    assert!(!response.allowed, "--permissions deny should override agent allow");
+    let response = gate
+        .request_permission(PermRequest::tool("some_tool", json!({})))
+        .await;
+    assert!(
+        !response.allowed,
+        "--permissions deny should override agent allow"
+    );
 }
 
 #[tokio::test]
@@ -147,6 +159,11 @@ async fn agent_deny_rules_enforced_even_with_allow_default() {
     agent_config.deny = vec!["bash:rm *".to_string()];
 
     let gate = DaemonPermissionGate::new(Some(agent_config), false);
-    let response = gate.request_permission(PermRequest::bash(["rm", "-rf", "/tmp"])).await;
-    assert!(!response.allowed, "deny rules must fire even with allow default");
+    let response = gate
+        .request_permission(PermRequest::bash(["rm", "-rf", "/tmp"]))
+        .await;
+    assert!(
+        !response.allowed,
+        "deny rules must fire even with allow default"
+    );
 }

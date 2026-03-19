@@ -508,7 +508,7 @@ fn rendering_is_idempotent_with_tool_calls() {
         call_id: None,
         description: None,
         source: None,
-                lua_primary_arg: None,
+        lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "test_tool".to_string(),

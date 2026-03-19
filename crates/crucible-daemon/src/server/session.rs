@@ -705,10 +705,19 @@ pub(crate) async fn handle_session_send_message(
         .params
         .get("permission_mode")
         .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<crucible_config::components::permissions::PermissionMode>().ok());
+        .and_then(|s| {
+            s.parse::<crucible_config::components::permissions::PermissionMode>()
+                .ok()
+        });
 
     match am
-        .send_message(session_id, content.to_string(), event_tx, is_interactive, permission_override)
+        .send_message(
+            session_id,
+            content.to_string(),
+            event_tx,
+            is_interactive,
+            permission_override,
+        )
         .await
     {
         Ok(message_id) => Response::success(
