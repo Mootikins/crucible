@@ -790,3 +790,50 @@ mod permission_channel_tests {
         );
     }
 }
+
+mod resolve_agent_profile_tests {
+    use crucible_acp::discovery::default_agent_profiles;
+    use crucible_config::components::{
+        acp::AgentProfile,
+        permissions::{PermissionConfig, PermissionMode},
+    };
+    use std::collections::HashMap;
+
+    use crate::agent_manager::resolve_agent_profile;
+
+    fn make_profile_with_permissions(mode: PermissionMode) -> AgentProfile {
+        let mut p = AgentProfile::default();
+        let mut perms = PermissionConfig::default();
+        perms.default = mode;
+        p.permissions = Some(perms);
+        p
+    }
+
+    #[test]
+    fn resolve_agent_profile_merges_permissions() {
+        let mut configured = HashMap::new();
+        configured.insert(
+            "my-claude".to_string(),
+            make_profile_with_permissions(PermissionMode::Ask),
+        );
+        let available = default_agent_profiles();
+
+        let resolved = resolve_agent_profile("my-claude", &configured, &available)
+            .expect("should resolve");
+        let perms = resolved.permissions.expect("should have permissions");
+        assert_eq!(perms.default, PermissionMode::Ask);
+    }
+
+    #[test]
+    fn resolve_agent_profile_no_permissions_returns_none() {
+        let mut configured = HashMap::new();
+        let mut p = AgentProfile::default();
+        p.extends = Some("opencode".to_string());
+        configured.insert("my-opencode".to_string(), p);
+        let available = default_agent_profiles();
+
+        let resolved = resolve_agent_profile("my-opencode", &configured, &available)
+            .expect("should resolve");
+        assert!(resolved.permissions.is_none());
+    }
+}
