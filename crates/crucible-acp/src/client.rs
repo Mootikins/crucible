@@ -618,6 +618,12 @@ impl CrucibleAcpClient {
         self.agent_mcp_capabilities =
             Some(init_response.agent_capabilities.mcp_capabilities.clone());
 
+        tracing::debug!(
+            http_mcp = ?self.agent_mcp_capabilities.as_ref().map(|c| c.http),
+            sse_mcp = ?self.agent_mcp_capabilities.as_ref().map(|c| c.sse),
+            "Agent MCP capabilities from InitializeResponse"
+        );
+
         tracing::info!(
             agent = %self.agent_name,
             protocol_version = %init_response.protocol_version,
@@ -751,6 +757,12 @@ impl CrucibleAcpClient {
 
         // 3. Choose transport based on agent capabilities
         // Priority: HTTP (Streamable HTTP) > Stdio (all agents MUST support stdio per ACP spec)
+        tracing::debug!(
+            agent = %self.agent_name,
+            supports_http = self.agent_supports_http_mcp(),
+            mcp_url_provided = mcp_url.is_some(),
+            "MCP transport decision"
+        );
         let crucible_mcp_server = if let Some(url) = mcp_url {
             if self.agent_supports_http_mcp() {
                 tracing::info!(

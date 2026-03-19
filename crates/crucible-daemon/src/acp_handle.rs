@@ -157,6 +157,10 @@ impl AcpAgentHandle {
             {
                 Ok(host) => {
                     info!(url = %host.mcp_url(), "In-process MCP server started");
+                    debug!(
+                        url = %host.mcp_url(),
+                        "In-process MCP server started — will attempt HTTP transport"
+                    );
                     Some(host)
                 }
                 Err(e) => {
@@ -172,6 +176,10 @@ impl AcpAgentHandle {
         };
 
         let mcp_url = mcp_host.as_ref().map(|h| h.mcp_url());
+        debug!(
+            mcp_url = ?mcp_url,
+            "Selecting MCP transport for ACP agent"
+        );
         let (session, mcp_host) = match client.connect_with_best_mcp(mcp_url.as_deref()).await {
             Ok(s) => (s, mcp_host),
             Err(e) if mcp_host.is_some() => {
