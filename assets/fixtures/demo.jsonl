@@ -1,435 +1,577 @@
-{"version":1,"session_id":"chat-2026-03-18T2305-0lttej","recording_mode":"granular","started_at":"2026-03-18T23:05:49.644859820Z"}
-{"ts":"2026-03-18T23:05:49.660345468Z","seq":1,"event":"user_message","session_id":"chat-2026-03-18T2305-0lttej","data":{"message_id":"msg-63f086b7-6483-498d-bc6a-c847a1f44108","content":"What is a kiln in Crucible?"}}
-{"ts":"2026-03-18T23:05:49.804262675Z","seq":2,"event":"precognition_complete","session_id":"chat-2026-03-18T2305-0lttej","data":{"notes_count":5,"query_summary":"What is a kiln in Crucible?","notes":[{"title":"Kilns","kiln_label":null},{"title":"Kilns","kiln_label":null},{"title":"2026-02-03-discord-bot-sessions-design","kiln_label":null},{"title":"2026-02-03-discord-bot-sessions-design","kiln_label":null},{"title":"stats","kiln_label":null}]}}
-{"ts":"2026-03-18T23:05:50.589358464Z","seq":3,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"The"}}
-{"ts":"2026-03-18T23:05:50.622285792Z","seq":4,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" user"}}
-{"ts":"2026-03-18T23:05:50.653337406Z","seq":5,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" is"}}
-{"ts":"2026-03-18T23:05:50.685147697Z","seq":6,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" asking"}}
-{"ts":"2026-03-18T23:05:50.716176402Z","seq":7,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" about"}}
-{"ts":"2026-03-18T23:05:50.747456569Z","seq":8,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" what"}}
-{"ts":"2026-03-18T23:05:50.778797835Z","seq":9,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" a"}}
-{"ts":"2026-03-18T23:05:50.810477120Z","seq":10,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" kil"}}
-{"ts":"2026-03-18T23:05:50.841785627Z","seq":11,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"n"}}
-{"ts":"2026-03-18T23:05:50.873087473Z","seq":12,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" is"}}
-{"ts":"2026-03-18T23:05:50.904143637Z","seq":13,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" in"}}
-{"ts":"2026-03-18T23:05:50.934942549Z","seq":14,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Cruc"}}
-{"ts":"2026-03-18T23:05:50.966069491Z","seq":15,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"ible"}}
-{"ts":"2026-03-18T23:05:50.997040628Z","seq":16,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":","}}
-{"ts":"2026-03-18T23:05:51.027809161Z","seq":17,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" and"}}
-{"ts":"2026-03-18T23:05:51.058845836Z","seq":18,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" I"}}
-{"ts":"2026-03-18T23:05:51.090591139Z","seq":19,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" can"}}
-{"ts":"2026-03-18T23:05:51.121908165Z","seq":20,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" see"}}
-{"ts":"2026-03-18T23:05:51.152758446Z","seq":21,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" from"}}
-{"ts":"2026-03-18T23:05:51.183876418Z","seq":22,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" the"}}
-{"ts":"2026-03-18T23:05:51.215247162Z","seq":23,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" context"}}
-{"ts":"2026-03-18T23:05:51.246431263Z","seq":24,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" that"}}
-{"ts":"2026-03-18T23:05:51.277782298Z","seq":25,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" there"}}
-{"ts":"2026-03-18T23:05:51.308911350Z","seq":26,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" are"}}
-{"ts":"2026-03-18T23:05:51.340157228Z","seq":27,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" several"}}
-{"ts":"2026-03-18T23:05:51.371493264Z","seq":28,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" notes"}}
-{"ts":"2026-03-18T23:05:51.402960336Z","seq":29,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" with"}}
-{"ts":"2026-03-18T23:05:51.434232603Z","seq":30,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" \""}}
-{"ts":"2026-03-18T23:05:51.465267588Z","seq":31,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"K"}}
-{"ts":"2026-03-18T23:05:51.496354201Z","seq":32,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"il"}}
-{"ts":"2026-03-18T23:05:51.528204221Z","seq":33,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"ns"}}
-{"ts":"2026-03-18T23:05:51.559184798Z","seq":34,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"\""}}
-{"ts":"2026-03-18T23:05:51.590093566Z","seq":35,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" in"}}
-{"ts":"2026-03-18T23:05:51.621002315Z","seq":36,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" them"}}
-{"ts":"2026-03-18T23:05:51.652310361Z","seq":37,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"."}}
-{"ts":"2026-03-18T23:05:51.683883010Z","seq":38,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" I"}}
-{"ts":"2026-03-18T23:05:51.715141638Z","seq":39,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" should"}}
-{"ts":"2026-03-18T23:05:51.746470814Z","seq":40,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" search"}}
-{"ts":"2026-03-18T23:05:51.777511958Z","seq":41,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" for"}}
-{"ts":"2026-03-18T23:05:51.808484645Z","seq":42,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" more"}}
-{"ts":"2026-03-18T23:05:51.839404243Z","seq":43,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" specific"}}
-{"ts":"2026-03-18T23:05:51.870499796Z","seq":44,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" information"}}
-{"ts":"2026-03-18T23:05:51.901680987Z","seq":45,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" about"}}
-{"ts":"2026-03-18T23:05:51.932571246Z","seq":46,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" kil"}}
-{"ts":"2026-03-18T23:05:51.963702448Z","seq":47,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"ns"}}
-{"ts":"2026-03-18T23:05:51.994469991Z","seq":48,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" in"}}
-{"ts":"2026-03-18T23:05:52.025760798Z","seq":49,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" the"}}
-{"ts":"2026-03-18T23:05:52.057543300Z","seq":50,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Cruc"}}
-{"ts":"2026-03-18T23:05:52.088766429Z","seq":51,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"ible"}}
-{"ts":"2026-03-18T23:05:52.120838222Z","seq":52,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" documentation"}}
-{"ts":"2026-03-18T23:05:52.151888686Z","seq":53,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"."}}
-{"ts":"2026-03-18T23:05:52.182978890Z","seq":54,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Let"}}
-{"ts":"2026-03-18T23:05:52.213806791Z","seq":55,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" me"}}
-{"ts":"2026-03-18T23:05:52.244702200Z","seq":56,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" read"}}
-{"ts":"2026-03-18T23:05:52.275505451Z","seq":57,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" one"}}
-{"ts":"2026-03-18T23:05:52.306335153Z","seq":58,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" of"}}
-{"ts":"2026-03-18T23:05:52.337466155Z","seq":59,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" these"}}
-{"ts":"2026-03-18T23:05:52.368315345Z","seq":60,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" kil"}}
-{"ts":"2026-03-18T23:05:52.399151836Z","seq":61,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"n"}}
-{"ts":"2026-03-18T23:05:52.430179841Z","seq":62,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"-related"}}
-{"ts":"2026-03-18T23:05:52.461357851Z","seq":63,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" notes"}}
-{"ts":"2026-03-18T23:05:52.492815913Z","seq":64,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" to"}}
-{"ts":"2026-03-18T23:05:52.523782960Z","seq":65,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" get"}}
-{"ts":"2026-03-18T23:05:52.554756357Z","seq":66,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" more"}}
-{"ts":"2026-03-18T23:05:52.585516200Z","seq":67,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" context"}}
-{"ts":"2026-03-18T23:05:52.616437678Z","seq":68,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"."}}
-{"ts":"2026-03-18T23:05:52.678689792Z","seq":69,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"I"}}
-{"ts":"2026-03-18T23:05:52.709893882Z","seq":70,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" can"}}
-{"ts":"2026-03-18T23:05:52.740877058Z","seq":71,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" see"}}
-{"ts":"2026-03-18T23:05:52.772209144Z","seq":72,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" there"}}
-{"ts":"2026-03-18T23:05:52.803362345Z","seq":73,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" are"}}
-{"ts":"2026-03-18T23:05:52.834659682Z","seq":74,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" several"}}
-{"ts":"2026-03-18T23:05:52.866111654Z","seq":75,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" notes"}}
-{"ts":"2026-03-18T23:05:52.896812449Z","seq":76,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" about"}}
-{"ts":"2026-03-18T23:05:52.927921562Z","seq":77,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" \""}}
-{"ts":"2026-03-18T23:05:52.959020655Z","seq":78,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"K"}}
-{"ts":"2026-03-18T23:05:52.990042730Z","seq":79,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"il"}}
-{"ts":"2026-03-18T23:05:53.021077845Z","seq":80,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"ns"}}
-{"ts":"2026-03-18T23:05:53.052176587Z","seq":81,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"\""}}
-{"ts":"2026-03-18T23:05:53.083549982Z","seq":82,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" in"}}
-{"ts":"2026-03-18T23:05:53.115535018Z","seq":83,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" your"}}
-{"ts":"2026-03-18T23:05:53.146841644Z","seq":84,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Cruc"}}
-{"ts":"2026-03-18T23:05:53.178635756Z","seq":85,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"ible"}}
-{"ts":"2026-03-18T23:05:53.209809827Z","seq":86,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" documentation"}}
-{"ts":"2026-03-18T23:05:53.240806633Z","seq":87,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"."}}
-{"ts":"2026-03-18T23:05:53.272384481Z","seq":88,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Let"}}
-{"ts":"2026-03-18T23:05:53.303820594Z","seq":89,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" me"}}
-{"ts":"2026-03-18T23:05:53.334554948Z","seq":90,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" read"}}
-{"ts":"2026-03-18T23:05:53.365827345Z","seq":91,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" one"}}
-{"ts":"2026-03-18T23:05:53.397253018Z","seq":92,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" of"}}
-{"ts":"2026-03-18T23:05:53.429143957Z","seq":93,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" those"}}
-{"ts":"2026-03-18T23:05:53.460514131Z","seq":94,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" notes"}}
-{"ts":"2026-03-18T23:05:53.491574465Z","seq":95,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" to"}}
-{"ts":"2026-03-18T23:05:53.523054017Z","seq":96,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" provide"}}
-{"ts":"2026-03-18T23:05:53.554039583Z","seq":97,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" you"}}
-{"ts":"2026-03-18T23:05:53.585079588Z","seq":98,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" with"}}
-{"ts":"2026-03-18T23:05:53.616839880Z","seq":99,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" a"}}
-{"ts":"2026-03-18T23:05:53.648014931Z","seq":100,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" clear"}}
-{"ts":"2026-03-18T23:05:53.679250470Z","seq":101,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" answer"}}
-{"ts":"2026-03-18T23:05:53.710329503Z","seq":102,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"."}}
-{"ts":"2026-03-18T23:05:54.114873472Z","seq":103,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"The user is asking about what a kiln is in Crucible, and I can see from the context that there are several notes with \"Kilns\" in them. I should search for more specific information about kilns in the Crucible documentation. Let me read one of these kiln-related notes to get more context."}}
-{"ts":"2026-03-18T23:05:54.115416206Z","seq":104,"event":"tool_call","session_id":"chat-2026-03-18T2305-0lttej","data":{"call_id":"rbVonvxbnNueLp5aLZYE1hYgfWTGVZFW","tool":"read_note","args":{"path":"Kilns"},"description":"Read note content with optional line range","source":"Crucible"}}
-{"ts":"2026-03-18T23:05:54.119679556Z","seq":105,"event":"tool_result","session_id":"chat-2026-03-18T2305-0lttej","data":{"call_id":"rbVonvxbnNueLp5aLZYE1hYgfWTGVZFW","tool":"read_note","result":{"result":"{\"path\":\"Kilns.md\",\"content\":\"---\\ntitle: Kilns\\ndescription: What a kiln is and how it differs from a folder or vault\\nstatus: implemented\\ntags:\\n  - concept\\n  - fundamentals\\n---\\n\\n# Kilns\\n\\nA **kiln** is a directory of markdown files that Crucible treats as a connected knowledge base. The name comes from the idea of a place where raw materials are transformed into something more useful - your notes become a searchable, interconnected knowledge graph.\\n\\n## What Makes a Kiln\\n\\nA kiln is simply a folder containing:\\n\\n- **Markdown files** (.md) - Your notes, ideas, documents\\n- **Config.toml** (optional) - Configuration for this kiln\\n- **Any folder structure** - Organize however you like\\n\\nThat's it. No special database, no proprietary format, no lock-in.\\n\\n## Kiln vs Folder\\n\\nAny folder with markdown files can be a kiln. The difference is what you do with it:\\n\\n| Folder | Kiln |\\n|--------|------|\\n| Just files | Connected knowledge |\\n| Text search only | Semantic search |\\n| Manual organization | Wikilink-based graph |\\n| Static content | AI-assisted discovery |\\n\\nWhen you run Crucible commands in a folder, it becomes a kiln.\\n\\n## Kiln vs Vault\\n\\nIf you're coming from Obsidian, a kiln is similar to a vault:\\n\\n- Both are folders of markdown\\n- Both use `[[wikilinks]]`\\n- Both have configuration files\\n\\nThe difference is philosophy:\\n\\n- **Obsidian vaults** require Obsidian to get full value\\n- **Kilns** work with any text editor - Crucible just adds capabilities\\n\\nYour files are always portable. You can open a kiln in Obsidian, VS Code, or plain Vim.\\n\\n## Creating a Kiln\\n\\nAny folder becomes a kiln when you use Crucible:\\n\\n```bash\\n# Process files and start exploring\\ncru\\n\\n# Or explicitly initialize\\ncru init\\n```\\n\\nSee [[Guides/Your First Kiln]] for detailed setup.\\n\\n## See Also\\n\\n- [[Help/Concepts/Plaintext First]] - Why markdown matters\\n- [[Help/Concepts/The Knowledge Graph]] - How kilns become connected\\n- [[Guides/Getting Started]] - Your first steps with Crucible\\n\",\"total_lines\":70,\"lines_returned\":70}"}}}
-{"ts":"2026-03-18T23:05:56.794054766Z","seq":106,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"The"}}
-{"ts":"2026-03-18T23:05:56.829552495Z","seq":107,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" relevant"}}
-{"ts":"2026-03-18T23:05:56.861513732Z","seq":108,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" notes"}}
-{"ts":"2026-03-18T23:05:56.893749960Z","seq":109,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" show"}}
-{"ts":"2026-03-18T23:05:56.925830983Z","seq":110,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" several"}}
-{"ts":"2026-03-18T23:05:56.957399622Z","seq":111,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" matches"}}
-{"ts":"2026-03-18T23:05:56.988948831Z","seq":112,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" for"}}
-{"ts":"2026-03-18T23:05:57.020178790Z","seq":113,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" \""}}
-{"ts":"2026-03-18T23:05:57.051679890Z","seq":114,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"K"}}
-{"ts":"2026-03-18T23:05:57.082586649Z","seq":115,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"il"}}
-{"ts":"2026-03-18T23:05:57.113713541Z","seq":116,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"ns"}}
-{"ts":"2026-03-18T23:05:57.145348517Z","seq":117,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"\","}}
-{"ts":"2026-03-18T23:05:57.176646684Z","seq":118,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" and"}}
-{"ts":"2026-03-18T23:05:57.207870433Z","seq":119,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" I"}}
-{"ts":"2026-03-18T23:05:57.239868219Z","seq":120,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" found"}}
-{"ts":"2026-03-18T23:05:57.271272422Z","seq":121,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" the"}}
-{"ts":"2026-03-18T23:05:57.302502841Z","seq":122,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" main"}}
-{"ts":"2026-03-18T23:05:57.334169487Z","seq":123,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" note"}}
-{"ts":"2026-03-18T23:05:57.365336367Z","seq":124,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" about"}}
-{"ts":"2026-03-18T23:05:57.396356593Z","seq":125,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" kil"}}
-{"ts":"2026-03-18T23:05:57.427439206Z","seq":126,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"ns"}}
-{"ts":"2026-03-18T23:05:57.458804631Z","seq":127,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" that"}}
-{"ts":"2026-03-18T23:05:57.490125027Z","seq":128,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" explains"}}
-{"ts":"2026-03-18T23:05:57.521495162Z","seq":129,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" what"}}
-{"ts":"2026-03-18T23:05:57.552856037Z","seq":130,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" they"}}
-{"ts":"2026-03-18T23:05:57.584153933Z","seq":131,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" are"}}
-{"ts":"2026-03-18T23:05:57.615326874Z","seq":132,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"."}}
-{"ts":"2026-03-18T23:05:57.646450466Z","seq":133,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Let"}}
-{"ts":"2026-03-18T23:05:57.678478541Z","seq":134,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" me"}}
-{"ts":"2026-03-18T23:05:57.709588063Z","seq":135,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" provide"}}
-{"ts":"2026-03-18T23:05:57.740733835Z","seq":136,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" a"}}
-{"ts":"2026-03-18T23:05:57.772711011Z","seq":137,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" clear"}}
-{"ts":"2026-03-18T23:05:57.803600550Z","seq":138,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" answer"}}
-{"ts":"2026-03-18T23:05:57.834692873Z","seq":139,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" based"}}
-{"ts":"2026-03-18T23:05:57.866413647Z","seq":140,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" on"}}
-{"ts":"2026-03-18T23:05:57.898572687Z","seq":141,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" this"}}
-{"ts":"2026-03-18T23:05:57.929513695Z","seq":142,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" content"}}
-{"ts":"2026-03-18T23:05:57.960732564Z","seq":143,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"."}}
-{"ts":"2026-03-18T23:05:58.023032827Z","seq":144,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"Based"}}
-{"ts":"2026-03-18T23:05:58.054276985Z","seq":145,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" on"}}
-{"ts":"2026-03-18T23:05:58.085384818Z","seq":146,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" the"}}
-{"ts":"2026-03-18T23:05:58.116651536Z","seq":147,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" relevant"}}
-{"ts":"2026-03-18T23:05:58.148200855Z","seq":148,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" notes"}}
-{"ts":"2026-03-18T23:05:58.179944958Z","seq":149,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":","}}
-{"ts":"2026-03-18T23:05:58.211118999Z","seq":150,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" a"}}
-{"ts":"2026-03-18T23:05:58.242280390Z","seq":151,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" **"}}
-{"ts":"2026-03-18T23:05:58.273619515Z","seq":152,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"kil"}}
-{"ts":"2026-03-18T23:05:58.304680809Z","seq":153,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"n"}}
-{"ts":"2026-03-18T23:05:58.335708624Z","seq":154,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"**"}}
-{"ts":"2026-03-18T23:05:58.366816307Z","seq":155,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" in"}}
-{"ts":"2026-03-18T23:05:58.398779853Z","seq":156,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Cruc"}}
-{"ts":"2026-03-18T23:05:58.430014222Z","seq":157,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"ible"}}
-{"ts":"2026-03-18T23:05:58.462031607Z","seq":158,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" is"}}
-{"ts":"2026-03-18T23:05:58.493396872Z","seq":159,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":":"}}
-{"ts":"2026-03-18T23:05:58.524609991Z","seq":160,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"\n\nA"}}
-{"ts":"2026-03-18T23:05:58.555930227Z","seq":161,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" **"}}
-{"ts":"2026-03-18T23:05:58.587135337Z","seq":162,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"directory"}}
-{"ts":"2026-03-18T23:05:58.618458763Z","seq":163,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" of"}}
-{"ts":"2026-03-18T23:05:58.650166377Z","seq":164,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" markdown"}}
-{"ts":"2026-03-18T23:05:58.681917850Z","seq":165,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" files"}}
-{"ts":"2026-03-18T23:05:58.713242476Z","seq":166,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"**"}}
-{"ts":"2026-03-18T23:05:58.745102636Z","seq":167,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" that"}}
-{"ts":"2026-03-18T23:05:58.776443011Z","seq":168,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Cruc"}}
-{"ts":"2026-03-18T23:05:58.807551094Z","seq":169,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"ible"}}
-{"ts":"2026-03-18T23:05:58.838757723Z","seq":170,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" treats"}}
-{"ts":"2026-03-18T23:05:58.870087209Z","seq":171,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" as"}}
-{"ts":"2026-03-18T23:05:58.901505442Z","seq":172,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" a"}}
-{"ts":"2026-03-18T23:05:58.932794020Z","seq":173,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" connected"}}
-{"ts":"2026-03-18T23:05:58.964242142Z","seq":174,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" knowledge"}}
-{"ts":"2026-03-18T23:05:58.995443742Z","seq":175,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" base"}}
-{"ts":"2026-03-18T23:05:59.026614532Z","seq":176,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"."}}
-{"ts":"2026-03-18T23:05:59.057900019Z","seq":177,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" The"}}
-{"ts":"2026-03-18T23:05:59.089504537Z","seq":178,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" name"}}
-{"ts":"2026-03-18T23:05:59.120835473Z","seq":179,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" comes"}}
-{"ts":"2026-03-18T23:05:59.152361163Z","seq":180,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" from"}}
-{"ts":"2026-03-18T23:05:59.183764276Z","seq":181,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" the"}}
-{"ts":"2026-03-18T23:05:59.215895817Z","seq":182,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" idea"}}
-{"ts":"2026-03-18T23:05:59.247323750Z","seq":183,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" of"}}
-{"ts":"2026-03-18T23:05:59.278892799Z","seq":184,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" a"}}
-{"ts":"2026-03-18T23:05:59.309970972Z","seq":185,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" place"}}
-{"ts":"2026-03-18T23:05:59.341570100Z","seq":186,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" where"}}
-{"ts":"2026-03-18T23:05:59.372922795Z","seq":187,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" raw"}}
-{"ts":"2026-03-18T23:05:59.404068156Z","seq":188,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" materials"}}
-{"ts":"2026-03-18T23:05:59.436187458Z","seq":189,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" are"}}
-{"ts":"2026-03-18T23:05:59.467598362Z","seq":190,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" transformed"}}
-{"ts":"2026-03-18T23:05:59.498954147Z","seq":191,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" into"}}
-{"ts":"2026-03-18T23:05:59.530879924Z","seq":192,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" something"}}
-{"ts":"2026-03-18T23:05:59.562834771Z","seq":193,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" more"}}
-{"ts":"2026-03-18T23:05:59.594332992Z","seq":194,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" useful"}}
-{"ts":"2026-03-18T23:05:59.625318978Z","seq":195,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" -"}}
-{"ts":"2026-03-18T23:05:59.656835558Z","seq":196,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" your"}}
-{"ts":"2026-03-18T23:05:59.688502064Z","seq":197,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" notes"}}
-{"ts":"2026-03-18T23:05:59.719875608Z","seq":198,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" become"}}
-{"ts":"2026-03-18T23:05:59.751234343Z","seq":199,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" a"}}
-{"ts":"2026-03-18T23:05:59.783355805Z","seq":200,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" searchable"}}
-{"ts":"2026-03-18T23:05:59.814676111Z","seq":201,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":","}}
-{"ts":"2026-03-18T23:05:59.845795043Z","seq":202,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" interconnected"}}
-{"ts":"2026-03-18T23:05:59.876913856Z","seq":203,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" knowledge"}}
-{"ts":"2026-03-18T23:05:59.908020848Z","seq":204,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" graph"}}
-{"ts":"2026-03-18T23:05:59.939797641Z","seq":205,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"."}}
-{"ts":"2026-03-18T23:05:59.970946452Z","seq":206,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"\n\n###"}}
-{"ts":"2026-03-18T23:06:00.002951197Z","seq":207,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" What"}}
-{"ts":"2026-03-18T23:06:00.034321862Z","seq":208,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Makes"}}
-{"ts":"2026-03-18T23:06:00.066150062Z","seq":209,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" a"}}
-{"ts":"2026-03-18T23:06:00.097135299Z","seq":210,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Kil"}}
-{"ts":"2026-03-18T23:06:00.128930590Z","seq":211,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"n"}}
-{"ts":"2026-03-18T23:06:00.159883308Z","seq":212,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":":"}}
-{"ts":"2026-03-18T23:06:00.191679279Z","seq":213,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"\n-"}}
-{"ts":"2026-03-18T23:06:00.223512200Z","seq":214,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" **"}}
-{"ts":"2026-03-18T23:06:00.255706519Z","seq":215,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"Markdown"}}
-{"ts":"2026-03-18T23:06:00.286944678Z","seq":216,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" files"}}
-{"ts":"2026-03-18T23:06:00.318335142Z","seq":217,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"**"}}
-{"ts":"2026-03-18T23:06:00.350709316Z","seq":218,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" (."}}
-{"ts":"2026-03-18T23:06:00.382156838Z","seq":219,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"md"}}
-{"ts":"2026-03-18T23:06:00.414104645Z","seq":220,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":")"}}
-{"ts":"2026-03-18T23:06:00.445455950Z","seq":221,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" -"}}
-{"ts":"2026-03-18T23:06:00.477101317Z","seq":222,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Your"}}
-{"ts":"2026-03-18T23:06:00.508666855Z","seq":223,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" notes"}}
-{"ts":"2026-03-18T23:06:00.539800757Z","seq":224,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":","}}
-{"ts":"2026-03-18T23:06:00.571028226Z","seq":225,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" ideas"}}
-{"ts":"2026-03-18T23:06:00.602214766Z","seq":226,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":","}}
-{"ts":"2026-03-18T23:06:00.633447905Z","seq":227,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" documents"}}
-{"ts":"2026-03-18T23:06:00.696858524Z","seq":228,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"\n-"}}
-{"ts":"2026-03-18T23:06:00.728661685Z","seq":229,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" **"}}
-{"ts":"2026-03-18T23:06:00.759792667Z","seq":230,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"Config"}}
-{"ts":"2026-03-18T23:06:00.791090644Z","seq":231,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":".tom"}}
-{"ts":"2026-03-18T23:06:00.822392741Z","seq":232,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"l"}}
-{"ts":"2026-03-18T23:06:00.853824993Z","seq":233,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"**"}}
-{"ts":"2026-03-18T23:06:00.885418051Z","seq":234,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" ("}}
-{"ts":"2026-03-18T23:06:00.916789536Z","seq":235,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"optional"}}
-{"ts":"2026-03-18T23:06:00.948049784Z","seq":236,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":")"}}
-{"ts":"2026-03-18T23:06:00.979378999Z","seq":237,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" -"}}
-{"ts":"2026-03-18T23:06:01.010601768Z","seq":238,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Configuration"}}
-{"ts":"2026-03-18T23:06:01.041863626Z","seq":239,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" for"}}
-{"ts":"2026-03-18T23:06:01.073038987Z","seq":240,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" this"}}
-{"ts":"2026-03-18T23:06:01.104789830Z","seq":241,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" kil"}}
-{"ts":"2026-03-18T23:06:01.135808915Z","seq":242,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"n"}}
-{"ts":"2026-03-18T23:06:01.199783867Z","seq":243,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"\n-"}}
-{"ts":"2026-03-18T23:06:01.231225239Z","seq":244,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" **"}}
-{"ts":"2026-03-18T23:06:01.262864266Z","seq":245,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"Any"}}
-{"ts":"2026-03-18T23:06:01.295041206Z","seq":246,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" folder"}}
-{"ts":"2026-03-18T23:06:01.327164317Z","seq":247,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" structure"}}
-{"ts":"2026-03-18T23:06:01.359141994Z","seq":248,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"**"}}
-{"ts":"2026-03-18T23:06:01.390694073Z","seq":249,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" -"}}
-{"ts":"2026-03-18T23:06:01.422162624Z","seq":250,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Organ"}}
-{"ts":"2026-03-18T23:06:01.453942286Z","seq":251,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"ize"}}
-{"ts":"2026-03-18T23:06:01.485447747Z","seq":252,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" however"}}
-{"ts":"2026-03-18T23:06:01.516632917Z","seq":253,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" you"}}
-{"ts":"2026-03-18T23:06:01.548028951Z","seq":254,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" like"}}
-{"ts":"2026-03-18T23:06:01.611127399Z","seq":255,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"\n\n###"}}
-{"ts":"2026-03-18T23:06:01.642296400Z","seq":256,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Key"}}
-{"ts":"2026-03-18T23:06:01.674394412Z","seq":257,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Differences"}}
-{"ts":"2026-03-18T23:06:01.706052568Z","seq":258,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":":"}}
-{"ts":"2026-03-18T23:06:01.737355185Z","seq":259,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"\n\n|"}}
-{"ts":"2026-03-18T23:06:01.768693220Z","seq":260,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Feature"}}
-{"ts":"2026-03-18T23:06:01.800224040Z","seq":261,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" |"}}
-{"ts":"2026-03-18T23:06:01.831431230Z","seq":262,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Folder"}}
-{"ts":"2026-03-18T23:06:01.862804744Z","seq":263,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" |"}}
-{"ts":"2026-03-18T23:06:01.893898097Z","seq":264,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Kil"}}
-{"ts":"2026-03-18T23:06:01.925665410Z","seq":265,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"n"}}
-{"ts":"2026-03-18T23:06:01.956923668Z","seq":266,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" |"}}
-{"ts":"2026-03-18T23:06:01.988032150Z","seq":267,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"\n|"}}
-{"ts":"2026-03-18T23:06:02.019205561Z","seq":268,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"---------"}}
-{"ts":"2026-03-18T23:06:02.050366452Z","seq":269,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"|"}}
-{"ts":"2026-03-18T23:06:02.081701257Z","seq":270,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"--------"}}
-{"ts":"2026-03-18T23:06:02.113186228Z","seq":271,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"|"}}
-{"ts":"2026-03-18T23:06:02.144772037Z","seq":272,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"------"}}
-{"ts":"2026-03-18T23:06:02.176112452Z","seq":273,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"|"}}
-{"ts":"2026-03-18T23:06:02.207425608Z","seq":274,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"\n|"}}
-{"ts":"2026-03-18T23:06:02.238708226Z","seq":275,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Just"}}
-{"ts":"2026-03-18T23:06:02.269902346Z","seq":276,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" files"}}
-{"ts":"2026-03-18T23:06:02.301180323Z","seq":277,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" |"}}
-{"ts":"2026-03-18T23:06:02.364228843Z","seq":278,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" ✅"}}
-{"ts":"2026-03-18T23:06:02.395436762Z","seq":279,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" |"}}
-{"ts":"2026-03-18T23:06:02.458059875Z","seq":280,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" ✅"}}
-{"ts":"2026-03-18T23:06:02.489617674Z","seq":281,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" |"}}
-{"ts":"2026-03-18T23:06:02.520876412Z","seq":282,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"\n|"}}
-{"ts":"2026-03-18T23:06:02.552180059Z","seq":283,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Text"}}
-{"ts":"2026-03-18T23:06:02.583347829Z","seq":284,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" search"}}
-{"ts":"2026-03-18T23:06:02.614546829Z","seq":285,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" only"}}
-{"ts":"2026-03-18T23:06:02.645838476Z","seq":286,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" |"}}
-{"ts":"2026-03-18T23:06:02.709346972Z","seq":287,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" ✅"}}
-{"ts":"2026-03-18T23:06:02.740721596Z","seq":288,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" |"}}
-{"ts":"2026-03-18T23:06:02.772410981Z","seq":289,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Semantic"}}
-{"ts":"2026-03-18T23:06:02.803823815Z","seq":290,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" search"}}
-{"ts":"2026-03-18T23:06:02.835061673Z","seq":291,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" |"}}
-{"ts":"2026-03-18T23:06:02.866333021Z","seq":292,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"\n|"}}
-{"ts":"2026-03-18T23:06:02.897588399Z","seq":293,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Manual"}}
-{"ts":"2026-03-18T23:06:02.929028742Z","seq":294,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" organization"}}
-{"ts":"2026-03-18T23:06:02.960800164Z","seq":295,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" |"}}
-{"ts":"2026-03-18T23:06:03.024211932Z","seq":296,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" ✅"}}
-{"ts":"2026-03-18T23:06:03.055855038Z","seq":297,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" |"}}
-{"ts":"2026-03-18T23:06:03.087427356Z","seq":298,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Wik"}}
-{"ts":"2026-03-18T23:06:03.118769321Z","seq":299,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"il"}}
-{"ts":"2026-03-18T23:06:03.150230893Z","seq":300,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"ink"}}
-{"ts":"2026-03-18T23:06:03.181924307Z","seq":301,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"-based"}}
-{"ts":"2026-03-18T23:06:03.213460846Z","seq":302,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" graph"}}
-{"ts":"2026-03-18T23:06:03.245256198Z","seq":303,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" |"}}
-{"ts":"2026-03-18T23:06:03.277120667Z","seq":304,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"\n|"}}
-{"ts":"2026-03-18T23:06:03.308492681Z","seq":305,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Static"}}
-{"ts":"2026-03-18T23:06:03.339706860Z","seq":306,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" content"}}
-{"ts":"2026-03-18T23:06:03.371430153Z","seq":307,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" |"}}
-{"ts":"2026-03-18T23:06:03.434097024Z","seq":308,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" ✅"}}
-{"ts":"2026-03-18T23:06:03.465334292Z","seq":309,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" |"}}
-{"ts":"2026-03-18T23:06:03.496566630Z","seq":310,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" AI"}}
-{"ts":"2026-03-18T23:06:03.528090440Z","seq":311,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"-ass"}}
-{"ts":"2026-03-18T23:06:03.559508803Z","seq":312,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"isted"}}
-{"ts":"2026-03-18T23:06:03.590952075Z","seq":313,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" discovery"}}
-{"ts":"2026-03-18T23:06:03.622957480Z","seq":314,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" |"}}
-{"ts":"2026-03-18T23:06:03.654514148Z","seq":315,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"\n\n###"}}
-{"ts":"2026-03-18T23:06:03.686242322Z","seq":316,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Kil"}}
-{"ts":"2026-03-18T23:06:03.717658694Z","seq":317,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"n"}}
-{"ts":"2026-03-18T23:06:03.749183704Z","seq":318,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" vs"}}
-{"ts":"2026-03-18T23:06:03.780911847Z","seq":319,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Vault"}}
-{"ts":"2026-03-18T23:06:03.812548593Z","seq":320,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":":"}}
-{"ts":"2026-03-18T23:06:03.844924587Z","seq":321,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"\n-"}}
-{"ts":"2026-03-18T23:06:03.877347860Z","seq":322,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Both"}}
-{"ts":"2026-03-18T23:06:03.908825311Z","seq":323,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" are"}}
-{"ts":"2026-03-18T23:06:03.940645281Z","seq":324,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" folders"}}
-{"ts":"2026-03-18T23:06:03.972665876Z","seq":325,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" of"}}
-{"ts":"2026-03-18T23:06:04.004408089Z","seq":326,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" markdown"}}
-{"ts":"2026-03-18T23:06:04.035636657Z","seq":327,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" using"}}
-{"ts":"2026-03-18T23:06:04.067404299Z","seq":328,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" `"}}
-{"ts":"2026-03-18T23:06:04.099019896Z","seq":329,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"[["}}
-{"ts":"2026-03-18T23:06:04.130864166Z","seq":330,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"wik"}}
-{"ts":"2026-03-18T23:06:04.162655498Z","seq":331,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"il"}}
-{"ts":"2026-03-18T23:06:04.194123139Z","seq":332,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"inks"}}
-{"ts":"2026-03-18T23:06:04.225591140Z","seq":333,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"]]"}}
-{"ts":"2026-03-18T23:06:04.257156308Z","seq":334,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"`"}}
-{"ts":"2026-03-18T23:06:04.288647609Z","seq":335,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"\n-"}}
-{"ts":"2026-03-18T23:06:04.319977474Z","seq":336,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" **"}}
-{"ts":"2026-03-18T23:06:04.351624350Z","seq":337,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"Obs"}}
-{"ts":"2026-03-18T23:06:04.383171029Z","seq":338,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"idian"}}
-{"ts":"2026-03-18T23:06:04.414845164Z","seq":339,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" vault"}}
-{"ts":"2026-03-18T23:06:04.446942566Z","seq":340,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"s"}}
-{"ts":"2026-03-18T23:06:04.478315790Z","seq":341,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"**"}}
-{"ts":"2026-03-18T23:06:04.509540909Z","seq":342,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" require"}}
-{"ts":"2026-03-18T23:06:04.541300071Z","seq":343,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Obs"}}
-{"ts":"2026-03-18T23:06:04.573042074Z","seq":344,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"idian"}}
-{"ts":"2026-03-18T23:06:04.603969062Z","seq":345,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" to"}}
-{"ts":"2026-03-18T23:06:04.635301287Z","seq":346,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" get"}}
-{"ts":"2026-03-18T23:06:04.667092008Z","seq":347,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" full"}}
-{"ts":"2026-03-18T23:06:04.698685916Z","seq":348,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" value"}}
-{"ts":"2026-03-18T23:06:04.761134913Z","seq":349,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"\n-"}}
-{"ts":"2026-03-18T23:06:04.792193656Z","seq":350,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" **"}}
-{"ts":"2026-03-18T23:06:04.823869521Z","seq":351,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"K"}}
-{"ts":"2026-03-18T23:06:04.856129779Z","seq":352,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"il"}}
-{"ts":"2026-03-18T23:06:04.888119714Z","seq":353,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"ns"}}
-{"ts":"2026-03-18T23:06:04.920291364Z","seq":354,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"**"}}
-{"ts":"2026-03-18T23:06:04.952261950Z","seq":355,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" work"}}
-{"ts":"2026-03-18T23:06:04.984101770Z","seq":356,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" with"}}
-{"ts":"2026-03-18T23:06:05.016063096Z","seq":357,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" any"}}
-{"ts":"2026-03-18T23:06:05.047510338Z","seq":358,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" text"}}
-{"ts":"2026-03-18T23:06:05.079693528Z","seq":359,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" editor"}}
-{"ts":"2026-03-18T23:06:05.111111021Z","seq":360,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" -"}}
-{"ts":"2026-03-18T23:06:05.142714248Z","seq":361,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Cruc"}}
-{"ts":"2026-03-18T23:06:05.174087892Z","seq":362,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"ible"}}
-{"ts":"2026-03-18T23:06:05.205766137Z","seq":363,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" just"}}
-{"ts":"2026-03-18T23:06:05.237336345Z","seq":364,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" adds"}}
-{"ts":"2026-03-18T23:06:05.269409618Z","seq":365,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" capabilities"}}
-{"ts":"2026-03-18T23:06:05.331970222Z","seq":366,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"\n-"}}
-{"ts":"2026-03-18T23:06:05.363226679Z","seq":367,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Your"}}
-{"ts":"2026-03-18T23:06:05.394755369Z","seq":368,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" files"}}
-{"ts":"2026-03-18T23:06:05.426470922Z","seq":369,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" are"}}
-{"ts":"2026-03-18T23:06:05.458107499Z","seq":370,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" always"}}
-{"ts":"2026-03-18T23:06:05.489443464Z","seq":371,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" portable"}}
-{"ts":"2026-03-18T23:06:05.520750800Z","seq":372,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" and"}}
-{"ts":"2026-03-18T23:06:05.552003388Z","seq":373,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" can"}}
-{"ts":"2026-03-18T23:06:05.583133959Z","seq":374,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" be"}}
-{"ts":"2026-03-18T23:06:05.614785435Z","seq":375,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" opened"}}
-{"ts":"2026-03-18T23:06:05.646315834Z","seq":376,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" in"}}
-{"ts":"2026-03-18T23:06:05.678098676Z","seq":377,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Obs"}}
-{"ts":"2026-03-18T23:06:05.709939556Z","seq":378,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"idian"}}
-{"ts":"2026-03-18T23:06:05.741324Z","seq":379,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":","}}
-{"ts":"2026-03-18T23:06:05.772832890Z","seq":380,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" VS"}}
-{"ts":"2026-03-18T23:06:05.804763177Z","seq":381,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Code"}}
-{"ts":"2026-03-18T23:06:05.836292906Z","seq":382,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":","}}
-{"ts":"2026-03-18T23:06:05.867977921Z","seq":383,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" or"}}
-{"ts":"2026-03-18T23:06:05.899232329Z","seq":384,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" plain"}}
-{"ts":"2026-03-18T23:06:05.930473257Z","seq":385,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Vim"}}
-{"ts":"2026-03-18T23:06:05.993179276Z","seq":386,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"\n\nA"}}
-{"ts":"2026-03-18T23:06:06.024241480Z","seq":387,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" folder"}}
-{"ts":"2026-03-18T23:06:06.055514857Z","seq":388,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" becomes"}}
-{"ts":"2026-03-18T23:06:06.086851752Z","seq":389,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" a"}}
-{"ts":"2026-03-18T23:06:06.118799719Z","seq":390,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" kil"}}
-{"ts":"2026-03-18T23:06:06.150331908Z","seq":391,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"n"}}
-{"ts":"2026-03-18T23:06:06.182275385Z","seq":392,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" when"}}
-{"ts":"2026-03-18T23:06:06.214400386Z","seq":393,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" you"}}
-{"ts":"2026-03-18T23:06:06.246233746Z","seq":394,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" use"}}
-{"ts":"2026-03-18T23:06:06.277546572Z","seq":395,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Cruc"}}
-{"ts":"2026-03-18T23:06:06.308978865Z","seq":396,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"ible"}}
-{"ts":"2026-03-18T23:06:06.340389738Z","seq":397,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" commands"}}
-{"ts":"2026-03-18T23:06:06.372036394Z","seq":398,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" like"}}
-{"ts":"2026-03-18T23:06:06.404362449Z","seq":399,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" `"}}
-{"ts":"2026-03-18T23:06:06.435989765Z","seq":400,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"c"}}
-{"ts":"2026-03-18T23:06:06.467330820Z","seq":401,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"ru"}}
-{"ts":"2026-03-18T23:06:06.498566028Z","seq":402,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"`"}}
-{"ts":"2026-03-18T23:06:06.529890854Z","seq":403,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" or"}}
-{"ts":"2026-03-18T23:06:06.561555309Z","seq":404,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" `"}}
-{"ts":"2026-03-18T23:06:06.593227604Z","seq":405,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"c"}}
-{"ts":"2026-03-18T23:06:06.624774903Z","seq":406,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"ru"}}
-{"ts":"2026-03-18T23:06:06.656598053Z","seq":407,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" init"}}
-{"ts":"2026-03-18T23:06:06.688418184Z","seq":408,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"`."}}
-{"ts":"2026-03-18T23:06:06.720014542Z","seq":409,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" It"}}
-{"ts":"2026-03-18T23:06:06.751862941Z","seq":410,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"'s"}}
-{"ts":"2026-03-18T23:06:06.783734570Z","seq":411,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" essentially"}}
-{"ts":"2026-03-18T23:06:06.815041496Z","seq":412,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" a"}}
-{"ts":"2026-03-18T23:06:06.846588935Z","seq":413,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" regular"}}
-{"ts":"2026-03-18T23:06:06.878157053Z","seq":414,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" folder"}}
-{"ts":"2026-03-18T23:06:06.909831148Z","seq":415,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" with"}}
-{"ts":"2026-03-18T23:06:06.941146924Z","seq":416,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" markdown"}}
-{"ts":"2026-03-18T23:06:06.972549737Z","seq":417,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" files"}}
-{"ts":"2026-03-18T23:06:07.004634240Z","seq":418,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" that"}}
-{"ts":"2026-03-18T23:06:07.035813220Z","seq":419,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" gets"}}
-{"ts":"2026-03-18T23:06:07.067598701Z","seq":420,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" \""}}
-{"ts":"2026-03-18T23:06:07.098986695Z","seq":421,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"activated"}}
-{"ts":"2026-03-18T23:06:07.130311950Z","seq":422,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"\""}}
-{"ts":"2026-03-18T23:06:07.161705524Z","seq":423,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" with"}}
-{"ts":"2026-03-18T23:06:07.193069738Z","seq":424,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" Cruc"}}
-{"ts":"2026-03-18T23:06:07.224401154Z","seq":425,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"ible"}}
-{"ts":"2026-03-18T23:06:07.255684150Z","seq":426,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"'s"}}
-{"ts":"2026-03-18T23:06:07.286860350Z","seq":427,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" search"}}
-{"ts":"2026-03-18T23:06:07.318268614Z","seq":428,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" and"}}
-{"ts":"2026-03-18T23:06:07.349545870Z","seq":429,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" graph"}}
-{"ts":"2026-03-18T23:06:07.380958693Z","seq":430,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":" capabilities"}}
-{"ts":"2026-03-18T23:06:07.412136513Z","seq":431,"event":"text_delta","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"."}}
-{"ts":"2026-03-18T23:06:07.443847027Z","seq":432,"event":"thinking","session_id":"chat-2026-03-18T2305-0lttej","data":{"content":"The relevant notes show several matches for \"Kilns\", and I found the main note about kilns that explains what they are. Let me provide a clear answer based on this content."}}
-{"ts":"2026-03-18T23:06:07.443852657Z","seq":433,"event":"message_complete","session_id":"chat-2026-03-18T2305-0lttej","data":{"message_id":"msg-63f086b7-6483-498d-bc6a-c847a1f44108","full_response":"I can see there are several notes about \"Kilns\" in your Crucible documentation. Let me read one of those notes to provide you with a clear answer.Based on the relevant notes, a **kiln** in Crucible is:\n\nA **directory of markdown files** that Crucible treats as a connected knowledge base. The name comes from the idea of a place where raw materials are transformed into something more useful - your notes become a searchable, interconnected knowledge graph.\n\n### What Makes a Kiln:\n- **Markdown files** (.md) - Your notes, ideas, documents\n- **Config.toml** (optional) - Configuration for this kiln\n- **Any folder structure** - Organize however you like\n\n### Key Differences:\n\n| Feature | Folder | Kiln |\n|---------|--------|------|\n| Just files | ✅ | ✅ |\n| Text search only | ✅ | Semantic search |\n| Manual organization | ✅ | Wikilink-based graph |\n| Static content | ✅ | AI-assisted discovery |\n\n### Kiln vs Vault:\n- Both are folders of markdown using `[[wikilinks]]`\n- **Obsidian vaults** require Obsidian to get full value\n- **Kilns** work with any text editor - Crucible just adds capabilities\n- Your files are always portable and can be opened in Obsidian, VS Code, or plain Vim\n\nA folder becomes a kiln when you use Crucible commands like `cru` or `cru init`. It's essentially a regular folder with markdown files that gets \"activated\" with Crucible's search and graph capabilities.","prompt_tokens":3530,"completion_tokens":339,"total_tokens":3869}}
-{"ts":"2026-03-18T23:06:07.444113659Z","seq":434,"event":"post_llm_call","session_id":"chat-2026-03-18T2305-0lttej","data":{"response_summary":"I can see there are several notes about \"Kilns\" in your Crucible documentation. Let me read one of those notes to provide you with a clear answer.Based on the relevant notes, a **kiln** in Crucible is","model":"glm-4.7-flash-iq4","duration_ms":17639,"token_count":null}}
+{"version":1,"session_id":"chat-2026-03-19T0427-vzaef4","recording_mode":"granular","started_at":"2026-03-19T04:27:42.497336055Z"}
+{"ts":"2026-03-19T04:27:47.131205057Z","seq":1,"event":"user_message","session_id":"chat-2026-03-19T0427-vzaef4","data":{"message_id":"msg-4065920a-d12c-4234-8683-cbdd853ea6aa","content":"What is a kiln in Crucible?"}}
+{"ts":"2026-03-19T04:27:47.152066986Z","seq":2,"event":"precognition_complete","session_id":"chat-2026-03-19T0427-vzaef4","data":{"notes_count":5,"query_summary":"What is a kiln in Crucible?","notes":[{"title":"Kilns","kiln_label":null},{"title":"Kilns","kiln_label":null},{"title":"2026-02-03-discord-bot-sessions-design","kiln_label":null},{"title":"2026-02-03-discord-bot-sessions-design","kiln_label":null},{"title":"stats","kiln_label":null}]}}
+{"ts":"2026-03-19T04:27:47.204256230Z","seq":3,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"The"}}
+{"ts":"2026-03-19T04:27:47.234427549Z","seq":4,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" user"}}
+{"ts":"2026-03-19T04:27:47.266285716Z","seq":5,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" is"}}
+{"ts":"2026-03-19T04:27:47.296200133Z","seq":6,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" asking"}}
+{"ts":"2026-03-19T04:27:47.327429589Z","seq":7,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" \""}}
+{"ts":"2026-03-19T04:27:47.358197610Z","seq":8,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"What"}}
+{"ts":"2026-03-19T04:27:47.388860254Z","seq":9,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" is"}}
+{"ts":"2026-03-19T04:27:47.420408671Z","seq":10,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" a"}}
+{"ts":"2026-03-19T04:27:47.451066695Z","seq":11,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" kil"}}
+{"ts":"2026-03-19T04:27:47.481798287Z","seq":12,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"n"}}
+{"ts":"2026-03-19T04:27:47.512619406Z","seq":13,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" in"}}
+{"ts":"2026-03-19T04:27:47.543475454Z","seq":14,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Cruc"}}
+{"ts":"2026-03-19T04:27:47.574489707Z","seq":15,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ible"}}
+{"ts":"2026-03-19T04:27:47.605455172Z","seq":16,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"?\""}}
+{"ts":"2026-03-19T04:27:47.636373638Z","seq":17,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" based"}}
+{"ts":"2026-03-19T04:27:47.667696541Z","seq":18,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" on"}}
+{"ts":"2026-03-19T04:27:47.698698895Z","seq":19,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" the"}}
+{"ts":"2026-03-19T04:27:47.730381958Z","seq":20,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" relevant"}}
+{"ts":"2026-03-19T04:27:47.761862767Z","seq":21,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" notes"}}
+{"ts":"2026-03-19T04:27:47.792225300Z","seq":22,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" provided"}}
+{"ts":"2026-03-19T04:27:47.823035620Z","seq":23,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"."}}
+{"ts":"2026-03-19T04:27:47.854235497Z","seq":24,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" I"}}
+{"ts":"2026-03-19T04:27:47.884981008Z","seq":25,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" can"}}
+{"ts":"2026-03-19T04:27:47.915892215Z","seq":26,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" see"}}
+{"ts":"2026-03-19T04:27:47.946929987Z","seq":27,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" there"}}
+{"ts":"2026-03-19T04:27:47.978099636Z","seq":28,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" are"}}
+{"ts":"2026-03-19T04:27:48.040502571Z","seq":29,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" 5"}}
+{"ts":"2026-03-19T04:27:48.071743477Z","seq":30,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" notes"}}
+{"ts":"2026-03-19T04:27:48.103548947Z","seq":31,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" that"}}
+{"ts":"2026-03-19T04:27:48.134876570Z","seq":32,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" match"}}
+{"ts":"2026-03-19T04:27:48.166047619Z","seq":33,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" \""}}
+{"ts":"2026-03-19T04:27:48.197091681Z","seq":34,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"K"}}
+{"ts":"2026-03-19T04:27:48.228215851Z","seq":35,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"il"}}
+{"ts":"2026-03-19T04:27:48.259179786Z","seq":36,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ns"}}
+{"ts":"2026-03-19T04:27:48.290459921Z","seq":37,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\""}}
+{"ts":"2026-03-19T04:27:48.322908161Z","seq":38,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" ("}}
+{"ts":"2026-03-19T04:27:48.353286683Z","seq":39,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"79"}}
+{"ts":"2026-03-19T04:27:48.384143671Z","seq":40,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"%"}}
+{"ts":"2026-03-19T04:27:48.415192793Z","seq":41,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" match"}}
+{"ts":"2026-03-19T04:27:48.446004652Z","seq":42,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":")"}}
+{"ts":"2026-03-19T04:27:48.476760244Z","seq":43,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" -"}}
+{"ts":"2026-03-19T04:27:48.507885764Z","seq":44,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" so"}}
+{"ts":"2026-03-19T04:27:48.538708783Z","seq":45,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" there"}}
+{"ts":"2026-03-19T04:27:48.570074365Z","seq":46,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" are"}}
+{"ts":"2026-03-19T04:27:48.601454377Z","seq":47,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" likely"}}
+{"ts":"2026-03-19T04:27:48.632521499Z","seq":48,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" notes"}}
+{"ts":"2026-03-19T04:27:48.663717436Z","seq":49,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" about"}}
+{"ts":"2026-03-19T04:27:48.694627133Z","seq":50,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" kil"}}
+{"ts":"2026-03-19T04:27:48.726881258Z","seq":51,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ns"}}
+{"ts":"2026-03-19T04:27:48.757338438Z","seq":52,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" in"}}
+{"ts":"2026-03-19T04:27:48.788599604Z","seq":53,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" the"}}
+{"ts":"2026-03-19T04:27:48.819836341Z","seq":54,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" cruc"}}
+{"ts":"2026-03-19T04:27:48.850851544Z","seq":55,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ible"}}
+{"ts":"2026-03-19T04:27:48.882887216Z","seq":56,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"-doc"}}
+{"ts":"2026-03-19T04:27:48.913408214Z","seq":57,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"s"}}
+{"ts":"2026-03-19T04:27:48.944147866Z","seq":58,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" knowledge"}}
+{"ts":"2026-03-19T04:27:48.974850708Z","seq":59,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" base"}}
+{"ts":"2026-03-19T04:27:49.005839152Z","seq":60,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"."}}
+{"ts":"2026-03-19T04:27:49.036358500Z","seq":61,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n\nLet"}}
+{"ts":"2026-03-19T04:27:49.067278097Z","seq":62,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" me"}}
+{"ts":"2026-03-19T04:27:49.098739906Z","seq":63,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" search"}}
+{"ts":"2026-03-19T04:27:49.129692481Z","seq":64,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" for"}}
+{"ts":"2026-03-19T04:27:49.161997475Z","seq":65,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" more"}}
+{"ts":"2026-03-19T04:27:49.192356138Z","seq":66,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" specific"}}
+{"ts":"2026-03-19T04:27:49.224139708Z","seq":67,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" information"}}
+{"ts":"2026-03-19T04:27:49.255314407Z","seq":68,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" about"}}
+{"ts":"2026-03-19T04:27:49.285985240Z","seq":69,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" what"}}
+{"ts":"2026-03-19T04:27:49.316875717Z","seq":70,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" a"}}
+{"ts":"2026-03-19T04:27:49.348625538Z","seq":71,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" kil"}}
+{"ts":"2026-03-19T04:27:49.379175575Z","seq":72,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"n"}}
+{"ts":"2026-03-19T04:27:49.410240107Z","seq":73,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" is"}}
+{"ts":"2026-03-19T04:27:49.441130054Z","seq":74,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" by"}}
+{"ts":"2026-03-19T04:27:49.471875855Z","seq":75,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" reading"}}
+{"ts":"2026-03-19T04:27:49.503628576Z","seq":76,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" one"}}
+{"ts":"2026-03-19T04:27:49.533915091Z","seq":77,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" of"}}
+{"ts":"2026-03-19T04:27:49.565110869Z","seq":78,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" the"}}
+{"ts":"2026-03-19T04:27:49.595998046Z","seq":79,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" related"}}
+{"ts":"2026-03-19T04:27:49.627224022Z","seq":80,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" notes"}}
+{"ts":"2026-03-19T04:27:49.658158078Z","seq":81,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"."}}
+{"ts":"2026-03-19T04:27:50.094486218Z","seq":82,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"The user is asking \"What is a kiln in Crucible?\" based on the relevant notes provided. I can see there are 5 notes that match \"Kilns\" (79% match) - so there are likely notes about kilns in the crucible-docs knowledge base.\n\nLet me search for more specific information about what a kiln is by reading one of the related notes."}}
+{"ts":"2026-03-19T04:27:50.100112918Z","seq":83,"event":"tool_call","session_id":"chat-2026-03-19T0427-vzaef4","data":{"call_id":"Bev40JxlVX8Sc0VrHMnj2xdasqWPBIYS","tool":"read_note","args":{"path":"Kilns"},"description":"Read note content with optional line range","source":"Crucible"}}
+{"ts":"2026-03-19T04:27:50.100545065Z","seq":84,"event":"tool_result","session_id":"chat-2026-03-19T0427-vzaef4","data":{"call_id":"Bev40JxlVX8Sc0VrHMnj2xdasqWPBIYS","tool":"read_note","result":{"result":"{\"path\":\"Kilns.md\",\"content\":\"---\\ntitle: Kilns\\ndescription: What a kiln is and how it differs from a folder or vault\\nstatus: implemented\\ntags:\\n  - concept\\n  - fundamentals\\n---\\n\\n# Kilns\\n\\nA **kiln** is a directory of markdown files that Crucible treats as a connected knowledge base. The name comes from the idea of a place where raw materials are transformed into something more useful - your notes become a searchable, interconnected knowledge graph.\\n\\n## What Makes a Kiln\\n\\nA kiln is simply a folder containing:\\n\\n- **Markdown files** (.md) - Your notes, ideas, documents\\n- **Config.toml** (optional) - Configuration for this kiln\\n- **Any folder structure** - Organize however you like\\n\\nThat's it. No special database, no proprietary format, no lock-in.\\n\\n## Kiln vs Folder\\n\\nAny folder with markdown files can be a kiln. The difference is what you do with it:\\n\\n| Folder | Kiln |\\n|--------|------|\\n| Just files | Connected knowledge |\\n| Text search only | Semantic search |\\n| Manual organization | Wikilink-based graph |\\n| Static content | AI-assisted discovery |\\n\\nWhen you run Crucible commands in a folder, it becomes a kiln.\\n\\n## Kiln vs Vault\\n\\nIf you're coming from Obsidian, a kiln is similar to a vault:\\n\\n- Both are folders of markdown\\n- Both use `[[wikilinks]]`\\n- Both have configuration files\\n\\nThe difference is philosophy:\\n\\n- **Obsidian vaults** require Obsidian to get full value\\n- **Kilns** work with any text editor - Crucible just adds capabilities\\n\\nYour files are always portable. You can open a kiln in Obsidian, VS Code, or plain Vim.\\n\\n## Creating a Kiln\\n\\nAny folder becomes a kiln when you use Crucible:\\n\\n```bash\\n# Process files and start exploring\\ncru\\n\\n# Or explicitly initialize\\ncru init\\n```\\n\\nSee [[Guides/Your First Kiln]] for detailed setup.\\n\\n## See Also\\n\\n- [[Help/Concepts/Plaintext First]] - Why markdown matters\\n- [[Help/Concepts/The Knowledge Graph]] - How kilns become connected\\n- [[Guides/Getting Started]] - Your first steps with Crucible\\n\",\"total_lines\":70,\"lines_returned\":70}"}}}
+{"ts":"2026-03-19T04:27:52.811118409Z","seq":85,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"I"}}
+{"ts":"2026-03-19T04:27:52.846491730Z","seq":86,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" found"}}
+{"ts":"2026-03-19T04:27:52.877481384Z","seq":87,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" the"}}
+{"ts":"2026-03-19T04:27:52.908260064Z","seq":88,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" relevant"}}
+{"ts":"2026-03-19T04:27:52.940437662Z","seq":89,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" note"}}
+{"ts":"2026-03-19T04:27:52.971601651Z","seq":90,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" about"}}
+{"ts":"2026-03-19T04:27:53.001814368Z","seq":91,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" kil"}}
+{"ts":"2026-03-19T04:27:53.033197591Z","seq":92,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ns"}}
+{"ts":"2026-03-19T04:27:53.065069948Z","seq":93,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"."}}
+{"ts":"2026-03-19T04:27:53.095370863Z","seq":94,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Let"}}
+{"ts":"2026-03-19T04:27:53.127225461Z","seq":95,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" me"}}
+{"ts":"2026-03-19T04:27:53.159025590Z","seq":96,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" also"}}
+{"ts":"2026-03-19T04:27:53.190200918Z","seq":97,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" check"}}
+{"ts":"2026-03-19T04:27:53.221065166Z","seq":98,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" the"}}
+{"ts":"2026-03-19T04:27:53.251992222Z","seq":99,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" \""}}
+{"ts":"2026-03-19T04:27:53.284144971Z","seq":100,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"stats"}}
+{"ts":"2026-03-19T04:27:53.315745116Z","seq":101,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\""}}
+{"ts":"2026-03-19T04:27:53.345895756Z","seq":102,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" note"}}
+{"ts":"2026-03-19T04:27:53.376628547Z","seq":103,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" that"}}
+{"ts":"2026-03-19T04:27:53.408697759Z","seq":104,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" was"}}
+{"ts":"2026-03-19T04:27:53.440081021Z","seq":105,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" in"}}
+{"ts":"2026-03-19T04:27:53.470593159Z","seq":106,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" the"}}
+{"ts":"2026-03-19T04:27:53.501302921Z","seq":107,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" search"}}
+{"ts":"2026-03-19T04:27:53.532249087Z","seq":108,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" results"}}
+{"ts":"2026-03-19T04:27:53.563755885Z","seq":109,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" to"}}
+{"ts":"2026-03-19T04:27:53.594505406Z","seq":110,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" see"}}
+{"ts":"2026-03-19T04:27:53.626459451Z","seq":111,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" if"}}
+{"ts":"2026-03-19T04:27:53.656684258Z","seq":112,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" it"}}
+{"ts":"2026-03-19T04:27:53.688685081Z","seq":113,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" contains"}}
+{"ts":"2026-03-19T04:27:53.718923358Z","seq":114,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" additional"}}
+{"ts":"2026-03-19T04:27:53.749797555Z","seq":115,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" relevant"}}
+{"ts":"2026-03-19T04:27:53.782107619Z","seq":116,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" information"}}
+{"ts":"2026-03-19T04:27:53.814166931Z","seq":117,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"."}}
+{"ts":"2026-03-19T04:27:54.191751106Z","seq":118,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"I found the relevant note about kilns. Let me also check the \"stats\" note that was in the search results to see if it contains additional relevant information."}}
+{"ts":"2026-03-19T04:27:54.191794674Z","seq":119,"event":"tool_call","session_id":"chat-2026-03-19T0427-vzaef4","data":{"call_id":"uAPitMgxGrxpPQgjUUVDkOOm1oG2rvYb","tool":"read_note","args":{"path":"stats"},"description":"Read note content with optional line range","source":"Crucible"}}
+{"ts":"2026-03-19T04:27:54.196195081Z","seq":120,"event":"tool_result","session_id":"chat-2026-03-19T0427-vzaef4","data":{"call_id":"uAPitMgxGrxpPQgjUUVDkOOm1oG2rvYb","tool":"read_note","result":{"result":"{\"path\":\"stats.md\",\"content\":\"---\\ntitle: stats\\ndescription: Display statistics about your kiln\\ntags:\\n  - reference\\n  - cli\\n---\\n\\n# cru stats\\n\\nDisplay summary statistics about your kiln directory.\\n\\n## Synopsis\\n\\n```\\ncru stats\\n```\\n\\n## Description\\n\\nThe `stats` command scans your kiln directory and provides a summary of its contents. It recursively walks through all subdirectories and reports file counts, markdown file counts, and total storage size.\\n\\nThis command is useful for:\\n- Getting a quick overview of your kiln's size\\n- Monitoring growth over time\\n- Verifying that your kiln path is configured correctly\\n\\n## Options\\n\\nThe `stats` command currently takes no options or flags. It operates on the kiln path configured in your Crucible configuration file.\\n\\n## Statistics Reported\\n\\n### Total Files\\nThe total number of files in your kiln directory and all subdirectories.\\n\\n### Markdown Files\\nThe count of files with a `.md` extension (case-insensitive).\\n\\n### Total Size\\nThe combined size of all files in your kiln, reported in kilobytes (KB).\\n\\n### Kiln Path\\nThe absolute path to your kiln directory.\\n\\n## Example Output\\n\\n```\\nKiln Statistics\\n\\nTotal files: 127\\nMarkdown files: 89\\nTotal size: 2048 KB\\nKiln path: /home/user/my-kiln\\n\\nKiln scan completed successfully.\\n```\\n\\n## Error Conditions\\n\\n### Kiln Path Not Configured\\n\\n```\\nError: kiln path does not exist: /path/to/nonexistent\\nPlease configure kiln.path in your config file (see: cru config show)\\n```\\n\\n**Solution**: Configure your kiln path:\\n\\n```toml\\n[kiln]\\npath = \\\"/path/to/your/kiln\\\"\\n```\\n\\n### Permission Errors\\n\\nIf the command cannot read certain directories or files, those items will be skipped and the scan will continue.\\n\\n## Implementation Details\\n\\nThe stats command:\\n- Recursively scans all subdirectories\\n- Identifies markdown files by `.md` extension (case-insensitive)\\n- Uses filesystem metadata for file sizes\\n- Uses saturating addition to prevent overflow on very large kilns\\n\\n## Source Code\\n\\n**Implementation:** `crates/crucible-cli/src/commands/stats.rs`\\n\\n## See Also\\n\\n- `:h process` - Process your kiln for search and queries\\n- `:h search` - Search indexed content\\n- `:h config.kiln` - Kiln configuration options\\n\",\"total_lines\":95,\"lines_returned\":95}"}}}
+{"ts":"2026-03-19T04:27:57.590442786Z","seq":121,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"A"}}
+{"ts":"2026-03-19T04:27:57.626316972Z","seq":122,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" kil"}}
+{"ts":"2026-03-19T04:27:57.658223798Z","seq":123,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"n"}}
+{"ts":"2026-03-19T04:27:57.689969959Z","seq":124,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" in"}}
+{"ts":"2026-03-19T04:27:57.721662202Z","seq":125,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Cruc"}}
+{"ts":"2026-03-19T04:27:57.753630426Z","seq":126,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ible"}}
+{"ts":"2026-03-19T04:27:57.785313679Z","seq":127,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" is"}}
+{"ts":"2026-03-19T04:27:57.817303913Z","seq":128,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" described"}}
+{"ts":"2026-03-19T04:27:57.849095313Z","seq":129,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" in"}}
+{"ts":"2026-03-19T04:27:57.881370738Z","seq":130,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" the"}}
+{"ts":"2026-03-19T04:27:57.913401790Z","seq":131,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" note"}}
+{"ts":"2026-03-19T04:27:57.945722694Z","seq":132,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" titled"}}
+{"ts":"2026-03-19T04:27:57.977102326Z","seq":133,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" \""}}
+{"ts":"2026-03-19T04:27:58.009024892Z","seq":134,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"K"}}
+{"ts":"2026-03-19T04:27:58.041837591Z","seq":135,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"il"}}
+{"ts":"2026-03-19T04:27:58.072606041Z","seq":136,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ns"}}
+{"ts":"2026-03-19T04:27:58.103813739Z","seq":137,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":".md"}}
+{"ts":"2026-03-19T04:27:58.136205030Z","seq":138,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\"."}}
+{"ts":"2026-03-19T04:27:58.166881604Z","seq":139,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" This"}}
+{"ts":"2026-03-19T04:27:58.198211207Z","seq":140,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" note"}}
+{"ts":"2026-03-19T04:27:58.230033676Z","seq":141,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" explains"}}
+{"ts":"2026-03-19T04:27:58.260958712Z","seq":142,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" what"}}
+{"ts":"2026-03-19T04:27:58.293446791Z","seq":143,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" a"}}
+{"ts":"2026-03-19T04:27:58.323957319Z","seq":144,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" kil"}}
+{"ts":"2026-03-19T04:27:58.356697800Z","seq":145,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"n"}}
+{"ts":"2026-03-19T04:27:58.387201229Z","seq":146,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" is"}}
+{"ts":"2026-03-19T04:27:58.418454295Z","seq":147,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" and"}}
+{"ts":"2026-03-19T04:27:58.449572445Z","seq":148,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" how"}}
+{"ts":"2026-03-19T04:27:58.480891459Z","seq":149,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" it"}}
+{"ts":"2026-03-19T04:27:58.512182484Z","seq":150,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" differs"}}
+{"ts":"2026-03-19T04:27:58.544582295Z","seq":151,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" from"}}
+{"ts":"2026-03-19T04:27:58.576458022Z","seq":152,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" a"}}
+{"ts":"2026-03-19T04:27:58.607117666Z","seq":153,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" folder"}}
+{"ts":"2026-03-19T04:27:58.639407991Z","seq":154,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" or"}}
+{"ts":"2026-03-19T04:27:58.671223220Z","seq":155,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" vault"}}
+{"ts":"2026-03-19T04:27:58.703550003Z","seq":156,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"."}}
+{"ts":"2026-03-19T04:27:58.734373622Z","seq":157,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Based"}}
+{"ts":"2026-03-19T04:27:58.765848012Z","seq":158,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" on"}}
+{"ts":"2026-03-19T04:27:58.798027059Z","seq":159,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" the"}}
+{"ts":"2026-03-19T04:27:58.830031693Z","seq":160,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" note"}}
+{"ts":"2026-03-19T04:27:58.861925579Z","seq":161,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" content"}}
+{"ts":"2026-03-19T04:27:58.892414148Z","seq":162,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":":"}}
+{"ts":"2026-03-19T04:27:58.923514479Z","seq":163,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n\n-"}}
+{"ts":"2026-03-19T04:27:58.956139513Z","seq":164,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" A"}}
+{"ts":"2026-03-19T04:27:58.987184116Z","seq":165,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" kil"}}
+{"ts":"2026-03-19T04:27:59.018638166Z","seq":166,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"n"}}
+{"ts":"2026-03-19T04:27:59.050293199Z","seq":167,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" is"}}
+{"ts":"2026-03-19T04:27:59.082196846Z","seq":168,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" a"}}
+{"ts":"2026-03-19T04:27:59.113830060Z","seq":169,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" directory"}}
+{"ts":"2026-03-19T04:27:59.145277720Z","seq":170,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" of"}}
+{"ts":"2026-03-19T04:27:59.176928354Z","seq":171,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" markdown"}}
+{"ts":"2026-03-19T04:27:59.208323346Z","seq":172,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" files"}}
+{"ts":"2026-03-19T04:27:59.239889132Z","seq":173,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" that"}}
+{"ts":"2026-03-19T04:27:59.271515697Z","seq":174,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Cruc"}}
+{"ts":"2026-03-19T04:27:59.302983407Z","seq":175,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ible"}}
+{"ts":"2026-03-19T04:27:59.334252112Z","seq":176,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" treats"}}
+{"ts":"2026-03-19T04:27:59.365507968Z","seq":177,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" as"}}
+{"ts":"2026-03-19T04:27:59.396964088Z","seq":178,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" a"}}
+{"ts":"2026-03-19T04:27:59.428080168Z","seq":179,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" connected"}}
+{"ts":"2026-03-19T04:27:59.460367573Z","seq":180,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" knowledge"}}
+{"ts":"2026-03-19T04:27:59.491214031Z","seq":181,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" base"}}
+{"ts":"2026-03-19T04:27:59.553735642Z","seq":182,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n-"}}
+{"ts":"2026-03-19T04:27:59.586109175Z","seq":183,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" The"}}
+{"ts":"2026-03-19T04:27:59.618068109Z","seq":184,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" name"}}
+{"ts":"2026-03-19T04:27:59.650002125Z","seq":185,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" comes"}}
+{"ts":"2026-03-19T04:27:59.681409936Z","seq":186,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" from"}}
+{"ts":"2026-03-19T04:27:59.712106799Z","seq":187,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" the"}}
+{"ts":"2026-03-19T04:27:59.743256058Z","seq":188,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" idea"}}
+{"ts":"2026-03-19T04:27:59.775752156Z","seq":189,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" of"}}
+{"ts":"2026-03-19T04:27:59.806342562Z","seq":190,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" transforming"}}
+{"ts":"2026-03-19T04:27:59.837461052Z","seq":191,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" raw"}}
+{"ts":"2026-03-19T04:27:59.868454266Z","seq":192,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" materials"}}
+{"ts":"2026-03-19T04:27:59.899847158Z","seq":193,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" into"}}
+{"ts":"2026-03-19T04:27:59.932400445Z","seq":194,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" something"}}
+{"ts":"2026-03-19T04:27:59.963361509Z","seq":195,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" more"}}
+{"ts":"2026-03-19T04:27:59.994481559Z","seq":196,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" useful"}}
+{"ts":"2026-03-19T04:28:00.059215544Z","seq":197,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n-"}}
+{"ts":"2026-03-19T04:28:00.090994264Z","seq":198,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" A"}}
+{"ts":"2026-03-19T04:28:00.122773804Z","seq":199,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" kil"}}
+{"ts":"2026-03-19T04:28:00.153227874Z","seq":200,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"n"}}
+{"ts":"2026-03-19T04:28:00.184459831Z","seq":201,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" is"}}
+{"ts":"2026-03-19T04:28:00.216270660Z","seq":202,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" simply"}}
+{"ts":"2026-03-19T04:28:00.248820307Z","seq":203,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" a"}}
+{"ts":"2026-03-19T04:28:00.280339805Z","seq":204,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" folder"}}
+{"ts":"2026-03-19T04:28:00.311146314Z","seq":205,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" containing"}}
+{"ts":"2026-03-19T04:28:00.343399420Z","seq":206,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" markdown"}}
+{"ts":"2026-03-19T04:28:00.375363264Z","seq":207,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" files"}}
+{"ts":"2026-03-19T04:28:00.407014918Z","seq":208,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":","}}
+{"ts":"2026-03-19T04:28:00.438984183Z","seq":209,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" optional"}}
+{"ts":"2026-03-19T04:28:00.469858850Z","seq":210,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" config"}}
+{"ts":"2026-03-19T04:28:00.501270771Z","seq":211,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":".tom"}}
+{"ts":"2026-03-19T04:28:00.532617924Z","seq":212,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"l"}}
+{"ts":"2026-03-19T04:28:00.563785753Z","seq":213,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":","}}
+{"ts":"2026-03-19T04:28:00.596383848Z","seq":214,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" and"}}
+{"ts":"2026-03-19T04:28:00.626885417Z","seq":215,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" any"}}
+{"ts":"2026-03-19T04:28:00.658053745Z","seq":216,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" folder"}}
+{"ts":"2026-03-19T04:28:00.690535914Z","seq":217,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" structure"}}
+{"ts":"2026-03-19T04:28:00.754259179Z","seq":218,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n-"}}
+{"ts":"2026-03-19T04:28:00.784704300Z","seq":219,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Kil"}}
+{"ts":"2026-03-19T04:28:00.817314845Z","seq":220,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ns"}}
+{"ts":"2026-03-19T04:28:00.848893821Z","seq":221,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" differ"}}
+{"ts":"2026-03-19T04:28:00.879337511Z","seq":222,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" from"}}
+{"ts":"2026-03-19T04:28:00.910728213Z","seq":223,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" folders"}}
+{"ts":"2026-03-19T04:28:00.941968019Z","seq":224,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" in"}}
+{"ts":"2026-03-19T04:28:00.973353741Z","seq":225,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" that"}}
+{"ts":"2026-03-19T04:28:01.004561609Z","seq":226,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" they"}}
+{"ts":"2026-03-19T04:28:01.036095096Z","seq":227,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" enable"}}
+{"ts":"2026-03-19T04:28:01.067435800Z","seq":228,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" semantic"}}
+{"ts":"2026-03-19T04:28:01.098850631Z","seq":229,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" search"}}
+{"ts":"2026-03-19T04:28:01.130092227Z","seq":230,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":","}}
+{"ts":"2026-03-19T04:28:01.161692842Z","seq":231,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" wik"}}
+{"ts":"2026-03-19T04:28:01.193067995Z","seq":232,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"il"}}
+{"ts":"2026-03-19T04:28:01.225715089Z","seq":233,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ink"}}
+{"ts":"2026-03-19T04:28:01.257690893Z","seq":234,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"-based"}}
+{"ts":"2026-03-19T04:28:01.288533521Z","seq":235,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" organization"}}
+{"ts":"2026-03-19T04:28:01.321154716Z","seq":236,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":","}}
+{"ts":"2026-03-19T04:28:01.351996204Z","seq":237,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" and"}}
+{"ts":"2026-03-19T04:28:01.384417985Z","seq":238,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" AI"}}
+{"ts":"2026-03-19T04:28:01.415490526Z","seq":239,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"-ass"}}
+{"ts":"2026-03-19T04:28:01.447239357Z","seq":240,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"isted"}}
+{"ts":"2026-03-19T04:28:01.478596850Z","seq":241,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" discovery"}}
+{"ts":"2026-03-19T04:28:01.541409253Z","seq":242,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n-"}}
+{"ts":"2026-03-19T04:28:01.574208242Z","seq":243,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Kil"}}
+{"ts":"2026-03-19T04:28:01.605176847Z","seq":244,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ns"}}
+{"ts":"2026-03-19T04:28:01.636482041Z","seq":245,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" are"}}
+{"ts":"2026-03-19T04:28:01.667564542Z","seq":246,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" similar"}}
+{"ts":"2026-03-19T04:28:01.698815688Z","seq":247,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" to"}}
+{"ts":"2026-03-19T04:28:01.731218900Z","seq":248,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Obs"}}
+{"ts":"2026-03-19T04:28:01.762019829Z","seq":249,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"idian"}}
+{"ts":"2026-03-19T04:28:01.794262495Z","seq":250,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" vault"}}
+{"ts":"2026-03-19T04:28:01.826114613Z","seq":251,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"s"}}
+{"ts":"2026-03-19T04:28:01.857768167Z","seq":252,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" but"}}
+{"ts":"2026-03-19T04:28:01.888328984Z","seq":253,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" work"}}
+{"ts":"2026-03-19T04:28:01.919419635Z","seq":254,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" with"}}
+{"ts":"2026-03-19T04:28:01.952043200Z","seq":255,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" any"}}
+{"ts":"2026-03-19T04:28:01.983751912Z","seq":256,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" text"}}
+{"ts":"2026-03-19T04:28:02.014595160Z","seq":257,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" editor"}}
+{"ts":"2026-03-19T04:28:02.045707570Z","seq":258,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" ("}}
+{"ts":"2026-03-19T04:28:02.078074583Z","seq":259,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"not"}}
+{"ts":"2026-03-19T04:28:02.108916461Z","seq":260,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" requiring"}}
+{"ts":"2026-03-19T04:28:02.140268494Z","seq":261,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Obs"}}
+{"ts":"2026-03-19T04:28:02.172020045Z","seq":262,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"idian"}}
+{"ts":"2026-03-19T04:28:02.203340459Z","seq":263,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" for"}}
+{"ts":"2026-03-19T04:28:02.234491008Z","seq":264,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" full"}}
+{"ts":"2026-03-19T04:28:02.266197510Z","seq":265,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" value"}}
+{"ts":"2026-03-19T04:28:02.297292461Z","seq":266,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":")"}}
+{"ts":"2026-03-19T04:28:02.328732991Z","seq":267,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n-"}}
+{"ts":"2026-03-19T04:28:02.360092724Z","seq":268,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Any"}}
+{"ts":"2026-03-19T04:28:02.391456967Z","seq":269,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" folder"}}
+{"ts":"2026-03-19T04:28:02.423018193Z","seq":270,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" becomes"}}
+{"ts":"2026-03-19T04:28:02.454583990Z","seq":271,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" a"}}
+{"ts":"2026-03-19T04:28:02.485644442Z","seq":272,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" kil"}}
+{"ts":"2026-03-19T04:28:02.518119791Z","seq":273,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"n"}}
+{"ts":"2026-03-19T04:28:02.549035037Z","seq":274,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" when"}}
+{"ts":"2026-03-19T04:28:02.580168856Z","seq":275,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" you"}}
+{"ts":"2026-03-19T04:28:02.611387413Z","seq":276,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" run"}}
+{"ts":"2026-03-19T04:28:02.642766316Z","seq":277,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Cruc"}}
+{"ts":"2026-03-19T04:28:02.675431549Z","seq":278,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ible"}}
+{"ts":"2026-03-19T04:28:02.707066603Z","seq":279,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" commands"}}
+{"ts":"2026-03-19T04:28:02.769397311Z","seq":280,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n\nThe"}}
+{"ts":"2026-03-19T04:28:02.800525630Z","seq":281,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" stats"}}
+{"ts":"2026-03-19T04:28:02.832064638Z","seq":282,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" note"}}
+{"ts":"2026-03-19T04:28:02.863378642Z","seq":283,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" provides"}}
+{"ts":"2026-03-19T04:28:02.894832022Z","seq":284,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" additional"}}
+{"ts":"2026-03-19T04:28:02.926193344Z","seq":285,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" context"}}
+{"ts":"2026-03-19T04:28:02.958602855Z","seq":286,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" about"}}
+{"ts":"2026-03-19T04:28:02.989539171Z","seq":287,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" the"}}
+{"ts":"2026-03-19T04:28:03.021754458Z","seq":288,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" stats"}}
+{"ts":"2026-03-19T04:28:03.052406452Z","seq":289,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" command"}}
+{"ts":"2026-03-19T04:28:03.083705567Z","seq":290,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" that"}}
+{"ts":"2026-03-19T04:28:03.115102508Z","seq":291,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" displays"}}
+{"ts":"2026-03-19T04:28:03.146463881Z","seq":292,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" information"}}
+{"ts":"2026-03-19T04:28:03.178283240Z","seq":293,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" about"}}
+{"ts":"2026-03-19T04:28:03.210274123Z","seq":294,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" your"}}
+{"ts":"2026-03-19T04:28:03.241805391Z","seq":295,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" kil"}}
+{"ts":"2026-03-19T04:28:03.274263430Z","seq":296,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"n"}}
+{"ts":"2026-03-19T04:28:03.304789078Z","seq":297,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" directory"}}
+{"ts":"2026-03-19T04:28:03.336367104Z","seq":298,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":","}}
+{"ts":"2026-03-19T04:28:03.367672799Z","seq":299,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" including"}}
+{"ts":"2026-03-19T04:28:03.398849027Z","seq":300,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" total"}}
+{"ts":"2026-03-19T04:28:03.430970107Z","seq":301,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" file"}}
+{"ts":"2026-03-19T04:28:03.461714258Z","seq":302,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" counts"}}
+{"ts":"2026-03-19T04:28:03.492886667Z","seq":303,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":","}}
+{"ts":"2026-03-19T04:28:03.525324997Z","seq":304,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" markdown"}}
+{"ts":"2026-03-19T04:28:03.555956422Z","seq":305,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" file"}}
+{"ts":"2026-03-19T04:28:03.587388932Z","seq":306,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" counts"}}
+{"ts":"2026-03-19T04:28:03.618911870Z","seq":307,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":","}}
+{"ts":"2026-03-19T04:28:03.650817716Z","seq":308,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" and"}}
+{"ts":"2026-03-19T04:28:03.683189248Z","seq":309,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" storage"}}
+{"ts":"2026-03-19T04:28:03.713992538Z","seq":310,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" size"}}
+{"ts":"2026-03-19T04:28:03.745967772Z","seq":311,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"."}}
+{"ts":"2026-03-19T04:28:03.778338504Z","seq":312,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n\nSo"}}
+{"ts":"2026-03-19T04:28:03.810639568Z","seq":313,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" when"}}
+{"ts":"2026-03-19T04:28:03.841263893Z","seq":314,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" someone"}}
+{"ts":"2026-03-19T04:28:03.873339445Z","seq":315,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" asks"}}
+{"ts":"2026-03-19T04:28:03.906677178Z","seq":316,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" \""}}
+{"ts":"2026-03-19T04:28:03.937568004Z","seq":317,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"What"}}
+{"ts":"2026-03-19T04:28:03.968829670Z","seq":318,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" is"}}
+{"ts":"2026-03-19T04:28:04.000575041Z","seq":319,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" a"}}
+{"ts":"2026-03-19T04:28:04.031832867Z","seq":320,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" kil"}}
+{"ts":"2026-03-19T04:28:04.063019145Z","seq":321,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"n"}}
+{"ts":"2026-03-19T04:28:04.094470765Z","seq":322,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" in"}}
+{"ts":"2026-03-19T04:28:04.126010092Z","seq":323,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Cruc"}}
+{"ts":"2026-03-19T04:28:04.157334946Z","seq":324,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ible"}}
+{"ts":"2026-03-19T04:28:04.189019229Z","seq":325,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"?\","}}
+{"ts":"2026-03-19T04:28:04.221264675Z","seq":326,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" I"}}
+{"ts":"2026-03-19T04:28:04.252562810Z","seq":327,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" should"}}
+{"ts":"2026-03-19T04:28:04.284747827Z","seq":328,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" provide"}}
+{"ts":"2026-03-19T04:28:04.315548247Z","seq":329,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" a"}}
+{"ts":"2026-03-19T04:28:04.347187501Z","seq":330,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" concise"}}
+{"ts":"2026-03-19T04:28:04.379234583Z","seq":331,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" summary"}}
+{"ts":"2026-03-19T04:28:04.411252156Z","seq":332,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" of"}}
+{"ts":"2026-03-19T04:28:04.442927760Z","seq":333,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" what"}}
+{"ts":"2026-03-19T04:28:04.474856925Z","seq":334,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" a"}}
+{"ts":"2026-03-19T04:28:04.506571157Z","seq":335,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" kil"}}
+{"ts":"2026-03-19T04:28:04.538556781Z","seq":336,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"n"}}
+{"ts":"2026-03-19T04:28:04.571455157Z","seq":337,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" is"}}
+{"ts":"2026-03-19T04:28:04.603568387Z","seq":338,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" based"}}
+{"ts":"2026-03-19T04:28:04.635456774Z","seq":339,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" on"}}
+{"ts":"2026-03-19T04:28:04.666698350Z","seq":340,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" the"}}
+{"ts":"2026-03-19T04:28:04.698828800Z","seq":341,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Kil"}}
+{"ts":"2026-03-19T04:28:04.731273810Z","seq":342,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ns"}}
+{"ts":"2026-03-19T04:28:04.763122698Z","seq":343,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":".md"}}
+{"ts":"2026-03-19T04:28:04.793835990Z","seq":344,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" note"}}
+{"ts":"2026-03-19T04:28:04.826156374Z","seq":345,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"."}}
+{"ts":"2026-03-19T04:28:04.889747763Z","seq":346,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"Based"}}
+{"ts":"2026-03-19T04:28:04.921547752Z","seq":347,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" on"}}
+{"ts":"2026-03-19T04:28:04.952185507Z","seq":348,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" the"}}
+{"ts":"2026-03-19T04:28:04.983475481Z","seq":349,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Kil"}}
+{"ts":"2026-03-19T04:28:05.015377798Z","seq":350,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ns"}}
+{"ts":"2026-03-19T04:28:05.046745940Z","seq":351,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" note"}}
+{"ts":"2026-03-19T04:28:05.078640247Z","seq":352,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" in"}}
+{"ts":"2026-03-19T04:28:05.110197434Z","seq":353,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" your"}}
+{"ts":"2026-03-19T04:28:05.141615135Z","seq":354,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" cruc"}}
+{"ts":"2026-03-19T04:28:05.174600178Z","seq":355,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ible"}}
+{"ts":"2026-03-19T04:28:05.205517314Z","seq":356,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"-doc"}}
+{"ts":"2026-03-19T04:28:05.237319854Z","seq":357,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"s"}}
+{"ts":"2026-03-19T04:28:05.269004577Z","seq":358,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" knowledge"}}
+{"ts":"2026-03-19T04:28:05.300090888Z","seq":359,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" base"}}
+{"ts":"2026-03-19T04:28:05.332427791Z","seq":360,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":","}}
+{"ts":"2026-03-19T04:28:05.363647078Z","seq":361,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" a"}}
+{"ts":"2026-03-19T04:28:05.395355730Z","seq":362,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" **"}}
+{"ts":"2026-03-19T04:28:05.427838569Z","seq":363,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"kil"}}
+{"ts":"2026-03-19T04:28:05.458704207Z","seq":364,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"n"}}
+{"ts":"2026-03-19T04:28:05.490098938Z","seq":365,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"**"}}
+{"ts":"2026-03-19T04:28:05.521439362Z","seq":366,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" in"}}
+{"ts":"2026-03-19T04:28:05.552723667Z","seq":367,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Cruc"}}
+{"ts":"2026-03-19T04:28:05.584169947Z","seq":368,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ible"}}
+{"ts":"2026-03-19T04:28:05.615845830Z","seq":369,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" is"}}
+{"ts":"2026-03-19T04:28:05.647629050Z","seq":370,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":":"}}
+{"ts":"2026-03-19T04:28:05.679382271Z","seq":371,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n\n-"}}
+{"ts":"2026-03-19T04:28:05.712404943Z","seq":372,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" **"}}
+{"ts":"2026-03-19T04:28:05.744153604Z","seq":373,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"A"}}
+{"ts":"2026-03-19T04:28:05.775138938Z","seq":374,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" directory"}}
+{"ts":"2026-03-19T04:28:05.806586359Z","seq":375,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" of"}}
+{"ts":"2026-03-19T04:28:05.838273211Z","seq":376,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" markdown"}}
+{"ts":"2026-03-19T04:28:05.869667703Z","seq":377,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" files"}}
+{"ts":"2026-03-19T04:28:05.901004377Z","seq":378,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"**"}}
+{"ts":"2026-03-19T04:28:05.932408478Z","seq":379,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" that"}}
+{"ts":"2026-03-19T04:28:05.964034473Z","seq":380,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Cruc"}}
+{"ts":"2026-03-19T04:28:05.995492992Z","seq":381,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ible"}}
+{"ts":"2026-03-19T04:28:06.026859325Z","seq":382,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" treats"}}
+{"ts":"2026-03-19T04:28:06.058160690Z","seq":383,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" as"}}
+{"ts":"2026-03-19T04:28:06.089400046Z","seq":384,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" a"}}
+{"ts":"2026-03-19T04:28:06.120637002Z","seq":385,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" connected"}}
+{"ts":"2026-03-19T04:28:06.151954776Z","seq":386,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" knowledge"}}
+{"ts":"2026-03-19T04:28:06.184350778Z","seq":387,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" base"}}
+{"ts":"2026-03-19T04:28:06.248402454Z","seq":388,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n-"}}
+{"ts":"2026-03-19T04:28:06.279348569Z","seq":389,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" **"}}
+{"ts":"2026-03-19T04:28:06.311788279Z","seq":390,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"A"}}
+{"ts":"2026-03-19T04:28:06.343280518Z","seq":391,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" place"}}
+{"ts":"2026-03-19T04:28:06.375126396Z","seq":392,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" for"}}
+{"ts":"2026-03-19T04:28:06.405703632Z","seq":393,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" transformation"}}
+{"ts":"2026-03-19T04:28:06.437152692Z","seq":394,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"**"}}
+{"ts":"2026-03-19T04:28:06.468483246Z","seq":395,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" -"}}
+{"ts":"2026-03-19T04:28:06.499830779Z","seq":396,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" raw"}}
+{"ts":"2026-03-19T04:28:06.532012347Z","seq":397,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" materials"}}
+{"ts":"2026-03-19T04:28:06.562917064Z","seq":398,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" ("}}
+{"ts":"2026-03-19T04:28:06.594508839Z","seq":399,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"your"}}
+{"ts":"2026-03-19T04:28:06.626233691Z","seq":400,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" notes"}}
+{"ts":"2026-03-19T04:28:06.658987452Z","seq":401,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":")"}}
+{"ts":"2026-03-19T04:28:06.690120681Z","seq":402,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" become"}}
+{"ts":"2026-03-19T04:28:06.721679858Z","seq":403,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" something"}}
+{"ts":"2026-03-19T04:28:06.753223895Z","seq":404,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" more"}}
+{"ts":"2026-03-19T04:28:06.785492021Z","seq":405,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" useful"}}
+{"ts":"2026-03-19T04:28:06.817778745Z","seq":406,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" through"}}
+{"ts":"2026-03-19T04:28:06.848667102Z","seq":407,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" search"}}
+{"ts":"2026-03-19T04:28:06.880330486Z","seq":408,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":","}}
+{"ts":"2026-03-19T04:28:06.911858973Z","seq":409,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" connections"}}
+{"ts":"2026-03-19T04:28:06.944437079Z","seq":410,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":","}}
+{"ts":"2026-03-19T04:28:06.976398324Z","seq":411,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" and"}}
+{"ts":"2026-03-19T04:28:07.008133295Z","seq":412,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" AI"}}
+{"ts":"2026-03-19T04:28:07.040090950Z","seq":413,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" assistance"}}
+{"ts":"2026-03-19T04:28:07.103542623Z","seq":414,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n-"}}
+{"ts":"2026-03-19T04:28:07.135125219Z","seq":415,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" **"}}
+{"ts":"2026-03-19T04:28:07.167034705Z","seq":416,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"Simple"}}
+{"ts":"2026-03-19T04:28:07.197885534Z","seq":417,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" and"}}
+{"ts":"2026-03-19T04:28:07.229606845Z","seq":418,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" portable"}}
+{"ts":"2026-03-19T04:28:07.261323697Z","seq":419,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"**"}}
+{"ts":"2026-03-19T04:28:07.292814576Z","seq":420,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" -"}}
+{"ts":"2026-03-19T04:28:07.324363773Z","seq":421,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" just"}}
+{"ts":"2026-03-19T04:28:07.355580140Z","seq":422,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" a"}}
+{"ts":"2026-03-19T04:28:07.386905244Z","seq":423,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" folder"}}
+{"ts":"2026-03-19T04:28:07.418495430Z","seq":424,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" with"}}
+{"ts":"2026-03-19T04:28:07.449768355Z","seq":425,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" `."}}
+{"ts":"2026-03-19T04:28:07.481453318Z","seq":426,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"md"}}
+{"ts":"2026-03-19T04:28:07.513449412Z","seq":427,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"`"}}
+{"ts":"2026-03-19T04:28:07.544826504Z","seq":428,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" files"}}
+{"ts":"2026-03-19T04:28:07.576221336Z","seq":429,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" ("}}
+{"ts":"2026-03-19T04:28:07.608213239Z","seq":430,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"plus"}}
+{"ts":"2026-03-19T04:28:07.639561202Z","seq":431,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" optional"}}
+{"ts":"2026-03-19T04:28:07.671443129Z","seq":432,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" `"}}
+{"ts":"2026-03-19T04:28:07.703306337Z","seq":433,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"config"}}
+{"ts":"2026-03-19T04:28:07.734673159Z","seq":434,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":".tom"}}
+{"ts":"2026-03-19T04:28:07.766962334Z","seq":435,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"l"}}
+{"ts":"2026-03-19T04:28:07.798186751Z","seq":436,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"`)"}}
+{"ts":"2026-03-19T04:28:07.829638441Z","seq":437,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" that"}}
+{"ts":"2026-03-19T04:28:07.860849638Z","seq":438,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" works"}}
+{"ts":"2026-03-19T04:28:07.892317837Z","seq":439,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" with"}}
+{"ts":"2026-03-19T04:28:07.926708959Z","seq":440,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" any"}}
+{"ts":"2026-03-19T04:28:07.958462729Z","seq":441,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" text"}}
+{"ts":"2026-03-19T04:28:07.990372276Z","seq":442,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" editor"}}
+{"ts":"2026-03-19T04:28:08.055216967Z","seq":443,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n\n##"}}
+{"ts":"2026-03-19T04:28:08.086369006Z","seq":444,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Key"}}
+{"ts":"2026-03-19T04:28:08.118419758Z","seq":445,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Differences"}}
+{"ts":"2026-03-19T04:28:08.182404595Z","seq":446,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n\n|"}}
+{"ts":"2026-03-19T04:28:08.214850985Z","seq":447,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Folder"}}
+{"ts":"2026-03-19T04:28:08.246459280Z","seq":448,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" |"}}
+{"ts":"2026-03-19T04:28:08.279392125Z","seq":449,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Kil"}}
+{"ts":"2026-03-19T04:28:08.310829726Z","seq":450,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"n"}}
+{"ts":"2026-03-19T04:28:08.342811060Z","seq":451,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" |"}}
+{"ts":"2026-03-19T04:28:08.374717596Z","seq":452,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n|"}}
+{"ts":"2026-03-19T04:28:08.406321751Z","seq":453,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"--------"}}
+{"ts":"2026-03-19T04:28:08.438080252Z","seq":454,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"|"}}
+{"ts":"2026-03-19T04:28:08.470044266Z","seq":455,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"------"}}
+{"ts":"2026-03-19T04:28:08.501914934Z","seq":456,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"|"}}
+{"ts":"2026-03-19T04:28:08.534682434Z","seq":457,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n|"}}
+{"ts":"2026-03-19T04:28:08.565971429Z","seq":458,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Just"}}
+{"ts":"2026-03-19T04:28:08.599293953Z","seq":459,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" files"}}
+{"ts":"2026-03-19T04:28:08.631130611Z","seq":460,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" |"}}
+{"ts":"2026-03-19T04:28:08.664436195Z","seq":461,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Connected"}}
+{"ts":"2026-03-19T04:28:08.695952283Z","seq":462,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" knowledge"}}
+{"ts":"2026-03-19T04:28:08.728243747Z","seq":463,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" |"}}
+{"ts":"2026-03-19T04:28:08.761604170Z","seq":464,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n|"}}
+{"ts":"2026-03-19T04:28:08.793243834Z","seq":465,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Text"}}
+{"ts":"2026-03-19T04:28:08.826280806Z","seq":466,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" search"}}
+{"ts":"2026-03-19T04:28:08.858141714Z","seq":467,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" only"}}
+{"ts":"2026-03-19T04:28:08.890254894Z","seq":468,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" |"}}
+{"ts":"2026-03-19T04:28:08.923386953Z","seq":469,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Semantic"}}
+{"ts":"2026-03-19T04:28:08.956616409Z","seq":470,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" search"}}
+{"ts":"2026-03-19T04:28:08.988174566Z","seq":471,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" |"}}
+{"ts":"2026-03-19T04:28:09.020044024Z","seq":472,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n|"}}
+{"ts":"2026-03-19T04:28:09.051870822Z","seq":473,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Manual"}}
+{"ts":"2026-03-19T04:28:09.083653562Z","seq":474,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" organization"}}
+{"ts":"2026-03-19T04:28:09.116081223Z","seq":475,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" |"}}
+{"ts":"2026-03-19T04:28:09.147990259Z","seq":476,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Wik"}}
+{"ts":"2026-03-19T04:28:09.180653722Z","seq":477,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"il"}}
+{"ts":"2026-03-19T04:28:09.212337175Z","seq":478,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ink"}}
+{"ts":"2026-03-19T04:28:09.244371728Z","seq":479,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"-based"}}
+{"ts":"2026-03-19T04:28:09.276079560Z","seq":480,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" graph"}}
+{"ts":"2026-03-19T04:28:09.309007555Z","seq":481,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" |"}}
+{"ts":"2026-03-19T04:28:09.340178414Z","seq":482,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n|"}}
+{"ts":"2026-03-19T04:28:09.372304783Z","seq":483,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Static"}}
+{"ts":"2026-03-19T04:28:09.405413544Z","seq":484,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" content"}}
+{"ts":"2026-03-19T04:28:09.436798615Z","seq":485,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" |"}}
+{"ts":"2026-03-19T04:28:09.469046571Z","seq":486,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" AI"}}
+{"ts":"2026-03-19T04:28:09.502236679Z","seq":487,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"-ass"}}
+{"ts":"2026-03-19T04:28:09.533916312Z","seq":488,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"isted"}}
+{"ts":"2026-03-19T04:28:09.565599105Z","seq":489,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" discovery"}}
+{"ts":"2026-03-19T04:28:09.598068384Z","seq":490,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" |"}}
+{"ts":"2026-03-19T04:28:09.630109606Z","seq":491,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n\n##"}}
+{"ts":"2026-03-19T04:28:09.662430700Z","seq":492,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" How"}}
+{"ts":"2026-03-19T04:28:09.694467452Z","seq":493,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" It"}}
+{"ts":"2026-03-19T04:28:09.726903133Z","seq":494,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Works"}}
+{"ts":"2026-03-19T04:28:09.791117603Z","seq":495,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n\nAny"}}
+{"ts":"2026-03-19T04:28:09.823032519Z","seq":496,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" folder"}}
+{"ts":"2026-03-19T04:28:09.855058311Z","seq":497,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" becomes"}}
+{"ts":"2026-03-19T04:28:09.887407074Z","seq":498,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" a"}}
+{"ts":"2026-03-19T04:28:09.920426577Z","seq":499,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" kil"}}
+{"ts":"2026-03-19T04:28:09.952039882Z","seq":500,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"n"}}
+{"ts":"2026-03-19T04:28:09.984239330Z","seq":501,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" when"}}
+{"ts":"2026-03-19T04:28:10.016457266Z","seq":502,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" you"}}
+{"ts":"2026-03-19T04:28:10.048605605Z","seq":503,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" use"}}
+{"ts":"2026-03-19T04:28:10.080411735Z","seq":504,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Cruc"}}
+{"ts":"2026-03-19T04:28:10.112827256Z","seq":505,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ible"}}
+{"ts":"2026-03-19T04:28:10.145044033Z","seq":506,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" commands"}}
+{"ts":"2026-03-19T04:28:10.177486183Z","seq":507,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":":"}}
+{"ts":"2026-03-19T04:28:10.209790827Z","seq":508,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n\n```"}}
+{"ts":"2026-03-19T04:28:10.242091651Z","seq":509,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"bash"}}
+{"ts":"2026-03-19T04:28:10.307108007Z","seq":510,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\nc"}}
+{"ts":"2026-03-19T04:28:10.339113950Z","seq":511,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ru"}}
+{"ts":"2026-03-19T04:28:10.403547514Z","seq":512,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"        #"}}
+{"ts":"2026-03-19T04:28:10.435643125Z","seq":513,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Process"}}
+{"ts":"2026-03-19T04:28:10.468020997Z","seq":514,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" files"}}
+{"ts":"2026-03-19T04:28:10.499915903Z","seq":515,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" and"}}
+{"ts":"2026-03-19T04:28:10.531771461Z","seq":516,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" start"}}
+{"ts":"2026-03-19T04:28:10.563654988Z","seq":517,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" exploring"}}
+{"ts":"2026-03-19T04:28:10.628154640Z","seq":518,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\nc"}}
+{"ts":"2026-03-19T04:28:10.660067886Z","seq":519,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ru"}}
+{"ts":"2026-03-19T04:28:10.692221105Z","seq":520,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" init"}}
+{"ts":"2026-03-19T04:28:10.757304349Z","seq":521,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"    #"}}
+{"ts":"2026-03-19T04:28:10.789714770Z","seq":522,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Explicit"}}
+{"ts":"2026-03-19T04:28:10.821855069Z","seq":523,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ly"}}
+{"ts":"2026-03-19T04:28:10.853747996Z","seq":524,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" initialize"}}
+{"ts":"2026-03-19T04:28:10.918547918Z","seq":525,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n``"}}
+{"ts":"2026-03-19T04:28:10.949815464Z","seq":526,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"`"}}
+{"ts":"2026-03-19T04:28:10.981712020Z","seq":527,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"\n\nYour"}}
+{"ts":"2026-03-19T04:28:11.013473861Z","seq":528,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" notes"}}
+{"ts":"2026-03-19T04:28:11.045640309Z","seq":529,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" are"}}
+{"ts":"2026-03-19T04:28:11.077420549Z","seq":530,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" always"}}
+{"ts":"2026-03-19T04:28:11.109678745Z","seq":531,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" portable"}}
+{"ts":"2026-03-19T04:28:11.141485654Z","seq":532,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" -"}}
+{"ts":"2026-03-19T04:28:11.173418660Z","seq":533,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" you"}}
+{"ts":"2026-03-19T04:28:11.205801151Z","seq":534,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" can"}}
+{"ts":"2026-03-19T04:28:11.238366698Z","seq":535,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" open"}}
+{"ts":"2026-03-19T04:28:11.270356321Z","seq":536,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" a"}}
+{"ts":"2026-03-19T04:28:11.302698694Z","seq":537,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" kil"}}
+{"ts":"2026-03-19T04:28:11.334925741Z","seq":538,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"n"}}
+{"ts":"2026-03-19T04:28:11.367806758Z","seq":539,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" in"}}
+{"ts":"2026-03-19T04:28:11.399526240Z","seq":540,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Obs"}}
+{"ts":"2026-03-19T04:28:11.431621700Z","seq":541,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"idian"}}
+{"ts":"2026-03-19T04:28:11.464171447Z","seq":542,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":","}}
+{"ts":"2026-03-19T04:28:11.496383564Z","seq":543,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" VS"}}
+{"ts":"2026-03-19T04:28:11.528669729Z","seq":544,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Code"}}
+{"ts":"2026-03-19T04:28:11.560624964Z","seq":545,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":","}}
+{"ts":"2026-03-19T04:28:11.592648096Z","seq":546,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" or"}}
+{"ts":"2026-03-19T04:28:11.624996289Z","seq":547,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" plain"}}
+{"ts":"2026-03-19T04:28:11.657364952Z","seq":548,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Vim"}}
+{"ts":"2026-03-19T04:28:11.689588208Z","seq":549,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"."}}
+{"ts":"2026-03-19T04:28:11.723001959Z","seq":550,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" The"}}
+{"ts":"2026-03-19T04:28:11.755289134Z","seq":551,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" power"}}
+{"ts":"2026-03-19T04:28:11.788144931Z","seq":552,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" comes"}}
+{"ts":"2026-03-19T04:28:11.820278171Z","seq":553,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" from"}}
+{"ts":"2026-03-19T04:28:11.852292314Z","seq":554,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" Cruc"}}
+{"ts":"2026-03-19T04:28:11.884302397Z","seq":555,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"ible"}}
+{"ts":"2026-03-19T04:28:11.916020169Z","seq":556,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"'s"}}
+{"ts":"2026-03-19T04:28:11.948375431Z","seq":557,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" capabilities"}}
+{"ts":"2026-03-19T04:28:11.980280168Z","seq":558,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" ("}}
+{"ts":"2026-03-19T04:28:12.013537393Z","seq":559,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"semantic"}}
+{"ts":"2026-03-19T04:28:12.045324393Z","seq":560,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" search"}}
+{"ts":"2026-03-19T04:28:12.077255888Z","seq":561,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":","}}
+{"ts":"2026-03-19T04:28:12.110378148Z","seq":562,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" knowledge"}}
+{"ts":"2026-03-19T04:28:12.141873896Z","seq":563,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" graph"}}
+{"ts":"2026-03-19T04:28:12.173719684Z","seq":564,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":","}}
+{"ts":"2026-03-19T04:28:12.205643030Z","seq":565,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" AI"}}
+{"ts":"2026-03-19T04:28:12.237453339Z","seq":566,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" assistance"}}
+{"ts":"2026-03-19T04:28:12.269226360Z","seq":567,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"),"}}
+{"ts":"2026-03-19T04:28:12.301116786Z","seq":568,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" not"}}
+{"ts":"2026-03-19T04:28:12.332994623Z","seq":569,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" from"}}
+{"ts":"2026-03-19T04:28:12.364884250Z","seq":570,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" a"}}
+{"ts":"2026-03-19T04:28:12.397224693Z","seq":571,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" proprietary"}}
+{"ts":"2026-03-19T04:28:12.429476919Z","seq":572,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":" format"}}
+{"ts":"2026-03-19T04:28:12.461618918Z","seq":573,"event":"text_delta","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"."}}
+{"ts":"2026-03-19T04:28:12.493807126Z","seq":574,"event":"thinking","session_id":"chat-2026-03-19T0427-vzaef4","data":{"content":"A kiln in Crucible is described in the note titled \"Kilns.md\". This note explains what a kiln is and how it differs from a folder or vault. Based on the note content:\n\n- A kiln is a directory of markdown files that Crucible treats as a connected knowledge base\n- The name comes from the idea of transforming raw materials into something more useful\n- A kiln is simply a folder containing markdown files, optional config.toml, and any folder structure\n- Kilns differ from folders in that they enable semantic search, wikilink-based organization, and AI-assisted discovery\n- Kilns are similar to Obsidian vaults but work with any text editor (not requiring Obsidian for full value)\n- Any folder becomes a kiln when you run Crucible commands\n\nThe stats note provides additional context about the stats command that displays information about your kiln directory, including total file counts, markdown file counts, and storage size.\n\nSo when someone asks \"What is a kiln in Crucible?\", I should provide a concise summary of what a kiln is based on the Kilns.md note."}}
+{"ts":"2026-03-19T04:28:12.493880184Z","seq":575,"event":"message_complete","session_id":"chat-2026-03-19T0427-vzaef4","data":{"message_id":"msg-4065920a-d12c-4234-8683-cbdd853ea6aa","full_response":"Based on the Kilns note in your crucible-docs knowledge base, a **kiln** in Crucible is:\n\n- **A directory of markdown files** that Crucible treats as a connected knowledge base\n- **A place for transformation** - raw materials (your notes) become something more useful through search, connections, and AI assistance\n- **Simple and portable** - just a folder with `.md` files (plus optional `config.toml`) that works with any text editor\n\n## Key Differences\n\n| Folder | Kiln |\n|--------|------|\n| Just files | Connected knowledge |\n| Text search only | Semantic search |\n| Manual organization | Wikilink-based graph |\n| Static content | AI-assisted discovery |\n\n## How It Works\n\nAny folder becomes a kiln when you use Crucible commands:\n\n```bash\ncru        # Process files and start exploring\ncru init    # Explicitly initialize\n```\n\nYour notes are always portable - you can open a kiln in Obsidian, VS Code, or plain Vim. The power comes from Crucible's capabilities (semantic search, knowledge graph, AI assistance), not from a proprietary format.","prompt_tokens":4137,"completion_tokens":470,"total_tokens":4607}}
+{"ts":"2026-03-19T04:28:12.494506095Z","seq":576,"event":"post_llm_call","session_id":"chat-2026-03-19T0427-vzaef4","data":{"response_summary":"Based on the Kilns note in your crucible-docs knowledge base, a **kiln** in Crucible is:\n\n- **A directory of markdown files** that Crucible treats as a connected knowledge base\n- **A place for transfo","model":"glm-4.7-flash-iq4","duration_ms":25341,"token_count":null}}
