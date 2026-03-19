@@ -121,11 +121,14 @@ clean:
 # === Demo & Recording ===
 
 # Generate demo GIF from replay fixture
-demo name:
+demo name speed="3":
+    @printf '#!/bin/sh\nexec cru chat --replay assets/fixtures/%s.jsonl --replay-speed %s --replay-auto-exit 500\n' "{{name}}" "{{speed}}" > /tmp/cru-demo-wrapper && chmod +x /tmp/cru-demo-wrapper
     vhs assets/{{name}}.tape
 
 # Generate all demo GIFs
 demo-all: (demo "demo") (demo "acp-demo") (demo "delegation-demo") (demo "overview")
+    cp assets/demo.gif docs-site/public/demo.gif
+    @echo "Copied hero demo to docs-site/public/"
 
 # Record a new demo fixture (requires live agent)
 demo-record name *args:

@@ -1,6 +1,5 @@
 # Cross-Agent Delegation Demo — Claude delegating to OpenCode
-# Requirements: Claude Code and opencode both available
-# Usage: vhs assets/delegation-demo.tape
+# Usage: just demo delegation-demo
 
 Output assets/delegation-demo.gif
 
@@ -15,13 +14,12 @@ Set WindowBar Colorful
 Set WindowBarSize 40
 Set Padding 20
 Set TypingSpeed 60ms
-Set PlaybackSpeed 4
 
 Type "cru chat -a claude"
 Hide
 Ctrl+U
-Type "cru chat --replay assets/fixtures/delegation-demo.jsonl --replay-auto-exit 0"
+Type "/tmp/cru-demo-wrapper"
 Enter
 Sleep 3s
 Show
-Sleep 16s
+Sleep 10s

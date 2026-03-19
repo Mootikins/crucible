@@ -11,13 +11,12 @@ Set WindowBar Colorful
 Set WindowBarSize 40
 Set Padding 20
 Set TypingSpeed 60ms
-Set PlaybackSpeed 2
 
 Type "cru chat"
 Hide
 Ctrl+U
-Type "cru chat --replay assets/fixtures/demo.jsonl --replay-speed 5 --replay-auto-exit 0"
+Type "/tmp/cru-demo-wrapper"
 Enter
 Sleep 3s
 Show
-Sleep 56s
+Sleep 15s

@@ -6,7 +6,7 @@ Set Shell "bash"
 Set FontSize 16
 Set Width 1200
 Set Height 700
-Set Theme "Catppuccin Mocha"
+Set Theme "Firewatch"
 Set WindowBar Colorful
 Set WindowBarSize 40
 Set Padding 20

@@ -1,5 +1,5 @@
 # ACP Agent Demo — Crucible chat with Claude Code
-# Usage: vhs assets/acp-demo.tape
+# Usage: just demo acp-demo
 
 Output assets/acp-demo.gif
 
@@ -14,13 +14,12 @@ Set WindowBar Colorful
 Set WindowBarSize 40
 Set Padding 20
 Set TypingSpeed 60ms
-Set PlaybackSpeed 4
 
 Type "cru chat -a claude"
 Hide
 Ctrl+U
-Type "cru chat --replay assets/fixtures/acp-demo.jsonl --replay-auto-exit 0"
+Type "/tmp/cru-demo-wrapper"
 Enter
 Sleep 3s
 Show
-Sleep 52s
+Sleep 10s
