@@ -265,7 +265,7 @@ async fn test_streamable_http_accept_header_without_sse_still_succeeds() {
     host.shutdown().await;
 }
 
-/// Test that tools/list over HTTP returns all 16 tools including delegate_session
+/// Test that tools/list over HTTP returns all tools (excluding delegate_session without delegation context)
 #[tokio::test]
 async fn test_tools_list_over_http_returns_delegate_session() {
     let temp = TempDir::new().unwrap();

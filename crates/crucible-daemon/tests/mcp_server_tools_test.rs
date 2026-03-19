@@ -26,8 +26,6 @@ const EXPECTED_TOOLS: &[&str] = &[
     "property_search",
     // Kiln tools (1)
     "get_kiln_info",
-    // Delegation tool (1)
-    "delegate_session",
     // Job tools (3)
     "list_jobs",
     "get_job_result",
@@ -53,7 +51,7 @@ fn create_test_server() -> CrucibleMcpServer {
     )
 }
 
-/// Test that CrucibleMcpServer exposes exactly 16 tools
+/// Test that CrucibleMcpServer exposes exactly 20 tools (including filtered ones)
 #[tokio::test]
 async fn test_mcp_server_exposes_13_tools() {
     let server = create_test_server();
@@ -61,8 +59,15 @@ async fn test_mcp_server_exposes_13_tools() {
     let tool_count = server.tool_count();
     assert_eq!(
         tool_count, 20,
-        "Should expose exactly 20 tools, got {}",
+        "Should expose exactly 20 tools (all tools including delegate_session), got {}",
         tool_count
+    );
+    
+    let listed_tools = server.list_tools();
+    assert_eq!(
+        listed_tools.len(), 19,
+        "Should list exactly 19 tools (delegate_session filtered when no delegation context), got {}",
+        listed_tools.len()
     );
 }
 
@@ -138,12 +143,12 @@ async fn test_server_info_metadata() {
     assert!(info.server_info.title.is_some());
     assert_eq!(info.server_info.title.unwrap(), "Crucible MCP Server");
 
-    // Verify instructions mention 14 tools
+    // Verify instructions mention tool count (dynamic based on tool_count())
     assert!(info.instructions.is_some());
     let instructions = info.instructions.unwrap();
     assert!(
         instructions.contains("20 tools"),
-        "Instructions should mention 20 tools"
+        "Instructions should mention 20 tools (tool_count includes all tools)"
     );
 
     // Verify tools capability is advertised
@@ -193,7 +198,7 @@ async fn test_tool_categories() {
         .iter()
         .filter(|t| *t == "delegate_session")
         .count();
-    assert_eq!(delegation_count, 1, "Should have delegate_session tool");
+    assert_eq!(delegation_count, 0, "Should not have delegate_session tool (no delegation context)");
 }
 
 /// Test tool descriptions are meaningful (not just the tool name)
@@ -229,7 +234,7 @@ async fn test_tool_descriptions_are_meaningful() {
     }
 }
 
-/// Test that tool_count matches list_tools length
+/// Test that tool_count includes all tools (including filtered ones)
 #[tokio::test]
 async fn test_tool_count_matches_list_length() {
     let server = create_test_server();
@@ -238,8 +243,11 @@ async fn test_tool_count_matches_list_length() {
     let tools = server.list_tools();
 
     assert_eq!(
-        count,
-        tools.len(),
-        "tool_count() should match list_tools().len()"
+        count, 20,
+        "tool_count() should return all 20 tools (including delegate_session)"
+    );
+    assert_eq!(
+        tools.len(), 19,
+        "list_tools() should return 19 tools (delegate_session filtered when no delegation context)"
     );
 }

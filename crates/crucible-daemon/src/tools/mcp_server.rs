@@ -256,6 +256,17 @@ impl CrucibleMcpServer {
     pub fn list_tools(&self) -> Vec<rmcp::model::Tool> {
         let mut tools = self.tool_router.list_all();
 
+        // Filter delegate_session when delegation is unavailable or disabled
+        let delegation_available = self.delegation_context
+            .as_ref()
+            .map(|ctx| ctx.enabled)
+            .unwrap_or(false);
+        
+        if !delegation_available {
+            tools.retain(|t| t.name != "delegate_session");
+        }
+
+        // Enrich description when enabled with targets
         if let Some(delegation_context) = &self.delegation_context {
             if !delegation_context.targets.is_empty() {
                 if let Some(delegate_tool) = tools.iter_mut().find(|t| t.name == "delegate_session")
@@ -644,17 +655,20 @@ impl CrucibleMcpServer {
 #[tool_handler]
 impl ServerHandler for CrucibleMcpServer {
     fn get_info(&self) -> rmcp::model::ServerInfo {
+        let tool_count = self.tool_count();
         make_server_info(
-            "Crucible knowledge management server with 20 tools. \
-            Notes: create_note, read_note, update_note, delete_note, list_notes, \
-            read_metadata. \
-            Search: semantic_search, text_search, property_search. \
-            Workspace: read_file, edit_file, write_file, bash, glob, grep. \
-            Kiln: get_kiln_info. \
-            Delegation: delegate_session \
-            \u{2014} hand off tasks to other agents when asked to delegate. \
-            Jobs: list_jobs, get_job_result, cancel_job \
-            \u{2014} manage background jobs.",
+            &format!(
+                "Crucible knowledge management server with {tool_count} tools. \
+                Notes: create_note, read_note, update_note, delete_note, list_notes, \
+                read_metadata. \
+                Search: semantic_search, text_search, property_search. \
+                Workspace: read_file, edit_file, write_file, bash, glob, grep. \
+                Kiln: get_kiln_info. \
+                Delegation: delegate_session \
+                \u{2014} hand off tasks to other agents when asked to delegate. \
+                Jobs: list_jobs, get_job_result, cancel_job \
+                \u{2014} manage background jobs."
+            ),
         )
     }
 }
