@@ -127,9 +127,9 @@ impl AcpAgentHandle {
         info!(agent = %agent_name, workspace = %workspace.display(), "Creating ACP agent handle");
 
         let client_config = build_client_config(agent_config, workspace, acp_config)?;
-        let mut client = CrucibleAcpClient::with_name(client_config, agent_name.clone());
-        if let Some(handler) = permission_handler {
-            client = client.with_permission_handler(handler);
+        let mut client = CrucibleAcpClient::with_name(client_config.clone(), agent_name.clone());
+        if let Some(ref handler) = permission_handler {
+            client = client.with_permission_handler(handler.clone());
         }
         let delegation_context = parent_session_id.and_then(|session_id| {
             background_spawner.clone().map(|spawner| DelegationContext {
@@ -172,10 +172,35 @@ impl AcpAgentHandle {
         };
 
         let mcp_url = mcp_host.as_ref().map(|h| h.mcp_url());
-        let session = client
+        let (session, mcp_host) = match client
             .connect_with_best_mcp(mcp_url.as_deref())
             .await
-            .map_err(|e| AcpHandleError::Connection(e.to_string()))?;
+        {
+            Ok(s) => (s, mcp_host),
+            Err(e) if mcp_host.is_some() => {
+                // HTTP MCP transport failed (e.g. agent rejects `type: "http"` at
+                // Zod level). Drop the HTTP server, create a fresh agent process,
+                // and retry with stdio-only transport.
+                warn!(
+                    agent = %agent_name,
+                    error = %e,
+                    "HTTP MCP failed, retrying with stdio transport"
+                );
+                drop(mcp_host);
+                let mut retry_client =
+                    CrucibleAcpClient::with_name(client_config.clone(), agent_name.clone());
+                if let Some(ref handler) = permission_handler {
+                    retry_client = retry_client.with_permission_handler(handler.clone());
+                }
+                let session = retry_client
+                    .connect_with_best_mcp(None)
+                    .await
+                    .map_err(|e| AcpHandleError::Connection(e.to_string()))?;
+                client = retry_client;
+                (session, None)
+            }
+            Err(e) => return Err(AcpHandleError::Connection(e.to_string())),
+        };
 
         let session_id = session.id().to_string();
         info!(session_id = %session_id, "ACP agent connected");

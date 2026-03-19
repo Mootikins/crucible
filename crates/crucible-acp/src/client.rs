@@ -652,13 +652,19 @@ impl CrucibleAcpClient {
     ) -> Result<agent_client_protocol::NewSessionResponse> {
         use agent_client_protocol::ClientRequest;
 
-        // Send the new session request
-        let response = self
-            .send_request(ClientRequest::NewSessionRequest(request))
-            .await?;
+        let client_request = ClientRequest::NewSessionRequest(request);
+        if let Ok(json) = serde_json::to_string(&client_request) {
+            tracing::debug!(agent = %self.agent_name, payload = %json, "session/new request payload");
+        }
 
-        // Extract the result field from JSON-RPC response
+        let response = self.send_request(client_request).await?;
+
         let result = response.get("result").ok_or_else(|| {
+            tracing::debug!(
+                agent = %self.agent_name,
+                response = %response,
+                "session/new response missing result field"
+            );
             ClientError::Session("Missing result field in new session response".to_string())
         })?;
 
@@ -767,10 +773,13 @@ impl CrucibleAcpClient {
         };
 
         // 4. Create session with chosen transport
+        // Must be absolute — the agent process runs in working_dir, so a relative
+        // cwd would resolve to working_dir/cwd (double-nesting).
         let cwd = self
             .config
             .working_dir
-            .clone()
+            .as_ref()
+            .and_then(|p| std::fs::canonicalize(p).ok())
             .or_else(|| std::env::current_dir().ok())
             .unwrap_or_else(|| PathBuf::from("/"));
 
@@ -804,7 +813,13 @@ impl CrucibleAcpClient {
             .map(|p| p.join("cru"))
             .unwrap_or_else(|| PathBuf::from("cru"));
 
-        McpServer::Stdio(McpServerStdio::new("crucible", cru_command).args(vec!["mcp".to_string()]))
+        McpServer::Stdio(
+            McpServerStdio::new("crucible", cru_command).args(vec![
+                "mcp".to_string(),
+                "--stdio".to_string(),
+                "--standalone".to_string(),
+            ]),
+        )
     }
 
     /// Write a JSON request to the agent's stdin
