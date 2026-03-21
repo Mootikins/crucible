@@ -11,7 +11,7 @@ The query system provides a powerful language for finding notes based on complex
 
 ## Overview
 
-While `cru search` handles simple lookups, the query system lets you:
+While simple search is available through chat commands like `/search`, the query system will let you:
 
 - Combine multiple conditions
 - Filter by relationships
@@ -154,11 +154,11 @@ end
 ### From CLI
 
 ```bash
+# Planned command (not yet implemented)
 cru query "notes where tags contains 'important'"
 ```
 
 ## See Also
 
-- [search](../cli/search/) - Simple search commands
 - Search & Discovery - All search methods
 - [Tags](../tags/) - Tag syntax for filtering

@@ -242,4 +242,4 @@ Editors can enhance handler documents with:
 
 - [Event Hooks](./event-hooks/) — Code-based event handlers in Lua
 - [Creating Plugins](./creating-plugins/) — Full plugin development
-- Workflows — Higher-level orchestration
+- [Workflows](../workflows/) — Higher-level orchestration

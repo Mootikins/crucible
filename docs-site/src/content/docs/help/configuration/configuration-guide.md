@@ -218,21 +218,21 @@ profile = "development"  # Active profile
 
 ## Storage Modes
 
-Crucible supports two storage modes that control how the CLI connects to SurrealDB:
+Crucible supports multiple storage modes that control how the CLI accesses data:
 
-### Embedded Mode (Default)
+### SQLite Mode (Default)
 
 ```toml
 [storage]
-mode = "embedded"
+mode = "sqlite"
 ```
 
-The CLI connects directly to SurrealDB in-process. This is simple and fast for single-session use:
+The CLI uses SQLite for local storage. This is simple and fast for single-user use:
 
-- **Pros**: Fast startup, no extra processes, simple setup
-- **Cons**: File locked to one session, cannot run multiple cru commands simultaneously
+- **Pros**: Fast startup, no extra processes, simple setup, reliable
+- **Cons**: Single-user only, file locked to one session
 
-Use embedded mode when:
+Use SQLite mode when:
 - Running a single CLI session at a time
 - Using scripts that call cru commands sequentially
 - Maximum simplicity is desired
@@ -268,8 +268,8 @@ The daemon is managed automatically. For manual control:
 
 ```bash
 # The daemon starts automatically when needed
-# To force shutdown, kill the cru-server process
-pkill -f "cru-server"
+# To force shutdown:
+cru daemon stop
 ```
 
 ## Tips
@@ -277,5 +277,5 @@ pkill -f "cru-server"
 1. **Secure API keys**: Use `{env:VAR}` syntax so secrets never appear in config files
 2. **Use file references** for shared configs: `gateway = "{file:mcps.toml}"`
 3. **Test your config**: Run `cru config show` to see effective configuration
-4. **Validate**: Run `cru config validate` to check for errors
+4. **Verify**: Use `cru config show` to confirm your changes took effect
 5. **Use daemon mode** if you frequently run multiple cru commands at once

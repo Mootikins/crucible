@@ -12,7 +12,7 @@ export default defineConfig({
 		starlight({
 			title: '⚗️ Crucible',
 			description:
-				'A local-first AI assistant where every conversation becomes a searchable note.',
+				'A knowledge-grounded agent runtime. Agents that draw from a knowledge graph make better decisions.',
 			social: [
 				{
 					icon: 'github',
@@ -35,10 +35,11 @@ export default defineConfig({
 					label: 'Core Concepts',
 					items: [
 						{ slug: 'help/concepts/kilns' },
-						{ slug: 'help/concepts/plaintext-first' },
-						{ slug: 'help/wikilinks' },
+						{ slug: 'help/concepts/precognition' },
 						{ slug: 'help/concepts/the-knowledge-graph' },
 						{ slug: 'help/concepts/semantic-search' },
+						{ slug: 'help/concepts/plaintext-first' },
+						{ slug: 'help/wikilinks' },
 						{ slug: 'help/core/sessions' },
 						{ slug: 'help/frontmatter' },
 						{ slug: 'help/tags' },

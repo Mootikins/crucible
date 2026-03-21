@@ -938,7 +938,7 @@ oil.either(has_data,
 
 ## Examples
 
-See [`examples/plugins/custom-ui.lua`](https://github.com/Mootikins/crucible/tree/master/examples/plugins/custom-ui.lua) for comprehensive examples including:
+See [`examples/plugins/custom-ui.lua`](../../../examples/plugins/custom-ui.lua) for comprehensive examples including:
 
 - Chat interface with messages and tool calls
 - Dashboard with cards and statistics
@@ -951,6 +951,6 @@ See [`examples/plugins/custom-ui.lua`](https://github.com/Mootikins/crucible/tre
 
 ## See Also
 
-- [Plugin System Overview](../extending/creating-plugins/)
-- [Lua Scripting Guide](../concepts/scripting-languages/)
-- [Example Plugins](https://github.com/Mootikins/crucible/tree/master/examples/plugins)
+- [Plugin System Overview](./Plugins.md)
+- [Lua Scripting Guide](../Concepts/Scripting%20Languages.md)
+- [Example Plugins](../../../examples/plugins/)

@@ -57,7 +57,7 @@ impl MyHandler {
 Handles database persistence:
 
 ```rust
-// From crucible-surrealdb/src/event_handlers/storage_handler.rs
+// From crucible-sqlite/src/event_handlers/storage_handler.rs
 
 pub struct StorageHandler {
     store: Arc<EAVGraphStore>,

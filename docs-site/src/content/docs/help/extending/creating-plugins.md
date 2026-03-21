@@ -208,10 +208,10 @@ When a plugin tries a non-whitelisted command, the user is prompted to allow or 
 
 Common commands (`git`, `cargo`, `npm`, `docker`, etc.) are whitelisted by default.
 
-### Workspace Shell Policy
+### Project Shell Policy
 
 ```toml
-# .crucible/workspace.toml
+# .crucible/project.toml
 [security.shell]
 whitelist = ["aws", "terraform"]  # Allow these commands
 blacklist = ["docker run"]         # Block these (prefix match)
@@ -289,6 +289,259 @@ end
 
 See [Scripted UI](./scripted-ui/) for the `cru.oil` API.
 
+## Testing Plugins
+
+Crucible ships a built-in test runner based on `describe`/`it` blocks. Tests live in a `tests/` directory inside your plugin and follow the `*_test.lua` naming convention.
+
+### Writing Tests
+
+```lua
+-- tests/init_test.lua
+
+describe("tasks_list", function()
+    local plugin = require("init")
+
+    before_each(function()
+        test_mocks.setup({
+            kiln = {
+                search = function() return {} end,
+            },
+        })
+    end)
+
+    after_each(function()
+        test_mocks.reset()
+    end)
+
+    it("returns empty list when no tasks exist", function()
+        local result = plugin.tools.tasks_list.fn({ file = "nonexistent.md" })
+        assert.equal(result.count, 0)
+    end)
+
+    it("filters completed tasks when show_completed is false", function()
+        local result = plugin.tools.tasks_list.fn({
+            file = "TASKS.md",
+            show_completed = false,
+        })
+        assert.equal(type(result.tasks), "table")
+    end)
+end)
+```
+
+### Running Tests
+
+```bash
+# Test a specific plugin
+cru plugin test path/to/my-plugin
+
+# Filter to specific tests
+cru plugin test path/to/my-plugin --filter "tasks_list"
+
+# Verbose output
+cru plugin test path/to/my-plugin --verbose
+```
+
+### Assert API
+
+The test runner provides a rich assertion library:
+
+```lua
+assert.equal(actual, expected)       -- Strict equality (==)
+assert.deep_equal(actual, expected)  -- Deep table comparison
+assert.truthy(value)                 -- Not nil and not false
+assert.falsy(value)                  -- nil or false
+assert.error(function()              -- Expects the function to throw
+    error("boom")
+end)
+```
+
+### Mocking Crucible APIs
+
+Tests run in a sandbox where `cru.*` APIs are replaced with mocks. Use `test_mocks` to configure what the mocks return:
+
+```lua
+before_each(function()
+    test_mocks.setup({
+        kiln = {
+            search = function(query)
+                return {
+                    { title = "Note 1", score = 0.9 },
+                    { title = "Note 2", score = 0.7 },
+                }
+            end,
+        },
+        http = {
+            get = function(url)
+                return { status = 200, body = '{"ok": true}' }
+            end,
+        },
+    })
+end)
+
+after_each(function()
+    test_mocks.reset()
+end)
+```
+
+After a test runs, you can inspect what the mocks recorded:
+
+```lua
+it("calls search with the right query", function()
+    plugin.tools.my_search.fn({ query = "rust" })
+    local calls = test_mocks.get_calls("kiln", "search")
+    assert.equal(#calls, 1)
+    assert.equal(calls[1][1], "rust")
+end)
+```
+
+### Pending Tests
+
+Mark tests you plan to write later with `pending`:
+
+```lua
+pending("should handle unicode task names")
+```
+
+These show up in the test output as skipped, not failed.
+
+## Health Checks
+
+Health checks let your plugin report its own status. They're useful for verifying that dependencies exist, APIs are reachable, and configuration is valid.
+
+### Writing health.lua
+
+Create a `health.lua` file in your plugin directory:
+
+```lua
+-- health.lua
+
+local function check()
+    cru.health.start("my-plugin")
+
+    -- Verify required APIs
+    if cru.kiln then
+        cru.health.ok("Kiln API available")
+    else
+        cru.health.error("Kiln API missing", {
+            "Ensure the plugin has 'kiln' in its capabilities",
+        })
+    end
+
+    -- Check configuration
+    local config = cru.config and cru.config.get("my-plugin")
+    if config and config.api_key then
+        cru.health.ok("API key configured")
+    else
+        cru.health.warn("No API key set", {
+            "Set api_key in plugin config for full functionality",
+        })
+    end
+
+    -- Informational
+    cru.health.info("Using default cache size (100)")
+
+    return cru.health.get_results()
+end
+
+return { check = check }
+```
+
+### Health API
+
+Four reporting levels, each with an optional advice table:
+
+| Function | Effect | Use For |
+|----------|--------|---------|
+| `cru.health.ok(msg)` | Pass | Confirming something works |
+| `cru.health.warn(msg, advice?)` | Warning | Non-critical issues |
+| `cru.health.error(msg, advice?)` | Fail (sets `healthy = false`) | Missing requirements |
+| `cru.health.info(msg)` | Informational | Version info, config values |
+
+### Running Health Checks
+
+```bash
+# Check a specific plugin
+cru plugin health path/to/my-plugin
+
+# Check all installed plugins
+cru plugin health
+```
+
+The output groups results by plugin and highlights errors and warnings.
+
+## Hot Reload
+
+During development, you don't need to restart Crucible every time you change a plugin file.
+
+### Manual Reload
+
+From the TUI, use the `:reload` command:
+
+```
+:reload my-plugin    # Reload a specific plugin
+:reload              # Reload all plugins
+```
+
+Crucible clears the plugin's module cache, re-reads the source files, and re-registers tools and hooks. If the reload fails (syntax error, missing dependency), the previous version stays active and you'll see an error notification.
+
+### Automatic File Watching
+
+Enable watch mode in `crucible.toml` to reload plugins whenever their files change on disk:
+
+```toml
+[plugins]
+watch = true
+```
+
+With this enabled, saving a `.lua` or `.fnl` file inside any plugin directory triggers an automatic reload. Changes are debounced per-plugin, so rapid saves don't cause repeated reloads.
+
+Watch mode pairs well with a split terminal: editor on one side, Crucible TUI on the other. Save your file, see the effect immediately.
+
+## IDE Setup
+
+Type-aware editors (VS Code, Neovim with lua-language-server, etc.) can provide autocompletion and diagnostics for the `cru.*` API if you generate stub files.
+
+### Generating Stubs
+
+```bash
+# Generate to the default location (~/.config/crucible/stubs/)
+cru plugin stubs
+
+# Generate to a custom directory
+cru plugin stubs --output ./my-stubs/
+```
+
+This creates a `cru.lua` stub file with type annotations for every module in the Crucible Lua API (`cru.kiln`, `cru.health`, `cru.shell`, etc.) and a `cru-docs.json` companion with documentation metadata.
+
+### Configuring lua-language-server
+
+Add a `.luarc.json` to your plugin directory (or your kiln root):
+
+```json
+{
+    "workspace.library": [
+        "~/.config/crucible/stubs"
+    ],
+    "runtime.version": "Lua 5.4",
+    "diagnostics.globals": [
+        "cru",
+        "describe",
+        "it",
+        "before_each",
+        "after_each",
+        "pending",
+        "test_mocks"
+    ]
+}
+```
+
+The `cru plugin new` scaffold command generates this file automatically. If you're adding it to an existing plugin, the key parts are:
+
+- **workspace.library** points to wherever you generated stubs
+- **diagnostics.globals** suppresses "undefined global" warnings for the test runner and `cru` API
+
+After this, your editor should offer completions for `cru.kiln.search(`, `cru.health.ok(`, and all other API surfaces.
+
 ## Best Practices
 
 1. **One concern per plugin** - Keep plugins focused
@@ -298,6 +551,9 @@ See [Scripted UI](./scripted-ui/) for the `cru.oil` API.
 5. **Provide param descriptions** - Help agents understand your tools
 6. **Minimize shell usage** - Prefer Crucible APIs over shelling out
 7. **Declare capabilities** - Only request what you need in manifest
+8. **Write tests** - Use `describe`/`it` blocks in a `tests/` directory
+9. **Add health checks** - Help users diagnose configuration problems
+10. **Generate stubs** - Run `cru plugin stubs` for editor autocompletion
 
 ## Example: Tasks Plugin
 

@@ -1,5 +1,6 @@
 ---
 title: "Lua Configuration"
+description: "Documentation note for Configuration."
 ---
 
 Crucible loads Lua configuration from `~/.config/crucible/init.lua` at startup. This file can configure the TUI, define keybindings, and customize behavior.
@@ -62,7 +63,7 @@ cru.emitter.new()    -- Event emitter (:on, :once, :off, :emit)
 cru.check            -- Argument validation (.string, .number, .boolean, .table, .func, .one_of)
 cru.spawn(fn)        -- Spawn async task (daemon context only, requires send feature)
 
--- Daemon-side modules (available when running as a plugin in cru-server)
+-- Daemon-side modules (available when running as a plugin in the daemon)
 cru.sessions         -- Session management: create, get, list, send_message, subscribe, etc.
 
 -- Legacy aliases (still work)

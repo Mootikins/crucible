@@ -159,4 +159,4 @@ OpenRouter charges per-token based on the upstream model's pricing. Check your u
 
 - [Getting Started Guide](./getting-started/)
 - [GitHub Copilot Setup](./github-copilot-setup/)
-- LLM Providers Reference
+- [LLM Providers Reference](../help/config/llm-providers/)

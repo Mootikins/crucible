@@ -1,5 +1,6 @@
 ---
 title: "Shell Execution"
+description: "Documentation note for Shell Execution."
 ---
 
 Crucible's TUI allows you to execute shell commands directly and optionally share their output with the AI agent.
