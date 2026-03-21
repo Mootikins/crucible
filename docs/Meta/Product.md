@@ -19,13 +19,12 @@ tags:
 
 ## Vision
 
-**"Neovim for agents+notes"** — extensible, open, documented
+A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph make better decisions — memory and knowledge are too fundamental to be an afterthought. Your notes, sessions, and wikilinks form that graph. Everything beyond the knowledge core is extensible.
 
-A knowledge management system where:
-- AI agents have perfect context from your kiln
-- Workflows are defined in markdown and executed by agents
-- Everything is extensible via Lua scripting and hooks
-- Power users get CLI, everyone else gets web/desktop UI eventually
+- **Knowledge + Agents** — the core. Agents draw from and contribute to a knowledge graph. [[Help/Concepts/Precognition|Precognition]] injects relevant context before every turn. Sessions persist as linked notes. The more you use it, the smarter it gets.
+- **PKM as input** — notes, wikilinks, tags, and sessions-as-notes are how knowledge enters the system. Not an add-on; essential infrastructure.
+- **Neovim-like architecture** — Lua extensibility, TUI-first, headless daemon with RPC, plugin-driven. Most behaviors beyond the knowledge core can be scripted.
+- **Plaintext-first** — you own everything as markdown files. The daemon is an implementation detail. Simple at rest, powerful when running.
 
 ## User Progression
 
@@ -112,12 +111,12 @@ A knowledge management system where:
 - [x] **File Attachment** `P0` — `@file` context attachment in chat · `crucible-cli`
 - [x] **Rules Files** `P0` — Project-level AI instructions (`.crucible/rules`) · [[Help/Rules Files]] · `crucible-config`
 
-### Core Agent Features (Toggleable via `:set`)
+### Core Agent Features
 
-> Core capabilities implemented in Rust for performance and reliability, toggleable like precognition (`:set autolink`, `:set noprecognition`). These expose hook points that Lua plugins can intercept and override. `:plugins` shows both core and Lua plugins in a unified view.
+> Core capabilities implemented in Rust. Precognition is toggleable via `:set precognition`. Other features are callable RPCs. Future: expose as toggleable session config with hook points for Lua override.
 
 - [x] **Precognition** `P0` — Auto-RAG: inject relevant kiln context before each agent turn; `:set precognition`; the core differentiator — every conversation is knowledge-graph-aware · `crucible-cli`, `crucible-acp`
-- [ ] **Auto-Linking** `P1` — Detect unlinked mentions of existing notes in agent output and conversation; suggest or apply wikilinks; emits `autolink:suggest` events for Lua override; `:set autolink` · `crucible-core`, `crucible-daemon`
+- [x] **Auto-Linking** `P1` — `suggest_links` RPC detects unlinked mentions of existing notes in text via word-boundary matching; case-insensitive, skips already-linked targets · `crucible-daemon`
 - [ ] **Team Patterns** `P1` — Multi-agent orchestration primitives in core Rust; supervisor (decompose → delegate → synthesize), router (route to specialist by topic), broadcast (parallel, gather perspectives); builds on existing subagent spawning infrastructure; `:set team.default_pattern=supervisor` · `crucible-daemon`
 
 ### Lua Session API
@@ -130,10 +129,10 @@ A knowledge management system where:
 
 - [x] **`cru.tools.call(name, args)`** `P1` — Programmatic tool calling from Lua; returns results synchronously; respects session permission scope; the bridge between "plugins that react" and "plugins that do intelligent work" · `crucible-lua`, `crucible-daemon` (tools)
 - [x] **`cru.tools.batch({...})`** `P1` — Concurrent multi-tool calls; `batch({{"semantic_search", {query="X"}}, {"list_notes", {tag="Y"}}})` runs in parallel via async runtime; essential for digest/summarization plugins · `crucible-lua`, `crucible-daemon` (tools)
-- [ ] **`session.messages()`** `P1` — Read conversation history from Lua; enables context windowing, summarization, checkpoint detection · `crucible-lua`
-- [ ] **`session.inject(role, content)`** `P1` — Insert messages mid-conversation; enables fan-out result collection, context injection at checkpoints · `crucible-lua`
+- [x] **`cru.sessions.messages(id, opts)`** `P1` — Read conversation history from Lua; opts: `{role, limit}`; enables context windowing, summarization, checkpoint detection · `crucible-lua`, `crucible-daemon`
+- [x] **`cru.sessions.inject(id, role, content)`** `P1` — Insert messages mid-conversation via `session.inject_context` RPC; requires session_id as first param; persists to session log and emits broadcast event · `crucible-lua`, `crucible-daemon`
 - [ ] **`session.fork()`** `P1` — Branch conversation state; enables parallel exploration, A/B approach testing · `crucible-lua`
-- [ ] **`subagent.collect(ids)`** `P1` — Await multiple subagents and collect results; enables fan-out patterns · `crucible-lua`
+- [x] **`cru.sessions.collect_subagents(ids, timeout?)`** `P1` — `subagent.collect` RPC + Lua API; await multiple subagents with optional timeout · `crucible-lua`, `crucible-daemon`
 
 ### In Progress / Planned
 - [x] **MCP Tool System** `P0` — Permission prompts via `PermissionGate` trait, ACP integration, `McpProxyTool` injection · `crucible-daemon` (tools), `crucible-acp`
@@ -230,11 +229,11 @@ A knowledge management system where:
 
 - [ ] **LuaCATS Type Stubs** `P1` — Generate `---@meta` files from Rust API surface (`cru.fs`, `cru.session`, `cru.http`, etc.); ship with binary, write to `~/.config/crucible/luals/`; enables IDE autocomplete and type checking via LuaLS · `crucible-lua`
 - [x] **Plugin Hot Reload** `P1` — `:reload <plugin>` command; invalidate `package.loaded`, re-require, re-extract services; `plugin.reload` RPC + `plugin.list` RPC · `crucible-lua`, `crucible-daemon`, `crucible-cli`
-- [ ] **`:lua` REPL** `P1` — Evaluate Lua expressions in running daemon context; `=expr` prints result (Neovim pattern); inspect plugin state, test API calls, debug interactively · `crucible-cli`, `crucible-lua`
-- [ ] **`cru plugin new`** `P1` — Scaffold plugin from template: `plugin.yaml`, `init.lua` with annotated example tool, `.luarc.json` for LuaLS, optional `tests/` directory; symlinks into plugin path · `crucible-cli`
-- [ ] **Clean Error Messages** `P1` — `xpcall` wrapper strips Rust FFI frames from stack traces; errors include plugin name + file path + line number; user sees `Error in 'discord' at responder.lua:42` not raw mlua backtrace · `crucible-lua`
-- [ ] **Plugin Test Harness** `P2` — `cru plugin test <name>` runs plugin tests with mock `cru.*` API; busted-compatible test runner; enables CI for plugins · `crucible-lua`, `crucible-cli`
-- [ ] **`.luarc.json` Generation** `P2` — `cru plugin new` and `cru plugin init` emit LuaLS config pointing to type stubs; zero-config IDE setup · `crucible-cli`
+- [x] **`:lua` REPL** `P1` — `lua.eval` RPC + `cru lua` CLI command; `=expr` prints result (Neovim pattern); inspect plugin state, test API calls · `crucible-cli`, `crucible-daemon`
+- [x] **`cru plugin new`** `P1` — Scaffold plugin from template: `plugin.yaml`, `init.lua`, `health.lua`, `.luarc.json`, `tests/` directory · `crucible-cli`
+- [x] **Clean Error Messages** `P1` — `format_lua_error()` strips Rust FFI frames from stack traces; errors include plugin name + file path + line number · `crucible-lua`
+- [-] **Plugin Test Harness** `P2` — `cru plugin test <name>` runs plugin tests with mock `cru.*` API; busted-compatible test runner; enables CI for plugins · `crucible-lua`, `crucible-cli`
+- [x] **`.luarc.json` Generation** `P2` — `cru plugin new` and `cru plugin init` emit LuaLS config pointing to type stubs; zero-config IDE setup · `crucible-cli`
 
 ### Plugin Abstractions (Planned)
 
@@ -317,7 +316,7 @@ Crucible acts as an **ACP host**, spawning and controlling external AI agents (C
 
 ### Install & Onboarding (P0 — #1 adoption blocker)
 
-- [x] **One-Line Install** `P0` — Pre-built binaries via GitHub Releases (linux x86_64/aarch64, macOS Intel/Apple Silicon); `curl|sh`, `brew install mootikins/crucible/crucible`, `cargo binstall crucible-cli`; target: working `cru` binary in <60 seconds · `crucible-cli`
+- [x] **One-Line Install** `P0` — Pre-built binaries via GitHub Releases (linux x86_64/aarch64, macOS Intel/Apple Silicon); `curl|sh`, `brew install mootikins/crucible/crucible` (external tap), `cargo binstall crucible-cli`; target: working `cru` binary in <60 seconds · `crucible-cli`
 - [x] **Precognition Default-On** `P0` — Changed default from opt-in to on; the knowledge-graph-aware context is the core differentiator · `crucible-cli`
 
 ### HTTP Gateway (P1 — platform layer for everything external)
@@ -336,8 +335,8 @@ HTTP Gateway (crucible-web wired to daemon)
 - [x] **SSE/WebSocket Event Bridge** `P1` — Subscribe to daemon session events, stream to HTTP clients via SSE; `EventBroker` fans out per-session events · `crucible-web`
 - [x] **Chat HTTP API** `P1` — `POST /api/chat/send` + `GET /api/chat/events/:session_id` SSE stream; `POST /api/session`, `/list`, `/:id/pause`, `/:id/resume`, `/:id/end` · `crucible-web`
 - [x] **Search HTTP API** `P1` — `POST /api/search/vectors`; `GET /api/notes`, `GET /api/notes/:name`; `GET /api/kilns` · `crucible-web`
-- [ ] **API Auth** `P1` — Bearer token or API key auth; required the moment the gateway is exposed beyond localhost · `crucible-web`
-- [ ] **Webhook API** `P1` — `POST /api/webhook/:name` triggers named Lua handlers; enables GitHub webhooks, calendar events, IFTTT/Zapier/n8n integration; enriches payloads with kiln context (uniquely Crucible) · `crucible-web`, `crucible-lua`
+- [x] **API Auth** `P1` — Bearer token middleware with auto-generated key; localhost bypass; `~/.config/crucible/api_key` persistence · `crucible-web`, `crucible-config`
+- [x] **Webhook API** `P1` — `POST /api/webhook/:name` receives payloads, broadcasts `webhook:received` event for Lua handlers; enables GitHub webhooks, IFTTT/Zapier/n8n integration · `crucible-web`, `crucible-daemon`
 
 ### Messaging Integrations (P1 — meet users where they are)
 
@@ -361,7 +360,7 @@ HTTP Gateway (crucible-web wired to daemon)
 > OpenClaw's most praised feature was the heartbeat — the agent reaching out unprompted. Crucible can do this better because it has a knowledge graph, not flat memory. Heartbeat is time-based; webhook triggers are event-driven — Crucible can do both.
 
 - [ ] **Kiln Digest** `P2` — Periodic scan of recent kiln changes; surface missed connections ("You wrote about X in two notes this week — want me to link them?"); delivered via messaging integration or TUI notification · `crucible-daemon`, `crucible-lua`
-- [ ] **Scheduled Lua Hooks** `P2` — Cron-style callbacks for Lua plugins; enables daily briefings, orphan note detection, task reminders from `- [ ]` items · `crucible-lua`, `crucible-daemon`
+- [x] **Scheduled Lua Hooks** `P2` — `cru.schedule({every=N}, fn)` interval-based callbacks with `cru.schedule.cancel(handle)`; enables periodic digests and task reminders · `crucible-lua`, `crucible-daemon`
 - [ ] **Daily Briefing Plugin** `P2` — Reference plugin: summarize recent kiln changes, pending tasks, orphaned notes; delivered via messaging or shown on TUI startup · `crucible-lua`
 
 ### Default Runtime Plugins (P1 — Neovim-style bundled plugins)
@@ -377,7 +376,7 @@ HTTP Gateway (crucible-web wired to daemon)
 >
 > Same-named user plugin at any higher path **shadows** the runtime version. `:plugins` shows provenance: `[core]`, `[runtime]`, `[user]`, `[kiln]`.
 
-- [ ] **Runtime Plugin Infrastructure** `P1` — `$CRUCIBLE_RUNTIME/plugins/` path added to plugin discovery; provenance tracking in `:plugins` display; shadow-by-name semantics · `crucible-lua`, `crucible-cli`
+- [x] **Runtime Plugin Infrastructure** `P1` — `$CRUCIBLE_RUNTIME/plugins/` path with `PluginSource` provenance tracking; `plugin.list` RPC includes source/version; shadow-by-name semantics · `crucible-lua`, `crucible-daemon`
 - [ ] **`entity-memory` Runtime Plugin** `P1` — Extract entities/facts from conversations → atomic zettelkasten notes; wikilinks to source sessions; deduplicates against existing entity notes · `runtime/entity-memory/`
 - [ ] **`session-digest` Runtime Plugin** `P1` — Summarize completed sessions → linked notes; captures decisions, topics, entities; wikilinks to entity and source notes · `runtime/session-digest/`
 

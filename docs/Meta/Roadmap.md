@@ -16,21 +16,17 @@ tags:
 
 ## Vision
 
-**"Neovim for agents+notes"** — extensible, open, documented
+> See [[Meta/Product#Vision]] for the full vision statement.
 
-A knowledge management system where:
-- AI agents have perfect context from your kiln
-- Workflows are defined in markdown and executed by agents
-- Everything is extensible via Lua scripting and hooks
-- Power users get CLI, everyone else gets web/desktop UI eventually
+A knowledge-grounded agent runtime — agents that draw from a knowledge graph make better decisions. Neovim-like architecture: Lua extensibility, TUI-first, headless daemon with RPC, plugin-driven.
 
 ## User Progression
 
 | Phase | Users | Interface |
 |-------|-------|-----------|
 | Now | Power users, developers | CLI (chat-focused) |
-| Next | Plugin creators, agent developers | CLI + Lua scripting |
-| Later | Non-technical users | Web UI, Tauri desktop |
+| Next | Plugin creators, agent developers | CLI + Lua scripting + messaging integrations |
+| Later | Broader audience, mobile users | Web PWA (self-hosted via Tailscale/Cloudflare Tunnel) |
 
 ---
 

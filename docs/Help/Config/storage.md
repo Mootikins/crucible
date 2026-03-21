@@ -1,6 +1,6 @@
 ---
 title: storage
-description: Configuration reference for Crucible storage backends
+description: Configuration reference for Crucible storage
 tags:
   - help
   - config
@@ -9,50 +9,39 @@ tags:
 
 # Storage Configuration
 
-Configure where and how Crucible stores your data.
+Crucible uses a **daemon-backed storage architecture**. All storage operations go through the daemon, which manages SQLite and LanceDB internally.
 
-## Default Storage
+## How It Works
 
-By default, Crucible uses **SQLite** - fast, lightweight, and recommended for most users.
+The daemon is the only storage backend. It starts automatically on first use via `DaemonClient::connect_or_start()` and manages all data access.
 
 Data is stored in:
-- `<kiln_path>/.crucible/crucible-sqlite.db` (in your kiln)
-- Or `~/.local/share/crucible/` (Linux) / `~/Library/Application Support/crucible/` (macOS)
+- `<kiln_path>/.crucible/crucible-sqlite.db` (notes, metadata, FTS index)
+- `<kiln_path>/.crucible/lance/` (vector embeddings)
 
-## Storage Modes
-
-```toml
-[storage]
-# Storage mode: "sqlite" (default), "daemon", or "lightweight"
-mode = "sqlite"
-```
-
-| Mode | Description | Use Case |
-|------|-------------|----------|
-| `sqlite` | SQLite database (default) | Most users, single-user |
-| `daemon` | Connect to crucible-daemon | Multi-client, cloud |
-| `lightweight` | Minimal mode with LanceDB | Testing, CI |
-
-## SQLite (Default)
-
-No configuration needed - just works:
+## Configuration
 
 ```toml
 [storage]
-mode = "sqlite"
+# Seconds of inactivity before daemon auto-shuts down (default: 300)
+idle_timeout_secs = 300
 ```
 
-## Daemon Mode
+## Daemon Socket
 
-Connect to the daemon for multi-client support (auto-started on first use):
+The daemon listens on a Unix socket, resolved in order:
 
-```toml
-[storage]
-mode = "daemon"
-# Socket auto-detected from $CRUCIBLE_SOCKET or $XDG_RUNTIME_DIR/crucible.sock
-# Only set explicitly if using a custom socket path:
-# daemon_socket = "/tmp/crucible.sock"
-```
+1. `$CRUCIBLE_SOCKET` environment variable
+2. `$XDG_RUNTIME_DIR/crucible.sock`
+3. `/tmp/crucible.sock`
+
+## Backward Compatibility
+
+Old `storage.mode` values (`sqlite`, `lightweight`, `daemon`) are silently accepted but have no effect. The daemon is always used. Remove `storage.mode` from your config to avoid the deprecation warning.
+
+## Source of Truth
+
+The database is derived data — a cache built from your markdown files. You can delete `.crucible/crucible-sqlite.db` and rebuild with `cru process --force` at any time.
 
 ## See Also
 

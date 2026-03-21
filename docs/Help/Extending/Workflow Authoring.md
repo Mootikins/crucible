@@ -1,7 +1,7 @@
 ---
 title: Workflow Authoring
 description: How to create custom workflows in Crucible
-status: implemented
+status: planned
 tags:
   - extending
   - workflows
@@ -12,9 +12,9 @@ aliases:
 
 # Workflow Authoring
 
-Create automated workflows that combine multiple operations.
+> **⚠️ Planned Feature**: This feature is not yet implemented. The documentation below describes the intended design.
 
-> [!warning] A new prose-based workflow syntax is planned. See [[Help/Workflows/Markup]].
+Create automated workflows that combine multiple operations.
 
 ## Overview
 

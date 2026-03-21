@@ -15,14 +15,14 @@ Welcome to Crucible! This guide will help you install, configure, and run your f
 
 ## What is Crucible?
 
-Crucible is a plaintext-first knowledge management system that combines markdown files with powerful semantic search, graph traversal, and AI agent integration. Your notes stay in markdown files that work with any text editor, while Crucible builds a rich knowledge graph from your wikilinks, tags, and frontmatter.
+Crucible is a knowledge-grounded agent runtime — agents that draw from a knowledge graph make better decisions. Your notes, conversations, and wikilinks form a living knowledge graph that grows over time. Agents draw from this graph automatically via [[Help/Concepts/Precognition|Precognition]], and everything beyond the knowledge core is extensible via Lua scripting and plugins.
 
 **Key Features:**
-- Markdown files are your source of truth
-- Semantic search at block (paragraph/heading) level
-- Wikilink-based knowledge graph
-- AI agent integration via Model Context Protocol (MCP)
-- Incremental processing with hash-based change detection
+- **Knowledge-grounded agents** — Precognition auto-injects relevant context before each LLM turn
+- **Sessions are notes** — every conversation persists as searchable, linkable markdown
+- **Wikilink-based knowledge graph** with block-level semantic search
+- **Neovim-like architecture** — Lua/Fennel plugins, TUI-first, headless daemon with RPC
+- **Plaintext first** — markdown files are your source of truth, no lock-in
 
 ## Prerequisites
 

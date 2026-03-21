@@ -4,17 +4,13 @@
 
 ## Project Overview
 
-**Crucible** is a local-first AI assistant where every conversation becomes a searchable note. It combines:
-- **Agent chat** with session persistence as markdown
-- **Knowledge graph** from wikilinks with semantic search
-- **Lua plugins** with Fennel support
-- **MCP server** for external agent integration
+**Crucible** is a knowledge-grounded agent runtime. Agents that draw from a knowledge graph make better decisions — memory and knowledge are too fundamental to be an afterthought. Your notes, sessions, and wikilinks form that graph. Everything beyond the knowledge core is extensible.
 
-**Core Principles:**
-- Plaintext first — markdown files are source of truth
-- Sessions as notes — conversations saved to your kiln
-- Lua extensibility — write plugins in Lua or Fennel
-- Capability-based LLM providers — swap backends freely
+**Core Pillars:**
+- **Knowledge + Agents** — agents draw from and contribute to a knowledge graph; Precognition injects relevant context before every turn
+- **PKM as input** — notes, wikilinks, tags, and sessions-as-notes are how knowledge enters the system
+- **Neovim-like architecture** — Lua extensibility, TUI-first, headless daemon with RPC, plugin-driven
+- **Plaintext-first** — markdown files are source of truth; swap LLM backends freely
 
 ## Architecture
 
@@ -28,7 +24,7 @@
 | `crucible-web` | Browser chat UI (SolidJS + Axum) | HTTP/SSE endpoints |
 | `crucible-sqlite` | SQLite storage (default); fast, lightweight; includes query/ module | `SqliteStorage` |
 | `crucible-lua` | Lua/Luau with Fennel support | `LuaExecutor`, `FennelCompiler` |
-| `crucible-llm` | Embedding backends (FastEmbed only) | `EmbeddingBackend` |
+| `crucible-llm` | Embedding backends (FastEmbed, Ollama, OpenAI) | `EmbeddingProvider` |
 | `crucible-config` | Configuration types and loading | `AppConfig`, provider configs |
 | `crucible-acp` | Agent Context Protocol | Protocol types |
 | `crucible-daemon` | Daemon server (library); includes enrichment pipeline, note processing, RPC client, observability, file watching, skills discovery, and tools (absorbed from crucible-tools) | `Server`, `SessionManager`, `AgentManager` |
@@ -160,15 +156,20 @@ use crucible_sqlite::query::{SqlSugarSyntax, JaqSyntax};
 ```
 Provider (base trait)
    ├── CanEmbed (embedding generation)
-   ├── CanChat (chat completions)
-   └── CanConstrainGeneration (grammar/schema constraints)
+   └── CanChat (chat completions)
 ```
 
-| Backend | Embeddings | Chat | Constrained | Feature Flag |
-|---------|------------|------|-------------|--------------|
-| Ollama | Yes | Yes | No | default |
-| OpenAI | Yes | Yes | JSON Schema | default |
-| FastEmbed | Yes | No | No | `fastembed` |
+| Backend | Embeddings | Chat | Feature Flag |
+|---------|------------|------|--------------|
+| Ollama | Yes | Yes | default |
+| OpenAI | Yes | Yes | default |
+| Anthropic | No | Yes | default |
+| Cohere | No | Yes | default |
+| VertexAI | No | Yes | default |
+| OpenRouter | No | Yes | default |
+| GitHubCopilot | No | Yes | default |
+| ZAI | No | Yes | default |
+| FastEmbed | Yes | No | `fastembed` |
 
 ### Systems
 

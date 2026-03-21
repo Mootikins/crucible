@@ -1,7 +1,7 @@
 ---
 title: Task Management
 description: Track implementation tasks using structured markdown files
-status: planned
+status: implemented
 tags:
   - reference
   - tasks
@@ -12,11 +12,7 @@ aliases:
   - Task Files
 ---
 
-> **⚠️ Planned Feature**: This feature is not yet implemented. The documentation below describes the intended design.
-
 # Task Management
-
-> **Status**: This feature is planned as an official Lua plugin. It will demonstrate programmatic tool generation, file-as-state patterns, and the tools→workflow bridge.
 
 Task management in Crucible uses structured markdown files (typically `TASKS.md`) to track implementation plans. The file format is designed for both human readability and machine parsing.
 
@@ -93,9 +89,9 @@ Task IDs follow the pattern: `{phase}.{section}.{task}`
 - Phase 1, Section 1, Task 1: `1.1.1`
 - Phase 2, Section 3, Task 2: `2.3.2`
 
-## Planned CLI Commands
+## CLI Commands
 
-The `cru tasks` command will provide operations on TASKS.md files:
+The `cru tasks` command provides operations on TASKS.md files:
 
 ```bash
 # List all tasks with status
@@ -124,36 +120,9 @@ Tasks with `[deps:: ...]` metadata won't be available until all dependencies are
 - [ ] Add caching layer [id:: 1.1.3] [deps:: 1.1.2]          # Not available yet
 ```
 
-## Plugin Architecture
+## Implementation
 
-This feature will be implemented as an official Lua plugin, demonstrating:
-
-1. **Programmatic tool generation**: Tools are generated at initialization based on the TASKS.md format
-2. **File-as-state**: No runtime state—the markdown file is the source of truth
-3. **Tools→workflow bridge**: Individual task tools compose into a workflow
-
-### Planned Plugin Structure
-
-```
-Scripts/
-└── tasks/
-    ├── init.lua           # Main plugin with tool generators
-    ├── parser.lua         # TASKS.md format parser
-    └── README.md          # Usage documentation
-```
-
-### Tool Generation Pattern
-
-```lua
--- At initialization, generate tools from task format
-function on_init(ctx)
-    -- Register task management tools
-    ctx:register_tool("tasks_list", tasks_list_handler)
-    ctx:register_tool("tasks_next", tasks_next_handler)
-    ctx:register_tool("tasks_pick", tasks_pick_handler)
-    ctx:register_tool("tasks_done", tasks_done_handler)
-end
-```
+Task management is implemented as a built-in CLI command in `crates/crucible-cli/src/commands/tasks.rs`, with parsing support in `crucible-core`.
 
 ## Context Optimization
 
