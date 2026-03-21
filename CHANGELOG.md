@@ -7,7 +7,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-03-08
+### Added
+- **Plugin install**: `plugins.toml` declaration + git bootstrap on daemon startup; `cru plugin add/remove/update` CLI commands
+- **LuaCATS auto-ship**: Type stubs auto-generated at `~/.config/crucible/luals/` on daemon start for IDE autocomplete
+- **Declarative schedules**: `[[schedules]]` section in `crucible.toml` with human-readable intervals (`1h`, `30m`, `5s`)
+- **Fuzzy finder**: nucleo-backed fuzzy matching replaces substring filtering in all autocomplete; `:pick` command for full-screen picker
+- **`session.fork`**: RPC method + `cru.sessions.fork(id, opts)` Lua API to branch conversations
+- **`session.messages`**: `cru.sessions.messages(id, opts)` Lua API to read conversation history with role/limit filtering
+- **`session.inject`**: `cru.sessions.inject(id, role, content)` inserts messages into live session context
+- **`subagent.collect`**: `cru.sessions.collect_subagents(ids, timeout?)` awaits multiple subagents with shared deadline
+- **`lua.eval`** RPC + `cru lua` CLI command with `=expr` Neovim convention
+- **Auto-linking**: `suggest_links` RPC detects unlinked note mentions via word-boundary matching
+- **Webhook API**: `POST /api/webhook/:name` receives payloads, broadcasts `webhook:received` event for Lua handlers
+- **API auth**: Bearer token middleware with auto-generated key (`~/.config/crucible/api_key`), constant-time comparison, localhost bypass with X-Forwarded-For awareness
+- **Scheduled Lua hooks**: `cru.schedule({every=N}, fn)` with `cru.schedule.cancel(handle)` and 256-schedule limit
+- **Runtime plugin infrastructure**: `PluginSource` provenance tracking (user/runtime/kiln/env-path); `plugin.list` RPC includes source/version
+- **Clean Lua error messages**: `format_lua_error()` strips FFI frames, prepends `[plugin_name]`
+- **`:help` categories**: `:help commands`, `:help keys`, `:help config`, `:help tools`
+- **"Did you mean?"** suggestions for unknown REPL/slash commands via Levenshtein distance
+- **`cru doctor`** enhancements: plugin health check, config validation
+- E2E ACP delegation pipeline test
+- Diagnostic logging for MCP transport negotiation
+- Strict content checks in `validate-demos.sh`
+
+### Changed
+- Autocomplete filtering uses nucleo fuzzy scoring instead of substring matching
+- `lua.eval` RPC returns proper RPC errors instead of `{"error": ...}` JSON
+- `collect_jobs` uses shared deadline across all jobs (was per-job timeout)
+- Demo pipeline: modernized VHS tapes and justfile recipes
+- Regenerated all demo GIFs via VHS
+- Removed dead asciinema pipeline and redundant docs
+
+### Fixed
+- API key file written with `0o600` permissions (was world-readable)
+- Bearer auth constant-time token comparison (prevents timing attacks)
+- Bearer auth checks X-Forwarded-For to prevent proxy bypass
+- Deduplicated `inject_context` logic between RPC handler and Lua bridge
+- Role filter validation in `load_messages` (rejects invalid roles with error)
+- Auto-link UTF-8 safety guard (returns empty for non-ASCII-safe text instead of wrong offsets)
+- Max 256 active scheduled tasks (prevents resource exhaustion)
+- Empty plugin names from malformed URLs now rejected
+- Zero-duration schedules rejected with actionable config error
+- `session.fork` copies parent agent configuration (model, provider, etc.)
+- Flaky `replay_speed_zero` test uses behavioral assertion instead of wall-clock threshold
+- 5 missing RPC methods added to METHODS capability array
+- `delegate_session` filtered from `list_tools` when unavailable
+- Real providers passed to ACP agent MCP server
+- CLI integration test uses `CARGO_PKG_VERSION` instead of hardcoded version
+- HTTP MCP endpoint vs `list_tools()` filtering behavior documented
+
+### Removed
+- Dead `CrdtManager` (142 LOC) and `CanvasNode`/`CanvasEdge` (123 LOC) code stubs
+- `yrs` workspace dependency (only used by removed CRDT module)
+- Stale `TODO: METHODS array is incomplete` comment
+- Duplicate `#[test]` attribute in config includes tests
+
+## [0.4.0] - 2026-03-19
+
+### Added
+- Per-agent permission profiles via `[acp.agents.<name>.permissions]`
+- `--permissions` CLI flag and `CRUCIBLE_PERMISSIONS` env var for headless sessions
+- Shell completion generation for bash and zsh (`cru completions`)
+- Top-level `cru search` command with `-f json` output
+- JSON output format (`-f json`) for `cru stats`, `cru models`, `cru skills`, `cru tools`, `cru doctor`
+- `CRU_SESSION` env var support for all session commands
+- LLM-powered session auto-titling
+- Session auto-archive with configurable `auto_archive_hours`
+- Thinking positional rendering with `Ctrl+T` streaming filter
+- Compact tool display format with render blocks and Lua display hooks
+- Lua `tool:display_start` and `tool:display_complete` handler types
+- Daemon auto-discovery of LLM providers with classification filtering
+- Connected kiln names injected into agent system prompt
+- Shipped `defaults/init.lua` with precognition format and session hooks
+- Multi-session web UI with tab management and file explorer
+- E2E Playwright tests for web UI
+
+### Changed
+- Config split: `kiln.toml` and `project.toml` replace monolithic `workspace.toml`
+- Session commands: renamed `unpause` → `resume`, `resume` → `open`
+- Grounding-first default system prompt replaces size-tiered prompts
+- Demo pipeline: VHS tapes replace asciinema, `glm-4.7-flash` model
+- ACP: table-driven built-in profile initialization
+- RPC client: `daemon_*` prefix → `rpc` submodule
+
+### Fixed
+- ACP MCP transport fallback (retry with stdio when HTTP rejected)
+- Permission gating for headless sessions (`is_interactive` threading)
+- CORS restricted to explicit origin allowlist
+- Symlink traversal validation for web file operations
+- Async file write flushing in session storage
+- UTF-8 panic in thinking truncation
+- Web: double-prefix in model display, provider detection for defaults
+- Config: `{env:VAR}` template resolution in CLI config loading
+
+## [0.3.0] - 2026-03-08
 
 ### Added
 - **Error handling**: `BackendError::is_retryable()` and `retry_delay_secs()` for typed transient failure classification

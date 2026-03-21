@@ -10,10 +10,11 @@
 use crucible_core::storage::NoteStore;
 use crucible_lua::{
     register_graph_module, register_graph_module_with_store, register_oq_module,
-    register_paths_module, register_sessions_module, register_sessions_module_with_api,
-    register_shell_module, register_tools_module, register_tools_module_with_api,
-    register_vault_module, register_vault_module_with_store, register_ws_module, DaemonSessionApi,
-    DaemonToolsApi, LuaExecutor, PathsContext, PluginManager, PluginSpec, ShellPolicy,
+    register_paths_module, register_schedule_module, register_sessions_module,
+    register_sessions_module_with_api, register_shell_module, register_tools_module,
+    register_tools_module_with_api, register_vault_module, register_vault_module_with_store,
+    register_ws_module, DaemonSessionApi, DaemonToolsApi, LuaExecutor, PathsContext, PluginManager,
+    PluginSource, PluginSpec, ShellPolicy,
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
@@ -46,6 +47,7 @@ impl DaemonPluginLoader {
     /// - `oq` — JSON/YAML/TOML query
     /// - `paths` — Standard path helpers
     /// - `cru.kiln` / `cru.graph` — Kiln and graph stubs (upgraded with storage later)
+    /// - `cru.schedule` — Interval-based scheduled callbacks
     ///
     /// **Not** registered (UI-only):
     /// - `cru.oil`, `cru.popup`, `cru.panel`, `cru.statusline`
@@ -66,6 +68,7 @@ impl DaemonPluginLoader {
         register_vault_module(lua).map_err(|e| anyhow::anyhow!("vault module: {e}"))?;
         register_sessions_module(lua).map_err(|e| anyhow::anyhow!("sessions module: {e}"))?;
         register_tools_module(lua).map_err(|e| anyhow::anyhow!("tools module: {e}"))?;
+        register_schedule_module(lua).map_err(|e| anyhow::anyhow!("schedule module: {e}"))?;
         Self::register_plugin_config(lua, plugin_config)
             .map_err(|e| anyhow::anyhow!("config module: {e}"))?;
 
@@ -188,10 +191,11 @@ impl DaemonPluginLoader {
     /// via [`take_service_fns`].
     pub async fn load_plugins(
         &mut self,
-        plugin_paths: &[PathBuf],
+        plugin_paths: &[(PathBuf, PluginSource)],
     ) -> anyhow::Result<Vec<PluginSpec>> {
-        for path in plugin_paths {
-            self.plugin_manager.add_search_path(path.clone());
+        for (path, source) in plugin_paths {
+            self.plugin_manager
+                .add_search_path_with_source(path.clone(), *source);
         }
 
         let discovered = self
@@ -411,6 +415,23 @@ impl DaemonPluginLoader {
             .collect()
     }
 
+    /// Return plugin info including provenance source for each loaded plugin.
+    pub fn loaded_plugin_info(&self) -> Vec<serde_json::Value> {
+        self.plugin_manager
+            .list()
+            .filter(|p| p.state == crucible_lua::PluginState::Active)
+            .map(|p| {
+                serde_json::json!({
+                    "name": p.manifest.name,
+                    "version": p.manifest.version,
+                    "source": p.source.to_string(),
+                    "state": p.state.to_string(),
+                    "dir": p.dir.to_string_lossy(),
+                })
+            })
+            .collect()
+    }
+
     /// Return `(plugin_name, plugin_dir)` pairs for all loaded plugins.
     ///
     /// Used by the plugin file watcher to know which directories to monitor
@@ -431,36 +452,91 @@ impl DaemonPluginLoader {
             .collect()
     }
 
+    /// Generate LuaCATS type stubs for IDE support.
+    ///
+    /// Creates `cru.lua` and `cru-docs.json` in `output_dir` by introspecting
+    /// registered modules via a temporary executor (does not touch the daemon's
+    /// live Lua state).
+    pub fn generate_stubs(&self, output_dir: &std::path::Path) -> anyhow::Result<()> {
+        crucible_lua::stubs::StubGenerator::generate(output_dir)
+            .map_err(|e| anyhow::anyhow!("stub generation: {e}"))
+    }
+
     pub fn executor(&self) -> &LuaExecutor {
         &self.executor
     }
+
+    /// Evaluate Lua code in the plugin runtime context.
+    ///
+    /// If `code` starts with `=`, prepend `return ` (Neovim convention).
+    /// Returns the string representation of the result.
+    pub async fn eval(&self, code: &str) -> anyhow::Result<String> {
+        let code = if let Some(expr) = code.strip_prefix('=') {
+            format!("return {expr}")
+        } else {
+            code.to_string()
+        };
+
+        let lua = self.executor.lua();
+        let result: mlua::Value = lua
+            .load(&code)
+            .set_name("=lua.eval")
+            .eval_async()
+            .await
+            .map_err(|e| anyhow::anyhow!("{}", crucible_lua::format_lua_error(None, &e)))?;
+
+        match &result {
+            mlua::Value::Nil => Ok("nil".to_string()),
+            mlua::Value::Boolean(b) => Ok(b.to_string()),
+            mlua::Value::Integer(n) => Ok(n.to_string()),
+            mlua::Value::Number(n) => Ok(n.to_string()),
+            mlua::Value::String(s) => Ok(s
+                .to_str()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|_| "<invalid utf8>".to_string())),
+            mlua::Value::Table(_) => {
+                // Use json encoding for tables
+                match lua.from_value::<serde_json::Value>(result) {
+                    Ok(json) => Ok(serde_json::to_string_pretty(&json)?),
+                    Err(_) => Ok("<table>".to_string()),
+                }
+            }
+            other => Ok(format!("<{}>", other.type_name())),
+        }
+    }
 }
 
-/// Return the default plugin search paths.
+/// Return the default plugin search paths with provenance.
 ///
 /// Uses the same paths as the CLI: `CRUCIBLE_PLUGIN_PATH` env var
-/// and `~/.config/crucible/plugins/`.
-pub fn default_daemon_plugin_paths() -> Vec<PathBuf> {
+/// and `~/.config/crucible/plugins/`. Each path is tagged with its
+/// [`PluginSource`] for provenance tracking. Paths are ordered by
+/// priority (highest first), so same-named plugins at higher-priority
+/// paths shadow lower-priority ones.
+pub fn default_daemon_plugin_paths() -> Vec<(PathBuf, PluginSource)> {
     let mut paths = Vec::new();
 
     if let Ok(env_paths) = std::env::var("CRUCIBLE_PLUGIN_PATH") {
         let sep = if cfg!(windows) { ';' } else { ':' };
         for p in env_paths.split(sep) {
             if !p.is_empty() {
-                paths.push(PathBuf::from(p));
+                paths.push((PathBuf::from(p), PluginSource::EnvPath));
             }
         }
     }
 
     if let Some(config_dir) = dirs::config_dir() {
-        paths.push(config_dir.join("crucible").join("plugins"));
+        paths.push((
+            config_dir.join("crucible").join("plugins"),
+            PluginSource::User,
+        ));
     }
 
     if let Ok(runtime_base) = std::env::var("CRUCIBLE_RUNTIME") {
         let runtime_plugins = PathBuf::from(runtime_base).join("plugins");
         if runtime_plugins.exists() {
             tracing::debug!("Adding runtime plugin path: {:?}", runtime_plugins);
-            paths.push(runtime_plugins);
+            paths.push((runtime_plugins, PluginSource::Runtime));
         }
     } else if let Ok(exe_path) = std::env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
@@ -475,7 +551,7 @@ pub fn default_daemon_plugin_paths() -> Vec<PathBuf> {
                     "Adding installed runtime plugin path: {:?}",
                     installed_plugins
                 );
-                paths.push(installed_plugins);
+                paths.push((installed_plugins, PluginSource::Runtime));
             }
             let dev_plugins = exe_dir
                 .join("..")
@@ -484,12 +560,108 @@ pub fn default_daemon_plugin_paths() -> Vec<PathBuf> {
                 .join("plugins");
             if dev_plugins.exists() {
                 tracing::debug!("Adding dev runtime plugin path: {:?}", dev_plugins);
-                paths.push(dev_plugins);
+                paths.push((dev_plugins, PluginSource::Runtime));
             }
         }
     }
 
     paths
+}
+
+/// Bootstrap declared plugins by git-cloning any that are missing.
+///
+/// Reads `PluginEntry` declarations (typically from `plugins.toml`) and
+/// shallow-clones repos into `~/.config/crucible/plugins/<name>/` when
+/// the target directory does not already exist.
+pub async fn bootstrap_plugins(entries: &[crucible_config::PluginEntry]) -> anyhow::Result<()> {
+    let plugins_dir = dirs::config_dir()
+        .ok_or_else(|| anyhow::anyhow!("could not determine config directory"))?
+        .join("crucible")
+        .join("plugins");
+
+    for entry in entries {
+        if !entry.enabled {
+            continue;
+        }
+        let name = match plugin_name_from_url(&entry.url) {
+            Some(n) => n,
+            None => {
+                warn!("Skipping plugin with unparseable URL: '{}'", entry.url);
+                continue;
+            }
+        };
+        let dest = plugins_dir.join(&name);
+        if dest.exists() {
+            continue;
+        }
+
+        let url = normalize_git_url(&entry.url);
+        info!("Bootstrapping plugin '{}' from {}", name, url);
+
+        let mut cmd = tokio::process::Command::new("git");
+        cmd.args(["clone", "--depth", "1"]);
+        if let Some(ref branch) = entry.branch {
+            cmd.args(["--branch", branch]);
+        }
+        cmd.arg(&url).arg(&dest);
+
+        match cmd.output().await {
+            Ok(output) if output.status.success() => {
+                info!("Cloned plugin '{}'", name);
+                if let Some(ref pin) = entry.pin {
+                    let checkout = tokio::process::Command::new("git")
+                        .args(["checkout", pin])
+                        .current_dir(&dest)
+                        .output()
+                        .await;
+                    if let Ok(out) = checkout {
+                        if !out.status.success() {
+                            warn!("Failed to checkout pin '{}' for plugin '{}'", pin, name);
+                        }
+                    }
+                }
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                warn!("Failed to clone plugin '{}': {}", name, stderr.trim());
+            }
+            Err(e) => {
+                warn!("Failed to run git clone for plugin '{}': {}", name, e);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Extract plugin name from URL (last path segment, sans `.git`).
+///
+/// Returns `None` if the extracted name is empty, `.`, or `..` — callers
+/// should skip/warn rather than creating directories with unsafe names.
+fn plugin_name_from_url(url: &str) -> Option<String> {
+    let name = url
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or("")
+        .trim_end_matches(".git")
+        .to_string();
+    if name.is_empty() || name == "." || name == ".." {
+        None
+    } else {
+        Some(name)
+    }
+}
+
+/// Normalize shorthand URLs to full git URLs.
+///
+/// Passes through full URLs (`http`, `git@`, `ssh://`) unchanged.
+/// Treats anything else as a GitHub `user/repo` shorthand.
+fn normalize_git_url(url: &str) -> String {
+    if url.starts_with("http") || url.starts_with("git@") || url.starts_with("ssh://") {
+        url.to_string()
+    } else {
+        format!("https://github.com/{}.git", url)
+    }
 }
 
 #[cfg(test)]
@@ -511,7 +683,7 @@ mod tests {
         let paths = default_daemon_plugin_paths();
         let has_plugins = paths
             .iter()
-            .any(|p| p.to_string_lossy().contains("plugins"));
+            .any(|(p, _)| p.to_string_lossy().contains("plugins"));
         assert!(has_plugins, "Expected plugins path in {:?}", paths);
     }
 
@@ -530,9 +702,9 @@ mod tests {
 
         let paths = default_daemon_plugin_paths();
 
-        let has_runtime = paths
-            .iter()
-            .any(|p| p.ends_with("plugins") && p.starts_with(runtime_dir));
+        let has_runtime = paths.iter().any(|(p, src)| {
+            p.ends_with("plugins") && p.starts_with(runtime_dir) && *src == PluginSource::Runtime
+        });
 
         assert!(has_runtime, "Expected runtime plugin path in {:?}", paths);
     }
@@ -550,7 +722,160 @@ mod tests {
         // At least one path should contain "plugins"
         let has_plugins = paths
             .iter()
-            .any(|p| p.to_string_lossy().contains("plugins"));
+            .any(|(p, _)| p.to_string_lossy().contains("plugins"));
         assert!(has_plugins, "Expected plugins path in {:?}", paths);
+    }
+
+    #[tokio::test]
+    async fn eval_expression_with_equals_prefix() {
+        let loader = DaemonPluginLoader::new(HashMap::new()).unwrap();
+        assert_eq!(loader.eval("=1+1").await.unwrap(), "2");
+    }
+
+    #[tokio::test]
+    async fn eval_string_expression() {
+        let loader = DaemonPluginLoader::new(HashMap::new()).unwrap();
+        assert_eq!(loader.eval("='hello'").await.unwrap(), "hello");
+    }
+
+    #[tokio::test]
+    async fn eval_nil_result() {
+        let loader = DaemonPluginLoader::new(HashMap::new()).unwrap();
+        assert_eq!(loader.eval("=nil").await.unwrap(), "nil");
+    }
+
+    #[tokio::test]
+    async fn eval_table_as_json() {
+        let loader = DaemonPluginLoader::new(HashMap::new()).unwrap();
+        let result = loader.eval("={a=1, b=2}").await.unwrap();
+        let json: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(json["a"], 1);
+        assert_eq!(json["b"], 2);
+    }
+
+    #[tokio::test]
+    async fn eval_statement_returns_nil() {
+        let loader = DaemonPluginLoader::new(HashMap::new()).unwrap();
+        assert_eq!(loader.eval("local x = 42").await.unwrap(), "nil");
+    }
+
+    #[tokio::test]
+    async fn eval_syntax_error_returns_err() {
+        let loader = DaemonPluginLoader::new(HashMap::new()).unwrap();
+        assert!(loader.eval("=???").await.is_err());
+    }
+
+    #[test]
+    fn plugin_name_from_full_https_url() {
+        assert_eq!(
+            plugin_name_from_url("https://github.com/user/my-plugin.git"),
+            Some("my-plugin".to_string())
+        );
+    }
+
+    #[test]
+    fn plugin_name_from_shorthand() {
+        assert_eq!(
+            plugin_name_from_url("user/my-plugin"),
+            Some("my-plugin".to_string())
+        );
+    }
+
+    #[test]
+    fn plugin_name_strips_git_suffix() {
+        assert_eq!(
+            plugin_name_from_url("git@github.com:user/cool.git"),
+            Some("cool".to_string())
+        );
+    }
+
+    #[test]
+    fn plugin_name_no_slash() {
+        assert_eq!(
+            plugin_name_from_url("standalone"),
+            Some("standalone".to_string())
+        );
+    }
+
+    #[test]
+    fn plugin_name_trailing_slash_stripped() {
+        assert_eq!(
+            plugin_name_from_url("https://github.com/user/repo/"),
+            Some("repo".to_string())
+        );
+    }
+
+    #[test]
+    fn plugin_name_empty_url_returns_none() {
+        assert_eq!(plugin_name_from_url(""), None);
+    }
+
+    #[test]
+    fn plugin_name_only_slashes_returns_none() {
+        assert_eq!(plugin_name_from_url("///"), None);
+    }
+
+    #[test]
+    fn plugin_name_dot_returns_none() {
+        assert_eq!(plugin_name_from_url("."), None);
+    }
+
+    #[test]
+    fn plugin_name_dotdot_returns_none() {
+        assert_eq!(plugin_name_from_url(".."), None);
+    }
+
+    #[test]
+    fn plugin_name_bare_git_suffix_returns_none() {
+        assert_eq!(plugin_name_from_url(".git"), None);
+    }
+
+    #[test]
+    fn normalize_passes_https_through() {
+        assert_eq!(
+            normalize_git_url("https://github.com/user/repo.git"),
+            "https://github.com/user/repo.git"
+        );
+    }
+
+    #[test]
+    fn normalize_passes_ssh_through() {
+        assert_eq!(
+            normalize_git_url("git@github.com:user/repo.git"),
+            "git@github.com:user/repo.git"
+        );
+    }
+
+    #[test]
+    fn normalize_expands_shorthand() {
+        assert_eq!(
+            normalize_git_url("user/repo"),
+            "https://github.com/user/repo.git"
+        );
+    }
+
+    #[test]
+    fn normalize_passes_ssh_scheme_through() {
+        assert_eq!(
+            normalize_git_url("ssh://git@host/repo.git"),
+            "ssh://git@host/repo.git"
+        );
+    }
+
+    #[tokio::test]
+    async fn bootstrap_skips_disabled_entries() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        // Override config dir isn't feasible, but we can verify the function
+        // doesn't attempt to clone when entry is disabled
+        let entries = vec![crucible_config::PluginEntry {
+            url: "user/disabled-plugin".to_string(),
+            branch: None,
+            pin: None,
+            enabled: false,
+        }];
+        // Should succeed without attempting any git operations
+        let result = bootstrap_plugins(&entries).await;
+        assert!(result.is_ok());
+        drop(tmp);
     }
 }

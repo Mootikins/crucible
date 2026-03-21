@@ -444,6 +444,11 @@ impl AgentManager {
         }
     }
 
+    /// Access the background job manager for direct job queries.
+    pub fn background_manager(&self) -> &Arc<BackgroundJobManager> {
+        &self.background_manager
+    }
+
     pub fn get_session_with_agent(
         &self,
         session_id: &str,

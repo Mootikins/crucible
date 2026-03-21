@@ -1,8 +1,10 @@
 use crate::assets::static_routes;
-use crate::middleware::auth::localhost_only_shell_auth;
+use crate::middleware::auth::{
+    bearer_auth, localhost_only_shell_auth, resolve_api_key, ApiKeyState,
+};
 use crate::routes::{
     chat_routes, config_routes, health_routes, kiln_routes, mcp_routes, plugin_routes,
-    project_routes, search_routes, session_routes, shell_routes,
+    project_routes, search_routes, session_routes, shell_routes, webhook_routes,
 };
 use crate::services::daemon;
 use crate::{Result, WebError};
@@ -11,6 +13,7 @@ use axum::http::{header, HeaderValue, Method};
 use axum::middleware;
 use axum::Router;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
 pub use crucible_config::{CliAppConfig, WebConfig};
@@ -33,7 +36,16 @@ pub async fn start_server(web_config: &WebConfig, app_config: &CliAppConfig) -> 
         ])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
 
-    let app = Router::new()
+    let api_key = resolve_api_key(web_config.api_key.as_deref());
+    if api_key.is_some() {
+        tracing::info!("API Bearer token auth enabled for non-localhost requests");
+    } else {
+        tracing::warn!("API Bearer token auth is disabled — all requests will be accepted");
+    }
+    let api_key_state = Arc::new(ApiKeyState { api_key });
+
+    // API routes get Bearer auth + shell gets additional localhost-only check.
+    let api_routes = Router::new()
         .nest(
             "/api/shell",
             shell_routes().layer(middleware::from_fn(localhost_only_shell_auth)),
@@ -46,7 +58,12 @@ pub async fn start_server(web_config: &WebConfig, app_config: &CliAppConfig) -> 
         .merge(plugin_routes())
         .merge(mcp_routes())
         .merge(kiln_routes())
+        .merge(webhook_routes())
         .with_state(state)
+        .layer(middleware::from_fn_with_state(api_key_state, bearer_auth));
+
+    // Health and static routes are public (no Bearer auth).
+    let app = api_routes
         .merge(health_routes())
         .merge(static_routes(web_config.static_dir.as_deref()))
         .layer(DefaultBodyLimit::max(MAX_BODY_SIZE_10MB))
@@ -127,12 +144,13 @@ mod tests {
             host: "localhost".to_string(),
             port: 3000,
             static_dir: None,
+            api_key: None,
         };
 
         let origins = build_cors_origins(&web_config);
         let has_origin = |value: &str| {
             let value = HeaderValue::from_str(value).unwrap();
-            origins.iter().any(|origin| origin == &value)
+            origins.iter().any(|origin| origin == value)
         };
 
         assert!(has_origin("http://localhost:3000"));
@@ -149,6 +167,7 @@ mod tests {
             host: "localhost".to_string(),
             port: 3000,
             static_dir: None,
+            api_key: None,
         };
 
         let cors = CorsLayer::new()

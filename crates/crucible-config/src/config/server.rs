@@ -78,6 +78,12 @@ pub struct WebConfig {
     /// Path to static web assets directory (optional, uses embedded assets if not set).
     #[serde(default)]
     pub static_dir: Option<String>,
+
+    /// API key for Bearer token authentication on API routes.
+    /// If not set, one is generated and stored in `~/.config/crucible/api_key`.
+    /// Set to empty string `""` to disable auth entirely.
+    #[serde(default)]
+    pub api_key: Option<String>,
 }
 
 fn default_web_port() -> u16 {
@@ -95,6 +101,7 @@ impl Default for WebConfig {
             port: default_web_port(),
             host: default_web_host(),
             static_dir: None,
+            api_key: None,
         }
     }
 }

@@ -6,6 +6,7 @@
 use crate::agent_manager::AgentManager;
 use crate::protocol::SessionEventMessage;
 use crate::session_manager::SessionManager;
+use crate::session_storage::{FileSessionStorage, SessionStorage};
 use crucible_core::session::SessionType;
 use crucible_lua::{DaemonSessionApi, ResponsePart};
 use std::future::Future;
@@ -262,6 +263,167 @@ impl DaemonSessionApi for DaemonSessionBridge {
         // Unsubscribe is handled by dropping the receiver from subscribe().
         // The spawned task will detect the closed channel and exit.
         Box::pin(async { Ok(()) })
+    }
+
+    fn load_messages(
+        &self,
+        session_id: String,
+        role_filter: Option<String>,
+        limit: Option<usize>,
+    ) -> BoxFut<Vec<serde_json::Value>> {
+        bridge_async!(self.session_manager, |sm| async move {
+            if let Some(ref role) = role_filter {
+                if !matches!(role.as_str(), "user" | "assistant" | "system") {
+                    return Err(format!(
+                        "Invalid role filter '{}': must be 'user', 'assistant', or 'system'",
+                        role
+                    ));
+                }
+            }
+
+            let session = sm
+                .get_session(&session_id)
+                .ok_or_else(|| format!("Session not found: {}", session_id))?;
+            let session_dir = FileSessionStorage::sessions_base(&session.kiln).join(&session_id);
+            // NOTE: Loads entire session event log. For very long sessions, consider
+            // adding a streaming/backwards-reading approach with index files.
+            let events = crate::observe::load_events(&session_dir)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            let mut messages: Vec<serde_json::Value> = events
+                .iter()
+                .filter_map(|event| match event {
+                    crate::observe::LogEvent::User { content, .. } => {
+                        if role_filter.as_deref().is_some_and(|r| r != "user") {
+                            return None;
+                        }
+                        Some(serde_json::json!({
+                            "role": "user",
+                            "content": content,
+                            "timestamp": event.timestamp().to_rfc3339(),
+                        }))
+                    }
+                    crate::observe::LogEvent::Assistant { content, .. } => {
+                        if role_filter.as_deref().is_some_and(|r| r != "assistant") {
+                            return None;
+                        }
+                        Some(serde_json::json!({
+                            "role": "assistant",
+                            "content": content,
+                            "timestamp": event.timestamp().to_rfc3339(),
+                        }))
+                    }
+                    crate::observe::LogEvent::System { content, .. } => {
+                        if role_filter.as_deref().is_some_and(|r| r != "system") {
+                            return None;
+                        }
+                        Some(serde_json::json!({
+                            "role": "system",
+                            "content": content,
+                            "timestamp": event.timestamp().to_rfc3339(),
+                        }))
+                    }
+                    _ => None,
+                })
+                .collect();
+
+            if let Some(n) = limit {
+                let start = messages.len().saturating_sub(n);
+                messages = messages.split_off(start);
+            }
+
+            Ok(messages)
+        })
+    }
+
+    /// Fork a session by copying messages up to an optional limit.
+    ///
+    /// NOTE: Bridge fork does not copy agent configuration (no AgentManager access).
+    /// Callers should configure the forked session's agent separately.
+    /// The RPC handler version (handle_session_fork) does copy agent config.
+    fn fork_session(&self, session_id: String, up_to: Option<u64>) -> BoxFut<serde_json::Value> {
+        bridge_async!(self.session_manager, |sm| async move {
+            let parent = sm
+                .get_session(&session_id)
+                .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+            let child = sm
+                .create_session(
+                    parent.session_type,
+                    parent.kiln.clone(),
+                    Some(parent.workspace.clone()),
+                    parent.connected_kilns.clone(),
+                    None,
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+
+            let parent_dir = FileSessionStorage::sessions_base(&parent.kiln).join(&session_id);
+            let events = crate::observe::load_events(&parent_dir)
+                .await
+                .unwrap_or_default();
+
+            let storage = FileSessionStorage::new();
+            let mut count = 0u64;
+            for event in &events {
+                if let Some(limit) = up_to {
+                    if count >= limit {
+                        break;
+                    }
+                }
+                match event {
+                    crate::observe::LogEvent::User { .. }
+                    | crate::observe::LogEvent::Assistant { .. }
+                    | crate::observe::LogEvent::System { .. } => {
+                        let json = serde_json::to_string(event).map_err(|e| e.to_string())?;
+                        storage
+                            .append_event(&child, &json)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        count += 1;
+                    }
+                    _ => {}
+                }
+            }
+
+            Ok(serde_json::json!({
+                "id": child.id,
+                "parent_id": session_id,
+                "messages_copied": count,
+            }))
+        })
+    }
+
+    fn inject_context(&self, session_id: String, role: String, content: String) -> BoxFut<()> {
+        let sm = self.session_manager.clone();
+        let event_tx = self.event_tx.clone();
+        Box::pin(async move {
+            crate::server::session::inject_context_impl(
+                &sm,
+                &event_tx,
+                &session_id,
+                &role,
+                &content,
+            )
+            .await
+        })
+    }
+
+    fn collect_subagents(
+        &self,
+        job_ids: Vec<String>,
+        timeout_secs: Option<f64>,
+    ) -> BoxFut<Vec<serde_json::Value>> {
+        let am = self.agent_manager.clone();
+        Box::pin(async move {
+            let timeout = std::time::Duration::from_secs_f64(timeout_secs.unwrap_or(120.0));
+            let results = am
+                .background_manager()
+                .collect_jobs(&job_ids, timeout)
+                .await;
+            Ok(results)
+        })
     }
 
     fn send_and_collect(

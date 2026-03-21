@@ -113,6 +113,21 @@ pub enum AutocompleteKind {
     SetOption {
         option: Option<String>,
     },
+    /// Full-screen picker opened by `:pick [source]`.
+    Pick {
+        source: PickSource,
+    },
+}
+
+/// Source category for the `:pick` command.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum PickSource {
+    #[default]
+    All,
+    Notes,
+    Sessions,
+    Commands,
+    Files,
 }
 
 /// Message queue state — deferred messages and message counter

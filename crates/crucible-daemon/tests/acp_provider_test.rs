@@ -1,6 +1,6 @@
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
-use crucible_daemon::test_support::{MockKnowledgeRepository, MockEmbeddingProvider};
+use crucible_daemon::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
 use crucible_daemon::InProcessMcpHost;
 use std::sync::Arc;
 use tempfile::TempDir;

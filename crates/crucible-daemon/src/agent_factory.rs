@@ -654,7 +654,8 @@ mod tests {
         .await;
 
         assert!(names.iter().any(|name| name == "semantic_search"));
-        assert!(names.iter().any(|name| name == "delegate_session"));
+        // delegate_session is filtered out when no delegation context is provided
+        assert!(!names.iter().any(|name| name == "delegate_session"));
         assert!(names.iter().any(|name| name == "list_jobs"));
     }
 

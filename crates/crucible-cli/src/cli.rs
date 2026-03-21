@@ -272,9 +272,10 @@ pub enum Commands {
         recent: bool,
     },
 
-    #[command(long_about = "Run bounded installation diagnostics for Crucible.
+    /// Run installation diagnostics for Crucible
+    #[command(long_about = "Run installation diagnostics for Crucible.
 
-Performs exactly five checks: daemon reachability, config validity, provider connectivity, kiln accessibility, and embedding backend availability.
+Checks daemon reachability, config validity, provider connectivity, kiln accessibility, embedding backend availability, plugin health, and config validation.
 
 Examples:
   # Run all doctor checks
@@ -347,6 +348,15 @@ Examples:
         long_about = "Manage and develop Lua plugins.\n\nTest, scaffold, generate type stubs, and run health checks for Crucible plugins.\n\nExamples:\n  # Run plugin tests\n  cru plugin test ./my-plugin\n\n  # Scaffold a new plugin\n  cru plugin new my-plugin\n\n  # Generate LuaLS type stubs\n  cru plugin stubs\n\n  # Run health checks\n  cru plugin health ./my-plugin"
     )]
     Plugin(crate::commands::plugin::PluginCommands),
+
+    /// Evaluate Lua code in the daemon's plugin runtime
+    #[command(
+        long_about = "Evaluate Lua code in the daemon's plugin runtime.\n\nRuns code in the same Lua VM that plugins use. Use '=' prefix for expressions.\n\nExamples:\n  # Evaluate an expression\n  cru lua '=1+1'\n\n  # Call a function\n  cru lua 'print(\"hello\")'\n\n  # Inspect the cru namespace\n  cru lua '=cru'"
+    )]
+    Lua {
+        /// Lua code to evaluate. Use '=' prefix for expressions (e.g., '=1+1').
+        code: String,
+    },
 
     /// Initialize a new kiln (Crucible workspace)
     #[command(

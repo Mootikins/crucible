@@ -179,7 +179,8 @@ async fn test_acp_delegation_pipeline_all_fixes_work() {
 
     let client = reqwest::Client::new();
     let url = host.mcp_url();
-    let session_id = initialize_mcp_session(&client, &url, "acp-delegation-e2e-providers-only").await;
+    let session_id =
+        initialize_mcp_session(&client, &url, "acp-delegation-e2e-providers-only").await;
     let search_payload = call_semantic_search(&client, &url, &session_id, 3).await;
 
     assert!(

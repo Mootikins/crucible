@@ -4,7 +4,7 @@
 //! The actual handler implementations remain in server.rs for now,
 //! but this module provides the infrastructure for testable dispatch.
 
-use crate::protocol::{Request, RequestId, Response, RpcError, METHOD_NOT_FOUND};
+use crate::protocol::{Request, RequestId, Response, RpcError, INTERNAL_ERROR, METHOD_NOT_FOUND};
 use crate::rpc::context::RpcContext;
 use crate::subscription::ClientId;
 
@@ -55,13 +55,20 @@ pub const METHODS: &[&str] = &[
     "session.get_temperature",
     "session.set_max_tokens",
     "session.get_max_tokens",
+    "session.set_system_prompt",
+    "session.get_system_prompt",
+    "session.set_precognition",
+    "session.get_precognition",
+    "session.inject_context",
     "session.test_interaction",
+    "session.fork",
     "session.set_title",
     "session.search",
     "session.load_events",
     "session.list_persisted",
     "session.render_markdown",
     "session.export_to_file",
+    "session.replay",
     "session.cleanup",
     "session.reindex",
     "plugin.reload",
@@ -75,6 +82,7 @@ pub const METHODS: &[&str] = &[
     "lua.generate_stubs",
     "lua.run_plugin_tests",
     "lua.register_commands",
+    "lua.eval",
     "project.register",
     "project.unregister",
     "project.list",
@@ -93,8 +101,10 @@ pub const METHODS: &[&str] = &[
     "agents.resolve_profile",
     "models.list",
     "providers.list",
+    "subagent.collect",
+    "webhook.receive",
+    "suggest_links",
 ];
-// TODO: METHODS array is incomplete - add missing methods handled by dispatch.
 
 fn to_response(id: Option<RequestId>, result: RpcResult<serde_json::Value>) -> Response {
     match result {
@@ -188,6 +198,7 @@ impl RpcDispatcher {
             "search_vectors" => to_response(id, self.handle_search_vectors(&req).await),
             "list_notes" => to_response(id, self.handle_list_notes(&req).await),
             "get_note_by_name" => to_response(id, self.handle_get_note_by_name(&req).await),
+            "suggest_links" => to_response(id, self.handle_suggest_links(&req).await),
 
             // Note CRUD handlers
             "note.upsert" => to_response(id, self.handle_note_upsert(&req).await),
@@ -217,6 +228,7 @@ impl RpcDispatcher {
             "session.unarchive" => to_response(id, self.handle_session_unarchive(&req).await),
             "session.delete" => to_response(id, self.handle_session_delete(&req).await),
             "session.compact" => to_response(id, self.handle_session_compact(&req).await),
+            "session.fork" => to_response(id, self.handle_session_fork(&req).await),
 
             // Session utility handlers
             "session.search" => to_response(id, self.handle_session_search(&req).await),
@@ -238,6 +250,9 @@ impl RpcDispatcher {
                 to_response(id, self.handle_session_configure_agent(&req).await)
             }
             "session.send_message" => to_response(id, self.handle_session_send_message(&req).await),
+            "session.inject_context" => {
+                to_response(id, self.handle_session_inject_context(&req).await)
+            }
             "session.cancel" => to_response(id, self.handle_session_cancel(&req).await),
             "session.interaction_respond" => {
                 to_response(id, self.handle_session_interaction_respond(&req).await)
@@ -270,6 +285,7 @@ impl RpcDispatcher {
             "lua.register_commands" => {
                 to_response(id, self.handle_lua_register_commands(&req).await)
             }
+            "lua.eval" => to_response(id, self.handle_lua_eval(&req).await),
 
             // Plugin RPC handlers
             "plugin.reload" => to_response(id, self.handle_plugin_reload(&req).await),
@@ -302,6 +318,12 @@ impl RpcDispatcher {
             "agents.resolve_profile" => {
                 to_response(id, self.handle_agents_resolve_profile(&req).await)
             }
+
+            // Subagent RPC handlers
+            "subagent.collect" => to_response(id, self.handle_subagent_collect(&req).await),
+
+            // Webhook RPC handler
+            "webhook.receive" => to_response(id, self.handle_webhook_receive(&req)),
 
             _ => Response::error(
                 id,
@@ -554,6 +576,11 @@ impl RpcDispatcher {
         map_server_resp(resp)
     }
 
+    async fn handle_suggest_links(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::kiln::handle_suggest_links(req.clone(), &self.ctx.kiln).await;
+        map_server_resp(resp)
+    }
+
     async fn handle_note_upsert(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::kiln::handle_note_upsert(req.clone(), &self.ctx.kiln).await;
         map_server_resp(resp)
@@ -700,6 +727,16 @@ impl RpcDispatcher {
         map_server_resp(resp)
     }
 
+    async fn handle_session_fork(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_fork(
+            req.clone(),
+            &self.ctx.sessions,
+            &self.ctx.agents,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
     // ── Session utility wrappers ─────────────────────────────────────────────
 
     async fn handle_session_search(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -752,6 +789,16 @@ impl RpcDispatcher {
         let resp = crate::server::session::handle_session_send_message(
             req.clone(),
             &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_inject_context(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_inject_context(
+            req.clone(),
+            &self.ctx.sessions,
             &self.ctx.event_tx,
         )
         .await;
@@ -902,6 +949,38 @@ impl RpcDispatcher {
         map_server_resp(resp)
     }
 
+    // SAFETY: lua.eval executes arbitrary code in the daemon's Lua VM.
+    // This is safe because the daemon socket is protected by filesystem permissions
+    // (same-user access only). If the daemon is ever exposed over TCP, this
+    // endpoint MUST require authentication.
+    async fn handle_lua_eval(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        use crate::rpc::params::parse_params;
+        use serde::Deserialize;
+
+        #[derive(Deserialize)]
+        struct Params {
+            code: String,
+        }
+
+        let params: Params = parse_params(req)?;
+        let loader_guard = self.ctx.plugin_loader.lock().await;
+        match loader_guard.as_ref() {
+            Some(loader) => match loader.eval(&params.code).await {
+                Ok(result) => Ok(serde_json::json!({ "result": result })),
+                Err(e) => Err(RpcError {
+                    code: INTERNAL_ERROR,
+                    message: e.to_string(),
+                    data: None,
+                }),
+            },
+            None => Err(RpcError {
+                code: INTERNAL_ERROR,
+                message: "Lua runtime not initialized".to_string(),
+                data: None,
+            }),
+        }
+    }
+
     // ── Plugin RPC wrappers ──────────────────────────────────────────────
 
     async fn handle_plugin_reload(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -1029,6 +1108,62 @@ impl RpcDispatcher {
                 .await;
         map_server_resp(resp)
     }
+
+    // ── Subagent RPC handlers ─────────────────────────────────────────────
+
+    async fn handle_subagent_collect(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        use crate::rpc::params::parse_params;
+        use serde::Deserialize;
+
+        #[derive(Deserialize)]
+        struct Params {
+            job_ids: Vec<String>,
+            #[serde(default = "default_collect_timeout")]
+            timeout_secs: f64,
+        }
+
+        fn default_collect_timeout() -> f64 {
+            120.0
+        }
+
+        let p: Params = parse_params(req)?;
+        let manager = self.ctx.agents.background_manager();
+        let timeout = std::time::Duration::from_secs_f64(p.timeout_secs);
+        let results = manager.collect_jobs(&p.job_ids, timeout).await;
+
+        Ok(serde_json::json!({ "results": results }))
+    }
+
+    // ── Webhook RPC handler ─────────────────────────────────────────────
+
+    fn handle_webhook_receive(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        use crate::rpc::params::parse_params;
+        use serde::Deserialize;
+
+        #[derive(Deserialize)]
+        struct Params {
+            name: String,
+            headers: serde_json::Map<String, serde_json::Value>,
+            body: String,
+        }
+
+        let p: Params = parse_params(req)?;
+
+        let event = crate::protocol::SessionEventMessage::new(
+            "__webhook__",
+            "webhook:received",
+            serde_json::json!({
+                "name": p.name,
+                "headers": p.headers,
+                "body": p.body,
+            }),
+        );
+
+        // Best-effort broadcast — no subscribers is fine
+        let _ = self.ctx.event_tx.send(event);
+
+        Ok(serde_json::json!({ "status": "ok" }))
+    }
 }
 
 #[cfg(test)]
@@ -1100,11 +1235,12 @@ mod tests {
         assert!(METHODS.contains(&"daemon.capabilities"));
         assert!(METHODS.contains(&"session.subscribe"));
         assert!(METHODS.contains(&"session.set_thinking_budget"));
+        assert!(METHODS.contains(&"subagent.collect"));
     }
 
     #[test]
     fn methods_count() {
-        assert_eq!(METHODS.len(), 82, "Update when adding RPC methods");
+        assert_eq!(METHODS.len(), 93, "Update when adding RPC methods");
     }
 
     #[tokio::test]

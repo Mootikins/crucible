@@ -76,6 +76,7 @@ pub struct Server {
     plugin_watch: bool,
     auto_archive_hours: Option<u64>,
     llm_config: Option<LlmConfig>,
+    schedules: Vec<crucible_config::ScheduleEntry>,
     #[cfg(feature = "web")]
     #[allow(dead_code)] // web server started externally by crucible-web crate
     web_config: Option<crucible_config::WebConfig>,
@@ -103,6 +104,7 @@ pub struct BindWithPluginConfigParams {
     pub acp_config: Option<crucible_config::components::acp::AcpConfig>,
     pub permission_config: Option<crucible_config::components::permissions::PermissionConfig>,
     pub web_config: Option<crucible_config::WebConfig>,
+    pub schedules: Vec<crucible_config::ScheduleEntry>,
 }
 
 impl Server {
@@ -124,6 +126,7 @@ impl Server {
             acp_config: None,
             permission_config: None,
             web_config: None,
+            schedules: Vec::new(),
         })
         .await
     }
@@ -238,6 +241,7 @@ impl Server {
             plugin_watch: params.plugin_watch,
             auto_archive_hours: params.auto_archive_hours,
             llm_config: params.llm_config.clone(),
+            schedules: params.schedules,
             mcp_server_manager,
             #[cfg(feature = "web")]
             web_config: params.web_config.clone(),
@@ -283,6 +287,30 @@ impl Server {
                     warn!("Failed to upgrade Lua tools module: {}", e);
                 }
 
+                // Bootstrap declared plugins from plugins.toml before discovery
+                let plugins_toml =
+                    dirs::config_dir().map(|d| d.join("crucible").join("plugins.toml"));
+                if let Some(ref path) = plugins_toml {
+                    if path.exists() {
+                        match std::fs::read_to_string(path) {
+                            Ok(content) => {
+                                match toml::from_str::<crucible_config::PluginsConfig>(&content) {
+                                    Ok(config) => {
+                                        if let Err(e) =
+                                            crate::daemon_plugins::bootstrap_plugins(&config.plugin)
+                                                .await
+                                        {
+                                            warn!("Plugin bootstrap error: {}", e);
+                                        }
+                                    }
+                                    Err(e) => warn!("Failed to parse {}: {}", path.display(), e),
+                                }
+                            }
+                            Err(e) => warn!("Failed to read {}: {}", path.display(), e),
+                        }
+                    }
+                }
+
                 let paths = crate::daemon_plugins::default_daemon_plugin_paths();
                 match loader.load_plugins(&paths).await {
                     Ok(specs) => {
@@ -311,6 +339,58 @@ impl Server {
                             Err(e) => warn!("Service '{}' failed: {}", name, e),
                         }
                     });
+                }
+
+                // Auto-generate LuaCATS stubs for IDE support
+                if let Some(config_dir) = dirs::config_dir() {
+                    let stubs_dir = config_dir.join("crucible").join("luals");
+                    match loader.generate_stubs(&stubs_dir) {
+                        Ok(()) => debug!("Generated LuaCATS stubs at {}", stubs_dir.display()),
+                        Err(e) => debug!("LuaCATS stub generation skipped: {}", e),
+                    }
+                }
+
+                // Register declarative schedules from config
+                for schedule in &self.schedules {
+                    if !schedule.enabled {
+                        continue;
+                    }
+                    let secs = match crucible_config::parse_duration_string(&schedule.every) {
+                        Some(d) if d.as_secs() > 0 => d.as_secs(),
+                        Some(_) => {
+                            warn!(
+                                "Schedule '{}': interval must be positive (got '{}')",
+                                schedule.name, schedule.every
+                            );
+                            continue;
+                        }
+                        None => {
+                            warn!(
+                                "Schedule '{}': invalid interval '{}'",
+                                schedule.name, schedule.every
+                            );
+                            continue;
+                        }
+                    };
+                    let action = schedule
+                        .action
+                        .strip_prefix("lua:")
+                        .unwrap_or(&schedule.action);
+                    let code = format!(
+                        "cru.schedule({{ every = {} }}, function() {} end)",
+                        secs, action
+                    );
+                    match loader.eval(&code).await {
+                        Ok(_) => {
+                            info!(
+                                "Registered schedule '{}' (every {})",
+                                schedule.name, schedule.every
+                            );
+                        }
+                        Err(e) => {
+                            warn!("Failed to register schedule '{}': {}", schedule.name, e);
+                        }
+                    }
                 }
 
                 if self.plugin_watch {

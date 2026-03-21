@@ -62,8 +62,9 @@ pub use components::{
     UpstreamServerConfig,
 };
 pub use config::{
-    crucible_home, is_crucible_home, CliAppConfig, Config, ConfigError, ConfigValidationError,
-    EffectiveLlmConfig, LoggingConfig, ProcessingConfig, ScmConfig, ServerConfig, WebConfig,
+    crucible_home, is_crucible_home, parse_duration_string, CliAppConfig, Config, ConfigError,
+    ConfigValidationError, EffectiveLlmConfig, LoggingConfig, PluginEntry, PluginsConfig,
+    ProcessingConfig, ScheduleEntry, ScmConfig, ServerConfig, WebConfig,
 };
 #[cfg(feature = "keyring")]
 pub use credentials::KeyringStore;

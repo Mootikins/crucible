@@ -53,7 +53,11 @@ fn tool_names(server: &CrucibleMcpServer) -> Vec<String> {
         .collect()
 }
 
-fn test_dependencies() -> (TempDir, Arc<dyn KnowledgeRepository>, Arc<dyn EmbeddingProvider>) {
+fn test_dependencies() -> (
+    TempDir,
+    Arc<dyn KnowledgeRepository>,
+    Arc<dyn EmbeddingProvider>,
+) {
     let temp = TempDir::new().expect("temp dir");
     let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
     let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;

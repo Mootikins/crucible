@@ -246,6 +246,7 @@ mod tests {
             storage: None,
             mcp: None,
             permissions: None,
+            schedules: vec![],
             plugins: std::collections::HashMap::new(),
             web: None,
             server: None,

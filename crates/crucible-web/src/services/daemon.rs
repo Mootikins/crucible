@@ -660,6 +660,32 @@ impl ReconnectingDaemon {
         .await
     }
 
+    pub async fn webhook_receive(
+        &self,
+        name: String,
+        headers: std::collections::HashMap<String, String>,
+        body: String,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.call_with_reconnect("webhook.receive", move |daemon| {
+            let name = name.clone();
+            let headers = headers.clone();
+            let body = body.clone();
+            Box::pin(async move {
+                daemon
+                    .call(
+                        "webhook.receive",
+                        serde_json::json!({
+                            "name": name,
+                            "headers": headers,
+                            "body": body,
+                        }),
+                    )
+                    .await
+            })
+        })
+        .await
+    }
+
     pub async fn session_render_markdown(
         &self,
         session_dir: &Path,

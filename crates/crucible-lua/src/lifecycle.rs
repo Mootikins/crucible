@@ -4,6 +4,8 @@ use crate::annotations::{
     DiscoveredCommand, DiscoveredHandler, DiscoveredParam, DiscoveredService, DiscoveredTool,
     DiscoveredView,
 };
+use crate::error::format_lua_error;
+use crate::manifest::PluginSource;
 use crate::manifest::{Capability, LoadedPlugin, ManifestError, PluginManifest, PluginState};
 use mlua::{Function, Lua, RegistryKey, Value};
 use std::collections::{HashMap, VecDeque};
@@ -58,6 +60,8 @@ pub struct PluginSpec {
     pub views: Vec<DiscoveredView>,
     pub services: Vec<DiscoveredService>,
     pub has_setup: bool,
+    /// Where the plugin was discovered from (user, runtime, kiln, etc.)
+    pub source: Option<String>,
 }
 
 /// Handle for unregistering programmatically-added items
@@ -139,6 +143,8 @@ impl PluginErrorLog {
 pub struct PluginManager {
     plugins: HashMap<String, LoadedPlugin>,
     search_paths: Vec<PathBuf>,
+    /// Maps search paths to their provenance category.
+    path_sources: HashMap<PathBuf, PluginSource>,
     tools: Vec<RegisteredItem<DiscoveredTool>>,
     commands: Vec<RegisteredItem<DiscoveredCommand>>,
     views: Vec<RegisteredItem<DiscoveredView>>,
@@ -186,6 +192,7 @@ impl PluginManager {
         Self {
             plugins: HashMap::new(),
             search_paths: Vec::new(),
+            path_sources: HashMap::new(),
             tools: Vec::new(),
             commands: Vec::new(),
             views: Vec::new(),
@@ -256,6 +263,25 @@ impl PluginManager {
         }
     }
 
+    /// Add a search path with provenance tracking.
+    pub fn add_search_path_with_source(&mut self, path: PathBuf, source: PluginSource) {
+        self.path_sources.insert(path.clone(), source);
+        self.add_search_path(path);
+    }
+
+    /// Get the provenance source for a plugin directory.
+    fn source_for_dir(&self, plugin_dir: &Path) -> PluginSource {
+        // Walk search paths to find which one contains this plugin dir
+        for search_path in &self.search_paths {
+            if plugin_dir.starts_with(search_path) {
+                if let Some(source) = self.path_sources.get(search_path) {
+                    return *source;
+                }
+            }
+        }
+        PluginSource::User
+    }
+
     pub fn discover(&mut self) -> LifecycleResult<Vec<String>> {
         let mut discovered = Vec::new();
 
@@ -271,15 +297,22 @@ impl PluginManager {
 
                 if path.is_dir() {
                     // Try manifest first, then fall back to manifest-less discovery
+                    let source = self.source_for_dir(&path);
                     match PluginManifest::discover(&path) {
                         Ok(Some(manifest)) => {
                             let name = manifest.name.clone();
                             if self.plugins.contains_key(&name) {
-                                debug!("Plugin already discovered: {}", name);
+                                debug!(
+                                    "Plugin already discovered: {} (shadowed by higher-priority)",
+                                    name
+                                );
                                 continue;
                             }
-                            info!("Discovered plugin: {} v{}", name, manifest.version);
-                            let plugin = LoadedPlugin::new(manifest, path);
+                            info!(
+                                "Discovered plugin: {} v{} [{}]",
+                                name, manifest.version, source
+                            );
+                            let plugin = LoadedPlugin::with_source(manifest, path, source);
                             self.plugins.insert(name.clone(), plugin);
                             discovered.push(name);
                         }
@@ -290,15 +323,17 @@ impl PluginManager {
                                     Ok(manifest) => {
                                         let name = manifest.name.clone();
                                         if self.plugins.contains_key(&name) {
-                                            debug!("Plugin already discovered: {}", name);
+                                            debug!("Plugin already discovered: {} (shadowed by higher-priority)", name);
                                             continue;
                                         }
                                         info!(
-                                            "Discovered manifest-less plugin: {} (from {})",
+                                            "Discovered manifest-less plugin: {} [{}] (from {})",
                                             name,
+                                            source,
                                             path.display()
                                         );
-                                        let plugin = LoadedPlugin::new(manifest, path);
+                                        let plugin =
+                                            LoadedPlugin::with_source(manifest, path, source);
                                         self.plugins.insert(name.clone(), plugin);
                                         discovered.push(name);
                                     }
@@ -741,9 +776,7 @@ impl PluginManager {
                 .load(&lua_source)
                 .set_name(chunk_name.as_str())
                 .eval()
-                .map_err(|e| {
-                    LifecycleError::LoadError(format!("Lua error in {}: {}", chunk_name, e))
-                })?;
+                .map_err(|e| LifecycleError::LoadError(format_lua_error(Some(name), &e)))?;
 
             match result {
                 Value::Table(spec_table) => {
@@ -1503,9 +1536,7 @@ pub fn load_plugin_spec_from_source(
         .load(source)
         .set_name(source_path_str.as_str())
         .eval()
-        .map_err(|e| {
-            LifecycleError::LoadError(format!("Lua error in {}: {}", source_path_str, e))
-        })?;
+        .map_err(|e| LifecycleError::LoadError(format_lua_error(None, &e)))?;
 
     let table = match result {
         Value::Table(t) => t,

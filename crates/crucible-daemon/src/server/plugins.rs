@@ -46,17 +46,26 @@ pub(crate) async fn handle_plugin_list(
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
     let loader_guard = plugin_loader.lock().await;
-    let names = match loader_guard.as_ref() {
-        Some(l) => l.loaded_plugin_names(),
-        None => Vec::new(),
-    };
-
-    Response::success(
-        req.id,
-        serde_json::json!({
-            "plugins": names,
-        }),
-    )
+    match loader_guard.as_ref() {
+        Some(l) => {
+            let plugins = l.loaded_plugin_info();
+            let names: Vec<String> = l.loaded_plugin_names();
+            Response::success(
+                req.id,
+                serde_json::json!({
+                    "plugins": names,
+                    "plugin_info": plugins,
+                }),
+            )
+        }
+        None => Response::success(
+            req.id,
+            serde_json::json!({
+                "plugins": [],
+                "plugin_info": [],
+            }),
+        ),
+    }
 }
 
 // --- Project handlers ---

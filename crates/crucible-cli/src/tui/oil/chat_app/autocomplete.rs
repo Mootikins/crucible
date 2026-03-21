@@ -1,6 +1,9 @@
 //! Popup autocomplete logic for OilChatApp.
 //!
 //! Trigger detection, item filtering, completion insertion, and popup lifecycle.
+//! Uses nucleo fuzzy matching (via `crucible_core::fuzzy`) for ranked results.
+
+use crucible_core::fuzzy::FuzzyMatcher;
 
 use crate::tui::oil::app::Action;
 use crate::tui::oil::event::InputAction;
@@ -195,6 +198,7 @@ impl OilChatApp {
                     (":clear", "Clear conversation history", "core"),
                     (":palette", "Open command palette", "core"),
                     (":model", "Switch model", "core"),
+                    (":pick", "Fuzzy picker (notes, files, commands)", "core"),
                     (":mcp", "List MCP servers", "mcp"),
                     (":plugins", "Show plugin status", "core"),
                     (":export", "Export session to file", "core"),
@@ -214,6 +218,7 @@ impl OilChatApp {
             AutocompleteKind::SetOption { ref option } => {
                 self.get_set_option_completions(option.as_deref(), &filter)
             }
+            AutocompleteKind::Pick { ref source } => self.get_pick_items(source, &filter),
             AutocompleteKind::None => vec![],
         }
     }
@@ -224,12 +229,26 @@ impl OilChatApp {
         kind: &str,
         limit: usize,
     ) -> Vec<PopupItemNode> {
-        items
-            .iter()
-            .filter(|s| filter.is_empty() || s.to_lowercase().contains(filter))
+        if filter.is_empty() {
+            return items
+                .iter()
+                .take(limit)
+                .map(|s| PopupItemNode {
+                    label: s.clone(),
+                    description: None,
+                    kind: Some(kind.to_string()),
+                })
+                .collect();
+        }
+
+        let mut matcher = FuzzyMatcher::new();
+        let matches = matcher.match_items(filter, items);
+
+        matches
+            .into_iter()
             .take(limit)
-            .map(|s| PopupItemNode {
-                label: s.clone(),
+            .map(|(idx, _score)| PopupItemNode {
+                label: items[idx].clone(),
                 description: None,
                 kind: Some(kind.to_string()),
             })
@@ -240,13 +259,30 @@ impl OilChatApp {
         commands: &[(&str, &str, &str)],
         filter: &str,
     ) -> Vec<PopupItemNode> {
-        commands
-            .iter()
-            .filter(|(label, _, _)| filter.is_empty() || label.to_lowercase().contains(filter))
-            .map(|(label, desc, kind)| PopupItemNode {
-                label: label.to_string(),
-                description: Some(desc.to_string()),
-                kind: Some(kind.to_string()),
+        if filter.is_empty() {
+            return commands
+                .iter()
+                .map(|(label, desc, kind)| PopupItemNode {
+                    label: label.to_string(),
+                    description: Some(desc.to_string()),
+                    kind: Some(kind.to_string()),
+                })
+                .collect();
+        }
+
+        let labels: Vec<String> = commands.iter().map(|(l, _, _)| l.to_string()).collect();
+        let mut matcher = FuzzyMatcher::new();
+        let matches = matcher.match_items(filter, &labels);
+
+        matches
+            .into_iter()
+            .map(|(idx, _score)| {
+                let (label, desc, kind) = commands[idx];
+                PopupItemNode {
+                    label: label.to_string(),
+                    description: Some(desc.to_string()),
+                    kind: Some(kind.to_string()),
+                }
             })
             .collect()
     }
@@ -259,34 +295,58 @@ impl OilChatApp {
         use crate::tui::oil::config::{CompletionSource, SHORTCUTS, THINKING_PRESETS};
 
         match option {
-            None => SHORTCUTS
-                .iter()
-                .filter(|s| filter.is_empty() || s.short.to_lowercase().contains(filter))
-                .map(|s| {
-                    let current_value = self.runtime_config.get(s.short);
-                    let value_str = current_value.map(|v| format!("={}", v)).unwrap_or_default();
-                    PopupItemNode {
-                        label: s.short.to_string(),
-                        description: Some(format!("{}{}", s.description, value_str)),
-                        kind: Some("option".to_string()),
-                    }
-                })
-                .collect(),
+            None => {
+                let labels: Vec<String> = SHORTCUTS.iter().map(|s| s.short.to_string()).collect();
+                let indices = if filter.is_empty() {
+                    (0..labels.len()).map(|i| (i, 0u32)).collect::<Vec<_>>()
+                } else {
+                    let mut matcher = FuzzyMatcher::new();
+                    matcher.match_items(filter, &labels)
+                };
+                indices
+                    .into_iter()
+                    .map(|(idx, _)| {
+                        let s = &SHORTCUTS[idx];
+                        let current_value = self.runtime_config.get(s.short);
+                        let value_str =
+                            current_value.map(|v| format!("={}", v)).unwrap_or_default();
+                        PopupItemNode {
+                            label: s.short.to_string(),
+                            description: Some(format!("{}{}", s.description, value_str)),
+                            kind: Some("option".to_string()),
+                        }
+                    })
+                    .collect()
+            }
             Some(opt) => {
                 let source = self.runtime_config.completions_for(opt);
                 match source {
                     CompletionSource::Models => {
                         Self::filter_to_popup_items(&self.available_models, filter, "model", 100)
                     }
-                    CompletionSource::ThinkingPresets => THINKING_PRESETS
-                        .iter()
-                        .filter(|p| filter.is_empty() || p.name.to_lowercase().contains(filter))
-                        .map(|p| PopupItemNode {
-                            label: p.name.to_string(),
-                            description: p.tokens.map(|t| format!("~{} tokens", t)),
-                            kind: Some("preset".to_string()),
-                        })
-                        .collect(),
+                    CompletionSource::ThinkingPresets => {
+                        let labels: Vec<String> = THINKING_PRESETS
+                            .iter()
+                            .map(|p| p.name.to_string())
+                            .collect();
+                        let indices = if filter.is_empty() {
+                            (0..labels.len()).map(|i| (i, 0u32)).collect::<Vec<_>>()
+                        } else {
+                            let mut matcher = FuzzyMatcher::new();
+                            matcher.match_items(filter, &labels)
+                        };
+                        indices
+                            .into_iter()
+                            .map(|(idx, _)| {
+                                let p = &THINKING_PRESETS[idx];
+                                PopupItemNode {
+                                    label: p.name.to_string(),
+                                    description: p.tokens.map(|t| format!("~{} tokens", t)),
+                                    kind: Some("preset".to_string()),
+                                }
+                            })
+                            .collect()
+                    }
                     CompletionSource::Themes => Self::filter_commands(
                         &[
                             ("base16-ocean.dark", "", "theme"),
@@ -302,15 +362,10 @@ impl OilChatApp {
                         p
                     })
                     .collect(),
-                    CompletionSource::Static(values) => values
-                        .iter()
-                        .filter(|v| filter.is_empty() || v.to_lowercase().contains(filter))
-                        .map(|v| PopupItemNode {
-                            label: v.to_string(),
-                            description: None,
-                            kind: Some("value".to_string()),
-                        })
-                        .collect(),
+                    CompletionSource::Static(values) => {
+                        let owned: Vec<String> = values.iter().map(|v| v.to_string()).collect();
+                        Self::filter_to_popup_items(&owned, filter, "value", owned.len())
+                    }
                     CompletionSource::None => vec![],
                 }
             }
@@ -335,15 +390,102 @@ impl OilChatApp {
     }
 
     pub(super) fn complete_mcp_servers(&self, filter: &str) -> Vec<PopupItemNode> {
-        self.mcp_servers
-            .iter()
-            .filter(|s| filter.is_empty() || s.name.to_lowercase().contains(filter))
-            .map(|s| PopupItemNode {
-                label: s.name.clone(),
-                description: Some(format!("{} tools", s.tool_count)),
-                kind: Some("mcp".to_string()),
+        if filter.is_empty() {
+            return self
+                .mcp_servers
+                .iter()
+                .map(|s| PopupItemNode {
+                    label: s.name.clone(),
+                    description: Some(format!("{} tools", s.tool_count)),
+                    kind: Some("mcp".to_string()),
+                })
+                .collect();
+        }
+
+        let names: Vec<String> = self.mcp_servers.iter().map(|s| s.name.clone()).collect();
+        let mut matcher = FuzzyMatcher::new();
+        let matches = matcher.match_items(filter, &names);
+
+        matches
+            .into_iter()
+            .map(|(idx, _)| {
+                let s = &self.mcp_servers[idx];
+                PopupItemNode {
+                    label: s.name.clone(),
+                    description: Some(format!("{} tools", s.tool_count)),
+                    kind: Some("mcp".to_string()),
+                }
             })
             .collect()
+    }
+
+    fn get_pick_items(
+        &self,
+        source: &super::state::PickSource,
+        filter: &str,
+    ) -> Vec<PopupItemNode> {
+        use super::state::PickSource;
+
+        match source {
+            PickSource::Notes => Self::filter_to_popup_items(&self.kiln_notes, filter, "note", 50),
+            PickSource::Files => {
+                Self::filter_to_popup_items(&self.workspace_files, filter, "file", 50)
+            }
+            PickSource::Commands => {
+                let owned: Vec<(String, String, String)> = self
+                    .slash_commands
+                    .iter()
+                    .map(|(name, desc)| (format!("/{}", name), desc.clone(), "command".to_string()))
+                    .collect();
+                let refs: Vec<(&str, &str, &str)> = owned
+                    .iter()
+                    .map(|(n, d, k)| (n.as_str(), d.as_str(), k.as_str()))
+                    .collect();
+                let mut items = Self::filter_commands(&refs, filter);
+                items.extend(Self::filter_commands(
+                    &[
+                        (":quit", "Exit chat", "core"),
+                        (":help", "Show help", "core"),
+                        (":clear", "Clear conversation history", "core"),
+                        (":model", "Switch model", "core"),
+                        (":set", "View/modify runtime options", "core"),
+                        (":pick", "Open picker", "core"),
+                    ],
+                    filter,
+                ));
+                items
+            }
+            PickSource::Sessions => {
+                // Sessions aren't tracked in TUI state yet; show empty.
+                vec![]
+            }
+            PickSource::All => {
+                let mut items = Vec::new();
+                items.extend(Self::filter_to_popup_items(
+                    &self.kiln_notes,
+                    filter,
+                    "note",
+                    20,
+                ));
+                items.extend(Self::filter_to_popup_items(
+                    &self.workspace_files,
+                    filter,
+                    "file",
+                    20,
+                ));
+                let owned: Vec<(String, String, String)> = self
+                    .slash_commands
+                    .iter()
+                    .map(|(name, desc)| (format!("/{}", name), desc.clone(), "command".to_string()))
+                    .collect();
+                let refs: Vec<(&str, &str, &str)> = owned
+                    .iter()
+                    .map(|(n, d, k)| (n.as_str(), d.as_str(), k.as_str()))
+                    .collect();
+                items.extend(Self::filter_commands(&refs, filter));
+                items
+            }
+        }
     }
 
     pub(super) fn insert_autocomplete_selection(&mut self, label: &str) {
@@ -374,6 +516,23 @@ impl OilChatApp {
                     Some(opt) => format!(":set {}={}", opt, label),
                 };
                 self.set_input(&cmd);
+            }
+            AutocompleteKind::Pick { ref source } => {
+                use super::state::PickSource;
+                match source {
+                    PickSource::Files | PickSource::All => {
+                        self.set_input(&format!("@{} ", label));
+                        self.add_context_if_new(format!("@{}", label));
+                    }
+                    PickSource::Notes => {
+                        self.set_input(&format!("[[{}]] ", label));
+                        self.add_context_if_new(format!("[[{}]]", label));
+                    }
+                    PickSource::Commands => {
+                        self.set_input(label);
+                    }
+                    PickSource::Sessions => {}
+                }
             }
             AutocompleteKind::None => {}
         }
