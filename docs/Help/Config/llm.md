@@ -112,7 +112,7 @@ export ANTHROPIC_API_KEY=your-api-key
 
 ### Other Providers
 
-Additional provider types are supported: `openrouter`, `zai`, `github-copilot`, `vertex-ai`, `cohere`, and `custom`. They follow the same `[llm.providers.NAME]` format. Run `cru models` to see all available models across your configured providers.
+Additional provider types are supported: `openrouter`, `zai`, `github-copilot`, `vertexai`, `cohere`, and `custom`. They follow the same `[llm.providers.NAME]` format. Run `cru models` to see all available models across your configured providers.
 
 ## Parameters
 

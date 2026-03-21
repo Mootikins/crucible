@@ -45,12 +45,13 @@ Complete reference for all Crucible CLI commands.
 
 | Command | Description |
 |---------|-------------|
-| `cru daemon` | Manage the Crucible daemon (start, stop, status, logs) |
+| `cru daemon` | Manage the Crucible daemon (start, stop, restart, status) |
 | `cru storage` | Manage storage operations (migration, verification, backup, cleanup) |
 | `cru tasks` | Manage tasks from a TASKS.md file (list, next, pick, done) |
 | `cru plugin` | Manage and develop Lua plugins |
 | `cru web` | Start the web UI server for browser-based chat |
 | `cru doctor` | Run installation diagnostics (daemon, config, providers, kiln, embeddings) |
+| `cru completions` | Generate shell completion scripts (bash, zsh) |
 
 ## Global Options
 

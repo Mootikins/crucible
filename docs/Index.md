@@ -11,18 +11,53 @@ order: 0
 
 # Welcome to Crucible
 
-**Crucible** is a local-first AI assistant where every conversation becomes a searchable note. Chat with AI agents, build a knowledge graph from wikilinks, extend with plugins in multiple languages — all backed by markdown files you own.
+**Crucible** is a knowledge-grounded agent runtime. Agents that draw from a knowledge graph make better decisions — memory and knowledge are too fundamental to be an afterthought. Your notes, conversations, and wikilinks form that graph. Everything beyond the knowledge core is extensible via Lua scripting and plugins.
 
-## What is This?
+## How It Works
 
-This **dev-kiln** serves as:
+### Knowledge enters
 
-- **Learning Environment** — Tutorials and guides to get started
-- **Reference System** — Queryable documentation for all features
-- **Working Example** — A real kiln demonstrating best practices
-- **Test Fixture** — Integration tests verify this content works
+Notes, wikilinks, tags, and sessions-as-notes are how knowledge gets into the system. Write markdown, link ideas with `[[wikilinks]]`, and every conversation you have becomes a searchable, linkable note in your [[Help/Concepts/Kilns|kiln]].
 
-Think of it as Crucible documenting itself, using itself.
+- **[[Help/Concepts/Kilns]]** — What makes a kiln
+- **[[Help/Concepts/The Knowledge Graph]]** — How wikilinks connect ideas
+- **[[Help/Concepts/Plaintext First]]** — Why markdown matters
+
+### Knowledge activates
+
+[[Help/Concepts/Precognition|Precognition]] is the core expression of this philosophy: before every message reaches the LLM, Crucible searches your knowledge graph and silently injects relevant context. Your notes whisper to the agent. The more you write and link, the smarter your agents get.
+
+- **[[Help/Concepts/Precognition]]** — Auto-RAG from your knowledge graph
+- **[[Help/Concepts/Semantic Search]]** — Finding by meaning, not just keywords
+- **[[Help/Concepts/Agents & Protocols]]** — MCP, ACP, and how agents connect
+
+### You extend it
+
+Neovim-like architecture: Lua/Fennel plugins, TUI-first, headless daemon with RPC. Most behaviors beyond the knowledge core can be scripted.
+
+- **[[Help/Concepts/Scripting Languages]]** — Lua with Fennel support
+- **[[Help/Extending/Creating Plugins]]** — Create plugins in any language
+- **[[Help/Extending/MCP Gateway]]** — Connect external tools
+
+## Getting Started
+
+```bash
+# Start an AI chat session
+cru chat
+
+# Process your notes for search
+cru process
+
+# Start MCP server for external agents
+cru mcp
+```
+
+New to Crucible? Start here:
+
+1. **[[Guides/Getting Started]]** — Your first steps with Crucible
+2. **[[Guides/Your First Kiln]]** — Create and configure a new kiln
+3. **[[Help/CLI/chat]]** — Start chatting with AI
+4. **[[Help/Wikilinks]]** — The link syntax that powers everything
 
 ## Maps of Content
 
@@ -33,42 +68,6 @@ Navigate by topic:
 - **[[Extending Crucible]]** — Plugins, hooks, tools, and scripting
 - **[[Search & Discovery]]** — Finding and navigating your notes
 - **[[Configuration]]** — Setting up providers and backends
-
-## Core Concepts
-
-Understand the fundamentals:
-
-- **[[Help/Concepts/Agents & Protocols]]** — MCP, ACP, and how agents connect
-- **[[Help/Concepts/Kilns]]** — What makes a kiln
-- **[[Help/Concepts/The Knowledge Graph]]** — How wikilinks connect ideas
-- **[[Help/Concepts/Semantic Search]]** — Finding by meaning
-- **[[Help/Concepts/Plaintext First]]** — Why markdown matters
-- **[[Help/Concepts/Scripting Languages]]** — Lua with Fennel support
-
-## Getting Started
-
-New to Crucible? Start here:
-
-1. **[[Guides/Getting Started]]** — Your first steps with Crucible
-2. **[[Guides/Your First Kiln]]** — Create and configure a new kiln
-3. **[[Help/CLI/chat]]** — Start chatting with AI
-4. **[[Help/Wikilinks]]** — The link syntax that powers everything
-
-## Quick Start Commands
-
-```bash
-# Start an AI chat session
-cru chat
-
-# Process your notes for search
-cru process
-
-# View kiln statistics
-cru stats
-
-# Start MCP server for external agents
-cru mcp
-```
 
 ## Reference Documentation
 
@@ -133,7 +132,7 @@ Not sure how to structure your notes?
 
 ## About This Kiln
 
-This dev-kiln is maintained as part of the Crucible project. See [[Meta/Dev Kiln Architecture]] for technical details.
+This **dev-kiln** serves as a learning environment, reference system, working example, and test fixture — Crucible documenting itself, using itself. See [[Meta/Dev Kiln Architecture]] for technical details.
 
 ---
 

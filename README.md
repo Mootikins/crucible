@@ -4,9 +4,9 @@
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE-MIT)
 [![Docs](https://img.shields.io/badge/docs-mootikins.github.io%2Fcrucible-blue)](https://mootikins.github.io/crucible/)
 
-**A local-first AI agent that turns every conversation into a searchable, linkable note you own.**
+**A knowledge-grounded agent runtime. Agents that draw from a knowledge graph make better decisions.**
 
-No cloud. No lock-in. Your AI chats live as markdown files in git, wired into a knowledge graph you control.
+Local-first. No cloud. No lock-in. Your conversations, notes, and wikilinks form a knowledge graph that agents draw from and contribute to — all as markdown files you own.
 
 <p align="center">
   <img src="assets/demo.gif" alt="Crucible chat with Precognition" width="720" />
@@ -16,12 +16,12 @@ No cloud. No lock-in. Your AI chats live as markdown files in git, wired into a 
 
 ## What Makes Crucible Different
 
-Most AI chat tools treat conversations as disposable. Crucible treats them as knowledge.
+Memory and knowledge are too fundamental to be an afterthought. Most AI tools treat conversations as disposable — Crucible makes them the foundation.
 
-- **Sessions are markdown.** Every chat saves to a `.md` file in your workspace. Search them, link them, version them in git.
-- **Your notes become agent memory.** Precognition auto-injects relevant vault context before each LLM turn. Wikilinks define relationships. Block-level embeddings power semantic search at paragraph granularity.
+- **Knowledge-grounded agents.** Precognition auto-injects relevant context from your knowledge graph before each LLM turn. Block-level embeddings power semantic search at paragraph granularity. The more you use it, the smarter your agents get.
+- **Sessions are notes.** Every chat saves as markdown in your kiln. Search them, link them with wikilinks, version them in git. Conversations become permanent, connectable knowledge.
+- **Neovim-like architecture.** Lua/Fennel plugins, TUI-first, headless daemon with RPC. Most behaviors beyond the knowledge core can be scripted.
 - **Bring any LLM.** Ollama, OpenAI, Anthropic, local GGUF models. Swap freely.
-- **Extend with Lua & Fennel.** Write tools, handlers, and automations as plugins. Drop a `.lua` or `.fnl` file in your plugins folder and it just works.
 - **Plaintext first.** No proprietary formats. Files are the source of truth. The database is optional acceleration.
 
 ## How It Compares

@@ -186,11 +186,6 @@ timeout_secs = 120
 # - fastembed: Local CPU-based embeddings (default, no API key needed)
 # - ollama: Local GPU-accelerated embeddings via Ollama
 # - openai: OpenAI's text-embedding-3 models (requires API key)
-# - anthropic: Anthropic's embedding models (requires API key)
-# - cohere: Cohere's embedding models (requires API key)
-# - burn: Local GPU via Burn ML framework (experimental)
-# - custom: Custom HTTP endpoint
-# - mock: Testing only
 #
 # See Help/Config/embedding.md for full documentation
 # See examples/config/embedding.toml for more examples
@@ -202,7 +197,7 @@ timeout_secs = 120
 
 [embedding]
 # Provider type
-# Options: fastembed, ollama, openai, anthropic, cohere, burn, custom
+# Options: fastembed, ollama, openai
 provider = "ollama"
 
 # Model name (provider-specific)
