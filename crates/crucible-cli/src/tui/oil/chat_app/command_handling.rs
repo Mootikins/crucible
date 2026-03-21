@@ -14,6 +14,112 @@ use super::model_state::ModelListState;
 use super::state::ChatMode;
 use super::OilChatApp;
 
+/// Known REPL command names for suggestion matching.
+const KNOWN_REPL_COMMANDS: &[&str] = &[
+    "quit",
+    "q",
+    "help",
+    "h",
+    "clear",
+    "model",
+    "set",
+    "export",
+    "messages",
+    "msgs",
+    "notifications",
+    "palette",
+    "commands",
+    "mcp",
+    "plugins",
+    "reload",
+    "config",
+    "pick",
+];
+
+/// Minimal Levenshtein distance for command suggestions.
+fn levenshtein(a: &str, b: &str) -> usize {
+    let a = a.as_bytes();
+    let b = b.as_bytes();
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    let mut curr = vec![0; b.len() + 1];
+    for i in 1..=a.len() {
+        curr[0] = i;
+        for j in 1..=b.len() {
+            let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
+            curr[j] = (prev[j] + 1).min(curr[j - 1] + 1).min(prev[j - 1] + cost);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    prev[b.len()]
+}
+
+/// Suggest the closest known command for a typo.
+fn suggest_command<'a>(input: &str, known: &[&'a str]) -> Option<&'a str> {
+    known
+        .iter()
+        .map(|cmd| (*cmd, levenshtein(input, cmd)))
+        .filter(|(_, dist)| *dist <= 2)
+        .min_by_key(|(_, dist)| *dist)
+        .map(|(cmd, _)| cmd)
+}
+
+/// Categorized help text for the :help system.
+fn help_text(category: Option<&str>) -> String {
+    match category {
+        None | Some("") => "Crucible Help\n\n\
+             :help commands  — List all REPL commands\n\
+             :help keys      — Keybindings reference\n\
+             :help config    — Configuration options\n\
+             :help tools     — Available agent tools\n\
+             \n\
+             Type :quit to exit, /command for slash commands"
+            .to_string(),
+        Some("commands") | Some("cmds") => ":quit, :q      — Exit\n\
+             :clear          — Clear conversation\n\
+             :model <name>   — Switch model (or list available)\n\
+             :set <opt>      — Set option (e.g., :set temperature=0.7)\n\
+             :export <path>  — Export session to markdown\n\
+             :messages       — Toggle notification drawer\n\
+             :mcp            — Show MCP server status\n\
+             :plugins        — Show loaded plugins\n\
+             :reload <name>  — Reload a plugin\n\
+             :palette        — Open command palette (F1)\n\
+             :config         — Show current configuration\n\
+             :help [topic]   — Show help"
+            .to_string(),
+        Some("keys") | Some("keybindings") | Some("shortcuts") => "Enter          — Send message\n\
+             Ctrl+C         — Cancel / clear input\n\
+             Ctrl+T         — Toggle thinking display\n\
+             Esc            — Cancel streaming / close popup\n\
+             BackTab        — Cycle modes (Normal → Plan → Auto)\n\
+             F1             — Command palette\n\
+             Tab            — Accept autocomplete\n\
+             Up/Down        — Navigate popup / history"
+            .to_string(),
+        Some("config") | Some("settings") => {
+            ":set temperature=0.7    — LLM temperature (0.0-2.0)\n\
+             :set maxtokens=4096     — Max output tokens\n\
+             :set thinkingbudget=med — Thinking budget preset\n\
+             :set precognition       — Toggle auto-RAG\n\
+             :set verbose            — Verbose output\n\
+             :set thinking           — Show thinking blocks\n\
+             :set model=<name>       — Switch LLM model\n\
+             :set                    — Show modified settings\n\
+             :set all                — Show all settings"
+                .to_string()
+        }
+        Some("tools") => "Agent tools are provided by the daemon and MCP servers.\n\
+             Use :mcp to see connected MCP servers and their tool counts.\n\
+             Use :plugins to see loaded plugins and their capabilities.\n\
+             Use /mode, /plan, /auto to switch agent modes."
+            .to_string(),
+        Some(other) => format!(
+            "Unknown help topic: '{}'. Try :help for available topics.",
+            other
+        ),
+    }
+}
+
 impl OilChatApp {
     pub(super) fn handle_slash_command(&mut self, cmd: &str) -> Action<ChatAppMsg> {
         let parts: Vec<&str> = cmd[1..].splitn(2, ' ').collect();
@@ -50,7 +156,15 @@ impl OilChatApp {
 
         match command {
             "q" | "quit" => Action::Quit,
-            "help" | "h" => self.handle_help_repl(),
+            "help" | "h" => self.handle_help_repl(None),
+            _ if command.starts_with("help ") || command.starts_with("h ") => {
+                let topic = command
+                    .strip_prefix("help ")
+                    .or_else(|| command.strip_prefix("h "))
+                    .unwrap_or("")
+                    .trim();
+                self.handle_help_repl(Some(topic))
+            }
             "messages" | "msgs" | "notifications" => {
                 self.notification_area.toggle();
                 Action::Continue
@@ -65,6 +179,14 @@ impl OilChatApp {
             "mcp" => {
                 self.handle_mcp_command();
                 Action::Continue
+            }
+            "pick" => self.open_picker(None),
+            _ if command.starts_with("pick ") => {
+                let source = command
+                    .strip_prefix("pick ")
+                    .expect("starts_with guard")
+                    .trim();
+                self.open_picker(Some(source))
             }
             "plugins" => {
                 self.handle_plugins_command();
@@ -95,27 +217,37 @@ impl OilChatApp {
                 self.handle_export_command(path)
             }
             _ => {
+                // Extract the base command word for suggestion matching
+                let base_cmd = command.split_whitespace().next().unwrap_or(command);
+                let mut msg = format!("Unknown REPL command: {}", cmd);
+                if let Some(suggestion) = suggest_command(base_cmd, KNOWN_REPL_COMMANDS) {
+                    msg.push_str(&format!(" Did you mean :{} ?", suggestion));
+                }
                 self.notification_area
-                    .add(crucible_core::types::Notification::warning(format!(
-                        "Unknown REPL command: {}",
-                        cmd
-                    )));
+                    .add(crucible_core::types::Notification::warning(msg));
                 Action::Continue
             }
         }
     }
 
-    fn handle_help_repl(&mut self) -> Action<ChatAppMsg> {
-        let slash_list: String = self
-            .slash_commands
-            .iter()
-            .map(|(name, _)| format!("/{}", name))
-            .collect::<Vec<_>>()
-            .join(" ");
-        self.add_system_message(format!(
-            "[system] :quit :help :clear :palette :model :set :export <path> :messages :mcp :plugins :reload <name>\n[agent] {}",
-            slash_list
-        ));
+    fn handle_help_repl(&mut self, topic: Option<&str>) -> Action<ChatAppMsg> {
+        let text = help_text(topic);
+        if topic.is_none() {
+            // For the overview, also append the slash command list
+            let slash_list: String = self
+                .slash_commands
+                .iter()
+                .map(|(name, _)| format!("/{}", name))
+                .collect::<Vec<_>>()
+                .join(" ");
+            if slash_list.is_empty() {
+                self.add_system_message(text);
+            } else {
+                self.add_system_message(format!("{}\n\nSlash commands: {}", text, slash_list));
+            }
+        } else {
+            self.add_system_message(text);
+        }
         Action::Continue
     }
 
@@ -629,6 +761,36 @@ impl OilChatApp {
         self.add_system_message(lines.join("\n"));
     }
 
+    pub(super) fn open_picker(&mut self, source: Option<&str>) -> Action<ChatAppMsg> {
+        use super::state::{AutocompleteKind, PickSource};
+
+        let pick_source = match source {
+            None | Some("all") => PickSource::All,
+            Some("notes" | "note") => PickSource::Notes,
+            Some("sessions" | "session") => PickSource::Sessions,
+            Some("commands" | "command" | "cmd") => PickSource::Commands,
+            Some("files" | "file") => PickSource::Files,
+            Some(unknown) => {
+                self.notification_area
+                    .add(crucible_core::types::Notification::warning(format!(
+                        "Unknown pick source: '{}'. Valid: notes, sessions, commands, files",
+                        unknown
+                    )));
+                return Action::Continue;
+            }
+        };
+
+        self.popup.show = true;
+        self.popup.kind = AutocompleteKind::Pick {
+            source: pick_source,
+        };
+        self.popup.filter.clear();
+        self.popup.selected = 0;
+        // Clear input so the picker starts fresh
+        self.set_input("");
+        Action::Continue
+    }
+
     pub(super) fn handle_mcp_command(&mut self) {
         if self.mcp_servers.is_empty() {
             self.add_system_message("No MCP servers configured".to_string());
@@ -644,5 +806,75 @@ impl OilChatApp {
             ));
         }
         self.add_system_message(lines.join("\n"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- levenshtein tests ---
+
+    #[test]
+    fn levenshtein_identical_strings() {
+        assert_eq!(levenshtein("quit", "quit"), 0);
+    }
+
+    #[test]
+    fn levenshtein_single_char_difference() {
+        assert_eq!(levenshtein("quit", "qut"), 1); // deletion
+        assert_eq!(levenshtein("quit", "quiit"), 1); // insertion
+        assert_eq!(levenshtein("quit", "qxit"), 1); // substitution
+    }
+
+    #[test]
+    fn levenshtein_empty_strings() {
+        assert_eq!(levenshtein("", ""), 0);
+        assert_eq!(levenshtein("abc", ""), 3);
+        assert_eq!(levenshtein("", "abc"), 3);
+    }
+
+    #[test]
+    fn levenshtein_completely_different() {
+        assert_eq!(levenshtein("abc", "xyz"), 3);
+    }
+
+    // --- suggest_command tests ---
+
+    #[test]
+    fn suggest_command_exact_match() {
+        let known = &["quit", "help", "clear", "model"];
+        assert_eq!(suggest_command("quit", known), Some("quit"));
+    }
+
+    #[test]
+    fn suggest_command_typo_within_distance_2() {
+        let known = &["quit", "help", "clear", "model"];
+        assert_eq!(suggest_command("quiy", known), Some("quit"));
+        assert_eq!(suggest_command("hlep", known), Some("help"));
+        assert_eq!(suggest_command("claer", known), Some("clear"));
+    }
+
+    #[test]
+    fn suggest_command_no_match_beyond_distance_2() {
+        let known = &["quit", "help", "clear", "model"];
+        assert_eq!(suggest_command("xyzzy", known), None);
+        assert_eq!(suggest_command("abcdef", known), None);
+    }
+
+    #[test]
+    fn suggest_command_picks_closest() {
+        let known = &["model", "mode", "models"];
+        // "modl" is distance 1 from both "model" and "mode";
+        // min_by_key returns the first minimum, so "model" wins
+        let result = suggest_command("modl", known);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn suggest_command_empty_input() {
+        let known = &["quit", "help"];
+        // Empty string is distance 4 from "quit" — beyond threshold of 2
+        assert_eq!(suggest_command("", known), None);
     }
 }

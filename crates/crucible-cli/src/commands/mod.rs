@@ -6,6 +6,7 @@ pub mod completions;
 pub mod daemon;
 pub mod doctor;
 pub mod init;
+pub mod lua;
 pub mod mcp;
 pub mod models;
 pub mod plugin;

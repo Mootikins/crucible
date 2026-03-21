@@ -31,7 +31,6 @@ keywords = ["knowledge-management", "ai", "collaboration", "crdt", "rust"]
 categories = ["development-tools", "text-processing", "database"]
 
 [workspace.dependencies]
-yrs = "0.25"
 tokio = { version = "1.50", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

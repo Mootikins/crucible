@@ -529,3 +529,23 @@ pub(crate) async fn handle_process_batch(
         }),
     )
 }
+
+pub(crate) async fn handle_suggest_links(req: Request, km: &Arc<KilnManager>) -> Response {
+    let text = require_param!(req, "text", as_str);
+    let kiln_path = require_param!(req, "kiln", as_str);
+
+    let handle = match km.get_or_open(Path::new(kiln_path)).await {
+        Ok(c) => c,
+        Err(e) => return internal_error(req.id, e),
+    };
+
+    let notes = match handle.list_notes(None).await {
+        Ok(n) => n,
+        Err(e) => return internal_error(req.id, e),
+    };
+
+    let note_names: Vec<String> = notes.into_iter().map(|n| n.name).collect();
+    let suggestions = crate::tools::autolink::suggest_links(text, &note_names);
+
+    Response::success(req.id, serde_json::json!({ "suggestions": suggestions }))
+}

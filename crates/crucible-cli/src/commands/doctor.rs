@@ -178,6 +178,46 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: &str) -> Res
         });
     }
 
+    // Check 6: Plugins (only if daemon is running)
+    if let Ok(client) = DaemonClient::connect().await {
+        match client.plugin_list().await {
+            Ok(plugins) => {
+                results.push(DoctorCheckResult {
+                    check_name: "Plugins".to_string(),
+                    status: "pass".to_string(),
+                    message: format!("{} plugin(s) loaded", plugins.len()),
+                });
+            }
+            Err(e) => {
+                results.push(DoctorCheckResult {
+                    check_name: "Plugins".to_string(),
+                    status: "warn".to_string(),
+                    message: format!("Plugin check failed ({})", e),
+                });
+            }
+        }
+    }
+
+    // Check 7: Config validation (structural parse of config.toml)
+    if loaded_config.is_some() {
+        results.push(DoctorCheckResult {
+            check_name: "Config validation".to_string(),
+            status: "pass".to_string(),
+            message: "Config parsed and validated".to_string(),
+        });
+    } else if config_path.exists() {
+        // Config file exists but failed to load (already reported in Check 2),
+        // add a validation-specific note
+        results.push(DoctorCheckResult {
+            check_name: "Config validation".to_string(),
+            status: "fail".to_string(),
+            message: "Config file exists but failed validation (see Config check above)"
+                .to_string(),
+        });
+    }
+
+    let total_checks = results.len();
+
     // Output results based on format
     match format {
         "json" => {
@@ -208,7 +248,7 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: &str) -> Res
             println!();
             if failures == 0 {
                 if warnings == 0 {
-                    output::success("All 5 checks passed.");
+                    output::success(&format!("All {} checks passed.", total_checks));
                 } else {
                     output::warning(&format!(
                         "All checks passed with {} warning{}.",

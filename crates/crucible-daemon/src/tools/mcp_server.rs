@@ -257,11 +257,12 @@ impl CrucibleMcpServer {
         let mut tools = self.tool_router.list_all();
 
         // Filter delegate_session when delegation is unavailable or disabled
-        let delegation_available = self.delegation_context
+        let delegation_available = self
+            .delegation_context
             .as_ref()
             .map(|ctx| ctx.enabled)
             .unwrap_or(false);
-        
+
         if !delegation_available {
             tools.retain(|t| t.name != "delegate_session");
         }
@@ -656,9 +657,8 @@ impl CrucibleMcpServer {
 impl ServerHandler for CrucibleMcpServer {
     fn get_info(&self) -> rmcp::model::ServerInfo {
         let tool_count = self.tool_count();
-        make_server_info(
-            &format!(
-                "Crucible knowledge management server with {tool_count} tools. \
+        make_server_info(&format!(
+            "Crucible knowledge management server with {tool_count} tools. \
                 Notes: create_note, read_note, update_note, delete_note, list_notes, \
                 read_metadata. \
                 Search: semantic_search, text_search, property_search. \
@@ -668,8 +668,7 @@ impl ServerHandler for CrucibleMcpServer {
                 \u{2014} hand off tasks to other agents when asked to delegate. \
                 Jobs: list_jobs, get_job_result, cancel_job \
                 \u{2014} manage background jobs."
-            ),
-        )
+        ))
     }
 }
 
@@ -881,7 +880,7 @@ mod tests {
     }
 
     #[test]
-    fn test_delegate_session_description_generic_when_no_targets() {
+    fn test_delegate_session_filtered_when_no_delegation_context() {
         let temp = TempDir::new().unwrap();
         let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
         let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
@@ -893,20 +892,9 @@ mod tests {
         );
 
         let tools = server.list_tools();
-        let delegate_tool = tools
-            .iter()
-            .find(|t| t.name == "delegate_session")
-            .expect("delegate_session tool should exist");
-
-        let desc = delegate_tool
-            .description
-            .as_ref()
-            .map(|d| d.as_ref())
-            .unwrap_or("");
         assert!(
-            !desc.contains("Available targets:"),
-            "Description should not have 'Available targets:' when no context. Got: {}",
-            desc
+            !tools.iter().any(|t| t.name == "delegate_session"),
+            "delegate_session should be filtered out when no delegation context is set"
         );
     }
 

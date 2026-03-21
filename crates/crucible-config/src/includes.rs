@@ -936,7 +936,6 @@ verbose = true
     }
 
     #[test]
-    #[test]
     fn test_parse_ref_kind_env() {
         assert_eq!(
             parse_ref_kind("{env:OPENAI_API_KEY}"),

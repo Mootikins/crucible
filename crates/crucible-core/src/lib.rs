@@ -3,9 +3,7 @@ pub use uuid;
 
 pub mod agent;
 pub mod background;
-pub mod canvas;
 pub mod content_category;
-pub mod crdt;
 pub mod crucible_core;
 pub mod discovery;
 pub mod enrichment;
@@ -39,7 +37,6 @@ pub use agent::{
     AgentCard, AgentCardFrontmatter, AgentCardLoader, AgentCardMatch, AgentCardMatcher,
     AgentCardQuery, AgentCardRegistry,
 };
-pub use canvas::{CanvasEdge, CanvasNode};
 pub use content_category::{ContentCategory, ContentCategoryError};
 pub use crucible_core::CrucibleCore;
 pub use discovery::{DiscoveryConfig, DiscoveryPaths};
@@ -191,9 +188,6 @@ pub enum CrucibleError {
 
     #[error("Invalid operation: {0}")]
     InvalidOperation(String),
-
-    #[error("CRDT error: {0}")]
-    CrdtError(String),
 
     #[error("Database error: {0}")]
     DatabaseError(String),

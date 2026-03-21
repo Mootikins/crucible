@@ -645,3 +645,66 @@ fn logging_level_returns_none_when_unset() {
         "default config should have no logging level"
     );
 }
+
+// ---- PluginsConfig tests ----
+
+#[test]
+fn plugins_config_deserializes_from_toml() {
+    let toml_content = r#"
+[[plugin]]
+url = "https://github.com/user/my-plugin.git"
+branch = "main"
+
+[[plugin]]
+url = "other-user/other-plugin"
+pin = "v1.0.0"
+enabled = false
+"#;
+    let config: crate::config::PluginsConfig = toml::from_str(toml_content).unwrap();
+    assert_eq!(config.plugin.len(), 2);
+
+    assert_eq!(
+        config.plugin[0].url,
+        "https://github.com/user/my-plugin.git"
+    );
+    assert_eq!(config.plugin[0].branch.as_deref(), Some("main"));
+    assert!(config.plugin[0].pin.is_none());
+    assert!(config.plugin[0].enabled); // default_true
+
+    assert_eq!(config.plugin[1].url, "other-user/other-plugin");
+    assert_eq!(config.plugin[1].pin.as_deref(), Some("v1.0.0"));
+    assert!(!config.plugin[1].enabled);
+}
+
+#[test]
+fn plugins_config_empty_deserializes() {
+    let config: crate::config::PluginsConfig = toml::from_str("").unwrap();
+    assert!(config.plugin.is_empty());
+}
+
+#[test]
+fn plugins_config_default_enabled_is_true() {
+    let toml_content = r#"
+[[plugin]]
+url = "user/repo"
+"#;
+    let config: crate::config::PluginsConfig = toml::from_str(toml_content).unwrap();
+    assert!(config.plugin[0].enabled);
+}
+
+#[test]
+fn plugins_config_roundtrips_through_toml() {
+    let config = crate::config::PluginsConfig {
+        plugin: vec![crate::config::PluginEntry {
+            url: "user/my-plugin".to_string(),
+            branch: Some("dev".to_string()),
+            pin: None,
+            enabled: true,
+        }],
+    };
+    let serialized = toml::to_string_pretty(&config).unwrap();
+    let deserialized: crate::config::PluginsConfig = toml::from_str(&serialized).unwrap();
+    assert_eq!(deserialized.plugin.len(), 1);
+    assert_eq!(deserialized.plugin[0].url, "user/my-plugin");
+    assert_eq!(deserialized.plugin[0].branch.as_deref(), Some("dev"));
+}

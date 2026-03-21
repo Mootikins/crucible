@@ -25,6 +25,7 @@ pub async fn handle(cmd: WebCommand) -> Result<()> {
         port: 3000,
         host: "127.0.0.1".to_string(),
         static_dir: None,
+        api_key: None,
     });
 
     let final_config = WebConfig {
@@ -32,6 +33,7 @@ pub async fn handle(cmd: WebCommand) -> Result<()> {
         port: cmd.port.unwrap_or(web_config.port),
         host: cmd.host.unwrap_or(web_config.host),
         static_dir: cmd.static_dir.or(web_config.static_dir),
+        api_key: web_config.api_key,
     };
 
     crate::common::daemon_client().await?;

@@ -76,6 +76,7 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
             acp_config: Some(config.acp.clone()),
             permission_config: config.permissions.clone(),
             web_config: None,
+            schedules: config.schedules.clone(),
         })
         .await?;
 

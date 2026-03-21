@@ -101,6 +101,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
                 acp_config: Some(config.acp.clone()),
                 permission_config: None,
                 web_config: None,
+                schedules: config.schedules.clone(),
             },
         )
         .await?;
@@ -325,6 +326,10 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
 
         Some(Commands::Plugin(cmd)) => {
             commands::plugin::execute(config, cmd).await?;
+        }
+
+        Some(Commands::Lua { code }) => {
+            commands::lua::execute(code).await?;
         }
 
         Some(Commands::Init {

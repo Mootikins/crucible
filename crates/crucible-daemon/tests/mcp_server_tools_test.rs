@@ -62,7 +62,7 @@ async fn test_mcp_server_exposes_13_tools() {
         "Should expose exactly 20 tools (all tools including delegate_session), got {}",
         tool_count
     );
-    
+
     let listed_tools = server.list_tools();
     assert_eq!(
         listed_tools.len(), 19,
@@ -198,7 +198,10 @@ async fn test_tool_categories() {
         .iter()
         .filter(|t| *t == "delegate_session")
         .count();
-    assert_eq!(delegation_count, 0, "Should not have delegate_session tool (no delegation context)");
+    assert_eq!(
+        delegation_count, 0,
+        "Should not have delegate_session tool (no delegation context)"
+    );
 }
 
 /// Test tool descriptions are meaningful (not just the tool name)

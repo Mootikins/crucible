@@ -731,6 +731,71 @@ pub(crate) async fn handle_session_send_message(
     }
 }
 
+/// Shared implementation for context injection -- used by both RPC handler and Lua bridge.
+pub(crate) async fn inject_context_impl(
+    sm: &SessionManager,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+    session_id: &str,
+    role: &str,
+    content: &str,
+) -> Result<(), String> {
+    if !matches!(role, "system" | "user" | "assistant") {
+        return Err(format!(
+            "Invalid role '{}': must be 'system', 'user', or 'assistant'",
+            role
+        ));
+    }
+
+    let session = sm
+        .get_session(session_id)
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+    let log_event = match role {
+        "system" => crate::observe::LogEvent::system(content),
+        "user" => crate::observe::LogEvent::user(content),
+        "assistant" => crate::observe::LogEvent::assistant(content),
+        _ => unreachable!(),
+    };
+
+    let event_json = serde_json::to_string(&log_event).map_err(|e| e.to_string())?;
+    let storage = FileSessionStorage::new();
+    storage
+        .append_event(&session, &event_json)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let _ = emit_event(
+        event_tx,
+        SessionEventMessage::new(
+            session_id,
+            "context_injected",
+            serde_json::json!({
+                "role": role,
+                "content": content,
+            }),
+        ),
+    );
+
+    Ok(())
+}
+
+pub(crate) async fn handle_session_inject_context(
+    req: Request,
+    sm: &Arc<SessionManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    let session_id = require_param!(req, "session_id", as_str);
+    let role = require_param!(req, "role", as_str);
+    let content = require_param!(req, "content", as_str);
+
+    match inject_context_impl(sm, event_tx, session_id, role, content).await {
+        Ok(()) => Response::success(req.id, serde_json::json!({ "status": "ok" })),
+        Err(msg) if msg.starts_with("Invalid role") => Response::error(req.id, INVALID_PARAMS, msg),
+        Err(msg) if msg.starts_with("Session not found") => session_not_found(req.id, session_id),
+        Err(msg) => Response::error(req.id, INTERNAL_ERROR, msg),
+    }
+}
+
 pub(crate) async fn handle_session_cancel(req: Request, am: &Arc<AgentManager>) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
 
@@ -996,6 +1061,99 @@ pub(crate) async fn handle_providers_list(req: Request, am: &Arc<AgentManager>) 
 
     let providers = am.list_providers(classification).await;
     Response::success(req.id, serde_json::json!({ "providers": providers }))
+}
+
+/// Fork a session by creating a new session and replaying messages from the parent.
+///
+/// Params:
+///   - `session_id` (string, required): Parent session ID to fork from
+///   - `up_to` (u64, optional): Only copy the first N messages (user/assistant/system)
+///
+/// Returns: `{ id, parent_id, messages_copied }`
+pub(crate) async fn handle_session_fork(
+    req: Request,
+    sm: &Arc<SessionManager>,
+    am: &Arc<AgentManager>,
+) -> Response {
+    let parent_id = require_param!(req, "session_id", as_str);
+    let up_to = optional_param!(req, "up_to", as_u64);
+
+    let parent = match sm.get_session(parent_id) {
+        Some(s) => s,
+        None => return session_not_found(req.id, parent_id),
+    };
+
+    let child = match sm
+        .create_session(
+            parent.session_type,
+            parent.kiln.clone(),
+            Some(parent.workspace.clone()),
+            parent.connected_kilns.clone(),
+            None,
+        )
+        .await
+    {
+        Ok(s) => s,
+        Err(e) => return internal_error(req.id, e),
+    };
+
+    let parent_dir = FileSessionStorage::sessions_base(&parent.kiln).join(parent_id);
+    let events = match crate::observe::load_events(&parent_dir).await {
+        Ok(e) => e,
+        Err(e) => {
+            warn!(parent_id = %parent_id, error = %e, "Failed to load parent events for fork");
+            Vec::new()
+        }
+    };
+
+    let storage = FileSessionStorage::new();
+    let mut count = 0u64;
+    for event in &events {
+        if let Some(limit) = up_to {
+            if count >= limit {
+                break;
+            }
+        }
+        match event {
+            crate::observe::LogEvent::User { .. }
+            | crate::observe::LogEvent::Assistant { .. }
+            | crate::observe::LogEvent::System { .. } => match serde_json::to_string(event) {
+                Ok(json) => {
+                    if let Err(e) = storage.append_event(&child, &json).await {
+                        warn!(
+                            child_id = %child.id,
+                            error = %e,
+                            "Failed to write forked event"
+                        );
+                    }
+                    count += 1;
+                }
+                Err(e) => warn!(error = %e, "Failed to serialize event for fork"),
+            },
+            _ => {}
+        }
+    }
+
+    // Copy agent configuration from parent so the forked session inherits
+    // model, provider, system prompt, thinking budget, etc.
+    if let Ok((_, parent_agent)) = am.get_session_with_agent(parent_id) {
+        if let Err(e) = am.configure_agent(&child.id, parent_agent).await {
+            warn!(
+                child_id = %child.id,
+                error = %e,
+                "Failed to copy agent config to forked session"
+            );
+        }
+    }
+
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "id": child.id,
+            "parent_id": parent_id,
+            "messages_copied": count,
+        }),
+    )
 }
 
 pub(crate) async fn handle_session_set_thinking_budget(

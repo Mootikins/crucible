@@ -233,6 +233,67 @@ impl BackgroundJobManager {
         self.running.len()
     }
 
+    /// Wait for all specified jobs to complete, with timeout.
+    ///
+    /// Returns one JSON object per job ID with `id`, `status`, and (on success)
+    /// `output`/`error`/`exit_code` fields from the finished `JobResult`.
+    /// Jobs that are still running when the deadline is reached get `"timeout"` status.
+    /// Unknown job IDs get `"not_found"` status.
+    pub async fn collect_jobs(
+        &self,
+        job_ids: &[JobId],
+        timeout: Duration,
+    ) -> Vec<serde_json::Value> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        let mut results: Vec<Option<serde_json::Value>> = vec![None; job_ids.len()];
+
+        loop {
+            let mut all_done = true;
+            for (i, job_id) in job_ids.iter().enumerate() {
+                if results[i].is_some() {
+                    continue;
+                }
+                match self.get_job_result(job_id) {
+                    Some(jr) if jr.info.status.is_terminal() => {
+                        results[i] = Some(serde_json::json!({
+                            "id": job_id,
+                            "status": jr.info.status.to_string(),
+                            "output": jr.output,
+                            "error": jr.error,
+                            "exit_code": jr.exit_code,
+                        }));
+                    }
+                    Some(_) => {
+                        all_done = false;
+                    }
+                    None => {
+                        results[i] = Some(serde_json::json!({
+                            "id": job_id,
+                            "status": "not_found",
+                        }));
+                    }
+                }
+            }
+            if all_done || tokio::time::Instant::now() >= deadline {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+
+        results
+            .into_iter()
+            .enumerate()
+            .map(|(i, r)| {
+                r.unwrap_or_else(|| {
+                    serde_json::json!({
+                        "id": job_ids[i].to_string(),
+                        "status": "timeout",
+                    })
+                })
+            })
+            .collect()
+    }
+
     fn add_to_history(
         history: &DashMap<String, std::collections::VecDeque<JobResult>>,
         session_id: &str,

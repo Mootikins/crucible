@@ -7,10 +7,17 @@ use clap::Subcommand;
 
 use crate::config::CliConfig;
 
+mod add;
 mod health;
 mod new;
+mod remove;
 mod stubs;
 mod test;
+mod update;
+
+pub use add::AddArgs;
+pub use remove::RemoveArgs;
+pub use update::UpdateArgs;
 
 #[derive(Debug, Subcommand)]
 pub enum PluginCommands {
@@ -22,6 +29,12 @@ pub enum PluginCommands {
     Stubs(StubsArgs),
     /// Run plugin health checks
     Health(HealthArgs),
+    /// Add a plugin from a git URL
+    Add(AddArgs),
+    /// Remove a plugin declaration
+    Remove(RemoveArgs),
+    /// Update installed plugins (git pull)
+    Update(UpdateArgs),
 }
 
 #[derive(Debug, clap::Parser)]
@@ -71,5 +84,8 @@ pub async fn execute(config: CliConfig, cmd: PluginCommands) -> Result<()> {
         PluginCommands::New(args) => new::execute(config, args).await,
         PluginCommands::Stubs(args) => stubs::execute(config, args).await,
         PluginCommands::Health(args) => health::execute(config, args).await,
+        PluginCommands::Add(args) => add::execute(args).await,
+        PluginCommands::Remove(args) => remove::execute(args).await,
+        PluginCommands::Update(args) => update::execute(args).await,
     }
 }

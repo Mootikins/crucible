@@ -750,7 +750,8 @@ mod tests {
         );
 
         let tools = server.list_all_tools().await;
-        assert_eq!(tools.len(), 22); // 11 kiln tools + 3 job tools + 2 discovery tools + 6 workspace tools
+        // 10 kiln tools (delegate_session filtered without context) + 3 job tools + 2 discovery tools + 6 workspace tools
+        assert_eq!(tools.len(), 21);
     }
 
     #[test]

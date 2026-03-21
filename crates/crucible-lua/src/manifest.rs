@@ -340,12 +340,37 @@ fn is_valid_version(version: &str) -> bool {
     true
 }
 
+/// Where a plugin was discovered from, ordered by priority (highest first).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PluginSource {
+    /// `CRUCIBLE_PLUGIN_PATH` env var
+    EnvPath,
+    /// `~/.config/crucible/plugins/`
+    User,
+    /// `KILN/.crucible/plugins/` or `KILN/plugins/`
+    Kiln,
+    /// `$CRUCIBLE_RUNTIME/plugins/` or exe-relative runtime path
+    Runtime,
+}
+
+impl std::fmt::Display for PluginSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EnvPath => f.write_str("path"),
+            Self::User => f.write_str("user"),
+            Self::Kiln => f.write_str("kiln"),
+            Self::Runtime => f.write_str("runtime"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct LoadedPlugin {
     pub manifest: PluginManifest,
     pub dir: PathBuf,
     pub state: PluginState,
     pub last_error: Option<String>,
+    pub source: PluginSource,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -376,6 +401,17 @@ impl LoadedPlugin {
             dir,
             state: PluginState::Discovered,
             last_error: None,
+            source: PluginSource::User,
+        }
+    }
+
+    pub fn with_source(manifest: PluginManifest, dir: PathBuf, source: PluginSource) -> Self {
+        Self {
+            manifest,
+            dir,
+            state: PluginState::Discovered,
+            last_error: None,
+            source,
         }
     }
 

@@ -116,6 +116,10 @@ pub struct CliAppConfig {
     #[serde(default)]
     pub permissions: Option<PermissionConfig>,
 
+    /// Declarative schedules that run Lua snippets at fixed intervals.
+    #[serde(default)]
+    pub schedules: Vec<super::types::ScheduleEntry>,
+
     /// Per-plugin configuration sections (e.g. `[plugins.discord]`)
     #[serde(default)]
     pub plugins: HashMap<String, serde_json::Value>,
@@ -157,6 +161,7 @@ impl Default for CliAppConfig {
             storage: None,
             mcp: None,
             permissions: None,
+            schedules: Vec::new(),
             plugins: HashMap::new(),
             web: None,
             server: None,

@@ -73,6 +73,7 @@ mod paths;
 mod popup;
 mod ratelimit;
 mod registry;
+pub mod schedule;
 pub mod schema;
 pub mod session;
 mod session_api;
@@ -112,7 +113,7 @@ pub use config::{
     get_statusline_config, get_theme_config, list_available_themes, ConfigLoader, ConfigState,
 };
 pub use core_handler::{LuaHandler, LuaHandlerMeta};
-pub use error::LuaError;
+pub use error::{format_lua_error, LuaError};
 pub use executor::LuaExecutor;
 #[cfg(feature = "fennel")]
 pub use fennel::FennelCompiler;
@@ -141,6 +142,7 @@ pub use paths::{register_paths_module, PathsContext};
 pub use popup::{lua_entry_to_core, lua_request_to_core, register_popup_module};
 pub use ratelimit::register_ratelimit_module;
 pub use registry::LuaToolRegistry;
+pub use schedule::register_schedule_module;
 pub use schema::{generate_input_schema, type_to_string, FunctionSignature, LuauType, TypedParam};
 pub use shell::{register_shell_module, ExecResult, ShellPolicy};
 pub use statusline::{
@@ -172,7 +174,7 @@ pub use lifecycle::{
 };
 pub use manifest::{
     Capability, ConfigProperty, ConfigSchema, ConfigType, ExportDeclarations, LoadedPlugin,
-    ManifestError, ManifestResult, PluginDependency, PluginManifest, PluginState,
+    ManifestError, ManifestResult, PluginDependency, PluginManifest, PluginSource, PluginState,
 };
 pub use mcp::{
     register_mcp_module, register_mcp_module_stub, LuaMcpClient, McpToolInfo, McpToolResult,

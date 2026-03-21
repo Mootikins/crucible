@@ -200,6 +200,50 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
         session_id: String,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
 
+    /// Load conversation messages for a session.
+    ///
+    /// Returns an array of `{ role, content, timestamp }` objects filtered from
+    /// the session event log. Only User, Assistant, and System events are included.
+    /// `role_filter` restricts to a single role (e.g. `"user"`).
+    /// `limit` returns only the last N messages.
+    fn load_messages(
+        &self,
+        session_id: String,
+        role_filter: Option<String>,
+        limit: Option<usize>,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>>;
+
+    /// Inject a message into the session context without triggering LLM completion.
+    ///
+    /// Persists a `LogEvent` to the session's JSONL log and emits a broadcast event.
+    /// `role` must be `"system"`, `"user"`, or `"assistant"`.
+    fn inject_context(
+        &self,
+        session_id: String,
+        role: String,
+        content: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
+
+    /// Wait for multiple background subagent jobs to complete.
+    ///
+    /// Returns one result object per job ID with `id`, `status`, and
+    /// `output`/`error`/`exit_code` fields. `timeout_secs` defaults to 120.
+    fn collect_subagents(
+        &self,
+        job_ids: Vec<String>,
+        timeout_secs: Option<f64>,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>>;
+
+    /// Fork a session, creating a new session with copied message history.
+    ///
+    /// Returns a JSON object with `{ id, parent_id, messages_copied }`.
+    /// `up_to` limits copying to the first N user/assistant/system messages.
+    fn fork_session(
+        &self,
+        session_id: String,
+        up_to: Option<u64>,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>>;
+
     /// Send a message and stream structured response parts.
     ///
     /// Subscribes, sends the message, then returns a receiver that yields
@@ -263,6 +307,15 @@ pub fn register_sessions_module(lua: &Lua) -> Result<(), LuaError> {
         sessions,
         (String, String, mlua::Value)
     );
+    stub_async!("inject", lua, sessions, (String, String, String));
+    stub_async!(
+        "collect_subagents",
+        lua,
+        sessions,
+        (mlua::Value, mlua::Value)
+    );
+    stub_async!("messages", lua, sessions, (String, mlua::Value));
+    stub_async!("fork", lua, sessions, (String, mlua::Value));
 
     register_in_namespaces(lua, "sessions", sessions)?;
 
@@ -615,6 +668,109 @@ pub fn register_sessions_module_with_api(
     )?;
     sessions.set("send_and_collect", collect_fn)?;
 
+    // messages(session_id, opts?) -> (messages_table, nil) or (nil, err)
+    // opts: { role = "user"|"assistant"|"system", limit = N }
+    let a = Arc::clone(&api);
+    let messages_fn =
+        lua.create_async_function(move |lua, (session_id, opts): (String, Value)| {
+            let a = Arc::clone(&a);
+            async move {
+                let (role_filter, limit) = match opts {
+                    Value::Table(ref t) => {
+                        (t.get::<String>("role").ok(), t.get::<usize>("limit").ok())
+                    }
+                    _ => (None, None),
+                };
+                match a.load_messages(session_id, role_filter, limit).await {
+                    Ok(messages) => {
+                        let table = lua.create_table()?;
+                        for (i, msg) in messages.iter().enumerate() {
+                            let lua_val = lua.to_value(msg)?;
+                            table.set(i + 1, lua_val)?;
+                        }
+                        Ok((Value::Table(table), Value::Nil))
+                    }
+                    Err(e) => {
+                        let err = lua.create_string(&e)?;
+                        Ok((Value::Nil, Value::String(err)))
+                    }
+                }
+            }
+        })?;
+    sessions.set("messages", messages_fn)?;
+
+    // inject(session_id, role, content) -> (true, nil) or (nil, err)
+    let a = Arc::clone(&api);
+    let inject_fn = lua.create_async_function(
+        move |lua, (session_id, role, content): (String, String, String)| {
+            let a = Arc::clone(&a);
+            async move {
+                match a.inject_context(session_id, role, content).await {
+                    Ok(()) => Ok((Value::Boolean(true), Value::Nil)),
+                    Err(e) => {
+                        let err = lua.create_string(&e)?;
+                        Ok((Value::Nil, Value::String(err)))
+                    }
+                }
+            }
+        },
+    )?;
+    sessions.set("inject", inject_fn)?;
+
+    // collect_subagents(job_ids, timeout_secs?) -> (results_table, nil) or (nil, err)
+    let a = Arc::clone(&api);
+    let collect_fn =
+        lua.create_async_function(move |lua, (job_ids, timeout): (Vec<String>, Value)| {
+            let a = Arc::clone(&a);
+            async move {
+                let timeout_secs = match timeout {
+                    Value::Number(n) => Some(n),
+                    Value::Integer(n) => Some(n as f64),
+                    _ => None,
+                };
+                match a.collect_subagents(job_ids, timeout_secs).await {
+                    Ok(results) => {
+                        let table = lua.create_table()?;
+                        for (i, val) in results.iter().enumerate() {
+                            let lua_val = lua.to_value(val)?;
+                            table.set(i + 1, lua_val)?;
+                        }
+                        Ok((Value::Table(table), Value::Nil))
+                    }
+                    Err(e) => {
+                        let err = lua.create_string(&e)?;
+                        Ok((Value::Nil, Value::String(err)))
+                    }
+                }
+            }
+        })?;
+    sessions.set("collect_subagents", collect_fn)?;
+
+    // fork(session_id, opts?) -> ({ id, parent_id, messages_copied }, nil) or (nil, err)
+    // opts can be a table { up_to = N } or an integer N
+    let a = Arc::clone(&api);
+    let fork_fn = lua.create_async_function(move |lua, (session_id, opts): (String, Value)| {
+        let a = Arc::clone(&a);
+        async move {
+            let up_to = match opts {
+                Value::Table(ref t) => t.get::<u64>("up_to").ok(),
+                Value::Integer(n) => Some(n as u64),
+                _ => None,
+            };
+            match a.fork_session(session_id, up_to).await {
+                Ok(val) => {
+                    let lua_val = lua.to_value(&val)?;
+                    Ok((lua_val, Value::Nil))
+                }
+                Err(e) => {
+                    let err = lua.create_string(&e)?;
+                    Ok((Value::Nil, Value::String(err)))
+                }
+            }
+        }
+    })?;
+    sessions.set("fork", fork_fn)?;
+
     Ok(())
 }
 
@@ -643,6 +799,10 @@ mod tests {
         assert!(sessions.contains_key("resume").unwrap());
         assert!(sessions.contains_key("end_session").unwrap());
         assert!(sessions.contains_key("send_and_collect").unwrap());
+        assert!(sessions.contains_key("collect_subagents").unwrap());
+        assert!(sessions.contains_key("messages").unwrap());
+        assert!(sessions.contains_key("inject").unwrap());
+        assert!(sessions.contains_key("fork").unwrap());
 
         // Also registered under crucible.*
         let crucible: Table = lua
@@ -867,6 +1027,60 @@ mod api_tests {
             _session_id: String,
         ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
             Box::pin(async { Ok(()) })
+        }
+
+        fn load_messages(
+            &self,
+            _session_id: String,
+            role_filter: Option<String>,
+            limit: Option<usize>,
+        ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
+            Box::pin(async move {
+                let mut msgs = vec![
+                    serde_json::json!({ "role": "system", "content": "You are helpful.", "timestamp": "2025-01-01T00:00:00Z" }),
+                    serde_json::json!({ "role": "user", "content": "Hello", "timestamp": "2025-01-01T00:00:01Z" }),
+                    serde_json::json!({ "role": "assistant", "content": "Hi there!", "timestamp": "2025-01-01T00:00:02Z" }),
+                ];
+                if let Some(role) = role_filter {
+                    msgs.retain(|m| m.get("role").and_then(|r| r.as_str()) == Some(role.as_str()));
+                }
+                if let Some(n) = limit {
+                    let start = msgs.len().saturating_sub(n);
+                    msgs = msgs.split_off(start);
+                }
+                Ok(msgs)
+            })
+        }
+
+        fn inject_context(
+            &self,
+            _session_id: String,
+            _role: String,
+            _content: String,
+        ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn collect_subagents(
+            &self,
+            _job_ids: Vec<String>,
+            _timeout_secs: Option<f64>,
+        ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
+            Box::pin(async { Ok(vec![]) })
+        }
+
+        fn fork_session(
+            &self,
+            _session_id: String,
+            _up_to: Option<u64>,
+        ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
+            Box::pin(async {
+                Ok(serde_json::json!({
+                    "id": "fork-123",
+                    "parent_id": "parent-123",
+                    "messages_copied": 3,
+                }))
+            })
         }
 
         fn send_and_collect(
@@ -1271,6 +1485,46 @@ mod api_tests {
             _: String,
         ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
             Box::pin(async { Ok(()) })
+        }
+
+        fn load_messages(
+            &self,
+            _: String,
+            _: Option<String>,
+            _: Option<usize>,
+        ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
+            Box::pin(async { Ok(vec![]) })
+        }
+
+        fn inject_context(
+            &self,
+            _session_id: String,
+            _role: String,
+            _content: String,
+        ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn collect_subagents(
+            &self,
+            _job_ids: Vec<String>,
+            _timeout_secs: Option<f64>,
+        ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
+            Box::pin(async { Ok(vec![]) })
+        }
+
+        fn fork_session(
+            &self,
+            _session_id: String,
+            _up_to: Option<u64>,
+        ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
+            Box::pin(async {
+                Ok(serde_json::json!({
+                    "id": "fork-123",
+                    "parent_id": "parent-123",
+                    "messages_copied": 0,
+                }))
+            })
         }
 
         fn send_and_collect(
@@ -1732,5 +1986,149 @@ mod api_tests {
         );
         assert_eq!(result.get::<String>("first").unwrap(), "chunk-1");
         assert_eq!(result.get::<String>("last").unwrap(), "chunk-5");
+    }
+
+    // -----------------------------------------------------------------------
+    // Tests for messages, inject, fork, and collect_subagents
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn sessions_messages_returns_all_roles() {
+        let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
+        let lua = TestLuaBuilder::new().with_sessions_api(api).build();
+
+        let result: Table = lua
+            .load(
+                r#"
+                local msgs, err = cru.sessions.messages("test-session")
+                assert(err == nil, "unexpected error: " .. tostring(err))
+                return msgs
+                "#,
+            )
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert_eq!(result.len().unwrap(), 3); // system + user + assistant from mock
+    }
+
+    #[tokio::test]
+    async fn sessions_messages_filters_by_role() {
+        let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
+        let lua = TestLuaBuilder::new().with_sessions_api(api).build();
+
+        let result: Table = lua
+            .load(
+                r#"
+                local msgs, err = cru.sessions.messages("test-session", { role = "user" })
+                assert(err == nil, "unexpected error: " .. tostring(err))
+                return msgs
+                "#,
+            )
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert_eq!(result.len().unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn sessions_messages_respects_limit() {
+        let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
+        let lua = TestLuaBuilder::new().with_sessions_api(api).build();
+
+        let result: Table = lua
+            .load(
+                r#"
+                local msgs, err = cru.sessions.messages("test-session", { limit = 1 })
+                assert(err == nil, "unexpected error: " .. tostring(err))
+                return msgs
+                "#,
+            )
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert_eq!(result.len().unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn sessions_inject_succeeds() {
+        let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
+        let lua = TestLuaBuilder::new().with_sessions_api(api).build();
+
+        let result: (Value, Value) = lua
+            .load(r#"return cru.sessions.inject("test-session", "system", "injected context")"#)
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert!(matches!(result.0, Value::Boolean(true)));
+        assert!(matches!(result.1, Value::Nil));
+    }
+
+    #[tokio::test]
+    async fn sessions_fork_returns_child_info() {
+        let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
+        let lua = TestLuaBuilder::new().with_sessions_api(api).build();
+
+        let result: Table = lua
+            .load(
+                r#"
+                local info, err = cru.sessions.fork("parent-session")
+                assert(err == nil, "unexpected error: " .. tostring(err))
+                return info
+                "#,
+            )
+            .eval_async()
+            .await
+            .unwrap();
+
+        let id: String = result.get("id").unwrap();
+        assert!(!id.is_empty());
+    }
+
+    #[tokio::test]
+    async fn sessions_fork_with_up_to() {
+        let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
+        let lua = TestLuaBuilder::new().with_sessions_api(api).build();
+
+        let result: Table = lua
+            .load(
+                r#"
+                local info, err = cru.sessions.fork("parent-session", { up_to = 5 })
+                assert(err == nil, "unexpected error: " .. tostring(err))
+                return info
+                "#,
+            )
+            .eval_async()
+            .await
+            .unwrap();
+
+        let id: String = result.get("id").unwrap();
+        assert!(!id.is_empty());
+    }
+
+    #[tokio::test]
+    async fn sessions_collect_subagents_returns_results() {
+        let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
+        let lua = TestLuaBuilder::new().with_sessions_api(api).build();
+
+        let result: (Value, Value) = lua
+            .load(
+                r#"
+                return cru.sessions.collect_subagents({"job-1", "job-2"}, 5)
+                "#,
+            )
+            .eval_async()
+            .await
+            .unwrap();
+
+        // MockDaemonApi returns empty vec, so result should be an empty table
+        match result.0 {
+            Value::Table(t) => assert_eq!(t.len().unwrap(), 0),
+            _ => panic!("Expected table, got {:?}", result.0),
+        }
+        assert!(matches!(result.1, Value::Nil));
     }
 }

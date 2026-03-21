@@ -44,6 +44,10 @@ crucible-daemon = { path = "../crucible-daemon" }
 crucible-core = { workspace = true }
 crucible-config = { path = "../crucible-config" }
 
+# API key generation and storage
+rand = { workspace = true }
+dirs = { workspace = true }
+
 # Asset embedding (release builds)
 rust-embed = { version = "8", features = ["interpolate-folder-path"] }
 mime_guess = "2"
