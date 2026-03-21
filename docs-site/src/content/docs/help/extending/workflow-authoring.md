@@ -3,9 +3,9 @@ title: "Workflow Authoring"
 description: "How to create custom workflows in Crucible"
 ---
 
-Create automated workflows that combine multiple operations.
+> **⚠️ Planned Feature**: This feature is not yet implemented. The documentation below describes the intended design.
 
-> [!warning] A new prose-based workflow syntax is planned. See [Markup](../workflows/markup/).
+Create automated workflows that combine multiple operations.
 
 ## Overview
 
@@ -85,4 +85,4 @@ cru workflow list
 - [Sessions](../core/sessions/) - Session tracking
 - [Creating Plugins](./creating-plugins/) - Plugin development
 - [Custom Tools](./custom-tools/) - Creating tools
-- Daily Summary - Example workflow script
+- [Daily Summary](./scripts/daily-summary/) - Example workflow script

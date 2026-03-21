@@ -260,4 +260,4 @@ Future versions may integrate VTE parsing for:
 
 - [TUI Reference](./index/) - TUI architecture overview
 - [Component Architecture](./component-architecture/) - Widget system details
-- Testing Plugins - Testing Lua plugins
+- [Testing Plugins](../lua/testing-plugins/) - Testing Lua plugins

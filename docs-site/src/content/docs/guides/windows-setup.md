@@ -231,7 +231,7 @@ cargo test -p crucible-llm --features fastembed --test test_onnx_windows_diagnos
 
 - **File watching**: Windows file system events may have different latency than Linux
 - **Embedding models**: ONNX Runtime performance is similar across platforms
-- **Database**: SurrealDB performance is consistent on Windows
+- **Database**: SQLite performance is consistent on Windows
 
 ## See Also
 

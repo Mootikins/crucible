@@ -156,7 +156,7 @@ cru chat "Find all notes about machine learning"
 
 ## Implementation
 
-**Code reference:** `crates/crucible-tools/src/search.rs`
+**Code reference:** `crates/crucible-daemon/src/tools/search.rs`
 
 ## See Also
 

@@ -8,75 +8,156 @@ Start an interactive AI chat session with access to your kiln.
 ## Synopsis
 
 ```
-cru [chat] [MESSAGE] [OPTIONS]
+cru chat [OPTIONS] [QUERY]
 ```
 
 Running `cru` with no arguments starts chat mode.
 
+## Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `[QUERY]` | Optional one-shot query. If omitted, starts interactive mode. |
+
 ## Description
 
-The chat command connects an AI agent to your knowledge base. The agent can search, read, and explore your notes. In act mode, it can also create and modify notes.
+The chat command connects an AI agent to your knowledge base. The agent can search, read, and explore your notes. In normal mode it has full tool access. Switch to plan mode for read-only exploration, or auto mode to skip tool confirmation prompts.
 
 ## Options
 
-### `--internal`
+### Agent Selection
 
-Use Crucible's built-in agent instead of external ACP agents.
+#### `-a, --agent <AGENT>`
 
-```bash
-cru chat --internal "What notes do I have about Rust?"
-```
-
-### `--provider <PROVIDER>`
-
-LLM provider for internal agent: `ollama`, `openai`, `anthropic`
+Preferred ACP agent to use. Skips the splash screen and connects directly.
 
 ```bash
-cru chat --internal --provider openai "Summarize my notes"
+cru chat --agent claude-code
+cru chat --agent gemini-cli
+cru chat --agent codex
 ```
 
-### `--model <MODEL>`
+Available agents: `claude-code`, `gemini-cli`, `codex`, `cursor`, or any custom profile defined in `crucible.toml`. The agent must be installed and available in your PATH.
 
-Specific model to use.
+#### `--provider <PROVIDER>`
+
+LLM provider from your `[llm.providers]` config section.
 
 ```bash
-cru chat --internal --provider ollama --model llama3.2
+cru chat --provider openai
+cru chat --provider ollama
 ```
 
-### `--agent <AGENT>` (ACP Mode)
+### Session Management
 
-Specify which ACP agent to use. Skips the splash screen and connects directly.
+#### `-r, --resume <SESSION_ID>`
+
+Resume a previous session by ID. Session IDs follow the format `chat-YYYYMMDD-HHMM-xxxx`.
 
 ```bash
-cru chat --agent opencode
-cru chat --agent claude
+cru chat --resume chat-20250102-1430-a1b2
 ```
 
-Available agents: `opencode`, `claude`, `gemini`, `codex`, `cursor` (requires agent to be installed)
+#### `--record <FILE>`
 
-When `--agent` is specified, Crucible bypasses the splash screen and connects directly to the specified agent.
+Record the TUI session to a JSONL file for later replay.
+
+```bash
+cru chat --record session-recording.jsonl
+```
+
+#### `--replay <FILE>`
+
+Replay a previously recorded JSONL session.
+
+```bash
+cru chat --replay session-recording.jsonl
+```
+
+#### `--replay-speed <N>`
+
+Playback speed multiplier for replay (default: 1.0).
+
+#### `--replay-auto-exit [<DELAY_MS>]`
+
+Auto-exit after replay completes. Optional delay in milliseconds (default: 2000).
+
+### Context & Knowledge Base
+
+#### `--no-context`
+
+Skip context enrichment. Faster startup, but the agent won't have knowledge base access.
+
+```bash
+cru chat --no-context "What's 2+2?"
+```
+
+#### `--max-context <TOKENS>`
+
+Maximum context window tokens (default: 16384).
+
+#### `--context-size <N>`
+
+Number of context results to include (default: 5).
+
+### Mode & Configuration
+
+#### `--plan`
+
+Start in plan mode (read-only) instead of normal mode. The agent can search and read notes but can't execute write operations. Toggle during a session with `/plan` and `/normal` commands.
+
+```bash
+cru chat --plan
+```
+
+#### `--set <KEY[=VALUE]>`
+
+Session configuration overrides using the same syntax as the TUI `:set` command. Can be repeated.
+
+```bash
+cru chat --set model=llama3 --set temperature=0.5
+cru chat --set perm.autoconfirm_session
+```
+
+#### `-e, --env <KEY=VALUE>`
+
+Environment variables to pass to the ACP agent. Can be repeated.
+
+```bash
+cru chat --agent claude-code --env ANTHROPIC_BASE_URL=http://localhost:4000
+```
+
+### Runtime
+
+#### `--standalone`
+
+Run with an in-process daemon instead of connecting to the background server. Useful for single-session use, restricted environments, or testing. Data persists to the kiln's `.crucible/` directory.
+
+```bash
+cru chat --standalone
+```
 
 ## Chat Modes
 
-### Plan Mode (Default)
+Crucible has three chat modes. Cycle between them with `Shift+Tab` during a session.
 
-The agent can search and read, but cannot modify notes.
+### Normal Mode (Default)
 
-```
-/plan
-```
+Full tool access. The agent can search, read, create, modify, and delete notes. Tool calls prompt for confirmation before executing.
 
-Safe for exploration. The agent provides information and suggestions without changing anything.
+### Plan Mode
 
-### Act Mode
+Read-only. The agent can search and read your notes, but write operations are blocked. Good for exploration and brainstorming without risk of changes.
 
-The agent can create, modify, and delete notes.
+Toggle with `/plan` or start directly:
 
-```
-/act
+```bash
+cru chat --plan
 ```
 
-Enable for workflows that require changes. The agent will confirm before destructive operations.
+### Auto Mode
+
+Full tool access with automatic approval. Tool calls execute without confirmation prompts. Useful for trusted workflows where you don't want to approve every action.
 
 ## In-Chat Commands
 
@@ -85,8 +166,8 @@ Enable for workflows that require changes. The agent will confirm before destruc
 | Command | Description |
 |---------|-------------|
 | `/help` | Show available commands |
-| `/plan` | Switch to read-only mode |
-| `/act` | Enable write mode |
+| `/plan` | Switch to plan (read-only) mode |
+| `/normal` | Switch to normal (full access) mode |
 | `/clear` | Clear conversation history |
 | `/agent <name>` | Switch to a different agent |
 
@@ -110,21 +191,7 @@ See [Commands](../tui/commands/) for complete REPL command reference.
 |-----|--------|
 | `Ctrl+C` | Cancel / Exit |
 | `Alt+T` | Toggle thinking display |
-| `Shift+Tab` | Cycle mode |
-
-## Statusline Notifications
-
-The statusline displays notifications when files change in your kiln:
-
-- **File changes** appear dimmed on the right side (e.g., "notes.md modified")
-- **Multiple changes** batch together (e.g., "3 files modified")
-- **Errors** appear in red and stay visible longer
-
-Notification timing:
-- Info notifications: 2 seconds
-- Error notifications: 5 seconds
-
-This provides real-time feedback when other tools or editors modify your notes while you're chatting.
+| `Shift+Tab` | Cycle mode (Normal, Plan, Auto) |
 
 ## Agent Access
 
@@ -136,10 +203,10 @@ In chat mode, the agent has access to these tools:
 - `property_search` - Filter by metadata
 - `read_note` - Read note contents
 
-**Write operations (act mode only):**
+**Write operations (normal and auto modes):**
 - `create_note` - Create new notes
 - `update_note` - Modify existing notes
-- `delete_note` - Remove notes (with confirmation)
+- `delete_note` - Remove notes (with confirmation in normal mode)
 
 ## Examples
 
@@ -166,61 +233,95 @@ You: Can you summarize the key techniques?
 Agent: Based on your notes, the main techniques are...
 ```
 
-### Create Note in Act Mode
+### Use a Specific ACP Agent
 
 ```bash
-cru
+cru chat --agent claude-code "Summarize my notes on API design"
 ```
 
-```
-/act
-Please create a note summarizing our discussion about API design
-```
-
-### Use Specific Agent
+### Resume a Previous Session
 
 ```bash
-cru
+cru chat --resume chat-20250102-1430-a1b2
 ```
 
-```
-/agent researcher
-Deep dive into my notes on machine learning
-```
-
-## Provider Configuration
-
-### Ollama (Local)
+### Plan Mode Exploration
 
 ```bash
-cru chat --internal --provider ollama
+cru chat --plan "What patterns do my testing notes share?"
 ```
 
-Requires Ollama running locally with a model installed.
-
-### OpenAI
+### Custom Provider with Overrides
 
 ```bash
-export OPENAI_API_KEY=your-key
-cru chat --internal --provider openai --model gpt-4o
+cru chat --provider ollama --set model=llama3.2 --set temperature=0.7
 ```
 
-### Anthropic
+### Record and Replay
 
 ```bash
-export ANTHROPIC_API_KEY=your-key
-cru chat --internal --provider anthropic --model claude-3-5-sonnet
+# Record a session
+cru chat --record demo.jsonl
+
+# Replay it later
+cru chat --replay demo.jsonl --replay-speed 2.0
 ```
 
-## External Agents
+## Model Switching
 
-By default, Crucible looks for ACP-compatible agents. To use Claude Code:
+Change models at runtime without restarting:
+
+```
+:model                      # Opens model picker
+:model claude-3-5-sonnet    # Switch directly
+:model gpt-4o
+```
+
+Model changes persist for the session and sync to the daemon.
+
+## Extended Thinking
+
+For models that support reasoning tokens (Claude with thinking budget, DeepSeek-R1, etc.):
+
+```
+:set thinkingbudget=high    # Enable extended thinking (8192 tokens)
+:set thinkingbudget=off     # Disable thinking
+:set thinking               # Show thinking in UI
+:set nothinking             # Hide thinking display
+```
+
+Toggle thinking display with `Alt+T`.
+
+**Presets:** `off`, `minimal` (512), `low` (1024), `medium` (4096), `high` (8192), `max` (unlimited)
+
+## Session Resume
+
+Sessions auto-save and can be resumed:
 
 ```bash
-cru chat
+cru session list                          # See available sessions
+cru chat --resume chat-20250102-1430-a1b2 # Resume specific session
 ```
 
-This connects to `claude-code` if available in your PATH.
+Or from within chat:
+```
+:session list
+:session load chat-20250102-1430-a1b2
+```
+
+## Statusline Notifications
+
+The statusline displays notifications when files change in your kiln:
+
+- **File changes** appear dimmed on the right side (e.g., "notes.md modified")
+- **Multiple changes** batch together (e.g., "3 files modified")
+- **Errors** appear in red and stay visible longer
+
+Notification timing:
+- Info notifications: 2 seconds
+- Error notifications: 5 seconds
+
+This provides real-time feedback when other tools or editors modify your notes while you're chatting.
 
 ## Tips
 
@@ -259,52 +360,6 @@ Ask the agent to cite sources:
 
 **Source code:** `crates/crucible-cli/src/commands/chat.rs`
 
-**Related modules:**
-- `crates/crucible-agents/` - Agent system
-- `crates/crucible-llm/` - LLM provider integration
-
-## Model Switching
-
-Change models at runtime without restarting:
-
-```
-:model                      # Opens model picker
-:model claude-3-5-sonnet    # Switch directly
-:model gpt-4o
-```
-
-Model changes persist for the session and sync to the daemon.
-
-## Extended Thinking
-
-For models that support reasoning tokens (Claude with thinking budget, DeepSeek-R1, etc.):
-
-```
-:set thinkingbudget=high    # Enable extended thinking (8192 tokens)
-:set thinkingbudget=off     # Disable thinking
-:set thinking               # Show thinking in UI
-:set nothinking             # Hide thinking display
-```
-
-Toggle thinking display with `Alt+T`.
-
-**Presets:** `off`, `minimal` (512), `low` (1024), `medium` (4096), `high` (8192), `max` (unlimited)
-
-## Session Resume
-
-Sessions auto-save and can be resumed:
-
-```bash
-cru session list            # See available sessions
-cru session load ses_abc123 # Resume specific session
-```
-
-Or from within chat:
-```
-:session list
-:session load ses_abc123
-```
-
 ## See Also
 
 - [Commands](../tui/commands/) - REPL command reference
@@ -312,3 +367,4 @@ Or from within chat:
 - [Sessions](../core/sessions/) - Session management
 - [llm](../config/llm/) - LLM configuration
 - [agents](../config/agents/) - Agent configuration
+- [Agent Client Protocol](../concepts/agent-client-protocol/) - ACP specification

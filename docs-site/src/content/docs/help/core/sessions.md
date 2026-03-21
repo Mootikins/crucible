@@ -3,23 +3,23 @@ title: "Sessions"
 description: "Track conversation and execution history"
 ---
 
-A session is a continuous sequence of events — a conversation with an AI agent, including tool calls, thinking, and responses. Sessions provide audit trails, enable resumption, and persist as markdown files.
+A session is a continuous sequence of events: a conversation with an AI agent, including tool calls, thinking, and responses. Sessions provide audit trails, enable resumption, and persist as markdown files.
 
 ## Architecture
 
 Sessions follow Crucible's "plaintext first" philosophy:
 
 - **Markdown is truth** — Each session saves as a markdown file
-- **Daemon manages state** — `cru-server` tracks active sessions via RPC
-- **Resume on restart** — Load previous sessions with `cru session load`
+- **Daemon manages state** — the daemon tracks active sessions via RPC
+- **Resume anytime** — Pick up previous sessions with `cru session open`
 
 ### Daemon Integration
 
-Sessions are managed by the daemon (`cru-server`):
+Sessions are managed by the daemon (`cru daemon serve`):
 
 ```
 ┌─────────────────┐         ┌─────────────────────┐
-│ cru chat        │◄───────►│ cru-server          │
+│ cru chat        │◄───────►│ cru daemon serve    │
 │                 │ JSON-RPC│                     │
 │ TUI/CLI client  │         │ SessionManager      │
 │                 │         │ AgentManager        │
@@ -30,33 +30,41 @@ Sessions are managed by the daemon (`cru-server`):
 - `session.create` — Start new session
 - `session.list` — List all sessions
 - `session.get` — Get session details
-- `session.load` — Load/resume existing session
-- `session.pause` / `session.resume` — Pause/resume session
+- `session.load` — Load a persisted session from storage into daemon memory
+- `session.pause` — Pause a running session
+- `session.unpause` — Unpause a paused session (programmatic, no TUI)
+- `session.resume` — Resume a session in the TUI (interactive)
 - `session.end` — End session
+- `session.send_message` — Send a message and stream the response
+- `session.configure_agent` — Configure the agent for a session
 - `session.subscribe` / `session.unsubscribe` — Event streaming
+- `session.archive` — Archive a session (remove from active list)
+- `session.unarchive` — Restore an archived session to active
+- `session.delete` — Permanently delete a session
+
+> **CLI naming vs RPC methods**: The daemon RPC methods are `session.resume` (open in TUI) and `session.unpause` (reactivate programmatically). The CLI commands use clearer names: `cru session open` maps to `session.resume`, and `cru session resume` maps to `session.unpause`. The old `cru session unpause` still works as a deprecated alias. Scripts should use `cru session resume`; humans picking up a conversation should use `cru session open`.
 
 ## Session Storage
 
-Sessions are saved to your workspace sessions directory:
+Sessions are saved to your kiln's sessions directory. Session IDs follow the format `chat-YYYYMMDD-HHMM-xxxx` (e.g., `chat-20250102-1430-a1b2`).
 
 ```
 ~/your-workspace/sessions/
-├── project-name/
-│   ├── 2025-01-20_1430.md    # Session log
-│   ├── 2025-01-21_0900.md    # Another session
-│   └── ...
+├── chat-20250102-1430-a1b2.jsonl
+├── chat-20250121-0900-c3d4.jsonl
+└── ...
 ```
 
 ### Session Log Format
 
-Sessions are readable markdown:
+Sessions are readable markdown when exported:
 
 ```markdown
 ---
-session_id: ses_abc123
+session_id: chat-20250102-1430-a1b2
 workspace: /home/user/project
 model: claude-3-5-sonnet
-started: 2025-01-20T14:30:00Z
+started: 2025-01-02T14:30:00Z
 ---
 
 # Chat Session
@@ -83,28 +91,175 @@ Tell me more about Project Beta
 
 ## CLI Commands
 
-### List Sessions
+Crucible provides a full set of session subcommands. They split into two groups: **user-facing** commands for everyday use, and **daemon** commands for programmatic session control.
+
+### User-Facing Commands
+
+#### List Sessions
 
 ```bash
 cru session list
 ```
 
-Shows all sessions with ID, workspace, and timestamp.
+Shows recent sessions with ID, workspace, and timestamp.
 
-### Load/Resume Session
-
-```bash
-cru session load <session-id>
-```
-
-Resumes an existing session. The conversation history is loaded and you can continue chatting.
-
-### Start New Session
+#### Search Sessions
 
 ```bash
-cru chat                     # Auto-creates session
-cru chat --session new       # Explicit new session
+cru session search "rust"
 ```
+
+Search sessions by title or content.
+
+#### Show Session Details
+
+```bash
+cru session show chat-20250102-1430-a1b2
+```
+
+Display details for a specific session, including model, message count, and timestamps.
+
+#### Open a Session (Interactive TUI)
+
+```bash
+cru session open chat-20250102-1430-a1b2
+```
+
+Opens the session in the interactive TUI. The conversation history loads and you can continue chatting. This is the command humans use to pick up where they left off.
+
+#### Export Session
+
+```bash
+cru session export chat-20250102-1430-a1b2 -o session.md
+```
+
+Export a session to a standalone markdown file.
+
+#### Reindex Sessions
+
+```bash
+cru session reindex
+```
+
+Rebuild the session index from JSONL files on disk. Useful after manual edits or recovery.
+
+#### Cleanup Old Sessions
+
+```bash
+cru session cleanup
+```
+
+Remove old or orphaned sessions.
+
+### Daemon Commands
+
+These commands control sessions at the daemon level. They're designed for scripts, automation, and multi-client workflows rather than interactive use.
+
+#### Create a Session
+
+```bash
+cru session create                        # Basic creation
+cru session create --agent claude         # With agent profile
+cru session create --title "Auth refactor" --workspace /path/to/project
+ID=$(cru session create -q)               # Capture session ID for scripting
+cru session create -f json                # Structured JSON output
+```
+
+Create a new daemon session. The `-q`/`--quiet` flag prints only the session ID, which is handy for capturing in shell variables. Use `--title` to give the session a human-readable name and `--workspace` to pin it to a specific project directory.
+
+#### Pause a Session
+
+```bash
+cru session pause chat-20250102-1430-a1b2
+```
+
+Pause a running daemon session. The session stays in memory but stops processing.
+
+#### Resume a Session (Daemon)
+
+```bash
+cru session resume chat-20250102-1430-a1b2
+```
+
+Reactivate a paused daemon session without opening a TUI. Use this in scripts and automation workflows. For interactive use, prefer `cru session open` instead. The old `cru session unpause` still works as a deprecated alias.
+
+#### End a Session
+
+```bash
+cru session end chat-20250102-1430-a1b2
+```
+
+End a daemon session. The session is finalized and persisted.
+
+#### Send a Message
+
+```bash
+cru session send chat-20250102-1430-a1b2 "Analyze the auth module"
+# Or with env var:
+CRU_SESSION=chat-20250102-1430-a1b2 cru session send "Analyze the auth module"
+# Or pipe from stdin:
+echo "Analyze the auth module" | cru session send chat-20250102-1430-a1b2
+```
+
+Send a message to a session and stream the response. Both the session ID and message are positional arguments. If you set `CRU_SESSION`, you can omit the ID entirely.
+
+#### Configure Agent
+
+```bash
+cru session configure chat-20250102-1430-a1b2 -p openai -m gpt-4o
+```
+
+Configure the agent backend for a session: provider, model, and endpoint. For runtime parameter tweaks (temperature, thinking budget), use `cru set` instead:
+
+```bash
+cru set chat-20250102-1430-a1b2 temperature=0.7
+```
+
+#### Load a Session
+
+```bash
+cru session load chat-20250102-1430-a1b2
+```
+
+Load a persisted session from storage into daemon memory. This doesn't open a TUI; it just makes the session available for daemon operations like `send`, `pause`, or `configure`.
+
+#### Scripting Patterns
+
+A full programmatic lifecycle, start to finish:
+
+```bash
+# Create, configure, use, and tear down a session
+ID=$(cru session create -q --title "Code review" --agent claude)
+cru session configure "$ID" -p anthropic -m claude-sonnet-4-20250514
+cru session send "$ID" "Review the auth module for security issues"
+cru session pause "$ID"
+# ... later ...
+cru session resume "$ID"
+cru session send "$ID" "Now check the database layer"
+cru session end "$ID"
+```
+
+All lifecycle commands accept `-f json` for structured output, which pairs well with `jq`:
+
+```bash
+cru session pause "$ID" -f json | jq .previous_state
+cru session list -f json | jq '.sessions[].session_id'
+cru session search "auth" -f json | jq '.[].session_id'
+```
+
+### Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `CRU_SESSION` | Default session ID for `send` and `cru set` when no positional ID is given |
+
+### Start a New Chat
+
+```bash
+cru chat                     # Auto-creates a new session
+```
+
+Running `cru chat` starts a fresh session. If there's a recent session for the current workspace, it may auto-resume.
 
 ## In-TUI Session Management
 
@@ -118,24 +273,86 @@ Use the `:session` command:
 
 ```
 :session list              # Show available sessions
-:session load ses_abc123   # Switch to session
 :session new               # Start fresh session
 ```
 
+## Session Archiving
+
+Sessions have two states: **active** and **archived**. Active sessions appear in `session.list` by default. Archived sessions are hidden unless you explicitly ask for them.
+
+### Active vs Archived
+
+| | Active | Archived |
+|---|---|---|
+| Visible in `session.list` | Yes | Only with `include_archived: true` |
+| Can receive messages | Yes | No (must unarchive first) |
+| Counts toward "recent sessions" | Yes | No |
+| Data preserved | Yes | Yes |
+| Can be resumed | Yes | Yes (after unarchive) |
+
+Archiving doesn't delete anything. It moves the session out of the active view so your session list stays manageable. Unarchive brings it back.
+
+### Manual Archive and Unarchive
+
+Use the `session.archive` and `session.unarchive` RPC methods. Both require `session_id` and `kiln` parameters:
+
+```bash
+# Archive a session
+cru session archive chat-20250102-1430-a1b2
+
+# Unarchive it later
+cru session unarchive chat-20250102-1430-a1b2
+```
+
+### Deleting Sessions
+
+To permanently remove a session, use `session.delete`. This cleans up both the daemon state and the agent resources. Requires `session_id` and `kiln` parameters:
+
+```bash
+cru session delete chat-20250102-1430-a1b2
+```
+
+Deletion is irreversible. The session's JSONL file and any associated daemon state are removed.
+
+### Listing Archived Sessions
+
+By default, `session.list` only returns active sessions. Pass `include_archived: true` to see everything:
+
+```bash
+cru session list --all    # includes archived sessions
+```
+
+### Auto-Archive
+
+The daemon automatically archives stale sessions. A background sweep runs every 30 minutes, checking for sessions that have been inactive (no messages, no subscribers) beyond a configurable threshold.
+
+**Default threshold:** 72 hours of inactivity.
+
+Configure it in `~/.config/crucible/config.toml`:
+
+```toml
+[server]
+auto_archive_hours = 72    # default; set to 0 to disable
+```
+
+The sweep skips sessions that have active subscribers (connected clients). It also re-checks activity timestamps before archiving to avoid race conditions where a session receives new activity between the staleness check and the archive operation.
+
+Auto-archived sessions can be unarchived at any time. No data is lost.
+
 ## Session Configuration
 
-Configure session behavior in `~/.config/crucible/config.toml`:
+Session behavior is configured through the `[chat]` section in `~/.config/crucible/config.toml`. The daemon manages session persistence automatically; sessions always save to your kiln's `sessions/` directory.
 
 ```toml
 [chat]
-# Auto-save sessions (default: true)
-auto_save = true
+# Default chat model (can be overridden per session)
+# model = "llama3.2"
 
-# Session save directory (default: workspace/sessions/)
-session_dir = "sessions"
+# Enable markdown rendering in terminal output
+enable_markdown = true
 
-# Auto-resume recent sessions (default: true)
-auto_resume = true
+# Show thinking/reasoning tokens from models that support it
+# show_thinking = false
 ```
 
 ## Agent Configuration per Session

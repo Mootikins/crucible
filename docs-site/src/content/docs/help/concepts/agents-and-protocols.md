@@ -84,6 +84,14 @@ Agents need context to work effectively, but context windows are finite and atte
 
 See [Task Management](../task-management/#context-optimization) for implementation details.
 
+## Tool Execution
+
+When an agent calls a tool during a session, the daemon dispatches the call through a `ToolDispatcher` that routes to the correct executor (built-in tools, Lua plugins, or MCP servers).
+
+**Timeout**: Every tool call has a hard 30-second timeout. If a tool doesn't return within 30 seconds, the call is cancelled and the agent receives an error message like `Tool 'semantic_search' timed out after 30 seconds`. The agent can then retry or try a different approach.
+
+This timeout prevents runaway tool calls from blocking a session indefinitely. It applies uniformly to all tool types: built-in Rust tools, Lua plugin tools, and tools proxied from external MCP servers.
+
 ## See Also
 
 - AI Features - All AI capabilities
@@ -91,3 +99,6 @@ See [Task Management](../task-management/#context-optimization) for implementati
 - [Agent Cards](../extending/agent-cards/) - Creating agents
 - [Custom Tools](../extending/custom-tools/) - Adding agent capabilities
 - [Task Management](../task-management/) - TASKS.md format and context optimization
+- [Agent Client Protocol](./agent-client-protocol/) - ACP specification reference
+- [Model Context Protocol](./model-context-protocol/) - MCP specification reference
+- [Agent Skills](./agent-skills/) - Skills specification reference

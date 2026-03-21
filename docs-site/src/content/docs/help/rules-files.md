@@ -1,5 +1,6 @@
 ---
 title: "Rules Files"
+description: "Documentation note for Rules Files."
 ---
 
 Rules files provide project-specific instructions to AI agents working in your codebase. Crucible loads these files automatically and includes them in the system prompt.

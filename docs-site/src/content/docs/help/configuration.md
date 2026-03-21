@@ -1,5 +1,6 @@
 ---
 title: "Configuration Reference"
+description: "Documentation note for Configuration."
 ---
 
 Crucible uses TOML configuration files. The main config file is at `~/.config/crucible/config.toml`.

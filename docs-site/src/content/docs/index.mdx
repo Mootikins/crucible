@@ -1,9 +1,9 @@
 ---
 title: Crucible Documentation
-description: A local-first AI assistant where every conversation becomes a searchable note.
+description: A knowledge-grounded agent runtime. Agents that draw from a knowledge graph make better decisions.
 template: splash
 hero:
-  tagline: Every conversation becomes a searchable, linkable note you own. No cloud. No lock-in.
+  tagline: A knowledge-grounded agent runtime. Agents that draw from a knowledge graph make better decisions — all backed by markdown files you own.
   image:
     html: '<img src="/crucible/demo.gif" alt="Crucible chat with Precognition" width="720" style="border-radius: 8px;" />'
   actions:
@@ -20,12 +20,12 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
 
 ## What Makes Crucible Different
 
-Most AI chat tools treat conversations as disposable. Crucible treats them as **knowledge**.
+Memory and knowledge are too fundamental to be an afterthought. Most AI tools treat conversations as disposable — Crucible makes them the foundation.
 
-- **Sessions are markdown.** Every chat saves to a `.md` file in your workspace. Search them, link them, version them in git.
-- **Your notes become agent memory.** Precognition auto-injects relevant vault context before each LLM turn. Wikilinks define relationships. Block-level embeddings power semantic search at paragraph granularity.
+- **Knowledge-grounded agents.** Precognition auto-injects relevant context from your knowledge graph before each LLM turn. Block-level embeddings power semantic search at paragraph granularity. The more you use it, the smarter your agents get.
+- **Sessions are notes.** Every chat saves as markdown in your kiln. Search them, link them with wikilinks, version them in git. Conversations become permanent, connectable knowledge.
+- **Neovim-like architecture.** Lua/Fennel plugins, TUI-first, headless daemon with RPC. Most behaviors beyond the knowledge core can be scripted.
 - **Bring any LLM.** Ollama, OpenAI, Anthropic, local GGUF models — swap freely.
-- **Extend with Lua & Fennel.** Write tools, handlers, and automations as plugins.
 - **Plaintext first.** No proprietary formats. Files are the source of truth.
 
 ## How It Compares
@@ -58,7 +58,7 @@ cru mcp
 
 <CardGrid stagger>
 	<Card title="Core Concepts" icon="open-book">
-		Learn about [kilns](/crucible/help/concepts/kilns/), the [knowledge graph](/crucible/help/concepts/the-knowledge-graph/), and [semantic search](/crucible/help/concepts/semantic-search/).
+		Learn about [kilns](/crucible/help/concepts/kilns/), [precognition](/crucible/help/concepts/precognition/), and the [knowledge graph](/crucible/help/concepts/the-knowledge-graph/).
 	</Card>
 	<Card title="CLI Reference" icon="laptop">
 		Start a [chat session](/crucible/help/cli/chat/), [search your notes](/crucible/help/cli/search/), or [process your kiln](/crucible/help/cli/process/).

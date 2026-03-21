@@ -1,5 +1,6 @@
 ---
 title: "GitHub Copilot Setup"
+description: "Documentation note for GitHub Copilot Setup."
 ---
 
 This guide walks you through setting up GitHub Copilot as an LLM provider in Crucible.
@@ -192,4 +193,4 @@ The API token (30-min TTL) refreshes automatically, but if issues persist:
 - [Getting Started Guide](./getting-started/)
 - [OpenRouter Setup](./openrouter-setup/)
 - [Configuration Reference](../help/configuration/)
-- LLM Providers
+- [LLM Providers](../help/config/llm-providers/)

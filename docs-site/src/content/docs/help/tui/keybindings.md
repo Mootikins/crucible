@@ -1,5 +1,6 @@
 ---
 title: "TUI Keybindings"
+description: "Documentation note for Keybindings."
 ---
 
 Crucible's terminal UI supports readline-style editing and custom shortcuts.

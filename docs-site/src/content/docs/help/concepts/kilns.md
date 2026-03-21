@@ -3,7 +3,7 @@ title: "Kilns"
 description: "What a kiln is and how it differs from a folder or vault"
 ---
 
-A **kiln** is a directory of markdown files that Crucible treats as a connected knowledge base. The name comes from the idea of a place where raw materials are transformed into something more useful - your notes become a searchable, interconnected knowledge graph.
+A **kiln** is a directory of markdown files that Crucible treats as a connected knowledge base. Think of it like an Obsidian vault — a living collection of notes that grows and evolves over time. As you write, link, and converse, the knowledge graph deepens naturally. That growing graph is what gives your agents their memory.
 
 ## What Makes a Kiln
 
@@ -26,7 +26,7 @@ Any folder with markdown files can be a kiln. The difference is what you do with
 | Manual organization | Wikilink-based graph |
 | Static content | AI-assisted discovery |
 
-When you run Crucible commands in a folder, it becomes a kiln.
+When you start using Crucible in a folder, it becomes a kiln — a living knowledge base that grows with you. As you add notes and conversations, [Precognition](./precognition/) draws on the whole graph to give your agents context.
 
 ## Kiln vs Vault
 

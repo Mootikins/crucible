@@ -9,14 +9,14 @@ Welcome to Crucible! This guide will help you install, configure, and run your f
 
 ## What is Crucible?
 
-Crucible is a plaintext-first knowledge management system that combines markdown files with powerful semantic search, graph traversal, and AI agent integration. Your notes stay in markdown files that work with any text editor, while Crucible builds a rich knowledge graph from your wikilinks, tags, and frontmatter.
+Crucible is a knowledge-grounded agent runtime — agents that draw from a knowledge graph make better decisions. Your notes, conversations, and wikilinks form a living knowledge graph that grows over time. Agents draw from this graph automatically via [Precognition](../help/concepts/precognition/), and everything beyond the knowledge core is extensible via Lua scripting and plugins.
 
 **Key Features:**
-- Markdown files are your source of truth
-- Semantic search at block (paragraph/heading) level
-- Wikilink-based knowledge graph
-- AI agent integration via Model Context Protocol (MCP)
-- Incremental processing with hash-based change detection
+- **Knowledge-grounded agents** — Precognition auto-injects relevant context before each LLM turn
+- **Sessions are notes** — every conversation persists as searchable, linkable markdown
+- **Wikilink-based knowledge graph** with block-level semantic search
+- **Neovim-like architecture** — Lua/Fennel plugins, TUI-first, headless daemon with RPC
+- **Plaintext first** — markdown files are your source of truth, no lock-in
 
 ## Prerequisites
 
@@ -58,30 +58,41 @@ sudo ln -s /path/to/crucible/target/release/cru /usr/local/bin/cru
 
 ### Set Your Kiln Path
 
-Crucible stores notes in a "kiln" - your markdown directory.
+Crucible stores notes in a "kiln", your markdown directory. The easiest way to get started is with `cru init`, which walks you through creating a config file interactively.
 
-**Option 1: Environment Variable**
 ```bash
-export CRUCIBLE_KILN_PATH="/path/to/your/notes"
+cru init
 ```
 
-**Option 2: Configuration File**
+This creates `~/.config/crucible/config.toml` with your kiln path and provider settings.
+
+You can also set it up manually:
+
+**Option 1: Configuration File**
 
 Create `~/.config/crucible/config.toml`:
 
 ```toml
 kiln_path = "/home/user/Documents/my-kiln"
 
-[embedding]
-provider = "fastembed"
+[llm]
+default = "local"
+
+[llm.providers.local]
+type = "ollama"
+default_model = "llama3.2"
+endpoint = "http://localhost:11434"
+
+[enrichment.provider]
+type = "fastembed"
 
 [cli]
 show_progress = true
 ```
 
-**Option 3: CLI Flag**
+**Option 2: Environment Variable**
 ```bash
-cru --kiln /path/to/notes stats
+export CRUCIBLE_KILN_PATH="/path/to/your/notes"
 ```
 
 ## Your First Commands
@@ -127,7 +138,7 @@ This parses all markdown files, extracts metadata, wikilinks, tags, and blocks, 
 cru chat
 ```
 
-On first run, a setup wizard guides you through kiln path, provider, and model configuration. After setup, you enter an interactive chat session with your knowledge base.
+The first time you run `cru chat`, Crucible automatically starts a background daemon (`cru daemon serve`) if one isn't already running. You don't need to start it manually. The daemon handles session state, file watching, and multi-session support over a Unix socket.
 
 **Chat modes** (cycle with `BackTab`):
 - **Normal** (default): Full access, agent can read and modify files
@@ -141,7 +152,7 @@ On first run, a setup wizard guides you through kiln path, provider, and model c
 
 ## Understanding the Database
 
-Crucible stores processed data in a local SurrealDB database:
+Crucible stores processed data in a local SQLite database:
 
 **Location:** `<kiln_path>/.crucible/kiln.db/`
 
@@ -174,7 +185,7 @@ Reduce parallel workers: `cru process --parallel 1`
 
 ### Chat doesn't respond
 
-Test with internal agent: `cru chat --internal --provider ollama`
+Make sure your LLM provider is running and configured. For Ollama: `cru chat --provider ollama`. For other providers, check your `config.toml` settings.
 
 ## See Also
 

@@ -166,4 +166,4 @@ end
 
 - [Custom Handlers](./custom-handlers/) - Using ask_agent in handlers
 - [Creating Plugins](./creating-plugins/) - Plugin development
-- Ask Module - Full ask module reference
+- [Ask Module](../lua/ask-module/) - Full ask module reference
