@@ -27,6 +27,22 @@ use crate::protocol::SessionEventMessage;
 
 use crucible_config::EmbeddingProviderConfig;
 
+/// Normalize a file path to be relative to the kiln root.
+///
+/// Strips the kiln prefix (canonical or as-given) and normalizes
+/// separators to forward slashes. Returns `None` if the path is not
+/// inside the kiln.
+pub fn normalize_note_path(file_path: &Path, kiln_path: &Path) -> Option<String> {
+    let canonical = kiln_path
+        .canonicalize()
+        .unwrap_or_else(|_| kiln_path.to_path_buf());
+    let relative = file_path
+        .strip_prefix(&canonical)
+        .or_else(|_| file_path.strip_prefix(kiln_path))
+        .ok()?;
+    Some(relative.to_string_lossy().replace('\\', "/"))
+}
+
 // Backend-specific imports
 #[cfg(feature = "storage-sqlite")]
 use crucible_sqlite::{adapters as sqlite_adapters, SqliteClientHandle, SqliteConfig};
@@ -233,7 +249,8 @@ impl KilnManager {
             db_path
         );
 
-        let pipeline = create_pipeline(&handle, self.enrichment_config.as_ref()).await?;
+        let mut pipeline = create_pipeline(&handle, self.enrichment_config.as_ref()).await?;
+        pipeline.set_kiln_root(canonical.clone());
         info!("Pipeline created for kiln at {:?}", canonical);
 
         let name = read_kiln_name(&canonical);
@@ -399,15 +416,10 @@ impl KilnManager {
 
         conn.last_access = Instant::now();
 
-        let relative_path = match file_path
-            .strip_prefix(&canonical)
-            .or_else(|_| file_path.strip_prefix(kiln_path))
-        {
-            Ok(path) => path,
-            Err(_) => return Ok(false),
+        let relative_path = match normalize_note_path(file_path, kiln_path) {
+            Some(p) => p,
+            None => return Ok(false),
         };
-
-        let relative_path = relative_path.to_string_lossy().replace('\\', "/");
         let event = conn.handle.as_note_store().delete(&relative_path).await?;
 
         match event {
@@ -1175,5 +1187,36 @@ mod tests {
         let gamma = note_store.get("gamma.md").await.unwrap();
         assert!(gamma.is_some(), "gamma.md should still exist");
         assert_eq!(gamma.unwrap().title, "Gamma");
+    }
+
+    #[test]
+    fn normalize_note_path_strips_absolute_prefix() {
+        let tmp = TempDir::new().unwrap();
+        let kiln = tmp.path();
+        std::fs::create_dir_all(kiln.join("notes")).unwrap();
+        std::fs::write(kiln.join("notes/hello.md"), "").unwrap();
+
+        let file = kiln.join("notes/hello.md");
+        let result = normalize_note_path(&file, kiln);
+        assert_eq!(result, Some("notes/hello.md".to_string()));
+    }
+
+    #[test]
+    fn normalize_note_path_returns_none_outside_kiln() {
+        let kiln = Path::new("/home/user/docs");
+        let file = Path::new("/other/path/hello.md");
+        let result = normalize_note_path(file, kiln);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn normalize_note_path_handles_same_directory() {
+        let tmp = TempDir::new().unwrap();
+        let kiln = tmp.path();
+        std::fs::write(kiln.join("hello.md"), "").unwrap();
+
+        let file = kiln.join("hello.md");
+        let result = normalize_note_path(&file, kiln);
+        assert_eq!(result, Some("hello.md".to_string()));
     }
 }
