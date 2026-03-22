@@ -1811,6 +1811,179 @@ fn extract_user_messages_from_recording(path: &std::path::Path) -> Result<Vec<St
     Ok(user_messages)
 }
 
+/// Convert a session event into `ChatAppMsg`(s) for the TUI.
+///
+/// Returns zero or more messages. The `tool_result` event produces two messages
+/// (delta + complete), while most events produce one. `replay_complete` and
+/// unknown event types return an empty Vec.
+pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) -> Vec<ChatAppMsg> {
+    match event_type {
+        "user_message" => data
+            .get("content")
+            .and_then(|v| v.as_str())
+            .map(|c| vec![ChatAppMsg::UserMessage(c.to_string())])
+            .unwrap_or_default(),
+        "text_delta" => data
+            .get("content")
+            .and_then(|v| v.as_str())
+            .map(|c| vec![ChatAppMsg::TextDelta(c.to_string())])
+            .unwrap_or_default(),
+        "thinking" => data
+            .get("content")
+            .and_then(|v| v.as_str())
+            .map(|c| vec![ChatAppMsg::ThinkingDelta(c.to_string())])
+            .unwrap_or_default(),
+        "tool_call" => {
+            let name = data
+                .get("tool")
+                .and_then(|v| v.as_str())
+                .unwrap_or("tool")
+                .to_string();
+            let args = data.get("args").map(|v| v.to_string()).unwrap_or_default();
+            let call_id = data
+                .get("call_id")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let description = data
+                .get("description")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let source = data
+                .get("source")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let lua_primary_arg = data
+                .get("lua_primary_arg")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            vec![ChatAppMsg::ToolCall {
+                name,
+                args,
+                call_id,
+                description,
+                source,
+                lua_primary_arg,
+            }]
+        }
+        "tool_result" => {
+            let name = data
+                .get("tool")
+                .and_then(|v| v.as_str())
+                .unwrap_or("tool")
+                .to_string();
+            let call_id = data
+                .get("call_id")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let result_data = data.get("result");
+            let error = result_data
+                .and_then(|r| r.get("error"))
+                .and_then(|e| e.as_str());
+
+            if let Some(err) = error {
+                vec![ChatAppMsg::ToolResultError {
+                    name,
+                    error: err.to_string(),
+                    call_id,
+                }]
+            } else {
+                let result_str = result_data
+                    .and_then(|r| r.get("result"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                vec![
+                    ChatAppMsg::ToolResultDelta {
+                        name: name.clone(),
+                        delta: result_str,
+                        call_id: call_id.clone(),
+                    },
+                    ChatAppMsg::ToolResultComplete { name, call_id },
+                ]
+            }
+        }
+        "message_complete" => vec![ChatAppMsg::StreamComplete],
+        "precognition_complete" => {
+            let notes_count = data
+                .get("notes_count")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize)
+                .unwrap_or(0);
+            let notes = data
+                .get("notes")
+                .and_then(|v| {
+                    serde_json::from_value::<
+                        Vec<crucible_core::traits::chat::PrecognitionNoteInfo>,
+                    >(v.clone())
+                    .ok()
+                })
+                .unwrap_or_default();
+            if notes_count > 0 {
+                vec![ChatAppMsg::PrecognitionResult { notes_count, notes }]
+            } else {
+                vec![]
+            }
+        }
+        "delegation_spawned" => {
+            let id = data
+                .get("delegation_id")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let prompt = data
+                .get("prompt")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let target_agent = data
+                .get("target_agent")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+
+            match (id, prompt) {
+                (Some(id), Some(prompt)) => vec![ChatAppMsg::DelegationSpawned {
+                    id,
+                    prompt,
+                    target_agent,
+                }],
+                _ => vec![],
+            }
+        }
+        "delegation_completed" => {
+            let id = data
+                .get("delegation_id")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let summary = data
+                .get("result_summary")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+
+            match (id, summary) {
+                (Some(id), Some(summary)) => {
+                    vec![ChatAppMsg::DelegationCompleted { id, summary }]
+                }
+                _ => vec![],
+            }
+        }
+        "delegation_failed" => {
+            let id = data
+                .get("delegation_id")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let error = data.get("error").and_then(|v| v.as_str()).map(String::from);
+
+            match (id, error) {
+                (Some(id), Some(error)) => vec![ChatAppMsg::DelegationFailed { id, error }],
+                _ => vec![],
+            }
+        }
+        "replay_complete" => vec![],
+        _ => {
+            tracing::trace!(event_type = %event_type, "Skipping unknown session event");
+            vec![]
+        }
+    }
+}
+
 pub(crate) async fn replay_event_consumer(
     replay_session_id: String,
     mut event_rx: tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>,
@@ -1820,198 +1993,11 @@ pub(crate) async fn replay_event_consumer(
         if event.session_id != replay_session_id {
             continue;
         }
-
-        let msg = match event.event_type.as_str() {
-            "user_message" => event
-                .data
-                .get("content")
-                .and_then(|v| v.as_str())
-                .map(|c| ChatAppMsg::UserMessage(c.to_string())),
-            "text_delta" => event
-                .data
-                .get("content")
-                .and_then(|v| v.as_str())
-                .map(|c| ChatAppMsg::TextDelta(c.to_string())),
-            "thinking" => event
-                .data
-                .get("content")
-                .and_then(|v| v.as_str())
-                .map(|c| ChatAppMsg::ThinkingDelta(c.to_string())),
-            "tool_call" => {
-                let name = event
-                    .data
-                    .get("tool")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("tool")
-                    .to_string();
-                let args = event
-                    .data
-                    .get("args")
-                    .map(|v| v.to_string())
-                    .unwrap_or_default();
-                let call_id = event
-                    .data
-                    .get("call_id")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let description = event
-                    .data
-                    .get("description")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let source = event
-                    .data
-                    .get("source")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let lua_primary_arg = event
-                    .data
-                    .get("lua_primary_arg")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                Some(ChatAppMsg::ToolCall {
-                    name,
-                    args,
-                    call_id,
-                    description,
-                    source,
-                    lua_primary_arg,
-                })
-            }
-            "tool_result" => {
-                let name = event
-                    .data
-                    .get("tool")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("tool")
-                    .to_string();
-                let call_id = event
-                    .data
-                    .get("call_id")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let result_data = event.data.get("result");
-                let error = result_data
-                    .and_then(|r| r.get("error"))
-                    .and_then(|e| e.as_str());
-
-                if let Some(err) = error {
-                    Some(ChatAppMsg::ToolResultError {
-                        name,
-                        error: err.to_string(),
-                        call_id,
-                    })
-                } else {
-                    let result_str = result_data
-                        .and_then(|r| r.get("result"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let _ = msg_tx.send(ChatAppMsg::ToolResultDelta {
-                        name: name.clone(),
-                        delta: result_str,
-                        call_id: call_id.clone(),
-                    });
-                    Some(ChatAppMsg::ToolResultComplete { name, call_id })
-                }
-            }
-            "message_complete" => Some(ChatAppMsg::StreamComplete),
-            "precognition_complete" => {
-                let notes_count = event
-                    .data
-                    .get("notes_count")
-                    .and_then(|v| v.as_u64())
-                    .map(|n| n as usize)
-                    .unwrap_or(0);
-                let notes = event
-                    .data
-                    .get("notes")
-                    .and_then(|v| {
-                        serde_json::from_value::<
-                            Vec<crucible_core::traits::chat::PrecognitionNoteInfo>,
-                        >(v.clone())
-                        .ok()
-                    })
-                    .unwrap_or_default();
-                if notes_count > 0 {
-                    Some(ChatAppMsg::PrecognitionResult { notes_count, notes })
-                } else {
-                    None
-                }
-            }
-            "delegation_spawned" => {
-                let id = event
-                    .data
-                    .get("delegation_id")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let prompt = event
-                    .data
-                    .get("prompt")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let target_agent = event
-                    .data
-                    .get("target_agent")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-
-                match (id, prompt) {
-                    (Some(id), Some(prompt)) => Some(ChatAppMsg::DelegationSpawned {
-                        id,
-                        prompt,
-                        target_agent,
-                    }),
-                    _ => None,
-                }
-            }
-            "delegation_completed" => {
-                let id = event
-                    .data
-                    .get("delegation_id")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let summary = event
-                    .data
-                    .get("result_summary")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-
-                match (id, summary) {
-                    (Some(id), Some(summary)) => {
-                        Some(ChatAppMsg::DelegationCompleted { id, summary })
-                    }
-                    _ => None,
-                }
-            }
-            "delegation_failed" => {
-                let id = event
-                    .data
-                    .get("delegation_id")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let error = event
-                    .data
-                    .get("error")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-
-                match (id, error) {
-                    (Some(id), Some(error)) => Some(ChatAppMsg::DelegationFailed { id, error }),
-                    _ => None,
-                }
-            }
-            "replay_complete" => {
-                let _ = msg_tx.send(ChatAppMsg::Status("Replay complete".to_string()));
-                return;
-            }
-            _ => {
-                tracing::trace!(event_type = %event.event_type, "Replay consumer: skipping event");
-                None
-            }
-        };
-
-        if let Some(msg) = msg {
+        if event.event_type == "replay_complete" {
+            let _ = msg_tx.send(ChatAppMsg::Status("Replay complete".to_string()));
+            return;
+        }
+        for msg in session_event_to_chat_msgs(&event.event_type, &event.data) {
             if msg_tx.send(msg).is_err() {
                 return;
             }
