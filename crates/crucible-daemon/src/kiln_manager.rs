@@ -80,6 +80,14 @@ impl StorageHandle {
         }
     }
 
+    /// Get a PropertyStore trait object for EAV property storage
+    pub fn as_property_store(&self) -> std::sync::Arc<dyn crucible_core::storage::PropertyStore> {
+        match self {
+            #[cfg(feature = "storage-sqlite")]
+            StorageHandle::Sqlite(client) => client.as_property_store(),
+        }
+    }
+
     /// Search for similar vectors - backend-agnostic VSS
     ///
     /// Returns (document_id, score) pairs sorted by similarity descending.

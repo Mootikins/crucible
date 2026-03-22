@@ -5,16 +5,17 @@
 
 use std::sync::Arc;
 
-use crucible_core::storage::{GraphView, NoteStore};
+use crucible_core::storage::{GraphView, NoteStore, PropertyStore};
 use mlua::{Lua, Table};
 
 use crate::notify::register_notify_module;
 use crate::{
     register_graph_module, register_hooks_module, register_lua_stdlib, register_oil_module,
     register_oq_module, register_session_module, register_sessions_module,
-    register_sessions_module_with_api, register_statusline_module, register_tools_module,
-    register_tools_module_with_api, register_vault_module, register_vault_module_with_graph,
-    register_vault_module_with_store, DaemonSessionApi, DaemonToolsApi, SessionManager,
+    register_sessions_module_with_api, register_statusline_module, register_storage_module,
+    register_storage_module_with_store, register_tools_module, register_tools_module_with_api,
+    register_vault_module, register_vault_module_with_graph, register_vault_module_with_store,
+    DaemonSessionApi, DaemonToolsApi, SessionManager,
 };
 
 /// Builder for constructing Lua test environments with specific module registrations.
@@ -136,6 +137,26 @@ impl TestLuaBuilder {
         self.ensure_crucible_table();
         register_sessions_module_with_api(&self.lua, api)
             .expect("Should register sessions with API");
+        self
+    }
+
+    /// Register the storage module (cru.storage) with stubs.
+    /// Sets up: cru + crucible global tables.
+    pub fn with_storage(self) -> Self {
+        self.ensure_cru_table();
+        self.ensure_crucible_table();
+        register_storage_module(&self.lua).expect("Should register storage module");
+        self
+    }
+
+    /// Register the storage module with a PropertyStore backend.
+    /// Sets up: cru + crucible global tables.
+    pub fn with_storage_store(self, store: Arc<dyn PropertyStore>) -> Self {
+        self.ensure_cru_table();
+        self.ensure_crucible_table();
+        register_storage_module(&self.lua).expect("Should register storage stubs");
+        register_storage_module_with_store(&self.lua, store)
+            .expect("Should register storage with store");
         self
     }
 

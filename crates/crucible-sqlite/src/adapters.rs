@@ -7,7 +7,7 @@ use crate::error_ext::SqliteResultExt;
 use crate::note_store::SqliteNoteStore;
 use crate::SqliteConfig;
 use anyhow::Result;
-use crucible_core::storage::NoteStore;
+use crucible_core::storage::{NoteStore, PropertyStore};
 use crucible_core::{QueryResult, Record, RecordId};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -35,6 +35,11 @@ impl SqliteClientHandle {
 
     /// Get a trait object for NoteStore
     pub fn as_note_store(&self) -> Arc<dyn NoteStore> {
+        self.note_store.clone()
+    }
+
+    /// Get a trait object for PropertyStore (EAV properties)
+    pub fn as_property_store(&self) -> Arc<dyn PropertyStore> {
         self.note_store.clone()
     }
 

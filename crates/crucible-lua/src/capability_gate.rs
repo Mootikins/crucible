@@ -43,6 +43,10 @@ pub fn module_capability_map() -> Vec<ModuleCapabilityMapping> {
             module_name: "graph",
             required_capability: Some(Capability::Kiln),
         },
+        ModuleCapabilityMapping {
+            module_name: "storage",
+            required_capability: Some(Capability::Kiln),
+        },
         // No capability needed for core modules:
         ModuleCapabilityMapping {
             module_name: "sessions",
@@ -131,6 +135,7 @@ mod tests {
             dependencies: Vec::new(),
             exports: Default::default(),
             config: None,
+            storage: None,
             enabled: None,
         }
     }
@@ -227,6 +232,21 @@ mod tests {
         let (allowed, warning) = check_module_access("test-plugin", "graph", &manifest, false);
         assert!(allowed);
         assert!(warning.is_none());
+    }
+
+    #[test]
+    fn kiln_cap_required_for_storage() {
+        let manifest = make_manifest("test-plugin", vec![Capability::Kiln]);
+        let (allowed, warning) = check_module_access("test-plugin", "storage", &manifest, false);
+        assert!(allowed);
+        assert!(warning.is_none());
+
+        // Without Kiln capability
+        let manifest_no_kiln = make_manifest("test-plugin", vec![]);
+        let (allowed, warning) =
+            check_module_access("test-plugin", "storage", &manifest_no_kiln, true);
+        assert!(!allowed);
+        assert!(warning.is_some());
     }
 
     #[test]

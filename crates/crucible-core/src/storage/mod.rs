@@ -20,6 +20,7 @@ pub mod error;
 pub mod error_ext;
 pub mod graph;
 pub mod note_store;
+pub mod property_store;
 pub mod traits;
 
 // Re-export main types for convenience
@@ -27,4 +28,5 @@ pub use error::{StorageError, StorageResult};
 pub use error_ext::StorageResultExt;
 pub use graph::InMemoryGraph;
 pub use note_store::{Filter, GraphView, NoteRecord, NoteStore, Op, SearchResult};
+pub use property_store::PropertyStore;
 pub use traits::{ContentHasher, QuotaUsage, StorageBackend, StorageStats};

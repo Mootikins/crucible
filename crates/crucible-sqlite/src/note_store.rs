@@ -338,6 +338,11 @@ impl SqliteNoteStore {
         Self { pool }
     }
 
+    /// Get a reference to the underlying connection pool
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
+    }
+
     /// Apply the notes table schema
     ///
     /// This should be called once when initializing the store.

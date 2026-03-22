@@ -48,6 +48,7 @@ pub mod fts;
 pub mod graph_query;
 pub mod graph_view;
 pub mod note_store;
+pub mod property_store;
 pub mod query;
 pub mod repository;
 pub mod schema;
@@ -61,6 +62,7 @@ pub use fts::{FtsIndex, FtsResult};
 pub use graph_query::SqliteGraphQueryExecutor;
 pub use graph_view::SqliteGraphView;
 pub use note_store::{create_note_store, SqliteNoteStore};
+pub use property_store::SqlitePropertyStore;
 pub use query::{
     GraphIR, ParseError, PipelineError, QueryPipeline, QueryPipelineBuilder, QueryRenderer,
     QuerySyntax, QuerySyntaxRegistry, QuerySyntaxRegistryBuilder, QueryTransform, RenderError,
