@@ -431,15 +431,11 @@ impl OilChatRunner {
                             SetRpcAction::SetExecutionTimeout(n) => {
                                 ChatAppMsg::SetExecutionTimeout(n)
                             }
-                            SetRpcAction::SetContextBudget(n) => {
-                                ChatAppMsg::SetContextBudget(n)
-                            }
+                            SetRpcAction::SetContextBudget(n) => ChatAppMsg::SetContextBudget(n),
                             SetRpcAction::SetContextStrategy(s) => {
                                 ChatAppMsg::SetContextStrategy(s)
                             }
-                            SetRpcAction::SetContextWindow(n) => {
-                                ChatAppMsg::SetContextWindow(n)
-                            }
+                            SetRpcAction::SetContextWindow(n) => ChatAppMsg::SetContextWindow(n),
                             SetRpcAction::SetOutputValidation(v) => {
                                 ChatAppMsg::SetOutputValidation(v)
                             }
@@ -1383,9 +1379,7 @@ impl OilChatRunner {
                             return Ok(false);
                         }
                         tracing::info!(output_validation = %validation_str, "Setting output_validation");
-                        match validation_str
-                            .parse::<crucible_core::session::OutputValidation>()
-                        {
+                        match validation_str.parse::<crucible_core::session::OutputValidation>() {
                             Ok(validation) => {
                                 match params.agent.set_output_validation(validation).await {
                                     Ok(()) => {
@@ -1414,7 +1408,10 @@ impl OilChatRunner {
                         tracing::info!(validation_retries = retries, "Setting validation_retries");
                         match params.agent.set_validation_retries(*retries).await {
                             Ok(()) => {
-                                tracing::info!(validation_retries = retries, "Validation retries set successfully");
+                                tracing::info!(
+                                    validation_retries = retries,
+                                    "Validation retries set successfully"
+                                );
                             }
                             Err(e) => {
                                 tracing::warn!(validation_retries = retries, error = %e, "Validation retries not supported by this agent");

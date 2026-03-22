@@ -50,8 +50,7 @@ fn apply_prompt_caching(system_prompt: &str, messages: &mut Vec<ChatMessage>) {
     // genai's with_system() doesn't support MessageOptions, but system-role
     // ChatMessages do — the Anthropic adapter handles them identically.
     if !system_prompt.is_empty() {
-        let system_msg =
-            ChatMessage::system(system_prompt).with_options(CacheControl::Ephemeral);
+        let system_msg = ChatMessage::system(system_prompt).with_options(CacheControl::Ephemeral);
         messages.insert(0, system_msg);
     }
 }
@@ -75,7 +74,11 @@ fn is_write_tool_name(tool_name: &str) -> bool {
 fn usage_to_token_usage(usage: &genai::chat::Usage) -> TokenUsage {
     let to_u32 = |v: Option<i32>| -> u32 {
         let n = v.unwrap_or(0);
-        if n < 0 { 0 } else { n as u32 }
+        if n < 0 {
+            0
+        } else {
+            n as u32
+        }
     };
     let to_opt_u32 = |v: Option<i32>| -> Option<u32> {
         v.and_then(|n| if n > 0 { Some(n as u32) } else { None })
@@ -84,7 +87,12 @@ fn usage_to_token_usage(usage: &genai::chat::Usage) -> TokenUsage {
     let (cache_read_tokens, cache_creation_tokens) = usage
         .prompt_tokens_details
         .as_ref()
-        .map(|d| (to_opt_u32(d.cached_tokens), to_opt_u32(d.cache_creation_tokens)))
+        .map(|d| {
+            (
+                to_opt_u32(d.cached_tokens),
+                to_opt_u32(d.cache_creation_tokens),
+            )
+        })
         .unwrap_or((None, None));
 
     TokenUsage {
@@ -1332,7 +1340,9 @@ mod tests {
 
     fn make_test_handle() -> GenaiAgentHandle {
         let backend = BackendType::OpenAI;
-        let config = LlmProviderConfig::builder(backend).model("test-model").build();
+        let config = LlmProviderConfig::builder(backend)
+            .model("test-model")
+            .build();
         let chat_client = ChatClient::new(&config);
         let client = chat_client.inner().clone();
         let model_iden = chat_client

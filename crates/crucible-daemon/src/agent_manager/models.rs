@@ -732,10 +732,7 @@ impl AgentManager {
         .await
     }
 
-    pub fn get_output_validation(
-        &self,
-        session_id: &str,
-    ) -> Result<OutputValidation, AgentError> {
+    pub fn get_output_validation(&self, session_id: &str) -> Result<OutputValidation, AgentError> {
         let (_, agent_config) = self.get_session_with_agent(session_id)?;
         Ok(agent_config.output_validation.clone())
     }

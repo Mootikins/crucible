@@ -96,11 +96,11 @@ async fn setup_session_with_agent(server: &TestServer) -> (String, DaemonClient)
         precognition_enabled: true,
         max_iterations: None,
         execution_timeout_secs: None,
-            context_budget: None,
-            context_strategy: Default::default(),
-            context_window: None,
-            output_validation: OutputValidation::default(),
-            validation_retries: 3,
+        context_budget: None,
+        context_strategy: Default::default(),
+        context_window: None,
+        output_validation: OutputValidation::default(),
+        validation_retries: 3,
     };
 
     client
@@ -348,11 +348,11 @@ async fn test_configure_agent_sets_agent() {
         precognition_enabled: false,
         max_iterations: None,
         execution_timeout_secs: None,
-            context_budget: None,
-            context_strategy: Default::default(),
-            context_window: None,
-            output_validation: OutputValidation::default(),
-            validation_retries: 3,
+        context_budget: None,
+        context_strategy: Default::default(),
+        context_window: None,
+        output_validation: OutputValidation::default(),
+        validation_retries: 3,
     };
 
     client

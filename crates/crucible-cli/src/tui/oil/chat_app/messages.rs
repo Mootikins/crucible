@@ -189,7 +189,10 @@ pub enum ChatAppMsg {
     /// **Command** (TUI → daemon): Undo the last N agent turns.
     Undo(usize),
     /// **Event** (daemon → TUI): Undo completed, with count of turns reverted.
-    UndoComplete { turns: usize, messages_removed: usize },
+    UndoComplete {
+        turns: usize,
+        messages_removed: usize,
+    },
 }
 
 /// Category of a `ChatAppMsg` for top-level dispatch.

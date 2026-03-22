@@ -1,7 +1,7 @@
 use super::*;
-use crucible_core::session::OutputValidation;
 use crucible_config::{AgentProfile, BackendType, DelegationConfig};
 use crucible_core::background::JobStatus;
+use crucible_core::session::OutputValidation;
 use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatError, ChatResult};
 use futures::stream::{self, BoxStream};
 use std::collections::HashMap;
@@ -107,11 +107,11 @@ fn test_session_agent(delegation_config: Option<DelegationConfig>) -> SessionAge
         precognition_enabled: false,
         max_iterations: None,
         execution_timeout_secs: None,
-            context_budget: None,
-            context_strategy: Default::default(),
-            context_window: None,
-            output_validation: OutputValidation::default(),
-            validation_retries: 3,
+        context_budget: None,
+        context_strategy: Default::default(),
+        context_window: None,
+        output_validation: OutputValidation::default(),
+        validation_retries: 3,
     }
 }
 

@@ -268,11 +268,11 @@ async fn create_session(
         precognition_enabled: true,
         max_iterations: None,
         execution_timeout_secs: None,
-            context_budget: None,
-            context_strategy: Default::default(),
-            context_window: None,
-            output_validation: OutputValidation::default(),
-            validation_retries: 3,
+        context_budget: None,
+        context_strategy: Default::default(),
+        context_window: None,
+        output_validation: OutputValidation::default(),
+        validation_retries: 3,
     };
 
     state

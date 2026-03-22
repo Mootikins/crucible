@@ -114,11 +114,11 @@ fn test_session_agent(enabled: bool, max_concurrent_delegations: u32) -> Session
         precognition_enabled: false,
         max_iterations: None,
         execution_timeout_secs: None,
-            context_budget: None,
-            context_strategy: Default::default(),
-            context_window: None,
-            output_validation: OutputValidation::default(),
-            validation_retries: 3,
+        context_budget: None,
+        context_strategy: Default::default(),
+        context_window: None,
+        output_validation: OutputValidation::default(),
+        validation_retries: 3,
     }
 }
 
@@ -150,11 +150,11 @@ fn test_root_session_agent(enabled: bool, max_concurrent_delegations: u32) -> Se
         precognition_enabled: false,
         max_iterations: None,
         execution_timeout_secs: None,
-            context_budget: None,
-            context_strategy: Default::default(),
-            context_window: None,
-            output_validation: OutputValidation::default(),
-            validation_retries: 3,
+        context_budget: None,
+        context_strategy: Default::default(),
+        context_window: None,
+        output_validation: OutputValidation::default(),
+        validation_retries: 3,
     }
 }
 

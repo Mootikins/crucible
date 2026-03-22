@@ -1848,10 +1848,7 @@ pub(crate) async fn handle_session_undo(
     }
 }
 
-pub(crate) async fn handle_session_can_undo(
-    req: Request,
-    am: &Arc<AgentManager>,
-) -> Response {
+pub(crate) async fn handle_session_can_undo(req: Request, am: &Arc<AgentManager>) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
 
     match am.can_undo(session_id) {
@@ -1872,10 +1869,7 @@ pub(crate) async fn handle_session_can_undo(
     }
 }
 
-pub(crate) async fn handle_session_undo_depth(
-    req: Request,
-    am: &Arc<AgentManager>,
-) -> Response {
+pub(crate) async fn handle_session_undo_depth(req: Request, am: &Arc<AgentManager>) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
 
     match am.undo_depth(session_id) {

@@ -139,7 +139,11 @@ impl OilChatApp {
             "plan" => self.set_mode_with_status(ChatMode::Plan),
             "auto" => self.set_mode_with_status(ChatMode::Auto),
             "undo" => {
-                let count = parts.get(1).and_then(|s| s.parse::<usize>().ok()).unwrap_or(1).max(1);
+                let count = parts
+                    .get(1)
+                    .and_then(|s| s.parse::<usize>().ok())
+                    .unwrap_or(1)
+                    .max(1);
                 Action::Send(ChatAppMsg::Undo(count))
             }
             _ => Action::Send(ChatAppMsg::ExecuteSlashCommand(cmd.to_string())),
@@ -457,9 +461,7 @@ impl OilChatApp {
             "maxiterations" => self.handle_set_max_iterations(key, value),
             "executiontimeout" => self.handle_set_execution_timeout(key, value),
             "contextbudget" | "context_budget" => self.handle_set_context_budget(key, value),
-            "contextstrategy" | "context_strategy" => {
-                self.handle_set_context_strategy(key, value)
-            }
+            "contextstrategy" | "context_strategy" => self.handle_set_context_strategy(key, value),
             "contextwindow" | "context_window" => self.handle_set_context_window(key, value),
             "outputvalidation" | "output_validation" => {
                 self.handle_set_output_validation(key, value)
