@@ -24,7 +24,12 @@ fn pre_render_lines(content: &Node, max_lines: usize) -> Option<(Vec<String>, us
 }
 
 fn overflow_indicator(hidden: usize) -> Node {
-    styled(format!("({hidden} more lines)"), Style::new().dim())
+    styled(format!("({hidden} more lines)"), Style::new().dim()).with_margin(crate::Padding {
+        top: 1,
+        bottom: 1,
+        left: 4,
+        ..Default::default()
+    })
 }
 
 /// Cap rendered content to show the **last** `max_lines` visible lines (tail view).

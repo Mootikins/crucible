@@ -1,6 +1,5 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
-assertion_line: 1129
 expression: render_app(&app)
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
@@ -11,7 +10,9 @@ expression: render_app(&app)
                                                                                 
                                                                                 
                                                                                 
-(4 more lines)                                                                  
+                                                                                
+    (4 more lines)                                                              
+                                                                                
     Delta: narrowing down approach.                                             
     Echo: validating the hypothesis.                                            
     Foxtrot: confirming the conclusion.                                         

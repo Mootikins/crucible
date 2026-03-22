@@ -1,12 +1,12 @@
 ---
-source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests.rs
+source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
 expression: render_app(&app)
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  > What is 2+2?                                                                 
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
 
-  ┌─ thinking
+  ┌─ Thought (2 words)
     Simple arithmetic...
 
    The answer is 4.

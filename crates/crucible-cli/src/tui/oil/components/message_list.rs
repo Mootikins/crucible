@@ -115,10 +115,24 @@ pub fn render_user_prompt(content: &str, width: usize) -> Node {
 }
 
 /// Render a thinking block with header.
-pub fn render_thinking_block(content: &str, _token_count: usize, width: usize) -> Node {
+pub fn render_thinking_block(
+    content: &str,
+    _token_count: usize,
+    width: usize,
+    complete: bool,
+) -> Node {
     let t = crate::tui::oil::theme::active();
+    let label = if complete {
+        let word_count = content.split_whitespace().count();
+        format!(
+            "  \u{250C}{} Thought ({} words)",
+            t.decorations.divider_char, word_count
+        )
+    } else {
+        format!("  \u{250C}{} Thinking\u{2026}", t.decorations.divider_char)
+    };
     let header = styled(
-        format!("  \u{250C}{} thinking", t.decorations.divider_char),
+        label,
         Style::new()
             .fg(t.resolve_color(t.colors.text_muted))
             .italic(),
@@ -210,18 +224,18 @@ mod tests {
     #[test]
     fn render_thinking_block_boundary_1200_chars() {
         let content_exactly_1200 = "a".repeat(1200);
-        let node = render_thinking_block(&content_exactly_1200, 100, 80);
+        let node = render_thinking_block(&content_exactly_1200, 100, 80, true);
         let plain = render_to_plain_text(&node, 80);
-        assert!(plain.contains("thinking"));
+        assert!(plain.contains("Thought"));
         assert!(!plain.contains("…"));
     }
 
     #[test]
     fn render_thinking_block_over_1200_chars() {
         let content_over_1200 = "a".repeat(1201);
-        let node = render_thinking_block(&content_over_1200, 100, 80);
+        let node = render_thinking_block(&content_over_1200, 100, 80, true);
         let plain = render_to_plain_text(&node, 80);
-        assert!(plain.contains("thinking"));
+        assert!(plain.contains("Thought"));
         assert!(plain.contains("…"));
     }
 
@@ -235,9 +249,9 @@ mod tests {
             "CJK content should exceed 1200 bytes"
         );
         // This should not panic on UTF-8 boundary
-        let node = render_thinking_block(&content_cjk, 100, 80);
+        let node = render_thinking_block(&content_cjk, 100, 80, true);
         let plain = render_to_plain_text(&node, 80);
-        assert!(plain.contains("thinking"));
+        assert!(plain.contains("Thought"));
         assert!(plain.contains("…"));
     }
 
@@ -251,9 +265,9 @@ mod tests {
             "Emoji content should exceed 1200 bytes"
         );
         // This should not panic on UTF-8 boundary
-        let node = render_thinking_block(&content_emoji, 100, 80);
+        let node = render_thinking_block(&content_emoji, 100, 80, true);
         let plain = render_to_plain_text(&node, 80);
-        assert!(plain.contains("thinking"));
+        assert!(plain.contains("Thought"));
         assert!(plain.contains("…"));
     }
 
@@ -267,9 +281,9 @@ mod tests {
             "Mixed content should exceed 1200 bytes"
         );
         // This should not panic on UTF-8 boundary
-        let node = render_thinking_block(&content_mixed, 100, 80);
+        let node = render_thinking_block(&content_mixed, 100, 80, true);
         let plain = render_to_plain_text(&node, 80);
-        assert!(plain.contains("thinking"));
+        assert!(plain.contains("Thought"));
         assert!(plain.contains("…"));
     }
 

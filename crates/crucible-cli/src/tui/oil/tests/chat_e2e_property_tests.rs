@@ -205,7 +205,7 @@ proptest! {
 
         if !think_chunks.is_empty() {
             prop_assert!(
-                stdout.contains("thinking"),
+                stdout.contains("Thought") || stdout.contains("Thinking"),
                 "Should show thinking indicator:\n{}",
                 stdout
             );
