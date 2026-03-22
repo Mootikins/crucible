@@ -22,10 +22,14 @@ pub(crate) async fn handle_kiln_open(
 
     if let Some(handle) = km.get(kiln_path).await {
         let store = handle.as_note_store();
+        let property_store = handle.as_property_store();
         let loader_guard = plugin_loader.lock().await;
         if let Some(ref loader) = *loader_guard {
             if let Err(e) = loader.upgrade_with_storage(store, kiln_path) {
                 warn!("Failed to upgrade Lua modules with storage: {}", e);
+            }
+            if let Err(e) = loader.upgrade_with_property_store(property_store) {
+                warn!("Failed to upgrade Lua storage module: {}", e);
             }
         }
     }

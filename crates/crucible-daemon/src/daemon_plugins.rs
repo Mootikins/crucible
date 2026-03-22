@@ -8,13 +8,15 @@
 //! the daemon is headless.
 
 use crucible_core::storage::NoteStore;
+use crucible_core::storage::PropertyStore;
 use crucible_lua::{
     register_graph_module, register_graph_module_with_store, register_oq_module,
     register_paths_module, register_schedule_module, register_sessions_module,
-    register_sessions_module_with_api, register_shell_module, register_tools_module,
-    register_tools_module_with_api, register_vault_module, register_vault_module_with_store,
-    register_ws_module, DaemonSessionApi, DaemonToolsApi, LuaExecutor, PathsContext, PluginManager,
-    PluginSource, PluginSpec, ShellPolicy,
+    register_sessions_module_with_api, register_shell_module, register_storage_module,
+    register_storage_module_with_store, register_tools_module, register_tools_module_with_api,
+    register_vault_module, register_vault_module_with_store, register_ws_module, DaemonSessionApi,
+    DaemonToolsApi, LuaExecutor, PathsContext, PluginManager, PluginSource, PluginSpec,
+    ShellPolicy,
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
@@ -66,6 +68,7 @@ impl DaemonPluginLoader {
             .map_err(|e| anyhow::anyhow!("paths module: {e}"))?;
         register_graph_module(lua).map_err(|e| anyhow::anyhow!("graph module: {e}"))?;
         register_vault_module(lua).map_err(|e| anyhow::anyhow!("vault module: {e}"))?;
+        register_storage_module(lua).map_err(|e| anyhow::anyhow!("storage module: {e}"))?;
         register_sessions_module(lua).map_err(|e| anyhow::anyhow!("sessions module: {e}"))?;
         register_tools_module(lua).map_err(|e| anyhow::anyhow!("tools module: {e}"))?;
         register_schedule_module(lua).map_err(|e| anyhow::anyhow!("schedule module: {e}"))?;
@@ -130,7 +133,7 @@ impl DaemonPluginLoader {
         Ok(())
     }
 
-    /// Upgrade graph and vault modules with real NoteStore-backed implementations.
+    /// Upgrade graph, vault, and storage modules with real store-backed implementations.
     ///
     /// Call after a kiln opens and storage is available. Replaces stub functions
     /// registered in `new()` with implementations that query the store.
@@ -159,6 +162,18 @@ impl DaemonPluginLoader {
             "Lua graph/vault modules upgraded with storage (kiln: {})",
             kiln_path.display()
         );
+        Ok(())
+    }
+
+    /// Upgrade the `cru.storage` module with a real PropertyStore backend.
+    ///
+    /// Call after a kiln opens and storage is available. The namespace for each
+    /// plugin is determined dynamically from `cru._current_plugin` at call time.
+    pub fn upgrade_with_property_store(&self, store: Arc<dyn PropertyStore>) -> anyhow::Result<()> {
+        let lua = self.executor.lua();
+        register_storage_module_with_store(lua, store)
+            .map_err(|e| anyhow::anyhow!("storage upgrade: {e}"))?;
+        info!("Lua storage module upgraded with PropertyStore");
         Ok(())
     }
 

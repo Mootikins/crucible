@@ -80,6 +80,7 @@ mod session_api;
 mod sessions;
 mod shell;
 pub mod statusline;
+mod storage_api;
 pub mod stubs;
 mod timer;
 mod tools_api;
@@ -149,6 +150,7 @@ pub use statusline::{
     parse_statusline_config, register_statusline_module, ColorSpec, ModeStyleSpec,
     StatuslineComponent, StatuslineConfig, StyleSpec,
 };
+pub use storage_api::{register_storage_module, register_storage_module_with_store};
 pub use timer::register_timer_module;
 pub use types::{LuaExecutionResult, LuaTool, ToolParam, ToolResult};
 pub use vault::{
@@ -175,6 +177,7 @@ pub use lifecycle::{
 pub use manifest::{
     Capability, ConfigProperty, ConfigSchema, ConfigType, ExportDeclarations, LoadedPlugin,
     ManifestError, ManifestResult, PluginDependency, PluginManifest, PluginSource, PluginState,
+    PropertyDeclaration, StorageDeclaration,
 };
 pub use mcp::{
     register_mcp_module, register_mcp_module_stub, LuaMcpClient, McpToolInfo, McpToolResult,

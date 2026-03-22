@@ -79,6 +79,9 @@ pub struct PluginManifest {
     pub config: Option<ConfigSchema>,
 
     #[serde(default)]
+    pub storage: Option<StorageDeclaration>,
+
+    #[serde(default)]
     pub enabled: Option<bool>,
 }
 
@@ -167,6 +170,33 @@ pub struct ConfigSchema {
     pub properties: HashMap<String, ConfigProperty>,
 }
 
+/// Declares storage needs for a plugin.
+///
+/// Properties are stored in the EAV `properties` table with `namespace = "plugin:{name}"`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct StorageDeclaration {
+    /// Property keys this plugin uses (for documentation and validation)
+    #[serde(default)]
+    pub properties: Vec<PropertyDeclaration>,
+}
+
+/// A single property declaration within a plugin's storage manifest.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PropertyDeclaration {
+    /// Property key name
+    pub key: String,
+    /// Value type hint (text, number, boolean, json)
+    #[serde(rename = "type", default = "default_property_type")]
+    pub value_type: String,
+    /// Human description
+    #[serde(default)]
+    pub description: String,
+}
+
+fn default_property_type() -> String {
+    "text".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ConfigProperty {
     #[serde(rename = "type")]
@@ -250,6 +280,7 @@ impl PluginManifest {
                 ..Default::default()
             },
             config: None,
+            storage: None,
             enabled: None,
         })
     }
@@ -659,6 +690,60 @@ capabilities:
         let manifest = PluginManifest::from_yaml(yaml).unwrap();
         assert!(manifest.has_capability(Capability::Kiln));
         assert!(manifest.has_capability(Capability::Ui));
+    }
+
+    #[test]
+    fn test_parse_storage_declaration() {
+        let yaml = r#"
+name: entity-memory
+version: "0.1.0"
+capabilities:
+  - kiln
+storage:
+  properties:
+    - key: last_seen
+      type: text
+      description: Last seen timestamp
+    - key: interaction_count
+      type: number
+    - key: metadata
+      type: json
+      description: Arbitrary metadata blob
+"#;
+        let manifest = PluginManifest::from_yaml(yaml).unwrap();
+        let storage = manifest.storage.unwrap();
+        assert_eq!(storage.properties.len(), 3);
+        assert_eq!(storage.properties[0].key, "last_seen");
+        assert_eq!(storage.properties[0].value_type, "text");
+        assert_eq!(storage.properties[0].description, "Last seen timestamp");
+        assert_eq!(storage.properties[1].key, "interaction_count");
+        assert_eq!(storage.properties[1].value_type, "number");
+        assert_eq!(storage.properties[2].key, "metadata");
+        assert_eq!(storage.properties[2].value_type, "json");
+    }
+
+    #[test]
+    fn test_storage_declaration_default_type() {
+        let yaml = r#"
+name: simple-store
+version: "0.1.0"
+storage:
+  properties:
+    - key: status
+"#;
+        let manifest = PluginManifest::from_yaml(yaml).unwrap();
+        let storage = manifest.storage.unwrap();
+        assert_eq!(storage.properties[0].value_type, "text");
+    }
+
+    #[test]
+    fn test_manifest_without_storage() {
+        let yaml = r#"
+name: no-storage
+version: "1.0.0"
+"#;
+        let manifest = PluginManifest::from_yaml(yaml).unwrap();
+        assert!(manifest.storage.is_none());
     }
 
     #[test]
