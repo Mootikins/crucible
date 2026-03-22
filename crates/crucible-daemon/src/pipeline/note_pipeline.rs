@@ -78,6 +78,9 @@ pub struct NotePipeline {
 
     /// Configuration
     config: NotePipelineConfig,
+
+    /// Kiln root path for normalizing stored paths to kiln-relative form
+    kiln_root: Option<std::path::PathBuf>,
 }
 
 impl NotePipeline {
@@ -101,6 +104,7 @@ impl NotePipeline {
             enrichment_service,
             note_store,
             config,
+            kiln_root: None,
         }
     }
 
@@ -119,7 +123,13 @@ impl NotePipeline {
             enrichment_service,
             note_store,
             config,
+            kiln_root: None,
         }
+    }
+
+    /// Set the kiln root path for normalizing stored note paths.
+    pub fn set_kiln_root(&mut self, root: std::path::PathBuf) {
+        self.kiln_root = Some(root);
     }
 
     /// Set whether to force reprocessing of all files, bypassing change detection.
@@ -181,7 +191,14 @@ impl NotePipeline {
             .collect::<Vec<_>>();
         debug!("Phase 2: Parsed note successfully");
 
-        let path_str = path.to_string_lossy();
+        let path_str = if let Some(ref kiln_root) = self.kiln_root {
+            std::borrow::Cow::Owned(
+                crate::kiln_manager::normalize_note_path(path, kiln_root)
+                    .unwrap_or_else(|| path.to_string_lossy().to_string()),
+            )
+        } else {
+            path.to_string_lossy()
+        };
 
         // Phase 3: Enrichment (if enabled)
         let phase3_start = std::time::Instant::now();
@@ -324,7 +341,7 @@ impl NotePipeline {
     fn enriched_to_record(
         &self,
         enriched: &crucible_core::enrichment::EnrichedNote,
-        relative_path: &str,
+        storage_path: &str,
     ) -> Result<NoteRecord> {
         use crucible_core::parser::BlockHash;
 
@@ -381,7 +398,7 @@ impl NotePipeline {
             .unwrap_or_default();
 
         Ok(NoteRecord {
-            path: relative_path.to_string(),
+            path: storage_path.to_string(),
             content_hash,
             embedding,
             embedding_model,
