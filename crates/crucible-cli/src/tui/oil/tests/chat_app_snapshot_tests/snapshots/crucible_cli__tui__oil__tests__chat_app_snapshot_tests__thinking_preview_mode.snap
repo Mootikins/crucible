@@ -1,6 +1,5 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
-assertion_line: 1156
 expression: setup(false)
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
@@ -11,7 +10,9 @@ expression: setup(false)
                                                                                 
                                                                                 
                                                                                 
-(3 more lines)                                                                  
+                                                                                
+    (3 more lines)                                                              
+                                                                                
     Charlie: cross-referencing data.                                            
     Delta: forming conclusion.                                                  
     Echo: final verification.                                                   

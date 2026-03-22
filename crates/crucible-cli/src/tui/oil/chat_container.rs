@@ -252,12 +252,16 @@ fn render_assistant_blocks_with_graduation(
     for block in params.blocks {
         match block {
             ContentBlock::Thinking(tb) => {
-                let thinking_node =
-                    render_thinking_block(&tb.content, tb.token_count, render_state.width())
-                        .with_margin(Padding {
-                            top: 1,
-                            ..Default::default()
-                        });
+                let thinking_node = render_thinking_block(
+                    &tb.content,
+                    tb.token_count,
+                    render_state.width(),
+                    params.complete,
+                )
+                .with_margin(Padding {
+                    top: 1,
+                    ..Default::default()
+                });
 
                 if render_state.show_thinking {
                     nodes.push(scrollback(
