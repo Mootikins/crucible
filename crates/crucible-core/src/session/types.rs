@@ -103,6 +103,10 @@ fn default_validation_retries() -> u32 {
     3
 }
 
+fn default_precognition_results() -> usize {
+    5
+}
+
 /// Validate agent output against the configured validation mode.
 ///
 /// Returns `Ok(())` if validation passes or is disabled, `Err(reason)` otherwise.
@@ -200,6 +204,10 @@ pub struct SessionAgent {
     #[serde(default = "default_true")]
     pub precognition_enabled: bool,
 
+    /// Maximum number of unique notes to return from Precognition search (default: 5).
+    #[serde(default = "default_precognition_results")]
+    pub precognition_results: usize,
+
     /// Maximum tool-call iterations per turn. None = unlimited (default for interactive sessions).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_iterations: Option<u32>,
@@ -265,6 +273,7 @@ impl SessionAgent {
             agent_description: profile.description.clone(),
             delegation_config: profile.delegation.clone(),
             precognition_enabled: true,
+            precognition_results: default_precognition_results(),
             max_iterations: None,
             execution_timeout_secs: None,
             context_budget: None,
@@ -750,6 +759,7 @@ mod tests {
             agent_description: None,
             delegation_config: None,
             precognition_enabled: true,
+            precognition_results: default_precognition_results(),
             max_iterations: None,
             execution_timeout_secs: None,
             context_budget: None,
@@ -791,6 +801,7 @@ mod tests {
             agent_description: None,
             delegation_config: None,
             precognition_enabled: true,
+            precognition_results: default_precognition_results(),
             max_iterations: None,
             execution_timeout_secs: None,
             context_budget: None,
@@ -851,6 +862,7 @@ mod tests {
             agent_description: None,
             delegation_config: None,
             precognition_enabled: true,
+            precognition_results: default_precognition_results(),
             max_iterations: None,
             execution_timeout_secs: None,
             context_budget: None,
@@ -893,6 +905,7 @@ mod tests {
             agent_description: None,
             delegation_config: None,
             precognition_enabled: true,
+            precognition_results: default_precognition_results(),
             max_iterations: None,
             execution_timeout_secs: None,
             context_budget: None,
@@ -942,6 +955,7 @@ mod tests {
             agent_description: None,
             delegation_config: None,
             precognition_enabled: true,
+            precognition_results: default_precognition_results(),
             max_iterations: None,
             execution_timeout_secs: None,
             context_budget: None,
@@ -984,6 +998,7 @@ mod tests {
             agent_description: None,
             delegation_config: None,
             precognition_enabled: true,
+            precognition_results: default_precognition_results(),
             max_iterations: None,
             execution_timeout_secs: None,
             context_budget: None,
@@ -1026,6 +1041,7 @@ mod tests {
             agent_description: Some("Claude AI assistant".to_string()),
             delegation_config: None,
             precognition_enabled: true,
+            precognition_results: default_precognition_results(),
             max_iterations: None,
             execution_timeout_secs: None,
             context_budget: None,
@@ -1078,6 +1094,7 @@ mod tests {
             agent_description: None,
             delegation_config: Some(delegation),
             precognition_enabled: true,
+            precognition_results: default_precognition_results(),
             max_iterations: None,
             execution_timeout_secs: None,
             context_budget: None,
@@ -1162,6 +1179,7 @@ mod tests {
             agent_description: Some("A full-featured agent".to_string()),
             delegation_config: Some(delegation),
             precognition_enabled: true,
+            precognition_results: default_precognition_results(),
             max_iterations: None,
             execution_timeout_secs: None,
             context_budget: None,
@@ -1577,6 +1595,7 @@ mod tests {
             agent_description: None,
             delegation_config: None,
             precognition_enabled: true,
+            precognition_results: default_precognition_results(),
             max_iterations: None,
             execution_timeout_secs: None,
             context_budget: None,

@@ -1300,6 +1300,53 @@ pub(crate) async fn handle_session_get_precognition(
     }
 }
 
+pub(crate) async fn handle_session_set_precognition_results(
+    req: Request,
+    am: &Arc<AgentManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    let session_id = require_param!(req, "session_id", as_str);
+    let count = optional_param!(req, "precognition_results", as_u64).unwrap_or(5) as usize;
+
+    match am
+        .set_precognition_results(session_id, count, Some(event_tx))
+        .await
+    {
+        Ok(()) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "precognition_results": count,
+            }),
+        ),
+        Err(e) => agent_error_to_response(req.id, e),
+    }
+}
+
+pub(crate) async fn handle_session_get_precognition_results(
+    req: Request,
+    am: &Arc<AgentManager>,
+) -> Response {
+    let session_id = require_param!(req, "session_id", as_str);
+
+    match am.get_precognition_results(session_id) {
+        Ok(count) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "precognition_results": count,
+            }),
+        ),
+        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
+            session_not_found(req.id, &id)
+        }
+        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
+            agent_not_configured(req.id, &id)
+        }
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
 pub(crate) async fn handle_session_add_notification(
     req: Request,
     am: &Arc<AgentManager>,

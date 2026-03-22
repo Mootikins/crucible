@@ -395,6 +395,38 @@ impl AgentManager {
         Ok(agent_config.precognition_enabled)
     }
 
+    pub async fn set_precognition_results(
+        &self,
+        session_id: &str,
+        count: usize,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        self.update_agent_config_and_emit(
+            session_id,
+            event_tx,
+            "precognition_results_changed",
+            serde_json::json!({ "precognition_results": count }),
+            "Failed to emit precognition_results_changed event (no subscribers)",
+            |agent_config| {
+                agent_config.precognition_results = count;
+                Ok(())
+            },
+            || {
+                info!(
+                    session_id = %session_id,
+                    count = count,
+                    "Precognition results count updated (agent cache invalidated)"
+                );
+            },
+        )
+        .await
+    }
+
+    pub fn get_precognition_results(&self, session_id: &str) -> Result<usize, AgentError> {
+        let (_, agent_config) = self.get_session_with_agent(session_id)?;
+        Ok(agent_config.precognition_results)
+    }
+
     pub async fn set_temperature(
         &self,
         session_id: &str,

@@ -442,6 +442,9 @@ impl OilChatRunner {
                             SetRpcAction::SetValidationRetries(n) => {
                                 ChatAppMsg::SetValidationRetries(n)
                             }
+                            SetRpcAction::SetPrecognitionResults(n) => {
+                                ChatAppMsg::SetPrecognitionResults(n)
+                            }
                         };
                         let _ = msg_tx.send(msg);
                     }
@@ -1415,6 +1418,24 @@ impl OilChatRunner {
                             }
                             Err(e) => {
                                 tracing::warn!(validation_retries = retries, error = %e, "Validation retries not supported by this agent");
+                            }
+                        }
+                    }
+                    ChatAppMsg::SetPrecognitionResults(count) => {
+                        tracing::info!(
+                            precognition_results = count,
+                            "Setting precognition_results"
+                        );
+                        match params.agent.set_precognition_results(*count).await {
+                            Ok(()) => {
+                                tracing::info!(
+                                    precognition_results = count,
+                                    "Precognition results count set successfully"
+                                );
+                                params.app.set_precognition_results(*count);
+                            }
+                            Err(e) => {
+                                tracing::warn!(precognition_results = count, error = %e, "Precognition results not supported by this agent");
                             }
                         }
                     }
