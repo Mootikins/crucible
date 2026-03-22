@@ -48,6 +48,7 @@ pub struct DaemonAgentHandle {
     cached_context_window: Option<usize>,
     cached_output_validation: Option<String>,
     cached_validation_retries: Option<u32>,
+    cached_precognition_results: Option<usize>,
     kiln_path: Option<PathBuf>,
     workspace: Option<PathBuf>,
     cached_agent_config: Option<SessionAgent>,
@@ -94,6 +95,7 @@ impl DaemonAgentHandle {
             cached_context_window: None,
             cached_output_validation: None,
             cached_validation_retries: None,
+            cached_precognition_results: None,
             kiln_path: None,
             workspace: None,
             cached_agent_config: None,
@@ -171,6 +173,11 @@ impl DaemonAgentHandle {
             .flatten();
         handle.cached_validation_retries = client
             .session_get_validation_retries(&session_id)
+            .await
+            .ok()
+            .flatten();
+        handle.cached_precognition_results = client
+            .session_get_precognition_results(&session_id)
             .await
             .ok()
             .flatten();
@@ -586,6 +593,9 @@ impl AgentHandle for DaemonAgentHandle {
             config.thinking_budget = self.cached_thinking_budget;
             config.max_iterations = self.cached_max_iterations;
             config.execution_timeout_secs = self.cached_execution_timeout;
+            if let Some(count) = self.cached_precognition_results {
+                config.precognition_results = count;
+            }
             if let Err(e) = self.client.session_configure_agent(&new_id, &config).await {
                 tracing::warn!(error = %e, "Failed to configure agent on new session");
             }
@@ -810,6 +820,20 @@ impl AgentHandle for DaemonAgentHandle {
 
     fn get_validation_retries(&self) -> u32 {
         self.cached_validation_retries.unwrap_or(3)
+    }
+
+    async fn set_precognition_results(&mut self, count: usize) -> ChatResult<()> {
+        tracing::info!(session_id = %self.session_id, precognition_results = count, "Setting precognition_results via daemon");
+        self.client
+            .session_set_precognition_results(&self.session_id, count)
+            .await
+            .chat_comm()?;
+        self.cached_precognition_results = Some(count);
+        Ok(())
+    }
+
+    fn get_precognition_results(&self) -> usize {
+        self.cached_precognition_results.unwrap_or(5)
     }
 
     async fn interaction_respond(

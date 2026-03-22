@@ -73,6 +73,8 @@ pub const METHODS: &[&str] = &[
     "session.get_system_prompt",
     "session.set_precognition",
     "session.get_precognition",
+    "session.set_precognition_results",
+    "session.get_precognition_results",
     "session.inject_context",
     "session.test_interaction",
     "session.fork",
@@ -244,6 +246,12 @@ impl RpcDispatcher {
             }
             "session.get_precognition" => {
                 to_response(id, self.handle_session_get_precognition(&req).await)
+            }
+            "session.set_precognition_results" => {
+                to_response(id, self.handle_session_set_precognition_results(&req).await)
+            }
+            "session.get_precognition_results" => {
+                to_response(id, self.handle_session_get_precognition_results(&req).await)
             }
             // Kiln CRUD handlers
             "kiln.open" => to_response(id, self.handle_kiln_open(&req).await),
@@ -770,6 +778,31 @@ impl RpcDispatcher {
         let resp =
             crate::server::session::handle_session_get_precognition(req.clone(), &self.ctx.agents)
                 .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_set_precognition_results(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_set_precognition_results(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_get_precognition_results(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_get_precognition_results(
+            req.clone(),
+            &self.ctx.agents,
+        )
+        .await;
         map_server_resp(resp)
     }
 
@@ -1503,7 +1536,7 @@ mod tests {
 
     #[test]
     fn methods_count() {
-        assert_eq!(METHODS.len(), 110, "Update when adding RPC methods");
+        assert_eq!(METHODS.len(), 112, "Update when adding RPC methods");
     }
 
     #[tokio::test]

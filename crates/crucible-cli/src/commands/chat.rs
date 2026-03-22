@@ -878,6 +878,10 @@ async fn apply_rpc_action(
             .set_validation_retries(retries)
             .await
             .map_err(|e| e.to_string()),
+        SetRpcAction::SetPrecognitionResults(count) => handle
+            .set_precognition_results(count)
+            .await
+            .map_err(|e| e.to_string()),
     }
 }
 

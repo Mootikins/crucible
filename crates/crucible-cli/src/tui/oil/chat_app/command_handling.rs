@@ -685,14 +685,14 @@ impl OilChatApp {
         match value.parse::<usize>() {
             Ok(n) if (1..=20).contains(&n) => {
                 self.runtime_config.set_str(key, &value, ModSource::Command);
-                self.precognition.precognition_results = n;
                 self.send_setting_ack("precognition.results", n);
+                Action::Send(ChatAppMsg::SetPrecognitionResults(n))
             }
             _ => {
                 self.warn_invalid("precognition.results must be 1-20");
+                Action::Continue
             }
         }
-        Action::Continue
     }
 
     fn handle_set_enable(&mut self, key: &str) -> Action<ChatAppMsg> {

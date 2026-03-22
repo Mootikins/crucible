@@ -455,6 +455,13 @@ pub struct SessionSetPrecognitionRequest {
     pub precognition_enabled: bool,
 }
 
+/// Request for `session.set_precognition_results`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSetPrecognitionResultsRequest {
+    pub session_id: String,
+    pub precognition_results: usize,
+}
+
 /// Request for `session.undo`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionUndoRequest {
@@ -2115,6 +2122,36 @@ impl DaemonClient {
             .unwrap_or(true);
 
         Ok(enabled)
+    }
+
+    /// Set the maximum number of Precognition search results for a session.
+    pub async fn session_set_precognition_results(
+        &self,
+        session_id: &str,
+        count: usize,
+    ) -> Result<()> {
+        self.typed_unit_call_with_retry(
+            "session.set_precognition_results",
+            SessionSetPrecognitionResultsRequest {
+                session_id: session_id.to_string(),
+                precognition_results: count,
+            },
+        )
+        .await
+    }
+
+    /// Get the maximum number of Precognition search results for a session.
+    pub async fn session_get_precognition_results(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<usize>> {
+        self.get_session_option(
+            "session.get_precognition_results",
+            session_id,
+            "precognition_results",
+            |v| v.as_u64().map(|n| n as usize),
+        )
+        .await
     }
 
     pub async fn session_set_temperature(&self, session_id: &str, temperature: f64) -> Result<()> {

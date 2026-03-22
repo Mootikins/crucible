@@ -393,6 +393,16 @@ pub trait AgentHandle: Send + Sync {
         3
     }
 
+    /// Set the maximum number of Precognition search results.
+    async fn set_precognition_results(&mut self, _count: usize) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_precognition_results".into()))
+    }
+
+    /// Get the current Precognition search results count.
+    fn get_precognition_results(&self) -> usize {
+        5
+    }
+
     /// Respond to an interaction request
     ///
     /// Sends the user's response to an interaction request (Ask, Permission, etc.)
@@ -610,6 +620,14 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
 
     fn get_validation_retries(&self) -> u32 {
         (**self).get_validation_retries()
+    }
+
+    async fn set_precognition_results(&mut self, count: usize) -> ChatResult<()> {
+        (**self).set_precognition_results(count).await
+    }
+
+    fn get_precognition_results(&self) -> usize {
+        (**self).get_precognition_results()
     }
 
     async fn interaction_respond(

@@ -180,7 +180,7 @@ impl AgentManager {
         match search_across_kilns(
             params.sources,
             params.query_embedding,
-            5,
+            params.agent_config.precognition_results,
             Some(provider_trust),
             &params.session.workspace,
         )

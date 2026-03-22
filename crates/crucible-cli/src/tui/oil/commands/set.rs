@@ -40,6 +40,7 @@ pub enum SetRpcAction {
     SetContextWindow(Option<usize>),
     SetOutputValidation(String),
     SetValidationRetries(u32),
+    SetPrecognitionResults(usize),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -287,10 +288,9 @@ pub fn validate_set_for_cli(input: &str) -> Result<SetEffect, SetError> {
                         message: "precognition.results must be 1-20".to_string(),
                     });
                 }
-                Ok(SetEffect::TuiLocal {
-                    key,
-                    value: CliValue::Set(value),
-                })
+                Ok(SetEffect::DaemonRpc(SetRpcAction::SetPrecognitionResults(
+                    parsed,
+                )))
             }
             _ => Err(SetError::UnknownKey(key)),
         },
@@ -315,7 +315,6 @@ fn is_tui_local_key(key: &str) -> bool {
         key,
         "thinking"
             | "precognition"
-            | "precognition.results"
             | "perm.show_diff"
             | "perm.autoconfirm_session"
             | "theme"
@@ -338,6 +337,7 @@ fn is_daemon_rpc_key(key: &str) -> bool {
             | "context_strategy"
             | "contextwindow"
             | "context_window"
+            | "precognition.results"
     )
 }
 

@@ -307,6 +307,10 @@ impl OilChatApp {
         self.precognition.precognition_results
     }
 
+    pub(crate) fn set_precognition_results(&mut self, count: usize) {
+        self.precognition.precognition_results = count;
+    }
+
     fn perm_show_diff(&self) -> bool {
         self.permission.perm_show_diff
     }
