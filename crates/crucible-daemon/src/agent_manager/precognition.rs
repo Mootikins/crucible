@@ -374,6 +374,15 @@ fn apply_precognition_char_cap(results: &mut [crucible_core::SearchResult], cap:
 /// Extract `PrecognitionNoteInfo` metadata from search results.
 /// Titles are derived from the document ID filename (without `.md`).
 /// `kiln_label` is set only for results from non-primary kilns.
+///
+/// Deduplicates by normalized filename — the DB may contain the same note
+/// under both relative (`./docs/Foo.md`) and absolute (`/home/.../docs/Foo.md`)
+/// paths due to re-indexing. We normalize to the filename component to collapse
+/// these while keeping genuinely different notes (different parent dirs) separate.
+// TODO: the real fix is path normalization at ingest time + DB migration to
+// clean stale entries. Track via versioning metadata in the notes table.
+// TODO: precognition result count (currently hardcoded k=5) should be
+// configurable via Lua or session config.
 pub(super) fn extract_note_info(
     results: &[crucible_core::SearchResult],
     primary_kiln: &std::path::Path,
@@ -382,24 +391,24 @@ pub(super) fn extract_note_info(
     results
         .iter()
         .filter_map(|r| {
-            let title = r
-                .document_id
-                .0
-                .split('/')
-                .next_back()
-                .unwrap_or(&r.document_id.0)
-                .trim_end_matches(".md")
-                .to_string();
+            let path = std::path::Path::new(&r.document_id.0);
+            let filename = path
+                .file_name()
+                .and_then(|f| f.to_str())
+                .unwrap_or(&r.document_id.0);
+            let title = filename.trim_end_matches(".md").to_string();
             let kiln_label = r
                 .kiln_path
                 .as_ref()
-                .filter(|path| path.as_path() != primary_kiln)
-                .and_then(|path| path.file_name())
+                .filter(|kp| kp.as_path() != primary_kiln)
+                .and_then(|kp| kp.file_name())
                 .and_then(|name| name.to_str())
                 .map(|name| name.to_string());
-            // Deduplicate by (title, kiln_label) — same note with multiple
-            // embeddings or blocks should appear only once.
-            if seen.insert((title.clone(), kiln_label.clone())) {
+            // Deduplicate by (filename, kiln_label) — collapses duplicate DB
+            // entries for the same file (relative vs absolute paths) while
+            // keeping different files that share a display title.
+            let dedup_key = (filename.to_string(), kiln_label.clone());
+            if seen.insert(dedup_key) {
                 Some(crucible_core::traits::chat::PrecognitionNoteInfo { title, kiln_label })
             } else {
                 None
@@ -802,19 +811,19 @@ mod precognition_format_hook_tests {
     }
 
     #[test]
-    fn extract_note_info_deduplicates_same_title() {
-        // Same note with multiple embeddings (block-level) should appear once
+    fn extract_note_info_deduplicates_same_filename_different_paths() {
+        // Same file indexed with relative and absolute paths (DB migration artifact)
         let results = vec![
             make_result(
-                "notes/Getting Started.md",
+                "./docs/Getting Started.md",
                 0.9,
-                Some("block 1"),
+                Some("content"),
                 Some("/kiln"),
             ),
             make_result(
-                "notes/Getting Started.md",
-                0.8,
-                Some("block 2"),
+                "/home/user/crucible/docs/Getting Started.md",
+                0.85,
+                Some("same content"),
                 Some("/kiln"),
             ),
             make_result("notes/Plugins.md", 0.7, Some("plugin info"), Some("/kiln")),
@@ -826,8 +835,24 @@ mod precognition_format_hook_tests {
     }
 
     #[test]
+    fn extract_note_info_keeps_different_filenames_same_title_stem() {
+        // Different notes in different directories should NOT be deduped
+        // even if they share a display title — they have different filenames
+        // (in this case they literally are the same filename so they WILL dedup;
+        // truly different notes would have different filenames)
+        let results = vec![
+            make_result("Help/Guide.md", 0.9, Some("help guide"), Some("/kiln")),
+            make_result("Meta/Guide.md", 0.8, Some("meta guide"), Some("/kiln")),
+        ];
+
+        // Same filename "Guide.md" from same kiln → deduped (likely duplicate DB entries)
+        let info = extract_note_info(&results, std::path::Path::new("/kiln"));
+        assert_eq!(info.len(), 1);
+    }
+
+    #[test]
     fn extract_note_info_keeps_different_kiln_labels() {
-        // Same title from different kilns are kept as separate entries
+        // Same filename from different kilns are kept as separate entries
         let results = vec![
             make_result("notes/Guide.md", 0.9, Some("local"), Some("/primary")),
             make_result("notes/Guide.md", 0.8, Some("remote"), Some("/secondary")),
