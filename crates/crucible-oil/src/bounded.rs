@@ -23,13 +23,22 @@ fn pre_render_lines(content: &Node, max_lines: usize) -> Option<(Vec<String>, us
     }
 }
 
-fn overflow_indicator(hidden: usize) -> Node {
-    styled(format!("({hidden} more lines)"), Style::new().dim()).with_margin(crate::Padding {
+fn overflow_indicator(hidden: usize, indent: usize) -> Node {
+    let pad = " ".repeat(indent);
+    styled(format!("{pad}({hidden} more lines)"), Style::new().dim()).with_margin(crate::Padding {
         top: 1,
         bottom: 1,
-        left: 4,
         ..Default::default()
     })
+}
+
+/// Detect leading whitespace of the first non-empty line in the tail.
+fn detect_indent(lines: &[String]) -> usize {
+    lines
+        .iter()
+        .find(|l| !l.trim().is_empty())
+        .map(|l| l.len() - l.trim_start().len())
+        .unwrap_or(0)
 }
 
 /// Cap rendered content to show the **last** `max_lines` visible lines (tail view).
@@ -44,8 +53,10 @@ pub fn bounded(content: Node, max_lines: usize) -> Node {
         return content;
     };
 
-    let body = text(all_lines[hidden..].join("\n"));
-    col([overflow_indicator(hidden), body])
+    let tail = &all_lines[hidden..];
+    let indent = detect_indent(tail);
+    let body = text(tail.join("\n"));
+    col([overflow_indicator(hidden, indent), body])
 }
 
 /// Cap rendered content to show the **first** `max_lines` visible lines (head view).
@@ -60,8 +71,10 @@ pub fn bounded_head(content: Node, max_lines: usize) -> Node {
         return content;
     };
 
-    let body = text(all_lines[..max_lines].join("\n"));
-    col([body, overflow_indicator(hidden)])
+    let head = &all_lines[..max_lines];
+    let indent = detect_indent(head);
+    let body = text(head.join("\n"));
+    col([body, overflow_indicator(hidden, indent)])
 }
 
 #[cfg(test)]
