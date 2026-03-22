@@ -326,12 +326,13 @@ impl AgentManager {
             )
         };
         let note_info = extract_note_info(&results, &session.kiln);
+        let deduped_count = note_info.len();
 
         emit_precognition_event(
             event_tx,
             session_id,
             original_content,
-            results.len(),
+            deduped_count,
             kilns_searched,
             0,
             Some(note_info),
