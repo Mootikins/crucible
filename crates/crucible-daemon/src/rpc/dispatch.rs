@@ -55,6 +55,20 @@ pub const METHODS: &[&str] = &[
     "session.get_temperature",
     "session.set_max_tokens",
     "session.get_max_tokens",
+    "session.set_max_iterations",
+    "session.get_max_iterations",
+    "session.set_execution_timeout",
+    "session.get_execution_timeout",
+    "session.set_context_budget",
+    "session.get_context_budget",
+    "session.set_context_strategy",
+    "session.get_context_strategy",
+    "session.set_context_window",
+    "session.get_context_window",
+    "session.set_output_validation",
+    "session.get_output_validation",
+    "session.set_validation_retries",
+    "session.get_validation_retries",
     "session.set_system_prompt",
     "session.get_system_prompt",
     "session.set_precognition",
@@ -71,6 +85,9 @@ pub const METHODS: &[&str] = &[
     "session.replay",
     "session.cleanup",
     "session.reindex",
+    "session.undo",
+    "session.can_undo",
+    "session.undo_depth",
     "plugin.reload",
     "plugin.list",
     "lua.init_session",
@@ -174,6 +191,48 @@ impl RpcDispatcher {
             "session.get_max_tokens" => {
                 to_response(id, self.handle_session_get_max_tokens(&req).await)
             }
+            "session.set_max_iterations" => {
+                to_response(id, self.handle_session_set_max_iterations(&req).await)
+            }
+            "session.get_max_iterations" => {
+                to_response(id, self.handle_session_get_max_iterations(&req).await)
+            }
+            "session.set_execution_timeout" => {
+                to_response(id, self.handle_session_set_execution_timeout(&req).await)
+            }
+            "session.get_execution_timeout" => {
+                to_response(id, self.handle_session_get_execution_timeout(&req).await)
+            }
+            "session.set_context_budget" => {
+                to_response(id, self.handle_session_set_context_budget(&req).await)
+            }
+            "session.get_context_budget" => {
+                to_response(id, self.handle_session_get_context_budget(&req).await)
+            }
+            "session.set_context_strategy" => {
+                to_response(id, self.handle_session_set_context_strategy(&req).await)
+            }
+            "session.get_context_strategy" => {
+                to_response(id, self.handle_session_get_context_strategy(&req).await)
+            }
+            "session.set_context_window" => {
+                to_response(id, self.handle_session_set_context_window(&req).await)
+            }
+            "session.get_context_window" => {
+                to_response(id, self.handle_session_get_context_window(&req).await)
+            }
+            "session.set_output_validation" => {
+                to_response(id, self.handle_session_set_output_validation(&req).await)
+            }
+            "session.get_output_validation" => {
+                to_response(id, self.handle_session_get_output_validation(&req).await)
+            }
+            "session.set_validation_retries" => {
+                to_response(id, self.handle_session_set_validation_retries(&req).await)
+            }
+            "session.get_validation_retries" => {
+                to_response(id, self.handle_session_get_validation_retries(&req).await)
+            }
             "session.set_system_prompt" => {
                 to_response(id, self.handle_session_set_system_prompt(&req).await)
             }
@@ -272,6 +331,11 @@ impl RpcDispatcher {
                 to_response(id, self.handle_session_test_interaction(&req).await)
             }
             "session.replay" => to_response(id, self.handle_session_replay(&req).await),
+
+            // Undo handlers
+            "session.undo" => to_response(id, self.handle_session_undo(&req).await),
+            "session.can_undo" => to_response(id, self.handle_session_can_undo(&req).await),
+            "session.undo_depth" => to_response(id, self.handle_session_undo_depth(&req).await),
 
             // Lua RPC handlers
             "lua.init_session" => to_response(id, self.handle_lua_init_session(&req).await),
@@ -491,6 +555,181 @@ impl RpcDispatcher {
         let resp =
             crate::server::session::handle_session_get_max_tokens(req.clone(), &self.ctx.agents)
                 .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_set_max_iterations(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_set_max_iterations(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_get_max_iterations(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_get_max_iterations(
+            req.clone(),
+            &self.ctx.agents,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_set_execution_timeout(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_set_execution_timeout(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_get_execution_timeout(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_get_execution_timeout(
+            req.clone(),
+            &self.ctx.agents,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_set_context_budget(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_set_context_budget(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_get_context_budget(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_get_context_budget(
+            req.clone(),
+            &self.ctx.agents,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_set_context_strategy(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_set_context_strategy(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_get_context_strategy(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_get_context_strategy(
+            req.clone(),
+            &self.ctx.agents,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_set_context_window(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_set_context_window(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_get_context_window(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_get_context_window(
+            req.clone(),
+            &self.ctx.agents,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_set_output_validation(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_set_output_validation(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_get_output_validation(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_get_output_validation(
+            req.clone(),
+            &self.ctx.agents,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_set_validation_retries(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_set_validation_retries(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_get_validation_retries(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_get_validation_retries(
+            req.clone(),
+            &self.ctx.agents,
+        )
+        .await;
         map_server_resp(resp)
     }
 
@@ -894,6 +1133,30 @@ impl RpcDispatcher {
         map_server_resp(resp)
     }
 
+    // ── Undo RPC wrappers ────────────────────────────────────────────────
+
+    async fn handle_session_undo(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_undo(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_can_undo(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp =
+            crate::server::session::handle_session_can_undo(req.clone(), &self.ctx.agents).await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_undo_depth(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp =
+            crate::server::session::handle_session_undo_depth(req.clone(), &self.ctx.agents).await;
+        map_server_resp(resp)
+    }
+
     // ── Lua RPC wrappers ─────────────────────────────────────────────────
 
     async fn handle_lua_init_session(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -1240,7 +1503,7 @@ mod tests {
 
     #[test]
     fn methods_count() {
-        assert_eq!(METHODS.len(), 93, "Update when adding RPC methods");
+        assert_eq!(METHODS.len(), 110, "Update when adding RPC methods");
     }
 
     #[tokio::test]

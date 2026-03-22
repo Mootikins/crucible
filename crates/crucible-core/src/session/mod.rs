@@ -26,4 +26,7 @@
 
 mod types;
 
-pub use types::{RecordingMode, Session, SessionAgent, SessionState, SessionSummary, SessionType};
+pub use types::{
+    ContextStrategy, OutputValidation, RecordingMode, Session, SessionAgent, SessionState,
+    SessionSummary, SessionType, validate_output,
+};

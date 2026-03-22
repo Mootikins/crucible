@@ -127,6 +127,20 @@ pub enum ChatAppMsg {
     SetTemperature(f64),
     /// **Command** (TUI → daemon): Set maximum tokens for LLM response.
     SetMaxTokens(Option<u32>),
+    /// **Command** (TUI → daemon): Set maximum tool-call iterations per turn.
+    SetMaxIterations(Option<u32>),
+    /// **Command** (TUI → daemon): Set execution timeout in seconds per turn.
+    SetExecutionTimeout(Option<u64>),
+    /// **Command** (TUI → daemon): Set context token budget.
+    SetContextBudget(Option<usize>),
+    /// **Command** (TUI → daemon): Set context truncation strategy.
+    SetContextStrategy(String),
+    /// **Command** (TUI → daemon): Set sliding window size (message pairs).
+    SetContextWindow(Option<usize>),
+    /// **Command** (TUI → daemon): Set output validation mode.
+    SetOutputValidation(String),
+    /// **Command** (TUI → daemon): Set validation retry count.
+    SetValidationRetries(u32),
     // --- Delegation & Subagent Events (daemon → TUI) ---
     /// **Event** (daemon → TUI): Subagent spawned (background task started).
     SubagentSpawned { id: String, prompt: String },
@@ -172,6 +186,10 @@ pub enum ChatAppMsg {
     },
     /// **Dual-duty**: Internal enriched message ready to send (from background precognition).
     EnrichedMessage { original: String, enriched: String },
+    /// **Command** (TUI → daemon): Undo the last N agent turns.
+    Undo(usize),
+    /// **Event** (daemon → TUI): Undo completed, with count of turns reverted.
+    UndoComplete { turns: usize, messages_removed: usize },
 }
 
 /// Category of a `ChatAppMsg` for top-level dispatch.
@@ -214,6 +232,13 @@ impl ChatAppMsg {
             | Self::SetThinkingBudget(_)
             | Self::SetTemperature(_)
             | Self::SetMaxTokens(_)
+            | Self::SetMaxIterations(_)
+            | Self::SetExecutionTimeout(_)
+            | Self::SetContextBudget(_)
+            | Self::SetContextStrategy(_)
+            | Self::SetContextWindow(_)
+            | Self::SetOutputValidation(_)
+            | Self::SetValidationRetries(_)
             | Self::McpStatusLoaded(_)
             | Self::PluginStatusLoaded(_) => MsgCategory::Config,
 
@@ -238,7 +263,9 @@ impl ChatAppMsg {
             | Self::EnrichedMessage { .. }
             | Self::ExecuteSlashCommand(_)
             | Self::ExportSession(_)
-            | Self::ReloadPlugin(_) => MsgCategory::Ui,
+            | Self::ReloadPlugin(_)
+            | Self::Undo(_)
+            | Self::UndoComplete { .. } => MsgCategory::Ui,
         }
     }
 }

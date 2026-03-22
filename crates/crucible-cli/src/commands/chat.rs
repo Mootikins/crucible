@@ -840,6 +840,44 @@ async fn apply_rpc_action(
         SetRpcAction::SetMaxTokens(max) => {
             handle.set_max_tokens(max).await.map_err(|e| e.to_string())
         }
+        SetRpcAction::SetMaxIterations(max) => handle
+            .set_max_iterations(max)
+            .await
+            .map_err(|e| e.to_string()),
+        SetRpcAction::SetExecutionTimeout(timeout) => handle
+            .set_execution_timeout(timeout)
+            .await
+            .map_err(|e| e.to_string()),
+        SetRpcAction::SetContextBudget(budget) => handle
+            .set_context_budget(budget)
+            .await
+            .map_err(|e| e.to_string()),
+        SetRpcAction::SetContextStrategy(ref strategy_str) => {
+            match strategy_str.parse::<crucible_core::session::ContextStrategy>() {
+                Ok(strategy) => handle
+                    .set_context_strategy(strategy)
+                    .await
+                    .map_err(|e| e.to_string()),
+                Err(e) => Err(e),
+            }
+        }
+        SetRpcAction::SetContextWindow(window) => handle
+            .set_context_window(window)
+            .await
+            .map_err(|e| e.to_string()),
+        SetRpcAction::SetOutputValidation(ref validation_str) => {
+            match validation_str.parse::<crucible_core::session::OutputValidation>() {
+                Ok(validation) => handle
+                    .set_output_validation(validation)
+                    .await
+                    .map_err(|e| e.to_string()),
+                Err(e) => Err(e),
+            }
+        }
+        SetRpcAction::SetValidationRetries(retries) => handle
+            .set_validation_retries(retries)
+            .await
+            .map_err(|e| e.to_string()),
     }
 }
 

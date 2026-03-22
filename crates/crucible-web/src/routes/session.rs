@@ -6,7 +6,7 @@ use axum::{
     Json, Router,
 };
 use crucible_config::BackendType;
-use crucible_core::session::SessionAgent;
+use crucible_core::session::{OutputValidation, SessionAgent};
 use crucible_daemon::agent_manager::providers::ProviderInfo;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -266,6 +266,13 @@ async fn create_session(
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
+        max_iterations: None,
+        execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: Default::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: 3,
     };
 
     state

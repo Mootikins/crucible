@@ -11,7 +11,7 @@ use anyhow::Result;
 use tracing::info;
 
 use crucible_config::{BackendType, CliAppConfig};
-use crucible_core::session::SessionAgent;
+use crucible_core::session::{OutputValidation, SessionAgent};
 use crucible_core::traits::chat::AgentHandle;
 
 /// Agent type selection
@@ -180,6 +180,13 @@ fn build_acp_session_agent(params: &AgentInitParams, config: &CliAppConfig) -> S
         agent_description: None,
         delegation_config,
         precognition_enabled: true,
+        max_iterations: None,
+        execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: Default::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: 3,
     }
 }
 
@@ -232,6 +239,13 @@ fn build_internal_session_agent(config: &CliAppConfig) -> SessionAgent {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
+        max_iterations: None,
+        execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: Default::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: 3,
     }
 }
 

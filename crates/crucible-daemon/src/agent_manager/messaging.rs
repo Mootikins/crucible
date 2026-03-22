@@ -118,6 +118,57 @@ impl AgentManager {
         let task = tokio::spawn(async move {
             let mut accumulated_response = String::new();
             let stream_config = stream_ctx.agent_stream_config.clone();
+            // Use session-configured max_iterations, falling back to the default
+            let max_tool_depth = stream_config
+                .max_iterations
+                .map(|n| n as usize)
+                .unwrap_or(DEFAULT_MAX_TOOL_DEPTH);
+
+            let stream_future = Self::execute_agent_stream(
+                agent,
+                content,
+                stream_ctx.clone(),
+                stream_config,
+                &mut accumulated_response,
+                false,
+                0,
+                max_tool_depth,
+            );
+
+            // Wrap in execution timeout if configured
+            let timed_future = async {
+                if let Some(timeout_secs) = stream_ctx.agent_stream_config.execution_timeout_secs {
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(timeout_secs),
+                        stream_future,
+                    )
+                    .await
+                    {
+                        Ok(()) => {}
+                        Err(_) => {
+                            warn!(
+                                session_id = %stream_ctx.session_id,
+                                timeout_secs = timeout_secs,
+                                "Execution timeout reached"
+                            );
+                            if !emit_event(
+                                &stream_ctx.event_tx,
+                                SessionEventMessage::ended(
+                                    &stream_ctx.session_id,
+                                    "error: execution timeout reached",
+                                ),
+                            ) {
+                                warn!(
+                                    session_id = %stream_ctx.session_id,
+                                    "No subscribers for execution timeout ended event"
+                                );
+                            }
+                        }
+                    }
+                } else {
+                    stream_future.await;
+                }
+            };
 
             tokio::select! {
                 _ = cancel_rx => {
@@ -129,16 +180,7 @@ impl AgentManager {
                         warn!(session_id = %session_id_owned, "No subscribers for cancelled event");
                     }
                 }
-                _ = Self::execute_agent_stream(
-                    agent,
-                    content,
-                    stream_ctx,
-                    stream_config,
-                    &mut accumulated_response,
-                    false,
-                    0,
-                    DEFAULT_MAX_TOOL_DEPTH,
-                ) => {}
+                _ = timed_future => {}
             }
 
             request_state.remove(&session_id_owned);

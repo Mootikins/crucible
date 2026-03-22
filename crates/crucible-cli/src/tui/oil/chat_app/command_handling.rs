@@ -21,6 +21,7 @@ const KNOWN_REPL_COMMANDS: &[&str] = &[
     "help",
     "h",
     "clear",
+    "undo",
     "model",
     "set",
     "export",
@@ -76,6 +77,7 @@ fn help_text(category: Option<&str>) -> String {
             .to_string(),
         Some("commands") | Some("cmds") => ":quit, :q      — Exit\n\
              :clear          — Clear conversation\n\
+             :undo [N]       — Undo last N agent turns (default 1)\n\
              :model <name>   — Switch model (or list available)\n\
              :set <opt>      — Set option (e.g., :set temperature=0.7)\n\
              :export <path>  — Export session to markdown\n\
@@ -97,10 +99,13 @@ fn help_text(category: Option<&str>) -> String {
              Up/Down        — Navigate popup / history"
             .to_string(),
         Some("config") | Some("settings") => {
-            ":set temperature=0.7    — LLM temperature (0.0-2.0)\n\
-             :set maxtokens=4096     — Max output tokens\n\
-             :set thinkingbudget=med — Thinking budget preset\n\
-             :set precognition       — Toggle auto-RAG\n\
+            ":set temperature=0.7          — LLM temperature (0.0-2.0)\n\
+             :set maxtokens=4096           — Max output tokens\n\
+             :set thinkingbudget=med       — Thinking budget preset\n\
+             :set contextbudget=128000     — Context token budget (or 'none')\n\
+             :set contextstrategy=truncate — Context strategy (truncate|sliding_window)\n\
+             :set contextwindow=20         — Sliding window size (message pairs)\n\
+             :set precognition             — Toggle auto-RAG\n\
              :set verbose            — Verbose output\n\
              :set thinking           — Show thinking blocks\n\
              :set model=<name>       — Switch LLM model\n\
@@ -133,6 +138,10 @@ impl OilChatApp {
             "default" | "normal" => self.set_mode_with_status(ChatMode::Normal),
             "plan" => self.set_mode_with_status(ChatMode::Plan),
             "auto" => self.set_mode_with_status(ChatMode::Auto),
+            "undo" => {
+                let count = parts.get(1).and_then(|s| s.parse::<usize>().ok()).unwrap_or(1).max(1);
+                Action::Send(ChatAppMsg::Undo(count))
+            }
             _ => Action::Send(ChatAppMsg::ExecuteSlashCommand(cmd.to_string())),
         }
     }
@@ -201,6 +210,15 @@ impl OilChatApp {
                 self.handle_model_repl(Some(name))
             }
             "clear" => Action::Send(ChatAppMsg::ClearHistory),
+            "undo" => Action::Send(ChatAppMsg::Undo(1)),
+            _ if command.starts_with("undo ") => {
+                let count_str = command
+                    .strip_prefix("undo ")
+                    .expect("starts_with guard")
+                    .trim();
+                let count = count_str.parse::<usize>().unwrap_or(1).max(1);
+                Action::Send(ChatAppMsg::Undo(count))
+            }
             "reload" => self.handle_reload_repl(None),
             _ if command.starts_with("reload ") => {
                 let name = command
@@ -436,6 +454,19 @@ impl OilChatApp {
             "thinkingbudget" => self.handle_set_thinking_budget(key, value),
             "temperature" => self.handle_set_temperature(key, value),
             "maxtokens" => self.handle_set_max_tokens(key, value),
+            "maxiterations" => self.handle_set_max_iterations(key, value),
+            "executiontimeout" => self.handle_set_execution_timeout(key, value),
+            "contextbudget" | "context_budget" => self.handle_set_context_budget(key, value),
+            "contextstrategy" | "context_strategy" => {
+                self.handle_set_context_strategy(key, value)
+            }
+            "contextwindow" | "context_window" => self.handle_set_context_window(key, value),
+            "outputvalidation" | "output_validation" => {
+                self.handle_set_output_validation(key, value)
+            }
+            "validationretries" | "validation_retries" => {
+                self.handle_set_validation_retries(key, value)
+            }
             "precognition.results" => self.handle_set_precognition_results(key, value),
             k if k.starts_with("perm.") => self.handle_perm_set(key, &value),
             _ => {
@@ -510,6 +541,142 @@ impl OilChatApp {
         let display = max_tokens.map_or("none".to_string(), |n| n.to_string());
         self.send_setting_ack("maxtokens", &display);
         Action::Send(ChatAppMsg::SetMaxTokens(max_tokens))
+    }
+
+    fn handle_set_max_iterations(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
+        let max_iterations = if value == "none" || value == "null" {
+            None
+        } else {
+            match value.parse::<u32>() {
+                Ok(n) => Some(n),
+                Err(_) => {
+                    self.warn_invalid(format!(
+                        "Invalid max_iterations value: {} (use a number or 'none')",
+                        value
+                    ));
+                    return Action::Continue;
+                }
+            }
+        };
+        self.runtime_config.set_str(key, &value, ModSource::Command);
+        let display = max_iterations.map_or("none".to_string(), |n| n.to_string());
+        self.send_setting_ack("maxiterations", &display);
+        Action::Send(ChatAppMsg::SetMaxIterations(max_iterations))
+    }
+
+    fn handle_set_execution_timeout(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
+        let timeout_secs = if value == "none" || value == "null" {
+            None
+        } else {
+            match value.parse::<u64>() {
+                Ok(n) => Some(n),
+                Err(_) => {
+                    self.warn_invalid(format!(
+                        "Invalid execution_timeout value: {} (use seconds or 'none')",
+                        value
+                    ));
+                    return Action::Continue;
+                }
+            }
+        };
+        self.runtime_config.set_str(key, &value, ModSource::Command);
+        let display = timeout_secs.map_or("none".to_string(), |n| format!("{}s", n));
+        self.send_setting_ack("executiontimeout", &display);
+        Action::Send(ChatAppMsg::SetExecutionTimeout(timeout_secs))
+    }
+
+    fn handle_set_context_budget(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
+        let budget = if value == "none" || value == "null" {
+            None
+        } else {
+            match value.parse::<usize>() {
+                Ok(n) => Some(n),
+                Err(_) => {
+                    self.warn_invalid(format!(
+                        "Invalid context_budget value: {} (use a number or 'none')",
+                        value
+                    ));
+                    return Action::Continue;
+                }
+            }
+        };
+        self.runtime_config.set_str(key, &value, ModSource::Command);
+        let display = budget.map_or("none".to_string(), |n| n.to_string());
+        self.send_setting_ack("context_budget", &display);
+        Action::Send(ChatAppMsg::SetContextBudget(budget))
+    }
+
+    fn handle_set_context_strategy(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
+        let normalized = match value.to_lowercase().as_str() {
+            "truncate" => "truncate".to_string(),
+            "sliding_window" | "slidingwindow" => "sliding_window".to_string(),
+            _ => {
+                self.warn_invalid(format!(
+                    "Unknown context strategy '{}'. Valid: truncate, sliding_window",
+                    value
+                ));
+                return Action::Continue;
+            }
+        };
+        self.runtime_config
+            .set_str(key, &normalized, ModSource::Command);
+        self.send_setting_ack("context_strategy", &normalized);
+        Action::Send(ChatAppMsg::SetContextStrategy(normalized))
+    }
+
+    fn handle_set_context_window(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
+        let window = if value == "none" || value == "null" {
+            None
+        } else {
+            match value.parse::<usize>() {
+                Ok(n) => Some(n),
+                Err(_) => {
+                    self.warn_invalid(format!(
+                        "Invalid context_window value: {} (use a number or 'none')",
+                        value
+                    ));
+                    return Action::Continue;
+                }
+            }
+        };
+        self.runtime_config.set_str(key, &value, ModSource::Command);
+        let display = window.map_or("none".to_string(), |n| n.to_string());
+        self.send_setting_ack("context_window", &display);
+        Action::Send(ChatAppMsg::SetContextWindow(window))
+    }
+
+    fn handle_set_output_validation(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
+        // Validate the value parses before sending
+        match value.parse::<crucible_core::session::OutputValidation>() {
+            Ok(v) => {
+                let display = v.to_string();
+                self.runtime_config
+                    .set_str(key, &display, ModSource::Command);
+                self.send_setting_ack("output_validation", &display);
+                Action::Send(ChatAppMsg::SetOutputValidation(display))
+            }
+            Err(e) => {
+                self.warn_invalid(format!("Invalid output_validation: {}", e));
+                Action::Continue
+            }
+        }
+    }
+
+    fn handle_set_validation_retries(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
+        match value.parse::<u32>() {
+            Ok(n) => {
+                self.runtime_config.set_str(key, &value, ModSource::Command);
+                self.send_setting_ack("validation_retries", &value);
+                Action::Send(ChatAppMsg::SetValidationRetries(n))
+            }
+            Err(_) => {
+                self.warn_invalid(format!(
+                    "Invalid validation_retries value: {} (use a non-negative integer)",
+                    value
+                ));
+                Action::Continue
+            }
+        }
     }
 
     fn handle_set_precognition_results(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
@@ -618,6 +785,36 @@ impl OilChatApp {
             "  precognition.results: {}\n",
             self.precognition.precognition_results
         ));
+
+        let ctx_budget = self
+            .runtime_config
+            .get("context_budget")
+            .unwrap_or(ConfigValue::String("none".to_string()));
+        output.push_str(&format!("  context_budget: {}\n", ctx_budget));
+
+        let ctx_strategy = self
+            .runtime_config
+            .get("context_strategy")
+            .unwrap_or(ConfigValue::String("truncate".to_string()));
+        output.push_str(&format!("  context_strategy: {}\n", ctx_strategy));
+
+        let ctx_window = self
+            .runtime_config
+            .get("context_window")
+            .unwrap_or(ConfigValue::String("none".to_string()));
+        output.push_str(&format!("  context_window: {}\n", ctx_window));
+
+        let out_val = self
+            .runtime_config
+            .get("output_validation")
+            .unwrap_or(ConfigValue::String("none".to_string()));
+        output.push_str(&format!("  output_validation: {}\n", out_val));
+
+        let val_retries = self
+            .runtime_config
+            .get("validation_retries")
+            .unwrap_or(ConfigValue::String("3".to_string()));
+        output.push_str(&format!("  validation_retries: {}\n", val_retries));
 
         self.add_system_message(output);
         Action::Continue

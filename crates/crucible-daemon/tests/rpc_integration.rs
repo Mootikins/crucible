@@ -879,7 +879,7 @@ async fn test_daemon_agent_handle_creation() {
 
 #[tokio::test]
 async fn test_session_configure_agent() {
-    use crucible_core::session::SessionAgent;
+    use crucible_core::session::{OutputValidation, SessionAgent};
 
     let server = TestServer::start().await.expect("Failed to start server");
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
@@ -924,6 +924,13 @@ async fn test_session_configure_agent() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
+        max_iterations: None,
+        execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: Default::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: 3,
     };
 
     let result = client.session_configure_agent(&session_id, &agent).await;
@@ -1234,7 +1241,7 @@ async fn test_tui_resume_command_flow() {
 
 #[tokio::test]
 async fn test_tui_daemon_agent_full_flow() {
-    use crucible_core::session::SessionAgent;
+    use crucible_core::session::{OutputValidation, SessionAgent};
 
     let server = TestServer::start().await.expect("Failed to start server");
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
@@ -1284,6 +1291,13 @@ async fn test_tui_daemon_agent_full_flow() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
+        max_iterations: None,
+        execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: Default::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: 3,
     };
 
     client
@@ -1609,7 +1623,7 @@ mod event_flow_tests {
 
 #[tokio::test]
 async fn test_session_switch_model() {
-    use crucible_core::session::SessionAgent;
+    use crucible_core::session::{OutputValidation, SessionAgent};
 
     let server = TestServer::start().await.expect("Failed to start server");
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
@@ -1654,6 +1668,13 @@ async fn test_session_switch_model() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
+        max_iterations: None,
+        execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: Default::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: 3,
     };
 
     client
@@ -1683,7 +1704,7 @@ async fn test_session_switch_model() {
 
 #[tokio::test]
 async fn test_daemon_agent_handle_switch_model() {
-    use crucible_core::session::SessionAgent;
+    use crucible_core::session::{OutputValidation, SessionAgent};
     use crucible_core::traits::chat::AgentHandle;
     use crucible_daemon::DaemonAgentHandle;
 
@@ -1731,6 +1752,13 @@ async fn test_daemon_agent_handle_switch_model() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
+        max_iterations: None,
+        execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: Default::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: 3,
     };
 
     client

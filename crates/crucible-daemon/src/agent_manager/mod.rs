@@ -25,7 +25,7 @@ use crucible_core::events::{
     InternalSessionEvent, Reactor, ReactorEmitResult as EmitResult, SessionEvent,
 };
 use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, PermissionScope};
-use crucible_core::session::SessionAgent;
+use crucible_core::session::{ContextStrategy, OutputValidation, SessionAgent};
 use crucible_core::traits::chat::AgentHandle;
 use crucible_core::traits::tools::ToolExecutor;
 use crucible_core::traits::PermissionGate;
@@ -294,6 +294,8 @@ struct AgentStreamConfig {
     max_tokens: Option<u32>,
     thinking_budget: Option<i64>,
     system_prompt: String,
+    max_iterations: Option<u32>,
+    execution_timeout_secs: Option<u64>,
 }
 
 impl AgentStreamConfig {
@@ -304,6 +306,8 @@ impl AgentStreamConfig {
             max_tokens: session_agent.max_tokens,
             thinking_budget: session_agent.thinking_budget,
             system_prompt: session_agent.system_prompt.clone(),
+            max_iterations: session_agent.max_iterations,
+            execution_timeout_secs: session_agent.execution_timeout_secs,
         }
     }
 }
