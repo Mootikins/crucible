@@ -77,6 +77,31 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 - [ ] **Session Digest Plugin** `P1` — Default runtime Lua plugin; summarizes completed sessions → linked notes in `Sessions/` folder; captures key decisions, topics discussed, entities mentioned; wikilinks to entity notes and source notes; builds the "what did we talk about?" knowledge layer · `runtime/session-digest/`
 - [ ] **Memory Scoping** `P2` — Namespace agent memory: per-user, per-workspace, or global; entity notes tagged with scope; precognition filters by active scope · `crucible-core`, `crucible-lua`
 
+## Context & Execution (Core Runtime)
+
+> Runtime primitives that every reliable agent needs. These are too fundamental to be plugins — they govern how the agent manages its own context window, enforces execution boundaries, validates its output, and allows users to recover from mistakes. Informed by competitive analysis (2026-03): Aider, CrewAI, LangGraph, and Semantic Kernel all treat these as core concerns.
+
+### Prompt Caching
+- [ ] **Anthropic Cache Control** `P0` — Set `CacheControl::Ephemeral` on system prompts and prior conversation turns via genai's existing `MessageOptions` API; 90% cost reduction on cached reads; OpenAI caching is automatic (no code needed); `:set cache=off` escape hatch; cache hit stats in statusline · `crucible-daemon`
+- [ ] **Cache Stats** `P1` — `cru.session.cache_stats()` Lua API returns `{ hits, misses, tokens_saved }`; statusline shows hit rate · `crucible-lua`, `crucible-cli`
+
+### Context Window Management
+- [ ] **Token Budget Tracking** `P0` — Make `max_context_tokens` settable via RPC (field exists, not wired); estimate context size via char/4 heuristic calibrated against provider `usage.input_tokens`; warn at >80%, auto-compact at >95%; `:set context_budget=128000` (auto-detected from model if unset); statusline shows `used/budget` with color · `crucible-daemon`, `crucible-cli`
+- [ ] **Context Strategies** `P1` — `ContextStrategy` enum: `Truncate` (drop oldest, default), `SlidingWindow` (keep last N turns + system), `Summarize` (LLM-compress older turns — this is what `session.compact` becomes); `:set context_strategy=summarize`; `:set context_window=20` for sliding window · `crucible-core`, `crucible-daemon`
+- [ ] **Lua Context Operations** `P1` — Wire existing `context_ops` module to Lua: `cru.context.usage()`, `cru.context.compact()`, `cru.context.messages(range)`, `cru.context.remove(range)`, `cru.context.estimate_tokens(text)`; enables custom context strategies as plugins · `crucible-lua`, `crucible-core`
+
+### Execution Limits
+- [ ] **Max Iterations** `P1` — Cap tool-call rounds per agent turn; `:set max_iterations=20`; `None` = unlimited (default for interactive, user can Ctrl+C); `20` default for programmatic/Lua-spawned sessions; inject "Iteration limit reached" on exceed · `crucible-daemon`
+- [ ] **Execution Timeout** `P1` — Per-turn timeout; `:set execution_timeout=300` (seconds); cancel and report on exceed; extends existing subagent timeout pattern to primary sessions · `crucible-daemon`
+
+### Agent Undo
+- [ ] **Turn Undo** `P1` — `/undo` reverts last agent turn: git-based file rollback (`git stash create` before tool execution) + message truncation; `/undo 3` for multiple turns; `/redo` for branching; wires existing `UndoTree<T>` to session actions; non-git workspaces use file journal (path → original content); confirmation prompt before destructive revert · `crucible-daemon`, `crucible-cli`
+- [ ] **Undo Lua API** `P1` — `cru.session.undo(id, n?)`, `cru.session.redo(id, n?)`, `cru.session.can_undo(id)`, `cru.session.undo_history(id)` · `crucible-lua`
+
+### Output Validation
+- [ ] **Validate-Retry Loop** `P1` — After agent response, run configured validator; on failure, append error feedback and re-prompt (up to N retries); built-in validators: `json`, `json_schema(schema)`, `regex(pattern)`, `lua(fn)`; `:set output_validation=json`; `:set validation_retries=3`; primarily for programmatic/Lua sessions · `crucible-daemon`
+- [ ] **Lua Validators** `P1` — Custom validation via `cru.session.set("output_validation", { type = "lua", fn = validator_fn })`; validator returns `true` or `false, "reason"`; `cru.sessions.create({ output_validation = "json" })` at session creation · `crucible-lua`
+
 ## AI Chat & Agents
 
 ### Conversation & Sessions
@@ -548,6 +573,12 @@ HTTP Gateway (crucible-web wired to daemon)
 | 2026-02-05 | Default runtime plugins (Neovim-style) | Ship bundled Lua plugins at `$CRUCIBLE_RUNTIME/plugins/`; lowest-priority in discovery path; user plugins shadow by name. Source code serves as reference documentation. Plugins: `entity-memory` (facts → atomic notes), `session-digest` (session summaries → linked notes) |
 | 2026-02-05 | Team patterns as core Rust, not Lua plugins | Multi-agent orchestration (supervisor, router, broadcast) is fundamental infrastructure, not optional behavior. Implemented in Rust, builds on existing subagent spawning. Configurable via `:set team.default_pattern`. Lua hooks can intercept delegation decisions |
 | 2026-02-05 | SQLite is default storage | Product map updated to reflect SQLite as default, SurrealDB as advanced option. Docs (CLAUDE.md, Systems.md) corrected. SQLite is fast, lightweight, recommended for single-user local-first usage |
+| 2026-03-21 | Context & Execution as core runtime | Competitive analysis (Aider, CrewAI, LangGraph, Semantic Kernel) revealed 5 features universally treated as core: context window management, execution limits, prompt caching, agent undo, output validation. All too fundamental for plugins. Partial infrastructure already exists (context_ops module, UndoTree, session.compact, genai CacheControl) |
+| 2026-03-21 | Prompt caching via genai (no new deps) | genai v0.5.3 already exposes `CacheControl::Ephemeral`; Crucible just needs to import and use it. Anthropic: 90% savings on cached reads. OpenAI: automatic, no code needed. No Rust framework (Rig, kalosm) provides this — all DIY |
+| 2026-03-21 | Token counting: heuristic, not library | No accurate local Claude 3+ tokenizer exists. tiktoken-rs covers OpenAI only. char/4 heuristic calibrated against provider usage stats is sufficient for budget decisions. Exact counts only matter for billing (provider reports post-hoc) |
+| 2026-03-21 | Context strategies: truncate default, summarize opt-in | Truncate (drop oldest) is simple, no LLM call, good default. Summarize is expensive but preserves context — opt-in via `:set context_strategy=summarize`. Sliding window is middle ground. Prompt caching reduces urgency (cached prefix is cheap to resend) |
+| 2026-03-21 | Agent undo: git-based + message rollback | Most valuable undo is file changes. Git stash before tool execution, apply on undo. Non-git: file journal. UndoTree<T> already exists in crucible-core. /undo slash command matches Aider pattern |
+| 2026-03-21 | Output validation: primarily Lua-facing | Interactive chat rarely needs structured output validation. Programmatic/Lua sessions (entity extraction, digest generation) need it most. Built-in validators (json, regex) + custom Lua validators. Validate→retry loop is the universal pattern across CrewAI, Agno, Semantic Kernel |
 
 ## Archived / Cut
 
