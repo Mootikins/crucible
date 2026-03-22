@@ -12,6 +12,7 @@ mod component_isolation_tests;
 mod error_boundary_tests;
 mod event_loop_tests;
 mod event_tests;
+mod fixture_replay;
 mod focus_tests;
 mod graduation_invariant_property_tests;
 mod interrupt_tests;

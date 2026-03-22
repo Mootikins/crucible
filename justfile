@@ -130,6 +130,11 @@ demo-all: (demo "demo") (demo "acp-demo") (demo "delegation-demo") (demo "overvi
     cp assets/demo.gif docs-site/public/demo.gif
     @echo "Copied hero demo to docs-site/public/"
 
+# Validate demo fixtures render without duplication or styling issues
+demo-validate:
+    cargo test -p crucible-cli -- fixture_replay
+    cargo test -p crucible-oil --test style_wrap_tests
+
 # Record a new demo fixture (requires live agent)
 demo-record name *args:
     cargo run -p crucible-cli -- chat --record assets/fixtures/{{name}}.jsonl {{args}}
