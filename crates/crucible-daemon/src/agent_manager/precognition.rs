@@ -377,9 +377,10 @@ pub(super) fn extract_note_info(
     results: &[crucible_core::SearchResult],
     primary_kiln: &std::path::Path,
 ) -> Vec<crucible_core::traits::chat::PrecognitionNoteInfo> {
+    let mut seen = std::collections::HashSet::new();
     results
         .iter()
-        .map(|r| {
+        .filter_map(|r| {
             let title = r
                 .document_id
                 .0
@@ -395,7 +396,13 @@ pub(super) fn extract_note_info(
                 .and_then(|path| path.file_name())
                 .and_then(|name| name.to_str())
                 .map(|name| name.to_string());
-            crucible_core::traits::chat::PrecognitionNoteInfo { title, kiln_label }
+            // Deduplicate by (title, kiln_label) — same note with multiple
+            // embeddings or blocks should appear only once.
+            if seen.insert((title.clone(), kiln_label.clone())) {
+                Some(crucible_core::traits::chat::PrecognitionNoteInfo { title, kiln_label })
+            } else {
+                None
+            }
         })
         .collect()
 }
@@ -791,5 +798,43 @@ mod precognition_format_hook_tests {
         assert!(output.contains("<system>"));
         assert!(output.contains("Found 1 relevant notes:"));
         assert!(output.ends_with("What is Rust?"));
+    }
+
+    #[test]
+    fn extract_note_info_deduplicates_same_title() {
+        // Same note with multiple embeddings (block-level) should appear once
+        let results = vec![
+            make_result(
+                "notes/Getting Started.md",
+                0.9,
+                Some("block 1"),
+                Some("/kiln"),
+            ),
+            make_result(
+                "notes/Getting Started.md",
+                0.8,
+                Some("block 2"),
+                Some("/kiln"),
+            ),
+            make_result("notes/Plugins.md", 0.7, Some("plugin info"), Some("/kiln")),
+        ];
+
+        let info = extract_note_info(&results, std::path::Path::new("/kiln"));
+        let titles: Vec<&str> = info.iter().map(|n| n.title.as_str()).collect();
+        assert_eq!(titles, vec!["Getting Started", "Plugins"]);
+    }
+
+    #[test]
+    fn extract_note_info_keeps_different_kiln_labels() {
+        // Same title from different kilns are kept as separate entries
+        let results = vec![
+            make_result("notes/Guide.md", 0.9, Some("local"), Some("/primary")),
+            make_result("notes/Guide.md", 0.8, Some("remote"), Some("/secondary")),
+        ];
+
+        let info = extract_note_info(&results, std::path::Path::new("/primary"));
+        assert_eq!(info.len(), 2);
+        assert!(info[0].kiln_label.is_none()); // primary kiln
+        assert_eq!(info[1].kiln_label.as_deref(), Some("secondary"));
     }
 }
