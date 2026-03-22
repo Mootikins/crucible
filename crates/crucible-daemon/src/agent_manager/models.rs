@@ -542,4 +542,312 @@ impl AgentManager {
         let (_, agent_config) = self.get_session_with_agent(session_id)?;
         Ok(agent_config.max_tokens)
     }
+
+    pub async fn set_max_iterations(
+        &self,
+        session_id: &str,
+        max_iterations: Option<u32>,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        self.update_agent_config_and_emit(
+            session_id,
+            event_tx,
+            "max_iterations_changed",
+            serde_json::json!({ "max_iterations": max_iterations }),
+            "Failed to emit max_iterations_changed event (no subscribers)",
+            |agent_config| {
+                agent_config.max_iterations = max_iterations;
+                Ok(())
+            },
+            || {
+                info!(
+                    session_id = %session_id,
+                    max_iterations = ?max_iterations,
+                    "Max iterations updated (agent cache invalidated)"
+                );
+            },
+        )
+        .await
+    }
+
+    pub fn get_max_iterations(&self, session_id: &str) -> Result<Option<u32>, AgentError> {
+        let (_, agent_config) = self.get_session_with_agent(session_id)?;
+        Ok(agent_config.max_iterations)
+    }
+
+    pub async fn set_execution_timeout(
+        &self,
+        session_id: &str,
+        timeout_secs: Option<u64>,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        self.update_agent_config_and_emit(
+            session_id,
+            event_tx,
+            "execution_timeout_changed",
+            serde_json::json!({ "timeout_secs": timeout_secs }),
+            "Failed to emit execution_timeout_changed event (no subscribers)",
+            |agent_config| {
+                agent_config.execution_timeout_secs = timeout_secs;
+                Ok(())
+            },
+            || {
+                info!(
+                    session_id = %session_id,
+                    timeout_secs = ?timeout_secs,
+                    "Execution timeout updated (agent cache invalidated)"
+                );
+            },
+        )
+        .await
+    }
+
+    pub fn get_execution_timeout(&self, session_id: &str) -> Result<Option<u64>, AgentError> {
+        let (_, agent_config) = self.get_session_with_agent(session_id)?;
+        Ok(agent_config.execution_timeout_secs)
+    }
+
+    pub async fn set_context_budget(
+        &self,
+        session_id: &str,
+        budget: Option<usize>,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        self.update_agent_config_and_emit(
+            session_id,
+            event_tx,
+            "context_budget_changed",
+            serde_json::json!({ "context_budget": budget }),
+            "Failed to emit context_budget_changed event (no subscribers)",
+            |agent_config| {
+                agent_config.context_budget = budget;
+                Ok(())
+            },
+            || {
+                info!(
+                    session_id = %session_id,
+                    context_budget = ?budget,
+                    "Context budget updated (agent cache invalidated)"
+                );
+            },
+        )
+        .await
+    }
+
+    pub fn get_context_budget(&self, session_id: &str) -> Result<Option<usize>, AgentError> {
+        let (_, agent_config) = self.get_session_with_agent(session_id)?;
+        Ok(agent_config.context_budget)
+    }
+
+    pub async fn set_context_strategy(
+        &self,
+        session_id: &str,
+        strategy: ContextStrategy,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        let strategy_str = strategy.to_string();
+        self.update_agent_config_and_emit(
+            session_id,
+            event_tx,
+            "context_strategy_changed",
+            serde_json::json!({ "context_strategy": strategy_str }),
+            "Failed to emit context_strategy_changed event (no subscribers)",
+            |agent_config| {
+                agent_config.context_strategy = strategy.clone();
+                Ok(())
+            },
+            || {
+                info!(
+                    session_id = %session_id,
+                    context_strategy = %strategy_str,
+                    "Context strategy updated (agent cache invalidated)"
+                );
+            },
+        )
+        .await
+    }
+
+    pub fn get_context_strategy(&self, session_id: &str) -> Result<ContextStrategy, AgentError> {
+        let (_, agent_config) = self.get_session_with_agent(session_id)?;
+        Ok(agent_config.context_strategy)
+    }
+
+    pub async fn set_context_window(
+        &self,
+        session_id: &str,
+        window: Option<usize>,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        self.update_agent_config_and_emit(
+            session_id,
+            event_tx,
+            "context_window_changed",
+            serde_json::json!({ "context_window": window }),
+            "Failed to emit context_window_changed event (no subscribers)",
+            |agent_config| {
+                agent_config.context_window = window;
+                Ok(())
+            },
+            || {
+                info!(
+                    session_id = %session_id,
+                    context_window = ?window,
+                    "Context window updated (agent cache invalidated)"
+                );
+            },
+        )
+        .await
+    }
+
+    pub fn get_context_window(&self, session_id: &str) -> Result<Option<usize>, AgentError> {
+        let (_, agent_config) = self.get_session_with_agent(session_id)?;
+        Ok(agent_config.context_window)
+    }
+
+    pub async fn set_output_validation(
+        &self,
+        session_id: &str,
+        validation: OutputValidation,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        let validation_str = validation.to_string();
+        self.update_agent_config_and_emit(
+            session_id,
+            event_tx,
+            "output_validation_changed",
+            serde_json::json!({ "output_validation": validation_str }),
+            "Failed to emit output_validation_changed event (no subscribers)",
+            |agent_config| {
+                agent_config.output_validation = validation.clone();
+                Ok(())
+            },
+            || {
+                info!(
+                    session_id = %session_id,
+                    output_validation = %validation_str,
+                    "Output validation updated (agent cache invalidated)"
+                );
+            },
+        )
+        .await
+    }
+
+    pub fn get_output_validation(
+        &self,
+        session_id: &str,
+    ) -> Result<OutputValidation, AgentError> {
+        let (_, agent_config) = self.get_session_with_agent(session_id)?;
+        Ok(agent_config.output_validation.clone())
+    }
+
+    pub async fn set_validation_retries(
+        &self,
+        session_id: &str,
+        retries: u32,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        self.update_agent_config_and_emit(
+            session_id,
+            event_tx,
+            "validation_retries_changed",
+            serde_json::json!({ "validation_retries": retries }),
+            "Failed to emit validation_retries_changed event (no subscribers)",
+            |agent_config| {
+                agent_config.validation_retries = retries;
+                Ok(())
+            },
+            || {
+                info!(
+                    session_id = %session_id,
+                    validation_retries = retries,
+                    "Validation retries updated (agent cache invalidated)"
+                );
+            },
+        )
+        .await
+    }
+
+    pub fn get_validation_retries(&self, session_id: &str) -> Result<u32, AgentError> {
+        let (_, agent_config) = self.get_session_with_agent(session_id)?;
+        Ok(agent_config.validation_retries)
+    }
+
+    /// Undo the last N agent turns for a session, truncating conversation history.
+    pub async fn undo(
+        &self,
+        session_id: &str,
+        count: usize,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<Vec<crucible_core::types::UndoSummary>, AgentError> {
+        // Ensure session exists
+        let _ = self.get_session_with_agent(session_id)?;
+
+        if self.request_state.contains_key(session_id) {
+            return Err(AgentError::ConcurrentRequest(session_id.to_string()));
+        }
+
+        let agent = self
+            .agent_cache
+            .get(session_id)
+            .ok_or_else(|| AgentError::NoAgentConfigured(session_id.to_string()))?
+            .clone();
+
+        let mut guard = agent.lock().await;
+        let summaries = guard
+            .undo(count)
+            .await
+            .map_err(|e| AgentError::InvalidConfig(format!("undo failed: {e}")))?;
+
+        if !summaries.is_empty() {
+            if let Some(tx) = event_tx {
+                let total_removed: usize = summaries.iter().map(|s| s.messages_removed).sum();
+                emit_event(
+                    tx,
+                    SessionEventMessage::new(
+                        session_id,
+                        "session_undo",
+                        serde_json::json!({
+                            "turns_undone": summaries.len(),
+                            "messages_removed": total_removed,
+                        }),
+                    ),
+                );
+            }
+            info!(
+                session_id = %session_id,
+                turns = summaries.len(),
+                "Undo completed"
+            );
+        }
+
+        Ok(summaries)
+    }
+
+    /// Check whether a session has any turns that can be undone.
+    pub fn can_undo(&self, session_id: &str) -> Result<bool, AgentError> {
+        let _ = self.get_session_with_agent(session_id)?;
+        if let Some(agent) = self.agent_cache.get(session_id) {
+            // We need to block on the lock, but since this is a sync method and
+            // we only read a flag, use try_lock to avoid deadlocks.
+            match agent.try_lock() {
+                Ok(guard) => Ok(guard.can_undo()),
+                Err(_) => Ok(false), // agent is busy, report as not undoable
+            }
+        } else {
+            Ok(false) // no agent created yet, nothing to undo
+        }
+    }
+
+    /// Return the number of turns that can be undone.
+    pub fn undo_depth(&self, session_id: &str) -> Result<usize, AgentError> {
+        let _ = self.get_session_with_agent(session_id)?;
+        if let Some(agent) = self.agent_cache.get(session_id) {
+            match agent.try_lock() {
+                Ok(guard) => Ok(guard.undo_depth()),
+                Err(_) => Ok(0),
+            }
+        } else {
+            Ok(0)
+        }
+    }
 }

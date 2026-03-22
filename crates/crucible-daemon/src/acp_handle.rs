@@ -742,6 +742,13 @@ mod tests {
             agent_description: None,
             delegation_config: None,
             precognition_enabled: false,
+            max_iterations: None,
+            execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: Default::default(),
+            context_window: None,
+            output_validation: Default::default(),
+            validation_retries: 3,
         }
     }
 

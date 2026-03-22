@@ -265,6 +265,24 @@ pub trait AgentHandle: Send + Sync {
         None
     }
 
+    /// Undo the last N agent turns, reverting conversation history.
+    ///
+    /// Returns a summary for each reverted turn. The implementation truncates
+    /// the conversation history to the state before each turn started.
+    async fn undo(&mut self, _count: usize) -> ChatResult<Vec<crate::types::UndoSummary>> {
+        Err(ChatError::NotSupported("undo".into()))
+    }
+
+    /// Whether there are any turns that can be undone.
+    fn can_undo(&self) -> bool {
+        false
+    }
+
+    /// Number of turns available to undo.
+    fn undo_depth(&self) -> usize {
+        0
+    }
+
     /// Cancel the current agent operation
     ///
     /// Propagates cancellation to the backend (e.g., daemon RPC).
@@ -295,6 +313,84 @@ pub trait AgentHandle: Send + Sync {
     /// Get the current max tokens setting.
     fn get_max_tokens(&self) -> Option<u32> {
         None
+    }
+
+    /// Set maximum tool-call iterations per turn. None = unlimited.
+    async fn set_max_iterations(&mut self, _max_iterations: Option<u32>) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_max_iterations".into()))
+    }
+
+    /// Get the current max iterations setting.
+    fn get_max_iterations(&self) -> Option<u32> {
+        None
+    }
+
+    /// Set execution timeout in seconds per turn. None = no timeout.
+    async fn set_execution_timeout(&mut self, _timeout_secs: Option<u64>) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_execution_timeout".into()))
+    }
+
+    /// Get the current execution timeout setting.
+    fn get_execution_timeout(&self) -> Option<u64> {
+        None
+    }
+
+    /// Set the context token budget. None = no limit.
+    async fn set_context_budget(&mut self, _budget: Option<usize>) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_context_budget".into()))
+    }
+
+    /// Get the current context token budget.
+    fn get_context_budget(&self) -> Option<usize> {
+        None
+    }
+
+    /// Set the context truncation strategy.
+    async fn set_context_strategy(
+        &mut self,
+        _strategy: crate::session::ContextStrategy,
+    ) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_context_strategy".into()))
+    }
+
+    /// Get the current context truncation strategy.
+    fn get_context_strategy(&self) -> crate::session::ContextStrategy {
+        crate::session::ContextStrategy::default()
+    }
+
+    /// Set the sliding window size (message pairs to keep). None = default (10).
+    async fn set_context_window(&mut self, _window: Option<usize>) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_context_window".into()))
+    }
+
+    /// Get the current sliding window size.
+    fn get_context_window(&self) -> Option<usize> {
+        None
+    }
+
+    /// Set output validation mode for agent text responses.
+    async fn set_output_validation(
+        &mut self,
+        _validation: crate::session::OutputValidation,
+    ) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_output_validation".into()))
+    }
+
+    /// Get the current output validation mode.
+    fn get_output_validation(&self) -> &crate::session::OutputValidation {
+        // Return a static reference to None variant
+        static NONE: crate::session::OutputValidation = crate::session::OutputValidation::None;
+        &NONE
+    }
+
+    /// Set maximum retry count when output validation fails.
+    async fn set_validation_retries(&mut self, _retries: u32) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_validation_retries".into()))
+    }
+
+    /// Get the current validation retry count.
+    fn get_validation_retries(&self) -> u32 {
+        3
     }
 
     /// Respond to an interaction request
@@ -422,6 +518,18 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
         (**self).get_system_prompt()
     }
 
+    async fn undo(&mut self, count: usize) -> ChatResult<Vec<crate::types::UndoSummary>> {
+        (**self).undo(count).await
+    }
+
+    fn can_undo(&self) -> bool {
+        (**self).can_undo()
+    }
+
+    fn undo_depth(&self) -> usize {
+        (**self).undo_depth()
+    }
+
     async fn cancel(&self) -> ChatResult<()> {
         (**self).cancel().await
     }
@@ -440,6 +548,68 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
 
     fn get_max_tokens(&self) -> Option<u32> {
         (**self).get_max_tokens()
+    }
+
+    async fn set_max_iterations(&mut self, max_iterations: Option<u32>) -> ChatResult<()> {
+        (**self).set_max_iterations(max_iterations).await
+    }
+
+    fn get_max_iterations(&self) -> Option<u32> {
+        (**self).get_max_iterations()
+    }
+
+    async fn set_execution_timeout(&mut self, timeout_secs: Option<u64>) -> ChatResult<()> {
+        (**self).set_execution_timeout(timeout_secs).await
+    }
+
+    fn get_execution_timeout(&self) -> Option<u64> {
+        (**self).get_execution_timeout()
+    }
+
+    async fn set_context_budget(&mut self, budget: Option<usize>) -> ChatResult<()> {
+        (**self).set_context_budget(budget).await
+    }
+
+    fn get_context_budget(&self) -> Option<usize> {
+        (**self).get_context_budget()
+    }
+
+    async fn set_context_strategy(
+        &mut self,
+        strategy: crate::session::ContextStrategy,
+    ) -> ChatResult<()> {
+        (**self).set_context_strategy(strategy).await
+    }
+
+    fn get_context_strategy(&self) -> crate::session::ContextStrategy {
+        (**self).get_context_strategy()
+    }
+
+    async fn set_context_window(&mut self, window: Option<usize>) -> ChatResult<()> {
+        (**self).set_context_window(window).await
+    }
+
+    fn get_context_window(&self) -> Option<usize> {
+        (**self).get_context_window()
+    }
+
+    async fn set_output_validation(
+        &mut self,
+        validation: crate::session::OutputValidation,
+    ) -> ChatResult<()> {
+        (**self).set_output_validation(validation).await
+    }
+
+    fn get_output_validation(&self) -> &crate::session::OutputValidation {
+        (**self).get_output_validation()
+    }
+
+    async fn set_validation_retries(&mut self, retries: u32) -> ChatResult<()> {
+        (**self).set_validation_retries(retries).await
+    }
+
+    fn get_validation_retries(&self) -> u32 {
+        (**self).get_validation_retries()
     }
 
     async fn interaction_respond(

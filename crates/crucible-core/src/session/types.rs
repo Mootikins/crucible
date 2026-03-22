@@ -9,6 +9,121 @@ use std::str::FromStr;
 
 use crate::serde_helpers::default_true;
 
+/// Strategy for managing conversation context when it exceeds the token budget.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ContextStrategy {
+    /// Drop oldest non-system messages until under budget (default)
+    Truncate,
+    /// Keep system prompt + last N message pairs
+    SlidingWindow,
+}
+
+impl Default for ContextStrategy {
+    fn default() -> Self {
+        Self::Truncate
+    }
+}
+
+impl std::fmt::Display for ContextStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Truncate => write!(f, "truncate"),
+            Self::SlidingWindow => write!(f, "sliding_window"),
+        }
+    }
+}
+
+impl FromStr for ContextStrategy {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "truncate" => Ok(Self::Truncate),
+            "sliding_window" | "slidingwindow" => Ok(Self::SlidingWindow),
+            _ => Err(format!(
+                "unknown context strategy '{}'. Valid: truncate, sliding_window",
+                s
+            )),
+        }
+    }
+}
+
+/// Validation to apply to agent text responses before returning to the user.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum OutputValidation {
+    /// No validation (default)
+    None,
+    /// Response must be valid JSON
+    Json,
+    /// Response must match the given regex pattern
+    Regex(String),
+}
+
+impl Default for OutputValidation {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+impl std::fmt::Display for OutputValidation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => write!(f, "none"),
+            Self::Json => write!(f, "json"),
+            Self::Regex(p) => write!(f, "regex:{p}"),
+        }
+    }
+}
+
+impl FromStr for OutputValidation {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "none" | "off" => Ok(Self::None),
+            "json" => Ok(Self::Json),
+            other => {
+                if let Some(pattern) = other.strip_prefix("regex:") {
+                    // Validate the regex is compilable
+                    regex::Regex::new(pattern)
+                        .map_err(|e| format!("invalid regex pattern: {e}"))?;
+                    Ok(Self::Regex(pattern.to_string()))
+                } else {
+                    Err(format!(
+                        "unknown validation '{}'. Valid: none, json, regex:<pattern>",
+                        s
+                    ))
+                }
+            }
+        }
+    }
+}
+
+fn default_validation_retries() -> u32 {
+    3
+}
+
+/// Validate agent output against the configured validation mode.
+///
+/// Returns `Ok(())` if validation passes or is disabled, `Err(reason)` otherwise.
+pub fn validate_output(response: &str, validation: &OutputValidation) -> Result<(), String> {
+    match validation {
+        OutputValidation::None => Ok(()),
+        OutputValidation::Json => serde_json::from_str::<serde_json::Value>(response)
+            .map(|_| ())
+            .map_err(|e| format!("Invalid JSON: {e}")),
+        OutputValidation::Regex(pattern) => {
+            let re = regex::Regex::new(pattern)
+                .map_err(|e| format!("Invalid regex pattern: {e}"))?;
+            if re.is_match(response) {
+                Ok(())
+            } else {
+                Err(format!("Response does not match pattern: {pattern}"))
+            }
+        }
+    }
+}
+
 /// Agent configuration bound to a session.
 ///
 /// This captures everything needed to reconstruct an agent when resuming
@@ -84,6 +199,34 @@ pub struct SessionAgent {
     /// Whether Precognition (auto-RAG) is enabled for this session (default: true)
     #[serde(default = "default_true")]
     pub precognition_enabled: bool,
+
+    /// Maximum tool-call iterations per turn. None = unlimited (default for interactive sessions).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_iterations: Option<u32>,
+
+    /// Execution timeout in seconds per turn. None = no timeout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_timeout_secs: Option<u64>,
+
+    /// Context window token budget. None = no limit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_budget: Option<usize>,
+
+    /// Strategy for truncating context when over budget.
+    #[serde(default)]
+    pub context_strategy: ContextStrategy,
+
+    /// For SlidingWindow strategy: keep last N message pairs. None = 10 (default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<usize>,
+
+    /// Output validation mode for agent text responses.
+    #[serde(default)]
+    pub output_validation: OutputValidation,
+
+    /// Maximum retries when output validation fails (default: 3).
+    #[serde(default = "default_validation_retries")]
+    pub validation_retries: u32,
 }
 
 impl SessionAgent {
@@ -122,6 +265,13 @@ impl SessionAgent {
             agent_description: profile.description.clone(),
             delegation_config: profile.delegation.clone(),
             precognition_enabled: true,
+            max_iterations: None,
+            execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: ContextStrategy::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: default_validation_retries(),
         }
     }
 }
@@ -600,6 +750,13 @@ mod tests {
             agent_description: None,
             delegation_config: None,
             precognition_enabled: true,
+            max_iterations: None,
+            execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: ContextStrategy::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: default_validation_retries(),
         };
 
         let json = serde_json::to_string(&agent).unwrap();
@@ -634,6 +791,13 @@ mod tests {
             agent_description: None,
             delegation_config: None,
             precognition_enabled: true,
+            max_iterations: None,
+            execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: ContextStrategy::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: default_validation_retries(),
         };
 
         let kiln = PathBuf::from("/home/user/notes");
@@ -687,6 +851,13 @@ mod tests {
             agent_description: None,
             delegation_config: None,
             precognition_enabled: true,
+            max_iterations: None,
+            execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: ContextStrategy::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: default_validation_retries(),
         };
 
         let kiln = PathBuf::from("/home/user/notes");
@@ -722,6 +893,13 @@ mod tests {
             agent_description: None,
             delegation_config: None,
             precognition_enabled: true,
+            max_iterations: None,
+            execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: ContextStrategy::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: default_validation_retries(),
         };
 
         let json = serde_json::to_string(&agent).unwrap();
@@ -764,6 +942,13 @@ mod tests {
             agent_description: None,
             delegation_config: None,
             precognition_enabled: true,
+            max_iterations: None,
+            execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: ContextStrategy::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: default_validation_retries(),
         };
 
         let json = serde_json::to_string(&original).unwrap();
@@ -799,6 +984,13 @@ mod tests {
             agent_description: None,
             delegation_config: None,
             precognition_enabled: true,
+            max_iterations: None,
+            execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: ContextStrategy::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: default_validation_retries(),
         };
 
         let json = serde_json::to_string(&agent).unwrap();
@@ -834,6 +1026,13 @@ mod tests {
             agent_description: Some("Claude AI assistant".to_string()),
             delegation_config: None,
             precognition_enabled: true,
+            max_iterations: None,
+            execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: ContextStrategy::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: default_validation_retries(),
         };
 
         let json = serde_json::to_string(&agent).unwrap();
@@ -879,6 +1078,13 @@ mod tests {
             agent_description: None,
             delegation_config: Some(delegation),
             precognition_enabled: true,
+            max_iterations: None,
+            execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: ContextStrategy::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: default_validation_retries(),
         };
 
         let json = serde_json::to_string(&agent).unwrap();
@@ -956,6 +1162,13 @@ mod tests {
             agent_description: Some("A full-featured agent".to_string()),
             delegation_config: Some(delegation),
             precognition_enabled: true,
+            max_iterations: None,
+            execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: ContextStrategy::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: default_validation_retries(),
         };
 
         let json = serde_json::to_string(&original).unwrap();
@@ -1267,5 +1480,117 @@ mod tests {
         let kiln = PathBuf::from("/home/user/notes");
         let session = Session::new(SessionType::Chat, kiln);
         assert!(session.last_activity.is_some());
+    }
+
+    #[test]
+    fn test_output_validation_display_and_parse() {
+        assert_eq!(OutputValidation::None.to_string(), "none");
+        assert_eq!(OutputValidation::Json.to_string(), "json");
+        assert_eq!(
+            OutputValidation::Regex("^\\{".to_string()).to_string(),
+            "regex:^\\{"
+        );
+
+        assert_eq!("none".parse::<OutputValidation>().unwrap(), OutputValidation::None);
+        assert_eq!("off".parse::<OutputValidation>().unwrap(), OutputValidation::None);
+        assert_eq!("json".parse::<OutputValidation>().unwrap(), OutputValidation::Json);
+        assert_eq!("JSON".parse::<OutputValidation>().unwrap(), OutputValidation::Json);
+        assert_eq!(
+            "regex:^hello".parse::<OutputValidation>().unwrap(),
+            OutputValidation::Regex("^hello".to_string())
+        );
+        assert!("unknown".parse::<OutputValidation>().is_err());
+        assert!("regex:[invalid".parse::<OutputValidation>().is_err());
+    }
+
+    #[test]
+    fn test_validate_output_none() {
+        assert!(validate_output("anything", &OutputValidation::None).is_ok());
+    }
+
+    #[test]
+    fn test_validate_output_json_valid() {
+        assert!(validate_output(r#"{"key": "value"}"#, &OutputValidation::Json).is_ok());
+        assert!(validate_output("42", &OutputValidation::Json).is_ok());
+        assert!(validate_output(r#"[1, 2, 3]"#, &OutputValidation::Json).is_ok());
+    }
+
+    #[test]
+    fn test_validate_output_json_invalid() {
+        let result = validate_output("not json at all", &OutputValidation::Json);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid JSON"));
+    }
+
+    #[test]
+    fn test_validate_output_regex_match() {
+        let validation = OutputValidation::Regex("^hello".to_string());
+        assert!(validate_output("hello world", &validation).is_ok());
+    }
+
+    #[test]
+    fn test_validate_output_regex_no_match() {
+        let validation = OutputValidation::Regex("^hello".to_string());
+        let result = validate_output("goodbye world", &validation);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("does not match pattern"));
+    }
+
+    #[test]
+    fn test_validate_output_regex_invalid_pattern() {
+        let validation = OutputValidation::Regex("[invalid".to_string());
+        let result = validate_output("anything", &validation);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid regex pattern"));
+    }
+
+    #[test]
+    fn test_output_validation_serde_roundtrip() {
+        let agent = SessionAgent {
+            agent_type: "internal".to_string(),
+            agent_name: None,
+            provider_key: Some("ollama".to_string()),
+            provider: BackendType::Ollama,
+            model: "test".to_string(),
+            system_prompt: String::new(),
+            temperature: None,
+            max_tokens: None,
+            max_context_tokens: None,
+            thinking_budget: None,
+            endpoint: None,
+            env_overrides: HashMap::new(),
+            mcp_servers: Vec::new(),
+            agent_card_name: None,
+            capabilities: None,
+            agent_description: None,
+            delegation_config: None,
+            precognition_enabled: true,
+            max_iterations: None,
+            execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: ContextStrategy::default(),
+            context_window: None,
+            output_validation: OutputValidation::Json,
+            validation_retries: 5,
+        };
+
+        let json = serde_json::to_string(&agent).unwrap();
+        let parsed: SessionAgent = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.output_validation, OutputValidation::Json);
+        assert_eq!(parsed.validation_retries, 5);
+    }
+
+    #[test]
+    fn test_output_validation_serde_defaults() {
+        // Deserializing without the fields should give defaults
+        let json = r#"{
+            "agent_type": "internal",
+            "provider": "ollama",
+            "model": "test",
+            "system_prompt": ""
+        }"#;
+        let agent: SessionAgent = serde_json::from_str(json).unwrap();
+        assert_eq!(agent.output_validation, OutputValidation::None);
+        assert_eq!(agent.validation_retries, 3);
     }
 }

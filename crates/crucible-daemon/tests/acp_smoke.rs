@@ -13,7 +13,7 @@
 use crucible_config::{AcpConfig, AgentProfile, BackendType, DelegationConfig};
 use crucible_core::background::{JobResult, JobStatus};
 use crucible_core::session::RecordingMode;
-use crucible_core::session::SessionAgent;
+use crucible_core::session::{OutputValidation, SessionAgent};
 use crucible_core::traits::chat::AgentHandle;
 use crucible_daemon::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
 use crucible_daemon::background_manager::{BackgroundJobManager, SubagentContext, SubagentFactory};
@@ -71,6 +71,13 @@ pub fn mock_session_agent(agent_path: &str) -> SessionAgent {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: false,
+        max_iterations: None,
+        execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: Default::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: 3,
     }
 }
 

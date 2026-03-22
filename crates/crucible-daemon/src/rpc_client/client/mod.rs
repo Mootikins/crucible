@@ -455,6 +455,14 @@ pub struct SessionSetPrecognitionRequest {
     pub precognition_enabled: bool,
 }
 
+/// Request for `session.undo`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionUndoRequest {
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub count: Option<usize>,
+}
+
 /// Request for `session.set_temperature`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionSetTemperatureRequest {
@@ -468,6 +476,59 @@ pub struct SessionSetMaxTokensRequest {
     pub session_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
+}
+
+/// Request for `session.set_max_iterations`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSetMaxIterationsRequest {
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_iterations: Option<u32>,
+}
+
+/// Request for `session.set_execution_timeout`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSetExecutionTimeoutRequest {
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_secs: Option<u64>,
+}
+
+/// Request for `session.set_context_budget`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSetContextBudgetRequest {
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_budget: Option<usize>,
+}
+
+/// Request for `session.set_context_strategy`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSetContextStrategyRequest {
+    pub session_id: String,
+    pub context_strategy: String,
+}
+
+/// Request for `session.set_context_window`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSetContextWindowRequest {
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<usize>,
+}
+
+/// Request for `session.set_output_validation`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSetOutputValidationRequest {
+    pub session_id: String,
+    pub output_validation: String,
+}
+
+/// Request for `session.set_validation_retries`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSetValidationRetriesRequest {
+    pub session_id: String,
+    pub validation_retries: u32,
 }
 
 /// Request for `session.search`.
@@ -2109,6 +2170,230 @@ impl DaemonClient {
             v.as_u64().map(|n| n as u32)
         })
         .await
+    }
+
+    pub async fn session_set_max_iterations(
+        &self,
+        session_id: &str,
+        max_iterations: Option<u32>,
+    ) -> Result<()> {
+        self.typed_unit_call_with_retry(
+            "session.set_max_iterations",
+            SessionSetMaxIterationsRequest {
+                session_id: session_id.to_string(),
+                max_iterations,
+            },
+        )
+        .await
+    }
+
+    pub async fn session_get_max_iterations(&self, session_id: &str) -> Result<Option<u32>> {
+        self.get_session_option(
+            "session.get_max_iterations",
+            session_id,
+            "max_iterations",
+            |v| v.as_u64().map(|n| n as u32),
+        )
+        .await
+    }
+
+    pub async fn session_set_execution_timeout(
+        &self,
+        session_id: &str,
+        timeout_secs: Option<u64>,
+    ) -> Result<()> {
+        self.typed_unit_call_with_retry(
+            "session.set_execution_timeout",
+            SessionSetExecutionTimeoutRequest {
+                session_id: session_id.to_string(),
+                timeout_secs,
+            },
+        )
+        .await
+    }
+
+    pub async fn session_get_execution_timeout(&self, session_id: &str) -> Result<Option<u64>> {
+        self.get_session_option(
+            "session.get_execution_timeout",
+            session_id,
+            "timeout_secs",
+            |v| v.as_u64(),
+        )
+        .await
+    }
+
+    pub async fn session_set_context_budget(
+        &self,
+        session_id: &str,
+        context_budget: Option<usize>,
+    ) -> Result<()> {
+        self.typed_unit_call_with_retry(
+            "session.set_context_budget",
+            SessionSetContextBudgetRequest {
+                session_id: session_id.to_string(),
+                context_budget,
+            },
+        )
+        .await
+    }
+
+    pub async fn session_get_context_budget(&self, session_id: &str) -> Result<Option<usize>> {
+        self.get_session_option(
+            "session.get_context_budget",
+            session_id,
+            "context_budget",
+            |v| v.as_u64().map(|n| n as usize),
+        )
+        .await
+    }
+
+    pub async fn session_set_context_strategy(
+        &self,
+        session_id: &str,
+        strategy: &str,
+    ) -> Result<()> {
+        self.typed_unit_call_with_retry(
+            "session.set_context_strategy",
+            SessionSetContextStrategyRequest {
+                session_id: session_id.to_string(),
+                context_strategy: strategy.to_string(),
+            },
+        )
+        .await
+    }
+
+    pub async fn session_get_context_strategy(&self, session_id: &str) -> Result<Option<String>> {
+        self.get_session_option(
+            "session.get_context_strategy",
+            session_id,
+            "context_strategy",
+            |v| v.as_str().map(String::from),
+        )
+        .await
+    }
+
+    pub async fn session_set_context_window(
+        &self,
+        session_id: &str,
+        context_window: Option<usize>,
+    ) -> Result<()> {
+        self.typed_unit_call_with_retry(
+            "session.set_context_window",
+            SessionSetContextWindowRequest {
+                session_id: session_id.to_string(),
+                context_window,
+            },
+        )
+        .await
+    }
+
+    pub async fn session_get_context_window(&self, session_id: &str) -> Result<Option<usize>> {
+        self.get_session_option(
+            "session.get_context_window",
+            session_id,
+            "context_window",
+            |v| v.as_u64().map(|n| n as usize),
+        )
+        .await
+    }
+
+    pub async fn session_set_output_validation(
+        &self,
+        session_id: &str,
+        validation: &str,
+    ) -> Result<()> {
+        self.typed_unit_call_with_retry(
+            "session.set_output_validation",
+            SessionSetOutputValidationRequest {
+                session_id: session_id.to_string(),
+                output_validation: validation.to_string(),
+            },
+        )
+        .await
+    }
+
+    pub async fn session_get_output_validation(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<String>> {
+        self.get_session_option(
+            "session.get_output_validation",
+            session_id,
+            "output_validation",
+            |v| v.as_str().map(String::from),
+        )
+        .await
+    }
+
+    pub async fn session_set_validation_retries(
+        &self,
+        session_id: &str,
+        retries: u32,
+    ) -> Result<()> {
+        self.typed_unit_call_with_retry(
+            "session.set_validation_retries",
+            SessionSetValidationRetriesRequest {
+                session_id: session_id.to_string(),
+                validation_retries: retries,
+            },
+        )
+        .await
+    }
+
+    pub async fn session_get_validation_retries(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<u32>> {
+        self.get_session_option(
+            "session.get_validation_retries",
+            session_id,
+            "validation_retries",
+            |v| v.as_u64().map(|n| n as u32),
+        )
+        .await
+    }
+
+    /// Undo the last N agent turns for a session.
+    pub async fn session_undo(
+        &self,
+        session_id: &str,
+        count: usize,
+    ) -> Result<Vec<crucible_core::types::UndoSummary>> {
+        let resp: serde_json::Value = self
+            .typed_call_with_retry(
+                "session.undo",
+                SessionUndoRequest {
+                    session_id: session_id.to_string(),
+                    count: Some(count),
+                },
+            )
+            .await?;
+        let undone = resp
+            .get("undone")
+            .cloned()
+            .unwrap_or(serde_json::Value::Array(vec![]));
+        let summaries: Vec<crucible_core::types::UndoSummary> =
+            serde_json::from_value(undone).unwrap_or_default();
+        Ok(summaries)
+    }
+
+    /// Check whether a session has any turns that can be undone.
+    pub async fn session_can_undo(&self, session_id: &str) -> Result<bool> {
+        self.get_session_option("session.can_undo", session_id, "can_undo", |v| v.as_bool())
+            .await
+            .map(|opt| opt.unwrap_or(false))
+    }
+
+    /// Get the number of undoable turns for a session.
+    pub async fn session_undo_depth(&self, session_id: &str) -> Result<usize> {
+        self.get_session_option(
+            "session.undo_depth",
+            session_id,
+            "undo_depth",
+            |v| v.as_u64().map(|n| n as usize),
+        )
+        .await
+        .map(|opt| opt.unwrap_or(0))
     }
 
     pub async fn project_register(&self, path: &Path) -> Result<crucible_core::Project> {

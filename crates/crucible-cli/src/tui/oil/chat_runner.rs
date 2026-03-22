@@ -427,6 +427,25 @@ impl OilChatRunner {
                             SetRpcAction::SetThinkingBudget(None) => continue,
                             SetRpcAction::SetTemperature(t) => ChatAppMsg::SetTemperature(t),
                             SetRpcAction::SetMaxTokens(n) => ChatAppMsg::SetMaxTokens(n),
+                            SetRpcAction::SetMaxIterations(n) => ChatAppMsg::SetMaxIterations(n),
+                            SetRpcAction::SetExecutionTimeout(n) => {
+                                ChatAppMsg::SetExecutionTimeout(n)
+                            }
+                            SetRpcAction::SetContextBudget(n) => {
+                                ChatAppMsg::SetContextBudget(n)
+                            }
+                            SetRpcAction::SetContextStrategy(s) => {
+                                ChatAppMsg::SetContextStrategy(s)
+                            }
+                            SetRpcAction::SetContextWindow(n) => {
+                                ChatAppMsg::SetContextWindow(n)
+                            }
+                            SetRpcAction::SetOutputValidation(v) => {
+                                ChatAppMsg::SetOutputValidation(v)
+                            }
+                            SetRpcAction::SetValidationRetries(n) => {
+                                ChatAppMsg::SetValidationRetries(n)
+                            }
                         };
                         let _ = msg_tx.send(msg);
                     }
@@ -1065,6 +1084,57 @@ impl OilChatRunner {
             Action::Continue => Ok(false),
             Action::Send(msg) => {
                 match &msg {
+                    ChatAppMsg::Undo(count) => {
+                        if self.is_acp_session() {
+                            params.app.add_notification(
+                                crucible_core::types::Notification::warning(
+                                    "Undo not supported for ACP agents".to_string(),
+                                ),
+                            );
+                            return Ok(false);
+                        }
+                        if params.active_stream.is_some() {
+                            params.app.add_notification(
+                                crucible_core::types::Notification::warning(
+                                    "Cannot undo while streaming".to_string(),
+                                ),
+                            );
+                            return Ok(false);
+                        }
+                        let count = *count;
+                        match params.agent.undo(count).await {
+                            Ok(summaries) if !summaries.is_empty() => {
+                                let total_removed: usize =
+                                    summaries.iter().map(|s| s.messages_removed).sum();
+                                let turns = summaries.len();
+                                let _ = params.app.on_message(ChatAppMsg::UndoComplete {
+                                    turns,
+                                    messages_removed: total_removed,
+                                });
+                                tracing::info!(
+                                    turns = turns,
+                                    messages_removed = total_removed,
+                                    "Agent undo completed"
+                                );
+                            }
+                            Ok(_) => {
+                                params.app.add_notification(
+                                    crucible_core::types::Notification::toast(
+                                        "Nothing to undo".to_string(),
+                                    ),
+                                );
+                            }
+                            Err(e) => {
+                                params.app.add_notification(
+                                    crucible_core::types::Notification::warning(format!(
+                                        "Undo failed: {}",
+                                        e
+                                    )),
+                                );
+                            }
+                        }
+                        return Ok(false);
+                    }
                     ChatAppMsg::ClearHistory => {
                         if self.is_acp_session() {
                             params.app.add_notification(
@@ -1192,6 +1262,162 @@ impl OilChatRunner {
                             }
                             Err(e) => {
                                 tracing::warn!(max_tokens = ?max_tokens, error = %e, "Max tokens not supported by this agent");
+                            }
+                        }
+                    }
+                    ChatAppMsg::SetMaxIterations(max_iterations) => {
+                        if self.is_acp_session() {
+                            params.app.add_notification(
+                                crucible_core::types::Notification::warning(
+                                    "Max iterations setting not supported for ACP agents"
+                                        .to_string(),
+                                ),
+                            );
+                            return Ok(false);
+                        }
+                        tracing::info!(max_iterations = ?max_iterations, "Setting max_iterations");
+                        match params.agent.set_max_iterations(*max_iterations).await {
+                            Ok(()) => {
+                                tracing::info!(max_iterations = ?max_iterations, "Max iterations set successfully");
+                            }
+                            Err(e) => {
+                                tracing::warn!(max_iterations = ?max_iterations, error = %e, "Max iterations not supported by this agent");
+                            }
+                        }
+                    }
+                    ChatAppMsg::SetExecutionTimeout(timeout_secs) => {
+                        if self.is_acp_session() {
+                            params.app.add_notification(
+                                crucible_core::types::Notification::warning(
+                                    "Execution timeout setting not supported for ACP agents"
+                                        .to_string(),
+                                ),
+                            );
+                            return Ok(false);
+                        }
+                        tracing::info!(timeout_secs = ?timeout_secs, "Setting execution_timeout");
+                        match params.agent.set_execution_timeout(*timeout_secs).await {
+                            Ok(()) => {
+                                tracing::info!(timeout_secs = ?timeout_secs, "Execution timeout set successfully");
+                            }
+                            Err(e) => {
+                                tracing::warn!(timeout_secs = ?timeout_secs, error = %e, "Execution timeout not supported by this agent");
+                            }
+                        }
+                    }
+                    ChatAppMsg::SetContextBudget(budget) => {
+                        if self.is_acp_session() {
+                            params.app.add_notification(
+                                crucible_core::types::Notification::warning(
+                                    "Context budget setting not supported for ACP agents"
+                                        .to_string(),
+                                ),
+                            );
+                            return Ok(false);
+                        }
+                        tracing::info!(context_budget = ?budget, "Setting context_budget");
+                        match params.agent.set_context_budget(*budget).await {
+                            Ok(()) => {
+                                tracing::info!(context_budget = ?budget, "Context budget set successfully");
+                            }
+                            Err(e) => {
+                                tracing::warn!(context_budget = ?budget, error = %e, "Context budget not supported by this agent");
+                            }
+                        }
+                    }
+                    ChatAppMsg::SetContextStrategy(strategy_str) => {
+                        if self.is_acp_session() {
+                            params.app.add_notification(
+                                crucible_core::types::Notification::warning(
+                                    "Context strategy setting not supported for ACP agents"
+                                        .to_string(),
+                                ),
+                            );
+                            return Ok(false);
+                        }
+                        tracing::info!(context_strategy = %strategy_str, "Setting context_strategy");
+                        match strategy_str.parse::<crucible_core::session::ContextStrategy>() {
+                            Ok(strategy) => {
+                                match params.agent.set_context_strategy(strategy).await {
+                                    Ok(()) => {
+                                        tracing::info!(context_strategy = %strategy_str, "Context strategy set successfully");
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(context_strategy = %strategy_str, error = %e, "Context strategy not supported by this agent");
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(error = %e, "Invalid context strategy");
+                            }
+                        }
+                    }
+                    ChatAppMsg::SetContextWindow(window) => {
+                        if self.is_acp_session() {
+                            params.app.add_notification(
+                                crucible_core::types::Notification::warning(
+                                    "Context window setting not supported for ACP agents"
+                                        .to_string(),
+                                ),
+                            );
+                            return Ok(false);
+                        }
+                        tracing::info!(context_window = ?window, "Setting context_window");
+                        match params.agent.set_context_window(*window).await {
+                            Ok(()) => {
+                                tracing::info!(context_window = ?window, "Context window set successfully");
+                            }
+                            Err(e) => {
+                                tracing::warn!(context_window = ?window, error = %e, "Context window not supported by this agent");
+                            }
+                        }
+                    }
+                    ChatAppMsg::SetOutputValidation(ref validation_str) => {
+                        if self.is_acp_session() {
+                            params.app.add_notification(
+                                crucible_core::types::Notification::warning(
+                                    "Output validation setting not supported for ACP agents"
+                                        .to_string(),
+                                ),
+                            );
+                            return Ok(false);
+                        }
+                        tracing::info!(output_validation = %validation_str, "Setting output_validation");
+                        match validation_str
+                            .parse::<crucible_core::session::OutputValidation>()
+                        {
+                            Ok(validation) => {
+                                match params.agent.set_output_validation(validation).await {
+                                    Ok(()) => {
+                                        tracing::info!(output_validation = %validation_str, "Output validation set successfully");
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(error = %e, "Output validation not supported by this agent");
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(error = %e, "Invalid output validation");
+                            }
+                        }
+                    }
+                    ChatAppMsg::SetValidationRetries(retries) => {
+                        if self.is_acp_session() {
+                            params.app.add_notification(
+                                crucible_core::types::Notification::warning(
+                                    "Validation retries setting not supported for ACP agents"
+                                        .to_string(),
+                                ),
+                            );
+                            return Ok(false);
+                        }
+                        tracing::info!(validation_retries = retries, "Setting validation_retries");
+                        match params.agent.set_validation_retries(*retries).await {
+                            Ok(()) => {
+                                tracing::info!(validation_retries = retries, "Validation retries set successfully");
+                            }
+                            Err(e) => {
+                                tracing::warn!(validation_retries = retries, error = %e, "Validation retries not supported by this agent");
                             }
                         }
                     }
@@ -1421,6 +1647,26 @@ impl OilChatRunner {
             SessionCommand::SetMaxTokens(tokens, reply) => {
                 let result = agent
                     .set_max_tokens(tokens)
+                    .await
+                    .map_err(|e| e.to_string());
+                let _ = reply.send(result);
+            }
+            SessionCommand::GetMaxIterations(reply) => {
+                let _ = reply.send(agent.get_max_iterations());
+            }
+            SessionCommand::SetMaxIterations(iterations, reply) => {
+                let result = agent
+                    .set_max_iterations(iterations)
+                    .await
+                    .map_err(|e| e.to_string());
+                let _ = reply.send(result);
+            }
+            SessionCommand::GetExecutionTimeout(reply) => {
+                let _ = reply.send(agent.get_execution_timeout());
+            }
+            SessionCommand::SetExecutionTimeout(timeout, reply) => {
+                let result = agent
+                    .set_execution_timeout(timeout)
                     .await
                     .map_err(|e| e.to_string());
                 let _ = reply.send(result);

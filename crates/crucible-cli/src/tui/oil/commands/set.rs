@@ -33,6 +33,13 @@ pub enum SetRpcAction {
     SetThinkingBudget(Option<i64>),
     SetTemperature(f64),
     SetMaxTokens(Option<u32>),
+    SetMaxIterations(Option<u32>),
+    SetExecutionTimeout(Option<u64>),
+    SetContextBudget(Option<usize>),
+    SetContextStrategy(String),
+    SetContextWindow(Option<usize>),
+    SetOutputValidation(String),
+    SetValidationRetries(u32),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -123,6 +130,142 @@ pub fn validate_set_for_cli(input: &str) -> Result<SetEffect, SetError> {
 
                 Ok(SetEffect::DaemonRpc(SetRpcAction::SetMaxTokens(max_tokens)))
             }
+            "maxiterations" => {
+                let max_iterations =
+                    if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null") {
+                        None
+                    } else {
+                        match value.parse::<u32>() {
+                            Ok(n) => Some(n),
+                            Err(_) => {
+                                return Err(SetError::InvalidValue {
+                                    key,
+                                    message: format!(
+                                        "invalid maxiterations value: {} (use a number or 'none')",
+                                        value
+                                    ),
+                                });
+                            }
+                        }
+                    };
+
+                Ok(SetEffect::DaemonRpc(SetRpcAction::SetMaxIterations(
+                    max_iterations,
+                )))
+            }
+            "executiontimeout" => {
+                let timeout_secs =
+                    if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null") {
+                        None
+                    } else {
+                        match value.parse::<u64>() {
+                            Ok(n) => Some(n),
+                            Err(_) => {
+                                return Err(SetError::InvalidValue {
+                                    key,
+                                    message: format!(
+                                        "invalid executiontimeout value: {} (use seconds or 'none')",
+                                        value
+                                    ),
+                                });
+                            }
+                        }
+                    };
+
+                Ok(SetEffect::DaemonRpc(SetRpcAction::SetExecutionTimeout(
+                    timeout_secs,
+                )))
+            }
+            "contextbudget" | "context_budget" => {
+                let budget =
+                    if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null") {
+                        None
+                    } else {
+                        match value.parse::<usize>() {
+                            Ok(n) => Some(n),
+                            Err(_) => {
+                                return Err(SetError::InvalidValue {
+                                    key,
+                                    message: format!(
+                                        "invalid context_budget value: {} (use a number or 'none')",
+                                        value
+                                    ),
+                                });
+                            }
+                        }
+                    };
+                Ok(SetEffect::DaemonRpc(SetRpcAction::SetContextBudget(
+                    budget,
+                )))
+            }
+            "contextstrategy" | "context_strategy" => {
+                // Validate the strategy value
+                match value.to_lowercase().as_str() {
+                    "truncate" | "sliding_window" | "slidingwindow" => {
+                        let normalized = if value.to_lowercase() == "slidingwindow" {
+                            "sliding_window".to_string()
+                        } else {
+                            value.to_lowercase()
+                        };
+                        Ok(SetEffect::DaemonRpc(SetRpcAction::SetContextStrategy(
+                            normalized,
+                        )))
+                    }
+                    _ => Err(SetError::InvalidValue {
+                        key,
+                        message: format!(
+                            "unknown strategy '{}'. Valid: truncate, sliding_window",
+                            value
+                        ),
+                    }),
+                }
+            }
+            "contextwindow" | "context_window" => {
+                let window =
+                    if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null") {
+                        None
+                    } else {
+                        match value.parse::<usize>() {
+                            Ok(n) => Some(n),
+                            Err(_) => {
+                                return Err(SetError::InvalidValue {
+                                    key,
+                                    message: format!(
+                                        "invalid context_window value: {} (use a number or 'none')",
+                                        value
+                                    ),
+                                });
+                            }
+                        }
+                    };
+                Ok(SetEffect::DaemonRpc(SetRpcAction::SetContextWindow(
+                    window,
+                )))
+            }
+            "outputvalidation" | "output_validation" => {
+                // Validate the value parses correctly
+                value
+                    .parse::<crucible_core::session::OutputValidation>()
+                    .map_err(|message| SetError::InvalidValue {
+                        key: key.clone(),
+                        message,
+                    })?;
+                Ok(SetEffect::DaemonRpc(SetRpcAction::SetOutputValidation(
+                    value,
+                )))
+            }
+            "validationretries" | "validation_retries" => {
+                let retries = value.parse::<u32>().map_err(|_| SetError::InvalidValue {
+                    key: key.clone(),
+                    message: format!(
+                        "invalid validation_retries value: {} (use a non-negative integer)",
+                        value
+                    ),
+                })?;
+                Ok(SetEffect::DaemonRpc(SetRpcAction::SetValidationRetries(
+                    retries,
+                )))
+            }
             "perm.show_diff" | "perm.autoconfirm_session" => {
                 parse_bool(&value).map_err(|message| SetError::InvalidValue {
                     key: key.clone(),
@@ -187,7 +330,18 @@ fn is_tui_local_key(key: &str) -> bool {
 fn is_daemon_rpc_key(key: &str) -> bool {
     matches!(
         key,
-        "model" | "thinkingbudget" | "temperature" | "maxtokens"
+        "model"
+            | "thinkingbudget"
+            | "temperature"
+            | "maxtokens"
+            | "maxiterations"
+            | "executiontimeout"
+            | "contextbudget"
+            | "context_budget"
+            | "contextstrategy"
+            | "context_strategy"
+            | "contextwindow"
+            | "context_window"
     )
 }
 

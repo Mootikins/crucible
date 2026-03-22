@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use crucible_acp::discovery::default_agent_profiles;
 use crucible_config::{AcpConfig, AgentProfile, BackendType, DelegationConfig};
 use crucible_core::background::{JobResult, JobStatus, SubagentBlockingConfig};
-use crucible_core::session::{SessionAgent, SessionType};
+use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
 use crucible_core::traits::chat::{AgentHandle, ChatChunk};
 use crucible_core::traits::ChatResult;
 use crucible_daemon::background_manager::{BackgroundJobManager, SubagentContext, SubagentFactory};
@@ -112,6 +112,13 @@ fn test_session_agent(enabled: bool, max_concurrent_delegations: u32) -> Session
             max_concurrent_delegations,
         }),
         precognition_enabled: false,
+        max_iterations: None,
+        execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: Default::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: 3,
     }
 }
 
@@ -141,6 +148,13 @@ fn test_root_session_agent(enabled: bool, max_concurrent_delegations: u32) -> Se
             max_concurrent_delegations,
         }),
         precognition_enabled: false,
+        max_iterations: None,
+        execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: Default::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: 3,
     }
 }
 

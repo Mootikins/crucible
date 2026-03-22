@@ -1,5 +1,5 @@
 use crucible_config::BackendType;
-use crucible_core::session::{SessionAgent, SessionType};
+use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
 use crucible_daemon::background_manager::BackgroundJobManager;
 use crucible_daemon::tools::workspace::WorkspaceTools;
 use crucible_daemon::{
@@ -54,6 +54,13 @@ fn make_session_agent(
         agent_description: None,
         delegation_config: None,
         precognition_enabled: false,
+        max_iterations: None,
+        execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: Default::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: 3,
     }
 }
 

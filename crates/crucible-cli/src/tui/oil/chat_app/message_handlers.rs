@@ -186,6 +186,13 @@ impl OilChatApp {
             ChatAppMsg::SetThinkingBudget(_) => Action::Continue,
             ChatAppMsg::SetTemperature(_) => Action::Continue,
             ChatAppMsg::SetMaxTokens(_) => Action::Continue,
+            ChatAppMsg::SetMaxIterations(_) => Action::Continue,
+            ChatAppMsg::SetExecutionTimeout(_) => Action::Continue,
+            ChatAppMsg::SetContextBudget(_) => Action::Continue,
+            ChatAppMsg::SetContextStrategy(_) => Action::Continue,
+            ChatAppMsg::SetContextWindow(_) => Action::Continue,
+            ChatAppMsg::SetOutputValidation(_) => Action::Continue,
+            ChatAppMsg::SetValidationRetries(_) => Action::Continue,
             _ => Action::Continue,
         }
     }
@@ -284,6 +291,26 @@ impl OilChatApp {
                 Action::Continue
             }
             ChatAppMsg::ClearHistory => Action::Continue,
+            ChatAppMsg::Undo(_) => {
+                // Side effects handled in chat_runner; this is the state-update pass
+                Action::Continue
+            }
+            ChatAppMsg::UndoComplete {
+                turns,
+                messages_removed,
+            } => {
+                self.notification_area.add(
+                    crucible_core::types::Notification::toast(format!(
+                        "Undid {} turn{} ({} messages removed)",
+                        turns,
+                        if turns == 1 { "" } else { "s" },
+                        messages_removed,
+                    )),
+                );
+                // Re-render the chat view by marking a full redraw
+                self.needs_full_redraw = true;
+                Action::Continue
+            }
             ChatAppMsg::ToggleMessages => {
                 self.notification_area.toggle();
                 Action::Continue
