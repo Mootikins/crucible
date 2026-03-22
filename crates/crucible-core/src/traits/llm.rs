@@ -367,6 +367,12 @@ pub struct TokenUsage {
     pub completion_tokens: u32,
     /// Total tokens used
     pub total_tokens: u32,
+    /// Tokens read from prompt cache (Anthropic: 90% cost reduction)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read_tokens: Option<u32>,
+    /// Tokens written to prompt cache (Anthropic: 1.25x cost on first write)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_creation_tokens: Option<u32>,
 }
 
 /// Log probabilities

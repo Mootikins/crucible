@@ -227,6 +227,12 @@ impl SessionEventMessage {
             data["prompt_tokens"] = serde_json::json!(u.prompt_tokens);
             data["completion_tokens"] = serde_json::json!(u.completion_tokens);
             data["total_tokens"] = serde_json::json!(u.total_tokens);
+            if let Some(cached) = u.cache_read_tokens {
+                data["cache_read_tokens"] = serde_json::json!(cached);
+            }
+            if let Some(created) = u.cache_creation_tokens {
+                data["cache_creation_tokens"] = serde_json::json!(created);
+            }
         }
         Self::new(session_id, "message_complete", data)
     }
@@ -491,6 +497,8 @@ mod tests {
             prompt_tokens: 100,
             completion_tokens: 50,
             total_tokens: 150,
+            cache_read_tokens: None,
+            cache_creation_tokens: None,
         };
         let evt = SessionEventMessage::message_complete("s1", "msg-1", "done", Some(&usage));
         assert_eq!(evt.event, "message_complete");

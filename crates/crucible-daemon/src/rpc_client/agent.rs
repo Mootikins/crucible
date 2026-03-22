@@ -40,7 +40,14 @@ pub struct DaemonAgentHandle {
     cached_temperature: Option<f64>,
     cached_max_tokens: Option<u32>,
     cached_thinking_budget: Option<i64>,
+    cached_max_iterations: Option<u32>,
+    cached_execution_timeout: Option<u64>,
     cached_system_prompt: Option<String>,
+    cached_context_budget: Option<usize>,
+    cached_context_strategy: Option<String>,
+    cached_context_window: Option<usize>,
+    cached_output_validation: Option<String>,
+    cached_validation_retries: Option<u32>,
     kiln_path: Option<PathBuf>,
     workspace: Option<PathBuf>,
     cached_agent_config: Option<SessionAgent>,
@@ -79,7 +86,14 @@ impl DaemonAgentHandle {
             cached_temperature: None,
             cached_max_tokens: None,
             cached_thinking_budget: None,
+            cached_max_iterations: None,
+            cached_execution_timeout: None,
             cached_system_prompt: None,
+            cached_context_budget: None,
+            cached_context_strategy: None,
+            cached_context_window: None,
+            cached_output_validation: None,
+            cached_validation_retries: None,
             kiln_path: None,
             workspace: None,
             cached_agent_config: None,
@@ -120,8 +134,43 @@ impl DaemonAgentHandle {
             .await
             .ok()
             .flatten();
+        handle.cached_max_iterations = client
+            .session_get_max_iterations(&session_id)
+            .await
+            .ok()
+            .flatten();
+        handle.cached_execution_timeout = client
+            .session_get_execution_timeout(&session_id)
+            .await
+            .ok()
+            .flatten();
         handle.cached_system_prompt = client
             .session_get_system_prompt(&session_id)
+            .await
+            .ok()
+            .flatten();
+        handle.cached_context_budget = client
+            .session_get_context_budget(&session_id)
+            .await
+            .ok()
+            .flatten();
+        handle.cached_context_strategy = client
+            .session_get_context_strategy(&session_id)
+            .await
+            .ok()
+            .flatten();
+        handle.cached_context_window = client
+            .session_get_context_window(&session_id)
+            .await
+            .ok()
+            .flatten();
+        handle.cached_output_validation = client
+            .session_get_output_validation(&session_id)
+            .await
+            .ok()
+            .flatten();
+        handle.cached_validation_retries = client
+            .session_get_validation_retries(&session_id)
             .await
             .ok()
             .flatten();
@@ -295,6 +344,8 @@ fn convert_message_complete(event: &SessionEvent) -> Option<ChatChunk> {
                 prompt_tokens: prompt as u32,
                 completion_tokens: completion as u32,
                 total_tokens: total as u32,
+                cache_read_tokens: event.data.get("cache_read_tokens").and_then(|v| v.as_u64()).map(|v| v as u32),
+                cache_creation_tokens: event.data.get("cache_creation_tokens").and_then(|v| v.as_u64()).map(|v| v as u32),
             }
         });
     Some(ChatChunk {
@@ -442,6 +493,28 @@ impl AgentHandle for DaemonAgentHandle {
         self.interaction_rx.take()
     }
 
+    async fn undo(
+        &mut self,
+        count: usize,
+    ) -> crucible_core::traits::chat::ChatResult<Vec<crucible_core::types::UndoSummary>> {
+        tracing::info!(session_id = %self.session_id, count = count, "Undoing agent turns via daemon");
+        self.client
+            .session_undo(&self.session_id, count)
+            .await
+            .map_err(|e| ChatError::Communication(format!("Failed to undo: {}", e)))
+    }
+
+    fn can_undo(&self) -> bool {
+        // Sync method — we can't call async RPC here, so conservatively return true
+        // when we have a connected session. The actual check happens daemon-side.
+        self.connected
+    }
+
+    fn undo_depth(&self) -> usize {
+        // No cached value; caller should use the RPC directly for authoritative depth.
+        0
+    }
+
     fn is_connected(&self) -> bool {
         self.connected
     }
@@ -503,6 +576,8 @@ impl AgentHandle for DaemonAgentHandle {
                 config.max_tokens = Some(max);
             }
             config.thinking_budget = self.cached_thinking_budget;
+            config.max_iterations = self.cached_max_iterations;
+            config.execution_timeout_secs = self.cached_execution_timeout;
             if let Err(e) = self.client.session_configure_agent(&new_id, &config).await {
                 tracing::warn!(error = %e, "Failed to configure agent on new session");
             }
@@ -606,6 +681,127 @@ impl AgentHandle for DaemonAgentHandle {
 
     fn get_max_tokens(&self) -> Option<u32> {
         self.cached_max_tokens
+    }
+
+    async fn set_max_iterations(&mut self, max_iterations: Option<u32>) -> ChatResult<()> {
+        tracing::info!(session_id = %self.session_id, max_iterations = ?max_iterations, "Setting max_iterations via daemon");
+        self.client
+            .session_set_max_iterations(&self.session_id, max_iterations)
+            .await
+            .chat_comm()?;
+        self.cached_max_iterations = max_iterations;
+        Ok(())
+    }
+
+    fn get_max_iterations(&self) -> Option<u32> {
+        self.cached_max_iterations
+    }
+
+    async fn set_execution_timeout(&mut self, timeout_secs: Option<u64>) -> ChatResult<()> {
+        tracing::info!(session_id = %self.session_id, timeout_secs = ?timeout_secs, "Setting execution_timeout via daemon");
+        self.client
+            .session_set_execution_timeout(&self.session_id, timeout_secs)
+            .await
+            .chat_comm()?;
+        self.cached_execution_timeout = timeout_secs;
+        Ok(())
+    }
+
+    fn get_execution_timeout(&self) -> Option<u64> {
+        self.cached_execution_timeout
+    }
+
+    async fn set_context_budget(&mut self, budget: Option<usize>) -> ChatResult<()> {
+        tracing::info!(session_id = %self.session_id, context_budget = ?budget, "Setting context_budget via daemon");
+        self.client
+            .session_set_context_budget(&self.session_id, budget)
+            .await
+            .chat_comm()?;
+        self.cached_context_budget = budget;
+        Ok(())
+    }
+
+    fn get_context_budget(&self) -> Option<usize> {
+        self.cached_context_budget
+    }
+
+    async fn set_context_strategy(
+        &mut self,
+        strategy: crucible_core::session::ContextStrategy,
+    ) -> ChatResult<()> {
+        let strategy_str = strategy.to_string();
+        tracing::info!(session_id = %self.session_id, context_strategy = %strategy_str, "Setting context_strategy via daemon");
+        self.client
+            .session_set_context_strategy(&self.session_id, &strategy_str)
+            .await
+            .chat_comm()?;
+        self.cached_context_strategy = Some(strategy_str);
+        Ok(())
+    }
+
+    fn get_context_strategy(&self) -> crucible_core::session::ContextStrategy {
+        self.cached_context_strategy
+            .as_deref()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or_default()
+    }
+
+    async fn set_context_window(&mut self, window: Option<usize>) -> ChatResult<()> {
+        tracing::info!(session_id = %self.session_id, context_window = ?window, "Setting context_window via daemon");
+        self.client
+            .session_set_context_window(&self.session_id, window)
+            .await
+            .chat_comm()?;
+        self.cached_context_window = window;
+        Ok(())
+    }
+
+    fn get_context_window(&self) -> Option<usize> {
+        self.cached_context_window
+    }
+
+    async fn set_output_validation(
+        &mut self,
+        validation: crucible_core::session::OutputValidation,
+    ) -> ChatResult<()> {
+        let validation_str = validation.to_string();
+        tracing::info!(session_id = %self.session_id, output_validation = %validation_str, "Setting output_validation via daemon");
+        self.client
+            .session_set_output_validation(&self.session_id, &validation_str)
+            .await
+            .chat_comm()?;
+        self.cached_output_validation = Some(validation_str);
+        Ok(())
+    }
+
+    fn get_output_validation(&self) -> &crucible_core::session::OutputValidation {
+        // We can't return a reference to a parsed value from cached string,
+        // so use a static for the default and parse-match for known variants
+        static NONE: crucible_core::session::OutputValidation =
+            crucible_core::session::OutputValidation::None;
+        static JSON: crucible_core::session::OutputValidation =
+            crucible_core::session::OutputValidation::Json;
+        match self.cached_output_validation.as_deref() {
+            Some("json") => &JSON,
+            Some("none") | None => &NONE,
+            // For regex variants we can't return a reference to a local.
+            // Fall back to None; the daemon holds the authoritative value.
+            Some(_) => &NONE,
+        }
+    }
+
+    async fn set_validation_retries(&mut self, retries: u32) -> ChatResult<()> {
+        tracing::info!(session_id = %self.session_id, validation_retries = retries, "Setting validation_retries via daemon");
+        self.client
+            .session_set_validation_retries(&self.session_id, retries)
+            .await
+            .chat_comm()?;
+        self.cached_validation_retries = Some(retries);
+        Ok(())
+    }
+
+    fn get_validation_retries(&self) -> u32 {
+        self.cached_validation_retries.unwrap_or(3)
     }
 
     async fn interaction_respond(
