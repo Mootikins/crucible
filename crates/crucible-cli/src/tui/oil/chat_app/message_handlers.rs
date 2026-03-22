@@ -299,14 +299,13 @@ impl OilChatApp {
                 turns,
                 messages_removed,
             } => {
-                self.notification_area.add(
-                    crucible_core::types::Notification::toast(format!(
+                self.notification_area
+                    .add(crucible_core::types::Notification::toast(format!(
                         "Undid {} turn{} ({} messages removed)",
                         turns,
                         if turns == 1 { "" } else { "s" },
                         messages_removed,
-                    )),
-                );
+                    )));
                 // Re-render the chat view by marking a full redraw
                 self.needs_full_redraw = true;
                 Action::Continue

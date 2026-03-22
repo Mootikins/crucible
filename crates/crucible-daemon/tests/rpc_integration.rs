@@ -926,11 +926,11 @@ async fn test_session_configure_agent() {
         precognition_enabled: true,
         max_iterations: None,
         execution_timeout_secs: None,
-            context_budget: None,
-            context_strategy: Default::default(),
-            context_window: None,
-            output_validation: OutputValidation::default(),
-            validation_retries: 3,
+        context_budget: None,
+        context_strategy: Default::default(),
+        context_window: None,
+        output_validation: OutputValidation::default(),
+        validation_retries: 3,
     };
 
     let result = client.session_configure_agent(&session_id, &agent).await;
@@ -1293,11 +1293,11 @@ async fn test_tui_daemon_agent_full_flow() {
         precognition_enabled: true,
         max_iterations: None,
         execution_timeout_secs: None,
-            context_budget: None,
-            context_strategy: Default::default(),
-            context_window: None,
-            output_validation: OutputValidation::default(),
-            validation_retries: 3,
+        context_budget: None,
+        context_strategy: Default::default(),
+        context_window: None,
+        output_validation: OutputValidation::default(),
+        validation_retries: 3,
     };
 
     client
@@ -1670,11 +1670,11 @@ async fn test_session_switch_model() {
         precognition_enabled: true,
         max_iterations: None,
         execution_timeout_secs: None,
-            context_budget: None,
-            context_strategy: Default::default(),
-            context_window: None,
-            output_validation: OutputValidation::default(),
-            validation_retries: 3,
+        context_budget: None,
+        context_strategy: Default::default(),
+        context_window: None,
+        output_validation: OutputValidation::default(),
+        validation_retries: 3,
     };
 
     client
@@ -1754,11 +1754,11 @@ async fn test_daemon_agent_handle_switch_model() {
         precognition_enabled: true,
         max_iterations: None,
         execution_timeout_secs: None,
-            context_budget: None,
-            context_strategy: Default::default(),
-            context_window: None,
-            output_validation: OutputValidation::default(),
-            validation_retries: 3,
+        context_budget: None,
+        context_strategy: Default::default(),
+        context_window: None,
+        output_validation: OutputValidation::default(),
+        validation_retries: 3,
     };
 
     client

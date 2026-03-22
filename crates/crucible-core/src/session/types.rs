@@ -113,8 +113,8 @@ pub fn validate_output(response: &str, validation: &OutputValidation) -> Result<
             .map(|_| ())
             .map_err(|e| format!("Invalid JSON: {e}")),
         OutputValidation::Regex(pattern) => {
-            let re = regex::Regex::new(pattern)
-                .map_err(|e| format!("Invalid regex pattern: {e}"))?;
+            let re =
+                regex::Regex::new(pattern).map_err(|e| format!("Invalid regex pattern: {e}"))?;
             if re.is_match(response) {
                 Ok(())
             } else {
@@ -1491,10 +1491,22 @@ mod tests {
             "regex:^\\{"
         );
 
-        assert_eq!("none".parse::<OutputValidation>().unwrap(), OutputValidation::None);
-        assert_eq!("off".parse::<OutputValidation>().unwrap(), OutputValidation::None);
-        assert_eq!("json".parse::<OutputValidation>().unwrap(), OutputValidation::Json);
-        assert_eq!("JSON".parse::<OutputValidation>().unwrap(), OutputValidation::Json);
+        assert_eq!(
+            "none".parse::<OutputValidation>().unwrap(),
+            OutputValidation::None
+        );
+        assert_eq!(
+            "off".parse::<OutputValidation>().unwrap(),
+            OutputValidation::None
+        );
+        assert_eq!(
+            "json".parse::<OutputValidation>().unwrap(),
+            OutputValidation::Json
+        );
+        assert_eq!(
+            "JSON".parse::<OutputValidation>().unwrap(),
+            OutputValidation::Json
+        );
         assert_eq!(
             "regex:^hello".parse::<OutputValidation>().unwrap(),
             OutputValidation::Regex("^hello".to_string())

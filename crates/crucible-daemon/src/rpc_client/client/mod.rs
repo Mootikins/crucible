@@ -2312,10 +2312,7 @@ impl DaemonClient {
         .await
     }
 
-    pub async fn session_get_output_validation(
-        &self,
-        session_id: &str,
-    ) -> Result<Option<String>> {
+    pub async fn session_get_output_validation(&self, session_id: &str) -> Result<Option<String>> {
         self.get_session_option(
             "session.get_output_validation",
             session_id,
@@ -2340,10 +2337,7 @@ impl DaemonClient {
         .await
     }
 
-    pub async fn session_get_validation_retries(
-        &self,
-        session_id: &str,
-    ) -> Result<Option<u32>> {
+    pub async fn session_get_validation_retries(&self, session_id: &str) -> Result<Option<u32>> {
         self.get_session_option(
             "session.get_validation_retries",
             session_id,
@@ -2386,12 +2380,9 @@ impl DaemonClient {
 
     /// Get the number of undoable turns for a session.
     pub async fn session_undo_depth(&self, session_id: &str) -> Result<usize> {
-        self.get_session_option(
-            "session.undo_depth",
-            session_id,
-            "undo_depth",
-            |v| v.as_u64().map(|n| n as usize),
-        )
+        self.get_session_option("session.undo_depth", session_id, "undo_depth", |v| {
+            v.as_u64().map(|n| n as usize)
+        })
         .await
         .map(|opt| opt.unwrap_or(0))
     }

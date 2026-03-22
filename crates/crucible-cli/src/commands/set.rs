@@ -177,17 +177,13 @@ pub async fn execute(args: Vec<String>, session_id_flag: Option<String>) -> anyh
                 client
                     .session_set_output_validation(&session_id, validation)
                     .await
-                    .map_err(|e| {
-                        anyhow::anyhow!("Failed to set output validation: {}", e)
-                    })?;
+                    .map_err(|e| anyhow::anyhow!("Failed to set output validation: {}", e))?;
             }
             SetRpcAction::SetValidationRetries(retries) => {
                 client
                     .session_set_validation_retries(&session_id, *retries)
                     .await
-                    .map_err(|e| {
-                        anyhow::anyhow!("Failed to set validation retries: {}", e)
-                    })?;
+                    .map_err(|e| anyhow::anyhow!("Failed to set validation retries: {}", e))?;
             }
         }
         println!("Set {} on session {}", setting_str, session_id);

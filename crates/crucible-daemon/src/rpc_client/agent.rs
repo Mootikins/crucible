@@ -344,8 +344,16 @@ fn convert_message_complete(event: &SessionEvent) -> Option<ChatChunk> {
                 prompt_tokens: prompt as u32,
                 completion_tokens: completion as u32,
                 total_tokens: total as u32,
-                cache_read_tokens: event.data.get("cache_read_tokens").and_then(|v| v.as_u64()).map(|v| v as u32),
-                cache_creation_tokens: event.data.get("cache_creation_tokens").and_then(|v| v.as_u64()).map(|v| v as u32),
+                cache_read_tokens: event
+                    .data
+                    .get("cache_read_tokens")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32),
+                cache_creation_tokens: event
+                    .data
+                    .get("cache_creation_tokens")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32),
             }
         });
     Some(ChatChunk {

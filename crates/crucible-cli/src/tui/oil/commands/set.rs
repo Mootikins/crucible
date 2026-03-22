@@ -154,23 +154,24 @@ pub fn validate_set_for_cli(input: &str) -> Result<SetEffect, SetError> {
                 )))
             }
             "executiontimeout" => {
-                let timeout_secs =
-                    if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null") {
-                        None
-                    } else {
-                        match value.parse::<u64>() {
-                            Ok(n) => Some(n),
-                            Err(_) => {
-                                return Err(SetError::InvalidValue {
-                                    key,
-                                    message: format!(
-                                        "invalid executiontimeout value: {} (use seconds or 'none')",
-                                        value
-                                    ),
-                                });
-                            }
+                let timeout_secs = if value.eq_ignore_ascii_case("none")
+                    || value.eq_ignore_ascii_case("null")
+                {
+                    None
+                } else {
+                    match value.parse::<u64>() {
+                        Ok(n) => Some(n),
+                        Err(_) => {
+                            return Err(SetError::InvalidValue {
+                                key,
+                                message: format!(
+                                    "invalid executiontimeout value: {} (use seconds or 'none')",
+                                    value
+                                ),
+                            });
                         }
-                    };
+                    }
+                };
 
                 Ok(SetEffect::DaemonRpc(SetRpcAction::SetExecutionTimeout(
                     timeout_secs,
@@ -194,9 +195,7 @@ pub fn validate_set_for_cli(input: &str) -> Result<SetEffect, SetError> {
                             }
                         }
                     };
-                Ok(SetEffect::DaemonRpc(SetRpcAction::SetContextBudget(
-                    budget,
-                )))
+                Ok(SetEffect::DaemonRpc(SetRpcAction::SetContextBudget(budget)))
             }
             "contextstrategy" | "context_strategy" => {
                 // Validate the strategy value
@@ -238,9 +237,7 @@ pub fn validate_set_for_cli(input: &str) -> Result<SetEffect, SetError> {
                             }
                         }
                     };
-                Ok(SetEffect::DaemonRpc(SetRpcAction::SetContextWindow(
-                    window,
-                )))
+                Ok(SetEffect::DaemonRpc(SetRpcAction::SetContextWindow(window)))
             }
             "outputvalidation" | "output_validation" => {
                 // Validate the value parses correctly
