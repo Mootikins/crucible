@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use crucible_config::{BackendType, LlmProviderConfig};
+use crucible_core::session::{ContextStrategy, OutputValidation};
 use crucible_core::traits::chat::{
     AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall, ChatToolResult,
 };
@@ -10,8 +11,8 @@ use crucible_core::types::mode::default_internal_modes;
 use futures::stream::BoxStream;
 use futures::StreamExt;
 use genai::chat::{
-    ChatMessage, ChatOptions, ChatRequest, ChatStreamEvent, ContentPart, ReasoningEffort, Tool,
-    ToolCall, ToolResponse,
+    CacheControl, ChatMessage, ChatOptions, ChatRequest, ChatStreamEvent, ContentPart,
+    ReasoningEffort, Tool, ToolCall, ToolResponse,
 };
 use genai::ModelIden;
 
@@ -24,6 +25,36 @@ pub(crate) const STREAM_TIMEOUT_ERROR: &str =
 pub(crate) const STREAM_UNEXPECTED_END_ERROR: &str =
     "LLM stream ended unexpectedly — connection terminated without completion";
 pub(crate) const STREAM_CHUNK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// Apply Anthropic prompt caching to a message list.
+///
+/// Marks the system prompt and the second-to-last message (the last message before
+/// the current user turn) with `CacheControl::Ephemeral`. This follows Anthropic's
+/// multi-turn caching pattern: the growing conversation prefix is cached, and each
+/// turn only pays for new content. OpenAI caching is automatic and ignores this.
+///
+/// Returns the system prompt separately (as a cached system ChatMessage) so it can
+/// be included in the messages vec rather than via `with_system()`, which doesn't
+/// support cache control.
+fn apply_prompt_caching(system_prompt: &str, messages: &mut Vec<ChatMessage>) {
+    // Mark second-to-last message with cache control (the last msg before current user turn).
+    // This creates a cache breakpoint at the end of the prior conversation, so the entire
+    // prefix up to this point is cached on subsequent turns.
+    if messages.len() >= 2 {
+        let idx = messages.len() - 2;
+        let msg = messages[idx].clone().with_options(CacheControl::Ephemeral);
+        messages[idx] = msg;
+    }
+
+    // Prepend system prompt as a system-role message with cache control.
+    // genai's with_system() doesn't support MessageOptions, but system-role
+    // ChatMessages do — the Anthropic adapter handles them identically.
+    if !system_prompt.is_empty() {
+        let system_msg =
+            ChatMessage::system(system_prompt).with_options(CacheControl::Ephemeral);
+        messages.insert(0, system_msg);
+    }
+}
 
 fn is_write_tool_name(tool_name: &str) -> bool {
     if tool_name == "write_file" || tool_name == "edit_file" {
@@ -44,17 +75,24 @@ fn is_write_tool_name(tool_name: &str) -> bool {
 fn usage_to_token_usage(usage: &genai::chat::Usage) -> TokenUsage {
     let to_u32 = |v: Option<i32>| -> u32 {
         let n = v.unwrap_or(0);
-        if n < 0 {
-            0
-        } else {
-            n as u32
-        }
+        if n < 0 { 0 } else { n as u32 }
     };
+    let to_opt_u32 = |v: Option<i32>| -> Option<u32> {
+        v.and_then(|n| if n > 0 { Some(n as u32) } else { None })
+    };
+
+    let (cache_read_tokens, cache_creation_tokens) = usage
+        .prompt_tokens_details
+        .as_ref()
+        .map(|d| (to_opt_u32(d.cached_tokens), to_opt_u32(d.cache_creation_tokens)))
+        .unwrap_or((None, None));
 
     TokenUsage {
         prompt_tokens: to_u32(usage.prompt_tokens),
         completion_tokens: to_u32(usage.completion_tokens),
         total_tokens: to_u32(usage.total_tokens),
+        cache_read_tokens,
+        cache_creation_tokens,
     }
 }
 
@@ -136,6 +174,84 @@ pub struct GenaiAgentHandle {
     mode_context_sent: bool,
     max_tool_depth: usize,
     thinking_budget: Option<i64>,
+    context_budget: Option<usize>,
+    context_strategy: ContextStrategy,
+    context_window: Option<usize>,
+    output_validation: OutputValidation,
+    validation_retries: u32,
+    /// Stack of undo entries, one per agent turn. Each records the history
+    /// length before the turn so we can truncate back on undo.
+    undo_stack: Vec<crucible_core::types::UndoEntry>,
+}
+
+/// Estimate token count from message content using a chars/4 heuristic.
+fn estimate_message_tokens(msg: &ChatMessage) -> usize {
+    // Sum all text content parts; fall back to a small fixed cost for non-text messages
+    let char_count: usize = msg
+        .content
+        .parts()
+        .iter()
+        .map(|part| match part {
+            ContentPart::Text(t) => t.len(),
+            _ => 50, // tool calls, images, etc. get a rough fixed estimate
+        })
+        .sum();
+    // 4 chars per token heuristic, minimum 1 token per message
+    (char_count / 4).max(1)
+}
+
+/// Enforce context budget by truncating messages according to the chosen strategy.
+///
+/// Modifies the message vec in-place. System messages (at the front) are preserved.
+/// The last message (current user turn) is never removed.
+fn enforce_context_budget(
+    messages: &mut Vec<ChatMessage>,
+    budget: Option<usize>,
+    strategy: &ContextStrategy,
+    window: Option<usize>,
+) {
+    let Some(budget) = budget else { return };
+
+    let current: usize = messages.iter().map(estimate_message_tokens).sum();
+    if current <= budget {
+        return;
+    }
+
+    match strategy {
+        ContextStrategy::Truncate => {
+            // Drop oldest non-system messages until under budget.
+            // Keep system messages at the front and the last message (current user turn).
+            while messages.iter().map(estimate_message_tokens).sum::<usize>() > budget
+                && messages.len() > 2
+            {
+                // Find first non-system message
+                if let Some(idx) = messages
+                    .iter()
+                    .position(|m| m.role != genai::chat::ChatRole::System)
+                {
+                    // Don't remove the last message (current user turn)
+                    if idx >= messages.len() - 1 {
+                        break;
+                    }
+                    messages.remove(idx);
+                } else {
+                    break;
+                }
+            }
+        }
+        ContextStrategy::SlidingWindow => {
+            let keep = window.unwrap_or(10);
+            let keep_count = keep * 2; // user + assistant pairs
+            let system_count = messages
+                .iter()
+                .take_while(|m| m.role == genai::chat::ChatRole::System)
+                .count();
+            if messages.len() > system_count + keep_count {
+                let drain_end = messages.len() - keep_count;
+                messages.drain(system_count..drain_end);
+            }
+        }
+    }
 }
 
 impl GenaiAgentHandle {
@@ -160,6 +276,12 @@ impl GenaiAgentHandle {
             mode_context_sent: false,
             max_tool_depth: usize::MAX,
             thinking_budget,
+            context_budget: None,
+            context_strategy: ContextStrategy::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: 3,
+            undo_stack: Vec::new(),
         }
     }
 
@@ -194,6 +316,30 @@ impl GenaiAgentHandle {
             mode_context_sent: false,
             max_tool_depth: usize::MAX,
             thinking_budget: None,
+            context_budget: None,
+            context_strategy: ContextStrategy::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: 3,
+            undo_stack: Vec::new(),
+        }
+    }
+
+    /// Record the current history length before an agent turn starts.
+    /// Called at the beginning of `send_message_stream`.
+    pub fn snapshot_before_turn(&mut self) {
+        self.undo_stack.push(crucible_core::types::UndoEntry {
+            message_index: self.history.len(),
+            description: String::new(),
+        });
+    }
+
+    /// Set a description on the most recent undo entry (e.g. first ~80 chars of response).
+    pub fn set_turn_description(&mut self, description: String) {
+        if let Some(entry) = self.undo_stack.last_mut() {
+            if entry.description.is_empty() {
+                entry.description = description;
+            }
         }
     }
 
@@ -446,6 +592,9 @@ impl AgentHandle for GenaiAgentHandle {
             return wrap_stream_with_guards(self.send_mock_contract_stream(message));
         }
 
+        // Record undo snapshot before this turn modifies history
+        self.snapshot_before_turn();
+
         let mode_prefix = if self.current_mode_id == "plan" && !self.mode_context_sent {
             self.mode_context_sent = true;
             Some("[MODE: Plan mode - write tools are disabled. Use read-only tools only.]\n\n")
@@ -467,14 +616,20 @@ impl AgentHandle for GenaiAgentHandle {
             }
         }
 
+        apply_prompt_caching(&self.system_prompt, &mut messages);
+        enforce_context_budget(
+            &mut messages,
+            self.context_budget,
+            &self.context_strategy,
+            self.context_window,
+        );
+
         let req_tools: Vec<Tool> = self
             .visible_tools()
             .iter()
             .map(super::tool_bridge::llm_tool_to_genai)
             .collect();
-        let request = ChatRequest::new(messages)
-            .with_system(self.system_prompt.clone())
-            .with_tools(req_tools);
+        let request = ChatRequest::new(messages).with_tools(req_tools);
 
         let options = ChatOptions::default()
             .with_capture_tool_calls(true)
@@ -622,14 +777,21 @@ impl AgentHandle for GenaiAgentHandle {
                 .push(ChatMessage::from(ToolResponse::new(call_id, result.result)));
         }
 
+        let mut messages = self.history.clone();
+        apply_prompt_caching(&self.system_prompt, &mut messages);
+        enforce_context_budget(
+            &mut messages,
+            self.context_budget,
+            &self.context_strategy,
+            self.context_window,
+        );
+
         let req_tools: Vec<Tool> = self
             .visible_tools()
             .iter()
             .map(super::tool_bridge::llm_tool_to_genai)
             .collect();
-        let request = ChatRequest::new(self.history.clone())
-            .with_system(self.system_prompt.clone())
-            .with_tools(req_tools);
+        let request = ChatRequest::new(messages).with_tools(req_tools);
 
         let options = ChatOptions::default()
             .with_capture_tool_calls(true)
@@ -743,6 +905,31 @@ impl AgentHandle for GenaiAgentHandle {
         wrap_stream_with_guards(stream)
     }
 
+    async fn undo(&mut self, count: usize) -> ChatResult<Vec<crucible_core::types::UndoSummary>> {
+        let mut summaries = Vec::new();
+        for _ in 0..count {
+            if let Some(entry) = self.undo_stack.pop() {
+                let messages_removed = self.history.len().saturating_sub(entry.message_index);
+                self.history.truncate(entry.message_index);
+                summaries.push(crucible_core::types::UndoSummary {
+                    messages_removed,
+                    description: entry.description,
+                });
+            } else {
+                break;
+            }
+        }
+        Ok(summaries)
+    }
+
+    fn can_undo(&self) -> bool {
+        !self.undo_stack.is_empty()
+    }
+
+    fn undo_depth(&self) -> usize {
+        self.undo_stack.len()
+    }
+
     fn is_connected(&self) -> bool {
         true
     }
@@ -787,6 +974,54 @@ impl AgentHandle for GenaiAgentHandle {
 
     fn current_model(&self) -> Option<&str> {
         Some(&self.model.model_name)
+    }
+
+    async fn set_context_budget(&mut self, budget: Option<usize>) -> ChatResult<()> {
+        self.context_budget = budget;
+        Ok(())
+    }
+
+    fn get_context_budget(&self) -> Option<usize> {
+        self.context_budget
+    }
+
+    async fn set_context_strategy(&mut self, strategy: ContextStrategy) -> ChatResult<()> {
+        self.context_strategy = strategy;
+        Ok(())
+    }
+
+    fn get_context_strategy(&self) -> ContextStrategy {
+        self.context_strategy.clone()
+    }
+
+    async fn set_context_window(&mut self, window: Option<usize>) -> ChatResult<()> {
+        self.context_window = window;
+        Ok(())
+    }
+
+    fn get_context_window(&self) -> Option<usize> {
+        self.context_window
+    }
+
+    async fn set_output_validation(
+        &mut self,
+        validation: crucible_core::session::OutputValidation,
+    ) -> ChatResult<()> {
+        self.output_validation = validation;
+        Ok(())
+    }
+
+    fn get_output_validation(&self) -> &crucible_core::session::OutputValidation {
+        &self.output_validation
+    }
+
+    async fn set_validation_retries(&mut self, retries: u32) -> ChatResult<()> {
+        self.validation_retries = retries;
+        Ok(())
+    }
+
+    fn get_validation_retries(&self) -> u32 {
+        self.validation_retries
     }
 }
 
@@ -1090,6 +1325,106 @@ mod tests {
             results.iter().all(|r| r.is_ok()),
             "expected no errors, got: {:?}",
             results
+        );
+    }
+
+    // ── Undo tests ──────────────────────────────────────────────────────────
+
+    fn make_test_handle() -> GenaiAgentHandle {
+        let backend = BackendType::OpenAI;
+        let config = LlmProviderConfig::builder(backend).model("test-model").build();
+        let chat_client = ChatClient::new(&config);
+        let client = chat_client.inner().clone();
+        let model_iden = chat_client
+            .model_iden("test-model")
+            .unwrap_or_else(|| ModelIden::new(genai::adapter::AdapterKind::OpenAI, "test-model"));
+
+        GenaiAgentHandle::new(client, model_iden, "system", Vec::new(), None)
+    }
+
+    #[test]
+    fn undo_stack_empty_initially() {
+        let handle = make_test_handle();
+        assert!(!handle.can_undo());
+        assert_eq!(handle.undo_depth(), 0);
+    }
+
+    #[test]
+    fn snapshot_before_turn_pushes_entry() {
+        let mut handle = make_test_handle();
+        handle.snapshot_before_turn();
+        assert!(handle.can_undo());
+        assert_eq!(handle.undo_depth(), 1);
+    }
+
+    #[tokio::test]
+    async fn undo_truncates_history_to_snapshot() {
+        let mut handle = make_test_handle();
+
+        // Simulate a turn: snapshot, add user message, add tool response
+        handle.snapshot_before_turn();
+        handle.history.push(ChatMessage::user("hello"));
+        handle
+            .history
+            .push(ChatMessage::user("simulated assistant response"));
+        assert_eq!(handle.history.len(), 2);
+
+        let summaries = handle.undo(1).await.unwrap();
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].messages_removed, 2);
+        assert!(handle.history.is_empty());
+        assert!(!handle.can_undo());
+    }
+
+    #[tokio::test]
+    async fn undo_multiple_turns() {
+        let mut handle = make_test_handle();
+
+        // Turn 1
+        handle.snapshot_before_turn();
+        handle.history.push(ChatMessage::user("turn 1"));
+
+        // Turn 2
+        handle.snapshot_before_turn();
+        handle.history.push(ChatMessage::user("turn 2"));
+
+        assert_eq!(handle.undo_depth(), 2);
+        assert_eq!(handle.history.len(), 2);
+
+        // Undo both turns
+        let summaries = handle.undo(2).await.unwrap();
+        assert_eq!(summaries.len(), 2);
+        assert!(handle.history.is_empty());
+        assert_eq!(handle.undo_depth(), 0);
+    }
+
+    #[tokio::test]
+    async fn undo_more_than_available_stops_at_zero() {
+        let mut handle = make_test_handle();
+
+        handle.snapshot_before_turn();
+        handle.history.push(ChatMessage::user("only turn"));
+
+        let summaries = handle.undo(5).await.unwrap();
+        assert_eq!(summaries.len(), 1); // only 1 was available
+        assert!(handle.history.is_empty());
+    }
+
+    #[tokio::test]
+    async fn undo_nothing_returns_empty() {
+        let mut handle = make_test_handle();
+        let summaries = handle.undo(1).await.unwrap();
+        assert!(summaries.is_empty());
+    }
+
+    #[test]
+    fn set_turn_description_updates_last_entry() {
+        let mut handle = make_test_handle();
+        handle.snapshot_before_turn();
+        handle.set_turn_description("Analyzed the auth module".to_string());
+        assert_eq!(
+            handle.undo_stack.last().unwrap().description,
+            "Analyzed the auth module"
         );
     }
 }
