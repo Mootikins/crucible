@@ -54,8 +54,7 @@ pub use layout::flex::{
 };
 pub use layout::Rect;
 pub use layout::{
-    build_layout_tree, render_layout_tree, render_layout_tree_filtered, LayoutBox, LayoutContent,
-    LayoutTree, PopupItem,
+    build_layout_tree, render_layout_tree, LayoutBox, LayoutContent, LayoutTree, PopupItem,
 };
 pub use node::{
     badge, bullet_list, col, divider, error_boundary, fixed, flex, focusable, focusable_auto,
