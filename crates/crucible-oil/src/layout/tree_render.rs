@@ -49,37 +49,8 @@ pub fn render_layout_tree(tree: &LayoutTree) -> (String, CursorInfo) {
     (content, cursor_info)
 }
 
-pub fn render_layout_tree_filtered<F>(tree: &LayoutTree, skip_key: F) -> (String, CursorInfo)
-where
-    F: Fn(&str) -> bool,
-{
-    let width = tree.root.rect.width as usize;
-    let height = tree.root.rect.height as usize;
-
-    if width == 0 || height == 0 {
-        return (String::new(), CursorInfo::default());
-    }
-
-    let mut grid = CellGrid::new(width, height);
-    let mut cursor_position = None;
-    render_box_filtered(&tree.root, &mut grid, &skip_key, &mut cursor_position);
-
-    // Trim trailing blank lines so fully-filtered trees produce empty string
-    let lines = grid.to_lines();
-    let trimmed: Vec<&str> = {
-        let mut v: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
-        while v
-            .last()
-            .is_some_and(|l| l.is_empty() || l.chars().all(|c| c == ' ' || c == '\0'))
-        {
-            v.pop();
-        }
-        v
-    };
-    let content = trimmed.join("\r\n");
-    let cursor_info = cursor_info_from_position(cursor_position, trimmed.len());
-    (content, cursor_info)
-}
+// render_layout_tree_filtered was removed — graduated nodes are now filtered
+// from the tree BEFORE layout, so the renderer never sees them.
 
 fn cursor_info_from_position(
     cursor_position: Option<(u16, u16)>,
@@ -474,7 +445,7 @@ mod tests {
     }
 
     #[test]
-    fn render_layout_tree_filtered_tracks_cursor_for_focused_input() {
+    fn render_layout_tree_tracks_cursor_for_focused_input() {
         let tree = LayoutTree::new(
             LayoutBox::new(Rect::new(0, 0, 70, 4), LayoutContent::Empty).with_child(
                 LayoutBox::new(
@@ -490,15 +461,16 @@ mod tests {
             ),
         );
 
-        let (_, cursor_info) = render_layout_tree_filtered(&tree, |_| false);
+        let (_, cursor_info) = render_layout_tree(&tree);
 
         assert!(cursor_info.visible);
         assert_eq!(cursor_info.col, 8);
-        assert_eq!(cursor_info.row_from_end, 0);
+        // Input at row 2 in a 4-row layout → 1 row from bottom
+        assert_eq!(cursor_info.row_from_end, 1);
     }
 
     #[test]
-    fn render_layout_tree_filtered_hides_cursor_without_focused_input() {
+    fn render_layout_tree_hides_cursor_without_focused_input() {
         let tree = LayoutTree::new(LayoutBox::new(
             Rect::new(0, 0, 20, 1),
             LayoutContent::Text {
@@ -507,7 +479,7 @@ mod tests {
             },
         ));
 
-        let (_, cursor_info) = render_layout_tree_filtered(&tree, |_| false);
+        let (_, cursor_info) = render_layout_tree(&tree);
 
         assert!(!cursor_info.visible);
     }

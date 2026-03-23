@@ -5,7 +5,7 @@ mod tree_render;
 mod types;
 
 pub use crate::taffy_layout::{build_layout_tree, build_layout_tree_with_engine, LayoutEngine};
-pub use tree_render::{render_layout_tree, render_layout_tree_filtered};
+pub use tree_render::render_layout_tree;
 pub use types::{LayoutBox, LayoutContent, LayoutTree, PopupItem};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
