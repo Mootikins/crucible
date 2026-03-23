@@ -1,10 +1,7 @@
 ---
-source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests.rs
+source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
 expression: render_app_raw(&app)
 ---
-                                                                                
-                                                                                
-                                                                                
                                                                                 
 [38;5;8m ● [0mOnce upon a time                                                             
                                                                                 
