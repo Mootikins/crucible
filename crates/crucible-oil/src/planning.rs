@@ -131,13 +131,19 @@ impl FramePlanner {
 
         self.graduation.commit_graduation(&graduated);
 
+        // Filter graduated Static nodes from the tree BEFORE layout so Taffy
+        // doesn't allocate space for them. Without this, graduated nodes take
+        // up rows in the layout that become blank gaps after the renderer skips them.
+        let graduated_keys = self.graduation.graduated_keys();
+        let viewport_tree = filter_graduated_static_nodes(&main_tree, graduated_keys);
+
         let layout_tree = build_layout_tree_with_engine(
             &mut self.layout_engine,
-            &main_tree,
+            &viewport_tree,
             self.width,
             self.height,
         );
-        let graduated_keys = self.graduation.graduated_keys();
+        // Safety net: still pass the filter in case any graduated node slipped through
         let (content, cursor_info) = render_layout_tree_filtered(&layout_tree, |key| {
             graduated_keys.iter().any(|k| k == key)
         });
@@ -205,6 +211,39 @@ impl FramePlanner {
     pub fn set_size(&mut self, width: u16, height: u16) {
         self.width = width;
         self.height = height;
+    }
+}
+
+/// Remove graduated Static nodes from the tree so Taffy doesn't allocate
+/// layout space for them. Replaces graduated nodes with Empty.
+fn filter_graduated_static_nodes(
+    tree: &Node,
+    graduated_keys: &std::collections::VecDeque<String>,
+) -> Node {
+    match tree {
+        Node::Static(s) if graduated_keys.iter().any(|k| k == &s.key) => Node::Empty,
+        Node::Box(b) => Node::Box(crate::node::BoxNode {
+            children: b
+                .children
+                .iter()
+                .map(|c| filter_graduated_static_nodes(c, graduated_keys))
+                .collect(),
+            ..b.clone()
+        }),
+        Node::Fragment(cs) => Node::Fragment(
+            cs.iter()
+                .map(|c| filter_graduated_static_nodes(c, graduated_keys))
+                .collect(),
+        ),
+        Node::Static(s) => Node::Static(crate::node::StaticNode {
+            children: s
+                .children
+                .iter()
+                .map(|c| filter_graduated_static_nodes(c, graduated_keys))
+                .collect(),
+            ..s.clone()
+        }),
+        other => other.clone(),
     }
 }
 
