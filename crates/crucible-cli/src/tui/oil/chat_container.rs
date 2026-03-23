@@ -12,7 +12,7 @@ use crate::tui::oil::components::{
     render_user_prompt,
 };
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
-use crate::tui::oil::node::{col, row, scrollback, spinner, text, Node};
+use crate::tui::oil::node::{col, row, scrollback, spinner, styled, text, Node};
 use crate::tui::oil::render_state::RenderState;
 use crate::tui::oil::style::{Padding, Style};
 
@@ -247,47 +247,90 @@ fn render_assistant_blocks_with_graduation(
 
     let mut text_block_idx = 0usize;
     let mut thinking_block_idx = 0usize;
-    let mut has_hidden_thinking_spinner = false;
+    let mut thinking_summary_emitted = false;
+
+    // When show_thinking=false, emit ONE summary for all thinking blocks.
+    // Compute it once upfront so the per-block loop can skip them.
+    let thinking_summary: Option<Node> = if !render_state.show_thinking && has_thinking {
+        let total_words: usize = params
+            .blocks
+            .iter()
+            .filter_map(|b| match b {
+                ContentBlock::Thinking(tb) => Some(tb.content.split_whitespace().count()),
+                _ => None,
+            })
+            .sum();
+
+        let node = if !params.complete && total_words == 0 {
+            // Just started thinking — spinner
+            row([
+                text(" "),
+                spinner(None, render_state.spinner_frame)
+                    .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
+                text(" Thinking…").with_style(
+                    Style::new()
+                        .fg(t.resolve_color(t.colors.text_muted))
+                        .italic(),
+                ),
+            ])
+        } else if params.complete {
+            // Done — one-line summary
+            styled(
+                format!(
+                    "  \u{250C}{} Thought ({} words)",
+                    t.decorations.divider_char, total_words
+                ),
+                Style::new()
+                    .fg(t.resolve_color(t.colors.text_muted))
+                    .italic(),
+            )
+        } else {
+            // Still thinking, has some content — spinner with word count
+            row([
+                text(" "),
+                spinner(None, render_state.spinner_frame)
+                    .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
+                styled(
+                    format!(" Thinking… ({} words)", total_words),
+                    Style::new()
+                        .fg(t.resolve_color(t.colors.text_muted))
+                        .italic(),
+                ),
+            ])
+        };
+
+        Some(node)
+    } else {
+        None
+    };
 
     for block in params.blocks {
         match block {
             ContentBlock::Thinking(tb) => {
-                let thinking_node = render_thinking_block(
-                    &tb.content,
-                    tb.token_count,
-                    render_state.width(),
-                    params.complete,
-                )
-                .with_margin(Padding {
-                    top: 1,
-                    ..Default::default()
-                });
-
                 if render_state.show_thinking {
+                    // Full thinking view — each block gets its own scrollback
+                    let thinking_node = render_thinking_block(
+                        &tb.content,
+                        tb.token_count,
+                        render_state.width(),
+                        params.complete,
+                    )
+                    .with_margin(Padding {
+                        top: 1,
+                        ..Default::default()
+                    });
                     nodes.push(scrollback(
                         format!("{}-thinking-{thinking_block_idx}", params.container_id),
                         [thinking_node],
                     ));
-                } else if !params.complete && tb.token_count == 0 {
-                    // Thinking just started — show inline spinner instead of content
-                    has_hidden_thinking_spinner = true;
-                    let summary_node = row([
-                        text(" "),
-                        spinner(None, render_state.spinner_frame)
-                            .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
-                        text(" Thinking…").with_style(
-                            Style::new()
-                                .fg(t.resolve_color(t.colors.text_muted))
-                                .italic(),
-                        ),
-                    ]);
-                    nodes.push(summary_node.with_margin(Padding {
-                        top: 1,
-                        ..Default::default()
-                    }));
-                } else {
-                    nodes.push(crucible_oil::bounded::bounded(thinking_node, 3));
+                } else if !thinking_summary_emitted {
+                    // Hidden thinking — emit the single summary on first encounter
+                    if let Some(ref summary) = thinking_summary {
+                        nodes.push(summary.clone());
+                    }
+                    thinking_summary_emitted = true;
                 }
+                // else: skip subsequent thinking blocks (summary already emitted)
                 thinking_block_idx += 1;
             }
             ContentBlock::Text(content) => {
@@ -330,7 +373,7 @@ fn render_assistant_blocks_with_graduation(
     }
 
     // Show spinner when streaming and no text yet
-    if !params.complete && text_blocks.is_empty() && !has_hidden_thinking_spinner {
+    if !params.complete && text_blocks.is_empty() && !thinking_summary_emitted {
         nodes.push(
             row([
                 text(" "),
@@ -1853,17 +1896,22 @@ mod tests {
             "full mode should show all lines"
         );
 
+        // show_thinking=false shows a one-line summary, not a bounded tail
         assert!(
             !bounded_output.contains("alpha"),
-            "bounded mode should hide early lines:\n{bounded_output}"
+            "summary mode should hide thinking content:\n{bounded_output}"
         );
         assert!(
-            bounded_output.contains("juliet"),
-            "bounded mode should show tail lines:\n{bounded_output}"
+            !bounded_output.contains("juliet"),
+            "summary mode should hide thinking content:\n{bounded_output}"
         );
         assert!(
-            bounded_output.contains("more lines"),
-            "bounded mode should show overflow indicator:\n{bounded_output}"
+            bounded_output.contains("Thought"),
+            "summary mode should show 'Thought (N words)' summary:\n{bounded_output}"
+        );
+        assert!(
+            bounded_output.contains("words"),
+            "summary mode should show word count:\n{bounded_output}"
         );
     }
 }
