@@ -43,14 +43,11 @@ pub fn render_layout_tree(tree: &LayoutTree) -> (String, CursorInfo) {
 
     let mut grid = CellGrid::new(width, height);
     let mut cursor_position = None;
-    render_box_filtered(&tree.root, &mut grid, &|_| false, &mut cursor_position);
+    render_box(&tree.root, &mut grid, &mut cursor_position);
     let content = grid.to_string_joined();
     let cursor_info = cursor_info_from_position(cursor_position, content.lines().count());
     (content, cursor_info)
 }
-
-// render_layout_tree_filtered was removed — graduated nodes are now filtered
-// from the tree BEFORE layout, so the renderer never sees them.
 
 fn cursor_info_from_position(
     cursor_position: Option<(u16, u16)>,
@@ -68,18 +65,11 @@ fn cursor_info_from_position(
 }
 
 /// Recursively render a LayoutBox and its children to the grid.
-fn render_box_filtered<F>(
+fn render_box(
     layout_box: &LayoutBox,
     grid: &mut CellGrid,
-    skip_key: &F,
     cursor_position: &mut Option<(u16, u16)>,
-) where
-    F: Fn(&str) -> bool,
-{
-    if layout_box.key.as_deref().is_some_and(skip_key) {
-        return;
-    }
-
+) {
     let x = layout_box.rect.x as usize;
     let y = layout_box.rect.y as usize;
     let width = layout_box.rect.width as usize;
@@ -164,7 +154,7 @@ fn render_box_filtered<F>(
 
     // Render children (later children can overwrite earlier ones for z-order)
     for child in &layout_box.children {
-        render_box_filtered(child, grid, skip_key, cursor_position);
+        render_box(child, grid, cursor_position);
     }
 }
 
