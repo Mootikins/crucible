@@ -212,7 +212,6 @@ fn cjk_characters_within_styled_span_wrap_correctly() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "BUG: char_offset drift in wrap_styled_text char-level chunking path (line_end + 1 assumes whitespace separator)"]
 fn long_styled_word_splits_per_character_with_style() {
     // "abcdefghij" is 10 chars, styled bold, width=3.
     // textwrap can't word-break, so wrap_styled_text does char-level chunking.

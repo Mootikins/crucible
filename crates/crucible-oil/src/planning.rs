@@ -1,6 +1,6 @@
 use crate::ansi::visual_rows;
 use crate::graduation::{GraduatedContent, GraduationState};
-use crate::layout::{build_layout_tree_with_engine, render_layout_tree_filtered, LayoutEngine};
+use crate::layout::{build_layout_tree_with_engine, render_layout_tree, LayoutEngine};
 use crate::node::{ElementKind, Node, OverlayNode};
 use crate::overlay::{extract_overlays, filter_overlays, OverlayAnchor};
 use crate::render::{render_to_string, RenderResult};
@@ -143,10 +143,7 @@ impl FramePlanner {
             self.width,
             self.height,
         );
-        // Safety net: still pass the filter in case any graduated node slipped through
-        let (content, cursor_info) = render_layout_tree_filtered(&layout_tree, |key| {
-            graduated_keys.iter().any(|k| k == key)
-        });
+        let (content, cursor_info) = render_layout_tree(&layout_tree);
 
         let viewport = RenderResult {
             content,

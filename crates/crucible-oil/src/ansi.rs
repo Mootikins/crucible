@@ -122,36 +122,50 @@ pub fn wrap_styled_text(spans: &[(String, String)], width: usize) -> Vec<String>
         .map(|cow| cow.into_owned())
         .collect();
 
-    let mut wrapped_lines: Vec<String> = Vec::new();
+    // Build wrapped lines with their starting character offset in the original text.
+    // textwrap consumes whitespace between words (+1 offset), but char-level chunking
+    // of long words does NOT (+0 offset between chunks).
+    // Build wrapped lines with their starting character offset in the original text.
+    // textwrap may consume whitespace between words OR break long words directly.
+    // We detect whitespace gaps by checking the original text.
+    let plain_chars: Vec<char> = plain_text.chars().collect();
+    let mut wrapped_lines: Vec<(String, usize)> = Vec::new();
+    let mut char_offset = 0;
     for line in initial_wrapped {
         let char_count = line.chars().count();
         if char_count <= width {
-            wrapped_lines.push(line);
+            wrapped_lines.push((line, char_offset));
+            char_offset += char_count;
         } else {
             let chars: Vec<char> = line.chars().collect();
             for chunk in chars.chunks(width) {
-                wrapped_lines.push(chunk.iter().collect());
+                let chunk_str: String = chunk.iter().collect();
+                wrapped_lines.push((chunk_str, char_offset));
+                char_offset += chunk.len();
             }
+        }
+        // Skip whitespace at the current position (consumed by textwrap between words).
+        // Don't skip if we're at the end or if the next char isn't whitespace.
+        if char_offset < plain_chars.len() && plain_chars[char_offset].is_whitespace() {
+            char_offset += 1;
         }
     }
 
     let mut result: Vec<String> = Vec::new();
-    let mut char_offset = 0;
 
-    for line in wrapped_lines {
-        let line_start = char_offset;
+    for (line, line_start) in &wrapped_lines {
         let line_char_count = line.chars().count();
         let line_end = line_start + line_char_count;
 
         let mut output = String::new();
-        let mut current_pos = line_start;
+        let mut current_pos = *line_start;
 
         for span in &styled_spans {
-            if span.end <= line_start || span.start >= line_end {
+            if span.end <= *line_start || span.start >= line_end {
                 continue;
             }
 
-            let overlap_start = span.start.max(line_start);
+            let overlap_start = span.start.max(*line_start);
             let overlap_end = span.end.min(line_end);
 
             if overlap_start > current_pos {
@@ -181,7 +195,6 @@ pub fn wrap_styled_text(spans: &[(String, String)], width: usize) -> Vec<String>
         }
 
         result.push(output);
-        char_offset = line_end + 1;
     }
 
     if result.is_empty() {
