@@ -98,9 +98,11 @@ proptest! {
         let last_word = last_chunk.split_whitespace().next();
         if let Some(word) = last_word {
             if word.len() >= 4 {
+                let in_stdout = stdout.contains(word);
+                let in_viewport = viewport.contains(word);
                 prop_assert!(
-                    !stdout.contains(word) || viewport.contains(word),
-                    "In-progress content '{}' should be in viewport only, but found in stdout:\nstdout: {}\nviewport: {}",
+                    !(in_stdout && in_viewport),
+                    "Content '{}' should not appear in both stdout and viewport (XOR invariant):\nstdout: {}\nviewport: {}",
                     word, stdout, viewport
                 );
             }
@@ -147,9 +149,10 @@ proptest! {
         app.on_message(ChatAppMsg::StreamComplete);
 
         let tree = view_with_default_ctx(&app);
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             render_to_string(&tree, width)
         }));
+        prop_assert!(result.is_ok(), "render_to_string panicked at width={}", width);
     }
 
     #[test]
@@ -377,9 +380,10 @@ mod rendering_edge_cases {
 
         for width in [10, 15, 20, 25] {
             let tree = view_with_default_ctx(&app);
-            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 render_to_string(&tree, width)
             }));
+            assert!(result.is_ok(), "render_to_string panicked at width={}", width);
         }
     }
 

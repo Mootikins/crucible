@@ -420,29 +420,36 @@ mod realistic_scenarios {
     }
 }
 
-/// Tests that track tool call positioning during text graduation.
-/// These simulate real RPC message flows and capture snapshots at each step.
+/// Tests that track tool call positioning across the graduation boundary.
+///
+/// These use `TestRuntime` + `flush_and_render` so content actually graduates
+/// to stdout. Ordering is verified across the combined stdout+viewport output.
 mod graduation_tracking {
     use super::*;
+    use crate::tui::oil::tests::helpers::{combined_output, flush_and_render};
 
     fn positions<'a>(output: &str, markers: &[&'a str]) -> Vec<(&'a str, Option<usize>)> {
         markers.iter().map(|m| (*m, output.find(m))).collect()
     }
 
-    /// Simulates a realistic tool use session with large text blocks that trigger graduation.
-    /// Captures snapshots at each message to track how tool calls move relative to text.
+    /// Simulates a tool use session with enough text to trigger graduation.
+    /// Verifies that tool calls maintain correct ordering in the combined
+    /// stdout (graduated) + viewport (live) output.
     #[test]
     fn tool_call_position_during_graduation() {
+        let mut runtime = TestRuntime::new(120, 24);
         let mut app = OilChatApp::default();
-        app.on_message(ChatAppMsg::UserMessage("Analyze the file".to_string()));
 
-        // Step 1: Initial text (short, won't graduate)
+        // Step 1: User message + initial text
+        app.on_message(ChatAppMsg::UserMessage("Analyze the file".to_string()));
         app.on_message(ChatAppMsg::TextDelta("BEFORE_TOOL_TEXT\n\n".to_string()));
-        let snap1 = render_app(&app);
+        flush_and_render(&mut app, &mut runtime);
+
+        let output = combined_output(&runtime);
         assert!(
-            snap1.contains("BEFORE_TOOL_TEXT"),
+            output.contains("BEFORE_TOOL_TEXT"),
             "Step 1: Should have initial text\n{}",
-            snap1
+            output
         );
 
         // Step 2: Tool call arrives
@@ -454,16 +461,18 @@ mod graduation_tracking {
             source: None,
             lua_primary_arg: None,
         });
-        let snap2 = render_app(&app);
-        let pos2 = positions(&snap2, &["BEFORE_TOOL_TEXT", "Read File"]);
+        flush_and_render(&mut app, &mut runtime);
+
+        let output = combined_output(&runtime);
+        let pos2 = positions(&output, &["BEFORE_TOOL_TEXT", "Read File"]);
         assert!(
             pos2[0].1.unwrap() < pos2[1].1.unwrap(),
             "Step 2: Text should appear before tool call\nPositions: {:?}\n{}",
             pos2,
-            snap2
+            output
         );
 
-        // Step 3: Tool result arrives
+        // Step 3: Tool result completes
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "read_file".to_string(),
             delta: "TOOL_OUTPUT_CONTENT".to_string(),
@@ -473,43 +482,37 @@ mod graduation_tracking {
             name: "read_file".to_string(),
             call_id: None,
         });
-        let snap3 = render_app(&app);
-        assert!(
-            snap3.contains("✓") || snap3.contains("\u{2713}"),
-            "Step 3: Tool should be marked complete\n{}",
-            snap3
-        );
+        flush_and_render(&mut app, &mut runtime);
 
-        // Step 4: Post-tool text (short)
+        // Step 4: Post-tool text
         app.on_message(ChatAppMsg::TextDelta("AFTER_TOOL_TEXT\n\n".to_string()));
-        let snap4 = render_app(&app);
+        flush_and_render(&mut app, &mut runtime);
+
+        let output = combined_output(&runtime);
         let pos4 = positions(
-            &snap4,
+            &output,
             &["BEFORE_TOOL_TEXT", "Read File", "AFTER_TOOL_TEXT"],
         );
         assert!(
             pos4[0].1.unwrap() < pos4[1].1.unwrap() && pos4[1].1.unwrap() < pos4[2].1.unwrap(),
             "Step 4: Order should be text -> tool -> text\nPositions: {:?}\n{}",
             pos4,
-            snap4
+            output
         );
 
-        // Step 5: Add lots of text to trigger graduation (>15 lines)
+        // Step 5: Add enough text to force graduation past the viewport
         let long_text = (1..=20)
-            .map(|i| format!("LINE_{:02}\n", i))
+            .map(|i| format!("LINE_{i:02}\n"))
             .collect::<String>();
         app.on_message(ChatAppMsg::TextDelta(long_text));
-        let snap5 = render_app(&app);
+        flush_and_render(&mut app, &mut runtime);
 
-        // Check that tool call is still in correct position relative to markers
+        let output = combined_output(&runtime);
         let pos5 = positions(
-            &snap5,
+            &output,
             &["BEFORE_TOOL_TEXT", "Read File", "AFTER_TOOL_TEXT"],
         );
-        eprintln!("Step 5 positions: {:?}", pos5);
-        eprintln!("Step 5 output:\n{}", snap5);
 
-        // The tool should still be between BEFORE and AFTER markers
         if let (Some(before), Some(tool), Some(after)) = (pos5[0].1, pos5[1].1, pos5[2].1) {
             assert!(
                 before < tool && tool < after,
@@ -518,20 +521,22 @@ mod graduation_tracking {
                 before,
                 tool,
                 after,
-                snap5
+                output
             );
         } else {
             panic!(
-                "Step 5: Missing markers in output\nPositions: {:?}\n{}",
-                pos5, snap5
+                "Step 5: Missing markers in graduated+viewport output\nPositions: {:?}\n{}",
+                pos5, output
             );
         }
 
         // Step 6: Complete streaming
         app.on_message(ChatAppMsg::StreamComplete);
-        let snap6 = render_app(&app);
+        flush_and_render(&mut app, &mut runtime);
+
+        let output = combined_output(&runtime);
         let pos6 = positions(
-            &snap6,
+            &output,
             &["BEFORE_TOOL_TEXT", "Read File", "AFTER_TOOL_TEXT"],
         );
 
@@ -543,28 +548,31 @@ mod graduation_tracking {
                 before,
                 tool,
                 after,
-                snap6
+                output
             );
         } else {
             panic!(
-                "Step 6 (final): Missing markers in output\nPositions: {:?}\n{}",
-                pos6, snap6
+                "Step 6 (final): Missing markers in graduated+viewport output\nPositions: {:?}\n{}",
+                pos6, output
             );
         }
     }
 
-    /// Test specifically for the overflow graduation scenario.
-    /// When text overflows 15 lines, older lines should graduate to scrollback
-    /// but tool calls should maintain their chronological position.
+    /// Tests that tool ordering is preserved when enough content overflows
+    /// to push early content out of the viewport and into stdout graduation.
     #[test]
     fn tool_position_stable_through_overflow_graduation() {
+        let mut runtime = TestRuntime::new(120, 24);
         let mut app = OilChatApp::default();
+
         app.on_message(ChatAppMsg::UserMessage("test".to_string()));
+        flush_and_render(&mut app, &mut runtime);
 
-        // Add initial text that will be visible
+        // Initial text
         app.on_message(ChatAppMsg::TextDelta("HEADER\n\n".to_string()));
+        flush_and_render(&mut app, &mut runtime);
 
-        // Add tool call
+        // Tool call + completion
         app.on_message(ChatAppMsg::ToolCall {
             name: "test_tool".to_string(),
             args: "{}".to_string(),
@@ -577,35 +585,28 @@ mod graduation_tracking {
             name: "test_tool".to_string(),
             call_id: None,
         });
+        flush_and_render(&mut app, &mut runtime);
 
-        // Add text after tool
+        // Text after tool
         app.on_message(ChatAppMsg::TextDelta("MIDDLE\n\n".to_string()));
+        flush_and_render(&mut app, &mut runtime);
 
-        // Now add enough lines to trigger overflow graduation
+        // Enough lines to force graduation
         for i in 1..=25 {
-            app.on_message(ChatAppMsg::TextDelta(format!("overflow_line_{:02}\n", i)));
+            app.on_message(ChatAppMsg::TextDelta(format!("overflow_line_{i:02}\n")));
         }
+        flush_and_render(&mut app, &mut runtime);
 
-        let output = render_app(&app);
-        eprintln!("Overflow test output:\n{}", output);
+        let output = combined_output(&runtime);
 
-        // The order should still be: HEADER -> tool -> MIDDLE -> overflow lines
-        // Even if some content has graduated, relative order must be preserved
         let header_pos = output.find("HEADER");
         let tool_pos = output.find("Test Tool");
         let middle_pos = output.find("MIDDLE");
 
-        eprintln!(
-            "Positions: header={:?}, tool={:?}, middle={:?}",
-            header_pos, tool_pos, middle_pos
-        );
-
-        // All markers should exist
         assert!(header_pos.is_some(), "HEADER should be in output");
         assert!(tool_pos.is_some(), "Test Tool should be in output");
         assert!(middle_pos.is_some(), "MIDDLE should be in output");
 
-        // Order should be preserved
         let header = header_pos.unwrap();
         let tool = tool_pos.unwrap();
         let middle = middle_pos.unwrap();
@@ -940,13 +941,12 @@ mod duplicate_content_prevention {
         );
     }
 
+    /// Verify that streaming content followed by completion does not duplicate paragraphs
+    /// in the rendered output. Graduation is now handled by ContainerList at the CLI layer,
+    /// so this test checks rendered output consistency rather than stdout graduation.
     #[test]
-    fn streaming_to_final_no_stdout_duplication() {
-        use crate::tui::oil::app::{App, ViewContext};
-        use crate::tui::oil::focus::FocusContext;
-
+    fn streaming_to_final_no_rendered_duplication() {
         let mut app = OilChatApp::default();
-        let mut runtime = TestRuntime::new(120, 40);
 
         app.on_message(ChatAppMsg::UserMessage("test".to_string()));
 
@@ -960,47 +960,37 @@ mod duplicate_content_prevention {
             "MARKER_PARA_THREE third paragraph content.\n\n".to_string(),
         ));
 
-        let focus = FocusContext::new();
-        let ctx = ViewContext::new(&focus);
-        let tree = app.view(&ctx);
-        runtime.render(&tree);
-
-        let stdout_during_streaming = runtime.stdout_content().to_string();
-        assert!(
-            stdout_during_streaming.contains("MARKER_PARA_ONE"),
-            "Graduated content should be in stdout during streaming"
-        );
+        // Render during streaming
+        let output_streaming = render_app(&app);
+        for marker in &["MARKER_PARA_ONE", "MARKER_PARA_TWO", "MARKER_PARA_THREE"] {
+            let count = count_occurrences(&output_streaming, marker);
+            assert_eq!(
+                count, 1,
+                "{} should appear exactly once during streaming. Found {} times.\nOutput:\n{}",
+                marker, count, output_streaming
+            );
+        }
 
         app.on_message(ChatAppMsg::TextDelta(
             "MARKER_FINAL_PARA final paragraph.".to_string(),
         ));
         app.on_message(ChatAppMsg::StreamComplete);
 
-        // With container-based rendering, we don't need pre_graduate_keys.
-        // Container blocks have stable IDs that the runtime tracks - once graduated,
-        // they won't be output again.
+        // Render after completion
+        let output_final = render_app(&app);
 
-        let tree2 = app.view(&ctx);
-        runtime.render(&tree2);
-
-        let final_stdout = runtime.stdout_content();
-
-        for marker in &["MARKER_PARA_ONE", "MARKER_PARA_TWO", "MARKER_PARA_THREE"] {
-            let count = count_occurrences(final_stdout, marker);
+        for marker in &[
+            "MARKER_PARA_ONE",
+            "MARKER_PARA_TWO",
+            "MARKER_PARA_THREE",
+            "MARKER_FINAL_PARA",
+        ] {
+            let count = count_occurrences(&output_final, marker);
             assert_eq!(
                 count, 1,
-                "{} should appear exactly once in stdout (was graduated during streaming, \
-                 should be skipped after completion). Found {} times.\n\
-                 stdout:\n{}",
-                marker, count, final_stdout
+                "{} should appear exactly once after completion. Found {} times.\nOutput:\n{}",
+                marker, count, output_final
             );
         }
-
-        let final_para_count = count_occurrences(final_stdout, "MARKER_FINAL_PARA");
-        assert_eq!(
-            final_para_count, 1,
-            "Final paragraph should appear exactly once. Found {} times.\nstdout:\n{}",
-            final_para_count, final_stdout
-        );
     }
 }
