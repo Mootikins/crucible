@@ -1355,7 +1355,7 @@ mod tests {
     }
 
     #[test]
-    fn test_container_ids_used_in_scrollback() {
+    fn test_container_ids_used_in_view() {
         use crate::tui::oil::render::render_to_string;
 
         let mut list = ContainerList::new();
@@ -1373,8 +1373,8 @@ mod tests {
         let user_node = list.containers[0].view(80, 0, false, false, true);
         let asst_node = list.containers[1].view(80, 0, false, false, true);
 
-        // Check that scrollback nodes use the container IDs
-        // We can check this by rendering and seeing the output contains content
+        // Check that rendered nodes use the container IDs
+        // We can verify this by rendering and seeing the output contains content
         let user_output = render_to_string(&user_node, 80);
         let asst_output = render_to_string(&asst_node, 80);
 

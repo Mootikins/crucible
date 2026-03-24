@@ -80,7 +80,7 @@ impl OilChatApp {
             .enumerate()
             .map(|(i, c)| {
                 use crate::tui::oil::chat_container::ViewParams;
-                let abs_idx = self.container_list.viewport_start_index() + i;
+                let container_idx = self.container_list.viewport_start_index() + i;
                 let render_state = RenderState {
                     terminal_width: term_width as u16,
                     spinner_frame: self.spinner_frame,
@@ -88,8 +88,8 @@ impl OilChatApp {
                 };
                 let params = ViewParams {
                     render_state,
-                    is_continuation: self.container_list.is_continuation(abs_idx),
-                    is_complete: self.container_list.is_response_complete(abs_idx),
+                    is_continuation: self.container_list.is_continuation(container_idx),
+                    is_complete: self.container_list.is_response_complete(container_idx),
                 };
                 c.view_with_params(&params)
             })
