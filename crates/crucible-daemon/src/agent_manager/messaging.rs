@@ -319,41 +319,31 @@ impl AgentManager {
             }
         }
 
-        let agent = if let Some(plugin_loader) = &self.plugin_loader {
-            let guard = plugin_loader.lock().await;
-            let lua = guard.as_ref().map(|loader| loader.executor().lua());
-            create_agent_from_session_config(CreateAgentFromSessionConfigParams {
-                agent_config: &resolved_config,
-                lua,
-                workspace,
-                kiln_path,
-                connected_kilns: &connected_kilns,
-                parent_session_id: Some(session_id),
-                background_spawner: Some(self.background_manager.clone()),
-                mcp_gateway: self.mcp_gateway.clone(),
-                acp_permission_handler,
-                acp_config: self.acp_config.as_ref(),
-                knowledge_repo,
-                embedding_provider,
-            })
-            .await?
-        } else {
-            create_agent_from_session_config(CreateAgentFromSessionConfigParams {
-                agent_config: &resolved_config,
-                lua: None,
-                workspace,
-                kiln_path,
-                connected_kilns: &connected_kilns,
-                parent_session_id: Some(session_id),
-                background_spawner: Some(self.background_manager.clone()),
-                mcp_gateway: self.mcp_gateway.clone(),
-                acp_permission_handler,
-                acp_config: self.acp_config.as_ref(),
-                knowledge_repo,
-                embedding_provider,
-            })
-            .await?
+        // Resolve the Lua reference: clone the inner Lua handle (Arc-backed)
+        // so we don't need to hold the MutexGuard across the async agent creation.
+        let lua_handle: Option<mlua::Lua> = match &self.plugin_loader {
+            Some(loader) => {
+                let guard = loader.lock().await;
+                guard.as_ref().map(|l| l.executor().lua().clone())
+            }
+            None => None,
         };
+
+        let agent = create_agent_from_session_config(CreateAgentFromSessionConfigParams {
+            agent_config: &resolved_config,
+            lua: lua_handle.as_ref(),
+            workspace,
+            kiln_path,
+            connected_kilns: &connected_kilns,
+            parent_session_id: Some(session_id),
+            background_spawner: Some(self.background_manager.clone()),
+            mcp_gateway: self.mcp_gateway.clone(),
+            acp_permission_handler,
+            acp_config: self.acp_config.as_ref(),
+            knowledge_repo,
+            embedding_provider,
+        })
+        .await?;
 
         Ok((agent, resolved_config))
     }
@@ -368,7 +358,7 @@ impl AgentManager {
                 let parent_session_id = session
                     .parent_session_id
                     .clone()
-                    .or_else(|| Some(session.id.clone()));
+                    .or(Some(session.id.clone()));
                 let available_agents = self.build_available_agents();
                 self.background_manager.register_subagent_context(
                     session_id,

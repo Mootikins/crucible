@@ -110,6 +110,10 @@ fn default_precognition_results() -> usize {
 /// Validate agent output against the configured validation mode.
 ///
 /// Returns `Ok(())` if validation passes or is disabled, `Err(reason)` otherwise.
+///
+/// Note: `Regex` patterns are recompiled on each call. This is acceptable because
+/// validation runs at most once per agent turn (after output generation). If this
+/// becomes a hot path, consider caching the compiled regex in a side map.
 pub fn validate_output(response: &str, validation: &OutputValidation) -> Result<(), String> {
     match validation {
         OutputValidation::None => Ok(()),
@@ -117,6 +121,7 @@ pub fn validate_output(response: &str, validation: &OutputValidation) -> Result<
             .map(|_| ())
             .map_err(|e| format!("Invalid JSON: {e}")),
         OutputValidation::Regex(pattern) => {
+            // Pattern was validated at parse time (FromStr), so this should not fail
             let re =
                 regex::Regex::new(pattern).map_err(|e| format!("Invalid regex pattern: {e}"))?;
             if re.is_match(response) {

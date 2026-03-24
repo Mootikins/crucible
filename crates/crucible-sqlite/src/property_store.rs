@@ -11,6 +11,163 @@ use crate::error_ext::SqliteResultExt;
 use crate::note_store::SqliteNoteStore;
 use crucible_core::storage::{PropertyStore, StorageResult};
 
+// --- Free functions containing the actual SQL logic ---
+
+async fn do_property_set(
+    pool: SqlitePool,
+    entity_id: &str,
+    namespace: &str,
+    key: &str,
+    value: &str,
+) -> StorageResult<()> {
+    let entity_id = entity_id.to_string();
+    let namespace = namespace.to_string();
+    let key = key.to_string();
+    let value = value.to_string();
+
+    tokio::task::spawn_blocking(move || {
+        pool.with_connection(|conn| {
+            conn.execute(
+                "INSERT INTO properties (entity_id, namespace, key, value, source, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, 'plugin', datetime('now'))
+                 ON CONFLICT(entity_id, namespace, key) DO UPDATE SET
+                     value = excluded.value,
+                     source = excluded.source,
+                     updated_at = datetime('now')",
+                params![entity_id, namespace, key, value],
+            )
+            .sql()?;
+            Ok(())
+        })
+    })
+    .await??;
+    Ok(())
+}
+
+async fn do_property_get(
+    pool: SqlitePool,
+    entity_id: &str,
+    namespace: &str,
+    key: &str,
+) -> StorageResult<Option<String>> {
+    let entity_id = entity_id.to_string();
+    let namespace = namespace.to_string();
+    let key = key.to_string();
+
+    let result = tokio::task::spawn_blocking(move || {
+        pool.with_connection(|conn| {
+            let result = conn
+                .query_row(
+                    "SELECT value FROM properties
+                     WHERE entity_id = ?1 AND namespace = ?2 AND key = ?3",
+                    params![entity_id, namespace, key],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .sql()?;
+            Ok(result)
+        })
+    })
+    .await??;
+    Ok(result)
+}
+
+async fn do_property_list(
+    pool: SqlitePool,
+    entity_id: &str,
+    namespace: &str,
+) -> StorageResult<Vec<(String, String)>> {
+    let entity_id = entity_id.to_string();
+    let namespace = namespace.to_string();
+
+    let result = tokio::task::spawn_blocking(move || {
+        pool.with_connection(|conn| {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT key, value FROM properties
+                     WHERE entity_id = ?1 AND namespace = ?2
+                     ORDER BY key",
+                )
+                .sql()?;
+            let rows = stmt
+                .query_map(params![entity_id, namespace], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .sql()?;
+            let mut result = Vec::new();
+            for row in rows {
+                result.push(row.sql()?);
+            }
+            Ok(result)
+        })
+    })
+    .await??;
+    Ok(result)
+}
+
+async fn do_property_find(
+    pool: SqlitePool,
+    namespace: &str,
+    key: &str,
+    value: &str,
+) -> StorageResult<Vec<String>> {
+    let namespace = namespace.to_string();
+    let key = key.to_string();
+    let value = value.to_string();
+
+    let result = tokio::task::spawn_blocking(move || {
+        pool.with_connection(|conn| {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT entity_id FROM properties
+                     WHERE namespace = ?1 AND key = ?2 AND value = ?3
+                     ORDER BY entity_id",
+                )
+                .sql()?;
+            let rows = stmt
+                .query_map(params![namespace, key, value], |row| {
+                    row.get::<_, String>(0)
+                })
+                .sql()?;
+            let mut result = Vec::new();
+            for row in rows {
+                result.push(row.sql()?);
+            }
+            Ok(result)
+        })
+    })
+    .await??;
+    Ok(result)
+}
+
+async fn do_property_delete(
+    pool: SqlitePool,
+    entity_id: &str,
+    namespace: &str,
+    key: &str,
+) -> StorageResult<bool> {
+    let entity_id = entity_id.to_string();
+    let namespace = namespace.to_string();
+    let key = key.to_string();
+
+    let deleted = tokio::task::spawn_blocking(move || {
+        pool.with_connection(|conn| {
+            let changes = conn
+                .execute(
+                    "DELETE FROM properties
+                     WHERE entity_id = ?1 AND namespace = ?2 AND key = ?3",
+                    params![entity_id, namespace, key],
+                )
+                .sql()?;
+            Ok(changes > 0)
+        })
+    })
+    .await??;
+    Ok(deleted)
+}
+
+// --- Trait impls delegate to the free functions ---
+
 #[async_trait]
 impl PropertyStore for SqliteNoteStore {
     async fn property_set(
@@ -20,29 +177,7 @@ impl PropertyStore for SqliteNoteStore {
         key: &str,
         value: &str,
     ) -> StorageResult<()> {
-        let pool = self.pool().clone();
-        let entity_id = entity_id.to_string();
-        let namespace = namespace.to_string();
-        let key = key.to_string();
-        let value = value.to_string();
-
-        tokio::task::spawn_blocking(move || {
-            pool.with_connection(|conn| {
-                conn.execute(
-                    "INSERT INTO properties (entity_id, namespace, key, value, source, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, 'plugin', datetime('now'))
-                     ON CONFLICT(entity_id, namespace, key) DO UPDATE SET
-                         value = excluded.value,
-                         source = excluded.source,
-                         updated_at = datetime('now')",
-                    params![entity_id, namespace, key, value],
-                )
-                .sql()?;
-                Ok(())
-            })
-        })
-        .await??;
-        Ok(())
+        do_property_set(self.pool().clone(), entity_id, namespace, key, value).await
     }
 
     async fn property_get(
@@ -51,27 +186,7 @@ impl PropertyStore for SqliteNoteStore {
         namespace: &str,
         key: &str,
     ) -> StorageResult<Option<String>> {
-        let pool = self.pool().clone();
-        let entity_id = entity_id.to_string();
-        let namespace = namespace.to_string();
-        let key = key.to_string();
-
-        let result = tokio::task::spawn_blocking(move || {
-            pool.with_connection(|conn| {
-                let result = conn
-                    .query_row(
-                        "SELECT value FROM properties
-                         WHERE entity_id = ?1 AND namespace = ?2 AND key = ?3",
-                        params![entity_id, namespace, key],
-                        |row| row.get::<_, String>(0),
-                    )
-                    .optional()
-                    .sql()?;
-                Ok(result)
-            })
-        })
-        .await??;
-        Ok(result)
+        do_property_get(self.pool().clone(), entity_id, namespace, key).await
     }
 
     async fn property_list(
@@ -79,33 +194,7 @@ impl PropertyStore for SqliteNoteStore {
         entity_id: &str,
         namespace: &str,
     ) -> StorageResult<Vec<(String, String)>> {
-        let pool = self.pool().clone();
-        let entity_id = entity_id.to_string();
-        let namespace = namespace.to_string();
-
-        let result = tokio::task::spawn_blocking(move || {
-            pool.with_connection(|conn| {
-                let mut stmt = conn
-                    .prepare(
-                        "SELECT key, value FROM properties
-                         WHERE entity_id = ?1 AND namespace = ?2
-                         ORDER BY key",
-                    )
-                    .sql()?;
-                let rows = stmt
-                    .query_map(params![entity_id, namespace], |row| {
-                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-                    })
-                    .sql()?;
-                let mut result = Vec::new();
-                for row in rows {
-                    result.push(row.sql()?);
-                }
-                Ok(result)
-            })
-        })
-        .await??;
-        Ok(result)
+        do_property_list(self.pool().clone(), entity_id, namespace).await
     }
 
     async fn property_find(
@@ -114,34 +203,7 @@ impl PropertyStore for SqliteNoteStore {
         key: &str,
         value: &str,
     ) -> StorageResult<Vec<String>> {
-        let pool = self.pool().clone();
-        let namespace = namespace.to_string();
-        let key = key.to_string();
-        let value = value.to_string();
-
-        let result = tokio::task::spawn_blocking(move || {
-            pool.with_connection(|conn| {
-                let mut stmt = conn
-                    .prepare(
-                        "SELECT entity_id FROM properties
-                         WHERE namespace = ?1 AND key = ?2 AND value = ?3
-                         ORDER BY entity_id",
-                    )
-                    .sql()?;
-                let rows = stmt
-                    .query_map(params![namespace, key, value], |row| {
-                        row.get::<_, String>(0)
-                    })
-                    .sql()?;
-                let mut result = Vec::new();
-                for row in rows {
-                    result.push(row.sql()?);
-                }
-                Ok(result)
-            })
-        })
-        .await??;
-        Ok(result)
+        do_property_find(self.pool().clone(), namespace, key, value).await
     }
 
     async fn property_delete(
@@ -150,25 +212,7 @@ impl PropertyStore for SqliteNoteStore {
         namespace: &str,
         key: &str,
     ) -> StorageResult<bool> {
-        let pool = self.pool().clone();
-        let entity_id = entity_id.to_string();
-        let namespace = namespace.to_string();
-        let key = key.to_string();
-
-        let deleted = tokio::task::spawn_blocking(move || {
-            pool.with_connection(|conn| {
-                let changes = conn
-                    .execute(
-                        "DELETE FROM properties
-                         WHERE entity_id = ?1 AND namespace = ?2 AND key = ?3",
-                        params![entity_id, namespace, key],
-                    )
-                    .sql()?;
-                Ok(changes > 0)
-            })
-        })
-        .await??;
-        Ok(deleted)
+        do_property_delete(self.pool().clone(), entity_id, namespace, key).await
     }
 }
 
@@ -195,29 +239,7 @@ impl PropertyStore for SqlitePropertyStore {
         key: &str,
         value: &str,
     ) -> StorageResult<()> {
-        let pool = self.pool.clone();
-        let entity_id = entity_id.to_string();
-        let namespace = namespace.to_string();
-        let key = key.to_string();
-        let value = value.to_string();
-
-        tokio::task::spawn_blocking(move || {
-            pool.with_connection(|conn| {
-                conn.execute(
-                    "INSERT INTO properties (entity_id, namespace, key, value, source, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, 'plugin', datetime('now'))
-                     ON CONFLICT(entity_id, namespace, key) DO UPDATE SET
-                         value = excluded.value,
-                         source = excluded.source,
-                         updated_at = datetime('now')",
-                    params![entity_id, namespace, key, value],
-                )
-                .sql()?;
-                Ok(())
-            })
-        })
-        .await??;
-        Ok(())
+        do_property_set(self.pool.clone(), entity_id, namespace, key, value).await
     }
 
     async fn property_get(
@@ -226,27 +248,7 @@ impl PropertyStore for SqlitePropertyStore {
         namespace: &str,
         key: &str,
     ) -> StorageResult<Option<String>> {
-        let pool = self.pool.clone();
-        let entity_id = entity_id.to_string();
-        let namespace = namespace.to_string();
-        let key = key.to_string();
-
-        let result = tokio::task::spawn_blocking(move || {
-            pool.with_connection(|conn| {
-                let result = conn
-                    .query_row(
-                        "SELECT value FROM properties
-                         WHERE entity_id = ?1 AND namespace = ?2 AND key = ?3",
-                        params![entity_id, namespace, key],
-                        |row| row.get::<_, String>(0),
-                    )
-                    .optional()
-                    .sql()?;
-                Ok(result)
-            })
-        })
-        .await??;
-        Ok(result)
+        do_property_get(self.pool.clone(), entity_id, namespace, key).await
     }
 
     async fn property_list(
@@ -254,33 +256,7 @@ impl PropertyStore for SqlitePropertyStore {
         entity_id: &str,
         namespace: &str,
     ) -> StorageResult<Vec<(String, String)>> {
-        let pool = self.pool.clone();
-        let entity_id = entity_id.to_string();
-        let namespace = namespace.to_string();
-
-        let result = tokio::task::spawn_blocking(move || {
-            pool.with_connection(|conn| {
-                let mut stmt = conn
-                    .prepare(
-                        "SELECT key, value FROM properties
-                         WHERE entity_id = ?1 AND namespace = ?2
-                         ORDER BY key",
-                    )
-                    .sql()?;
-                let rows = stmt
-                    .query_map(params![entity_id, namespace], |row| {
-                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-                    })
-                    .sql()?;
-                let mut result = Vec::new();
-                for row in rows {
-                    result.push(row.sql()?);
-                }
-                Ok(result)
-            })
-        })
-        .await??;
-        Ok(result)
+        do_property_list(self.pool.clone(), entity_id, namespace).await
     }
 
     async fn property_find(
@@ -289,34 +265,7 @@ impl PropertyStore for SqlitePropertyStore {
         key: &str,
         value: &str,
     ) -> StorageResult<Vec<String>> {
-        let pool = self.pool.clone();
-        let namespace = namespace.to_string();
-        let key = key.to_string();
-        let value = value.to_string();
-
-        let result = tokio::task::spawn_blocking(move || {
-            pool.with_connection(|conn| {
-                let mut stmt = conn
-                    .prepare(
-                        "SELECT entity_id FROM properties
-                         WHERE namespace = ?1 AND key = ?2 AND value = ?3
-                         ORDER BY entity_id",
-                    )
-                    .sql()?;
-                let rows = stmt
-                    .query_map(params![namespace, key, value], |row| {
-                        row.get::<_, String>(0)
-                    })
-                    .sql()?;
-                let mut result = Vec::new();
-                for row in rows {
-                    result.push(row.sql()?);
-                }
-                Ok(result)
-            })
-        })
-        .await??;
-        Ok(result)
+        do_property_find(self.pool.clone(), namespace, key, value).await
     }
 
     async fn property_delete(
@@ -325,25 +274,7 @@ impl PropertyStore for SqlitePropertyStore {
         namespace: &str,
         key: &str,
     ) -> StorageResult<bool> {
-        let pool = self.pool.clone();
-        let entity_id = entity_id.to_string();
-        let namespace = namespace.to_string();
-        let key = key.to_string();
-
-        let deleted = tokio::task::spawn_blocking(move || {
-            pool.with_connection(|conn| {
-                let changes = conn
-                    .execute(
-                        "DELETE FROM properties
-                         WHERE entity_id = ?1 AND namespace = ?2 AND key = ?3",
-                        params![entity_id, namespace, key],
-                    )
-                    .sql()?;
-                Ok(changes > 0)
-            })
-        })
-        .await??;
-        Ok(deleted)
+        do_property_delete(self.pool.clone(), entity_id, namespace, key).await
     }
 }
 

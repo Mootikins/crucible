@@ -363,12 +363,10 @@ pub fn format_primary_arg(args: &str) -> String {
         return String::new();
     }
 
-    let parsed = match serde_json::from_str::<serde_json::Value>(args) {
-        Ok(v) => v,
-        Err(_) => return String::new(),
-    };
-
-    let obj = match parsed.as_object() {
+    let obj = serde_json::from_str::<serde_json::Value>(args)
+        .ok()
+        .and_then(|v| v.as_object().cloned());
+    let obj = match obj {
         Some(o) => o,
         None => return String::new(),
     };
@@ -378,24 +376,19 @@ pub fn format_primary_arg(args: &str) -> String {
         .find_map(|key| obj.get(*key))
         .or_else(|| obj.values().next());
 
-    match value {
-        Some(serde_json::Value::String(s)) => {
-            let collapsed = s.replace('\n', " ").replace('\r', "");
-            if collapsed.chars().count() > 40 {
-                format!("{}…", truncate_to_chars(&collapsed, 39, false))
-            } else {
-                collapsed
-            }
-        }
-        Some(other) => {
-            let s = other.to_string();
-            if s.chars().count() > 40 {
-                format!("{}…", truncate_to_chars(&s, 39, false))
-            } else {
-                s
-            }
-        }
-        None => String::new(),
+    let Some(value) = value else {
+        return String::new();
+    };
+
+    let text = match value {
+        serde_json::Value::String(s) => s.replace('\n', " ").replace('\r', ""),
+        other => other.to_string(),
+    };
+
+    if text.chars().count() > 40 {
+        format!("{}…", truncate_to_chars(&text, 39, false))
+    } else {
+        text
     }
 }
 
@@ -510,11 +503,7 @@ fn count_newline_items(result: &str) -> Option<usize> {
     let newline_count = result.matches('\n').count();
     let escaped_newline_count = result.matches("\\n").count();
     let count = newline_count.max(escaped_newline_count) + 1;
-    if count > 1 {
-        Some(count)
-    } else {
-        None
-    }
+    (count > 1).then_some(count)
 }
 
 fn count_grep_matches(result: &str) -> Option<usize> {
@@ -522,11 +511,7 @@ fn count_grep_matches(result: &str) -> Option<usize> {
         .lines()
         .filter(|l| l.contains(':') && !l.trim().is_empty())
         .count();
-    if count > 0 {
-        Some(count)
-    } else {
-        None
-    }
+    (count > 0).then_some(count)
 }
 
 #[cfg(test)]

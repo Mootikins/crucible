@@ -35,10 +35,6 @@ impl SearchMode {
     fn includes_semantic(&self) -> bool {
         matches!(self, Self::Semantic | Self::Both)
     }
-
-    fn show_scores(&self) -> bool {
-        matches!(self, Self::Semantic | Self::Both)
-    }
 }
 
 /// Execute the `cru search` command.
@@ -157,7 +153,7 @@ pub async fn execute(
         return Ok(());
     }
 
-    let formatted = output::format_search_results(&results, format, mode.show_scores(), false)?;
+    let formatted = output::format_search_results(&results, format, mode.includes_semantic(), false)?;
     println!("{formatted}");
 
     Ok(())

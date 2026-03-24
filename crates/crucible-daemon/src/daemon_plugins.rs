@@ -54,26 +54,29 @@ impl DaemonPluginLoader {
     /// **Not** registered (UI-only):
     /// - `cru.oil`, `cru.popup`, `cru.panel`, `cru.statusline`
     pub fn new(plugin_config: HashMap<String, serde_json::Value>) -> anyhow::Result<Self> {
-        let executor = LuaExecutor::new().map_err(|e| anyhow::anyhow!("LuaExecutor init: {e}"))?;
+        let executor =
+            LuaExecutor::new().map_err(|e| anyhow::anyhow!("LuaExecutor init: {e}"))?;
 
         // LuaExecutor::new() already registers: http, fs, timer, ratelimit, lua_stdlib.
         // Register additional daemon-specific modules here.
         let lua = executor.lua();
 
-        register_ws_module(lua).map_err(|e| anyhow::anyhow!("ws module: {e}"))?;
-        register_shell_module(lua, ShellPolicy::default())
-            .map_err(|e| anyhow::anyhow!("shell module: {e}"))?;
-        register_oq_module(lua).map_err(|e| anyhow::anyhow!("oq module: {e}"))?;
-        register_paths_module(lua, PathsContext::new())
-            .map_err(|e| anyhow::anyhow!("paths module: {e}"))?;
-        register_graph_module(lua).map_err(|e| anyhow::anyhow!("graph module: {e}"))?;
-        register_vault_module(lua).map_err(|e| anyhow::anyhow!("vault module: {e}"))?;
-        register_storage_module(lua).map_err(|e| anyhow::anyhow!("storage module: {e}"))?;
-        register_sessions_module(lua).map_err(|e| anyhow::anyhow!("sessions module: {e}"))?;
-        register_tools_module(lua).map_err(|e| anyhow::anyhow!("tools module: {e}"))?;
-        register_schedule_module(lua).map_err(|e| anyhow::anyhow!("schedule module: {e}"))?;
-        Self::register_plugin_config(lua, plugin_config)
-            .map_err(|e| anyhow::anyhow!("config module: {e}"))?;
+        // Helper to convert module registration errors with context
+        fn reg(name: &str, result: Result<(), impl std::fmt::Display>) -> anyhow::Result<()> {
+            result.map_err(|e| anyhow::anyhow!("{name} module: {e}"))
+        }
+
+        reg("ws", register_ws_module(lua))?;
+        reg("shell", register_shell_module(lua, ShellPolicy::default()))?;
+        reg("oq", register_oq_module(lua))?;
+        reg("paths", register_paths_module(lua, PathsContext::new()))?;
+        reg("graph", register_graph_module(lua))?;
+        reg("vault", register_vault_module(lua))?;
+        reg("storage", register_storage_module(lua))?;
+        reg("sessions", register_sessions_module(lua))?;
+        reg("tools", register_tools_module(lua))?;
+        reg("schedule", register_schedule_module(lua))?;
+        reg("config", Self::register_plugin_config(lua, plugin_config))?;
 
         let plugin_manager = PluginManager::new();
 
