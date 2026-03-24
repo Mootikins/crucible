@@ -1,15 +1,9 @@
 use crate::tui::oil::ansi::strip_ansi;
-use crate::tui::oil::app::{App, ViewContext};
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
-use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::render::render_to_string;
 use crate::tui::oil::*;
 
-fn view_with_default_ctx(app: &OilChatApp) -> Node {
-    let focus = FocusContext::new();
-    let ctx = ViewContext::new(&focus);
-    app.view(&ctx)
-}
+use super::helpers::view_with_default_ctx;
 
 #[test]
 fn streaming_content_grows_incrementally() {
