@@ -232,22 +232,16 @@ fn popup_positioned_above_input_bar() {
 mod overlay_graduation_tests {
     use super::*;
     use crate::tui::oil::ansi::strip_ansi;
-    use crate::tui::oil::app::{App, ViewContext};
+    use crate::tui::oil::app::App;
     use crate::tui::oil::chat_app::OilChatApp;
     use crate::tui::oil::event::Event;
-    use crate::tui::oil::focus::FocusContext;
     use crate::tui::oil::planning::FramePlanner;
+    use crate::tui::oil::tests::helpers::view_with_default_ctx;
     use crate::tui::oil::TestRuntime;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
-    }
-
-    fn view_with_default_ctx(app: &OilChatApp) -> Node {
-        let focus = FocusContext::new();
-        let ctx = ViewContext::new(&focus);
-        app.view(&ctx)
     }
 
     #[test]
@@ -434,17 +428,11 @@ mod overlay_graduation_tests {
 mod composer_stability_tests {
     use super::*;
     use crate::tui::oil::ansi::strip_ansi;
-    use crate::tui::oil::app::{App, ViewContext};
+    use crate::tui::oil::app::App;
     use crate::tui::oil::chat_app::OilChatApp;
     use crate::tui::oil::event::Event;
-    use crate::tui::oil::focus::FocusContext;
+    use crate::tui::oil::tests::helpers::view_with_default_ctx;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
-    fn view_with_default_ctx(app: &OilChatApp) -> Node {
-        let focus = FocusContext::new();
-        let ctx = ViewContext::new(&focus);
-        app.view(&ctx)
-    }
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::empty())

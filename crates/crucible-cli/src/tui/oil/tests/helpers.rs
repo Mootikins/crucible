@@ -19,6 +19,16 @@ pub fn combined_output(runtime: &TestRuntime) -> String {
     format!("{}{}", stdout, viewport)
 }
 
+/// Render the app's view tree through the runtime, triggering graduation.
+///
+/// This mirrors the real chat_runner loop: build the view tree from app state,
+/// then render it through the planner which graduates static nodes to stdout
+/// and renders the remaining viewport.
+pub fn flush_and_render(app: &mut OilChatApp, runtime: &mut TestRuntime) {
+    let tree = view_with_default_ctx(app);
+    runtime.render(&tree);
+}
+
 pub fn apply_rpc_event(app: &mut OilChatApp, event: &RpcEvent) {
     match event {
         RpcEvent::TextDelta(text) => {
