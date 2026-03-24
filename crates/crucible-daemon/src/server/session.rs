@@ -1,6 +1,8 @@
 use super::*;
 
-use crucible_core::session::{ContextStrategy, OutputValidation, SessionState, SessionType};
+use crucible_core::session::{
+    ContextStrategy, OutputValidation, SessionState, SessionSummary, SessionType,
+};
 
 pub(crate) async fn handle_session_create(
     req: Request,
@@ -188,6 +190,15 @@ pub(crate) async fn handle_session_list(
         let mut all_sessions = Vec::new();
         let mut seen_ids = std::collections::HashSet::new();
 
+        // Helper: fetch sessions for a kiln and dedup into the accumulator
+        let mut collect_from = |sessions: Vec<SessionSummary>| {
+            for session in sessions {
+                if seen_ids.insert(session.id.clone()) {
+                    all_sessions.push(session);
+                }
+            }
+        };
+
         // First, get sessions from all open kilns
         let kilns = km.list().await;
         for (kiln_path, _, _) in &kilns {
@@ -200,18 +211,12 @@ pub(crate) async fn handle_session_list(
                     include_archived,
                 )
                 .await;
-            for session in filtered {
-                if !seen_ids.contains(&session.id) {
-                    seen_ids.insert(session.id.clone());
-                    all_sessions.push(session);
-                }
-            }
+            collect_from(filtered);
         }
 
         // Also load from crucible home if not already included
         let home = crucible_config::crucible_home();
         if !kilns.iter().any(|(k, _, _)| k == &home) {
-            // Try to open crucible home if not already open
             let _ = km.open(&home).await;
             let home_sessions = sm
                 .list_sessions_filtered_async(
@@ -222,12 +227,7 @@ pub(crate) async fn handle_session_list(
                     include_archived,
                 )
                 .await;
-            for session in home_sessions {
-                if !seen_ids.contains(&session.id) {
-                    seen_ids.insert(session.id.clone());
-                    all_sessions.push(session);
-                }
-            }
+            collect_from(home_sessions);
         }
 
         all_sessions

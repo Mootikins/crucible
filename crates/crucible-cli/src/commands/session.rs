@@ -16,19 +16,18 @@ use std::str::FromStr;
 use tokio::fs;
 
 fn resolve_permission_mode(flag: Option<&str>) -> anyhow::Result<Option<String>> {
-    if let Some(p) = flag {
-        let _validated: crucible_config::components::permissions::PermissionMode =
-            p.parse().map_err(|e: String| anyhow::anyhow!("{}", e))?;
-        return Ok(Some(p.to_string()));
+    let raw = flag
+        .map(|s| s.to_string())
+        .or_else(|| std::env::var("CRUCIBLE_PERMISSIONS").ok());
+
+    match raw {
+        Some(val) => {
+            let _validated: crucible_config::components::permissions::PermissionMode =
+                val.parse().map_err(|e: String| anyhow::anyhow!("{e}"))?;
+            Ok(Some(val))
+        }
+        None => Ok(None),
     }
-    if let Ok(env_val) = std::env::var("CRUCIBLE_PERMISSIONS") {
-        let _validated: crucible_config::components::permissions::PermissionMode =
-            env_val.parse().map_err(|e: String| {
-                anyhow::anyhow!("Invalid CRUCIBLE_PERMISSIONS='{}': {}", env_val, e)
-            })?;
-        return Ok(Some(env_val));
-    }
-    Ok(None)
 }
 
 pub fn resolve_session_id(explicit: Option<String>) -> anyhow::Result<String> {
@@ -217,17 +216,12 @@ async fn read_session_events(session_dir: &std::path::Path) -> Result<Vec<LogEve
     let content = fs::read_to_string(&jsonl_path)
         .await
         .map_err(|e| anyhow!("Failed to read session events: {}", e))?;
-    let mut events = Vec::new();
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        if let Ok(event) = serde_json::from_str::<LogEvent>(line) {
-            events.push(event);
-        }
-    }
-    Ok(events)
+    Ok(content
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .filter_map(|line| serde_json::from_str::<LogEvent>(line).ok())
+        .collect())
 }
 
 async fn list_session_dirs(sessions_path: &std::path::Path) -> Result<Vec<String>> {

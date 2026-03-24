@@ -56,19 +56,9 @@ fn apply_prompt_caching(system_prompt: &str, messages: &mut Vec<ChatMessage>) {
 }
 
 fn is_write_tool_name(tool_name: &str) -> bool {
-    if tool_name == "write_file" || tool_name == "edit_file" {
-        return true;
-    }
-
-    if tool_name.starts_with("create_") || tool_name.starts_with("delete_") {
-        return true;
-    }
-
-    if tool_name == "bash" {
-        return true;
-    }
-
-    false
+    matches!(tool_name, "write_file" | "edit_file" | "bash")
+        || tool_name.starts_with("create_")
+        || tool_name.starts_with("delete_")
 }
 
 fn usage_to_token_usage(usage: &genai::chat::Usage) -> TokenUsage {

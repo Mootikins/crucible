@@ -174,84 +174,43 @@ impl RpcDispatcher {
             // Session title handler
             "session.set_title" => to_response(id, self.handle_set_title(&req).await),
 
-            // Config get/set handlers
-            "session.set_thinking_budget" => {
-                to_response(id, self.handle_session_set_thinking_budget(&req).await)
+            // Session config get/set handlers — each pair delegates to
+            // server::session::handle_session_{set,get}_<name> with uniform signatures.
+            "session.set_thinking_budget"
+            | "session.set_temperature"
+            | "session.set_max_tokens"
+            | "session.set_max_iterations"
+            | "session.set_execution_timeout"
+            | "session.set_context_budget"
+            | "session.set_context_strategy"
+            | "session.set_context_window"
+            | "session.set_output_validation"
+            | "session.set_validation_retries"
+            | "session.set_system_prompt"
+            | "session.set_precognition"
+            | "session.set_precognition_results" => {
+                to_response(
+                    id,
+                    self.dispatch_session_config_setter(&req).await,
+                )
             }
-            "session.get_thinking_budget" => {
-                to_response(id, self.handle_session_get_thinking_budget(&req).await)
-            }
-            "session.set_temperature" => {
-                to_response(id, self.handle_session_set_temperature(&req).await)
-            }
-            "session.get_temperature" => {
-                to_response(id, self.handle_session_get_temperature(&req).await)
-            }
-            "session.set_max_tokens" => {
-                to_response(id, self.handle_session_set_max_tokens(&req).await)
-            }
-            "session.get_max_tokens" => {
-                to_response(id, self.handle_session_get_max_tokens(&req).await)
-            }
-            "session.set_max_iterations" => {
-                to_response(id, self.handle_session_set_max_iterations(&req).await)
-            }
-            "session.get_max_iterations" => {
-                to_response(id, self.handle_session_get_max_iterations(&req).await)
-            }
-            "session.set_execution_timeout" => {
-                to_response(id, self.handle_session_set_execution_timeout(&req).await)
-            }
-            "session.get_execution_timeout" => {
-                to_response(id, self.handle_session_get_execution_timeout(&req).await)
-            }
-            "session.set_context_budget" => {
-                to_response(id, self.handle_session_set_context_budget(&req).await)
-            }
-            "session.get_context_budget" => {
-                to_response(id, self.handle_session_get_context_budget(&req).await)
-            }
-            "session.set_context_strategy" => {
-                to_response(id, self.handle_session_set_context_strategy(&req).await)
-            }
-            "session.get_context_strategy" => {
-                to_response(id, self.handle_session_get_context_strategy(&req).await)
-            }
-            "session.set_context_window" => {
-                to_response(id, self.handle_session_set_context_window(&req).await)
-            }
-            "session.get_context_window" => {
-                to_response(id, self.handle_session_get_context_window(&req).await)
-            }
-            "session.set_output_validation" => {
-                to_response(id, self.handle_session_set_output_validation(&req).await)
-            }
-            "session.get_output_validation" => {
-                to_response(id, self.handle_session_get_output_validation(&req).await)
-            }
-            "session.set_validation_retries" => {
-                to_response(id, self.handle_session_set_validation_retries(&req).await)
-            }
-            "session.get_validation_retries" => {
-                to_response(id, self.handle_session_get_validation_retries(&req).await)
-            }
-            "session.set_system_prompt" => {
-                to_response(id, self.handle_session_set_system_prompt(&req).await)
-            }
-            "session.get_system_prompt" => {
-                to_response(id, self.handle_session_get_system_prompt(&req).await)
-            }
-            "session.set_precognition" => {
-                to_response(id, self.handle_session_set_precognition(&req).await)
-            }
-            "session.get_precognition" => {
-                to_response(id, self.handle_session_get_precognition(&req).await)
-            }
-            "session.set_precognition_results" => {
-                to_response(id, self.handle_session_set_precognition_results(&req).await)
-            }
-            "session.get_precognition_results" => {
-                to_response(id, self.handle_session_get_precognition_results(&req).await)
+            "session.get_thinking_budget"
+            | "session.get_temperature"
+            | "session.get_max_tokens"
+            | "session.get_max_iterations"
+            | "session.get_execution_timeout"
+            | "session.get_context_budget"
+            | "session.get_context_strategy"
+            | "session.get_context_window"
+            | "session.get_output_validation"
+            | "session.get_validation_retries"
+            | "session.get_system_prompt"
+            | "session.get_precognition"
+            | "session.get_precognition_results" => {
+                to_response(
+                    id,
+                    self.dispatch_session_config_getter(&req).await,
+                )
             }
             // Kiln CRUD handlers
             "kiln.open" => to_response(id, self.handle_kiln_open(&req).await),
@@ -507,302 +466,52 @@ impl RpcDispatcher {
         }))
     }
 
-    async fn handle_session_set_thinking_budget(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_set_thinking_budget(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.event_tx,
-        )
-        .await;
+    /// Route a `session.set_*` method to the corresponding server handler.
+    ///
+    /// All session config setters share the signature `(Request, &AgentManager, &Sender) -> Response`.
+    /// This avoids 13 near-identical one-line forwarding methods.
+    async fn dispatch_session_config_setter(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        use crate::server::session;
+        let resp = match req.method.as_str() {
+            "session.set_thinking_budget" => session::handle_session_set_thinking_budget(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
+            "session.set_temperature" => session::handle_session_set_temperature(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
+            "session.set_max_tokens" => session::handle_session_set_max_tokens(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
+            "session.set_max_iterations" => session::handle_session_set_max_iterations(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
+            "session.set_execution_timeout" => session::handle_session_set_execution_timeout(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
+            "session.set_context_budget" => session::handle_session_set_context_budget(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
+            "session.set_context_strategy" => session::handle_session_set_context_strategy(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
+            "session.set_context_window" => session::handle_session_set_context_window(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
+            "session.set_output_validation" => session::handle_session_set_output_validation(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
+            "session.set_validation_retries" => session::handle_session_set_validation_retries(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
+            "session.set_system_prompt" => session::handle_session_set_system_prompt(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
+            "session.set_precognition" => session::handle_session_set_precognition(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
+            "session.set_precognition_results" => session::handle_session_set_precognition_results(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
+            _ => unreachable!("dispatch match already filtered to known setter methods"),
+        };
         map_server_resp(resp)
     }
 
-    async fn handle_session_get_thinking_budget(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_get_thinking_budget(
-            req.clone(),
-            &self.ctx.agents,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_set_temperature(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_set_temperature(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_get_temperature(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::session::handle_session_get_temperature(req.clone(), &self.ctx.agents)
-                .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_set_max_tokens(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_set_max_tokens(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_get_max_tokens(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::session::handle_session_get_max_tokens(req.clone(), &self.ctx.agents)
-                .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_set_max_iterations(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_set_max_iterations(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_get_max_iterations(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_get_max_iterations(
-            req.clone(),
-            &self.ctx.agents,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_set_execution_timeout(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_set_execution_timeout(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_get_execution_timeout(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_get_execution_timeout(
-            req.clone(),
-            &self.ctx.agents,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_set_context_budget(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_set_context_budget(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_get_context_budget(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_get_context_budget(
-            req.clone(),
-            &self.ctx.agents,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_set_context_strategy(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_set_context_strategy(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_get_context_strategy(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_get_context_strategy(
-            req.clone(),
-            &self.ctx.agents,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_set_context_window(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_set_context_window(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_get_context_window(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_get_context_window(
-            req.clone(),
-            &self.ctx.agents,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_set_output_validation(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_set_output_validation(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_get_output_validation(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_get_output_validation(
-            req.clone(),
-            &self.ctx.agents,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_set_validation_retries(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_set_validation_retries(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_get_validation_retries(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_get_validation_retries(
-            req.clone(),
-            &self.ctx.agents,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_set_system_prompt(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_set_system_prompt(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_get_system_prompt(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::session::handle_session_get_system_prompt(req.clone(), &self.ctx.agents)
-                .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_set_precognition(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_set_precognition(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_get_precognition(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::session::handle_session_get_precognition(req.clone(), &self.ctx.agents)
-                .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_set_precognition_results(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_set_precognition_results(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_get_precognition_results(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_get_precognition_results(
-            req.clone(),
-            &self.ctx.agents,
-        )
-        .await;
+    /// Route a `session.get_*` method to the corresponding server handler.
+    ///
+    /// All session config getters share the signature `(Request, &AgentManager) -> Response`.
+    async fn dispatch_session_config_getter(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        use crate::server::session;
+        let resp = match req.method.as_str() {
+            "session.get_thinking_budget" => session::handle_session_get_thinking_budget(req.clone(), &self.ctx.agents).await,
+            "session.get_temperature" => session::handle_session_get_temperature(req.clone(), &self.ctx.agents).await,
+            "session.get_max_tokens" => session::handle_session_get_max_tokens(req.clone(), &self.ctx.agents).await,
+            "session.get_max_iterations" => session::handle_session_get_max_iterations(req.clone(), &self.ctx.agents).await,
+            "session.get_execution_timeout" => session::handle_session_get_execution_timeout(req.clone(), &self.ctx.agents).await,
+            "session.get_context_budget" => session::handle_session_get_context_budget(req.clone(), &self.ctx.agents).await,
+            "session.get_context_strategy" => session::handle_session_get_context_strategy(req.clone(), &self.ctx.agents).await,
+            "session.get_context_window" => session::handle_session_get_context_window(req.clone(), &self.ctx.agents).await,
+            "session.get_output_validation" => session::handle_session_get_output_validation(req.clone(), &self.ctx.agents).await,
+            "session.get_validation_retries" => session::handle_session_get_validation_retries(req.clone(), &self.ctx.agents).await,
+            "session.get_system_prompt" => session::handle_session_get_system_prompt(req.clone(), &self.ctx.agents).await,
+            "session.get_precognition" => session::handle_session_get_precognition(req.clone(), &self.ctx.agents).await,
+            "session.get_precognition_results" => session::handle_session_get_precognition_results(req.clone(), &self.ctx.agents).await,
+            _ => unreachable!("dispatch match already filtered to known getter methods"),
+        };
         map_server_resp(resp)
     }
 

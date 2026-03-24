@@ -83,6 +83,11 @@ fn get_plugin_namespace(lua: &Lua) -> Result<String, mlua::Error> {
     Ok(format!("plugin:{}", plugin_name))
 }
 
+/// Convert a `StorageResult` into an `mlua::Result`, mapping storage errors to Lua runtime errors.
+fn storage_err<T>(result: crucible_core::storage::StorageResult<T>) -> Result<T, mlua::Error> {
+    result.map_err(|e| mlua::Error::runtime(format!("Storage error: {e}")))
+}
+
 /// Upgrade the storage module with a real PropertyStore backend.
 ///
 /// The plugin namespace is determined dynamically from `cru._current_plugin`
@@ -102,9 +107,7 @@ pub fn register_storage_module_with_store(
             let s = Arc::clone(&s);
             async move {
                 let ns = get_plugin_namespace(&lua)?;
-                s.property_set(&entity_id, &ns, &key, &value)
-                    .await
-                    .map_err(|e| mlua::Error::runtime(format!("Storage error: {}", e)))?;
+                storage_err(s.property_set(&entity_id, &ns, &key, &value).await)?;
                 Ok(Value::Boolean(true))
             }
         },
@@ -117,10 +120,9 @@ pub fn register_storage_module_with_store(
         let s = Arc::clone(&s);
         async move {
             let ns = get_plugin_namespace(&lua)?;
-            match s.property_get(&entity_id, &ns, &key).await {
-                Ok(Some(val)) => Ok(Value::String(lua.create_string(&val)?)),
-                Ok(None) => Ok(Value::Nil),
-                Err(e) => Err(mlua::Error::runtime(format!("Storage error: {}", e))),
+            match storage_err(s.property_get(&entity_id, &ns, &key).await)? {
+                Some(val) => Ok(Value::String(lua.create_string(&val)?)),
+                None => Ok(Value::Nil),
             }
         }
     })?;
@@ -132,16 +134,12 @@ pub fn register_storage_module_with_store(
         let s = Arc::clone(&s);
         async move {
             let ns = get_plugin_namespace(&lua)?;
-            match s.property_list(&entity_id, &ns).await {
-                Ok(props) => {
-                    let table = lua.create_table()?;
-                    for (key, value) in props {
-                        table.set(key, value)?;
-                    }
-                    Ok(Value::Table(table))
-                }
-                Err(e) => Err(mlua::Error::runtime(format!("Storage error: {}", e))),
+            let props = storage_err(s.property_list(&entity_id, &ns).await)?;
+            let table = lua.create_table()?;
+            for (key, value) in props {
+                table.set(key, value)?;
             }
+            Ok(Value::Table(table))
         }
     })?;
     storage.set("list", list_fn)?;
@@ -152,16 +150,12 @@ pub fn register_storage_module_with_store(
         let s = Arc::clone(&s);
         async move {
             let ns = get_plugin_namespace(&lua)?;
-            match s.property_find(&ns, &key, &value).await {
-                Ok(ids) => {
-                    let table = lua.create_table()?;
-                    for (i, id) in ids.iter().enumerate() {
-                        table.set(i + 1, id.as_str())?;
-                    }
-                    Ok(Value::Table(table))
-                }
-                Err(e) => Err(mlua::Error::runtime(format!("Storage error: {}", e))),
+            let ids = storage_err(s.property_find(&ns, &key, &value).await)?;
+            let table = lua.create_table()?;
+            for (i, id) in ids.iter().enumerate() {
+                table.set(i + 1, id.as_str())?;
             }
+            Ok(Value::Table(table))
         }
     })?;
     storage.set("find", find_fn)?;
@@ -172,10 +166,8 @@ pub fn register_storage_module_with_store(
         let s = Arc::clone(&s);
         async move {
             let ns = get_plugin_namespace(&lua)?;
-            match s.property_delete(&entity_id, &ns, &key).await {
-                Ok(deleted) => Ok(Value::Boolean(deleted)),
-                Err(e) => Err(mlua::Error::runtime(format!("Storage error: {}", e))),
-            }
+            let deleted = storage_err(s.property_delete(&entity_id, &ns, &key).await)?;
+            Ok(Value::Boolean(deleted))
         }
     })?;
     storage.set("delete", delete_fn)?;
