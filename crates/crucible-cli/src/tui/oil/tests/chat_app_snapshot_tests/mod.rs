@@ -1156,6 +1156,47 @@ fn snapshot_thinking_full_vs_preview() {
     assert_snapshot!("thinking_preview_mode", setup(false));
 }
 
+/// Bug regression: collapsed thinking summary kept its spinner after text started
+/// streaming. The spinner should only appear while thinking is actively in progress
+/// (no text yet). Once text starts, the thinking summary should show a static
+/// "Thought (N words)" label with no spinner, and only the trailing text spinner
+/// should remain.
+#[test]
+fn snapshot_collapsed_thinking_spinner_stops_when_text_streams() {
+    let mut app = OilChatApp::default();
+    app.set_show_thinking(false);
+    app.on_message(ChatAppMsg::UserMessage("Explain this".to_string()));
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "Let me reason through the problem carefully.".to_string(),
+    ));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Here is my explanation.".to_string(),
+    ));
+    // Intentionally NO StreamComplete — still streaming
+
+    let output = render_app(&app);
+
+    // Verify: thinking summary should NOT have a spinner
+    let thinking_line = output
+        .lines()
+        .find(|l| l.contains("Thought") || l.contains("Thinking"))
+        .expect("should have thinking summary line");
+    let spinner_chars = ['◐', '◓', '◑', '◒'];
+    assert!(
+        !spinner_chars.iter().any(|c| thinking_line.contains(*c)),
+        "Thinking summary should not show spinner once text is streaming.\n\
+         Line: {thinking_line}\nFull output:\n{output}"
+    );
+
+    // Verify: there should be a trailing spinner for the streaming text
+    assert!(
+        output.contains('◐'),
+        "Should have a trailing spinner for streaming text.\nFull output:\n{output}"
+    );
+
+    assert_snapshot!(output);
+}
+
 // =============================================================================
 // Lua Primary Arg Override Snapshot Tests (T8)
 // =============================================================================
