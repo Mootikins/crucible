@@ -153,7 +153,8 @@ pub async fn execute(
         return Ok(());
     }
 
-    let formatted = output::format_search_results(&results, format, mode.includes_semantic(), false)?;
+    let formatted =
+        output::format_search_results(&results, format, mode.includes_semantic(), false)?;
     println!("{formatted}");
 
     Ok(())
