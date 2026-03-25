@@ -383,7 +383,11 @@ mod rendering_edge_cases {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 render_to_string(&tree, width)
             }));
-            assert!(result.is_ok(), "render_to_string panicked at width={}", width);
+            assert!(
+                result.is_ok(),
+                "render_to_string panicked at width={}",
+                width
+            );
         }
     }
 

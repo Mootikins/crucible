@@ -57,6 +57,11 @@ pub enum ChatContainer {
     AssistantResponse {
         id: String,
         blocks: Vec<ContentBlock>,
+        /// Whether this response follows a tool/subagent/delegation/shell container,
+        /// meaning the assistant is continuing after an interruption rather than
+        /// starting fresh. Stored at creation time because the preceding container
+        /// may be dropped by graduation before rendering.
+        is_continuation: bool,
     },
 
     /// Group of consecutive tool calls (rendered compactly)
@@ -65,17 +70,8 @@ pub enum ChatContainer {
         tools: Vec<CachedToolCall>,
     },
 
-    /// Subagent execution
-    Subagent {
-        id: String,
-        subagent: CachedSubagent,
-    },
-
-    /// Delegation execution (session-to-session)
-    Delegation {
-        id: String,
-        delegation: CachedSubagent,
-    },
+    /// Agent task execution (subagent or delegation)
+    AgentTask { id: String, agent: CachedSubagent },
 
     /// Shell command execution
     ShellExecution {
@@ -94,8 +90,7 @@ impl ChatContainer {
             Self::UserMessage { id, .. } => id,
             Self::AssistantResponse { id, .. } => id,
             Self::ToolGroup { id, .. } => id,
-            Self::Subagent { id, .. } => id,
-            Self::Delegation { id, .. } => id,
+            Self::AgentTask { id, .. } => id,
             Self::ShellExecution { id, .. } => id,
             Self::SystemMessage { id, .. } => id,
         }
@@ -110,8 +105,7 @@ impl ChatContainer {
             Self::UserMessage { .. } => true,
             Self::AssistantResponse { .. } => false,
             Self::ToolGroup { tools, .. } => tools.iter().all(|t| t.complete),
-            Self::Subagent { subagent, .. } => subagent.is_terminal(),
-            Self::Delegation { delegation, .. } => delegation.is_terminal(),
+            Self::AgentTask { agent, .. } => agent.is_terminal(),
             Self::ShellExecution { .. } => true,
             Self::SystemMessage { .. } => true,
         }
@@ -151,7 +145,7 @@ impl ChatContainer {
                 scrollback(id.clone(), [content_node])
             }
 
-            Self::AssistantResponse { id, blocks } => render_assistant_blocks_with_graduation(
+            Self::AssistantResponse { id, blocks, .. } => render_assistant_blocks_with_graduation(
                 &RenderBlocksParams {
                     container_id: id,
                     blocks,
@@ -176,12 +170,8 @@ impl ChatContainer {
                 }
             }
 
-            Self::Subagent { id, subagent } => {
-                render_subagent_container(id, subagent, params.render_state.spinner_frame)
-            }
-
-            Self::Delegation { id, delegation } => {
-                render_subagent_container(id, delegation, params.render_state.spinner_frame)
+            Self::AgentTask { id, agent } => {
+                render_subagent_container(id, agent, params.render_state.spinner_frame)
             }
 
             Self::ShellExecution { id, shell } => {
@@ -212,7 +202,7 @@ struct RenderBlocksParams<'a> {
 ///
 /// Blocks are rendered in stream-arrival order: thinking blocks appear at their
 /// natural position (between text blocks), not always at the top.
-/// Ctrl+T toggles display density (full vs bounded tail), not position.
+/// Ctrl+T toggles display density (full vs collapsed summary), not position.
 ///
 /// Each completed block gets its own scrollback to enable incremental graduation.
 /// The in-progress block stays in the viewport.
@@ -220,160 +210,25 @@ fn render_assistant_blocks_with_graduation(
     params: &RenderBlocksParams,
     render_state: &RenderState,
 ) -> Node {
-    let mut nodes = Vec::new();
-    let t = crate::tui::oil::theme::active();
-
-    let text_blocks: Vec<&str> = params
-        .blocks
-        .iter()
-        .filter_map(|b| {
-            if let ContentBlock::Text(s) = b {
-                Some(s.as_str())
-            } else {
-                None
-            }
-        })
-        .collect();
-    let has_thinking = params
-        .blocks
-        .iter()
-        .any(|b| matches!(b, ContentBlock::Thinking(_)));
-
-    let complete_text_count = if params.complete || text_blocks.is_empty() {
-        text_blocks.len()
+    let mut nodes = if render_state.show_thinking {
+        render_blocks_full_thinking(params, render_state)
     } else {
-        text_blocks.len().saturating_sub(1)
+        render_blocks_collapsed_thinking(params, render_state)
     };
 
-    let mut text_block_idx = 0usize;
-    let mut thinking_block_idx = 0usize;
-    let mut thinking_summary_emitted = false;
-
-    // When show_thinking=false, emit ONE summary for all thinking blocks.
-    // Compute it once upfront so the per-block loop can skip them.
-    let thinking_summary: Option<Node> = if !render_state.show_thinking && has_thinking {
-        let total_words: usize = params
+    // Streaming spinners (shared logic)
+    let has_text = params
+        .blocks
+        .iter()
+        .any(|b| matches!(b, ContentBlock::Text(s) if !s.is_empty()));
+    let has_thinking_summary = !render_state.show_thinking
+        && params
             .blocks
             .iter()
-            .filter_map(|b| match b {
-                ContentBlock::Thinking(tb) => Some(tb.content.split_whitespace().count()),
-                _ => None,
-            })
-            .sum();
+            .any(|b| matches!(b, ContentBlock::Thinking(_)));
 
-        let node = if !params.complete && total_words == 0 {
-            // Just started thinking — spinner
-            row([
-                text(" "),
-                spinner(None, render_state.spinner_frame)
-                    .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
-                text(" Thinking…").with_style(
-                    Style::new()
-                        .fg(t.resolve_color(t.colors.text_muted))
-                        .italic(),
-                ),
-            ])
-        } else if params.complete {
-            // Done — one-line summary
-            styled(
-                format!(
-                    "  \u{250C}{} Thought ({} words)",
-                    t.decorations.divider_char, total_words
-                ),
-                Style::new()
-                    .fg(t.resolve_color(t.colors.text_muted))
-                    .italic(),
-            )
-        } else {
-            // Still thinking, has some content — spinner with word count
-            row([
-                text(" "),
-                spinner(None, render_state.spinner_frame)
-                    .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
-                styled(
-                    format!(" Thinking… ({} words)", total_words),
-                    Style::new()
-                        .fg(t.resolve_color(t.colors.text_muted))
-                        .italic(),
-                ),
-            ])
-        };
-
-        Some(node)
-    } else {
-        None
-    };
-
-    for block in params.blocks {
-        match block {
-            ContentBlock::Thinking(tb) => {
-                if render_state.show_thinking {
-                    // Full thinking view — each block gets its own scrollback
-                    let thinking_node = render_thinking_block(
-                        &tb.content,
-                        tb.token_count,
-                        render_state.width(),
-                        params.complete,
-                    )
-                    .with_margin(Padding {
-                        top: 1,
-                        ..Default::default()
-                    });
-                    nodes.push(scrollback(
-                        format!("{}-thinking-{thinking_block_idx}", params.container_id),
-                        [thinking_node],
-                    ));
-                } else if !thinking_summary_emitted {
-                    // Hidden thinking — emit the single summary on first encounter
-                    if let Some(ref summary) = thinking_summary {
-                        nodes.push(summary.clone());
-                    }
-                    thinking_summary_emitted = true;
-                }
-                // else: skip subsequent thinking blocks (summary already emitted)
-                thinking_block_idx += 1;
-            }
-            ContentBlock::Text(content) => {
-                if content.is_empty() {
-                    text_block_idx += 1;
-                    continue;
-                }
-
-                let margins = if params.is_continuation || text_block_idx > 0 || has_thinking {
-                    Margins::assistant_continuation()
-                } else {
-                    Margins::assistant()
-                };
-                let style = RenderStyle::natural_with_margins(render_state.width(), margins);
-                let md_node = markdown_to_node_styled(content, style);
-
-                let padding = if text_block_idx == 0 {
-                    Padding::xy(0, 1)
-                } else {
-                    Padding {
-                        bottom: 1,
-                        ..Default::default()
-                    }
-                };
-                let block_node = md_node.with_margin(padding);
-
-                // Wrap completed blocks in scrollback for graduation
-                if text_block_idx < complete_text_count {
-                    nodes.push(scrollback(
-                        format!("{}-block-{text_block_idx}", params.container_id),
-                        [block_node],
-                    ));
-                } else {
-                    // In-progress block - no scrollback, stays in viewport
-                    nodes.push(block_node);
-                }
-                text_block_idx += 1;
-            }
-        }
-    }
-
-    // Show spinner when streaming and no text yet
-    if !params.complete && text_blocks.is_empty() && !thinking_summary_emitted {
+    if !params.complete && !has_text && !has_thinking_summary {
+        let t = crate::tui::oil::theme::active();
         nodes.push(
             row([
                 text(" "),
@@ -385,10 +240,8 @@ fn render_assistant_blocks_with_graduation(
                 ..Default::default()
             }),
         );
-    }
-
-    // Show spinner after text blocks while still streaming
-    if !params.complete && !text_blocks.is_empty() {
+    } else if !params.complete && has_text {
+        let t = crate::tui::oil::theme::active();
         nodes.push(row([
             text(" "),
             spinner(None, render_state.spinner_frame)
@@ -397,6 +250,218 @@ fn render_assistant_blocks_with_graduation(
     }
 
     col(nodes)
+}
+
+/// Render blocks with full thinking content visible (show_thinking=true).
+fn render_blocks_full_thinking(
+    params: &RenderBlocksParams,
+    render_state: &RenderState,
+) -> Vec<Node> {
+    let mut nodes = Vec::new();
+    let has_thinking = params
+        .blocks
+        .iter()
+        .any(|b| matches!(b, ContentBlock::Thinking(_)));
+    let (complete_text_count, _) = text_block_counts(params);
+    let mut text_block_idx = 0usize;
+    let mut thinking_block_idx = 0usize;
+
+    for block in params.blocks {
+        match block {
+            ContentBlock::Thinking(tb) => {
+                let thinking_node = render_thinking_block(
+                    &tb.content,
+                    tb.token_count,
+                    render_state.width(),
+                    params.complete,
+                )
+                .with_margin(Padding {
+                    top: 1,
+                    ..Default::default()
+                });
+                nodes.push(scrollback(
+                    format!("{}-thinking-{thinking_block_idx}", params.container_id),
+                    [thinking_node],
+                ));
+                thinking_block_idx += 1;
+            }
+            ContentBlock::Text(content) => {
+                if let Some(node) = render_text_block(
+                    content,
+                    params,
+                    render_state,
+                    text_block_idx,
+                    complete_text_count,
+                    has_thinking,
+                ) {
+                    nodes.push(node);
+                }
+                text_block_idx += 1;
+            }
+        }
+    }
+
+    nodes
+}
+
+/// Render blocks with thinking collapsed to a one-line summary (show_thinking=false).
+fn render_blocks_collapsed_thinking(
+    params: &RenderBlocksParams,
+    render_state: &RenderState,
+) -> Vec<Node> {
+    let mut nodes = Vec::new();
+    let has_thinking = params
+        .blocks
+        .iter()
+        .any(|b| matches!(b, ContentBlock::Thinking(_)));
+    let (complete_text_count, _) = text_block_counts(params);
+    let mut text_block_idx = 0usize;
+    let mut summary_emitted = false;
+
+    let summary = if has_thinking {
+        Some(build_thinking_summary(params, render_state))
+    } else {
+        None
+    };
+
+    for block in params.blocks {
+        match block {
+            ContentBlock::Thinking(_) => {
+                if !summary_emitted {
+                    if let Some(ref summary_node) = summary {
+                        if params.complete {
+                            nodes.push(scrollback(
+                                format!("{}-thinking-summary", params.container_id),
+                                [summary_node.clone()],
+                            ));
+                        } else {
+                            nodes.push(summary_node.clone());
+                        }
+                    }
+                    summary_emitted = true;
+                }
+            }
+            ContentBlock::Text(content) => {
+                if let Some(node) = render_text_block(
+                    content,
+                    params,
+                    render_state,
+                    text_block_idx,
+                    complete_text_count,
+                    has_thinking,
+                ) {
+                    nodes.push(node);
+                }
+                text_block_idx += 1;
+            }
+        }
+    }
+
+    nodes
+}
+
+/// Count text blocks and determine how many are complete (eligible for graduation).
+fn text_block_counts(params: &RenderBlocksParams) -> (usize, usize) {
+    let total: usize = params
+        .blocks
+        .iter()
+        .filter(|b| matches!(b, ContentBlock::Text(s) if !s.is_empty()))
+        .count();
+    let complete = if params.complete || total == 0 {
+        total
+    } else {
+        total.saturating_sub(1)
+    };
+    (complete, total)
+}
+
+/// Render a single text block with appropriate margins and graduation wrapping.
+fn render_text_block(
+    content: &str,
+    params: &RenderBlocksParams,
+    render_state: &RenderState,
+    text_block_idx: usize,
+    complete_text_count: usize,
+    has_thinking: bool,
+) -> Option<Node> {
+    if content.is_empty() {
+        return None;
+    }
+
+    let margins = if params.is_continuation || text_block_idx > 0 || has_thinking {
+        Margins::assistant_continuation()
+    } else {
+        Margins::assistant()
+    };
+    let style = RenderStyle::natural_with_margins(render_state.width(), margins);
+    let md_node = markdown_to_node_styled(content, style);
+
+    let padding = if text_block_idx == 0 {
+        Padding::xy(0, 1)
+    } else {
+        Padding {
+            bottom: 1,
+            ..Default::default()
+        }
+    };
+    let block_node = md_node.with_margin(padding);
+
+    if text_block_idx < complete_text_count {
+        Some(scrollback(
+            format!("{}-block-{text_block_idx}", params.container_id),
+            [block_node],
+        ))
+    } else {
+        Some(block_node)
+    }
+}
+
+/// Build the collapsed thinking summary node.
+fn build_thinking_summary(params: &RenderBlocksParams, render_state: &RenderState) -> Node {
+    let t = crate::tui::oil::theme::active();
+    let total_words: usize = params
+        .blocks
+        .iter()
+        .filter_map(|b| match b {
+            ContentBlock::Thinking(tb) => Some(tb.content.split_whitespace().count()),
+            _ => None,
+        })
+        .sum();
+
+    if !params.complete && total_words == 0 {
+        row([
+            text(" "),
+            spinner(None, render_state.spinner_frame)
+                .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
+            text(" Thinking…").with_style(
+                Style::new()
+                    .fg(t.resolve_color(t.colors.text_muted))
+                    .italic(),
+            ),
+        ])
+    } else if params.complete {
+        styled(
+            format!(
+                "  \u{250C}{} Thought ({} words)",
+                t.decorations.divider_char, total_words
+            ),
+            Style::new()
+                .fg(t.resolve_color(t.colors.text_muted))
+                .italic(),
+        )
+    } else {
+        row([
+            text(" "),
+            spinner(None, render_state.spinner_frame)
+                .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
+            styled(
+                format!(" Thinking… ({} words)", total_words),
+                Style::new()
+                    .fg(t.resolve_color(t.colors.text_muted))
+                    .italic(),
+            ),
+        ])
+    }
 }
 
 fn render_subagent_container(id: &str, subagent: &CachedSubagent, spinner_frame: usize) -> Node {
@@ -478,14 +543,147 @@ fn ends_with_ordered_list_item(s: &str) -> bool {
     false
 }
 
+/// Split an incoming text delta into paragraph blocks, merging with existing blocks.
+///
+/// Handles:
+/// - `\n\n` paragraph splitting
+/// - Ordered list continuation merging (keeps "1. ...\n\n2. ..." in one block)
+/// - Full-text resend detection (some LLM backends re-emit the full response)
+/// - Empty placeholder management (trailing `\n\n` pushes a placeholder for next delta)
+fn split_and_merge_text_delta(existing: &[String], delta: &str) -> Vec<String> {
+    let mut blocks: Vec<String> = existing.to_vec();
+    let parts: Vec<&str> = delta.split("\n\n").collect();
+
+    if blocks.is_empty() {
+        // First content — build blocks from parts
+        if let Some((first, rest)) = parts.split_first() {
+            if !first.is_empty() {
+                blocks.push(first.to_string());
+            }
+            push_parts_merging_lists(&mut blocks, rest);
+            if delta.ends_with("\n\n") && !blocks.is_empty() {
+                blocks.push(String::new());
+            }
+        }
+    } else if parts.len() == 1 {
+        // No separator — append to current block
+        if try_merge_list_across_placeholder(&mut blocks, delta) {
+            // merged
+        } else if let Some(last) = blocks.last_mut() {
+            if last.is_empty() {
+                *last = delta.to_string();
+            } else if is_full_text_resend(last, delta) {
+                tracing::debug!(
+                    incoming_len = delta.len(),
+                    existing_len = last.len(),
+                    "Skipping duplicate full-text delta"
+                );
+            } else {
+                last.push_str(delta);
+            }
+        }
+    } else {
+        // Has separator(s) — append first part to current, create new blocks for rest
+        if let Some((first, rest)) = parts.split_first() {
+            append_first_part(&mut blocks, first);
+            push_parts_merging_lists(&mut blocks, rest);
+            // Trailing \n\n means next delta should start a fresh block
+            if delta.ends_with("\n\n")
+                && !blocks.is_empty()
+                && !blocks.last().map(|b| b.is_empty()).unwrap_or(false)
+            {
+                blocks.push(String::new());
+            }
+        }
+    }
+
+    blocks
+}
+
+/// Append parts to blocks, merging ordered list continuations with the previous block.
+fn push_parts_merging_lists(blocks: &mut Vec<String>, parts: &[&str]) {
+    for part in parts {
+        if part.is_empty() {
+            continue;
+        }
+        if is_ordered_list_continuation(part)
+            && blocks
+                .last()
+                .map(|b| ends_with_ordered_list_item(b))
+                .unwrap_or(false)
+        {
+            if let Some(last) = blocks.last_mut() {
+                last.push_str("\n\n");
+                last.push_str(part);
+            }
+        } else {
+            blocks.push(part.to_string());
+        }
+    }
+}
+
+/// Try to merge a list continuation across an empty placeholder.
+/// Returns true if merged.
+fn try_merge_list_across_placeholder(blocks: &mut Vec<String>, delta: &str) -> bool {
+    if blocks.len() >= 2
+        && blocks.last().map(|b| b.is_empty()).unwrap_or(false)
+        && is_ordered_list_continuation(delta)
+        && ends_with_ordered_list_item(&blocks[blocks.len() - 2])
+    {
+        blocks.pop();
+        if let Some(prev) = blocks.last_mut() {
+            prev.push_str("\n\n");
+            prev.push_str(delta);
+        }
+        true
+    } else {
+        false
+    }
+}
+
+/// Append the first part of a multi-part delta to the current blocks.
+fn append_first_part(blocks: &mut Vec<String>, first: &str) {
+    // Check if last block is an empty placeholder and first part merges as list continuation
+    if blocks.len() >= 2
+        && blocks.last().map(|b| b.is_empty()).unwrap_or(false)
+        && !first.is_empty()
+        && is_ordered_list_continuation(first)
+        && ends_with_ordered_list_item(&blocks[blocks.len() - 2])
+    {
+        blocks.pop();
+        if let Some(prev) = blocks.last_mut() {
+            prev.push_str("\n\n");
+            prev.push_str(first);
+        }
+        return;
+    }
+
+    if let Some(last) = blocks.last_mut() {
+        if !first.is_empty()
+            && is_ordered_list_continuation(first)
+            && ends_with_ordered_list_item(last)
+        {
+            last.push_str("\n\n");
+        }
+        last.push_str(first);
+    }
+}
+
+/// Detect full-text re-sends from LLM backends.
+fn is_full_text_resend(existing: &str, incoming: &str) -> bool {
+    let incoming = incoming.trim_start_matches('\n');
+    let existing = existing.trim_start_matches('\n');
+    !incoming.is_empty() && incoming == existing
+}
+
 /// Manages the list of chat containers.
 ///
-/// Containers are append-only during a conversation. When content graduates
-/// to stdout, containers are marked but not immediately removed (for efficiency).
+/// Containers are the live (non-graduated) content. When content graduates
+/// to stdout, the backing containers are drained from the front immediately.
 pub struct ContainerList {
     containers: Vec<ChatContainer>,
-    /// Index of first non-graduated container
-    viewport_start: usize,
+    /// Whether any containers have ever graduated (for spacer logic).
+    has_graduated: bool,
     /// Counter for generating unique IDs
     id_counter: u64,
     /// Whether the assistant turn is active (streaming). This stays true
@@ -503,7 +701,7 @@ impl ContainerList {
     pub fn new() -> Self {
         Self {
             containers: Vec::new(),
-            viewport_start: 0,
+            has_graduated: false,
             id_counter: 0,
             turn_active: false,
         }
@@ -538,6 +736,18 @@ impl ContainerList {
         }
     }
 
+    /// Whether the last container implies the next AssistantResponse is a continuation.
+    fn last_implies_continuation(&self) -> bool {
+        matches!(
+            self.containers.last(),
+            Some(
+                ChatContainer::ToolGroup { .. }
+                    | ChatContainer::AgentTask { .. }
+                    | ChatContainer::ShellExecution { .. }
+            )
+        )
+    }
+
     /// Ensure an open AssistantResponse exists and return its index.
     ///
     /// If the last container is already an AssistantResponse and the turn is active,
@@ -548,10 +758,12 @@ impl ContainerList {
                 return self.containers.len() - 1;
             }
         }
+        let is_continuation = self.last_implies_continuation();
         let id = self.next_id("assistant");
         self.containers.push(ChatContainer::AssistantResponse {
             id,
             blocks: Vec::new(),
+            is_continuation,
         });
         self.turn_active = true;
         self.containers.len() - 1
@@ -559,10 +771,12 @@ impl ContainerList {
 
     /// Start a new assistant response (called when streaming begins).
     pub fn start_assistant_response(&mut self) -> &str {
+        let is_continuation = self.last_implies_continuation();
         let id = self.next_id("assistant");
         self.containers.push(ChatContainer::AssistantResponse {
             id,
             blocks: Vec::new(),
+            is_continuation,
         });
         self.turn_active = true;
         self.containers
@@ -582,7 +796,7 @@ impl ContainerList {
                 .iter()
                 .rposition(|b| !matches!(b, ContentBlock::Text(_)))
                 .map_or(0, |i| i + 1);
-            let mut text_blocks: Vec<String> = blocks[trailing_text_start..]
+            let existing: Vec<String> = blocks[trailing_text_start..]
                 .iter()
                 .filter_map(|b| match b {
                     ContentBlock::Text(content) => Some(content.clone()),
@@ -590,135 +804,10 @@ impl ContainerList {
                 })
                 .collect();
 
-            // Check if text contains block separators
-            let parts: Vec<&str> = text.split("\n\n").collect();
-
-            if text_blocks.is_empty() {
-                // First content - add first part as new block
-                if let Some((first, rest)) = parts.split_first() {
-                    if !first.is_empty() {
-                        text_blocks.push(first.to_string());
-                    }
-                    // Add remaining parts, merging ordered list continuations
-                    for part in rest {
-                        if !part.is_empty() {
-                            if is_ordered_list_continuation(part)
-                                && text_blocks
-                                    .last()
-                                    .map(|b| ends_with_ordered_list_item(b))
-                                    .unwrap_or(false)
-                            {
-                                // Merge with previous block to preserve list numbering
-                                if let Some(last) = text_blocks.last_mut() {
-                                    last.push_str("\n\n");
-                                    last.push_str(part);
-                                }
-                            } else {
-                                text_blocks.push(part.to_string());
-                            }
-                        }
-                    }
-                    // Text ended with \n\n — push empty placeholder so next delta
-                    // starts a fresh block instead of appending to the current one
-                    if text.ends_with("\n\n") && !text_blocks.is_empty() {
-                        text_blocks.push(String::new());
-                    }
-                }
-            } else if parts.len() == 1 {
-                // No separator in this text
-                // Check if we should merge a list continuation into the previous block
-                // (the last block is an empty placeholder from a prior \n\n split)
-                let should_merge_list = text_blocks.len() >= 2
-                    && text_blocks.last().map(|b| b.is_empty()).unwrap_or(false)
-                    && is_ordered_list_continuation(text)
-                    && ends_with_ordered_list_item(&text_blocks[text_blocks.len() - 2]);
-
-                if should_merge_list {
-                    // Remove empty placeholder, merge into previous block
-                    text_blocks.pop();
-                    if let Some(prev) = text_blocks.last_mut() {
-                        prev.push_str("\n\n");
-                        prev.push_str(text);
-                    }
-                } else if let Some(last) = text_blocks.last_mut() {
-                    if last.is_empty() {
-                        // Replace placeholder with content
-                        *last = text.to_string();
-                    } else {
-                        // Defense-in-depth: detect full-text re-sends from LLM backends.
-                        // Some backends emit the accumulated response as a final delta.
-                        // If the incoming text (minus leading newline) exactly matches
-                        // the existing block content (minus leading newline), skip it.
-                        let incoming = text.trim_start_matches('\n');
-                        let existing = last.trim_start_matches('\n');
-                        if !incoming.is_empty() && incoming == existing {
-                            tracing::debug!(
-                                incoming_len = text.len(),
-                                existing_len = last.len(),
-                                "Skipping duplicate full-text delta in append_text"
-                            );
-                        } else {
-                            // Append to existing content
-                            last.push_str(text);
-                        }
-                    }
-                }
-            } else {
-                // Has separator(s) - append first part to current, create new blocks for rest
-                if let Some((first, rest)) = parts.split_first() {
-                    // Check if last block is an empty placeholder and first part is a
-                    // list continuation that should merge with the block before it
-                    let merged_list = if text_blocks.len() >= 2
-                        && text_blocks.last().map(|b| b.is_empty()).unwrap_or(false)
-                        && !first.is_empty()
-                        && is_ordered_list_continuation(first)
-                        && ends_with_ordered_list_item(&text_blocks[text_blocks.len() - 2])
-                    {
-                        text_blocks.pop();
-                        if let Some(prev) = text_blocks.last_mut() {
-                            prev.push_str("\n\n");
-                            prev.push_str(first);
-                        }
-                        true
-                    } else {
-                        false
-                    };
-
-                    if !merged_list {
-                        if let Some(last) = text_blocks.last_mut() {
-                            // If the first part is a list continuation and the current block
-                            // ends with a list item, preserve the \n\n separator
-                            if !first.is_empty()
-                                && is_ordered_list_continuation(first)
-                                && ends_with_ordered_list_item(last)
-                            {
-                                last.push_str("\n\n");
-                            }
-                            last.push_str(first);
-                        }
-                    }
-                    // Push parts, merging ordered list continuations
-                    for part in rest {
-                        if !part.is_empty()
-                            && is_ordered_list_continuation(part)
-                            && text_blocks
-                                .last()
-                                .map(|b| ends_with_ordered_list_item(b))
-                                .unwrap_or(false)
-                        {
-                            if let Some(last) = text_blocks.last_mut() {
-                                last.push_str("\n\n");
-                                last.push_str(part);
-                            }
-                        } else {
-                            text_blocks.push(part.to_string());
-                        }
-                    }
-                }
-            }
+            let merged = split_and_merge_text_delta(&existing, text);
 
             blocks.truncate(trailing_text_start);
-            blocks.extend(text_blocks.into_iter().map(ContentBlock::Text));
+            blocks.extend(merged.into_iter().map(ContentBlock::Text));
         }
     }
 
@@ -773,23 +862,13 @@ impl ContainerList {
         // Remove empty trailing AssistantResponse to avoid graduation gaps.
         self.remove_empty_trailing_response();
 
-        // Check if we can add to existing tool group in the viewport
-        // Only append if:
-        // 1. The last container is a ToolGroup
-        // 2. It's still in the viewport (hasn't graduated)
-        // This keeps consecutive tools together during streaming while preventing
-        // tools from being added to already-graduated groups.
-        let can_append = if !self.containers.is_empty() {
-            let last_idx = self.containers.len() - 1;
-            let in_viewport = last_idx >= self.viewport_start;
-            let is_tool_group = matches!(
-                self.containers.last(),
-                Some(ChatContainer::ToolGroup { .. })
-            );
-            in_viewport && is_tool_group
-        } else {
-            false
-        };
+        // Append to existing tool group if the last container is one.
+        // Since graduated containers are already drained, any remaining
+        // container is live and safe to append to.
+        let can_append = matches!(
+            self.containers.last(),
+            Some(ChatContainer::ToolGroup { .. })
+        );
 
         if can_append {
             if let Some(ChatContainer::ToolGroup { tools, .. }) = self.containers.last_mut() {
@@ -842,42 +921,21 @@ impl ContainerList {
         }
     }
 
-    /// Add a subagent.
-    /// Like tools, subagents break the current response.
-    pub fn add_subagent(&mut self, subagent: CachedSubagent) {
-        // Remove empty trailing response to avoid graduation gaps.
+    /// Add an agent task (subagent or delegation).
+    /// Like tools, agent tasks break the current response.
+    pub fn add_agent_task(&mut self, agent: CachedSubagent, id_prefix: &str) {
         self.remove_empty_trailing_response();
 
-        let id = self.next_id("subagent");
-        self.containers
-            .push(ChatContainer::Subagent { id, subagent });
+        let id = self.next_id(id_prefix);
+        self.containers.push(ChatContainer::AgentTask { id, agent });
     }
 
-    /// Update a subagent by ID.
-    pub fn update_subagent(&mut self, subagent_id: &str, f: impl FnOnce(&mut CachedSubagent)) {
+    /// Update an agent task by its agent ID.
+    pub fn update_agent_task(&mut self, agent_id: &str, f: impl FnOnce(&mut CachedSubagent)) {
         for container in self.containers.iter_mut().rev() {
-            if let ChatContainer::Subagent { subagent, .. } = container {
-                if subagent.id.as_ref() == subagent_id {
-                    f(subagent);
-                    return;
-                }
-            }
-        }
-    }
-
-    pub fn add_delegation(&mut self, delegation: CachedSubagent) {
-        self.remove_empty_trailing_response();
-
-        let id = self.next_id("delegation");
-        self.containers
-            .push(ChatContainer::Delegation { id, delegation });
-    }
-
-    pub fn update_delegation(&mut self, delegation_id: &str, f: impl FnOnce(&mut CachedSubagent)) {
-        for container in self.containers.iter_mut().rev() {
-            if let ChatContainer::Delegation { delegation, .. } = container {
-                if delegation.id.as_ref() == delegation_id {
-                    f(delegation);
+            if let ChatContainer::AgentTask { agent, .. } = container {
+                if agent.id.as_ref() == agent_id {
+                    f(agent);
                     return;
                 }
             }
@@ -891,38 +949,30 @@ impl ContainerList {
             .push(ChatContainer::SystemMessage { id, content });
     }
 
-    /// Mark containers as graduated.
+    /// Drop graduated containers from the front.
+    ///
+    /// Graduated IDs form a monotonic prefix — count how many leading
+    /// containers are graduated, then drain them in a single operation.
     pub fn graduate(&mut self, graduated_ids: &[String]) {
-        // Move viewport_start past graduated containers
-        while self.viewport_start < self.containers.len() {
-            let id = self.containers[self.viewport_start].id();
-            if graduated_ids.contains(&id.to_string()) {
-                self.viewport_start += 1;
-            } else {
-                break;
-            }
-        }
-
-        // Compact if we've accumulated too many graduated containers
-        if self.viewport_start > 100 {
-            self.containers.drain(0..self.viewport_start);
-            self.viewport_start = 0;
+        let count = self
+            .containers
+            .iter()
+            .take_while(|c| graduated_ids.iter().any(|id| id == c.id()))
+            .count();
+        if count > 0 {
+            self.containers.drain(0..count);
+            self.has_graduated = true;
         }
     }
 
-    /// Get non-graduated containers for viewport rendering.
-    pub fn viewport_containers(&self) -> &[ChatContainer] {
-        &self.containers[self.viewport_start..]
-    }
-
-    /// Index of the first non-graduated container.
-    pub fn viewport_start_index(&self) -> usize {
-        self.viewport_start
-    }
-
-    /// Get all containers (including graduated, for debugging).
-    pub fn all_containers(&self) -> &[ChatContainer] {
+    /// Get all live (non-graduated) containers.
+    pub fn containers(&self) -> &[ChatContainer] {
         &self.containers
+    }
+
+    /// Whether any containers have ever graduated to stdout.
+    pub fn has_graduated(&self) -> bool {
+        self.has_graduated
     }
 
     /// Check if there are any containers.
@@ -952,31 +1002,6 @@ impl ContainerList {
         index + 1 < self.containers.len()
     }
 
-    /// Derive whether a container at the given index is a continuation response.
-    ///
-    /// An AssistantResponse is a continuation if the container before it is a
-    /// ToolGroup, Subagent, or ShellExecution — meaning the assistant is
-    /// continuing after a tool call rather than starting a fresh response.
-    pub fn is_continuation(&self, index: usize) -> bool {
-        if index == 0 {
-            return false;
-        }
-        // Only relevant for AssistantResponse containers
-        if !matches!(
-            &self.containers[index],
-            ChatContainer::AssistantResponse { .. }
-        ) {
-            return false;
-        }
-        matches!(
-            &self.containers[index - 1],
-            ChatContainer::ToolGroup { .. }
-                | ChatContainer::Subagent { .. }
-                | ChatContainer::Delegation { .. }
-                | ChatContainer::ShellExecution { .. }
-        )
-    }
-
     /// Whether the container list needs a turn-level spinner appended.
     ///
     /// Returns true when the turn is active but the last container doesn't
@@ -993,8 +1018,7 @@ impl ContainerList {
             Some(ChatContainer::AssistantResponse { .. }) => false,
             // ToolGroup with any pending tool already shows braille spinners
             Some(ChatContainer::ToolGroup { tools, .. }) => tools.iter().all(|t| t.complete),
-            Some(ChatContainer::Subagent { subagent, .. }) => subagent.is_terminal(),
-            Some(ChatContainer::Delegation { delegation, .. }) => delegation.is_terminal(),
+            Some(ChatContainer::AgentTask { agent, .. }) => agent.is_terminal(),
             _ => true,
         }
     }
@@ -1080,7 +1104,7 @@ impl ContainerList {
     /// Clear all containers.
     pub fn clear(&mut self) {
         self.containers.clear();
-        self.viewport_start = 0;
+        self.has_graduated = false;
         self.turn_active = false;
     }
 }
@@ -1286,16 +1310,18 @@ mod tests {
 
         let user_id = list.containers[0].id().to_string();
 
-        // Initially all in viewport
-        assert_eq!(list.viewport_containers().len(), 2);
+        // Initially both containers present
+        assert_eq!(list.containers().len(), 2);
+        assert!(!list.has_graduated());
 
-        // Graduate user message
+        // Graduate user message — it gets dropped
         list.graduate(&[user_id]);
 
-        // Only assistant response in viewport now
-        assert_eq!(list.viewport_containers().len(), 1);
+        // Only assistant response remains
+        assert_eq!(list.containers().len(), 1);
+        assert!(list.has_graduated());
         assert!(matches!(
-            &list.viewport_containers()[0],
+            &list.containers()[0],
             ChatContainer::AssistantResponse { .. }
         ));
     }
@@ -1310,7 +1336,7 @@ mod tests {
         list.complete_response();
 
         // Render each container and verify it produces a non-empty node
-        for container in list.viewport_containers() {
+        for container in list.containers() {
             let node = container.view(80, 0, false, false, true);
             assert!(
                 !matches!(node, Node::Empty),
@@ -1345,7 +1371,7 @@ mod tests {
 
         list.add_tool_call(tool);
 
-        let containers = list.viewport_containers();
+        let containers = list.containers();
         assert_eq!(containers.len(), 1);
         assert!(matches!(containers[0], ChatContainer::ToolGroup { .. }));
 
@@ -1400,7 +1426,7 @@ mod tests {
         list.add_user_message("Second".to_string());
         list.add_user_message("Third".to_string());
 
-        assert_eq!(list.viewport_containers().len(), 3);
+        assert_eq!(list.containers().len(), 3);
 
         // Graduate first two
         let ids: Vec<String> = list.containers[..2]
@@ -1409,9 +1435,9 @@ mod tests {
             .collect();
         list.graduate(&ids);
 
-        // Only third should remain in viewport
-        assert_eq!(list.viewport_containers().len(), 1);
-        assert!(list.viewport_containers()[0].id().contains("user-"));
+        // Only third should remain
+        assert_eq!(list.containers().len(), 1);
+        assert!(list.containers()[0].id().contains("user-"));
     }
 
     #[test]
@@ -1566,7 +1592,7 @@ mod tests {
 
             // Debug: print container state
             eprintln!("\n=== After {} ===", desc);
-            for (i, c) in app.container_list().all_containers().iter().enumerate() {
+            for (i, c) in app.container_list().containers().iter().enumerate() {
                 match c {
                     ChatContainer::UserMessage { id, content } => {
                         eprintln!("{}: User({}): {:.30}", i, id, content);
@@ -1590,7 +1616,7 @@ mod tests {
         app.on_message(ChatAppMsg::StreamComplete);
 
         eprintln!("\n=== After StreamComplete ===");
-        for (i, c) in app.container_list().all_containers().iter().enumerate() {
+        for (i, c) in app.container_list().containers().iter().enumerate() {
             match c {
                 ChatContainer::UserMessage { id, content } => {
                     eprintln!("{}: User({}): {:.30}", i, id, content);
