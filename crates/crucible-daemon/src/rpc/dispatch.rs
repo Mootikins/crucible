@@ -189,10 +189,7 @@ impl RpcDispatcher {
             | "session.set_system_prompt"
             | "session.set_precognition"
             | "session.set_precognition_results" => {
-                to_response(
-                    id,
-                    self.dispatch_session_config_setter(&req).await,
-                )
+                to_response(id, self.dispatch_session_config_setter(&req).await)
             }
             "session.get_thinking_budget"
             | "session.get_temperature"
@@ -207,10 +204,7 @@ impl RpcDispatcher {
             | "session.get_system_prompt"
             | "session.get_precognition"
             | "session.get_precognition_results" => {
-                to_response(
-                    id,
-                    self.dispatch_session_config_getter(&req).await,
-                )
+                to_response(id, self.dispatch_session_config_getter(&req).await)
             }
             // Kiln CRUD handlers
             "kiln.open" => to_response(id, self.handle_kiln_open(&req).await),
@@ -473,19 +467,110 @@ impl RpcDispatcher {
     async fn dispatch_session_config_setter(&self, req: &Request) -> RpcResult<serde_json::Value> {
         use crate::server::session;
         let resp = match req.method.as_str() {
-            "session.set_thinking_budget" => session::handle_session_set_thinking_budget(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
-            "session.set_temperature" => session::handle_session_set_temperature(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
-            "session.set_max_tokens" => session::handle_session_set_max_tokens(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
-            "session.set_max_iterations" => session::handle_session_set_max_iterations(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
-            "session.set_execution_timeout" => session::handle_session_set_execution_timeout(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
-            "session.set_context_budget" => session::handle_session_set_context_budget(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
-            "session.set_context_strategy" => session::handle_session_set_context_strategy(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
-            "session.set_context_window" => session::handle_session_set_context_window(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
-            "session.set_output_validation" => session::handle_session_set_output_validation(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
-            "session.set_validation_retries" => session::handle_session_set_validation_retries(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
-            "session.set_system_prompt" => session::handle_session_set_system_prompt(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
-            "session.set_precognition" => session::handle_session_set_precognition(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
-            "session.set_precognition_results" => session::handle_session_set_precognition_results(req.clone(), &self.ctx.agents, &self.ctx.event_tx).await,
+            "session.set_thinking_budget" => {
+                session::handle_session_set_thinking_budget(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx,
+                )
+                .await
+            }
+            "session.set_temperature" => {
+                session::handle_session_set_temperature(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx,
+                )
+                .await
+            }
+            "session.set_max_tokens" => {
+                session::handle_session_set_max_tokens(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx,
+                )
+                .await
+            }
+            "session.set_max_iterations" => {
+                session::handle_session_set_max_iterations(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx,
+                )
+                .await
+            }
+            "session.set_execution_timeout" => {
+                session::handle_session_set_execution_timeout(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx,
+                )
+                .await
+            }
+            "session.set_context_budget" => {
+                session::handle_session_set_context_budget(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx,
+                )
+                .await
+            }
+            "session.set_context_strategy" => {
+                session::handle_session_set_context_strategy(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx,
+                )
+                .await
+            }
+            "session.set_context_window" => {
+                session::handle_session_set_context_window(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx,
+                )
+                .await
+            }
+            "session.set_output_validation" => {
+                session::handle_session_set_output_validation(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx,
+                )
+                .await
+            }
+            "session.set_validation_retries" => {
+                session::handle_session_set_validation_retries(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx,
+                )
+                .await
+            }
+            "session.set_system_prompt" => {
+                session::handle_session_set_system_prompt(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx,
+                )
+                .await
+            }
+            "session.set_precognition" => {
+                session::handle_session_set_precognition(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx,
+                )
+                .await
+            }
+            "session.set_precognition_results" => {
+                session::handle_session_set_precognition_results(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx,
+                )
+                .await
+            }
             _ => unreachable!("dispatch match already filtered to known setter methods"),
         };
         map_server_resp(resp)
@@ -497,19 +582,46 @@ impl RpcDispatcher {
     async fn dispatch_session_config_getter(&self, req: &Request) -> RpcResult<serde_json::Value> {
         use crate::server::session;
         let resp = match req.method.as_str() {
-            "session.get_thinking_budget" => session::handle_session_get_thinking_budget(req.clone(), &self.ctx.agents).await,
-            "session.get_temperature" => session::handle_session_get_temperature(req.clone(), &self.ctx.agents).await,
-            "session.get_max_tokens" => session::handle_session_get_max_tokens(req.clone(), &self.ctx.agents).await,
-            "session.get_max_iterations" => session::handle_session_get_max_iterations(req.clone(), &self.ctx.agents).await,
-            "session.get_execution_timeout" => session::handle_session_get_execution_timeout(req.clone(), &self.ctx.agents).await,
-            "session.get_context_budget" => session::handle_session_get_context_budget(req.clone(), &self.ctx.agents).await,
-            "session.get_context_strategy" => session::handle_session_get_context_strategy(req.clone(), &self.ctx.agents).await,
-            "session.get_context_window" => session::handle_session_get_context_window(req.clone(), &self.ctx.agents).await,
-            "session.get_output_validation" => session::handle_session_get_output_validation(req.clone(), &self.ctx.agents).await,
-            "session.get_validation_retries" => session::handle_session_get_validation_retries(req.clone(), &self.ctx.agents).await,
-            "session.get_system_prompt" => session::handle_session_get_system_prompt(req.clone(), &self.ctx.agents).await,
-            "session.get_precognition" => session::handle_session_get_precognition(req.clone(), &self.ctx.agents).await,
-            "session.get_precognition_results" => session::handle_session_get_precognition_results(req.clone(), &self.ctx.agents).await,
+            "session.get_thinking_budget" => {
+                session::handle_session_get_thinking_budget(req.clone(), &self.ctx.agents).await
+            }
+            "session.get_temperature" => {
+                session::handle_session_get_temperature(req.clone(), &self.ctx.agents).await
+            }
+            "session.get_max_tokens" => {
+                session::handle_session_get_max_tokens(req.clone(), &self.ctx.agents).await
+            }
+            "session.get_max_iterations" => {
+                session::handle_session_get_max_iterations(req.clone(), &self.ctx.agents).await
+            }
+            "session.get_execution_timeout" => {
+                session::handle_session_get_execution_timeout(req.clone(), &self.ctx.agents).await
+            }
+            "session.get_context_budget" => {
+                session::handle_session_get_context_budget(req.clone(), &self.ctx.agents).await
+            }
+            "session.get_context_strategy" => {
+                session::handle_session_get_context_strategy(req.clone(), &self.ctx.agents).await
+            }
+            "session.get_context_window" => {
+                session::handle_session_get_context_window(req.clone(), &self.ctx.agents).await
+            }
+            "session.get_output_validation" => {
+                session::handle_session_get_output_validation(req.clone(), &self.ctx.agents).await
+            }
+            "session.get_validation_retries" => {
+                session::handle_session_get_validation_retries(req.clone(), &self.ctx.agents).await
+            }
+            "session.get_system_prompt" => {
+                session::handle_session_get_system_prompt(req.clone(), &self.ctx.agents).await
+            }
+            "session.get_precognition" => {
+                session::handle_session_get_precognition(req.clone(), &self.ctx.agents).await
+            }
+            "session.get_precognition_results" => {
+                session::handle_session_get_precognition_results(req.clone(), &self.ctx.agents)
+                    .await
+            }
             _ => unreachable!("dispatch match already filtered to known getter methods"),
         };
         map_server_resp(resp)

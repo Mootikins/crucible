@@ -10,18 +10,13 @@ use std::str::FromStr;
 use crate::serde_helpers::default_true;
 
 /// Strategy for managing conversation context when it exceeds the token budget.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ContextStrategy {
     /// Drop oldest non-system messages until under budget (default)
+    #[default]
     Truncate,
     /// Keep system prompt + last N message pairs
     SlidingWindow,
-}
-
-impl Default for ContextStrategy {
-    fn default() -> Self {
-        Self::Truncate
-    }
 }
 
 impl std::fmt::Display for ContextStrategy {
@@ -49,20 +44,15 @@ impl FromStr for ContextStrategy {
 }
 
 /// Validation to apply to agent text responses before returning to the user.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum OutputValidation {
     /// No validation (default)
+    #[default]
     None,
     /// Response must be valid JSON
     Json,
     /// Response must match the given regex pattern
     Regex(String),
-}
-
-impl Default for OutputValidation {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 impl std::fmt::Display for OutputValidation {

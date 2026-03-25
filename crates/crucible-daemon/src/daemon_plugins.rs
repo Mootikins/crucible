@@ -54,8 +54,7 @@ impl DaemonPluginLoader {
     /// **Not** registered (UI-only):
     /// - `cru.oil`, `cru.popup`, `cru.panel`, `cru.statusline`
     pub fn new(plugin_config: HashMap<String, serde_json::Value>) -> anyhow::Result<Self> {
-        let executor =
-            LuaExecutor::new().map_err(|e| anyhow::anyhow!("LuaExecutor init: {e}"))?;
+        let executor = LuaExecutor::new().map_err(|e| anyhow::anyhow!("LuaExecutor init: {e}"))?;
 
         // LuaExecutor::new() already registers: http, fs, timer, ratelimit, lua_stdlib.
         // Register additional daemon-specific modules here.
