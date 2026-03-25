@@ -428,38 +428,34 @@ fn build_thinking_summary(params: &RenderBlocksParams, render_state: &RenderStat
         })
         .sum();
 
+    let has_text = params
+        .blocks
+        .iter()
+        .any(|b| matches!(b, ContentBlock::Text(s) if !s.is_empty()));
+
+    let muted = Style::new()
+        .fg(t.resolve_color(t.colors.text_muted))
+        .italic();
+
     if !params.complete && total_words == 0 {
+        // Just started thinking, no words yet
         row([
             text(" "),
             spinner(None, render_state.spinner_frame)
                 .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
-            text(" Thinking…").with_style(
-                Style::new()
-                    .fg(t.resolve_color(t.colors.text_muted))
-                    .italic(),
-            ),
+            text(" Thinking…").with_style(muted),
         ])
-    } else if params.complete {
-        styled(
-            format!(
-                "  \u{250C}{} Thought ({} words)",
-                t.decorations.divider_char, total_words
-            ),
-            Style::new()
-                .fg(t.resolve_color(t.colors.text_muted))
-                .italic(),
-        )
+    } else if params.complete || has_text {
+        // Thinking is done (either turn complete or text has started streaming).
+        // Use ◇ aligned with other chat node icons (✓, ✗, ●) at col 1.
+        styled(format!(" \u{25C7} Thought ({} words)", total_words), muted)
     } else {
+        // Still thinking, accumulating words, no text yet
         row([
             text(" "),
             spinner(None, render_state.spinner_frame)
                 .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
-            styled(
-                format!(" Thinking… ({} words)", total_words),
-                Style::new()
-                    .fg(t.resolve_color(t.colors.text_muted))
-                    .italic(),
-            ),
+            styled(format!(" Thinking… ({} words)", total_words), muted),
         ])
     }
 }
@@ -1940,4 +1936,102 @@ mod tests {
             "summary mode should show word count:\n{bounded_output}"
         );
     }
+
+    /// Bug: when streaming text after a thinking block, the spinner stays on the
+    /// "Thinking… (N words)" summary even after text output has started.
+    /// The thinking summary spinner should stop once text content begins streaming.
+    #[test]
+    fn thinking_summary_spinner_stops_when_text_starts_streaming() {
+        use crucible_oil::render::render_to_plain_text;
+
+        let spinner_chars: Vec<char> = vec!['◐', '◓', '◑', '◒'];
+
+        // Scenario: thinking complete, text streaming (not complete)
+        let blocks = vec![
+            ContentBlock::Thinking(ThinkingBlock {
+                content: "let me reason about this carefully".to_string(),
+                token_count: 10,
+            }),
+            ContentBlock::Text("Here is my response so far".to_string()),
+        ];
+
+        let params = super::RenderBlocksParams {
+            container_id: "test-spinner",
+            blocks: &blocks,
+            complete: false, // still streaming
+            is_continuation: false,
+        };
+        let render_state = super::RenderState {
+            terminal_width: 80,
+            spinner_frame: 0,
+            show_thinking: false, // collapsed thinking
+        };
+
+        let node = super::render_assistant_blocks_with_graduation(&params, &render_state);
+        let output = render_to_plain_text(&node, 80);
+
+        // The thinking summary line should NOT have a spinner — text has started
+        let thinking_line = output
+            .lines()
+            .find(|l| l.contains("Thinking") || l.contains("Thought"))
+            .expect("should have thinking summary line");
+
+        assert!(
+            !spinner_chars.iter().any(|c| thinking_line.contains(*c)),
+            "Thinking summary should not show spinner once text is streaming.\nLine: {thinking_line}\nFull output:\n{output}"
+        );
+
+        // There SHOULD still be a trailing spinner (for the streaming text)
+        let has_trailing_spinner = output
+            .lines()
+            .last()
+            .map(|l| spinner_chars.iter().any(|c| l.contains(*c)))
+            .unwrap_or(false);
+        assert!(
+            has_trailing_spinner,
+            "Should have a trailing spinner for streaming text.\nFull output:\n{output}"
+        );
+    }
+
+    /// The completed thinking summary should use a thinking-specific icon,
+    /// not ┌─ (box drawing corner) which implies content below it.
+    #[test]
+    fn completed_thinking_summary_uses_thinking_icon_not_box_corner() {
+        use crucible_oil::render::render_to_plain_text;
+
+        let blocks = vec![
+            ContentBlock::Thinking(ThinkingBlock {
+                content: "deep thoughts about architecture".to_string(),
+                token_count: 8,
+            }),
+            ContentBlock::Text("Here is my answer.".to_string()),
+        ];
+
+        let params = super::RenderBlocksParams {
+            container_id: "test-icon",
+            blocks: &blocks,
+            complete: true,
+            is_continuation: false,
+        };
+        let render_state = super::RenderState {
+            terminal_width: 80,
+            spinner_frame: 0,
+            show_thinking: false,
+        };
+
+        let node = super::render_assistant_blocks_with_graduation(&params, &render_state);
+        let output = render_to_plain_text(&node, 80);
+
+        let thought_line = output
+            .lines()
+            .find(|l| l.contains("Thought"))
+            .expect("should have 'Thought (N words)' line");
+
+        // Should NOT use box-drawing corner ┌ when thinking is collapsed
+        assert!(
+            !thought_line.contains('\u{250C}'),
+            "Collapsed thinking summary should not use box-drawing corner ┌\nLine: {thought_line}"
+        );
+    }
+
 }
