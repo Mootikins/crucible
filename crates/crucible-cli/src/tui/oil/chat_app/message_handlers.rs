@@ -204,17 +204,17 @@ impl OilChatApp {
                     self.container_list.mark_turn_active();
                 }
                 self.container_list
-                    .add_subagent(CachedSubagent::new(id, &prompt, "subagent"));
+                    .add_agent_task(CachedSubagent::new(id, &prompt, "subagent"), "subagent");
                 Action::Continue
             }
             ChatAppMsg::SubagentCompleted { id, summary } => {
-                self.container_list.update_subagent(&id, |s| {
+                self.container_list.update_agent_task(&id, |s| {
                     s.mark_completed(&summary);
                 });
                 Action::Continue
             }
             ChatAppMsg::SubagentFailed { id, error } => {
-                self.container_list.update_subagent(&id, |s| {
+                self.container_list.update_agent_task(&id, |s| {
                     s.mark_failed(&error);
                 });
                 Action::Continue
@@ -229,7 +229,7 @@ impl OilChatApp {
                 }
                 let mut delegation = CachedSubagent::new(id.clone(), &prompt, "delegation");
                 delegation.target_agent = target_agent.clone();
-                self.container_list.add_delegation(delegation);
+                self.container_list.add_agent_task(delegation, "delegation");
                 if !self
                     .container_list
                     .supersede_most_recent_tool("delegate_session")
@@ -239,13 +239,13 @@ impl OilChatApp {
                 Action::Continue
             }
             ChatAppMsg::DelegationCompleted { id, summary } => {
-                self.container_list.update_delegation(&id, |d| {
+                self.container_list.update_agent_task(&id, |d| {
                     d.mark_completed(&summary);
                 });
                 Action::Continue
             }
             ChatAppMsg::DelegationFailed { id, error } => {
-                self.container_list.update_delegation(&id, |d| {
+                self.container_list.update_agent_task(&id, |d| {
                     d.mark_failed(&error);
                 });
                 Action::Continue

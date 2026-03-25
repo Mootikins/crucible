@@ -34,7 +34,7 @@ fn test_user_message() {
     app.add_user_message("Hello".to_string());
 
     assert_eq!(app.container_list().len(), 1);
-    if let ChatContainer::UserMessage { content, .. } = &app.container_list().all_containers()[0] {
+    if let ChatContainer::UserMessage { content, .. } = &app.container_list().containers()[0] {
         assert_eq!(content, "Hello");
     } else {
         panic!("Expected UserMessage");
@@ -55,7 +55,7 @@ fn test_streaming_flow() {
     assert!(!app.is_streaming());
 
     // Verify content via container list
-    let containers = app.container_list().all_containers();
+    let containers = app.container_list().containers();
     assert_eq!(containers.len(), 1);
     if let ChatContainer::AssistantResponse { blocks, .. } = &containers[0] {
         let combined = blocks
@@ -1015,7 +1015,7 @@ fn precognition_result_shows_system_message() {
         notes: vec![],
     });
 
-    let containers = app.container_list().all_containers();
+    let containers = app.container_list().containers();
     assert_eq!(containers.len(), 1);
     if let ChatContainer::SystemMessage { content, .. } = &containers[0] {
         assert_eq!(content, "Found 3 relevant notes");
@@ -1048,7 +1048,7 @@ fn precognition_result_single_note_primary_kiln() {
         }],
     });
 
-    let containers = app.container_list().all_containers();
+    let containers = app.container_list().containers();
     assert_eq!(containers.len(), 1);
     if let ChatContainer::SystemMessage { content, .. } = &containers[0] {
         assert!(content.contains("Found 1 relevant notes:"));
@@ -1081,7 +1081,7 @@ fn precognition_result_mixed_kilns() {
         ],
     });
 
-    let containers = app.container_list().all_containers();
+    let containers = app.container_list().containers();
     assert_eq!(containers.len(), 1);
     if let ChatContainer::SystemMessage { content, .. } = &containers[0] {
         assert!(content.contains("Found 3 relevant notes:"));
@@ -1155,7 +1155,7 @@ fn plugins_command_no_plugins_shows_message() {
     let mut app = OilChatApp::init();
     let action = app.handle_repl_command(":plugins");
     assert!(matches!(action, Action::Continue));
-    let containers = app.container_list().all_containers();
+    let containers = app.container_list().containers();
     assert_eq!(containers.len(), 1);
     if let ChatContainer::SystemMessage { content, .. } = &containers[0] {
         assert!(content.contains("No plugins found"));
@@ -1183,7 +1183,7 @@ fn plugins_command_shows_status() {
     ]);
     let action = app.handle_repl_command(":plugins");
     assert!(matches!(action, Action::Continue));
-    let containers = app.container_list().all_containers();
+    let containers = app.container_list().containers();
     assert_eq!(containers.len(), 1);
     if let ChatContainer::SystemMessage { content, .. } = &containers[0] {
         assert!(content.contains("Plugins (2):"), "Header with count");

@@ -359,7 +359,7 @@ fn blank_line_between_graduated_prompt_and_streaming_response() {
     );
     app.mark_graduated(graduated_keys);
 
-    // Frame 2: viewport_start is now > 0, viewport has blank line spacer
+    // Frame 2: containers have graduated, viewport has blank line spacer
     let ctx2 = ViewContext::new(&focus);
     let tree2 = app.view(&ctx2);
     let snapshot2 = planner.plan(&tree2);

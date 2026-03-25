@@ -69,27 +69,32 @@ impl OilChatApp {
 
     /// Render chat content using the container-based architecture.
     ///
-    /// This renders all viewport containers (non-graduated) in order.
+    /// This renders all live containers (graduated ones are already dropped).
     /// Each container is wrapped in scrollback with its stable ID.
     pub(super) fn render_containers(&self) -> Node {
         let term_width = self.terminal_size.get().0 as usize;
-        let containers = self.container_list.viewport_containers();
+        let containers = self.container_list.containers();
 
         let mut nodes: Vec<Node> = containers
             .iter()
             .enumerate()
             .map(|(i, c)| {
-                use crate::tui::oil::chat_container::ViewParams;
-                let container_idx = self.container_list.viewport_start_index() + i;
+                use crate::tui::oil::chat_container::{ChatContainer, ViewParams};
                 let render_state = RenderState {
                     terminal_width: term_width as u16,
                     spinner_frame: self.spinner_frame,
                     show_thinking: self.show_thinking,
                 };
+                let is_continuation = match c {
+                    ChatContainer::AssistantResponse {
+                        is_continuation, ..
+                    } => *is_continuation,
+                    _ => false,
+                };
                 let params = ViewParams {
                     render_state,
-                    is_continuation: self.container_list.is_continuation(container_idx),
-                    is_complete: self.container_list.is_response_complete(container_idx),
+                    is_continuation,
+                    is_complete: self.container_list.is_response_complete(i),
                 };
                 c.view_with_params(&params)
             })
@@ -121,7 +126,7 @@ impl OilChatApp {
         // When graduated content exists above in stdout, insert a spacer line
         // so the viewport starts with a blank line (visual separation from
         // the graduated user prompt / previous content).
-        if self.container_list.viewport_start_index() > 0 {
+        if self.container_list.has_graduated() {
             nodes.insert(0, text(" "));
         }
 
