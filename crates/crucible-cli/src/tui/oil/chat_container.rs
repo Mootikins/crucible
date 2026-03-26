@@ -305,6 +305,8 @@ fn render_blocks_full_thinking(
 }
 
 /// Render blocks with thinking collapsed to a one-line summary (show_thinking=false).
+/// The summary always renders first regardless of block order — thinking logically
+/// precedes the text it produced, even if events arrived out of order.
 fn render_blocks_collapsed_thinking(
     params: &RenderBlocksParams,
     render_state: &RenderState,
@@ -316,44 +318,40 @@ fn render_blocks_collapsed_thinking(
         .any(|b| matches!(b, ContentBlock::Thinking(_)));
     let (complete_text_count, _) = text_block_counts(params);
     let mut text_block_idx = 0usize;
-    let mut summary_emitted = false;
 
-    let summary = if has_thinking {
-        Some(build_thinking_summary(params, render_state))
-    } else {
-        None
-    };
+    // Emit thinking summary first — before any text blocks.
+    // Graduate to scrollback once text starts streaming (not just on complete),
+    // so the summary doesn't consume viewport space during text streaming.
+    if has_thinking {
+        let has_text = params
+            .blocks
+            .iter()
+            .any(|b| matches!(b, ContentBlock::Text(s) if !s.is_empty()));
+        let summary_node = build_thinking_summary(params, render_state);
+        if params.complete || has_text {
+            nodes.push(scrollback(
+                format!("{}-thinking-summary", params.container_id),
+                [summary_node],
+            ));
+        } else {
+            nodes.push(summary_node);
+        }
+    }
 
+    // Then emit text blocks only (thinking blocks are already summarized above).
     for block in params.blocks {
-        match block {
-            ContentBlock::Thinking(_) => {
-                if !summary_emitted {
-                    if let Some(ref summary_node) = summary {
-                        if params.complete {
-                            nodes.push(scrollback(
-                                format!("{}-thinking-summary", params.container_id),
-                                [summary_node.clone()],
-                            ));
-                        } else {
-                            nodes.push(summary_node.clone());
-                        }
-                    }
-                    summary_emitted = true;
-                }
+        if let ContentBlock::Text(content) = block {
+            if let Some(node) = render_text_block(
+                content,
+                params,
+                render_state,
+                text_block_idx,
+                complete_text_count,
+                has_thinking,
+            ) {
+                nodes.push(node);
             }
-            ContentBlock::Text(content) => {
-                if let Some(node) = render_text_block(
-                    content,
-                    params,
-                    render_state,
-                    text_block_idx,
-                    complete_text_count,
-                    has_thinking,
-                ) {
-                    nodes.push(node);
-                }
-                text_block_idx += 1;
-            }
+            text_block_idx += 1;
         }
     }
 
@@ -448,7 +446,13 @@ fn build_thinking_summary(params: &RenderBlocksParams, render_state: &RenderStat
     } else if params.complete || has_text {
         // Thinking is done (either turn complete or text has started streaming).
         // Use ◇ aligned with other chat node icons (✓, ✗, ●) at col 1.
-        styled(format!(" \u{25C7} Thought ({} words)", total_words), muted)
+        // Contrast hierarchy: icon + label in text_dim, word count in text_muted + italic.
+        let dim = Style::new().fg(t.resolve_color(t.colors.text_dim));
+        row([
+            styled(" \u{25C7} ", dim),
+            styled("Thought", dim),
+            styled(format!(" ({} words)", total_words), muted),
+        ])
     } else {
         // Still thinking, accumulating words, no text yet
         row([
@@ -542,6 +546,15 @@ fn ends_with_ordered_list_item(s: &str) -> bool {
 /// Split an incoming text delta into paragraph blocks, merging with existing blocks.
 ///
 /// Handles:
+/// Index where the trailing run of `ContentBlock::Text` blocks starts.
+/// Returns `blocks.len()` if no trailing text (i.e., last block is non-text or empty).
+fn trailing_text_start(blocks: &[ContentBlock]) -> usize {
+    blocks
+        .iter()
+        .rposition(|b| !matches!(b, ContentBlock::Text(_)))
+        .map_or(0, |i| i + 1)
+}
+
 /// - `\n\n` paragraph splitting
 /// - Ordered list continuation merging (keeps "1. ...\n\n2. ..." in one block)
 /// - Full-text resend detection (some LLM backends re-emit the full response)
@@ -788,10 +801,7 @@ impl ContainerList {
 
         if let ChatContainer::AssistantResponse { blocks, .. } = &mut self.containers[response_idx]
         {
-            let trailing_text_start = blocks
-                .iter()
-                .rposition(|b| !matches!(b, ContentBlock::Text(_)))
-                .map_or(0, |i| i + 1);
+            let trailing_text_start = trailing_text_start(blocks);
             let existing: Vec<String> = blocks[trailing_text_start..]
                 .iter()
                 .filter_map(|b| match b {
@@ -808,6 +818,8 @@ impl ContainerList {
     }
 
     /// Set thinking content for the current assistant response.
+    /// Position-aware: finds existing thinking block anywhere in blocks, or inserts
+    /// before trailing text to maintain thinking-before-text invariant.
     pub fn set_thinking(&mut self, content: String, token_count: usize) {
         let idx = self.ensure_open_response();
         if let Some(ChatContainer::AssistantResponse { blocks, .. }) = self.containers.get_mut(idx)
@@ -816,32 +828,57 @@ impl ContainerList {
                 content,
                 token_count,
             };
-            match blocks.last_mut() {
-                Some(ContentBlock::Thinking(last)) => *last = thinking,
-                _ => blocks.push(ContentBlock::Thinking(thinking)),
+            // Find any existing thinking block and replace it
+            if let Some(pos) = blocks
+                .iter()
+                .position(|b| matches!(b, ContentBlock::Thinking(_)))
+            {
+                blocks[pos] = ContentBlock::Thinking(thinking);
+            } else {
+                // No existing thinking — insert before trailing text run
+                let insert_at = trailing_text_start(blocks);
+                blocks.insert(insert_at, ContentBlock::Thinking(thinking));
             }
         }
     }
 
     /// Append thinking content to the current assistant response.
     /// Creates a new response if none exists.
+    /// Position-aware: coalesces with existing thinking or inserts before trailing
+    /// text blocks to maintain thinking-before-text ordering regardless of event
+    /// arrival order.
     pub fn append_thinking(&mut self, delta: &str) {
         let response_idx = self.ensure_open_response();
 
         if let ChatContainer::AssistantResponse { blocks, .. } = &mut self.containers[response_idx]
         {
-            match blocks.last_mut() {
-                Some(ContentBlock::Thinking(tb)) => {
+            // Try to coalesce with the last thinking block (handles consecutive deltas)
+            if let Some(ContentBlock::Thinking(tb)) = blocks.last_mut() {
+                tb.content.push_str(delta);
+                tb.token_count += 1;
+                return;
+            }
+
+            // Find insertion point: before trailing text run
+            let insert_at = trailing_text_start(blocks);
+
+            // If there's a thinking block just before the trailing text, coalesce with it
+            if insert_at > 0 {
+                if let ContentBlock::Thinking(tb) = &mut blocks[insert_at - 1] {
                     tb.content.push_str(delta);
                     tb.token_count += 1;
-                }
-                _ => {
-                    blocks.push(ContentBlock::Thinking(ThinkingBlock {
-                        content: delta.to_string(),
-                        token_count: 1,
-                    }));
+                    return;
                 }
             }
+
+            // No existing thinking to coalesce with — insert new block
+            blocks.insert(
+                insert_at,
+                ContentBlock::Thinking(ThinkingBlock {
+                    content: delta.to_string(),
+                    token_count: 1,
+                }),
+            );
         }
     }
 
@@ -1184,29 +1221,112 @@ mod tests {
         }
     }
 
+    /// Thinking inserted before trailing text blocks preserves correct visual order.
+    /// When text arrives before thinking (daemon misordering), append_thinking
+    /// inserts before the trailing text run so thinking renders first.
+    /// After the fix, "first" and "second" share the same trailing text run and
+    /// merge (no \n\n separator), so we get 2 blocks, not 3.
     #[test]
     fn content_block_interleaving_order() {
         let mut list = ContainerList::new();
         list.start_assistant_response();
         list.append_text("first");
         list.append_thinking("thought");
-        list.append_text("second");
+        list.append_text("\n\nsecond");
 
         let blocks = match list.containers.last() {
             Some(ChatContainer::AssistantResponse { blocks, .. }) => blocks,
             _ => panic!("Expected AssistantResponse"),
         };
 
-        assert_eq!(blocks.len(), 3);
-        assert!(matches!(blocks[0], ContentBlock::Text(ref s) if s == "first"));
+        // Thinking is repositioned before trailing text, not appended after
+        assert_eq!(blocks.len(), 3, "blocks: {blocks:?}");
         assert!(matches!(
-            blocks[1],
+            blocks[0],
             ContentBlock::Thinking(ThinkingBlock {
                 content: ref s,
                 token_count: 1
             }) if s == "thought"
         ));
+        assert!(matches!(blocks[1], ContentBlock::Text(ref s) if s == "first"));
         assert!(matches!(blocks[2], ContentBlock::Text(ref s) if s == "second"));
+    }
+
+    /// Reproduce daemon bug: text_delta arrives before thinking for the same chunk.
+    /// append_thinking must insert before trailing text so thinking renders first.
+    #[test]
+    fn append_thinking_before_trailing_text() {
+        let mut list = ContainerList::new();
+        list.start_assistant_response();
+        list.append_text("Here is my answer");
+        list.append_thinking("let me reason about this");
+
+        let blocks = match list.containers.last() {
+            Some(ChatContainer::AssistantResponse { blocks, .. }) => blocks,
+            _ => panic!("Expected AssistantResponse"),
+        };
+
+        assert_eq!(blocks.len(), 2);
+        assert!(
+            matches!(blocks[0], ContentBlock::Thinking(_)),
+            "Thinking must come before text, got: {blocks:?}"
+        );
+        assert!(
+            matches!(blocks[1], ContentBlock::Text(ref s) if s == "Here is my answer"),
+            "Text should follow thinking, got: {blocks:?}"
+        );
+    }
+
+    /// set_thinking should also find/replace thinking blocks that aren't last
+    /// (e.g., when text blocks have been appended after thinking).
+    #[test]
+    fn set_thinking_replaces_existing_non_last() {
+        let mut list = ContainerList::new();
+        list.start_assistant_response();
+        list.append_thinking("initial");
+        list.append_text("some text");
+        // Thinking is at blocks[0], text at blocks[1]. set_thinking should replace blocks[0].
+        list.set_thinking("replaced".to_string(), 50);
+
+        let blocks = match list.containers.last() {
+            Some(ChatContainer::AssistantResponse { blocks, .. }) => blocks,
+            _ => panic!("Expected AssistantResponse"),
+        };
+
+        assert_eq!(blocks.len(), 2);
+        match &blocks[0] {
+            ContentBlock::Thinking(tb) => {
+                assert_eq!(tb.content, "replaced");
+                assert_eq!(tb.token_count, 50);
+            }
+            _ => panic!("Expected thinking at index 0, got: {blocks:?}"),
+        }
+        assert!(matches!(blocks[1], ContentBlock::Text(ref s) if s == "some text"));
+    }
+
+    /// Legitimate thinking→text→thinking coalesces thinking blocks.
+    #[test]
+    fn append_thinking_coalesces_at_boundary() {
+        let mut list = ContainerList::new();
+        list.start_assistant_response();
+        list.append_thinking("phase one ");
+        list.append_text("response");
+        list.append_thinking("phase two");
+
+        let blocks = match list.containers.last() {
+            Some(ChatContainer::AssistantResponse { blocks, .. }) => blocks,
+            _ => panic!("Expected AssistantResponse"),
+        };
+
+        // Both thinking phases coalesce before the text
+        assert_eq!(blocks.len(), 2);
+        match &blocks[0] {
+            ContentBlock::Thinking(tb) => {
+                assert_eq!(tb.content, "phase one phase two");
+            }
+            _ => panic!("Expected thinking at index 0, got: {blocks:?}"),
+        }
+        assert!(matches!(blocks[1], ContentBlock::Text(ref s) if s == "response"));
     }
 
     #[test]
