@@ -73,7 +73,7 @@ mod viewport_cache;
 pub use agent_selection::AgentSelection;
 pub use app::{Action, App, ViewContext};
 pub use chat_app::{
-    ChatAppMsg, ChatItem, ChatMode, McpServerDisplay, OilChatApp, PluginStatusEntry, Role,
+    ChatAppMsg, ChatMode, McpServerDisplay, OilChatApp, PluginStatusEntry, Role,
 };
 pub use chat_container::{ChatContainer, ContainerList, ContentBlock, ThinkingBlock};
 pub use chat_runner::OilChatRunner;
