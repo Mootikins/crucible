@@ -154,6 +154,81 @@ async fn send_message_emits_thinking_before_text_delta() {
     assert_eq!(complete.data["full_response"], "response");
 }
 
+/// When a single ChatChunk contains BOTH delta and reasoning (same-chunk transition),
+/// the thinking event must be emitted before text_delta.
+#[tokio::test]
+async fn same_chunk_thinking_emitted_before_text_delta() {
+    let tmp = TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let agent_manager = create_test_agent_manager(session_manager.clone());
+    agent_manager
+        .configure_agent(&session.id, test_agent())
+        .await
+        .unwrap();
+
+    // Single chunk with BOTH reasoning and delta populated
+    agent_manager.agent_cache.insert(
+        session.id.clone(),
+        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+            chunks: vec![ChatChunk {
+                delta: "answer".to_string(),
+                done: true,
+                tool_calls: None,
+                tool_results: None,
+                reasoning: Some("let me think".to_string()),
+                usage: None,
+                subagent_events: None,
+                precognition_notes_count: None,
+                precognition_notes: None,
+            }],
+        }))),
+    );
+
+    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    agent_manager
+        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
+        .await
+        .unwrap();
+
+    let _user_message = next_event_or_skip(&mut event_rx, "user_message").await;
+
+    // First event after user_message must be thinking, not text_delta
+    let first = timeout(Duration::from_secs(2), event_rx.recv())
+        .await
+        .expect("timed out")
+        .expect("channel closed");
+    assert_eq!(
+        first.event, "thinking",
+        "Same-chunk: thinking must be emitted before text_delta, got: {}",
+        first.event
+    );
+    assert_eq!(first.data["content"], "let me think");
+
+    let second = timeout(Duration::from_secs(2), event_rx.recv())
+        .await
+        .expect("timed out")
+        .expect("channel closed");
+    assert_eq!(
+        second.event, "text_delta",
+        "Same-chunk: text_delta must follow thinking, got: {}",
+        second.event
+    );
+    assert_eq!(second.data["content"], "answer");
+}
+
 #[tokio::test]
 async fn send_message_emits_tool_call_and_tool_result_events() {
     let tmp = TempDir::new().unwrap();

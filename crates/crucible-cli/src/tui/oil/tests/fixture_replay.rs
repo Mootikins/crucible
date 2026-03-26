@@ -280,6 +280,99 @@ fn fixture_path(name: &str) -> std::path::PathBuf {
     workspace_root.join("assets/fixtures").join(name)
 }
 
+/// Replay a fixture, checking thinking-before-text invariant on EVERY frame.
+/// Returns the final output and any frame that violated the invariant.
+/// Uses show_thinking=false to match the default user config and test collapsed mode.
+fn replay_checking_thinking_order(
+    path: &Path,
+    width: u16,
+    height: u16,
+) -> (String, Vec<(usize, String)>) {
+    let messages = parse_fixture(path);
+    assert!(
+        !messages.is_empty(),
+        "Fixture produced no messages: {}",
+        path.display()
+    );
+
+    let mut app = OilChatApp::default();
+    app.set_show_thinking(false);
+    let mut runtime = TestRuntime::new(width, height);
+    let focus = FocusContext::new();
+    let mut violations = Vec::new();
+
+    for (frame, msg) in messages.iter().enumerate() {
+        app.on_message(msg.clone());
+
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        runtime.render(&tree);
+
+        let graduated_keys = runtime.last_graduated_keys();
+        if !graduated_keys.is_empty() {
+            app.mark_graduated(graduated_keys);
+        }
+
+        // Check every frame for thinking-after-text violations
+        let stdout = strip_ansi(runtime.stdout_content());
+        let viewport = strip_ansi(runtime.viewport_content());
+        let combined = format!("{stdout}\n{viewport}");
+
+        // Look for text content appearing BEFORE a Thought summary within
+        // the SAME assistant response. Tool call lines (✓) reset the tracking
+        // since they mark a response boundary.
+        let lines: Vec<&str> = combined.lines().collect();
+        let mut saw_text_in_response = false;
+        let mut saw_thought_after_text = false;
+        for line in &lines {
+            let trimmed = line.trim();
+            // Skip non-content lines
+            if trimmed.is_empty()
+                || trimmed.chars().all(|c| "▄▀─│┌┐└┘ >".contains(c))
+                || trimmed.starts_with('◐')
+                || trimmed.starts_with('*')
+                || trimmed.starts_with("· ")
+                || trimmed.starts_with("NORMAL")
+                || trimmed.starts_with("— ctx")
+            {
+                continue;
+            }
+            // Tool calls mark response boundaries — reset per-response tracking
+            if trimmed.starts_with('✓')
+                || trimmed.starts_with('●')
+                || trimmed.contains("Read Note")
+                || trimmed.contains("│ {")
+                || trimmed.contains("Read note content")
+            {
+                saw_text_in_response = false;
+                continue;
+            }
+            // Is this a Thought summary line?
+            if trimmed.contains('\u{25C7}') && trimmed.contains("Thought") {
+                if saw_text_in_response {
+                    saw_thought_after_text = true;
+                }
+                // Reset — this Thought starts a new section
+                saw_text_in_response = false;
+                continue;
+            }
+            // Is this assistant text content? (indented with 3+ spaces)
+            if line.starts_with("   ") && !trimmed.is_empty() {
+                saw_text_in_response = true;
+            }
+        }
+
+        if saw_thought_after_text {
+            violations.push((frame, combined));
+        }
+    }
+
+    let stdout = strip_ansi(runtime.stdout_content());
+    let viewport = strip_ansi(runtime.viewport_content());
+    let final_output = format!("=== STDOUT ===\n{stdout}\n=== VIEWPORT ===\n{viewport}");
+    (final_output, violations)
+}
+
 fn assert_no_violations(result: &ReplayResult) {
     if !result.violations.is_empty() {
         let mut msg = format!(
@@ -378,4 +471,76 @@ fn replay_delegation_demo_fixture_120x40() {
     }
     let result = replay_fixture(&path, 120, 40);
     assert_no_violations(&result);
+}
+
+// ---------------------------------------------------------------------------
+// Tests: thinking ordering A/B comparison
+//
+// Fixture A: recorded from `cru session send --raw` with straggler thinking
+//            events arriving AFTER text_delta runs (the daemon bug).
+// Fixture B: same events but stragglers moved before text_delta runs (fixed order).
+//
+// Both should produce thinking BEFORE text in the final output because
+// append_thinking() is position-aware and inserts before trailing text.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn thinking_order_fixture_a_buggy_events() {
+    let path = fixture_path("thinking_order_A_buggy.jsonl");
+    if !path.exists() {
+        eprintln!("SKIPPED: fixture not found at {}", path.display());
+        return;
+    }
+    let (_, violations) = replay_checking_thinking_order(&path, 80, 24);
+    assert!(
+        violations.is_empty(),
+        "Fixture A (buggy event order): found {} frames where Thought appeared after text.\n\
+         First violation at frame {}:\n{}",
+        violations.len(),
+        violations[0].0,
+        violations[0].1,
+    );
+}
+
+#[test]
+fn thinking_order_fixture_b_fixed_events() {
+    let path = fixture_path("thinking_order_B_fixed.jsonl");
+    if !path.exists() {
+        eprintln!("SKIPPED: fixture not found at {}", path.display());
+        return;
+    }
+    let (_, violations) = replay_checking_thinking_order(&path, 80, 24);
+    assert!(
+        violations.is_empty(),
+        "Fixture B (fixed event order): found {} frames where Thought appeared after text.\n\
+         First violation at frame {}:\n{}",
+        violations.len(),
+        violations[0].0,
+        violations[0].1,
+    );
+}
+
+/// A/B: both fixtures should have zero ordering violations across all frames.
+#[test]
+fn thinking_order_ab_comparison() {
+    let path_a = fixture_path("thinking_order_A_buggy.jsonl");
+    let path_b = fixture_path("thinking_order_B_fixed.jsonl");
+    if !path_a.exists() || !path_b.exists() {
+        eprintln!("SKIPPED: A/B fixtures not found");
+        return;
+    }
+
+    let (_, violations_a) = replay_checking_thinking_order(&path_a, 80, 24);
+    let (_, violations_b) = replay_checking_thinking_order(&path_b, 80, 24);
+
+    assert!(
+        violations_a.is_empty(),
+        "Fixture A: {} frames with ordering violation",
+        violations_a.len()
+    );
+    assert!(
+        violations_b.is_empty(),
+        "Fixture B: {} frames with ordering violation",
+        violations_b.len()
+    );
 }

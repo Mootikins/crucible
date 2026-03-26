@@ -1118,6 +1118,21 @@ impl AgentManager {
         chunk: &crucible_core::traits::chat::ChatChunk,
         accumulated_response: &mut String,
     ) {
+        // Emit thinking before text_delta — thinking logically precedes the response
+        // it produced. Matches the TUI direct-stream path which already has this order.
+        if let Some(reasoning) = &chunk.reasoning {
+            debug!(session_id = %stream_ctx.session_id, "Sending thinking event");
+            if !emit_event(
+                &stream_ctx.event_tx,
+                SessionEventMessage::thinking(&stream_ctx.session_id, reasoning),
+            ) {
+                warn!(
+                    session_id = %stream_ctx.session_id,
+                    "No subscribers for thinking event"
+                );
+            }
+        }
+
         if !chunk.delta.is_empty() {
             if !accumulated_response.is_empty() && chunk.delta == *accumulated_response {
                 debug!(
@@ -1141,19 +1156,6 @@ impl AgentManager {
                         "No subscribers for text_delta event"
                     );
                 }
-            }
-        }
-
-        if let Some(reasoning) = &chunk.reasoning {
-            debug!(session_id = %stream_ctx.session_id, "Sending thinking event");
-            if !emit_event(
-                &stream_ctx.event_tx,
-                SessionEventMessage::thinking(&stream_ctx.session_id, reasoning),
-            ) {
-                warn!(
-                    session_id = %stream_ctx.session_id,
-                    "No subscribers for thinking event"
-                );
             }
         }
 
