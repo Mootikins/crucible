@@ -279,10 +279,15 @@ fn render_blocks_full_thinking(
                     top: 1,
                     ..Default::default()
                 });
-                nodes.push(scrollback(
-                    format!("{}-thinking-{thinking_block_idx}", params.container_id),
-                    [thinking_node],
-                ));
+                // Use "-thinking-summary" for the first block so toggling
+                // show_thinking doesn't leave a ghost graduated node —
+                // both renderers share the same key.
+                let key = if thinking_block_idx == 0 {
+                    format!("{}-thinking-summary", params.container_id)
+                } else {
+                    format!("{}-thinking-{thinking_block_idx}", params.container_id)
+                };
+                nodes.push(scrollback(key, [thinking_node]));
                 thinking_block_idx += 1;
             }
             ContentBlock::Text(content) => {
@@ -320,8 +325,8 @@ fn render_blocks_collapsed_thinking(
     let mut text_block_idx = 0usize;
 
     // Emit thinking summary first — before any text blocks.
-    // Graduate to scrollback once text starts streaming (not just on complete),
-    // so the summary doesn't consume viewport space during text streaming.
+    // Graduate to scrollback once text starts streaming, so the summary
+    // doesn't consume viewport space during text streaming.
     if has_thinking {
         let has_text = params
             .blocks
