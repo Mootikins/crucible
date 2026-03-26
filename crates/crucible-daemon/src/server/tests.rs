@@ -2088,6 +2088,7 @@ mod persist_event_tests {
     async fn test_should_persist_filters_correctly() {
         let persistent = [
             "user_message",
+            "thinking",
             "message_complete",
             "tool_call",
             "tool_result",
@@ -2099,7 +2100,7 @@ mod persist_event_tests {
             assert!(should_persist(&event), "{} should be persisted", event_name);
         }
 
-        let non_persistent = ["stream_chunk", "thinking", "status_update", "unknown"];
+        let non_persistent = ["stream_chunk", "status_update", "unknown"];
         for event_name in &non_persistent {
             let event = SessionEventMessage::new("test", *event_name, serde_json::json!({}));
             assert!(

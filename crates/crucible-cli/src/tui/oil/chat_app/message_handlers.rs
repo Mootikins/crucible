@@ -326,8 +326,8 @@ impl OilChatApp {
                 self.close_interaction();
                 Action::Continue
             }
-            ChatAppMsg::LoadHistory(items) => {
-                self.load_previous_messages(items);
+            ChatAppMsg::LoadHistoryEvents(events) => {
+                self.load_history_events(events);
                 Action::Continue
             }
             ChatAppMsg::PrecognitionResult { notes_count, notes } => {

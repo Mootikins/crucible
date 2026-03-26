@@ -54,7 +54,7 @@ use popup_state::{PermissionState, PopupState, PrecognitionState, ShellHistorySt
 #[cfg(test)]
 use state::AutocompleteKind;
 use state::MessageQueueState;
-pub use state::{ChatItem, ChatMode, InputMode, Role};
+pub use state::{ChatMode, InputMode, Role};
 
 // ─── Main Struct ─────────────────────────────────────────────────────────────
 
@@ -354,59 +354,22 @@ impl OilChatApp {
         self.container_list.graduate(&ids);
     }
 
-    pub(crate) fn load_previous_messages(&mut self, items: Vec<ChatItem>) {
-        use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedToolCall};
+    /// Replay stored session events through the live event path.
+    /// This ensures resume reconstructs the same state as live streaming —
+    /// user messages, thinking, tools, and delegation all come through for free.
+    pub(crate) fn load_history_events(&mut self, events: Vec<serde_json::Value>) {
+        use crate::tui::oil::chat_runner::session_event_to_chat_msgs;
 
         self.container_list.clear();
-        for item in &items {
-            match item {
-                ChatItem::Message { role, content, .. } => match role {
-                    Role::User => {
-                        self.container_list.add_user_message(content.clone());
-                    }
-                    Role::Assistant => {
-                        self.container_list.start_assistant_response();
-                        self.container_list.append_text(content);
-                        self.container_list.complete_response();
-                    }
-                    Role::System => {
-                        self.container_list.add_system_message(content.clone());
-                    }
-                },
-                ChatItem::ToolCall {
-                    id,
-                    name,
-                    args,
-                    result,
-                    complete,
-                } => {
-                    let mut tool = CachedToolCall::new(id, name, args);
-                    if !result.is_empty() {
-                        tool.append_output(result);
-                    }
-                    if *complete {
-                        tool.complete = true;
-                    }
-                    self.container_list.add_tool_call(tool);
-                }
-                ChatItem::ShellExecution {
-                    id,
-                    command,
-                    exit_code,
-                    output_tail,
-                    output_path,
-                } => {
-                    self.container_list
-                        .add_shell_execution(CachedShellExecution::new(
-                            id,
-                            command,
-                            *exit_code,
-                            output_tail.clone(),
-                            output_path.clone(),
-                        ));
-                }
+        for event in &events {
+            let event_type = event.get("event").and_then(|e| e.as_str()).unwrap_or("");
+            let data = event.get("data").cloned().unwrap_or_default();
+            for msg in session_event_to_chat_msgs(event_type, &data) {
+                self.on_message(msg);
             }
         }
+        // Mark the loaded history as complete (not actively streaming)
+        self.container_list.complete_response();
         self.message_queue.message_counter = self.container_list.len();
     }
 

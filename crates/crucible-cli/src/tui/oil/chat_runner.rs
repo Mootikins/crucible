@@ -2,7 +2,7 @@ use crate::chat::bridge::AgentEventBridge;
 use crate::tui::oil::agent_selection::AgentSelection;
 use crate::tui::oil::app::{Action, App, ViewContext};
 use crate::tui::oil::chat_app::{
-    ChatAppMsg, ChatItem, ChatMode, McpServerDisplay, OilChatApp, PluginStatusEntry,
+    ChatAppMsg, ChatMode, McpServerDisplay, OilChatApp, PluginStatusEntry,
 };
 use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
@@ -81,7 +81,7 @@ pub struct OilChatRunner {
     kiln_notes: Vec<String>,
     session_dir: Option<PathBuf>,
     resume_session_id: Option<String>,
-    resume_history: Option<Vec<ChatItem>>,
+    resume_history: Option<Vec<serde_json::Value>>,
     mcp_servers: Vec<McpServerDisplay>,
     plugin_status: Vec<PluginStatusEntry>,
     mcp_config: Option<crucible_config::mcp::McpConfig>,
@@ -199,7 +199,7 @@ impl OilChatRunner {
         self
     }
 
-    pub fn with_resume_history(mut self, history: Vec<ChatItem>) -> Self {
+    pub fn with_resume_history(mut self, history: Vec<serde_json::Value>) -> Self {
         self.resume_history = Some(history);
         self
     }
@@ -336,13 +336,13 @@ impl OilChatRunner {
         }
 
         // Hydrate viewport with conversation history from a resumed session
-        if let Some(history) = self.resume_history.take() {
-            if !history.is_empty() {
+        if let Some(events) = self.resume_history.take() {
+            if !events.is_empty() {
                 tracing::info!(
-                    count = history.len(),
+                    count = events.len(),
                     "Loading resume history into viewport"
                 );
-                app.load_previous_messages(history);
+                app.load_history_events(events);
             }
         }
 
@@ -733,12 +733,9 @@ impl OilChatRunner {
                     "Received chunk"
                 );
 
-                if !chunk.delta.is_empty()
-                    && msg_tx.send(ChatAppMsg::TextDelta(chunk.delta)).is_err()
-                {
-                    tracing::warn!("UI channel closed, TextDelta dropped");
-                }
-
+                // Process thinking before text — the model reasons first,
+                // then produces output. Reversing this causes the thinking
+                // block to appear after text that arrived in the same chunk.
                 if let Some(ref reasoning) = chunk.reasoning {
                     if !reasoning.is_empty()
                         && msg_tx
@@ -747,6 +744,12 @@ impl OilChatRunner {
                     {
                         tracing::warn!("UI channel closed, ThinkingDelta dropped");
                     }
+                }
+
+                if !chunk.delta.is_empty()
+                    && msg_tx.send(ChatAppMsg::TextDelta(chunk.delta)).is_err()
+                {
+                    tracing::warn!("UI channel closed, TextDelta dropped");
                 }
 
                 if let Some(ref tool_calls) = chunk.tool_calls {

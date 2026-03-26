@@ -1,32 +1,7 @@
 use std::collections::VecDeque;
-use std::path::PathBuf;
 
 use crate::tui::oil::style::Color;
 use crate::tui::oil::theme;
-
-#[derive(Debug, Clone)]
-pub enum ChatItem {
-    Message {
-        id: String,
-        role: Role,
-        content: String,
-    },
-    ToolCall {
-        id: String,
-        name: String,
-        args: String,
-        result: String,
-        complete: bool,
-    },
-    /// Shell command execution - display only, never sent to agent
-    ShellExecution {
-        id: String,
-        command: String,
-        exit_code: i32,
-        output_tail: Vec<String>,
-        output_path: Option<PathBuf>,
-    },
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {

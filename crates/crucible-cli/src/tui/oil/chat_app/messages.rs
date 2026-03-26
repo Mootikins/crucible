@@ -49,7 +49,7 @@ use std::path::PathBuf;
 use crucible_core::interaction::{InteractionRequest, InteractionResponse};
 use crucible_core::traits::chat::PrecognitionNoteInfo;
 
-use super::{ChatItem, McpServerDisplay, PluginStatusEntry};
+use super::{McpServerDisplay, PluginStatusEntry};
 
 #[derive(Debug, Clone)]
 pub enum ChatAppMsg {
@@ -173,8 +173,9 @@ pub enum ChatAppMsg {
         request_id: String,
         response: InteractionResponse,
     },
-    /// **Event** (daemon → TUI): Load chat history (session resume or replay).
-    LoadHistory(Vec<ChatItem>),
+    /// **Event** (daemon → TUI): Load chat history from stored session events.
+    /// Events are replayed through `session_event_to_chat_msgs` → `on_message`.
+    LoadHistoryEvents(Vec<serde_json::Value>),
     /// **Command** (TUI → daemon): Reload a Lua/Fennel plugin.
     ReloadPlugin(String),
     /// **Command** (TUI → daemon): Execute a slash command (/:command args).
@@ -264,7 +265,7 @@ impl ChatAppMsg {
             | Self::ToggleMessages
             | Self::OpenInteraction { .. }
             | Self::CloseInteraction { .. }
-            | Self::LoadHistory(_)
+            | Self::LoadHistoryEvents(_)
             | Self::PrecognitionResult { .. }
             | Self::EnrichedMessage { .. }
             | Self::ExecuteSlashCommand(_)

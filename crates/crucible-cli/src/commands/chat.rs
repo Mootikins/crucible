@@ -885,94 +885,20 @@ async fn apply_rpc_action(
     }
 }
 
-use crate::tui::oil::chat_app::{ChatItem, Role};
-
 async fn fetch_resume_history(
     session_id: &str,
     kiln_path: &std::path::Path,
-) -> Result<Vec<ChatItem>> {
+) -> Result<Vec<serde_json::Value>> {
     let client = crate::common::daemon_client().await?;
     let result = client
         .session_resume_from_storage(session_id, kiln_path, None, None)
         .await?;
 
-    let history = result
+    Ok(result
         .get("history")
         .and_then(|h| h.as_array())
         .cloned()
-        .unwrap_or_default();
-
-    Ok(events_to_chat_items(&history))
-}
-
-fn events_to_chat_items(events: &[serde_json::Value]) -> Vec<ChatItem> {
-    let mut items = Vec::new();
-    let mut counter = 0usize;
-
-    for event in events {
-        let event_type = event.get("event").and_then(|e| e.as_str()).unwrap_or("");
-        let data = event.get("data").cloned().unwrap_or_default();
-
-        match event_type {
-            "message_complete" => {
-                let full_response = data
-                    .get("full_response")
-                    .and_then(|r| r.as_str())
-                    .unwrap_or_default();
-                if !full_response.is_empty() {
-                    items.push(ChatItem::Message {
-                        id: format!("resume-{counter}"),
-                        role: Role::Assistant,
-                        content: full_response.to_string(),
-                    });
-                    counter += 1;
-                }
-            }
-            "tool_call" => {
-                let call_id = data
-                    .get("call_id")
-                    .and_then(|c| c.as_str())
-                    .unwrap_or("unknown")
-                    .to_string();
-                let tool_name = data
-                    .get("tool")
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("unknown")
-                    .to_string();
-                let args = data.get("args").map(|a| a.to_string()).unwrap_or_default();
-
-                items.push(ChatItem::ToolCall {
-                    id: call_id,
-                    name: tool_name,
-                    args,
-                    result: String::new(),
-                    complete: false,
-                });
-                counter += 1;
-            }
-            "tool_result" => {
-                let call_id = data.get("call_id").and_then(|c| c.as_str()).unwrap_or("");
-                let result_val = data
-                    .get("result")
-                    .map(|r| r.to_string())
-                    .unwrap_or_default();
-
-                if let Some(ChatItem::ToolCall {
-                    result, complete, ..
-                }) = items
-                    .iter_mut()
-                    .rev()
-                    .find(|item| matches!(item, ChatItem::ToolCall { id, .. } if id == call_id))
-                {
-                    *result = result_val;
-                    *complete = true;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    items
+        .unwrap_or_default())
 }
 
 pub fn known_slash_commands() -> Vec<(String, String)> {
