@@ -129,6 +129,7 @@ async fn test_tool_dispatch_executes_read_file() {
         .dispatch_tool(
             "read_file",
             serde_json::json!({ "path": test_file.to_string_lossy() }),
+            Default::default(),
         )
         .await;
 

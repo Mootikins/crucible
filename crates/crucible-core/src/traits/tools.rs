@@ -97,6 +97,10 @@ pub struct ExecutionContext {
 
     /// Additional context metadata
     pub metadata: HashMap<String, serde_json::Value>,
+
+    /// Environment variables to inject into subprocess-spawning tools (e.g., bash)
+    #[serde(default)]
+    pub env_vars: HashMap<String, String>,
 }
 
 impl ExecutionContext {
@@ -107,6 +111,7 @@ impl ExecutionContext {
             user_id: None,
             session_id: None,
             metadata: HashMap::new(),
+            env_vars: HashMap::new(),
         }
     }
 

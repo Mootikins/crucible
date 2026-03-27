@@ -20,6 +20,7 @@
 
 use super::helpers::{text_success, McpResultExt};
 use rmcp::model::{CallToolResult, RawContent, Tool};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::process::Command;
@@ -31,6 +32,8 @@ pub struct WorkspaceTools {
     workspace_root: PathBuf,
     /// Default timeout for bash commands (ms)
     default_timeout_ms: u64,
+    /// Extra environment variables injected into bash commands
+    env_vars: HashMap<String, String>,
 }
 
 impl WorkspaceTools {
@@ -39,7 +42,15 @@ impl WorkspaceTools {
         Self {
             workspace_root: workspace_root.into(),
             default_timeout_ms: 120_000,
+            env_vars: HashMap::new(),
         }
+    }
+
+    /// Add environment variables to inject into bash commands
+    #[must_use]
+    pub fn with_env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.env_vars.insert(key.into(), value.into());
+        self
     }
 
     /// Set default timeout for bash commands
@@ -372,6 +383,9 @@ impl WorkspaceTools {
         let mut cmd = Command::new("bash");
         cmd.arg("-c").arg(&command);
         cmd.current_dir(&self.workspace_root);
+        for (key, value) in &self.env_vars {
+            cmd.env(key, value);
+        }
 
         let output = tokio::time::timeout(timeout, cmd.output())
             .await
@@ -506,7 +520,7 @@ impl ToolExecutor for WorkspaceTools {
         &self,
         name: &str,
         params: serde_json::Value,
-        _context: &ExecutionContext,
+        context: &ExecutionContext,
     ) -> ToolResult<serde_json::Value> {
         // Helper to extract string param
         let get_str = |key: &str| -> Option<String> {
@@ -595,7 +609,16 @@ impl ToolExecutor for WorkspaceTools {
                             .into(),
                     ));
                 }
-                convert_result(self.bash(command, timeout_ms).await)
+                // Merge hook-injected env vars with struct-level env vars
+                if context.env_vars.is_empty() {
+                    convert_result(self.bash(command, timeout_ms).await)
+                } else {
+                    let mut with_hook_env = self.clone();
+                    for (k, v) in &context.env_vars {
+                        with_hook_env.env_vars.insert(k.clone(), v.clone());
+                    }
+                    convert_result(with_hook_env.bash(command, timeout_ms).await)
+                }
             }
             "glob" => {
                 let pattern = get_str("pattern")

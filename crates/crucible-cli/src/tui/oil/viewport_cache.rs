@@ -44,7 +44,6 @@ impl CachedMessage {
 }
 
 pub const TOOL_OUTPUT_MAX_TAIL_LINES: usize = 50;
-pub const TOOL_OUTPUT_FILE_THRESHOLD_BYTES: usize = 10 * 1024;
 
 /// Display-only representation of tool source, for rendering provenance badges.
 #[derive(Debug, Clone, PartialEq)]
@@ -132,10 +131,6 @@ impl CachedToolCall {
 
     pub fn set_output_path(&mut self, path: PathBuf) {
         self.output_path = Some(path);
-    }
-
-    pub fn should_spill_to_file(&self) -> bool {
-        self.output_path.is_none() && self.output_total_bytes >= TOOL_OUTPUT_FILE_THRESHOLD_BYTES
     }
 
     pub fn elapsed(&self) -> std::time::Duration {

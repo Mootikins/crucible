@@ -92,12 +92,10 @@ impl OilChatApp {
                     .update_tool(&name, call_id.as_deref(), |t| {
                         t.append_output(&delta);
                     });
-                self.maybe_spill_tool_output(&name);
                 Action::Continue
             }
             ChatAppMsg::ToolResultComplete { name, call_id } => {
                 tracing::debug!(tool_name = %name, ?call_id, "Received ToolResultComplete");
-                self.maybe_spill_tool_output(&name);
                 self.container_list
                     .update_tool(&name, call_id.as_deref(), |t| {
                         t.mark_complete();

@@ -1099,7 +1099,7 @@ mod tool_call_tests {
     }
 
     #[test]
-    fn tool_with_output_path_shows_path() {
+    fn tool_with_output_path_shows_summary_not_path() {
         let mut tool =
             test_tool_complete("mcp_bash", r#"{"command": "ls"}"#, "file1\nfile2\nfile3");
         tool.set_output_path(PathBuf::from("/tmp/output.txt"));
@@ -1107,9 +1107,10 @@ mod tool_call_tests {
         let node = render_tool_call_with_frame(&tool, 0);
         let plain = render_to_plain_text(&node, 80);
 
+        // Spill paths should never appear in the TUI — only clean summaries
         assert!(
-            plain.contains("→ /tmp/output.txt"),
-            "Should show output path: {:?}",
+            !plain.contains("/tmp/output.txt"),
+            "Should NOT show output path: {:?}",
             plain
         );
     }

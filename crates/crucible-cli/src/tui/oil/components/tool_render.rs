@@ -142,15 +142,10 @@ fn render_tool_complete(
     };
 
     let collapsed = collapse_result(&tool.name, result_str, result_summary.as_deref());
-    let has_arrow_suffix = tool.output_path.is_some() || collapsed.is_some();
+    let has_arrow_suffix = collapsed.is_some();
 
     let t = crate::tui::oil::theme::active();
-    let arrow_suffix = if let Some(ref path) = tool.output_path {
-        styled(
-            format!("→ {}", path.display()),
-            Style::new().fg(t.resolve_color(t.colors.text_muted)),
-        )
-    } else if let Some(ref s) = collapsed {
+    let arrow_suffix = if let Some(ref s) = collapsed {
         styled(
             format!("→ {}", s),
             Style::new().fg(t.resolve_color(t.colors.text_muted)),

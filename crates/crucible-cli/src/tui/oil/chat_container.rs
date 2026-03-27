@@ -1120,13 +1120,6 @@ impl ContainerList {
         false
     }
 
-    /// Check whether a tool's output should be spilled to a file.
-    pub fn tool_should_spill(&self, name: &str) -> bool {
-        self.find_tool(name)
-            .map(|t| t.should_spill_to_file())
-            .unwrap_or(false)
-    }
-
     /// Get the full output of a tool by name.
     pub fn get_tool_output(&self, name: &str) -> Option<String> {
         self.find_tool(name).map(|t| t.result())
@@ -1840,7 +1833,6 @@ mod tests {
 
         assert!(list.find_tool("read_file").is_some());
         assert!(list.find_tool("write_file").is_none());
-        assert!(!list.tool_should_spill("read_file"));
     }
 
     #[test]
