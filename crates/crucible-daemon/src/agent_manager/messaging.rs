@@ -1090,12 +1090,37 @@ impl AgentManager {
             ),
         };
 
-        // Spill large tool outputs to disk and replace with a token-efficient reference
+        // Spill large tool outputs to disk and replace with a token-efficient reference.
+        // Only spill tools whose output is not trivially reproducible — workspace file tools
+        // (read, edit, write, glob, grep) read files that already exist on disk.
         const SPILL_THRESHOLD: usize = 10 * 1024; // 10KB
-        let spill_path = if error_str.is_none() && result_str.len() >= SPILL_THRESHOLD {
+        let should_spill = error_str.is_none()
+            && result_str.len() >= SPILL_THRESHOLD
+            && !matches!(
+                tool_call.name.as_str(),
+                "read_file"
+                    | "mcp_read"
+                    | "edit_file"
+                    | "mcp_edit"
+                    | "write_file"
+                    | "mcp_write"
+                    | "glob"
+                    | "mcp_glob"
+                    | "grep"
+                    | "mcp_grep"
+            );
+        let spill_path = if should_spill {
             match Self::spill_tool_output(stream_ctx, &tool_call.name, &result_str) {
                 Ok((path, filename)) => {
-                    let line_count = result_str.lines().count();
+                    // Count lines in the actual content, not the JSON-serialized string
+                    let line_count = serde_json::from_str::<serde_json::Value>(&result_str)
+                        .ok()
+                        .and_then(|v| {
+                            v.as_str()
+                                .map(|s| s.lines().count())
+                                .or_else(|| v.get("result").and_then(|r| r.as_str()).map(|s| s.lines().count()))
+                        })
+                        .unwrap_or_else(|| result_str.lines().count());
                     let byte_kb = result_str.len() / 1024;
                     result_str = format!(
                         "[{line_count} lines, {byte_kb}KB — full output in $CRU_SESSION_DIR/tools/{filename}]"

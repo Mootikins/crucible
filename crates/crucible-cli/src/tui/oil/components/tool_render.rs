@@ -404,10 +404,19 @@ pub fn format_tool_result(name: &str, result: &str) -> Node {
 pub fn summarize_tool_result(name: &str, result: &str) -> Option<String> {
     let inner = unwrap_json_result(result);
     match name {
-        "read_file" | "mcp_read" => inner
-            .rfind('[')
-            .map(|i| inner[i..].to_string())
-            .or_else(|| Some(format!("{} lines", inner.lines().count()))),
+        "read_file" | "mcp_read" => {
+            // Extract short bracketed metadata (e.g., "[Directory Context: ...]") if present,
+            // but not spill references or long content
+            let bracket_summary = inner.rfind('[').and_then(|i| {
+                let bracket = &inner[i..];
+                if bracket.len() <= 60 && !bracket.contains("$CRU_SESSION_DIR") {
+                    Some(bracket.to_string())
+                } else {
+                    None
+                }
+            });
+            bracket_summary.or_else(|| Some(format!("{} lines", inner.lines().count())))
+        }
         "glob" | "mcp_glob" => count_newline_items(&inner).map(|n| format!("{} files", n)),
         "grep" | "mcp_grep" => count_grep_matches(&inner).map(|n| format!("{} matches", n)),
         "edit" | "mcp_edit" if inner.contains("success") || inner.contains("applied") => {
@@ -1047,6 +1056,39 @@ mod tests {
             !plain.contains("()"),
             "Should NOT have empty parens: {:?}",
             plain
+        );
+    }
+
+    #[test]
+    fn summarize_read_file_counts_lines_correctly() {
+        // read_file results should show actual line count, not "1 lines"
+        let content = "line1\nline2\nline3\nline4\nline5";
+        let result = summarize_tool_result("read_file", content);
+        assert_eq!(result, Some("5 lines".to_string()));
+    }
+
+    #[test]
+    fn summarize_read_file_does_not_extract_spill_reference_as_summary() {
+        // If a spill reference somehow gets to summarize, it should not be shown as-is
+        let spill_ref = "[200 lines, 15KB — full output in $CRU_SESSION_DIR/tools/read-file-1.txt]";
+        let result = summarize_tool_result("read_file", spill_ref);
+        // Should not contain the full spill path
+        assert!(
+            !result.as_ref().is_some_and(|s| s.contains("$CRU_SESSION_DIR")),
+            "Should not show spill path in summary: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn summarize_bash_spill_reference_not_shown_raw() {
+        let spill_ref = "[500 lines, 25KB — full output in $CRU_SESSION_DIR/tools/bash-1.txt]";
+        let result = summarize_tool_result("bash", spill_ref);
+        // Spill references are multi-line or >60 chars, so bash should return None
+        assert!(
+            result.is_none() || !result.as_ref().unwrap().contains("$CRU_SESSION_DIR"),
+            "Bash spill ref should not be shown as summary: {:?}",
+            result
         );
     }
 }
