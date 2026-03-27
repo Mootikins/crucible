@@ -511,41 +511,45 @@ fn render_system_message(content: &str) -> Node {
     })
 }
 
-/// Check if a text part is a continuation of an ordered list (numbered item > 1).
-/// Returns true for "2. foo", "3. bar", "10. baz" but not "1. start".
-fn is_ordered_list_continuation(s: &str) -> bool {
+/// Check if a text part starts with an ordered list item `N. ` where N > 1.
+/// Used to merge counting-up list items that span text block boundaries.
+fn starts_with_ordered_list_item(s: &str) -> bool {
+    ordered_list_start_number(s).is_some_and(|n| n > 1)
+}
+
+/// Extract the number from an ordered list item at the start of a string.
+/// Returns `Some(n)` for strings like "3. foo", `None` for non-list text.
+fn ordered_list_start_number(s: &str) -> Option<u32> {
     let trimmed = s.trim_start();
     let bytes = trimmed.as_bytes();
     if bytes.is_empty() || !bytes[0].is_ascii_digit() {
-        return false;
+        return None;
     }
-    // Find the ". " pattern after digits
     if let Some(dot_pos) = trimmed.find(". ") {
-        // All chars before dot must be digits, and number must be > 1
         let prefix = &trimmed[..dot_pos];
         if prefix.chars().all(|c| c.is_ascii_digit()) {
-            if let Ok(n) = prefix.parse::<u32>() {
-                return n > 1;
-            }
+            return prefix.parse::<u32>().ok();
         }
     }
-    false
+    None
+}
+
+/// Extract the ordered list number from the last line of a block.
+/// Returns `Some(n)` if the block ends with "N. ...", `None` otherwise.
+fn last_ordered_list_number(s: &str) -> Option<u32> {
+    let last_line = s.lines().last()?;
+    ordered_list_start_number(last_line)
 }
 
 /// Check if a block ends with an ordered list item.
 fn ends_with_ordered_list_item(s: &str) -> bool {
-    // Check the last line
-    if let Some(last_line) = s.lines().last() {
-        let trimmed = last_line.trim_start();
-        let bytes = trimmed.as_bytes();
-        if !bytes.is_empty() && bytes[0].is_ascii_digit() {
-            if let Some(dot_pos) = trimmed.find(". ") {
-                let prefix = &trimmed[..dot_pos];
-                return prefix.chars().all(|c| c.is_ascii_digit());
-            }
-        }
-    }
-    false
+    last_ordered_list_number(s).is_some()
+}
+
+/// Check if `part` is a lazy list continuation of `prev`.
+/// Lazy numbering: all items use `1.`, so `1.` after `1.` should merge.
+fn is_lazy_list_continuation(part: &str, prev: &str) -> bool {
+    ordered_list_start_number(part) == Some(1) && last_ordered_list_number(prev) == Some(1)
 }
 
 /// Check if a text block has an unclosed code fence.
@@ -615,6 +619,9 @@ fn split_and_merge_text_delta(existing: &[String], delta: &str) -> Vec<String> {
                 last.push_str(delta);
             }
         }
+        // Retroactive merge: if tokens arrived one at a time ("2", ".", " X"),
+        // the current block may now form a list item. Merge it back if so.
+        try_retroactive_list_merge(&mut blocks);
     } else {
         // Has separator(s) — append first part to current, create new blocks for rest
         if let Some((first, rest)) = parts.split_first() {
@@ -641,8 +648,9 @@ fn push_parts_merging_lists(blocks: &mut Vec<String>, parts: &[&str]) {
             continue;
         }
         let should_merge = blocks.last().is_some_and(|prev| {
-            // Merge ordered list continuations
-            (is_ordered_list_continuation(part) && ends_with_ordered_list_item(prev))
+            // Merge ordered list continuations (counting up: 2., 3., ... or lazy: 1., 1., ...)
+            (starts_with_ordered_list_item(part) && ends_with_ordered_list_item(prev))
+            || is_lazy_list_continuation(part, prev)
             // Merge content that's inside an unclosed code fence
             || has_unclosed_fence(prev)
         });
@@ -662,8 +670,9 @@ fn push_parts_merging_lists(blocks: &mut Vec<String>, parts: &[&str]) {
 fn try_merge_list_across_placeholder(blocks: &mut Vec<String>, delta: &str) -> bool {
     if blocks.len() >= 2 && blocks.last().map(|b| b.is_empty()).unwrap_or(false) {
         let prev = &blocks[blocks.len() - 2];
-        let should_merge = (is_ordered_list_continuation(delta)
+        let should_merge = (starts_with_ordered_list_item(delta)
             && ends_with_ordered_list_item(prev))
+            || is_lazy_list_continuation(delta, prev)
             || has_unclosed_fence(prev);
         if should_merge {
             blocks.pop();
@@ -677,6 +686,30 @@ fn try_merge_list_across_placeholder(blocks: &mut Vec<String>, delta: &str) -> b
     false
 }
 
+/// Retroactively merge the last block into the one before it if it forms a list continuation.
+///
+/// Defensive: handles cases where tokens arrive individually ("2", ".", " Item")
+/// and the block only becomes recognizable as a list item after accumulation.
+fn try_retroactive_list_merge(blocks: &mut Vec<String>) {
+    if blocks.len() < 2 {
+        return;
+    }
+    let current = &blocks[blocks.len() - 1];
+    let prev = &blocks[blocks.len() - 2];
+
+    let should_merge = (starts_with_ordered_list_item(current)
+        && ends_with_ordered_list_item(prev))
+        || is_lazy_list_continuation(current, prev);
+
+    if should_merge {
+        let current = blocks.pop().unwrap();
+        if let Some(prev) = blocks.last_mut() {
+            prev.push_str("\n\n");
+            prev.push_str(&current);
+        }
+    }
+}
+
 /// Append the first part of a multi-part delta to the current blocks.
 fn append_first_part(blocks: &mut Vec<String>, first: &str) {
     // Check if last block is an empty placeholder and first part should merge
@@ -686,8 +719,9 @@ fn append_first_part(blocks: &mut Vec<String>, first: &str) {
         && !first.is_empty()
     {
         let prev = &blocks[blocks.len() - 2];
-        let should_merge = (is_ordered_list_continuation(first)
+        let should_merge = (starts_with_ordered_list_item(first)
             && ends_with_ordered_list_item(prev))
+            || is_lazy_list_continuation(first, prev)
             || has_unclosed_fence(prev);
         if should_merge {
             blocks.pop();
@@ -703,8 +737,8 @@ fn append_first_part(blocks: &mut Vec<String>, first: &str) {
         // Inside an unclosed fence or continuing an ordered list: rejoin with \n\n
         if has_unclosed_fence(last)
             || (!first.is_empty()
-                && is_ordered_list_continuation(first)
-                && ends_with_ordered_list_item(last))
+                && ((starts_with_ordered_list_item(first) && ends_with_ordered_list_item(last))
+                    || is_lazy_list_continuation(first, last)))
         {
             last.push_str("\n\n");
             last.push_str(first);
@@ -1950,13 +1984,101 @@ mod tests {
     }
 
     #[test]
-    fn test_is_ordered_list_continuation() {
-        assert!(super::is_ordered_list_continuation("2. Second"));
-        assert!(super::is_ordered_list_continuation("3. Third"));
-        assert!(super::is_ordered_list_continuation("10. Tenth"));
-        assert!(!super::is_ordered_list_continuation("1. First")); // starts new list
-        assert!(!super::is_ordered_list_continuation("Not a list"));
-        assert!(!super::is_ordered_list_continuation(""));
+    fn test_lazy_numbered_list_not_split_across_blocks() {
+        let mut list = ContainerList::new();
+        list.start_assistant_response();
+        list.append_text("1. First\n\n1. Second\n\n1. Third");
+
+        if let Some(ChatContainer::AssistantResponse { blocks, .. }) = list.containers.last() {
+            assert_eq!(
+                blocks.len(),
+                1,
+                "Lazy-numbered list items should merge into one block: {:?}",
+                blocks
+            );
+            match &blocks[0] {
+                ContentBlock::Text(content) => {
+                    assert!(content.contains("1. First"));
+                    assert!(content.contains("1. Second"));
+                    assert!(content.contains("1. Third"));
+                }
+                _ => panic!("Expected text block"),
+            }
+        } else {
+            panic!("Expected AssistantResponse");
+        }
+    }
+
+    #[test]
+    fn test_lazy_numbered_list_incremental_streaming() {
+        let mut list = ContainerList::new();
+        list.start_assistant_response();
+        list.append_text("1. First\n\n");
+        list.append_text("1. Second\n\n");
+        list.append_text("1. Third");
+
+        if let Some(ChatContainer::AssistantResponse { blocks, .. }) = list.containers.last() {
+            assert_eq!(
+                blocks.len(),
+                1,
+                "Streamed lazy-numbered list items should merge: {:?}",
+                blocks
+            );
+            match &blocks[0] {
+                ContentBlock::Text(content) => {
+                    assert!(content.contains("1. First"));
+                    assert!(content.contains("1. Second"));
+                    assert!(content.contains("1. Third"));
+                }
+                _ => panic!("Expected text block"),
+            }
+        } else {
+            panic!("Expected AssistantResponse");
+        }
+    }
+
+    #[test]
+    fn test_counting_list_then_reset_splits_correctly() {
+        let mut list = ContainerList::new();
+        list.start_assistant_response();
+        // Counting up list, then a new list starting at 1
+        list.append_text("1. A\n\n2. B\n\n3. C\n\n1. X\n\n2. Y");
+
+        if let Some(ChatContainer::AssistantResponse { blocks, .. }) = list.containers.last() {
+            // "1. A ... 3. C" should merge (counting up), then "1. X" starts new block (reset)
+            assert_eq!(
+                blocks.len(),
+                2,
+                "Reset at '1. X' should split into two blocks: {:?}",
+                blocks
+            );
+            match &blocks[0] {
+                ContentBlock::Text(s) => {
+                    assert!(s.contains("1. A"), "First block has first list");
+                    assert!(s.contains("3. C"), "First block has last item of first list");
+                }
+                _ => panic!("Expected text block"),
+            }
+            match &blocks[1] {
+                ContentBlock::Text(s) => {
+                    assert!(s.contains("1. X"), "Second block starts new list");
+                    assert!(s.contains("2. Y"), "Second block has second item");
+                }
+                _ => panic!("Expected text block"),
+            }
+        } else {
+            panic!("Expected AssistantResponse");
+        }
+    }
+
+    #[test]
+    fn test_starts_with_ordered_list_item() {
+        assert!(super::starts_with_ordered_list_item("2. Second"));
+        assert!(super::starts_with_ordered_list_item("3. Third"));
+        assert!(super::starts_with_ordered_list_item("10. Tenth"));
+        assert!(!super::starts_with_ordered_list_item("1. First"));
+        assert!(!super::starts_with_ordered_list_item("Not a list"));
+        assert!(!super::starts_with_ordered_list_item(""));
     }
 
     #[test]

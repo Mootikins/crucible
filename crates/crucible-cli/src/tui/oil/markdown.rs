@@ -1249,6 +1249,124 @@ mod tests {
         );
     }
 
+    #[test]
+    fn ordered_list_renders_incrementing_numbers() {
+        let md = "1. Alpha\n2. Beta\n3. Gamma";
+        let node = markdown_to_node(md);
+        let output = render_to_string(&node, 80);
+        assert!(output.contains("1. "), "Should contain '1. '");
+        assert!(output.contains("2. "), "Should contain '2. '");
+        assert!(output.contains("3. "), "Should contain '3. '");
+    }
+
+    #[test]
+    fn ordered_list_lazy_numbering_renders_incrementing() {
+        let md = "1. Alpha\n1. Beta\n1. Gamma";
+        let node = markdown_to_node(md);
+        let output = render_to_string(&node, 80);
+        assert!(output.contains("1. "), "Should contain '1. '");
+        assert!(output.contains("2. "), "Should contain '2. '");
+        assert!(output.contains("3. "), "Should contain '3. '");
+    }
+
+    #[test]
+    fn ordered_list_no_blank_lines_between_items() {
+        let md = "1. First\n2. Second\n3. Third";
+        let node = markdown_to_node(md);
+        let output = render_to_string(&node, 80);
+        let lines: Vec<&str> = output.split("\r\n").collect();
+
+        let first_idx = lines.iter().position(|l| l.contains("First")).unwrap();
+        let second_idx = lines.iter().position(|l| l.contains("Second")).unwrap();
+        let third_idx = lines.iter().position(|l| l.contains("Third")).unwrap();
+
+        assert_eq!(
+            second_idx,
+            first_idx + 1,
+            "No blank line between First and Second.\nLines: {:?}",
+            lines
+        );
+        assert_eq!(
+            third_idx,
+            second_idx + 1,
+            "No blank line between Second and Third.\nLines: {:?}",
+            lines
+        );
+    }
+
+    #[test]
+    fn two_ordered_lists_separated_by_paragraph() {
+        let md = "1. A\n2. B\n\nSome paragraph\n\n1. X\n2. Y";
+        let node = markdown_to_node(md);
+        let output = render_to_string(&node, 80);
+        let lines: Vec<&str> = output.split("\r\n").collect();
+
+        // First list: 1. A, 2. B
+        assert!(
+            lines.iter().any(|l| l.contains("1.") && l.contains("A")),
+            "First list item A"
+        );
+        assert!(
+            lines.iter().any(|l| l.contains("2.") && l.contains("B")),
+            "First list item B"
+        );
+
+        // Paragraph between lists
+        assert!(
+            lines.iter().any(|l| l.contains("Some paragraph")),
+            "Paragraph between lists"
+        );
+
+        // Second list: 1. X, 2. Y (renumbered from 1)
+        assert!(
+            lines.iter().any(|l| l.contains("1.") && l.contains("X")),
+            "Second list item X"
+        );
+        assert!(
+            lines.iter().any(|l| l.contains("2.") && l.contains("Y")),
+            "Second list item Y"
+        );
+    }
+
+    #[test]
+    fn loose_ordered_list_no_extra_spacing() {
+        let md = "1. A\n\n2. B\n\n3. C";
+        let node = markdown_to_node(md);
+        let output = render_to_string(&node, 80);
+        let lines: Vec<&str> = output.split("\r\n").collect();
+
+        // Should render as 1, 2, 3 with no blank lines between
+        assert!(
+            lines.iter().any(|l| l.contains("1.") && l.contains("A")),
+            "Item 1"
+        );
+        assert!(
+            lines.iter().any(|l| l.contains("2.") && l.contains("B")),
+            "Item 2"
+        );
+        assert!(
+            lines.iter().any(|l| l.contains("3.") && l.contains("C")),
+            "Item 3"
+        );
+
+        let a_idx = lines.iter().position(|l| l.contains("A")).unwrap();
+        let b_idx = lines.iter().position(|l| l.contains("B")).unwrap();
+        let c_idx = lines.iter().position(|l| l.contains("C")).unwrap();
+
+        assert_eq!(
+            b_idx,
+            a_idx + 1,
+            "No blank line between A and B.\nLines: {:?}",
+            lines
+        );
+        assert_eq!(
+            c_idx,
+            b_idx + 1,
+            "No blank line between B and C.\nLines: {:?}",
+            lines
+        );
+    }
+
     fn assert_lines_fit_width(output: &str, max_width: usize) {
         for (i, line) in output.split("\r\n").enumerate() {
             let width = visible_width(line);
