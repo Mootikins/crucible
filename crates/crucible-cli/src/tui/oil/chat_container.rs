@@ -548,6 +548,21 @@ fn ends_with_ordered_list_item(s: &str) -> bool {
     false
 }
 
+/// Check if a text block has an unclosed code fence.
+///
+/// Scans lines for fence markers (``` or ~~~). An odd count means the last fence
+/// was an opening marker with no matching close — the block is mid-code-block.
+fn has_unclosed_fence(s: &str) -> bool {
+    let mut inside_fence = false;
+    for line in s.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            inside_fence = !inside_fence;
+        }
+    }
+    inside_fence
+}
+
 /// Split an incoming text delta into paragraph blocks, merging with existing blocks.
 ///
 /// Handles:
@@ -575,7 +590,11 @@ fn split_and_merge_text_delta(existing: &[String], delta: &str) -> Vec<String> {
                 blocks.push(first.to_string());
             }
             push_parts_merging_lists(&mut blocks, rest);
-            if delta.ends_with("\n\n") && !blocks.is_empty() {
+            // Trailing \n\n means next delta starts fresh — but not inside a code fence
+            if delta.ends_with("\n\n")
+                && !blocks.is_empty()
+                && !blocks.last().map_or(true, |b| has_unclosed_fence(b) || b.is_empty())
+            {
                 blocks.push(String::new());
             }
         }
@@ -601,10 +620,10 @@ fn split_and_merge_text_delta(existing: &[String], delta: &str) -> Vec<String> {
         if let Some((first, rest)) = parts.split_first() {
             append_first_part(&mut blocks, first);
             push_parts_merging_lists(&mut blocks, rest);
-            // Trailing \n\n means next delta should start a fresh block
+            // Trailing \n\n means next delta starts fresh — but not inside a code fence
             if delta.ends_with("\n\n")
                 && !blocks.is_empty()
-                && !blocks.last().map(|b| b.is_empty()).unwrap_or(false)
+                && !blocks.last().map_or(true, |b| has_unclosed_fence(b) || b.is_empty())
             {
                 blocks.push(String::new());
             }
@@ -614,18 +633,20 @@ fn split_and_merge_text_delta(existing: &[String], delta: &str) -> Vec<String> {
     blocks
 }
 
-/// Append parts to blocks, merging ordered list continuations with the previous block.
+/// Append parts to blocks, merging ordered list continuations and code fence
+/// interiors with the previous block.
 fn push_parts_merging_lists(blocks: &mut Vec<String>, parts: &[&str]) {
     for part in parts {
         if part.is_empty() {
             continue;
         }
-        if is_ordered_list_continuation(part)
-            && blocks
-                .last()
-                .map(|b| ends_with_ordered_list_item(b))
-                .unwrap_or(false)
-        {
+        let should_merge = blocks.last().is_some_and(|prev| {
+            // Merge ordered list continuations
+            (is_ordered_list_continuation(part) && ends_with_ordered_list_item(prev))
+            // Merge content that's inside an unclosed code fence
+            || has_unclosed_fence(prev)
+        });
+        if should_merge {
             if let Some(last) = blocks.last_mut() {
                 last.push_str("\n\n");
                 last.push_str(part);
@@ -636,50 +657,60 @@ fn push_parts_merging_lists(blocks: &mut Vec<String>, parts: &[&str]) {
     }
 }
 
-/// Try to merge a list continuation across an empty placeholder.
+/// Try to merge across an empty placeholder for list continuations and unclosed fences.
 /// Returns true if merged.
 fn try_merge_list_across_placeholder(blocks: &mut Vec<String>, delta: &str) -> bool {
-    if blocks.len() >= 2
-        && blocks.last().map(|b| b.is_empty()).unwrap_or(false)
-        && is_ordered_list_continuation(delta)
-        && ends_with_ordered_list_item(&blocks[blocks.len() - 2])
-    {
-        blocks.pop();
-        if let Some(prev) = blocks.last_mut() {
-            prev.push_str("\n\n");
-            prev.push_str(delta);
+    if blocks.len() >= 2 && blocks.last().map(|b| b.is_empty()).unwrap_or(false) {
+        let prev = &blocks[blocks.len() - 2];
+        let should_merge = (is_ordered_list_continuation(delta)
+            && ends_with_ordered_list_item(prev))
+            || has_unclosed_fence(prev);
+        if should_merge {
+            blocks.pop();
+            if let Some(prev) = blocks.last_mut() {
+                prev.push_str("\n\n");
+                prev.push_str(delta);
+            }
+            return true;
         }
-        true
-    } else {
-        false
     }
+    false
 }
 
 /// Append the first part of a multi-part delta to the current blocks.
 fn append_first_part(blocks: &mut Vec<String>, first: &str) {
-    // Check if last block is an empty placeholder and first part merges as list continuation
+    // Check if last block is an empty placeholder and first part should merge
+    // (list continuation or unclosed code fence in the block before the placeholder)
     if blocks.len() >= 2
         && blocks.last().map(|b| b.is_empty()).unwrap_or(false)
         && !first.is_empty()
-        && is_ordered_list_continuation(first)
-        && ends_with_ordered_list_item(&blocks[blocks.len() - 2])
     {
-        blocks.pop();
-        if let Some(prev) = blocks.last_mut() {
-            prev.push_str("\n\n");
-            prev.push_str(first);
+        let prev = &blocks[blocks.len() - 2];
+        let should_merge = (is_ordered_list_continuation(first)
+            && ends_with_ordered_list_item(prev))
+            || has_unclosed_fence(prev);
+        if should_merge {
+            blocks.pop();
+            if let Some(prev) = blocks.last_mut() {
+                prev.push_str("\n\n");
+                prev.push_str(first);
+            }
+            return;
         }
-        return;
     }
 
     if let Some(last) = blocks.last_mut() {
-        if !first.is_empty()
-            && is_ordered_list_continuation(first)
-            && ends_with_ordered_list_item(last)
+        // Inside an unclosed fence or continuing an ordered list: rejoin with \n\n
+        if has_unclosed_fence(last)
+            || (!first.is_empty()
+                && is_ordered_list_continuation(first)
+                && ends_with_ordered_list_item(last))
         {
             last.push_str("\n\n");
+            last.push_str(first);
+        } else {
+            last.push_str(first);
         }
-        last.push_str(first);
     }
 }
 
@@ -2149,6 +2180,176 @@ mod tests {
             !thought_line.contains('\u{250C}'),
             "Collapsed thinking summary should not use box-drawing corner ┌\nLine: {thought_line}"
         );
+    }
+
+    #[test]
+    fn code_block_not_split_across_text_blocks() {
+        // A fenced code block separated from surrounding text by \n\n should
+        // remain as a single block (fences + content together), not get split
+        // at the \n\n boundary which tears the fences off the content.
+        let md = "## Quick Commands\n\n```bash\n# Chat\ncru chat\n```\n\nText between\n\n```bash\ncru chat -a claude\n```\n\nMore text\n\n```bash\ncru mcp\n```";
+        let mut list = ContainerList::new();
+        list.start_assistant_response();
+        list.append_text(md);
+
+        let texts = extract_text_blocks(&list);
+        assert_no_orphaned_fences(&texts, "Single-delta code blocks");
+    }
+
+    #[test]
+    fn streamed_code_block_not_split_across_text_blocks() {
+        // Simulates streaming where fences arrive as separate tokens from content
+        let mut list = ContainerList::new();
+        list.start_assistant_response();
+        list.append_text("Here is code:\n\n");
+        list.append_text("```bash\n");
+        list.append_text("cru chat -a claude\n");
+        list.append_text("```\n\n");
+        list.append_text("And more code:\n\n");
+        list.append_text("```bash\n");
+        list.append_text("cru mcp\n");
+        list.append_text("```");
+
+        let blocks = match list.containers.last() {
+            Some(ChatContainer::AssistantResponse { blocks, .. }) => blocks,
+            _ => panic!("Expected AssistantResponse"),
+        };
+
+        let texts: Vec<&str> = blocks
+            .iter()
+            .filter_map(|b| match b {
+                ContentBlock::Text(s) => Some(s.as_str()),
+                _ => None,
+            })
+            .collect();
+        for (i, text) in texts.iter().enumerate() {
+            let trimmed = text.trim();
+            assert!(
+                trimmed != "```" && trimmed != "```bash",
+                "Block {i} is a bare fence marker '{}', streaming tore code block apart.\nAll blocks: {texts:?}",
+                trimmed
+            );
+        }
+    }
+
+    #[test]
+    fn code_block_fences_survive_chunked_streaming() {
+        // Simulates various realistic streaming chunk patterns to find
+        // which pattern tears code blocks apart.
+        //
+        // Full content:
+        // ## Quick Commands\n\n```bash\n# Chat\ncru chat\n```\n\n
+        // Chat with Claude Code\n\n```bash\ncru chat -a claude\n```\n\n
+        // Start MCP server\n\n```bash\ncru mcp\n```
+
+        // Pattern A: closing fence and \n\n arrive together (```\n\n)
+        {
+            let mut list = ContainerList::new();
+            list.start_assistant_response();
+            list.append_text("## Quick Commands\n\n```bash\n# Chat\ncru chat\n");
+            list.append_text("```\n\nChat with Claude Code\n\n```bash\ncru chat -a claude\n");
+            list.append_text("```\n\nStart MCP server\n\n```bash\ncru mcp\n```");
+
+            let blocks = extract_text_blocks(&list);
+            eprintln!("Pattern A blocks: {blocks:?}");
+            assert_no_orphaned_fences(&blocks, "Pattern A");
+        }
+
+        // Pattern B: closing fence in one chunk, \n\n starts next chunk
+        {
+            let mut list = ContainerList::new();
+            list.start_assistant_response();
+            list.append_text("## Quick Commands\n\n```bash\n# Chat\ncru chat\n```");
+            list.append_text("\n\nChat with Claude Code\n\n```bash\ncru chat -a claude\n```");
+            list.append_text("\n\nStart MCP server\n\n```bash\ncru mcp\n```");
+
+            let blocks = extract_text_blocks(&list);
+            eprintln!("Pattern B blocks: {blocks:?}");
+            assert_no_orphaned_fences(&blocks, "Pattern B");
+        }
+
+        // Pattern C: large chunks with mid-fence splits
+        {
+            let mut list = ContainerList::new();
+            list.start_assistant_response();
+            list.append_text("## Quick Commands\n\n```bash\n# Chat\ncru chat\n```\n\nChat with Claude Code\n\n```");
+            list.append_text("bash\ncru chat -a claude\n```\n\nStart MCP server\n\n```bash\ncru mcp\n```");
+
+            let blocks = extract_text_blocks(&list);
+            eprintln!("Pattern C blocks: {blocks:?}");
+            assert_no_orphaned_fences(&blocks, "Pattern C");
+        }
+
+        // Pattern D: \n\n inside code fence content
+        {
+            let mut list = ContainerList::new();
+            list.start_assistant_response();
+            list.append_text("```bash\n# Comment\n\ncru chat\n```\n\nSome text\n\n```bash\ncru mcp\n```");
+
+            let blocks = extract_text_blocks(&list);
+            eprintln!("Pattern D blocks: {blocks:?}");
+            assert_no_orphaned_fences(&blocks, "Pattern D");
+        }
+
+        // Pattern E: bare ``` (no language tag) code blocks
+        {
+            let mut list = ContainerList::new();
+            list.start_assistant_response();
+            list.append_text("Text\n\n```\ncru chat\n```\n\nMore text\n\n```\ncru mcp\n```");
+
+            let blocks = extract_text_blocks(&list);
+            eprintln!("Pattern E blocks: {blocks:?}");
+            assert_no_orphaned_fences(&blocks, "Pattern E");
+        }
+    }
+
+    fn extract_text_blocks(list: &ContainerList) -> Vec<String> {
+        match list.containers.last() {
+            Some(ChatContainer::AssistantResponse { blocks, .. }) => blocks
+                .iter()
+                .filter_map(|b| match b {
+                    ContentBlock::Text(s) => Some(s.clone()),
+                    _ => None,
+                })
+                .collect(),
+            _ => panic!("Expected AssistantResponse"),
+        }
+    }
+
+    #[test]
+    fn streamed_code_block_with_blank_line_inside() {
+        // Code block with a blank line inside, streamed in chunks where
+        // the \n\n arrives at a chunk boundary
+        let mut list = ContainerList::new();
+        list.start_assistant_response();
+        list.append_text("```bash\n# Comment\n\n");
+        list.append_text("cru chat\n```\n\n");
+        list.append_text("Some text");
+
+        let blocks = extract_text_blocks(&list);
+        eprintln!("Streamed blank-line blocks: {blocks:?}");
+        assert_no_orphaned_fences(&blocks, "Streamed blank-line");
+
+        // The code block should be intact
+        let code_block = &blocks[0];
+        assert!(
+            code_block.contains("```bash") && code_block.contains("```\n") || code_block.ends_with("```"),
+            "Code block should have both fences: {:?}",
+            code_block
+        );
+    }
+
+    fn assert_no_orphaned_fences(blocks: &[String], label: &str) {
+        for (i, text) in blocks.iter().enumerate() {
+            let trimmed = text.trim();
+            // A block that is JUST a fence marker means the code block was torn apart
+            assert!(
+                trimmed != "```" && !trimmed.starts_with("```") || trimmed.matches("```").count() >= 2,
+                "{label}: Block {i} has orphaned fence marker: {:?}\nAll blocks: {:?}",
+                trimmed,
+                blocks
+            );
+        }
     }
 
 }
