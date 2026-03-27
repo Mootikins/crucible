@@ -748,6 +748,7 @@ mod precognition_format_hook_tests {
             permission_hooks: Arc::new(StdMutex::new(Vec::new())),
             permission_functions: Arc::new(StdMutex::new(HashMap::new())),
             reactor: Reactor::new(),
+            spill_counter: std::sync::atomic::AtomicU32::new(1),
         }
     }
 
