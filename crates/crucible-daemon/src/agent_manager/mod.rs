@@ -187,6 +187,8 @@ pub(crate) struct SessionEventState {
     permission_hooks: Arc<StdMutex<Vec<PermissionHook>>>,
     permission_functions: Arc<StdMutex<HashMap<String, RegistryKey>>>,
     pub(crate) reactor: Reactor,
+    /// Counter for spill file naming, persists across messages in a session
+    pub(crate) spill_counter: std::sync::atomic::AtomicU32,
 }
 
 /// Discover Lua handler files and register them with the Reactor.
@@ -283,7 +285,6 @@ struct StreamContext {
     pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
     workspace_path: PathBuf,
     session_dir: PathBuf,
-    spill_counter: Arc<std::sync::atomic::AtomicU32>,
     agent_stream_config: AgentStreamConfig,
     tool_dispatcher: Arc<dyn ToolDispatcher>,
 }
@@ -695,6 +696,7 @@ impl AgentManager {
             permission_hooks,
             permission_functions,
             reactor,
+            spill_counter: std::sync::atomic::AtomicU32::new(1),
         }));
         self.session_states
             .insert(session_id.to_string(), state.clone());

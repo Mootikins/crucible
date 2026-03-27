@@ -37,17 +37,10 @@ impl AgentManager {
             .get_session(session_id)
             .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
 
-        let mut agent_config = session
+        let agent_config = session
             .agent
             .clone()
             .ok_or_else(|| AgentError::NoAgentConfigured(session_id.to_string()))?;
-
-        // Inject tool spilling context into system prompt so the agent knows about $CRU_SESSION_DIR
-        if !agent_config.system_prompt.is_empty() {
-            agent_config.system_prompt.push_str(
-                "\n\nLarge tool outputs are saved to $CRU_SESSION_DIR/tools/. Use this path in shell commands to access full content.",
-            );
-        }
 
         use dashmap::mapref::entry::Entry;
         let (cancel_tx, cancel_rx) = oneshot::channel();
@@ -120,7 +113,6 @@ impl AgentManager {
             pending_permissions: self.pending_permissions.clone(),
             workspace_path: session.workspace.clone(),
             session_dir: session.storage_path(),
-            spill_counter: Arc::new(std::sync::atomic::AtomicU32::new(1)),
             agent_stream_config: AgentStreamConfig::from_session_agent(&agent_config),
             tool_dispatcher: self.get_or_create_session_dispatcher(&session),
         };
@@ -255,7 +247,7 @@ impl AgentManager {
         is_interactive: bool,
         permission_override: Option<PermissionMode>,
     ) -> Result<(BoxedAgentHandle, SessionAgent), AgentError> {
-        let resolved_config = if agent_config.endpoint.is_none() {
+        let mut resolved_config = if agent_config.endpoint.is_none() {
             let provider_key = agent_config
                 .provider_key
                 .as_deref()
@@ -275,6 +267,13 @@ impl AgentManager {
         } else {
             agent_config.clone()
         };
+
+        // Inject tool spilling context into system prompt (once, at agent creation)
+        if !resolved_config.system_prompt.is_empty() {
+            resolved_config.system_prompt.push_str(
+                "\n\nLarge tool outputs are saved to $CRU_SESSION_DIR/tools/. Use this path in shell commands to access full content.",
+            );
+        }
 
         info!(
             session_id = %session_id,
@@ -1091,26 +1090,17 @@ impl AgentManager {
         };
 
         // Spill large tool outputs to disk and replace with a token-efficient reference.
-        // Only spill tools whose output is not trivially reproducible — workspace file tools
-        // (read, edit, write, glob, grep) read files that already exist on disk.
+        // Skip tools whose output is trivially reproducible from existing data on disk.
         const SPILL_THRESHOLD: usize = 10 * 1024; // 10KB
         let should_spill = error_str.is_none()
             && result_str.len() >= SPILL_THRESHOLD
-            && !matches!(
-                tool_call.name.as_str(),
-                "read_file"
-                    | "mcp_read"
-                    | "edit_file"
-                    | "mcp_edit"
-                    | "write_file"
-                    | "mcp_write"
-                    | "glob"
-                    | "mcp_glob"
-                    | "grep"
-                    | "mcp_grep"
-            );
+            && !Self::is_reproducible_tool(&tool_call.name);
         let spill_path = if should_spill {
-            match Self::spill_tool_output(stream_ctx, &tool_call.name, &result_str) {
+            let counter = {
+                let state = stream_ctx.session_state.lock().await;
+                state.spill_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            };
+            match Self::spill_tool_output(&stream_ctx.session_dir, &tool_call.name, &result_str, counter).await {
                 Ok((path, filename)) => {
                     // Count lines in the actual content, not the JSON-serialized string
                     let line_count = serde_json::from_str::<serde_json::Value>(&result_str)
@@ -1200,18 +1190,38 @@ impl AgentManager {
         })
     }
 
+    /// Tools whose output is trivially reproducible from existing data on disk.
+    /// These should not be spilled — the content already exists and can be re-read.
+    fn is_reproducible_tool(name: &str) -> bool {
+        matches!(
+            name,
+            "read_file"
+                | "mcp_read"
+                | "edit_file"
+                | "mcp_edit"
+                | "write_file"
+                | "mcp_write"
+                | "glob"
+                | "mcp_glob"
+                | "grep"
+                | "mcp_grep"
+                | "list_notes"
+                | "read_note"
+                | "read_metadata"
+                | "get_kiln_info"
+        )
+    }
+
     /// Spill large tool output to disk. Returns (absolute_path, filename).
-    fn spill_tool_output(
-        stream_ctx: &StreamContext,
+    async fn spill_tool_output(
+        session_dir: &std::path::Path,
         tool_name: &str,
         output: &str,
+        counter: u32,
     ) -> anyhow::Result<(PathBuf, String)> {
-        let tools_dir = stream_ctx.session_dir.join("tools");
-        std::fs::create_dir_all(&tools_dir)?;
+        let tools_dir = session_dir.join("tools");
+        tokio::fs::create_dir_all(&tools_dir).await?;
 
-        let counter = stream_ctx
-            .spill_counter
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let name_slug: String = tool_name
             .chars()
             .take(20)
@@ -1220,7 +1230,7 @@ impl AgentManager {
         let filename = format!("{}-{}.txt", name_slug, counter);
         let path = tools_dir.join(&filename);
 
-        std::fs::write(&path, output)?;
+        tokio::fs::write(&path, output).await?;
         Ok((path, filename))
     }
 
@@ -1711,7 +1721,6 @@ impl AgentManager {
                     pending_permissions: stream_ctx.pending_permissions.clone(),
                     workspace_path: stream_ctx.workspace_path.clone(),
                     session_dir: stream_ctx.session_dir.clone(),
-                    spill_counter: stream_ctx.spill_counter.clone(),
                     agent_stream_config: stream_ctx.agent_stream_config.clone(),
                     tool_dispatcher: stream_ctx.tool_dispatcher.clone(),
                 };
