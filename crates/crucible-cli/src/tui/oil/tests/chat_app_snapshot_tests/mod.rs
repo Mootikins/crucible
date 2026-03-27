@@ -111,6 +111,60 @@ fn snapshot_ordered_list_numbering() {
 }
 
 #[test]
+fn snapshot_lazy_numbered_list_renders_incrementing() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("List features".to_string()));
+    // LLM streams lazy-numbered items (all "1.") separated by blank lines
+    app.on_message(ChatAppMsg::TextDelta("1. First feature\n\n".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("1. Second feature\n\n".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("1. Third feature".to_string()));
+    app.on_message(ChatAppMsg::StreamComplete);
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
+fn snapshot_ordered_list_bulk_send() {
+    // LLM sends entire list in one delta (no streaming splits)
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("List".to_string()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "1. First\n2. Second\n3. Third\n4. Fourth\n5. Fifth".to_string(),
+    ));
+    app.on_message(ChatAppMsg::StreamComplete);
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
+fn snapshot_ordered_list_long_items() {
+    // Items long enough to wrap
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Features".to_string()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "1. Sessions as Notes — Every chat saves as markdown in your kiln workspace searchable and linkable\n\n".to_string(),
+    ));
+    app.on_message(ChatAppMsg::TextDelta(
+        "2. MCP Server — Expose your knowledge base to Claude Desktop or any MCP-compatible AI tool\n\n".to_string(),
+    ));
+    app.on_message(ChatAppMsg::TextDelta(
+        "3. Lua Plugins — Neovim-like extensibility with full API access".to_string(),
+    ));
+    app.on_message(ChatAppMsg::StreamComplete);
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
+fn snapshot_two_separate_ordered_lists() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Two lists".to_string()));
+    // First list counts up, then a paragraph, then a new list
+    app.on_message(ChatAppMsg::TextDelta(
+        "1. Alpha\n\n2. Beta\n\nSome text between\n\n1. X\n\n2. Y".to_string(),
+    ));
+    app.on_message(ChatAppMsg::StreamComplete);
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
 fn snapshot_tool_call_pending() {
     let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::UserMessage("Read a file".to_string()));

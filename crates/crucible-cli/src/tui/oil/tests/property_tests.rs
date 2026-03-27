@@ -812,6 +812,128 @@ mod markdown_block_spacing_properties {
     }
 }
 
+mod ordered_list_rendering_properties {
+    use crate::tui::oil::markdown::markdown_to_node;
+    use crate::tui::oil::render::render_to_string;
+    use proptest::prelude::*;
+
+    fn render_md(md: &str, width: usize) -> String {
+        let node = markdown_to_node(md);
+        render_to_string(&node, width)
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn ordered_list_numbers_increment_sequentially(
+            count in 2usize..=8,
+            width in 40usize..100
+        ) {
+            // Build a list with sequential numbering
+            let md: String = (1..=count)
+                .map(|i| format!("{}. Item{}", i, i))
+                .collect::<Vec<_>>()
+                .join("\n");
+            let output = render_md(&md, width);
+
+            for i in 1..=count {
+                let marker = format!("{}. ", i);
+                prop_assert!(
+                    output.contains(&marker),
+                    "Missing '{}' in output.\nMD:\n{}\nOutput:\n{}",
+                    marker, md, output
+                );
+            }
+        }
+
+        #[test]
+        fn lazy_numbered_list_increments(
+            count in 2usize..=8,
+            width in 40usize..100
+        ) {
+            // All items use "1." (lazy numbering)
+            let md: String = (0..count)
+                .map(|i| format!("1. Item{}", i))
+                .collect::<Vec<_>>()
+                .join("\n");
+            let output = render_md(&md, width);
+
+            // Should render as 1, 2, 3, ...
+            for i in 1..=count {
+                let marker = format!("{}. ", i);
+                prop_assert!(
+                    output.contains(&marker),
+                    "Lazy list missing '{}' in output.\nMD:\n{}\nOutput:\n{}",
+                    marker, md, output
+                );
+            }
+        }
+
+        #[test]
+        fn ordered_list_items_have_no_blank_lines_between(
+            count in 2usize..=6,
+            width in 40usize..100
+        ) {
+            let md: String = (1..=count)
+                .map(|i| format!("{}. Item{}", i, i))
+                .collect::<Vec<_>>()
+                .join("\n");
+            let output = render_md(&md, width);
+            let lines: Vec<&str> = output.split("\r\n").collect();
+
+            // Find positions of each item and verify they're consecutive
+            let positions: Vec<usize> = (1..=count)
+                .filter_map(|i| {
+                    let needle = format!("Item{}", i);
+                    lines.iter().position(|l| l.contains(&needle))
+                })
+                .collect();
+
+            prop_assert_eq!(
+                positions.len(), count,
+                "Not all items found.\nMD:\n{}\nOutput:\n{}\nLines: {:?}",
+                md, output, lines
+            );
+
+            for pair in positions.windows(2) {
+                prop_assert_eq!(
+                    pair[1], pair[0] + 1,
+                    "Blank line between items.\nMD:\n{}\nOutput:\n{}\nLines: {:?}",
+                    md, output, lines
+                );
+            }
+        }
+
+        #[test]
+        fn list_then_paragraph_has_blank_line(
+            count in 1usize..=4,
+            para in "[A-Za-z]{5,20}",
+            width in 40usize..100
+        ) {
+            let items: String = (1..=count)
+                .map(|i| format!("{}. Item{}", i, i))
+                .collect::<Vec<_>>()
+                .join("\n");
+            let md = format!("{}\n\n{}", items, para);
+            let output = render_md(&md, width);
+            let lines: Vec<&str> = output.split("\r\n").collect();
+
+            let last_item = format!("Item{}", count);
+            let item_pos = lines.iter().rposition(|l| l.contains(&last_item));
+            let para_pos = lines.iter().position(|l| l.contains(&para));
+
+            if let (Some(ip), Some(pp)) = (item_pos, para_pos) {
+                prop_assert!(
+                    pp > ip + 1,
+                    "No blank line between list and paragraph.\nMD:\n{}\nOutput:\n{}",
+                    md, output
+                );
+            }
+        }
+    }
+}
+
 mod cli_invariants {
     use super::super::generators::arb_short_text;
     use crate::tui::oil::app::App;
