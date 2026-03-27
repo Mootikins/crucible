@@ -628,6 +628,7 @@ impl crate::tool_dispatch::ToolDispatcher for HangingToolDispatcher {
         &self,
         _name: &str,
         _args: serde_json::Value,
+        _env_vars: std::collections::HashMap<String, String>,
     ) -> Result<serde_json::Value, String> {
         tokio::time::sleep(std::time::Duration::from_secs(120)).await;
         Ok(serde_json::Value::Null)
@@ -651,7 +652,7 @@ async fn tool_dispatch_has_timeout() {
 
     let timeout_result = tokio::time::timeout(
         std::time::Duration::from_secs(30),
-        dispatcher.dispatch_tool("test_tool", serde_json::json!({})),
+        dispatcher.dispatch_tool("test_tool", serde_json::json!({}), Default::default()),
     )
     .await;
 

@@ -47,7 +47,7 @@ async fn session_workspace_used_for_workspace_tools() {
 
     let dispatcher = agent_manager.get_or_create_session_dispatcher(&session);
     let result = dispatcher
-        .dispatch_tool("bash", json!({ "command": "pwd" }))
+        .dispatch_tool("bash", json!({ "command": "pwd" }), Default::default())
         .await
         .unwrap();
 
@@ -100,7 +100,7 @@ async fn session_kiln_used_for_crucible_mcp_server() {
 
     let dispatcher = agent_manager.get_or_create_session_dispatcher(&session);
     let result = dispatcher
-        .dispatch_tool("list_notes", json!({}))
+        .dispatch_tool("list_notes", json!({}), Default::default())
         .await
         .unwrap();
     let notes = result
@@ -153,7 +153,7 @@ async fn regression_workspace_equals_kiln_tools_still_work() {
     let dispatcher = agent_manager.get_or_create_session_dispatcher(&session);
 
     let pwd_result = dispatcher
-        .dispatch_tool("bash", json!({ "command": "pwd" }))
+        .dispatch_tool("bash", json!({ "command": "pwd" }), Default::default())
         .await
         .unwrap();
     let pwd = pwd_result
@@ -167,7 +167,7 @@ async fn regression_workspace_equals_kiln_tools_still_work() {
     );
 
     let notes_result = dispatcher
-        .dispatch_tool("list_notes", json!({}))
+        .dispatch_tool("list_notes", json!({}), Default::default())
         .await
         .unwrap();
     let notes = notes_result
@@ -203,7 +203,7 @@ async fn empty_workspace_uses_default_dispatcher_without_panic() {
 
     let dispatcher = agent_manager.get_or_create_session_dispatcher(&session);
     let result = dispatcher
-        .dispatch_tool("bash", json!({ "command": "pwd" }))
+        .dispatch_tool("bash", json!({ "command": "pwd" }), Default::default())
         .await
         .unwrap();
 

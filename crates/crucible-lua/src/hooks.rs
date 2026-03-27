@@ -1,7 +1,7 @@
 //! Hook registration system for Crucible Lua API
 //!
-//! Provides `crucible.on_session_start(fn)` and `crucible.on_tools_registered(fn)`
-//! for registering lifecycle hooks.
+//! Provides `crucible.on_session_start(fn)`, `crucible.on_tools_registered(fn)`,
+//! and `crucible.on_tool_execute(fn)` for registering lifecycle hooks.
 
 use mlua::{Function, Lua, Result as LuaResult, Table, Value};
 use tracing::{debug, warn};
@@ -72,6 +72,32 @@ pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
 
     crucible.set("on_tools_registered", on_tools_registered)?;
 
+    // crucible.on_tool_execute(fn) — fires before each tool execution.
+    // The hook receives { name, args, env } where env is initially empty.
+    // Populate env with key-value pairs to inject into bash commands.
+    let on_tool_execute = lua.create_function(|lua, func: Function| {
+        let key = lua.create_registry_value(func)?;
+
+        let globals = lua.globals();
+        let hooks_table: Table = globals
+            .get("__crucible_hooks__")
+            .unwrap_or_else(|_| lua.create_table().unwrap());
+
+        let tool_execute_hooks: Table = hooks_table
+            .get("on_tool_execute")
+            .unwrap_or_else(|_| lua.create_table().unwrap());
+
+        let len = tool_execute_hooks.raw_len();
+        tool_execute_hooks.raw_set(len + 1, key)?;
+
+        hooks_table.set("on_tool_execute", tool_execute_hooks)?;
+        globals.set("__crucible_hooks__", hooks_table)?;
+
+        Ok(())
+    })?;
+
+    crucible.set("on_tool_execute", on_tool_execute)?;
+
     Ok(())
 }
 
@@ -81,6 +107,10 @@ pub fn get_session_start_hooks(lua: &Lua) -> LuaResult<Vec<mlua::RegistryKey>> {
 
 pub fn get_tools_registered_hooks(lua: &Lua) -> LuaResult<Vec<mlua::RegistryKey>> {
     get_hooks_by_name(lua, "on_tools_registered")
+}
+
+pub fn get_tool_execute_hooks(lua: &Lua) -> LuaResult<Vec<mlua::RegistryKey>> {
+    get_hooks_by_name(lua, "on_tool_execute")
 }
 
 fn get_hooks_by_name(lua: &Lua, name: &str) -> LuaResult<Vec<mlua::RegistryKey>> {
@@ -215,6 +245,7 @@ mod tests {
 
         let _func: Function = crucible.get("on_session_start").unwrap();
         let _func2: Function = crucible.get("on_tools_registered").unwrap();
+        let _func3: Function = crucible.get("on_tool_execute").unwrap();
     }
 
     #[test]
@@ -419,6 +450,7 @@ mod tests {
             r#"
             crucible.on_session_start(function(s) end)
             crucible.on_tools_registered(function(e) end)
+            crucible.on_tool_execute(function(e) end)
         "#,
         )
         .exec()
@@ -426,5 +458,18 @@ mod tests {
 
         assert_eq!(get_session_start_hooks(&lua).unwrap().len(), 1);
         assert_eq!(get_tools_registered_hooks(&lua).unwrap().len(), 1);
+        assert_eq!(get_tool_execute_hooks(&lua).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_on_tool_execute_stores_function() {
+        let (lua, _) = TestLuaBuilder::new().build_with_hooks();
+
+        lua.load(r#"crucible.on_tool_execute(function(event) end)"#)
+            .exec()
+            .unwrap();
+
+        let hooks = get_tool_execute_hooks(&lua).unwrap();
+        assert_eq!(hooks.len(), 1);
     }
 }

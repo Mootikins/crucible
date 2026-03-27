@@ -32,6 +32,7 @@ pub trait ToolDispatcher: Send + Sync {
         &self,
         name: &str,
         args: serde_json::Value,
+        env_vars: std::collections::HashMap<String, String>,
     ) -> Result<serde_json::Value, String>;
     fn has_tool(&self, name: &str) -> bool;
     fn get_tool_ref(&self, name: &str) -> Option<ToolRef>;
@@ -387,10 +388,14 @@ impl ToolDispatcher for DaemonToolDispatcher {
         &self,
         name: &str,
         args: serde_json::Value,
+        env_vars: std::collections::HashMap<String, String>,
     ) -> Result<serde_json::Value, String> {
         self.hydrate_tool_names().await;
 
-        let ctx = ExecutionContext::default();
+        let ctx = ExecutionContext {
+            env_vars,
+            ..ExecutionContext::default()
+        };
 
         for provider in &self.providers {
             match provider.execute_tool(name, args.clone(), &ctx).await {
@@ -492,7 +497,7 @@ mod tests {
     #[tokio::test]
     async fn red_dispatch_get_kiln_info_is_not_unknown_tool() {
         let (_temp, dispatcher) = test_dispatcher_with_mcp();
-        let result = dispatcher.dispatch_tool("get_kiln_info", json!({})).await;
+        let result = dispatcher.dispatch_tool("get_kiln_info", json!({}), Default::default()).await;
 
         assert!(
             !matches!(result, Err(ref err) if err.contains("Unknown tool")),
@@ -503,7 +508,7 @@ mod tests {
     #[tokio::test]
     async fn red_dispatch_list_notes_is_not_unknown_tool() {
         let (_temp, dispatcher) = test_dispatcher_with_mcp();
-        let result = dispatcher.dispatch_tool("list_notes", json!({})).await;
+        let result = dispatcher.dispatch_tool("list_notes", json!({}), Default::default()).await;
 
         assert!(
             !matches!(result, Err(ref err) if err.contains("Unknown tool")),
@@ -515,7 +520,7 @@ mod tests {
     async fn red_dispatch_read_note_is_not_unknown_tool() {
         let (_temp, dispatcher) = test_dispatcher_with_mcp();
         let result = dispatcher
-            .dispatch_tool("read_note", json!({ "path": "test.md" }))
+            .dispatch_tool("read_note", json!({ "path": "test.md" }), Default::default())
             .await;
 
         assert!(
@@ -528,7 +533,7 @@ mod tests {
     async fn red_dispatch_text_search_is_not_unknown_tool() {
         let (_temp, dispatcher) = test_dispatcher_with_mcp();
         let result = dispatcher
-            .dispatch_tool("text_search", json!({ "query": "test" }))
+            .dispatch_tool("text_search", json!({ "query": "test" }), Default::default())
             .await;
 
         assert!(
@@ -548,7 +553,7 @@ mod tests {
     async fn workspace_tools_still_dispatch_with_mcp_provider_present() {
         let (_temp, dispatcher) = test_dispatcher_with_mcp();
         let result = dispatcher
-            .dispatch_tool("glob", json!({ "pattern": "**/*.md" }))
+            .dispatch_tool("glob", json!({ "pattern": "**/*.md" }), Default::default())
             .await;
 
         assert!(

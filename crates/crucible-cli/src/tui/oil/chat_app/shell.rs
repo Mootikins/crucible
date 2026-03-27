@@ -232,38 +232,7 @@ impl OilChatApp {
         modal.save_output(&session_dir)
     }
 
-    pub(super) fn maybe_spill_tool_output(&mut self, name: &str) {
-        if !self.container_list.tool_should_spill(name) {
-            return;
-        }
 
-        let Some(session_dir) = self.session_dir.clone() else {
-            return;
-        };
-
-        let tool_dir = session_dir.join("tools");
-        if let Err(e) = std::fs::create_dir_all(&tool_dir) {
-            tracing::error!(path = %tool_dir.display(), error = %e, "Failed to create tool output directory");
-            return;
-        }
-
-        let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
-        let name_slug: String = name
-            .chars()
-            .take(20)
-            .map(|c| if c.is_alphanumeric() { c } else { '-' })
-            .collect();
-        let filename = format!("{}-{}.txt", timestamp, name_slug);
-        let path = tool_dir.join(&filename);
-
-        if let Some(output) = self.container_list.get_tool_output(name) {
-            if let Err(e) = std::fs::write(&path, &output) {
-                tracing::error!(path = %path.display(), error = %e, "Failed to write tool output");
-                return;
-            }
-            self.container_list.set_tool_output_path(name, path);
-        }
-    }
 
     #[allow(dead_code)]
     pub(super) fn send_shell_output(&mut self, truncated: bool) {

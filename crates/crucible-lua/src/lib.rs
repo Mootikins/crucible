@@ -125,8 +125,8 @@ pub use graph::{
     register_graph_view_functions, register_note_store_functions,
 };
 pub use hooks::{
-    fire_tools_registered_hooks, get_session_start_hooks, get_tools_registered_hooks,
-    register_hooks_module, ToolRegistrationInfo,
+    fire_tools_registered_hooks, get_session_start_hooks, get_tool_execute_hooks,
+    get_tools_registered_hooks, register_hooks_module, ToolRegistrationInfo,
 };
 pub use http::register_http_module;
 pub use interaction::{lua_ask_to_core, lua_permission_to_core, register_interaction_module};
@@ -162,13 +162,14 @@ pub use ws::register_ws_module;
 pub const BUILTIN_INIT_LUA: &str = include_str!("defaults/init.lua");
 // Handler system
 pub use handlers::{
-    execute_handler, execute_permission_hooks, execute_tool_display_complete_hooks,
-    execute_tool_display_start_hooks, interpret_handler_result, register_crucible_on_api,
-    register_permission_hook_api, run_handler_chain, HandlerExecutionResult, LuaScriptHandler,
-    LuaScriptHandlerRegistry, PermissionHook, PermissionHookResult, PermissionRequest,
-    RuntimeHandler, ScriptHandlerResult, ToolDisplayCompleteEvent, ToolDisplayCompleteHints,
-    ToolDisplayStartEvent, ToolDisplayStartHints, TOOL_DISPLAY_COMPLETE_EVENT,
-    TOOL_DISPLAY_START_EVENT,
+    execute_handler, execute_permission_hooks, execute_tool_before_execute_hooks,
+    execute_tool_display_complete_hooks, execute_tool_display_start_hooks,
+    interpret_handler_result, register_crucible_on_api, register_permission_hook_api,
+    run_handler_chain, HandlerExecutionResult, LuaScriptHandler, LuaScriptHandlerRegistry,
+    PermissionHook, PermissionHookResult, PermissionRequest, RuntimeHandler, ScriptHandlerResult,
+    ToolBeforeExecuteEvent, ToolBeforeExecuteResult, ToolDisplayCompleteEvent,
+    ToolDisplayCompleteHints, ToolDisplayStartEvent, ToolDisplayStartHints,
+    TOOL_BEFORE_EXECUTE_EVENT, TOOL_DISPLAY_COMPLETE_EVENT, TOOL_DISPLAY_START_EVENT,
 };
 pub use lifecycle::{
     load_plugin_spec, load_plugin_spec_from_source, CommandBuilder, HandlerBuilder, LifecycleError,

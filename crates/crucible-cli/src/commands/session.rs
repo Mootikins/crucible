@@ -1059,7 +1059,9 @@ mod rpc {
             println!("{}", serde_json::to_string_pretty(&json)?);
         } else {
             println!("Created session: {}", session_id);
-            println!("\nTo use this session: export CRU_SESSION={}", session_id);
+            println!("\nTo use this session:");
+            println!("  export CRU_SESSION={}", session_id);
+            println!("  export CRU_SESSION_DIR={}", config.kiln_path.join(".crucible").join("sessions").join(session_id).display());
             println!("Type: {}", params.session_type);
             println!("Kiln: {}", config.kiln_path.display());
             if let Some(mode) = params.recording_mode {

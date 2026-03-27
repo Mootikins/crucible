@@ -282,6 +282,8 @@ struct StreamContext {
     session_state: Arc<Mutex<SessionEventState>>,
     pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
     workspace_path: PathBuf,
+    session_dir: PathBuf,
+    spill_counter: Arc<std::sync::atomic::AtomicU32>,
     agent_stream_config: AgentStreamConfig,
     tool_dispatcher: Arc<dyn ToolDispatcher>,
 }
@@ -514,7 +516,11 @@ impl AgentManager {
                 Arc::new(EmptyEmbeddingProvider),
             ));
             Arc::new(DaemonToolDispatcher::new(vec![
-                Arc::new(WorkspaceTools::new(&session.workspace)) as Arc<dyn ToolExecutor>,
+                Arc::new(
+                    WorkspaceTools::new(&session.workspace)
+                        .with_env("CRU_SESSION", &session.id)
+                        .with_env("CRU_SESSION_DIR", session.storage_path().to_string_lossy().to_string()),
+                ) as Arc<dyn ToolExecutor>,
                 Arc::new(McpToolExecutor::new(mcp)),
             ]))
         } else {

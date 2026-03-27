@@ -4,8 +4,9 @@ use crucible_config::components::permissions::{PermissionConfig, PermissionMode}
 use crucible_core::events::InternalSessionEvent;
 use crucible_core::types::ToolSource;
 use crucible_lua::{
-    execute_tool_display_complete_hooks, execute_tool_display_start_hooks,
-    ToolDisplayCompleteEvent, ToolDisplayStartEvent,
+    execute_tool_before_execute_hooks, execute_tool_display_complete_hooks,
+    execute_tool_display_start_hooks, ToolBeforeExecuteEvent, ToolDisplayCompleteEvent,
+    ToolDisplayStartEvent,
 };
 use std::collections::HashSet;
 
@@ -36,10 +37,17 @@ impl AgentManager {
             .get_session(session_id)
             .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
 
-        let agent_config = session
+        let mut agent_config = session
             .agent
             .clone()
             .ok_or_else(|| AgentError::NoAgentConfigured(session_id.to_string()))?;
+
+        // Inject tool spilling context into system prompt so the agent knows about $CRU_SESSION_DIR
+        if !agent_config.system_prompt.is_empty() {
+            agent_config.system_prompt.push_str(
+                "\n\nLarge tool outputs are saved to $CRU_SESSION_DIR/tools/. Use this path in shell commands to access full content.",
+            );
+        }
 
         use dashmap::mapref::entry::Entry;
         let (cancel_tx, cancel_rx) = oneshot::channel();
@@ -111,6 +119,8 @@ impl AgentManager {
             session_state: self.get_or_create_session_state(session_id),
             pending_permissions: self.pending_permissions.clone(),
             workspace_path: session.workspace.clone(),
+            session_dir: session.storage_path(),
+            spill_counter: Arc::new(std::sync::atomic::AtomicU32::new(1)),
             agent_stream_config: AgentStreamConfig::from_session_agent(&agent_config),
             tool_dispatcher: self.get_or_create_session_dispatcher(&session),
         };
@@ -1039,14 +1049,36 @@ impl AgentManager {
             );
         }
 
+        // Fire tool:before_execute hook for env var injection
+        let hook_env_vars = {
+            let state = stream_ctx.session_state.lock().await;
+            let hook_event = ToolBeforeExecuteEvent {
+                name: tool_call.name.clone(),
+                args: args.clone(),
+            };
+            match execute_tool_before_execute_hooks(&state.lua, &state.registry, &hook_event) {
+                Ok(Some(result)) => result.env,
+                Ok(None) => std::collections::HashMap::new(),
+                Err(error) => {
+                    warn!(
+                        session_id = %stream_ctx.session_id,
+                        tool = %tool_call.name,
+                        error = %error,
+                        "Lua tool:before_execute hook error, proceeding without env vars"
+                    );
+                    std::collections::HashMap::new()
+                }
+            }
+        };
+
         let tool_result = tokio::time::timeout(
             std::time::Duration::from_secs(30),
             stream_ctx
                 .tool_dispatcher
-                .dispatch_tool(&tool_call.name, args.clone()),
+                .dispatch_tool(&tool_call.name, args.clone(), hook_env_vars),
         )
         .await;
-        let (result_str, error_str) = match tool_result {
+        let (mut result_str, error_str) = match tool_result {
             Ok(Ok(val)) => (val.to_string(), None),
             Ok(Err(e)) => (String::new(), Some(e)),
             Err(_elapsed) => (
@@ -1058,11 +1090,41 @@ impl AgentManager {
             ),
         };
 
+        // Spill large tool outputs to disk and replace with a token-efficient reference
+        const SPILL_THRESHOLD: usize = 10 * 1024; // 10KB
+        let spill_path = if error_str.is_none() && result_str.len() >= SPILL_THRESHOLD {
+            match Self::spill_tool_output(stream_ctx, &tool_call.name, &result_str) {
+                Ok((path, filename)) => {
+                    let line_count = result_str.lines().count();
+                    let byte_kb = result_str.len() / 1024;
+                    result_str = format!(
+                        "[{line_count} lines, {byte_kb}KB — full output in $CRU_SESSION_DIR/tools/{filename}]"
+                    );
+                    Some(path)
+                }
+                Err(e) => {
+                    warn!(
+                        session_id = %stream_ctx.session_id,
+                        tool = %tool_call.name,
+                        error = %e,
+                        "Failed to spill tool output, sending full result"
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         let mut event_result = if let Some(error) = &error_str {
             serde_json::json!({ "error": error })
         } else {
             serde_json::json!({ "result": result_str })
         };
+
+        if let Some(ref path) = spill_path {
+            event_result["spill_path"] = serde_json::json!(path);
+        }
 
         {
             let state = stream_ctx.session_state.lock().await;
@@ -1111,6 +1173,30 @@ impl AgentManager {
             error: error_str,
             call_id: Some(call_id),
         })
+    }
+
+    /// Spill large tool output to disk. Returns (absolute_path, filename).
+    fn spill_tool_output(
+        stream_ctx: &StreamContext,
+        tool_name: &str,
+        output: &str,
+    ) -> anyhow::Result<(PathBuf, String)> {
+        let tools_dir = stream_ctx.session_dir.join("tools");
+        std::fs::create_dir_all(&tools_dir)?;
+
+        let counter = stream_ctx
+            .spill_counter
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let name_slug: String = tool_name
+            .chars()
+            .take(20)
+            .map(|c| if c.is_alphanumeric() { c } else { '-' })
+            .collect();
+        let filename = format!("{}-{}.txt", name_slug, counter);
+        let path = tools_dir.join(&filename);
+
+        std::fs::write(&path, output)?;
+        Ok((path, filename))
     }
 
     async fn emit_stream_events(
@@ -1599,6 +1685,8 @@ impl AgentManager {
                     session_state: stream_ctx.session_state.clone(),
                     pending_permissions: stream_ctx.pending_permissions.clone(),
                     workspace_path: stream_ctx.workspace_path.clone(),
+                    session_dir: stream_ctx.session_dir.clone(),
+                    spill_counter: stream_ctx.spill_counter.clone(),
                     agent_stream_config: stream_ctx.agent_stream_config.clone(),
                     tool_dispatcher: stream_ctx.tool_dispatcher.clone(),
                 };
