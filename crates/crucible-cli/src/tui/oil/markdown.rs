@@ -1780,6 +1780,25 @@ mod tests {
         );
     }
     #[test]
+    fn code_blocks_with_text_between_render_all_fences() {
+        // Multiple code blocks separated by paragraph text — each should render with fences
+        let md = "## Quick Commands\n\n\
+                   ```bash\n# Chat\ncru chat\n```\n\n\
+                   Chat with Claude Code\n\n\
+                   ```bash\ncru chat -a claude\n```\n\n\
+                   Start MCP server\n\n\
+                   ```bash\ncru mcp\n```";
+        let node = markdown_to_node(md);
+        let output = render_to_string(&node, 80);
+        let backtick_count = output.matches("```").count();
+        assert_eq!(
+            backtick_count, 6,
+            "Three code blocks should have 6 fence markers, got {}. Output:\n{}",
+            backtick_count, output
+        );
+    }
+
+    #[test]
     fn table_respects_terminal_width() {
         let table = r#"| Column One | Column Two | Column Three | Column Four | Column Five |
 |------------|------------|--------------|-------------|-------------|
