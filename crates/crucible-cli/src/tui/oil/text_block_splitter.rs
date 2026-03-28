@@ -6,8 +6,6 @@
 //! Used by `ContainerList::append_text` to accumulate streaming content into
 //! discrete text blocks for incremental rendering and graduation.
 
-use super::chat_container::ContentBlock;
-
 /// Check if a text part starts with an ordered list item `N. ` where N > 1.
 /// Used to merge counting-up list items that span text block boundaries.
 fn starts_with_ordered_list_item(s: &str) -> bool {
@@ -49,6 +47,18 @@ fn is_lazy_list_continuation(part: &str, prev: &str) -> bool {
     ordered_list_start_number(part) == Some(1) && last_ordered_list_number(prev) == Some(1)
 }
 
+/// Check whether `current` should merge into `previous` (list continuation or unclosed fence).
+///
+/// Covers three cases:
+/// 1. Counting-up ordered list: current starts with N>1 and previous ends with a list item
+/// 2. Lazy ordered list: both start/end with `1.`
+/// 3. Unclosed code fence in previous block
+fn should_merge_blocks(current: &str, previous: &str) -> bool {
+    (starts_with_ordered_list_item(current) && ends_with_ordered_list_item(previous))
+        || is_lazy_list_continuation(current, previous)
+        || has_unclosed_fence(previous)
+}
+
 /// Check if a text block has an unclosed code fence.
 ///
 /// Scans lines for fence markers (``` or ~~~). An odd count means the last fence
@@ -62,15 +72,6 @@ fn has_unclosed_fence(s: &str) -> bool {
         }
     }
     inside_fence
-}
-
-/// Index where the trailing run of `ContentBlock::Text` blocks starts.
-/// Returns `blocks.len()` if no trailing text (i.e., last block is non-text or empty).
-pub(super) fn trailing_text_start(blocks: &[ContentBlock]) -> usize {
-    blocks
-        .iter()
-        .rposition(|b| !matches!(b, ContentBlock::Text(_)))
-        .map_or(0, |i| i + 1)
 }
 
 /// Split an incoming text delta into paragraph blocks, merging with existing blocks.
@@ -144,13 +145,7 @@ fn push_parts_merging_lists(blocks: &mut Vec<String>, parts: &[&str]) {
         if part.is_empty() {
             continue;
         }
-        let should_merge = blocks.last().is_some_and(|prev| {
-            // Merge ordered list continuations (counting up: 2., 3., ... or lazy: 1., 1., ...)
-            (starts_with_ordered_list_item(part) && ends_with_ordered_list_item(prev))
-            || is_lazy_list_continuation(part, prev)
-            // Merge content that's inside an unclosed code fence
-            || has_unclosed_fence(prev)
-        });
+        let should_merge = blocks.last().is_some_and(|prev| should_merge_blocks(part, prev));
         if should_merge {
             if let Some(last) = blocks.last_mut() {
                 last.push_str("\n\n");
@@ -167,11 +162,7 @@ fn push_parts_merging_lists(blocks: &mut Vec<String>, parts: &[&str]) {
 fn try_merge_list_across_placeholder(blocks: &mut Vec<String>, delta: &str) -> bool {
     if blocks.len() >= 2 && blocks.last().map(|b| b.is_empty()).unwrap_or(false) {
         let prev = &blocks[blocks.len() - 2];
-        let should_merge = (starts_with_ordered_list_item(delta)
-            && ends_with_ordered_list_item(prev))
-            || is_lazy_list_continuation(delta, prev)
-            || has_unclosed_fence(prev);
-        if should_merge {
+        if should_merge_blocks(delta, prev) {
             blocks.pop();
             if let Some(prev) = blocks.last_mut() {
                 prev.push_str("\n\n");
@@ -194,6 +185,8 @@ fn try_retroactive_list_merge(blocks: &mut Vec<String>) {
     let current = &blocks[blocks.len() - 1];
     let prev = &blocks[blocks.len() - 2];
 
+    // Note: retroactive merge only applies to list continuations, not unclosed fences.
+    // Unclosed fences are handled at delta-arrival time, not retroactively.
     let should_merge = (starts_with_ordered_list_item(current)
         && ends_with_ordered_list_item(prev))
         || is_lazy_list_continuation(current, prev);
@@ -216,11 +209,7 @@ fn append_first_part(blocks: &mut Vec<String>, first: &str) {
         && !first.is_empty()
     {
         let prev = &blocks[blocks.len() - 2];
-        let should_merge = (starts_with_ordered_list_item(first)
-            && ends_with_ordered_list_item(prev))
-            || is_lazy_list_continuation(first, prev)
-            || has_unclosed_fence(prev);
-        if should_merge {
+        if should_merge_blocks(first, prev) {
             blocks.pop();
             if let Some(prev) = blocks.last_mut() {
                 prev.push_str("\n\n");
@@ -231,11 +220,10 @@ fn append_first_part(blocks: &mut Vec<String>, first: &str) {
     }
 
     if let Some(last) = blocks.last_mut() {
-        // Inside an unclosed fence or continuing an ordered list: rejoin with \n\n
+        // Inside an unclosed fence: always rejoin (even if first is empty, it's fence interior).
+        // List continuation: only if first is non-empty (the caller's guard).
         if has_unclosed_fence(last)
-            || (!first.is_empty()
-                && ((starts_with_ordered_list_item(first) && ends_with_ordered_list_item(last))
-                    || is_lazy_list_continuation(first, last)))
+            || (!first.is_empty() && should_merge_blocks(first, last))
         {
             last.push_str("\n\n");
             last.push_str(first);

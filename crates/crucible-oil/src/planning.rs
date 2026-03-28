@@ -173,8 +173,9 @@ impl FramePlanner {
         overlay_nodes
             .iter()
             .map(|overlay_node| {
-                // Overlays need compact output (just the content lines, no grid padding)
-                // since they're composited onto the viewport at an anchored position.
+                // Overlays use the legacy renderer because they need compact line output
+                // (no CellGrid padding). Taffy allocates a full terminal-height grid,
+                // but overlays are small widgets composited at anchored positions.
                 let content = render_to_string(&overlay_node.child, self.width as usize);
                 let lines: Vec<String> = content.lines().map(String::from).collect();
                 RenderedOverlay {

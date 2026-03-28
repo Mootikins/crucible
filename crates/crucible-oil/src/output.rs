@@ -290,6 +290,9 @@ impl OutputBuffer {
         available_rows: usize,
         scroll_offset: usize,
     ) -> (Vec<String>, usize) {
+        let max_scroll = total_visual_rows.saturating_sub(available_rows);
+        let scroll_offset = scroll_offset.min(max_scroll);
+
         if total_visual_rows <= available_rows && scroll_offset == 0 {
             return (all_lines.to_vec(), total_visual_rows);
         }
