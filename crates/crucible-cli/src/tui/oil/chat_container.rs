@@ -12,7 +12,7 @@ use crate::tui::oil::components::{
     render_user_prompt,
 };
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
-use crate::tui::oil::node::{col, row, scrollback, spinner, styled, text, Node};
+use crate::tui::oil::node::{col, row, scrollback, spinner, styled, text, Direction, Node};
 use crate::tui::oil::render_state::RenderState;
 use crate::tui::oil::style::{Padding, Style};
 
@@ -37,12 +37,6 @@ pub struct ThinkingBlock {
     pub token_count: usize,
 }
 
-#[derive(Debug, Clone)]
-pub enum ContentBlock {
-    Text(String),
-    Thinking(ThinkingBlock),
-}
-
 /// Semantic container for chat content.
 ///
 /// Each container is a graduation unit - it graduates and drops as a whole.
@@ -53,10 +47,13 @@ pub enum ChatContainer {
     /// Single user message with input prompt styling
     UserMessage { id: String, content: String },
 
-    /// Assistant response, may contain multiple text blocks and optional thinking
+    /// Assistant response: accumulated text + thinking blocks.
+    /// Text is a single string (no splitting); the markdown parser handles
+    /// paragraph decomposition at render time.
     AssistantResponse {
         id: String,
-        blocks: Vec<ContentBlock>,
+        text: String,
+        thinking: Vec<ThinkingBlock>,
         /// Whether this response follows a tool/subagent/delegation/shell container,
         /// meaning the assistant is continuing after an interruption rather than
         /// starting fresh. Stored at creation time because the preceding container
@@ -145,10 +142,16 @@ impl ChatContainer {
                 scrollback(id.clone(), [content_node])
             }
 
-            Self::AssistantResponse { id, blocks, .. } => render_assistant_blocks_with_graduation(
+            Self::AssistantResponse {
+                id,
+                text,
+                thinking,
+                ..
+            } => render_assistant_blocks_with_graduation(
                 &RenderBlocksParams {
                     container_id: id,
-                    blocks,
+                    text,
+                    thinking,
                     complete: params.is_complete,
                     is_continuation: params.is_continuation,
                 },
@@ -186,26 +189,21 @@ impl ChatContainer {
         }
     }
 }
-/// Parameters for rendering assistant text blocks with graduation support.
-///
-/// Bundles the parameters needed by `render_assistant_blocks_with_graduation`
-/// to reduce function signature complexity.
+/// Parameters for rendering assistant text with graduation support.
 #[derive(Debug, Clone)]
 struct RenderBlocksParams<'a> {
     pub container_id: &'a str,
-    pub blocks: &'a [ContentBlock],
+    pub text: &'a str,
+    pub thinking: &'a [ThinkingBlock],
     pub complete: bool,
     pub is_continuation: bool,
 }
 
-/// Render assistant blocks with graduation support.
+/// Render assistant text+thinking with graduation support.
 ///
-/// Blocks are rendered in stream-arrival order: thinking blocks appear at their
-/// natural position (between text blocks), not always at the top.
-/// Ctrl+T toggles display density (full vs collapsed summary), not position.
-///
-/// Each completed block gets its own scrollback to enable incremental graduation.
-/// The in-progress block stays in the viewport.
+/// Thinking blocks render before or interleaved with text (depending on
+/// show_thinking). Text is parsed as a single markdown string; top-level
+/// AST nodes are decomposed and graduated individually.
 fn render_assistant_blocks_with_graduation(
     params: &RenderBlocksParams,
     render_state: &RenderState,
@@ -217,15 +215,8 @@ fn render_assistant_blocks_with_graduation(
     };
 
     // Streaming spinners (shared logic)
-    let has_text = params
-        .blocks
-        .iter()
-        .any(|b| matches!(b, ContentBlock::Text(s) if !s.is_empty()));
-    let has_thinking_summary = !render_state.show_thinking
-        && params
-            .blocks
-            .iter()
-            .any(|b| matches!(b, ContentBlock::Thinking(_)));
+    let has_text = !params.text.is_empty();
+    let has_thinking_summary = !render_state.show_thinking && !params.thinking.is_empty();
 
     if !params.complete && !has_text && !has_thinking_summary {
         let t = crate::tui::oil::theme::active();
@@ -252,86 +243,168 @@ fn render_assistant_blocks_with_graduation(
     col(nodes)
 }
 
-/// Render blocks with full thinking content visible (show_thinking=true).
+/// Decompose a markdown Node into graduatable block groups.
+///
+/// The markdown renderer produces a `col([...])` where children include:
+/// - Content nodes (text lines, styled spans, boxes for code/tables)
+/// - Spacer nodes (empty text `""` between top-level blocks)
+///
+/// A single paragraph that word-wraps becomes multiple consecutive text
+/// nodes (one per line). We split ONLY at spacer boundaries to keep
+/// wrapped paragraphs and list items together.
+fn decompose_top_level_blocks(node: Node) -> Vec<Node> {
+    match node {
+        Node::Box(b) if b.direction == Direction::Column && b.children.len() > 1 => {
+            let mut groups: Vec<Vec<Node>> = vec![Vec::new()];
+
+            for child in b.children {
+                let is_spacer = matches!(&child, Node::Text(t) if t.content.is_empty());
+                if is_spacer {
+                    // Start a new group (include the spacer in the next group
+                    // so inter-block spacing is preserved)
+                    if !groups.last().map_or(true, |g| g.is_empty()) {
+                        groups.push(vec![child]);
+                    }
+                } else {
+                    groups.last_mut().unwrap().push(child);
+                }
+            }
+
+            groups
+                .into_iter()
+                .filter(|g| !g.is_empty())
+                .map(|g| {
+                    if g.len() == 1 {
+                        g.into_iter().next().unwrap()
+                    } else {
+                        col(g)
+                    }
+                })
+                .collect()
+        }
+        Node::Empty => vec![],
+        other => vec![other],
+    }
+}
+
+/// Render the accumulated text string with per-block graduation.
+///
+/// Parses the full text through the markdown renderer, decomposes the AST
+/// into top-level blocks, and wraps completed blocks in scrollback nodes.
+/// During streaming only the last block is unstable; all preceding blocks
+/// are syntactically closed and safe to graduate.
+fn render_text_graduated(
+    text: &str,
+    container_id: &str,
+    complete: bool,
+    is_continuation: bool,
+    has_thinking: bool,
+    render_state: &RenderState,
+) -> Vec<Node> {
+    if text.is_empty() {
+        return vec![];
+    }
+
+    let margins = if is_continuation || has_thinking {
+        Margins::assistant_continuation()
+    } else {
+        Margins::assistant()
+    };
+    let style = RenderStyle::natural_with_margins(render_state.width(), margins);
+    let md_node = markdown_to_node_styled(text, style);
+    let children = decompose_top_level_blocks(md_node);
+    let len = children.len();
+
+    children
+        .into_iter()
+        .enumerate()
+        .map(|(i, child)| {
+            // Only the first block gets top margin (separation from preceding
+            // thinking/user content). Only the last block gets bottom margin.
+            // Intermediate blocks have no extra margin — the markdown parser
+            // already handles inter-block spacing.
+            let padding = match (i == 0, i + 1 == len) {
+                (true, true) => Padding::xy(0, 1),   // single block: top + bottom
+                (true, false) => Padding { top: 1, ..Default::default() },
+                (false, true) => Padding { bottom: 1, ..Default::default() },
+                (false, false) => Padding::default(), // middle block: no extra margin
+            };
+            let block_node = if padding == Padding::default() {
+                child
+            } else {
+                child.with_margin(padding)
+            };
+
+            // During streaming, all-but-last are stable (graduated).
+            // When complete, all are stable.
+            let is_stable = complete || i + 1 < len;
+            if is_stable {
+                scrollback(
+                    format!("{container_id}-md-{i}"),
+                    [block_node],
+                )
+            } else {
+                block_node
+            }
+        })
+        .collect()
+}
+
+/// Render with full thinking content visible (show_thinking=true).
 fn render_blocks_full_thinking(
     params: &RenderBlocksParams,
     render_state: &RenderState,
 ) -> Vec<Node> {
     let mut nodes = Vec::new();
-    let has_thinking = params
-        .blocks
-        .iter()
-        .any(|b| matches!(b, ContentBlock::Thinking(_)));
-    let (complete_text_count, _) = text_block_counts(params);
-    let mut text_block_idx = 0usize;
-    let mut thinking_block_idx = 0usize;
 
-    for block in params.blocks {
-        match block {
-            ContentBlock::Thinking(tb) => {
-                let thinking_node = render_thinking_block(
-                    &tb.content,
-                    tb.token_count,
-                    render_state.width(),
-                    params.complete,
-                )
-                .with_margin(Padding {
-                    top: 1,
-                    ..Default::default()
-                });
-                // Use "-thinking-summary" for the first block so toggling
-                // show_thinking doesn't leave a ghost graduated node —
-                // both renderers share the same key.
-                let key = if thinking_block_idx == 0 {
-                    format!("{}-thinking-summary", params.container_id)
-                } else {
-                    format!("{}-thinking-{thinking_block_idx}", params.container_id)
-                };
-                nodes.push(scrollback(key, [thinking_node]));
-                thinking_block_idx += 1;
-            }
-            ContentBlock::Text(content) => {
-                if let Some(node) = render_text_block(
-                    content,
-                    params,
-                    render_state,
-                    text_block_idx,
-                    complete_text_count,
-                    has_thinking,
-                ) {
-                    nodes.push(node);
-                }
-                text_block_idx += 1;
-            }
-        }
+    // Render thinking blocks first
+    for (i, tb) in params.thinking.iter().enumerate() {
+        let thinking_node = render_thinking_block(
+            &tb.content,
+            tb.token_count,
+            render_state.width(),
+            params.complete,
+        )
+        .with_margin(Padding {
+            top: 1,
+            ..Default::default()
+        });
+        // Use "-thinking-summary" for the first block so toggling
+        // show_thinking doesn't leave a ghost graduated node —
+        // both renderers share the same key.
+        let key = if i == 0 {
+            format!("{}-thinking-summary", params.container_id)
+        } else {
+            format!("{}-thinking-{i}", params.container_id)
+        };
+        nodes.push(scrollback(key, [thinking_node]));
     }
+
+    // Render text
+    let has_thinking = !params.thinking.is_empty();
+    nodes.extend(render_text_graduated(
+        params.text,
+        params.container_id,
+        params.complete,
+        params.is_continuation,
+        has_thinking,
+        render_state,
+    ));
 
     nodes
 }
 
-/// Render blocks with thinking collapsed to a one-line summary (show_thinking=false).
-/// The summary always renders first regardless of block order — thinking logically
-/// precedes the text it produced, even if events arrived out of order.
+/// Render with thinking collapsed to a one-line summary (show_thinking=false).
 fn render_blocks_collapsed_thinking(
     params: &RenderBlocksParams,
     render_state: &RenderState,
 ) -> Vec<Node> {
     let mut nodes = Vec::new();
-    let has_thinking = params
-        .blocks
-        .iter()
-        .any(|b| matches!(b, ContentBlock::Thinking(_)));
-    let (complete_text_count, _) = text_block_counts(params);
-    let mut text_block_idx = 0usize;
+    let has_thinking = !params.thinking.is_empty();
 
-    // Emit thinking summary first — before any text blocks.
-    // Graduate to scrollback once text starts streaming, so the summary
-    // doesn't consume viewport space during text streaming.
+    // Emit thinking summary first — before text.
     if has_thinking {
-        let has_text = params
-            .blocks
-            .iter()
-            .any(|b| matches!(b, ContentBlock::Text(s) if !s.is_empty()));
+        let has_text = !params.text.is_empty();
         let summary_node = build_thinking_summary(params, render_state);
         if params.complete || has_text {
             nodes.push(scrollback(
@@ -343,98 +416,29 @@ fn render_blocks_collapsed_thinking(
         }
     }
 
-    // Then emit text blocks only (thinking blocks are already summarized above).
-    for block in params.blocks {
-        if let ContentBlock::Text(content) = block {
-            if let Some(node) = render_text_block(
-                content,
-                params,
-                render_state,
-                text_block_idx,
-                complete_text_count,
-                has_thinking,
-            ) {
-                nodes.push(node);
-            }
-            text_block_idx += 1;
-        }
-    }
+    // Render text
+    nodes.extend(render_text_graduated(
+        params.text,
+        params.container_id,
+        params.complete,
+        params.is_continuation,
+        has_thinking,
+        render_state,
+    ));
 
     nodes
-}
-
-/// Count text blocks and determine how many are complete (eligible for graduation).
-fn text_block_counts(params: &RenderBlocksParams) -> (usize, usize) {
-    let total: usize = params
-        .blocks
-        .iter()
-        .filter(|b| matches!(b, ContentBlock::Text(s) if !s.is_empty()))
-        .count();
-    let complete = if params.complete || total == 0 {
-        total
-    } else {
-        total.saturating_sub(1)
-    };
-    (complete, total)
-}
-
-/// Render a single text block with appropriate margins and graduation wrapping.
-fn render_text_block(
-    content: &str,
-    params: &RenderBlocksParams,
-    render_state: &RenderState,
-    text_block_idx: usize,
-    complete_text_count: usize,
-    has_thinking: bool,
-) -> Option<Node> {
-    if content.is_empty() {
-        return None;
-    }
-
-    let margins = if params.is_continuation || text_block_idx > 0 || has_thinking {
-        Margins::assistant_continuation()
-    } else {
-        Margins::assistant()
-    };
-    let style = RenderStyle::natural_with_margins(render_state.width(), margins);
-    let md_node = markdown_to_node_styled(content, style);
-
-    let padding = if text_block_idx == 0 {
-        Padding::xy(0, 1)
-    } else {
-        Padding {
-            bottom: 1,
-            ..Default::default()
-        }
-    };
-    let block_node = md_node.with_margin(padding);
-
-    if text_block_idx < complete_text_count {
-        Some(scrollback(
-            format!("{}-block-{text_block_idx}", params.container_id),
-            [block_node],
-        ))
-    } else {
-        Some(block_node)
-    }
 }
 
 /// Build the collapsed thinking summary node.
 fn build_thinking_summary(params: &RenderBlocksParams, render_state: &RenderState) -> Node {
     let t = crate::tui::oil::theme::active();
     let total_words: usize = params
-        .blocks
+        .thinking
         .iter()
-        .filter_map(|b| match b {
-            ContentBlock::Thinking(tb) => Some(tb.content.split_whitespace().count()),
-            _ => None,
-        })
+        .map(|tb| tb.content.split_whitespace().count())
         .sum();
 
-    let has_text = params
-        .blocks
-        .iter()
-        .any(|b| matches!(b, ContentBlock::Text(s) if !s.is_empty()));
+    let has_text = !params.text.is_empty();
 
     let muted = Style::new()
         .fg(t.resolve_color(t.colors.text_muted))
@@ -511,18 +515,6 @@ fn render_system_message(content: &str) -> Node {
     })
 }
 
-// Text block splitting and merging logic is in text_block_splitter.rs
-use super::text_block_splitter::split_and_merge_text_delta;
-
-/// Index where the trailing run of `ContentBlock::Text` blocks starts.
-/// Returns `blocks.len()` if no trailing text (i.e., last block is non-text or empty).
-fn trailing_text_start(blocks: &[ContentBlock]) -> usize {
-    blocks
-        .iter()
-        .rposition(|b| !matches!(b, ContentBlock::Text(_)))
-        .map_or(0, |i| i + 1)
-}
-
 /// Manages the list of chat containers.
 ///
 /// Containers are the live (non-graduated) content. When content graduates
@@ -574,9 +566,10 @@ impl ContainerList {
         let should_remove = matches!(
             self.containers.last(),
             Some(ChatContainer::AssistantResponse {
-                blocks,
+                text,
+                thinking,
                 ..
-            }) if blocks.is_empty()
+            }) if text.is_empty() && thinking.is_empty()
         );
         if should_remove {
             self.containers.pop();
@@ -609,7 +602,8 @@ impl ContainerList {
         let id = self.next_id("assistant");
         self.containers.push(ChatContainer::AssistantResponse {
             id,
-            blocks: Vec::new(),
+            text: String::new(),
+            thinking: Vec::new(),
             is_continuation,
         });
         self.turn_active = true;
@@ -622,7 +616,8 @@ impl ContainerList {
         let id = self.next_id("assistant");
         self.containers.push(ChatContainer::AssistantResponse {
             id,
-            blocks: Vec::new(),
+            text: String::new(),
+            thinking: Vec::new(),
             is_continuation,
         });
         self.turn_active = true;
@@ -634,89 +629,58 @@ impl ContainerList {
 
     /// Append text to the current assistant response.
     /// Creates a new response if none exists (via backward scan).
-    pub fn append_text(&mut self, text: &str) {
-        let response_idx = self.ensure_open_response();
-
-        if let ChatContainer::AssistantResponse { blocks, .. } = &mut self.containers[response_idx]
-        {
-            let trailing_text_start = trailing_text_start(blocks);
-            let existing: Vec<String> = blocks[trailing_text_start..]
-                .iter()
-                .filter_map(|b| match b {
-                    ContentBlock::Text(content) => Some(content.clone()),
-                    ContentBlock::Thinking(_) => None,
-                })
-                .collect();
-
-            let merged = split_and_merge_text_delta(&existing, text);
-
-            blocks.truncate(trailing_text_start);
-            blocks.extend(merged.into_iter().map(ContentBlock::Text));
+    pub fn append_text(&mut self, delta: &str) {
+        let idx = self.ensure_open_response();
+        if let ChatContainer::AssistantResponse { text, .. } = &mut self.containers[idx] {
+            // Full-text resend detection: some backends re-emit the entire
+            // response as a single delta. Skip if the existing text already
+            // ends with this content.
+            let incoming = delta.trim_start_matches('\n');
+            if incoming.len() > 50 && !text.is_empty() && text.ends_with(incoming) {
+                tracing::debug!(
+                    incoming_len = delta.len(),
+                    existing_len = text.len(),
+                    "Skipping duplicate full-text delta"
+                );
+                return;
+            }
+            text.push_str(delta);
         }
     }
 
     /// Set thinking content for the current assistant response.
-    /// Position-aware: finds existing thinking block anywhere in blocks, or inserts
-    /// before trailing text to maintain thinking-before-text invariant.
+    /// Replaces the first thinking block if one exists, otherwise pushes a new one.
     pub fn set_thinking(&mut self, content: String, token_count: usize) {
         let idx = self.ensure_open_response();
-        if let Some(ChatContainer::AssistantResponse { blocks, .. }) = self.containers.get_mut(idx)
+        if let Some(ChatContainer::AssistantResponse { thinking, .. }) =
+            self.containers.get_mut(idx)
         {
-            let thinking = ThinkingBlock {
-                content,
-                token_count,
-            };
-            // Find any existing thinking block and replace it
-            if let Some(pos) = blocks
-                .iter()
-                .position(|b| matches!(b, ContentBlock::Thinking(_)))
-            {
-                blocks[pos] = ContentBlock::Thinking(thinking);
+            if let Some(first) = thinking.first_mut() {
+                first.content = content;
+                first.token_count = token_count;
             } else {
-                // No existing thinking — insert before trailing text run
-                let insert_at = trailing_text_start(blocks);
-                blocks.insert(insert_at, ContentBlock::Thinking(thinking));
+                thinking.push(ThinkingBlock {
+                    content,
+                    token_count,
+                });
             }
         }
     }
 
     /// Append thinking content to the current assistant response.
-    /// Creates a new response if none exists.
-    /// Position-aware: coalesces with existing thinking or inserts before trailing
-    /// text blocks to maintain thinking-before-text ordering regardless of event
-    /// arrival order.
+    /// Coalesces with the last thinking block if one exists.
     pub fn append_thinking(&mut self, delta: &str) {
-        let response_idx = self.ensure_open_response();
-
-        if let ChatContainer::AssistantResponse { blocks, .. } = &mut self.containers[response_idx]
-        {
-            // Try to coalesce with the last thinking block (handles consecutive deltas)
-            if let Some(ContentBlock::Thinking(tb)) = blocks.last_mut() {
-                tb.content.push_str(delta);
-                tb.token_count += 1;
-                return;
-            }
-
-            // Find insertion point: before trailing text run
-            let insert_at = trailing_text_start(blocks);
-
-            // If there's a thinking block just before the trailing text, coalesce with it
-            if insert_at > 0 {
-                if let ContentBlock::Thinking(tb) = &mut blocks[insert_at - 1] {
-                    tb.content.push_str(delta);
-                    tb.token_count += 1;
-                    return;
-                }
-            }
-
-            // No existing thinking to coalesce with — insert new block
-            blocks.insert(
-                insert_at,
-                ContentBlock::Thinking(ThinkingBlock {
+        let idx = self.ensure_open_response();
+        if let ChatContainer::AssistantResponse { thinking, .. } = &mut self.containers[idx] {
+            if let Some(last) = thinking.last_mut() {
+                last.content.push_str(delta);
+                last.token_count += 1;
+            } else {
+                thinking.push(ThinkingBlock {
                     content: delta.to_string(),
                     token_count: 1,
-                }),
-            );
+                });
+            }
         }
     }
 
@@ -996,17 +960,14 @@ mod tests {
     }
 
     #[test]
-    fn test_text_block_splitting() {
+    fn test_text_accumulates_as_single_string() {
         let mut list = ContainerList::new();
 
         list.start_assistant_response();
         list.append_text("Block 1\n\nBlock 2\n\nBlock 3");
 
-        if let Some(ChatContainer::AssistantResponse { blocks, .. }) = list.containers.last() {
-            assert_eq!(blocks.len(), 3);
-            assert!(matches!(blocks[0], ContentBlock::Text(ref s) if s == "Block 1"));
-            assert!(matches!(blocks[1], ContentBlock::Text(ref s) if s == "Block 2"));
-            assert!(matches!(blocks[2], ContentBlock::Text(ref s) if s == "Block 3"));
+        if let Some(ChatContainer::AssistantResponse { text, .. }) = list.containers.last() {
+            assert_eq!(text, "Block 1\n\nBlock 2\n\nBlock 3");
         } else {
             panic!("Expected AssistantResponse");
         }
@@ -1021,206 +982,140 @@ mod tests {
         list.append_text("part\n\n");
         list.append_text("Second part");
 
-        if let Some(ChatContainer::AssistantResponse { blocks, .. }) = list.containers.last() {
-            assert_eq!(blocks.len(), 2);
-            assert!(matches!(blocks[0], ContentBlock::Text(ref s) if s == "First part"));
-            assert!(matches!(blocks[1], ContentBlock::Text(ref s) if s == "Second part"));
+        if let Some(ChatContainer::AssistantResponse { text, .. }) = list.containers.last() {
+            assert_eq!(text, "First part\n\nSecond part");
         } else {
             panic!("Expected AssistantResponse");
         }
     }
 
     #[test]
-    fn content_block_thinking_coalesces() {
+    fn thinking_coalesces() {
         let mut list = ContainerList::new();
         list.start_assistant_response();
         list.append_thinking("plan ");
         list.append_thinking("more");
 
-        let blocks = match list.containers.last() {
-            Some(ChatContainer::AssistantResponse { blocks, .. }) => blocks,
+        let thinking = match list.containers.last() {
+            Some(ChatContainer::AssistantResponse { thinking, .. }) => thinking,
             _ => panic!("Expected AssistantResponse"),
         };
 
-        assert_eq!(blocks.len(), 1);
-        match &blocks[0] {
-            ContentBlock::Thinking(tb) => {
-                assert_eq!(tb.content, "plan more");
-                assert_eq!(tb.token_count, 2);
-            }
-            _ => panic!("Expected thinking block"),
-        }
+        assert_eq!(thinking.len(), 1);
+        assert_eq!(thinking[0].content, "plan more");
+        assert_eq!(thinking[0].token_count, 2);
     }
 
-    /// Thinking inserted before trailing text blocks preserves correct visual order.
-    /// When text arrives before thinking (daemon misordering), append_thinking
-    /// inserts before the trailing text run so thinking renders first.
-    /// After the fix, "first" and "second" share the same trailing text run and
-    /// merge (no \n\n separator), so we get 2 blocks, not 3.
     #[test]
-    fn content_block_interleaving_order() {
+    fn thinking_and_text_are_separate_fields() {
         let mut list = ContainerList::new();
         list.start_assistant_response();
         list.append_text("first");
         list.append_thinking("thought");
         list.append_text("\n\nsecond");
 
-        let blocks = match list.containers.last() {
-            Some(ChatContainer::AssistantResponse { blocks, .. }) => blocks,
+        match list.containers.last() {
+            Some(ChatContainer::AssistantResponse { text, thinking, .. }) => {
+                assert_eq!(text, "first\n\nsecond");
+                assert_eq!(thinking.len(), 1);
+                assert_eq!(thinking[0].content, "thought");
+            }
             _ => panic!("Expected AssistantResponse"),
-        };
-
-        // Thinking is repositioned before trailing text, not appended after
-        assert_eq!(blocks.len(), 3, "blocks: {blocks:?}");
-        assert!(matches!(
-            blocks[0],
-            ContentBlock::Thinking(ThinkingBlock {
-                content: ref s,
-                token_count: 1
-            }) if s == "thought"
-        ));
-        assert!(matches!(blocks[1], ContentBlock::Text(ref s) if s == "first"));
-        assert!(matches!(blocks[2], ContentBlock::Text(ref s) if s == "second"));
+        }
     }
 
-    /// Reproduce daemon bug: text_delta arrives before thinking for the same chunk.
-    /// append_thinking must insert before trailing text so thinking renders first.
     #[test]
-    fn append_thinking_before_trailing_text() {
+    fn append_thinking_after_text() {
         let mut list = ContainerList::new();
         list.start_assistant_response();
         list.append_text("Here is my answer");
         list.append_thinking("let me reason about this");
 
-        let blocks = match list.containers.last() {
-            Some(ChatContainer::AssistantResponse { blocks, .. }) => blocks,
+        match list.containers.last() {
+            Some(ChatContainer::AssistantResponse { text, thinking, .. }) => {
+                assert_eq!(text, "Here is my answer");
+                assert_eq!(thinking.len(), 1);
+                assert_eq!(thinking[0].content, "let me reason about this");
+            }
             _ => panic!("Expected AssistantResponse"),
-        };
-
-        assert_eq!(blocks.len(), 2);
-        assert!(
-            matches!(blocks[0], ContentBlock::Thinking(_)),
-            "Thinking must come before text, got: {blocks:?}"
-        );
-        assert!(
-            matches!(blocks[1], ContentBlock::Text(ref s) if s == "Here is my answer"),
-            "Text should follow thinking, got: {blocks:?}"
-        );
+        }
     }
 
-    /// set_thinking should also find/replace thinking blocks that aren't last
-    /// (e.g., when text blocks have been appended after thinking).
     #[test]
-    fn set_thinking_replaces_existing_non_last() {
+    fn set_thinking_replaces_existing() {
         let mut list = ContainerList::new();
         list.start_assistant_response();
         list.append_thinking("initial");
         list.append_text("some text");
-        // Thinking is at blocks[0], text at blocks[1]. set_thinking should replace blocks[0].
         list.set_thinking("replaced".to_string(), 50);
 
-        let blocks = match list.containers.last() {
-            Some(ChatContainer::AssistantResponse { blocks, .. }) => blocks,
-            _ => panic!("Expected AssistantResponse"),
-        };
-
-        assert_eq!(blocks.len(), 2);
-        match &blocks[0] {
-            ContentBlock::Thinking(tb) => {
-                assert_eq!(tb.content, "replaced");
-                assert_eq!(tb.token_count, 50);
+        match list.containers.last() {
+            Some(ChatContainer::AssistantResponse { text, thinking, .. }) => {
+                assert_eq!(text, "some text");
+                assert_eq!(thinking.len(), 1);
+                assert_eq!(thinking[0].content, "replaced");
+                assert_eq!(thinking[0].token_count, 50);
             }
-            _ => panic!("Expected thinking at index 0, got: {blocks:?}"),
+            _ => panic!("Expected AssistantResponse"),
         }
-        assert!(matches!(blocks[1], ContentBlock::Text(ref s) if s == "some text"));
     }
 
-    /// Legitimate thinking→text→thinking coalesces thinking blocks.
     #[test]
-    fn append_thinking_coalesces_at_boundary() {
+    fn append_thinking_coalesces_across_text() {
         let mut list = ContainerList::new();
         list.start_assistant_response();
         list.append_thinking("phase one ");
         list.append_text("response");
         list.append_thinking("phase two");
 
-        let blocks = match list.containers.last() {
-            Some(ChatContainer::AssistantResponse { blocks, .. }) => blocks,
-            _ => panic!("Expected AssistantResponse"),
-        };
-
-        // Both thinking phases coalesce before the text
-        assert_eq!(blocks.len(), 2);
-        match &blocks[0] {
-            ContentBlock::Thinking(tb) => {
-                assert_eq!(tb.content, "phase one phase two");
+        match list.containers.last() {
+            Some(ChatContainer::AssistantResponse { text, thinking, .. }) => {
+                assert_eq!(text, "response");
+                assert_eq!(thinking.len(), 1);
+                assert_eq!(thinking[0].content, "phase one phase two");
             }
-            _ => panic!("Expected thinking at index 0, got: {blocks:?}"),
+            _ => panic!("Expected AssistantResponse"),
         }
-        assert!(matches!(blocks[1], ContentBlock::Text(ref s) if s == "response"));
     }
 
     #[test]
-    fn content_block_text_coalesces() {
+    fn text_coalesces() {
         let mut list = ContainerList::new();
         list.start_assistant_response();
         list.append_text("Hello");
         list.append_text(" world");
 
-        let blocks = match list.containers.last() {
-            Some(ChatContainer::AssistantResponse { blocks, .. }) => blocks,
+        match list.containers.last() {
+            Some(ChatContainer::AssistantResponse { text, .. }) => {
+                assert_eq!(text, "Hello world");
+            }
             _ => panic!("Expected AssistantResponse"),
-        };
-
-        assert_eq!(blocks.len(), 1);
-        assert!(matches!(blocks[0], ContentBlock::Text(ref s) if s == "Hello world"));
+        }
     }
 
-    /// Reproduces exact append_text sequence captured from cursor-acp duplication bug.
-    /// Log showed 3 calls:
-    ///   1. "\nHello — I'm " (17 bytes, streaming delta)
-    ///   2. "here to help with the Crucible codebase or anything else you're working on." (77 bytes, streaming continuation)
-    ///   3. "\nHello — I'm here to help with the Crucible codebase or anything else you're working on." (94 bytes, FULL TEXT re-sent)
-    ///
-    /// The third call duplicated the response text in the viewport.
+    /// Full-text resend detection: the third delta is the complete text re-sent.
     #[test]
-    fn repro_cursor_acp_text_duplication() {
+    fn full_text_resend_is_deduplicated() {
         let mut list = ContainerList::new();
         list.add_user_message("Say hello in one sentence".to_string());
         list.start_assistant_response();
 
-        // Exact deltas from the reproduction log
         list.append_text("\nHello \u{2014} I'm ");
         list.append_text(
             "here to help with the Crucible codebase or anything else you're working on.",
         );
         list.append_text("\nHello \u{2014} I'm here to help with the Crucible codebase or anything else you're working on.");
 
-        let blocks = match list.containers.last() {
-            Some(ChatContainer::AssistantResponse { blocks, .. }) => blocks,
+        let text = match list.containers.last() {
+            Some(ChatContainer::AssistantResponse { text, .. }) => text.as_str(),
             _ => panic!("Expected AssistantResponse"),
         };
 
-        // The full concatenated text across all blocks
-        let full_text: String = blocks
-            .iter()
-            .filter_map(|block| match block {
-                ContentBlock::Text(content) => Some(content.as_str()),
-                ContentBlock::Thinking(_) => None,
-            })
-            .collect::<Vec<_>>()
-            .join("\n\n");
-
-        // The greeting text must appear exactly ONCE
         let greeting = "Hello \u{2014} I'm here to help with the Crucible codebase or anything else you're working on.";
-        let count = full_text.matches(greeting).count();
+        let count = text.matches(greeting).count();
         assert_eq!(
-            count,
-            1,
-            "Expected greeting to appear exactly once, but appeared {} times.\nBlocks ({}):\n{:#?}",
-            count,
-            blocks.len(),
-            blocks
+            count, 1,
+            "Expected greeting to appear exactly once, but appeared {count} times.\nText: {text}"
         );
     }
 
@@ -1544,8 +1439,8 @@ mod tests {
                     ChatContainer::UserMessage { id, content } => {
                         eprintln!("{}: User({}): {:.30}", i, id, content);
                     }
-                    ChatContainer::AssistantResponse { id, blocks, .. } => {
-                        eprintln!("{}: Asst({}): {:?}", i, id, blocks);
+                    ChatContainer::AssistantResponse { id, text, thinking, .. } => {
+                        eprintln!("{}: Asst({}): text={:?} thinking={}", i, id, text, thinking.len());
                     }
                     ChatContainer::ToolGroup { id, tools } => {
                         for t in tools {
@@ -1568,8 +1463,8 @@ mod tests {
                 ChatContainer::UserMessage { id, content } => {
                     eprintln!("{}: User({}): {:.30}", i, id, content);
                 }
-                ChatContainer::AssistantResponse { id, blocks, .. } => {
-                    eprintln!("{}: Asst({}): {:?}", i, id, blocks);
+                ChatContainer::AssistantResponse { id, text, thinking, .. } => {
+                    eprintln!("{}: Asst({}): text={:?} thinking={}", i, id, text, thinking.len());
                 }
                 ChatContainer::ToolGroup { id, tools } => {
                     for t in tools {
@@ -1669,195 +1564,33 @@ mod tests {
     }
 
     #[test]
-    fn test_ordered_list_not_split_across_blocks() {
+    fn text_contains_ordered_list() {
         let mut list = ContainerList::new();
         list.start_assistant_response();
         list.append_text("1. First item\n\n2. Second item\n\n3. Third item");
 
-        if let Some(ChatContainer::AssistantResponse { blocks, .. }) = list.containers.last() {
-            // All list items should be in one block
-            assert_eq!(
-                blocks.len(),
-                1,
-                "List items should not be split: {:?}",
-                blocks
-            );
-            match &blocks[0] {
-                ContentBlock::Text(content) => {
-                    assert!(content.contains("1. First item"));
-                    assert!(content.contains("2. Second item"));
-                    assert!(content.contains("3. Third item"));
-                }
-                _ => panic!("Expected text block"),
-            }
+        if let Some(ChatContainer::AssistantResponse { text, .. }) = list.containers.last() {
+            assert!(text.contains("1. First item"));
+            assert!(text.contains("2. Second item"));
+            assert!(text.contains("3. Third item"));
         } else {
             panic!("Expected AssistantResponse");
         }
     }
 
     #[test]
-    fn test_ordered_list_incremental_streaming() {
-        let mut list = ContainerList::new();
-        list.start_assistant_response();
-        list.append_text("1. First item\n\n");
-        list.append_text("2. Second item\n\n");
-        list.append_text("3. Third item");
-
-        if let Some(ChatContainer::AssistantResponse { blocks, .. }) = list.containers.last() {
-            // All list items should be merged into one block
-            assert_eq!(
-                blocks.len(),
-                1,
-                "Streamed list items should merge: {:?}",
-                blocks
-            );
-            match &blocks[0] {
-                ContentBlock::Text(content) => {
-                    assert!(content.contains("1. First item"));
-                    assert!(content.contains("2. Second item"));
-                    assert!(content.contains("3. Third item"));
-                }
-                _ => panic!("Expected text block"),
-            }
-        } else {
-            panic!("Expected AssistantResponse");
-        }
-    }
-
-    #[test]
-    fn test_ordered_list_followed_by_paragraph() {
-        let mut list = ContainerList::new();
-        list.start_assistant_response();
-        list.append_text("1. First item\n\n2. Second item\n\nSome paragraph after the list");
-
-        if let Some(ChatContainer::AssistantResponse { blocks, .. }) = list.containers.last() {
-            // List items in one block, paragraph in another
-            assert_eq!(
-                blocks.len(),
-                2,
-                "Paragraph should be separate: {:?}",
-                blocks
-            );
-            assert!(matches!(
-                blocks[0],
-                ContentBlock::Text(ref s) if s.contains("1. First item") && s.contains("2. Second item")
-            ));
-            assert!(matches!(
-                blocks[1],
-                ContentBlock::Text(ref s) if s == "Some paragraph after the list"
-            ));
-        } else {
-            panic!("Expected AssistantResponse");
-        }
-    }
-
-    #[test]
-    fn test_lazy_numbered_list_not_split_across_blocks() {
-        let mut list = ContainerList::new();
-        list.start_assistant_response();
-        list.append_text("1. First\n\n1. Second\n\n1. Third");
-
-        if let Some(ChatContainer::AssistantResponse { blocks, .. }) = list.containers.last() {
-            assert_eq!(
-                blocks.len(),
-                1,
-                "Lazy-numbered list items should merge into one block: {:?}",
-                blocks
-            );
-            match &blocks[0] {
-                ContentBlock::Text(content) => {
-                    assert!(content.contains("1. First"));
-                    assert!(content.contains("1. Second"));
-                    assert!(content.contains("1. Third"));
-                }
-                _ => panic!("Expected text block"),
-            }
-        } else {
-            panic!("Expected AssistantResponse");
-        }
-    }
-
-    #[test]
-    fn test_lazy_numbered_list_incremental_streaming() {
-        let mut list = ContainerList::new();
-        list.start_assistant_response();
-        list.append_text("1. First\n\n");
-        list.append_text("1. Second\n\n");
-        list.append_text("1. Third");
-
-        if let Some(ChatContainer::AssistantResponse { blocks, .. }) = list.containers.last() {
-            assert_eq!(
-                blocks.len(),
-                1,
-                "Streamed lazy-numbered list items should merge: {:?}",
-                blocks
-            );
-            match &blocks[0] {
-                ContentBlock::Text(content) => {
-                    assert!(content.contains("1. First"));
-                    assert!(content.contains("1. Second"));
-                    assert!(content.contains("1. Third"));
-                }
-                _ => panic!("Expected text block"),
-            }
-        } else {
-            panic!("Expected AssistantResponse");
-        }
-    }
-
-    #[test]
-    fn test_counting_list_then_reset_splits_correctly() {
-        let mut list = ContainerList::new();
-        list.start_assistant_response();
-        // Counting up list, then a new list starting at 1
-        list.append_text("1. A\n\n2. B\n\n3. C\n\n1. X\n\n2. Y");
-
-        if let Some(ChatContainer::AssistantResponse { blocks, .. }) = list.containers.last() {
-            // "1. A ... 3. C" should merge (counting up), then "1. X" starts new block (reset)
-            assert_eq!(
-                blocks.len(),
-                2,
-                "Reset at '1. X' should split into two blocks: {:?}",
-                blocks
-            );
-            match &blocks[0] {
-                ContentBlock::Text(s) => {
-                    assert!(s.contains("1. A"), "First block has first list");
-                    assert!(s.contains("3. C"), "First block has last item of first list");
-                }
-                _ => panic!("Expected text block"),
-            }
-            match &blocks[1] {
-                ContentBlock::Text(s) => {
-                    assert!(s.contains("1. X"), "Second block starts new list");
-                    assert!(s.contains("2. Y"), "Second block has second item");
-                }
-                _ => panic!("Expected text block"),
-            }
-        } else {
-            panic!("Expected AssistantResponse");
-        }
-    }
-
-    // Tests for starts_with_ordered_list_item and ends_with_ordered_list_item
-    // are in text_block_splitter.rs
-
-    #[test]
-    fn thinking_renders_at_arrival_position() {
+    fn thinking_renders_before_text() {
         use crucible_oil::render::render_to_plain_text;
 
-        let blocks = vec![
-            ContentBlock::Text("First paragraph".to_string()),
-            ContentBlock::Thinking(ThinkingBlock {
-                content: "my deep thought".to_string(),
-                token_count: 5,
-            }),
-            ContentBlock::Text("Second paragraph".to_string()),
-        ];
+        let thinking = vec![ThinkingBlock {
+            content: "my deep thought".to_string(),
+            token_count: 5,
+        }];
 
         let params = super::RenderBlocksParams {
             container_id: "test-1",
-            blocks: &blocks,
+            text: "First paragraph\n\nSecond paragraph",
+            thinking: &thinking,
             complete: true,
             is_continuation: false,
         };
@@ -1870,19 +1603,20 @@ mod tests {
         let node = super::render_assistant_blocks_with_graduation(&params, &render_state);
         let output = render_to_plain_text(&node, 80);
 
-        let first_pos = output.find("First paragraph").expect("first text missing");
         let think_pos = output.find("my deep thought").expect("thinking missing");
+        let first_pos = output.find("First paragraph").expect("first text missing");
         let second_pos = output
             .find("Second paragraph")
             .expect("second text missing");
 
+        // Thinking renders first, then text
         assert!(
-            first_pos < think_pos,
-            "thinking should appear after first text"
+            think_pos < first_pos,
+            "thinking should appear before first text"
         );
         assert!(
-            think_pos < second_pos,
-            "thinking should appear before second text"
+            first_pos < second_pos,
+            "first text should appear before second text"
         );
     }
 
@@ -1895,17 +1629,15 @@ mod tests {
             "juliet",
         ];
         let long_thinking = lines.join("\n");
-        let blocks = vec![
-            ContentBlock::Thinking(ThinkingBlock {
-                content: long_thinking,
-                token_count: 50,
-            }),
-            ContentBlock::Text("Response text".to_string()),
-        ];
+        let thinking = vec![ThinkingBlock {
+            content: long_thinking,
+            token_count: 50,
+        }];
 
         let params = super::RenderBlocksParams {
             container_id: "test-2",
-            blocks: &blocks,
+            text: "Response text",
+            thinking: &thinking,
             complete: true,
             is_continuation: false,
         };
@@ -1939,7 +1671,6 @@ mod tests {
             "full mode should show all lines"
         );
 
-        // show_thinking=false shows a one-line summary, not a bounded tail
         assert!(
             !bounded_output.contains("alpha"),
             "summary mode should hide thinking content:\n{bounded_output}"
@@ -1958,40 +1689,33 @@ mod tests {
         );
     }
 
-    /// Bug: when streaming text after a thinking block, the spinner stays on the
-    /// "Thinking… (N words)" summary even after text output has started.
-    /// The thinking summary spinner should stop once text content begins streaming.
     #[test]
     fn thinking_summary_spinner_stops_when_text_starts_streaming() {
         use crucible_oil::render::render_to_plain_text;
 
-        let spinner_chars: Vec<char> = vec!['◐', '◓', '◑', '◒'];
+        let spinner_chars: Vec<char> = vec!['\u{25D0}', '\u{25D3}', '\u{25D1}', '\u{25D2}'];
 
-        // Scenario: thinking complete, text streaming (not complete)
-        let blocks = vec![
-            ContentBlock::Thinking(ThinkingBlock {
-                content: "let me reason about this carefully".to_string(),
-                token_count: 10,
-            }),
-            ContentBlock::Text("Here is my response so far".to_string()),
-        ];
+        let thinking = vec![ThinkingBlock {
+            content: "let me reason about this carefully".to_string(),
+            token_count: 10,
+        }];
 
         let params = super::RenderBlocksParams {
             container_id: "test-spinner",
-            blocks: &blocks,
-            complete: false, // still streaming
+            text: "Here is my response so far",
+            thinking: &thinking,
+            complete: false,
             is_continuation: false,
         };
         let render_state = super::RenderState {
             terminal_width: 80,
             spinner_frame: 0,
-            show_thinking: false, // collapsed thinking
+            show_thinking: false,
         };
 
         let node = super::render_assistant_blocks_with_graduation(&params, &render_state);
         let output = render_to_plain_text(&node, 80);
 
-        // The thinking summary line should NOT have a spinner — text has started
         let thinking_line = output
             .lines()
             .find(|l| l.contains("Thinking") || l.contains("Thought"))
@@ -2002,7 +1726,6 @@ mod tests {
             "Thinking summary should not show spinner once text is streaming.\nLine: {thinking_line}\nFull output:\n{output}"
         );
 
-        // There SHOULD still be a trailing spinner (for the streaming text)
         let has_trailing_spinner = output
             .lines()
             .last()
@@ -2014,23 +1737,19 @@ mod tests {
         );
     }
 
-    /// The completed thinking summary should use a thinking-specific icon,
-    /// not ┌─ (box drawing corner) which implies content below it.
     #[test]
     fn completed_thinking_summary_uses_thinking_icon_not_box_corner() {
         use crucible_oil::render::render_to_plain_text;
 
-        let blocks = vec![
-            ContentBlock::Thinking(ThinkingBlock {
-                content: "deep thoughts about architecture".to_string(),
-                token_count: 8,
-            }),
-            ContentBlock::Text("Here is my answer.".to_string()),
-        ];
+        let thinking = vec![ThinkingBlock {
+            content: "deep thoughts about architecture".to_string(),
+            token_count: 8,
+        }];
 
         let params = super::RenderBlocksParams {
             container_id: "test-icon",
-            blocks: &blocks,
+            text: "Here is my answer.",
+            thinking: &thinking,
             complete: true,
             is_continuation: false,
         };
@@ -2048,181 +1767,79 @@ mod tests {
             .find(|l| l.contains("Thought"))
             .expect("should have 'Thought (N words)' line");
 
-        // Should NOT use box-drawing corner ┌ when thinking is collapsed
         assert!(
             !thought_line.contains('\u{250C}'),
-            "Collapsed thinking summary should not use box-drawing corner ┌\nLine: {thought_line}"
+            "Collapsed thinking summary should not use box-drawing corner\nLine: {thought_line}"
         );
     }
 
+    /// Graduation decomposes markdown into top-level blocks: stable blocks
+    /// (all but last during streaming) get scrollback wrappers.
     #[test]
-    fn code_block_not_split_across_text_blocks() {
-        // A fenced code block separated from surrounding text by \n\n should
-        // remain as a single block (fences + content together), not get split
-        // at the \n\n boundary which tears the fences off the content.
-        let md = "## Quick Commands\n\n```bash\n# Chat\ncru chat\n```\n\nText between\n\n```bash\ncru chat -a claude\n```\n\nMore text\n\n```bash\ncru mcp\n```";
-        let mut list = ContainerList::new();
-        list.start_assistant_response();
-        list.append_text(md);
-
-        let texts = extract_text_blocks(&list);
-        assert_no_orphaned_fences(&texts, "Single-delta code blocks");
-    }
-
-    #[test]
-    fn streamed_code_block_not_split_across_text_blocks() {
-        // Simulates streaming where fences arrive as separate tokens from content
-        let mut list = ContainerList::new();
-        list.start_assistant_response();
-        list.append_text("Here is code:\n\n");
-        list.append_text("```bash\n");
-        list.append_text("cru chat -a claude\n");
-        list.append_text("```\n\n");
-        list.append_text("And more code:\n\n");
-        list.append_text("```bash\n");
-        list.append_text("cru mcp\n");
-        list.append_text("```");
-
-        let blocks = match list.containers.last() {
-            Some(ChatContainer::AssistantResponse { blocks, .. }) => blocks,
-            _ => panic!("Expected AssistantResponse"),
+    fn graduation_wraps_stable_blocks_in_scrollback() {
+        let params = super::RenderBlocksParams {
+            container_id: "grad-test",
+            text: "Paragraph one.\n\nParagraph two.\n\nParagraph three.",
+            thinking: &[],
+            complete: false,
+            is_continuation: false,
+        };
+        let render_state = super::RenderState {
+            terminal_width: 80,
+            spinner_frame: 0,
+            show_thinking: false,
         };
 
-        let texts: Vec<&str> = blocks
-            .iter()
-            .filter_map(|b| match b {
-                ContentBlock::Text(s) => Some(s.as_str()),
-                _ => None,
-            })
-            .collect();
-        for (i, text) in texts.iter().enumerate() {
-            let trimmed = text.trim();
-            assert!(
-                trimmed != "```" && trimmed != "```bash",
-                "Block {i} is a bare fence marker '{}', streaming tore code block apart.\nAll blocks: {texts:?}",
-                trimmed
-            );
-        }
-    }
+        let node = super::render_assistant_blocks_with_graduation(&params, &render_state);
 
-    #[test]
-    fn code_block_fences_survive_chunked_streaming() {
-        // Simulates various realistic streaming chunk patterns to find
-        // which pattern tears code blocks apart.
-        //
-        // Full content:
-        // ## Quick Commands\n\n```bash\n# Chat\ncru chat\n```\n\n
-        // Chat with Claude Code\n\n```bash\ncru chat -a claude\n```\n\n
-        // Start MCP server\n\n```bash\ncru mcp\n```
-
-        // Pattern A: closing fence and \n\n arrive together (```\n\n)
-        {
-            let mut list = ContainerList::new();
-            list.start_assistant_response();
-            list.append_text("## Quick Commands\n\n```bash\n# Chat\ncru chat\n");
-            list.append_text("```\n\nChat with Claude Code\n\n```bash\ncru chat -a claude\n");
-            list.append_text("```\n\nStart MCP server\n\n```bash\ncru mcp\n```");
-
-            let blocks = extract_text_blocks(&list);
-            eprintln!("Pattern A blocks: {blocks:?}");
-            assert_no_orphaned_fences(&blocks, "Pattern A");
+        // The result should be a col with the graduated text blocks + spinner
+        fn count_scrollback(node: &Node) -> usize {
+            match node {
+                Node::Static(_) => 1,
+                Node::Box(b) => b.children.iter().map(count_scrollback).sum(),
+                _ => 0,
+            }
         }
 
-        // Pattern B: closing fence in one chunk, \n\n starts next chunk
-        {
-            let mut list = ContainerList::new();
-            list.start_assistant_response();
-            list.append_text("## Quick Commands\n\n```bash\n# Chat\ncru chat\n```");
-            list.append_text("\n\nChat with Claude Code\n\n```bash\ncru chat -a claude\n```");
-            list.append_text("\n\nStart MCP server\n\n```bash\ncru mcp\n```");
-
-            let blocks = extract_text_blocks(&list);
-            eprintln!("Pattern B blocks: {blocks:?}");
-            assert_no_orphaned_fences(&blocks, "Pattern B");
-        }
-
-        // Pattern C: large chunks with mid-fence splits
-        {
-            let mut list = ContainerList::new();
-            list.start_assistant_response();
-            list.append_text("## Quick Commands\n\n```bash\n# Chat\ncru chat\n```\n\nChat with Claude Code\n\n```");
-            list.append_text("bash\ncru chat -a claude\n```\n\nStart MCP server\n\n```bash\ncru mcp\n```");
-
-            let blocks = extract_text_blocks(&list);
-            eprintln!("Pattern C blocks: {blocks:?}");
-            assert_no_orphaned_fences(&blocks, "Pattern C");
-        }
-
-        // Pattern D: \n\n inside code fence content
-        {
-            let mut list = ContainerList::new();
-            list.start_assistant_response();
-            list.append_text("```bash\n# Comment\n\ncru chat\n```\n\nSome text\n\n```bash\ncru mcp\n```");
-
-            let blocks = extract_text_blocks(&list);
-            eprintln!("Pattern D blocks: {blocks:?}");
-            assert_no_orphaned_fences(&blocks, "Pattern D");
-        }
-
-        // Pattern E: bare ``` (no language tag) code blocks
-        {
-            let mut list = ContainerList::new();
-            list.start_assistant_response();
-            list.append_text("Text\n\n```\ncru chat\n```\n\nMore text\n\n```\ncru mcp\n```");
-
-            let blocks = extract_text_blocks(&list);
-            eprintln!("Pattern E blocks: {blocks:?}");
-            assert_no_orphaned_fences(&blocks, "Pattern E");
-        }
-    }
-
-    fn extract_text_blocks(list: &ContainerList) -> Vec<String> {
-        match list.containers.last() {
-            Some(ChatContainer::AssistantResponse { blocks, .. }) => blocks
-                .iter()
-                .filter_map(|b| match b {
-                    ContentBlock::Text(s) => Some(s.clone()),
-                    _ => None,
-                })
-                .collect(),
-            _ => panic!("Expected AssistantResponse"),
-        }
-    }
-
-    #[test]
-    fn streamed_code_block_with_blank_line_inside() {
-        // Code block with a blank line inside, streamed in chunks where
-        // the \n\n arrives at a chunk boundary
-        let mut list = ContainerList::new();
-        list.start_assistant_response();
-        list.append_text("```bash\n# Comment\n\n");
-        list.append_text("cru chat\n```\n\n");
-        list.append_text("Some text");
-
-        let blocks = extract_text_blocks(&list);
-        eprintln!("Streamed blank-line blocks: {blocks:?}");
-        assert_no_orphaned_fences(&blocks, "Streamed blank-line");
-
-        // The code block should be intact
-        let code_block = &blocks[0];
+        let sb_count = count_scrollback(&node);
+        // During streaming: 2 of 3 paragraphs should be wrapped in scrollback
         assert!(
-            code_block.contains("```bash") && code_block.contains("```\n") || code_block.ends_with("```"),
-            "Code block should have both fences: {:?}",
-            code_block
+            sb_count >= 2,
+            "Expected at least 2 scrollback wrappers during streaming, got {sb_count}"
         );
     }
 
-    fn assert_no_orphaned_fences(blocks: &[String], label: &str) {
-        for (i, text) in blocks.iter().enumerate() {
-            let trimmed = text.trim();
-            // A block that is JUST a fence marker means the code block was torn apart
-            assert!(
-                trimmed != "```" && !trimmed.starts_with("```") || trimmed.matches("```").count() >= 2,
-                "{label}: Block {i} has orphaned fence marker: {:?}\nAll blocks: {:?}",
-                trimmed,
-                blocks
-            );
-        }
-    }
+    /// When complete, all top-level blocks get scrollback wrappers.
+    #[test]
+    fn graduation_wraps_all_blocks_when_complete() {
+        let params = super::RenderBlocksParams {
+            container_id: "grad-complete",
+            text: "Paragraph one.\n\nParagraph two.",
+            thinking: &[],
+            complete: true,
+            is_continuation: false,
+        };
+        let render_state = super::RenderState {
+            terminal_width: 80,
+            spinner_frame: 0,
+            show_thinking: false,
+        };
 
+        let node = super::render_assistant_blocks_with_graduation(&params, &render_state);
+
+        fn count_scrollback(node: &Node) -> usize {
+            match node {
+                Node::Static(_) => 1,
+                Node::Box(b) => b.children.iter().map(count_scrollback).sum(),
+                _ => 0,
+            }
+        }
+
+        let sb_count = count_scrollback(&node);
+        // When complete: both paragraphs should be wrapped
+        assert!(
+            sb_count >= 2,
+            "Expected at least 2 scrollback wrappers when complete, got {sb_count}"
+        );
+    }
 }

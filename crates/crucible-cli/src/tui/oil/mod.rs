@@ -40,7 +40,6 @@ mod cell_grid;
 pub mod chat_app;
 pub mod chat_container;
 pub mod chat_runner;
-mod text_block_splitter;
 pub mod commands;
 pub mod component;
 pub mod components;
@@ -76,7 +75,7 @@ pub use app::{Action, App, ViewContext};
 pub use chat_app::{
     ChatAppMsg, ChatMode, McpServerDisplay, OilChatApp, PluginStatusEntry, Role,
 };
-pub use chat_container::{ChatContainer, ContainerList, ContentBlock, ThinkingBlock};
+pub use chat_container::{ChatContainer, ContainerList, ThinkingBlock};
 pub use chat_runner::OilChatRunner;
 pub use component::{Component, ComponentHarness};
 pub use components::{InputArea, InputMode, StatusBar, INPUT_MAX_CONTENT_LINES};
