@@ -15,8 +15,9 @@
 //! 3. **Atomic**: Graduation commits before viewport filtering (no "flash" of missing content)
 //! 4. **Stable**: Resize operations preserve content (no loss during height changes)
 
+use crate::layout::{build_layout_tree, render_layout_tree_compact};
 use crate::node::{ElementKind, Node};
-use crate::render::{render_children_to_string, RenderFilter};
+use crate::render::RenderFilter;
 use std::collections::VecDeque;
 use std::io;
 
@@ -137,8 +138,13 @@ impl GraduationState {
         match node {
             Node::Static(static_node) => {
                 if !self.graduated_keys.contains(&static_node.key) {
-                    let raw = render_children_to_string(&static_node.children, width);
-                    let content = raw.trim_end_matches(['\r', '\n']).to_string();
+                    // Render via Taffy (same layout path as viewport) for visual consistency.
+                    // Use compact mode to strip CellGrid padding (graduated content
+                    // goes to stdout scrollback where fixed-width padding is wasteful).
+                    let wrapper = Node::Fragment(static_node.children.clone());
+                    let layout = build_layout_tree(&wrapper, width as u16, 9999);
+                    let (raw, _cursor) = render_layout_tree_compact(&layout);
+                    let content = collapse_graduated_blank_lines(&raw);
 
                     if !content.is_empty() {
                         graduated.push(GraduatedContent {
@@ -185,6 +191,44 @@ pub struct GraduatedContent {
     pub content: String,
     pub kind: ElementKind,
     pub newline: bool,
+}
+
+/// Clean up Taffy-rendered graduation content:
+/// - Strip trailing whitespace/newlines
+/// - Collapse consecutive blank lines to single blank line
+/// - Strip leading blank lines
+fn collapse_graduated_blank_lines(raw: &str) -> String {
+    let mut result = String::new();
+    let mut prev_blank = false;
+    let mut first = true;
+
+    for line in raw.split("\r\n") {
+        let trimmed = line.trim_end();
+        let is_blank = trimmed.is_empty();
+
+        // Skip leading blank lines
+        if first && is_blank {
+            continue;
+        }
+        // Collapse consecutive blank lines
+        if is_blank && prev_blank {
+            continue;
+        }
+
+        if !first {
+            result.push_str("\r\n");
+        }
+        result.push_str(trimmed);
+        prev_blank = is_blank;
+        first = false;
+    }
+
+    // Strip trailing blank lines
+    while result.ends_with("\r\n") || result.ends_with('\n') {
+        result.truncate(result.trim_end_matches(['\r', '\n']).len());
+    }
+
+    result
 }
 
 #[cfg(test)]

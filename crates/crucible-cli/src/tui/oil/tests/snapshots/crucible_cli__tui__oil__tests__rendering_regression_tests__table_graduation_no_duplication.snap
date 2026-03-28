@@ -1,5 +1,6 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/rendering_regression_tests.rs
+assertion_line: 59
 expression: rendered
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
@@ -8,13 +9,13 @@ expression: rendered
 
  ● Here's a summary:
 
-   ┌─────────┬─────────┐   
-   │ Feature │ Status  │   
-   ├─────────┼─────────┤   
-   │ Tables  │ Working │   
-   ├─────────┼─────────┤   
-   │ Lists   │ Working │   
-   └─────────┴─────────┘   
+   ┌─────────┬─────────┐
+   │ Feature │ Status  │
+   ├─────────┼─────────┤
+   │ Tables  │ Working │
+   ├─────────┼─────────┤
+   │ Lists   │ Working │
+   └─────────┴─────────┘
 
    That's the overview.
                                                                                 

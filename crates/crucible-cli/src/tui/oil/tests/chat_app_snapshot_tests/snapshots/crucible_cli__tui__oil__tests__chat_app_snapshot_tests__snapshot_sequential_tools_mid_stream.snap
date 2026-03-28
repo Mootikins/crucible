@@ -1,5 +1,6 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
+assertion_line: 636
 expression: render_app(&app)
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
@@ -9,8 +10,8 @@ expression: render_app(&app)
  ● Let me look at the files.
 
  ✓ Bash ls
-   │ src/
-   │ Cargo.toml
+   │ src/                                                                       
+   │ Cargo.toml                                                                 
 
    Now let me read the main file.
                                                                                 

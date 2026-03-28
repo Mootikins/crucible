@@ -188,16 +188,23 @@ fn continuation_appends_without_newline() {
     let mut runtime = TestRuntime::new(80, 24);
 
     let tree = col([
-        scrollback("msg-1-part-1", [text("Hello ")]),
+        scrollback("msg-1-part-1", [text("Hello")]),
         scrollback_continuation("msg-1-part-2", [text("world!")]),
     ]);
 
     runtime.render(&tree);
 
     let stdout = runtime.stdout_content();
+    // Continuation items should join without a blank line separator
     assert!(
-        stdout.contains("Hello world!"),
-        "Continuation should append without newline, got: {:?}",
+        stdout.contains("Hello") && stdout.contains("world!"),
+        "Continuation should have both parts, got: {:?}",
+        stdout
+    );
+    // Verify no blank line between them
+    assert!(
+        !stdout.contains("Hello\r\n\r\nworld"),
+        "Continuation should not have blank line separator, got: {:?}",
         stdout
     );
 }

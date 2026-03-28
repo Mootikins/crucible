@@ -135,6 +135,27 @@ impl CellGrid {
     pub fn to_string_joined(&self) -> String {
         self.to_lines().join("\r\n")
     }
+
+    /// Render to compact string with trailing padding stripped per line.
+    /// Used for graduation output where fixed-width padding is wasteful.
+    pub fn to_string_compact(&self) -> String {
+        self.cells
+            .iter()
+            .map(|row| cells_to_string_compact(row))
+            .collect::<Vec<_>>()
+            .join("\r\n")
+    }
+}
+
+/// Like `cells_to_string` but strips trailing unstyled space cells (CellGrid padding).
+fn cells_to_string_compact(cells: &[StyledCell]) -> String {
+    // Find last non-padding cell (non-space or styled)
+    let last_content = cells
+        .iter()
+        .rposition(|c| c.ch != ' ' || !c.style.is_empty())
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    cells_to_string(&cells[..last_content])
 }
 
 fn cells_to_string(cells: &[StyledCell]) -> String {

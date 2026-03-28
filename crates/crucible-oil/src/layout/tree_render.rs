@@ -34,6 +34,16 @@ use super::types::{LayoutBox, LayoutContent, LayoutTree, PopupItem};
 ///
 /// An ANSI-formatted string and cursor information.
 pub fn render_layout_tree(tree: &LayoutTree) -> (String, CursorInfo) {
+    render_layout_tree_inner(tree, false)
+}
+
+/// Render layout tree with trailing padding stripped per line.
+/// Used for graduation output where fixed-width padding is wasteful.
+pub fn render_layout_tree_compact(tree: &LayoutTree) -> (String, CursorInfo) {
+    render_layout_tree_inner(tree, true)
+}
+
+fn render_layout_tree_inner(tree: &LayoutTree, compact: bool) -> (String, CursorInfo) {
     let width = tree.root.rect.width as usize;
     let height = tree.root.rect.height as usize;
 
@@ -44,7 +54,11 @@ pub fn render_layout_tree(tree: &LayoutTree) -> (String, CursorInfo) {
     let mut grid = CellGrid::new(width, height);
     let mut cursor_position = None;
     render_box(&tree.root, &mut grid, &mut cursor_position);
-    let content = grid.to_string_joined();
+    let content = if compact {
+        grid.to_string_compact()
+    } else {
+        grid.to_string_joined()
+    };
     let cursor_info = cursor_info_from_position(cursor_position, content.lines().count());
     (content, cursor_info)
 }

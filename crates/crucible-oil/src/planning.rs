@@ -174,6 +174,8 @@ impl FramePlanner {
         overlay_nodes
             .iter()
             .map(|overlay_node| {
+                // Overlays need compact output (just the content lines, no grid padding)
+                // since they're composited onto the viewport at an anchored position.
                 let content = render_to_string(&overlay_node.child, self.width as usize);
                 let lines: Vec<String> = content.lines().map(String::from).collect();
                 RenderedOverlay {
