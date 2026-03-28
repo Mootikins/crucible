@@ -1,5 +1,5 @@
 use crate::focus::FocusContext;
-use crate::node::{focusable, overlay_from_bottom, popup, Node, PopupItemNode};
+use crate::node::{overlay_from_bottom, popup, Node, PopupItemNode};
 
 pub const POPUP_MAX_VISIBLE: usize = 10;
 pub const FOCUS_POPUP: &str = "popup";
@@ -96,10 +96,7 @@ impl PopupOverlay {
             return Node::Empty;
         }
 
-        let popup_node = focusable(
-            FOCUS_POPUP,
-            popup(self.items.clone(), self.selected, self.max_visible),
-        );
+        let popup_node = popup(self.items.clone(), self.selected, self.max_visible);
         overlay_from_bottom(popup_node, self.offset_from_bottom)
     }
 }

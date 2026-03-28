@@ -140,8 +140,6 @@ fn collect_overlays(node: &Node, overlays: &mut Vec<OverlayNode>) {
             .children
             .iter()
             .for_each(|c| collect_overlays(c, overlays)),
-        Node::Focusable(f) => collect_overlays(&f.child, overlays),
-        Node::ErrorBoundary(b) => collect_overlays(&b.child, overlays),
         _ => {}
     }
 }
@@ -159,15 +157,6 @@ pub fn filter_overlays(node: Node) -> Node {
         Node::Static(mut s) => {
             s.children = s.children.into_iter().map(filter_overlays).collect();
             Node::Static(s)
-        }
-        Node::Focusable(mut f) => {
-            f.child = Box::new(filter_overlays(*f.child));
-            Node::Focusable(f)
-        }
-        Node::ErrorBoundary(mut b) => {
-            b.child = Box::new(filter_overlays(*b.child));
-            b.fallback = Box::new(filter_overlays(*b.fallback));
-            Node::ErrorBoundary(b)
         }
         other => other,
     }

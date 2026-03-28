@@ -150,14 +150,6 @@ impl LayoutEngine {
                     .expect("taffy operation failed")
             }
 
-            Node::Focusable(focusable) => {
-                return self.build_node(&focusable.child, available_width);
-            }
-
-            Node::ErrorBoundary(boundary) => {
-                return self.build_node(&boundary.child, available_width);
-            }
-
             Node::Overlay(_) => self
                 .tree
                 .new_leaf(taffy::style::Style::default())
@@ -482,14 +474,6 @@ impl LayoutEngine {
                     style: OilStyle::default(),
                     key: None,
                 }
-            }
-
-            Node::Focusable(focusable) => {
-                self.node_to_layout_box(&focusable.child, taffy_id, offset_x, offset_y)
-            }
-
-            Node::ErrorBoundary(boundary) => {
-                self.node_to_layout_box(&boundary.child, taffy_id, offset_x, offset_y)
             }
 
             Node::Overlay(_) => LayoutBox::new(rect, LayoutContent::Empty),

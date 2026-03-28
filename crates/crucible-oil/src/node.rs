@@ -1,4 +1,3 @@
-use crate::focus::FocusId;
 use crate::overlay::OverlayAnchor;
 use crate::style::{AlignItems, Border, Color, Gap, JustifyContent, Padding, Style};
 
@@ -44,24 +43,9 @@ pub enum Node {
     Spinner(SpinnerNode),
     Popup(PopupNode),
     Fragment(Vec<Node>),
-    Focusable(FocusableNode),
-    ErrorBoundary(ErrorBoundaryNode),
     Overlay(OverlayNode),
     /// Raw escape sequence passthrough (for protocol-specific content like images)
     Raw(RawNode),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct FocusableNode {
-    pub id: FocusId,
-    pub child: Box<Node>,
-    pub auto_focus: bool,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ErrorBoundaryNode {
-    pub child: Box<Node>,
-    pub fallback: Box<Node>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -343,36 +327,6 @@ impl PopupItemNode {
         self.kind = Some(kind.into());
         self
     }
-}
-
-pub fn focusable(id: impl Into<String>, child: Node) -> Node {
-    Node::Focusable(FocusableNode {
-        id: FocusId::new(id),
-        child: Box::new(child),
-        auto_focus: false,
-    })
-}
-
-pub fn focusable_auto(id: impl Into<String>, child: Node) -> Node {
-    Node::Focusable(FocusableNode {
-        id: FocusId::new(id),
-        child: Box::new(child),
-        auto_focus: true,
-    })
-}
-
-impl FocusableNode {
-    pub fn auto_focus(mut self) -> Self {
-        self.auto_focus = true;
-        self
-    }
-}
-
-pub fn error_boundary(child: Node, fallback: Node) -> Node {
-    Node::ErrorBoundary(ErrorBoundaryNode {
-        child: Box::new(child),
-        fallback: Box::new(fallback),
-    })
 }
 
 pub fn overlay_from_bottom(child: Node, offset: usize) -> Node {

@@ -1,4 +1,3 @@
-use crate::focus::FocusId;
 use crate::node::*;
 use crate::overlay::OverlayAnchor;
 use crate::style::*;
@@ -173,9 +172,7 @@ fn parse_element(arr: &[NodeSpec]) -> NodeSpecResult<Node> {
         "input" => parse_input(&attrs),
         "popup" => parse_popup(&attrs, &children),
         "fragment" => parse_fragment(&children),
-        "focusable" => parse_focusable(&attrs, &children),
         "scrollback" => parse_scrollback(&attrs, &children),
-        "error-boundary" => parse_error_boundary(&children),
         "overlay" => parse_overlay(&attrs, &children),
         "divider" => parse_divider(&attrs),
         "hr" => Ok(horizontal_rule()),
@@ -352,25 +349,6 @@ fn parse_fragment(children: &[NodeSpec]) -> NodeSpecResult<Node> {
     Ok(fragment(child_nodes))
 }
 
-fn parse_focusable(attrs: &NodeAttrs, children: &[NodeSpec]) -> NodeSpecResult<Node> {
-    let id = required_attr(attrs, "id", "focusable")?;
-    let auto_focus = optional_bool(attrs, "auto_focus", false);
-
-    if children.is_empty() {
-        return Err(NodeSpecError::InvalidChild(
-            "focusable requires a child".to_string(),
-        ));
-    }
-
-    let child = spec_to_node(&children[0])?;
-
-    Ok(Node::Focusable(FocusableNode {
-        id: FocusId::new(id),
-        child: Box::new(child),
-        auto_focus,
-    }))
-}
-
 fn parse_scrollback(attrs: &NodeAttrs, children: &[NodeSpec]) -> NodeSpecResult<Node> {
     let key = required_attr(attrs, "key", "scrollback")?;
     let newline = optional_bool(attrs, "newline", true);
@@ -386,19 +364,6 @@ fn parse_scrollback(attrs: &NodeAttrs, children: &[NodeSpec]) -> NodeSpecResult<
         kind: ElementKind::default(),
         newline,
     }))
-}
-
-fn parse_error_boundary(children: &[NodeSpec]) -> NodeSpecResult<Node> {
-    if children.len() < 2 {
-        return Err(NodeSpecError::InvalidChild(
-            "error-boundary requires child and fallback".to_string(),
-        ));
-    }
-
-    let child = spec_to_node(&children[0])?;
-    let fallback = spec_to_node(&children[1])?;
-
-    Ok(error_boundary(child, fallback))
 }
 
 fn parse_overlay(attrs: &NodeAttrs, children: &[NodeSpec]) -> NodeSpecResult<Node> {
@@ -874,22 +839,6 @@ mod tests {
     }
 
     #[test]
-    fn test_focusable_node() {
-        let hiccup = arr(vec![
-            s("focusable"),
-            obj(vec![("id", s("my-input")), ("auto_focus", b(true))]),
-            arr(vec![s("text"), s("content")]),
-        ]);
-        let node = spec_to_node(&hiccup).unwrap();
-        if let Node::Focusable(f) = node {
-            assert_eq!(f.id.0, "my-input");
-            assert!(f.auto_focus);
-        } else {
-            panic!("Expected Focusable node");
-        }
-    }
-
-    #[test]
     fn test_divider_node() {
         let hiccup = arr(vec![
             s("divider"),
@@ -1054,17 +1003,6 @@ mod tests {
         } else {
             panic!("Expected Static node");
         }
-    }
-
-    #[test]
-    fn test_error_boundary_node() {
-        let hiccup = arr(vec![
-            s("error-boundary"),
-            arr(vec![s("text"), s("child")]),
-            arr(vec![s("text"), s("fallback")]),
-        ]);
-        let node = spec_to_node(&hiccup).unwrap();
-        assert!(matches!(node, Node::ErrorBoundary(_)));
     }
 
     #[test]
