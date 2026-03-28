@@ -20,7 +20,6 @@ pub mod ansi;
 pub mod bounded;
 pub mod cell_grid;
 pub mod components;
-pub mod decrypt;
 pub mod focus;
 pub mod graduation;
 pub mod layout;

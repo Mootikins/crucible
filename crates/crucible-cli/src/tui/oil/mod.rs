@@ -81,7 +81,6 @@ pub use chat_runner::OilChatRunner;
 pub use component::{Component, ComponentHarness};
 pub use components::{InputArea, InputMode, StatusBar, INPUT_MAX_CONTENT_LINES};
 pub use composer::{pad_popup_region, ComposerConfig};
-pub use crucible_oil::decrypt::{decrypt_text, DecryptConfig, CIPHER_CHARS};
 pub use event::{Event, InputAction, InputBuffer};
 pub use focus::*;
 pub use graduation::{GraduatedContent, GraduationState};
