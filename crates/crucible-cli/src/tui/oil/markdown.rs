@@ -559,50 +559,58 @@ fn render_code_block(node: &markdown_it::Node, ctx: &mut RenderContext) {
         "```".to_string()
     };
 
+    // Render entire code block as a single text node with embedded newlines.
+    // This prevents the layout engine from adding inter-line spacing
+    // (each line as a separate node in the outer col gets blank lines between).
     let t = theme::active();
     let fence_style = Style::new().fg(t.resolve_color(t.colors.fence_marker));
 
-    ctx.flush_line();
-    if indent.is_empty() {
-        ctx.blocks.push(styled(&fence_marker, fence_style));
-    } else {
-        ctx.blocks.push(row([text(&indent), styled(&fence_marker, fence_style)]));
-    }
-    render_highlighted_code(&content, lang_str, ctx, &indent);
-    if indent.is_empty() {
-        ctx.blocks.push(styled("```", fence_style));
-    } else {
-        ctx.blocks.push(row([text(&indent), styled("```", fence_style)]));
-    }
+    let fence_codes = fence_style.to_ansi_codes();
+    let fence_open_ansi = format!("{fence_codes}{indent}{fence_marker}\x1b[0m");
+    let fence_close_ansi = format!("{fence_codes}{indent}```\x1b[0m");
 
+    // Build highlighted code lines as ANSI strings
+    let code_lines = build_highlighted_code_lines(&content, lang_str, &indent, ctx.width);
+
+    // Join everything with \n into a single text node
+    let mut full_block = fence_open_ansi;
+    for line in &code_lines {
+        full_block.push('\n');
+        full_block.push_str(line);
+    }
+    full_block.push('\n');
+    full_block.push_str(&fence_close_ansi);
+
+    ctx.flush_line();
+    // Push as a pre-formatted text node — the renderer handles \n within text
+    ctx.blocks.push(text_node(&full_block));
     ctx.mark_block_end();
 }
 
 
 
-fn push_code_line(ctx: &mut RenderContext, node: Node, indent: &str) {
-    ctx.flush_line();
-    if indent.is_empty() {
-        ctx.blocks.push(node);
-    } else {
-        ctx.blocks.push(row([text(indent), node]));
-    }
-}
-
-fn render_highlighted_code(content: &str, lang: &str, ctx: &mut RenderContext, indent: &str) {
+/// Build highlighted code lines as ANSI strings (one per visual line).
+fn build_highlighted_code_lines(
+    content: &str,
+    lang: &str,
+    indent: &str,
+    width: usize,
+) -> Vec<String> {
     use crate::formatting::SyntaxHighlighter;
     use crate::tui::oil::ansi::wrap_styled_text;
+
+    let mut result = Vec::new();
 
     if lang.is_empty() || !SyntaxHighlighter::supports_language(lang) {
         let t = theme::active();
         let fallback = Style::new().fg(t.resolve_color(t.colors.code_fallback));
         for line in content.lines() {
             let spans = vec![(line.to_string(), fallback.to_ansi_codes())];
-            for wrapped in wrap_styled_text(&spans, ctx.width) {
-                push_code_line(ctx, text_node(&wrapped), indent);
+            for wrapped in wrap_styled_text(&spans, width) {
+                result.push(format!("{indent}{wrapped}"));
             }
         }
-        return;
+        return result;
     }
 
     let highlighter = SyntaxHighlighter::new();
@@ -610,7 +618,7 @@ fn render_highlighted_code(content: &str, lang: &str, ctx: &mut RenderContext, i
 
     for highlighted_line in highlighted_lines {
         if highlighted_line.spans.is_empty() {
-            push_code_line(ctx, text(""), indent);
+            result.push(indent.to_string());
             continue;
         }
 
@@ -620,10 +628,12 @@ fn render_highlighted_code(content: &str, lang: &str, ctx: &mut RenderContext, i
             .map(|span| (span.text.clone(), span.style.to_ansi_codes()))
             .collect();
 
-        for wrapped in wrap_styled_text(&spans, ctx.width) {
-            push_code_line(ctx, text_node(&wrapped), indent);
+        for wrapped in wrap_styled_text(&spans, width) {
+            result.push(format!("{indent}{wrapped}"));
         }
     }
+
+    result
 }
 
 fn render_list_item(node: &markdown_it::Node, ctx: &mut RenderContext) {
