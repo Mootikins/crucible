@@ -40,6 +40,7 @@ mod cell_grid;
 pub mod chat_app;
 pub mod chat_container;
 pub mod chat_runner;
+mod text_block_splitter;
 pub mod commands;
 pub mod component;
 pub mod components;
