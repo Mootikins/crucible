@@ -1195,17 +1195,37 @@ impl OilChatRunner {
                             );
                             return Ok(false);
                         }
-                        tracing::debug!(target: "crucible_cli::tui::oil::model_flow", "process_action: FetchModels starting async fetch");
-                        let models = params.agent.fetch_available_models().await;
-                        tracing::debug!(target: "crucible_cli::tui::oil::model_flow", count = models.len(), "process_action: fetch_available_models returned");
-                        if models.is_empty() {
-                            let _ = params.app.on_message(ChatAppMsg::ModelsFetchFailed(
-                                "No models available".to_string(),
-                            ));
-                        } else {
-                            tracing::info!(count = models.len(), "Models fetched successfully");
-                            let _ = params.app.on_message(ChatAppMsg::ModelsLoaded(models));
-                        }
+                        // Spawn model fetch as background task to avoid blocking the event loop.
+                        // Uses a fresh DaemonClient connection (same pattern as plugin reload).
+                        let tx = params.msg_tx.clone();
+                        params.background_tasks.push(tokio::spawn(async move {
+                            tracing::debug!(target: "crucible_cli::tui::oil::model_flow", "background: FetchModels starting");
+                            match crucible_daemon::DaemonClient::connect().await {
+                                Ok(client) => {
+                                    match client.list_all_models(None).await {
+                                        Ok(models) if models.is_empty() => {
+                                            let _ = tx.send(ChatAppMsg::ModelsFetchFailed(
+                                                "No models available".to_string(),
+                                            ));
+                                        }
+                                        Ok(models) => {
+                                            tracing::info!(count = models.len(), "Models fetched successfully");
+                                            let _ = tx.send(ChatAppMsg::ModelsLoaded(models));
+                                        }
+                                        Err(e) => {
+                                            let _ = tx.send(ChatAppMsg::ModelsFetchFailed(
+                                                format!("Failed to list models: {}", e),
+                                            ));
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    let _ = tx.send(ChatAppMsg::ModelsFetchFailed(
+                                        format!("Failed to connect to daemon: {}", e),
+                                    ));
+                                }
+                            }
+                        }));
                     }
                     ChatAppMsg::McpStatusLoaded(_) | ChatAppMsg::PluginStatusLoaded(_) => {
                         params.app.on_message(msg.clone());

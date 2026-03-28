@@ -212,6 +212,26 @@ impl AgentManager {
         Ok(all_models)
     }
 
+    /// Populate the model cache by discovering models from all configured providers.
+    ///
+    /// Called at daemon startup and periodically to keep the cache warm.
+    /// Clients then get instant responses from `list_models`.
+    pub async fn warm_model_cache(&self) {
+        let mut all_models = Vec::new();
+
+        for (provider_key, provider_config, _) in self.iter_chat_providers(None) {
+            let models = self.discover_models(&provider_key, &provider_config).await;
+            for model in models {
+                all_models.push(format!("{}/{}", provider_key, model));
+            }
+        }
+
+        if !all_models.iter().any(|model| model.starts_with("[error]")) {
+            self.model_cache
+                .insert("all".to_string(), (all_models, Instant::now()));
+        }
+    }
+
     /// Dispatch model discovery based on backend type.
     ///
     /// Always returns a model list (never fails). Falls back to
