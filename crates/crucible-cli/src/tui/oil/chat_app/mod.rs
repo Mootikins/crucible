@@ -103,6 +103,8 @@ pub struct OilChatApp {
     spinner_frame: usize,
     /// Force a full terminal redraw on next tick
     needs_full_redraw: bool,
+    /// Scroll offset (lines from bottom). 0 = pinned to bottom.
+    scroll_offset: usize,
     /// Whether to render LLM thinking/reasoning blocks
     show_thinking: bool,
     /// Precognition state (auto-RAG settings)
@@ -293,6 +295,26 @@ impl OilChatApp {
 
     pub(crate) fn set_show_thinking(&mut self, show: bool) {
         self.show_thinking = show;
+    }
+
+    pub(super) fn scroll_up(&mut self, lines: usize) {
+        self.scroll_offset = self.scroll_offset.saturating_add(lines);
+    }
+
+    pub(super) fn scroll_down(&mut self, lines: usize) {
+        self.scroll_offset = self.scroll_offset.saturating_sub(lines);
+    }
+
+    pub(super) fn snap_to_bottom(&mut self) {
+        self.scroll_offset = 0;
+    }
+
+    pub fn scroll_offset(&self) -> usize {
+        self.scroll_offset
+    }
+
+    pub fn is_scrolled(&self) -> bool {
+        self.scroll_offset > 0
     }
 
     pub(crate) fn set_precognition(&mut self, val: bool) {
@@ -499,6 +521,7 @@ impl OilChatApp {
     /// spinner renders while waiting for the first token.
     /// Use this (not `add_user_message`) when sending to the daemon.
     fn submit_user_message(&mut self, content: String) {
+        self.snap_to_bottom(); // Auto-scroll to bottom when sending
         self.add_user_message(content);
         self.container_list.mark_turn_active();
     }

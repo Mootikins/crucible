@@ -15,6 +15,7 @@ pub struct OutputBuffer {
     terminal_width: usize,
     terminal_height: usize,
     force_next_redraw: bool,
+    scroll_offset: usize,
 }
 
 fn lines_visually_equal(a: &str, b: &str) -> bool {
@@ -39,12 +40,25 @@ impl OutputBuffer {
             terminal_width: width,
             terminal_height: height,
             force_next_redraw: false,
+            scroll_offset: 0,
         }
     }
 
     pub fn set_size(&mut self, width: usize, height: usize) {
         self.terminal_width = width;
         self.terminal_height = height;
+    }
+
+    /// Set scroll offset (lines from bottom). 0 = pinned to bottom.
+    pub fn set_scroll_offset(&mut self, offset: usize) {
+        if offset != self.scroll_offset {
+            self.scroll_offset = offset;
+            self.force_next_redraw = true;
+        }
+    }
+
+    pub fn scroll_offset(&self) -> usize {
+        self.scroll_offset
     }
 
     #[allow(dead_code)] // WIP: render not yet used
@@ -77,11 +91,12 @@ impl OutputBuffer {
         let total_visual_rows: usize = line_visual_rows.iter().sum();
         let available_rows = self.terminal_height.saturating_sub(1);
 
-        let (mut viewport_lines, _base_visual_rows) = self.clamp_to_viewport(
+        let (mut viewport_lines, _base_visual_rows) = self.clamp_to_viewport_with_scroll(
             &all_lines,
             &line_visual_rows,
             total_visual_rows,
             available_rows,
+            self.scroll_offset,
         );
 
         let overlay_refs: Vec<Overlay> = overlays
@@ -171,13 +186,13 @@ impl OutputBuffer {
             }
 
             // Rewrite from first_diff to end
-            for i in first_diff..new_len {
+            for (i, line) in viewport_lines.iter().enumerate().skip(first_diff) {
                 execute!(self.stdout, cursor::MoveToColumn(0))?;
                 execute!(
                     self.stdout,
                     terminal::Clear(terminal::ClearType::CurrentLine)
                 )?;
-                write!(self.stdout, "{}", viewport_lines[i])?;
+                write!(self.stdout, "{}", line)?;
                 if i < new_len - 1 {
                     write!(self.stdout, "\r\n")?;
                 }
@@ -267,21 +282,38 @@ impl OutputBuffer {
         Ok(())
     }
 
-    fn clamp_to_viewport(
+    fn clamp_to_viewport_with_scroll(
         &self,
         all_lines: &[String],
         line_visual_rows: &[usize],
         total_visual_rows: usize,
         available_rows: usize,
+        scroll_offset: usize,
     ) -> (Vec<String>, usize) {
-        if total_visual_rows <= available_rows {
+        if total_visual_rows <= available_rows && scroll_offset == 0 {
             return (all_lines.to_vec(), total_visual_rows);
         }
 
-        let mut rows_remaining = available_rows;
-        let mut start_idx = all_lines.len();
+        // First, find the end index by skipping `scroll_offset` visual rows from bottom
+        let mut end_idx = all_lines.len();
+        let mut skip_rows = scroll_offset;
+        if scroll_offset > 0 {
+            for (i, &row_count) in line_visual_rows.iter().enumerate().rev() {
+                if skip_rows >= row_count {
+                    skip_rows -= row_count;
+                    end_idx = i;
+                } else {
+                    break;
+                }
+            }
+        }
 
-        for (i, &row_count) in line_visual_rows.iter().enumerate().rev() {
+        // Then, find the start index by fitting `available_rows` from end_idx backwards
+        let mut rows_remaining = available_rows;
+        let mut start_idx = end_idx;
+
+        for i in (0..end_idx).rev() {
+            let row_count = line_visual_rows[i];
             if rows_remaining >= row_count {
                 rows_remaining -= row_count;
                 start_idx = i;
@@ -290,13 +322,15 @@ impl OutputBuffer {
             }
         }
 
-        let viewport: Vec<String> = all_lines[start_idx..].to_vec();
-        let viewport_rows: usize = line_visual_rows[start_idx..].iter().sum();
+        let viewport: Vec<String> = all_lines[start_idx..end_idx].to_vec();
+        let viewport_rows: usize = line_visual_rows[start_idx..end_idx].iter().sum();
 
         tracing::debug!(
             total_rows = total_visual_rows,
             available = available_rows,
+            scroll_offset,
             skipped_lines = start_idx,
+            end_idx,
             viewport_rows,
             "viewport clamped"
         );
@@ -338,7 +372,8 @@ mod tests {
         let lines: Vec<String> = vec!["line1".into(), "line2".into(), "line3".into()];
         let visual_rows = vec![1, 1, 1];
 
-        let (viewport, rows) = buffer.clamp_to_viewport(&lines, &visual_rows, 3, 22);
+        let (viewport, rows) =
+            buffer.clamp_to_viewport_with_scroll(&lines, &visual_rows, 3, 22, 0);
 
         assert_eq!(viewport.len(), 3);
         assert_eq!(rows, 3);
@@ -350,7 +385,8 @@ mod tests {
         let lines: Vec<String> = (0..20).map(|i| format!("line{}", i)).collect();
         let visual_rows = vec![1; 20];
 
-        let (viewport, rows) = buffer.clamp_to_viewport(&lines, &visual_rows, 20, 8);
+        let (viewport, rows) =
+            buffer.clamp_to_viewport_with_scroll(&lines, &visual_rows, 20, 8, 0);
 
         assert_eq!(viewport.len(), 8);
         assert_eq!(rows, 8);
@@ -368,7 +404,8 @@ mod tests {
         ];
         let visual_rows = vec![1, 2, 1];
 
-        let (viewport, rows) = buffer.clamp_to_viewport(&lines, &visual_rows, 4, 3);
+        let (viewport, rows) =
+            buffer.clamp_to_viewport_with_scroll(&lines, &visual_rows, 4, 3, 0);
 
         assert_eq!(viewport.len(), 2);
         assert_eq!(rows, 3);

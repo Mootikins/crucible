@@ -134,11 +134,16 @@ impl OilChatApp {
     }
 
     pub(super) fn render_status(&self) -> Node {
+        let status_text = if self.is_scrolled() {
+            format!("{} \u{2191}{}L", self.status, self.scroll_offset)
+        } else {
+            self.status.clone()
+        };
         let mut comp = StatusComponent::new()
             .mode(self.mode)
             .model(&self.model)
             .context(self.context_used, self.context_total)
-            .status(&self.status);
+            .status(&status_text);
 
         if let Some(ref cfg) = self.statusline_config {
             comp = comp.config(cfg);
