@@ -190,7 +190,38 @@ fn parse_and_render_internal(
     blockquote_width: usize,
     margins: Margins,
 ) -> Node {
+    use std::cell::RefCell;
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
     use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    // Single-entry cache: skip re-parse when content + params unchanged between frames.
+    // During streaming, content changes every few tokens but not every 50ms tick,
+    // so many consecutive frames are cache hits.
+    thread_local! {
+        static CACHE: RefCell<Option<(u64, Node)>> = const { RefCell::new(None) };
+    }
+
+    let mut hasher = DefaultHasher::new();
+    markdown.hash(&mut hasher);
+    text_width.hash(&mut hasher);
+    table_width.hash(&mut hasher);
+    blockquote_width.hash(&mut hasher);
+    margins.left.hash(&mut hasher);
+    margins.right.hash(&mut hasher);
+    let key = hasher.finish();
+
+    if let Some(cached) = CACHE.with(|c| {
+        c.borrow().as_ref().and_then(|(k, node)| {
+            if *k == key {
+                Some(node.clone())
+            } else {
+                None
+            }
+        })
+    }) {
+        return cached;
+    }
 
     let result = catch_unwind(AssertUnwindSafe(|| {
         let md = create_parser();
@@ -201,7 +232,9 @@ fn parse_and_render_internal(
         ctx.into_node()
     }));
 
-    result.unwrap_or_else(|_| text(markdown))
+    let node = result.unwrap_or_else(|_| text(markdown));
+    CACHE.with(|c| *c.borrow_mut() = Some((key, node.clone())));
+    node
 }
 
 struct RenderContext {
