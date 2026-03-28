@@ -1,6 +1,6 @@
 //! Unix socket server for JSON-RPC
 
-use crate::agent_manager::{AgentError, AgentManager, AgentManagerParams};
+use crate::agent_manager::{AgentError, AgentManager, AgentManagerParams, MODEL_CACHE_TTL};
 use crate::background_manager::BackgroundJobManager;
 use crate::daemon_plugins::DaemonPluginLoader;
 use crate::event_emitter::emit_event;
@@ -401,6 +401,20 @@ impl Server {
                     }
                 }
             }
+        }
+
+        // Warm model cache on startup and refresh periodically
+        {
+            let am = self.agent_manager.clone();
+            tokio::spawn(async move {
+                am.warm_model_cache().await;
+                let mut interval = tokio::time::interval(MODEL_CACHE_TTL);
+                interval.tick().await; // skip immediate tick (just warmed)
+                loop {
+                    interval.tick().await;
+                    am.warm_model_cache().await;
+                }
+            });
         }
 
         #[cfg(feature = "web")]

@@ -1002,6 +1002,65 @@ mod rpc {
         Ok(())
     }
 
+    /// Build a default internal SessionAgent from global config.
+    ///
+    /// Same logic as `cru chat` uses via `build_internal_session_agent` in factories,
+    /// so CLI sessions get the same provider/model defaults.
+    fn build_default_session_agent(config: &CliConfig) -> SessionAgent {
+        let effective_llm = config.effective_llm_provider().ok();
+        let model = effective_llm
+            .as_ref()
+            .map(|p| p.model.clone())
+            .or_else(|| config.chat.model.clone())
+            .unwrap_or_else(|| crucible_config::DEFAULT_CHAT_MODEL.to_string());
+        let backend_type = effective_llm
+            .as_ref()
+            .map(|p| p.provider_type)
+            .unwrap_or(BackendType::Ollama);
+        let provider_key = effective_llm
+            .as_ref()
+            .map(|p| p.key.clone())
+            .unwrap_or_else(|| backend_type.as_str().to_string());
+
+        SessionAgent {
+            agent_type: "internal".to_string(),
+            agent_name: None,
+            provider_key: Some(provider_key),
+            provider: backend_type,
+            model,
+            system_prompt: String::new(),
+            temperature: effective_llm
+                .as_ref()
+                .map(|p| p.temperature as f64)
+                .or_else(|| config.chat.temperature.map(|t| t as f64)),
+            max_tokens: effective_llm
+                .as_ref()
+                .map(|p| p.max_tokens)
+                .or(config.chat.max_tokens),
+            endpoint: effective_llm
+                .as_ref()
+                .map(|p| p.endpoint.clone())
+                .or_else(|| config.chat.endpoint.clone()),
+            max_context_tokens: None,
+            thinking_budget: None,
+            env_overrides: std::collections::HashMap::new(),
+            mcp_servers: vec![],
+            agent_card_name: None,
+            capabilities: None,
+            agent_description: None,
+            delegation_config: None,
+            precognition_enabled: true,
+            precognition_results: 5,
+            max_iterations: None,
+            execution_timeout_secs: None,
+            context_budget: None,
+            context_strategy: Default::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: 3,
+        }
+    }
+
     pub(super) async fn create(
         client: &DaemonClient,
         config: &CliConfig,
@@ -1035,6 +1094,12 @@ mod rpc {
                 .await
                 .map_err(|e| anyhow!("Failed to resolve ACP agent profile: {}", e))?;
             let session_agent = SessionAgent::from_profile(&profile, agent_name);
+            client
+                .session_configure_agent(session_id, &session_agent)
+                .await?;
+        } else {
+            // Auto-configure from global config (same as `cru chat`)
+            let session_agent = build_default_session_agent(config);
             client
                 .session_configure_agent(session_id, &session_agent)
                 .await?;

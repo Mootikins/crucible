@@ -48,7 +48,7 @@ use tracing::{debug, error, info, warn};
 /// Unique identifier for a pending permission request.
 pub type PermissionId = String;
 
-const MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
+pub(crate) const MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 
 /// Check if a tool is safe to execute without requiring explicit permission.
 ///
