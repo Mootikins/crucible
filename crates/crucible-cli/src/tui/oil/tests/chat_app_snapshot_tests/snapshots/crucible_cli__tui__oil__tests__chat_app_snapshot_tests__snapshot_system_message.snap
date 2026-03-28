@@ -1,18 +1,19 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
+assertion_line: 1102
 expression: render_app(&app)
 ---
- * Crucible Help
-
-:help commands  — List all REPL commands
-:help keys      — Keybindings reference
-:help config    — Configuration options
-:help tools     — Available agent tools
-
-Type :quit to exit, /command for slash commands
-
+ * Crucible Help                                                                
+                                                                                
+:help commands  — List all REPL commands                                        
+:help keys      — Keybindings reference                                         
+:help config    — Configuration options                                         
+:help tools     — Available agent tools                                         
+                                                                                
+Type :quit to exit, /command for slash commands                                 
+                                                                                
 Slash commands: /mode /default /plan /auto /search /commit /agent /new /resume /
-view /models
+view /models                                                                    
                                                                                 
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  >                                                                              

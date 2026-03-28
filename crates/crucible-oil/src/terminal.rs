@@ -1,7 +1,7 @@
 use crate::node::Node;
 use crate::output::OutputBuffer;
 use crate::planning::{FramePlanner, FrameSnapshot};
-use crate::render::{render_to_string, CursorInfo};
+use crate::render::CursorInfo;
 #[allow(unused_imports)] // WIP: self not yet used in cursor and event modules
 use crossterm::{
     cursor::{self, Hide, MoveDown, MoveTo, MoveToColumn, MoveUp, SetCursorStyle, Show},
@@ -214,7 +214,8 @@ impl Terminal {
     }
 
     pub fn render_fullscreen(&mut self, tree: &Node) -> io::Result<Vec<String>> {
-        let content = render_to_string(tree, self.width as usize);
+        let layout = crate::layout::build_layout_tree(tree, self.width, self.height);
+        let (content, _cursor) = crate::layout::render_layout_tree(&layout);
         self.output.render_fullscreen(&content)?;
         Ok(Vec::new())
     }

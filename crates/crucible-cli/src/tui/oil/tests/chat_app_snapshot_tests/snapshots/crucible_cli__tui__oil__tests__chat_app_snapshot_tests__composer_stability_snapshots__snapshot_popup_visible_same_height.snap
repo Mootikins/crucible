@@ -1,5 +1,6 @@
 ---
-source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests.rs
+source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/composer_stability_snapshots.rs
+assertion_line: 29
 expression: render_app(&app)
 ---
                                                                                 
