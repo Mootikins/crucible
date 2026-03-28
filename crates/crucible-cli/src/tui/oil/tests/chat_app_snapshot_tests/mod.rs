@@ -1967,3 +1967,54 @@ fn snapshot_tool_pending_with_metadata() {
     });
     assert_snapshot!(render_app(&app));
 }
+
+/// Reproduces formatting bugs from real LLM output:
+/// - Code block with blank-line comments rendered outside fence
+/// - `---` + heading merged on same line
+/// - Table with trailing cell on its own line
+#[test]
+fn snapshot_code_block_with_comments_and_hr_headings() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Describe the project".to_string()));
+
+    // Simulate realistic LLM streaming with code blocks containing comments,
+    // horizontal rules followed by headings, and a table
+    app.on_message(ChatAppMsg::TextDelta(
+        "## 🏗 Architecture\n\n\
+         ```\n\
+         crucible/\n\
+         ├── crates/\n\
+         │   ├── crucible-cli/      # CLI commands\n\
+         │   ├── crucible-core/     # Core types\n\
+         │   └── crucible-daemon/   # Background daemon\n\
+         ├── docs/                  # Documentation\n\
+         └── plugins/              # Example plugins\n\
+         ```\n\n\
+         ---\n\n\
+         ### 🚀 Quick Commands\n\n\
+         ```bash\n\
+         # Install\n\
+         curl -fsSL https://example.com/install.sh | sh\n\
+         ```\n\n"
+            .to_string(),
+    ));
+    app.on_message(ChatAppMsg::TextDelta(
+        "```bash\n\
+         # Chat with AI\n\
+         cru chat\n\n\
+         # Start MCP server\n\
+         cru mcp\n\
+         ```\n\n\
+         ---\n\n\
+         ### 📊 Comparison\n\n\
+         | Feature | Crucible | Other |\n\
+         |---|---|---|\n\
+         | Local-first | ✅ | ❌ |\n\
+         | Sessions as markdown | ✅ | ❌ |\n\
+         | Semantic search | ✅ Block-level | ❌ |"
+            .to_string(),
+    ));
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    assert_snapshot!(render_app(&app));
+}
