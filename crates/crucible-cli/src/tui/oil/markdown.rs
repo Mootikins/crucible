@@ -561,14 +561,26 @@ fn render_code_block(node: &markdown_it::Node, ctx: &mut RenderContext) {
 
     let t = theme::active();
     let fence_style = Style::new().fg(t.resolve_color(t.colors.fence_marker));
-    push_indented_block(ctx, styled(&fence_marker, fence_style), &indent);
+
+    ctx.flush_line();
+    if indent.is_empty() {
+        ctx.blocks.push(styled(&fence_marker, fence_style));
+    } else {
+        ctx.blocks.push(row([text(&indent), styled(&fence_marker, fence_style)]));
+    }
     render_highlighted_code(&content, lang_str, ctx, &indent);
-    push_indented_block(ctx, styled("```", fence_style), &indent);
+    if indent.is_empty() {
+        ctx.blocks.push(styled("```", fence_style));
+    } else {
+        ctx.blocks.push(row([text(&indent), styled("```", fence_style)]));
+    }
 
     ctx.mark_block_end();
 }
 
-fn push_indented_block(ctx: &mut RenderContext, node: Node, indent: &str) {
+
+
+fn push_code_line(ctx: &mut RenderContext, node: Node, indent: &str) {
     ctx.flush_line();
     if indent.is_empty() {
         ctx.blocks.push(node);
@@ -587,7 +599,7 @@ fn render_highlighted_code(content: &str, lang: &str, ctx: &mut RenderContext, i
         for line in content.lines() {
             let spans = vec![(line.to_string(), fallback.to_ansi_codes())];
             for wrapped in wrap_styled_text(&spans, ctx.width) {
-                push_indented_block(ctx, text_node(&wrapped), indent);
+                push_code_line(ctx, text_node(&wrapped), indent);
             }
         }
         return;
@@ -598,7 +610,7 @@ fn render_highlighted_code(content: &str, lang: &str, ctx: &mut RenderContext, i
 
     for highlighted_line in highlighted_lines {
         if highlighted_line.spans.is_empty() {
-            push_indented_block(ctx, text(""), indent);
+            push_code_line(ctx, text(""), indent);
             continue;
         }
 
@@ -609,7 +621,7 @@ fn render_highlighted_code(content: &str, lang: &str, ctx: &mut RenderContext, i
             .collect();
 
         for wrapped in wrap_styled_text(&spans, ctx.width) {
-            push_indented_block(ctx, text_node(&wrapped), indent);
+            push_code_line(ctx, text_node(&wrapped), indent);
         }
     }
 }
@@ -626,7 +638,10 @@ fn render_list_item(node: &markdown_it::Node, ctx: &mut RenderContext) {
         let w = b.len();
         (b, w)
     } else {
-        ("• ".to_string(), 2)
+        let t = theme::active();
+        let b = format!("{} ", t.decorations.bullet_char);
+        let w = crate::tui::oil::ansi::visible_width(&b);
+        (b, w)
     };
 
     let item_text = extract_list_item_text(node);
