@@ -209,6 +209,7 @@ fn parse_and_render_internal(
     blockquote_width.hash(&mut hasher);
     margins.left.hash(&mut hasher);
     margins.right.hash(&mut hasher);
+    margins.show_bullet.hash(&mut hasher);
     let key = hasher.finish();
 
     if let Some(cached) = CACHE.with(|c| {
