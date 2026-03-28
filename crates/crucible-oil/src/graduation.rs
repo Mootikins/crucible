@@ -18,7 +18,7 @@
 use crate::layout::{build_layout_tree, render_layout_tree_compact};
 use crate::node::{ElementKind, Node};
 use crate::render::RenderFilter;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::io;
 
 /// Maximum number of graduated keys to track. Once full, oldest keys are evicted.
@@ -35,7 +35,10 @@ const MAX_GRADUATED_KEYS: usize = 256;
 /// 3. **Atomic**: Graduation commits before viewport filtering (no "flash" of missing content)
 /// 4. **Stable**: Resize operations preserve content (no loss during height changes)
 pub struct GraduationState {
-    graduated_keys: VecDeque<String>,
+    /// O(1) lookup for graduation checks.
+    graduated_set: HashSet<String>,
+    /// Ordered keys for eviction (oldest first). Kept in sync with graduated_set.
+    graduated_order: VecDeque<String>,
 }
 
 impl Default for GraduationState {
@@ -47,24 +50,26 @@ impl Default for GraduationState {
 impl GraduationState {
     pub fn new() -> Self {
         Self {
-            graduated_keys: VecDeque::with_capacity(MAX_GRADUATED_KEYS),
+            graduated_set: HashSet::with_capacity(MAX_GRADUATED_KEYS),
+            graduated_order: VecDeque::with_capacity(MAX_GRADUATED_KEYS),
         }
     }
 
     pub fn is_graduated(&self, key: &str) -> bool {
-        self.graduated_keys.iter().any(|k| k == key)
+        self.graduated_set.contains(key)
     }
 
     pub fn graduated_count(&self) -> usize {
-        self.graduated_keys.len()
+        self.graduated_set.len()
     }
 
     pub fn graduated_keys(&self) -> &VecDeque<String> {
-        &self.graduated_keys
+        &self.graduated_order
     }
 
     pub fn clear(&mut self) {
-        self.graduated_keys.clear();
+        self.graduated_set.clear();
+        self.graduated_order.clear();
     }
 
     /// Pre-register keys as already graduated.
@@ -75,11 +80,14 @@ impl GraduationState {
     /// new keys, we prevent the content from being written to stdout twice.
     pub fn pre_graduate_keys(&mut self, keys: impl IntoIterator<Item = String>) {
         for key in keys {
-            if !self.is_graduated(&key) {
-                if self.graduated_keys.len() >= MAX_GRADUATED_KEYS {
-                    self.graduated_keys.pop_front();
+            if !self.graduated_set.contains(&key) {
+                if self.graduated_order.len() >= MAX_GRADUATED_KEYS {
+                    if let Some(evicted) = self.graduated_order.pop_front() {
+                        self.graduated_set.remove(&evicted);
+                    }
                 }
-                self.graduated_keys.push_back(key);
+                self.graduated_set.insert(key.clone());
+                self.graduated_order.push_back(key);
             }
         }
     }
@@ -137,7 +145,7 @@ impl GraduationState {
     ) {
         match node {
             Node::Static(static_node) => {
-                if !self.graduated_keys.contains(&static_node.key) {
+                if !self.graduated_set.contains(&static_node.key) {
                     // Render via Taffy (same layout path as viewport) for visual consistency.
                     // Use compact mode to strip CellGrid padding (graduated content
                     // goes to stdout scrollback where fixed-width padding is wasteful).
