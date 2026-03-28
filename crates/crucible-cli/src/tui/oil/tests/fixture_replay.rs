@@ -178,10 +178,15 @@ fn check_stdout_paragraph_duplication(frame: usize, stdout: &str, violations: &m
         paragraphs.push(current.trim().to_string());
     }
 
-    // Check for duplicate paragraphs (>20 chars to avoid false positives on short phrases)
+    // Check for duplicate paragraphs (>20 chars to avoid false positives on short phrases).
+    // Exclude structural headers that legitimately repeat across agent turns
+    // (e.g., "┌─ Thinking…" appears once per thinking phase).
     for i in 0..paragraphs.len() {
         for j in (i + 1)..paragraphs.len() {
-            if paragraphs[i].len() > 20 && paragraphs[i] == paragraphs[j] {
+            if paragraphs[i].len() > 20
+                && paragraphs[i] == paragraphs[j]
+                && !is_repeatable_structural_header(&paragraphs[i])
+            {
                 violations.push(Violation {
                     frame,
                     kind: ViolationKind::DuplicateInStdout,
@@ -193,6 +198,13 @@ fn check_stdout_paragraph_duplication(frame: usize, stdout: &str, violations: &m
             }
         }
     }
+}
+
+/// Headers that legitimately repeat across agent turns (multiple thinking phases,
+/// multiple tool groups, etc.). These are structural, not content duplication.
+fn is_repeatable_structural_header(paragraph: &str) -> bool {
+    // Thinking block headers: "┌─ Thinking…" or "┌─ Thought (N words)"
+    paragraph.contains("Thinking\u{2026}") || paragraph.contains("Thought (")
 }
 
 /// Check for double blank lines in content.
