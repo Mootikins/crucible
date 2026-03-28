@@ -124,6 +124,7 @@ impl OutputBuffer {
 
         write!(self.stdout, "{}", BEGIN_SYNCHRONIZED_UPDATE)?;
 
+        // Move cursor to top of viewport
         if self.previous_visual_rows > 0 {
             let move_up_amount = (self.previous_visual_rows as u16)
                 .saturating_sub(1)
@@ -145,15 +146,50 @@ impl OutputBuffer {
             }
         }
 
-        execute!(
-            self.stdout,
-            terminal::Clear(terminal::ClearType::FromCursorDown)
-        )?;
+        // Line-level diff: only rewrite lines that changed.
+        // Reduces per-frame data ~10-30x for SSH/slow connections.
+        let prev_len = self.previous_lines.len();
+        let new_len = viewport_lines.len();
+        let common = prev_len.min(new_len);
 
-        for (i, line) in viewport_lines.iter().enumerate() {
-            write!(self.stdout, "{}", line)?;
-            if i < viewport_lines.len() - 1 {
+        // Find first line that differs
+        let first_diff = (0..common)
+            .find(|&i| !lines_visually_equal(&viewport_lines[i], &self.previous_lines[i]))
+            .unwrap_or(common);
+
+        if first_diff < common || new_len != prev_len {
+            // Skip unchanged lines at the top
+            if first_diff > 0 {
+                // Move cursor down past unchanged lines
+                let skip_rows: usize = viewport_lines[..first_diff]
+                    .iter()
+                    .map(|l| visual_rows(l, self.terminal_width))
+                    .sum();
+                if skip_rows > 0 {
+                    execute!(self.stdout, cursor::MoveDown(skip_rows as u16))?;
+                }
+            }
+
+            // Rewrite from first_diff to end
+            for i in first_diff..new_len {
+                execute!(self.stdout, cursor::MoveToColumn(0))?;
+                execute!(
+                    self.stdout,
+                    terminal::Clear(terminal::ClearType::CurrentLine)
+                )?;
+                write!(self.stdout, "{}", viewport_lines[i])?;
+                if i < new_len - 1 {
+                    write!(self.stdout, "\r\n")?;
+                }
+            }
+
+            // Clear remaining lines if viewport shrunk
+            if new_len < prev_len {
                 write!(self.stdout, "\r\n")?;
+                execute!(
+                    self.stdout,
+                    terminal::Clear(terminal::ClearType::FromCursorDown)
+                )?;
             }
         }
 
