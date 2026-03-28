@@ -544,3 +544,30 @@ fn thinking_order_ab_comparison() {
         violations_b.len()
     );
 }
+
+
+// ---------------------------------------------------------------------------
+// Tests: reproduce-formatting.jsonl
+// ---------------------------------------------------------------------------
+
+#[test]
+fn replay_reproduce_formatting_80x24() {
+    let path = fixture_path("reproduce-formatting.jsonl");
+    if !path.exists() {
+        eprintln!("SKIPPED: fixture not found at {}", path.display());
+        return;
+    }
+    let result = replay_fixture(&path, 80, 24);
+    assert_no_violations(&result);
+}
+
+#[test]
+fn replay_reproduce_formatting_67x24() {
+    let path = fixture_path("reproduce-formatting.jsonl");
+    if !path.exists() {
+        return;
+    }
+    // Narrower terminal matching the user's reported width
+    let result = replay_fixture(&path, 67, 24);
+    assert_no_violations(&result);
+}
