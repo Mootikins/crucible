@@ -26,6 +26,10 @@ use std::io;
 /// 256 messages is ~10 screens of typical chat content.
 const MAX_GRADUATED_KEYS: usize = 256;
 
+/// Height passed to Taffy for graduation layout. Half of u16::MAX to avoid
+/// overflow in layout math while still being effectively unbounded.
+const GRADUATION_MAX_HEIGHT: u16 = u16::MAX / 2;
+
 /// Tracks which messages have graduated from viewport to stdout.
 ///
 /// # Invariants (tested in graduation_invariant_tests.rs)
@@ -150,7 +154,7 @@ impl GraduationState {
                     // Use compact mode to strip CellGrid padding (graduated content
                     // goes to stdout scrollback where fixed-width padding is wasteful).
                     let wrapper = Node::Fragment(static_node.children.clone());
-                    let layout = build_layout_tree(&wrapper, width as u16, 9999);
+                    let layout = build_layout_tree(&wrapper, width as u16, GRADUATION_MAX_HEIGHT);
                     let (raw, _cursor) = render_layout_tree_compact(&layout);
                     let content = collapse_graduated_blank_lines(&raw);
 
@@ -232,9 +236,8 @@ fn collapse_graduated_blank_lines(raw: &str) -> String {
     }
 
     // Strip trailing blank lines
-    while result.ends_with("\r\n") || result.ends_with('\n') {
-        result.truncate(result.trim_end_matches(['\r', '\n']).len());
-    }
+    let trimmed_len = result.trim_end_matches(['\r', '\n']).len();
+    result.truncate(trimmed_len);
 
     result
 }

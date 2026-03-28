@@ -512,7 +512,16 @@ fn render_system_message(content: &str) -> Node {
 }
 
 // Text block splitting and merging logic is in text_block_splitter.rs
-use super::text_block_splitter::{split_and_merge_text_delta, trailing_text_start};
+use super::text_block_splitter::split_and_merge_text_delta;
+
+/// Index where the trailing run of `ContentBlock::Text` blocks starts.
+/// Returns `blocks.len()` if no trailing text (i.e., last block is non-text or empty).
+fn trailing_text_start(blocks: &[ContentBlock]) -> usize {
+    blocks
+        .iter()
+        .rposition(|b| !matches!(b, ContentBlock::Text(_)))
+        .map_or(0, |i| i + 1)
+}
 
 /// Manages the list of chat containers.
 ///
