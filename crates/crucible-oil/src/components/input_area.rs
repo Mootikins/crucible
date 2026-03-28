@@ -1,5 +1,5 @@
 use crate::focus::FocusContext;
-use crate::node::{col, focusable_auto, row, styled, InputNode, Node};
+use crate::node::{col, row, styled, InputNode, Node};
 use crate::style::{Color, Style};
 
 pub const INPUT_MAX_CONTENT_LINES: usize = 3;
@@ -135,8 +135,7 @@ impl InputArea {
 
         rows.push(bottom_edge);
 
-        let input_node = col(rows);
-        focusable_auto(FOCUS_INPUT, input_node)
+        col(rows)
     }
 }
 

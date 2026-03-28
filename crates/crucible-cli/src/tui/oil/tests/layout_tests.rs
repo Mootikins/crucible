@@ -269,7 +269,7 @@ fn builder_methods_work() {
 fn row_wrapped_spacer_fills_remaining_width() {
     let node = row([
         text(" NORMAL "),
-        focusable("status-spacer", spacer()),
+        spacer(),
         text("50% ctx"),
     ]);
 

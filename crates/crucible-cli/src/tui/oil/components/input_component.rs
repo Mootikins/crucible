@@ -150,9 +150,7 @@ impl Component for InputComponent<'_> {
 
         rows.push(bottom_edge);
 
-        let input_node = col(rows);
-
-        focusable_auto("input", input_node)
+        col(rows)
     }
 }
 
@@ -225,7 +223,6 @@ mod tests {
                 Node::Input(_) => true,
                 Node::Box(b) => b.children.iter().any(has_input_node),
                 Node::Fragment(children) => children.iter().any(has_input_node),
-                Node::Focusable(f) => has_input_node(&f.child),
                 _ => false,
             }
         }

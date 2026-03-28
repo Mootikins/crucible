@@ -9,7 +9,6 @@ mod chat_ordering_property_tests;
 mod chat_rendering_property_tests;
 mod chat_runner_tests;
 mod component_isolation_tests;
-mod error_boundary_tests;
 mod event_loop_tests;
 mod event_tests;
 mod fixture_replay;

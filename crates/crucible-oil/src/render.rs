@@ -74,8 +74,6 @@ fn render_node_plain_text(node: &Node, width: usize, output: &mut String) {
                 render_node_plain_text(child, width, output);
             }
         }
-        Node::Focusable(f) => render_node_plain_text(&f.child, width, output),
-        Node::ErrorBoundary(b) => render_node_plain_text(&b.child, width, output),
         Node::Overlay(o) => render_node_plain_text(&o.child, width, output),
         other => {
             let rendered = render_to_string(other, width);
@@ -169,37 +167,6 @@ fn render_node_filtered(
         Node::Fragment(children) => {
             for child in children {
                 render_node_filtered(child, width, filter, output, cursor_info);
-            }
-        }
-
-        Node::Focusable(focusable) => {
-            render_node_filtered(&focusable.child, width, filter, output, cursor_info);
-        }
-
-        Node::ErrorBoundary(boundary) => {
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let mut child_output = String::new();
-                let mut child_cursor = CursorInfo::default();
-                render_node_filtered(
-                    &boundary.child,
-                    width,
-                    filter,
-                    &mut child_output,
-                    &mut child_cursor,
-                );
-                (child_output, child_cursor)
-            }));
-
-            match result {
-                Ok((child_output, child_cursor)) => {
-                    output.push_str(&child_output);
-                    if child_cursor.visible {
-                        *cursor_info = child_cursor;
-                    }
-                }
-                Err(_) => {
-                    render_node_filtered(&boundary.fallback, width, filter, output, cursor_info)
-                }
             }
         }
 
@@ -722,20 +689,6 @@ mod tests {
             content_line.matches("\x1b[48;2;").count() <= 1,
             "popup line should have a single background style span: {content_line:?}"
         );
-    }
-
-    #[test]
-    fn test_render_focusable_node() {
-        let node = focusable("test-id", text("Focusable content"));
-        let result = render_to_string(&node, 80);
-        assert_eq!(result, "Focusable content");
-    }
-
-    #[test]
-    fn test_render_error_boundary_success() {
-        let node = error_boundary(text("Success"), text("Fallback"));
-        let result = render_to_string(&node, 80);
-        assert_eq!(result, "Success");
     }
 
     #[test]
