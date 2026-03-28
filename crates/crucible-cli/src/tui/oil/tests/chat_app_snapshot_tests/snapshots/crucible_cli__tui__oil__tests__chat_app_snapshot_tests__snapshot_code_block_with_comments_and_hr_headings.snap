@@ -11,39 +11,27 @@ expression: render_app(&app)
 
    ```
    crucible/
-
    ├── crates/
-
    │   ├── crucible-cli/      # CLI commands
-
    │   ├── crucible-core/     # Core types
-
    │   └── crucible-daemon/   # Background daemon
-
    ├── docs/                  # Documentation
-
    └── plugins/              # Example plugins
-
    ```
 
    🚀 Quick Commands
 
    ```bash
    # Install
-
    curl -fsSL https://example.com/install.sh | sh
-
    ```
 
    ```bash
    # Chat with AI
-
    cru chat
 
    # Start MCP server
-
    cru mcp
-
    ```
 
    📊 Comparison
