@@ -141,7 +141,7 @@ toml = { workspace = true }
 crucible-cli = { path = ".", features = ["test-utils"] }  # Enable test utilities
 crucible-config = { path = "../crucible-config", features = ["test-utils"] }
 # MCP client for testing examples
-rmcp = { version = "1.1", features = ["client", "transport-child-process"] }
+rmcp = { version = "1.3", features = ["client", "transport-child-process"] }
 tempfile = { workspace = true }
 assert_cmd = { workspace = true }
 predicates = { workspace = true }
@@ -152,10 +152,10 @@ toml = { workspace = true }
 blake3 = "1.8"  # For hash verification tests
 serial_test = "3.3"  # For preventing parallel test execution with shared env vars
 scopeguard = "1.2"  # For RAII-style cleanup in tests
-insta = { version = "1.46", features = ["filters"] }  # Snapshot testing for TUI
+insta = { version = "1.47", features = ["filters"] }  # Snapshot testing for TUI
 expectrl = { workspace = true }  # PTY-based TUI testing
 vt100 = "0.15"  # Terminal emulation for queryable screen buffer in E2E tests
-proptest = "1.8"  # Property-based testing for graduation invariants
+proptest = "1.11"  # Property-based testing for graduation invariants
 test-case = "3.3"  # Parameterized tests
 
 # Additional dependencies for resource constraint testing
