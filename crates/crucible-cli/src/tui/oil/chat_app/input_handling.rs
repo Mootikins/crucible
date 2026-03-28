@@ -25,6 +25,24 @@ impl OilChatApp {
         if self.interaction_modal.is_some() {
             return self.handle_interaction_key(key);
         }
+
+        // Scroll keybindings work in all modes (streaming and idle)
+        match key.code {
+            KeyCode::PageUp => {
+                self.scroll_up(10);
+                return Action::Continue;
+            }
+            KeyCode::PageDown => {
+                self.scroll_down(10);
+                return Action::Continue;
+            }
+            KeyCode::End => {
+                self.snap_to_bottom();
+                return Action::Continue;
+            }
+            _ => {}
+        }
+
         if self.is_streaming() {
             return self.handle_streaming_key(key);
         }

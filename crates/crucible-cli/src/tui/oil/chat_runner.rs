@@ -649,6 +649,9 @@ impl OilChatRunner {
             self.terminal.force_full_redraw()?;
         }
 
+        // Sync scroll offset to the terminal's output buffer
+        self.terminal.set_scroll_offset(app.scroll_offset());
+
         let terminal_size = self.terminal.size();
         let ctx = ViewContext::with_terminal_size(&self.focus, theme::active(), terminal_size);
         let tree = app.view(&ctx);
@@ -658,7 +661,9 @@ impl OilChatRunner {
         } else {
             self.terminal.render(&tree)?
         };
-        if !graduated_keys.is_empty() {
+        // Pause graduation while scrolled up — content stays in viewport tree
+        // so the user can see it. Resume when they snap back to bottom.
+        if !graduated_keys.is_empty() && !app.is_scrolled() {
             app.mark_graduated(graduated_keys);
         }
 
