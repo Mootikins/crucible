@@ -28,8 +28,6 @@ pub struct ViewParams {
     pub is_continuation: bool,
     /// Whether this response is complete (derived from turn state + position).
     pub is_complete: bool,
-    /// Whether the agent turn is currently active (streaming).
-    pub is_streaming: bool,
 }
 
 /// A block of thinking content with token count.
@@ -129,7 +127,6 @@ impl ChatContainer {
             },
             is_continuation,
             is_complete,
-            is_streaming: false,
         })
     }
 
@@ -162,17 +159,26 @@ impl ChatContainer {
             ),
 
             Self::ToolGroup { id, tools } => {
-                let content = render_tool_group(tools, &params.render_state);
-                // Tool groups graduate only when the turn has ended (!turn_active).
-                // During streaming, is_complete can be true (successor exists) but
-                // we keep tools in viewport so spinners animate and tools don't
-                // briefly duplicate across stdout/viewport.
-                let all_complete = tools.iter().all(|t| t.complete);
-                if all_complete && !params.is_streaming {
-                    scrollback(id.clone(), [content])
-                } else {
-                    content
-                }
+                // Each tool call graduates individually when complete.
+                // Running tools stay in viewport so spinners animate.
+                let tool_nodes: Vec<Node> = tools
+                    .iter()
+                    .enumerate()
+                    .map(|(i, t)| {
+                        let node =
+                            render_tool_call_with_frame(t, params.render_state.spinner_frame);
+                        if t.complete {
+                            scrollback(format!("{id}-tool-{i}"), [node])
+                        } else {
+                            node
+                        }
+                    })
+                    .collect();
+
+                col(tool_nodes).with_margin(Padding {
+                    top: 1,
+                    ..Default::default()
+                })
             }
 
             Self::AgentTask { id, agent } => {
@@ -484,20 +490,6 @@ fn render_subagent_container(id: &str, subagent: &CachedSubagent, spinner_frame:
     }
 }
 
-/// Render a group of tool calls compactly.
-fn render_tool_group(tools: &[CachedToolCall], render_state: &RenderState) -> Node {
-    let tool_nodes: Vec<Node> = tools
-        .iter()
-        .map(|t| render_tool_call_with_frame(t, render_state.spinner_frame))
-        .collect();
-
-    // Tool calls are rendered tightly grouped (no gap)
-    // Container has top margin for separation from previous content
-    col(tool_nodes).with_margin(Padding {
-        top: 1,
-        ..Default::default()
-    })
-}
 
 /// Render a system message.
 fn render_system_message(content: &str) -> Node {
