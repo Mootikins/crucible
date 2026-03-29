@@ -69,12 +69,26 @@ fn popup_selection_moves_with_index() {
     );
 }
 
+/// Taffy allocates max_visible height for the popup even with 0 items,
+/// producing background-colored blank lines. After stripping ANSI codes,
+/// the content should be empty or whitespace-only with no item labels.
 #[test]
 fn popup_empty_items_renders_empty() {
+    use crate::tui::oil::ansi::strip_ansi;
+
     let node = popup(vec![], 0, 10);
     let output = render_to_string(&node, 80);
+    let stripped = strip_ansi(&output);
 
-    assert!(output.is_empty() || output.trim().is_empty());
+    assert!(
+        !stripped.contains('▸'),
+        "Empty popup should have no selection indicator"
+    );
+    assert!(
+        stripped.trim().is_empty(),
+        "Empty popup should have no visible text content, got: {:?}",
+        stripped
+    );
 }
 
 #[test]

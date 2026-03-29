@@ -765,13 +765,21 @@ mod popup_overlay_tests {
         let popup = PopupOverlay::new(sample_items()).selected(1);
         let ansi = render_ansi(&popup, 80);
 
-        let lines: Vec<&str> = ansi.lines().filter(|l| !l.is_empty()).collect();
-        if lines.len() >= 2 {
-            assert_ne!(
-                lines[0], lines[1],
-                "Selected line should differ from others"
-            );
-        }
+        // Find the lines containing actual item text (not padding)
+        let item_lines: Vec<&str> = ansi
+            .lines()
+            .filter(|l| l.contains("Option"))
+            .collect();
+        assert!(
+            item_lines.len() >= 2,
+            "Should have at least 2 item lines, got: {}",
+            item_lines.len()
+        );
+        // The selected item (Option B, index 1) should differ from unselected (Option A, index 0)
+        assert_ne!(
+            item_lines[0], item_lines[1],
+            "Selected line should differ from others"
+        );
     }
 
     #[test]
@@ -831,8 +839,11 @@ mod popup_overlay_tests {
             "Popup always renders max_visible lines (with padding)"
         );
 
-        let non_empty: Vec<_> = lines.iter().filter(|l| !l.is_empty()).collect();
-        assert_eq!(non_empty.len(), 3, "Should have 3 item lines");
+        let item_lines: Vec<_> = lines
+            .iter()
+            .filter(|l| !l.trim().is_empty())
+            .collect();
+        assert_eq!(item_lines.len(), 3, "Should have 3 item lines");
     }
 
     #[test]

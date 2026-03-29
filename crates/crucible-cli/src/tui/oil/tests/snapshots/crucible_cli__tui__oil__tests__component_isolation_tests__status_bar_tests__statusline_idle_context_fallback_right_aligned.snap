@@ -2,4 +2,4 @@
 source: crates/crucible-cli/src/tui/oil/tests/component_isolation_tests.rs
 expression: "render_configured_bar_ansi(&bar, 80)"
 ---
-[48;5;10m[38;5;0m[1m NORMAL [0m[38;5;8m [39m[38;5;14mglm-4.7-flash-iq4[39m                                              [38;5;8m13% ctx[39m
+[48;5;10m[38;5;0m[1m NORMAL [0m[38;5;8m [0m[38;5;14mglm-4.7-flash-iq4[0m                                              [38;5;8m13% ctx[0m

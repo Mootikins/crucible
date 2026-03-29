@@ -266,7 +266,7 @@ fn render_assistant_blocks_with_graduation(
 ///
 /// The markdown renderer produces a `col([...])` where children include:
 /// - Content nodes (text lines, styled spans, boxes for code/tables)
-/// - Spacer nodes (empty text `""` between top-level blocks)
+/// - Spacer nodes (whitespace-only text between top-level blocks)
 ///
 /// A single paragraph that word-wraps becomes multiple consecutive text
 /// nodes (one per line). We split ONLY at spacer boundaries to keep
@@ -277,7 +277,7 @@ fn decompose_top_level_blocks(node: Node) -> Vec<Node> {
             let mut groups: Vec<Vec<Node>> = vec![Vec::new()];
 
             for child in b.children {
-                let is_spacer = matches!(&child, Node::Text(t) if t.content.is_empty());
+                let is_spacer = matches!(&child, Node::Text(t) if t.content.trim().is_empty());
                 if is_spacer {
                     // Start a new group (include the spacer in the next group
                     // so inter-block spacing is preserved)
