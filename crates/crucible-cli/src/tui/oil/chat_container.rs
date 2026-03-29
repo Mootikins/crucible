@@ -12,7 +12,9 @@ use crate::tui::oil::components::{
     render_user_prompt,
 };
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
-use crate::tui::oil::node::{col, row, scrollback, spinner, styled, text, Direction, Node};
+use crate::tui::oil::node::{
+    col, row, scrollback, scrollback_with_kind, spinner, styled, text, Direction, ElementKind, Node,
+};
 use crate::tui::oil::render_state::RenderState;
 use crate::tui::oil::style::{Padding, Style};
 
@@ -161,6 +163,7 @@ impl ChatContainer {
             Self::ToolGroup { id, tools } => {
                 // Each tool call graduates individually when complete.
                 // Running tools stay in viewport so spinners animate.
+                let mut first_complete = true;
                 let tool_nodes: Vec<Node> = tools
                     .iter()
                     .enumerate()
@@ -168,7 +171,15 @@ impl ChatContainer {
                         let node =
                             render_tool_call_with_frame(t, params.render_state.spinner_frame);
                         if t.complete {
-                            scrollback(format!("{id}-tool-{i}"), [node])
+                            // First completed tool uses Block (spacing from previous content).
+                            // Subsequent tools use Continuation (tight, no blank line between).
+                            let kind = if first_complete {
+                                first_complete = false;
+                                ElementKind::Block
+                            } else {
+                                ElementKind::Continuation
+                            };
+                            scrollback_with_kind(format!("{id}-tool-{i}"), kind, [node])
                         } else {
                             node
                         }
