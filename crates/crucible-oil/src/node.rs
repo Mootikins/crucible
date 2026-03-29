@@ -9,15 +9,6 @@ pub enum ElementKind {
 }
 
 impl ElementKind {
-    pub fn wants_blank_line_before(self, prev: Option<ElementKind>) -> bool {
-        match (prev, self) {
-            (None, _) => false,
-            (_, ElementKind::Continuation) => false,
-            (Some(ElementKind::Continuation), _) => false,
-            (Some(ElementKind::Block), ElementKind::Block) => true,
-        }
-    }
-
     pub fn wants_newline_after(self) -> bool {
         match self {
             ElementKind::Block => true,
@@ -977,11 +968,6 @@ mod raw_node_tests {
 #[cfg(test)]
 mod element_kind_tests {
     use super::ElementKind;
-
-    #[test]
-    fn block_to_block_wants_blank_line() {
-        assert!(ElementKind::Block.wants_blank_line_before(Some(ElementKind::Block)));
-    }
 
     #[test]
     fn wants_newline_after_matches_kind() {

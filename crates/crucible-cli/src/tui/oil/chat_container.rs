@@ -13,10 +13,10 @@ use crate::tui::oil::components::{
 };
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
 use crate::tui::oil::node::{
-    col, row, scrollback, scrollback_with_kind, spinner, styled, text, Direction, ElementKind, Node,
+    col, row, scrollback, scrollback_continuation, spinner, styled, text, Direction, Node,
 };
 use crate::tui::oil::render_state::RenderState;
-use crate::tui::oil::style::{Padding, Style};
+use crate::tui::oil::style::Style;
 
 use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
 
@@ -30,6 +30,8 @@ pub struct ViewParams {
     pub is_continuation: bool,
     /// Whether this response is complete (derived from turn state + position).
     pub is_complete: bool,
+    /// Whether the previous container was a ToolGroup (for tight tool-to-tool graduation).
+    pub prev_is_tool_group: bool,
 }
 
 /// A block of thinking content with token count.
@@ -37,6 +39,17 @@ pub struct ViewParams {
 pub struct ThinkingBlock {
     pub content: String,
     pub token_count: usize,
+}
+
+/// What kind of container this is, for spacing decisions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContainerKind {
+    UserMessage,
+    AssistantResponse,
+    ToolGroup,
+    AgentTask,
+    ShellExecution,
+    SystemMessage,
 }
 
 /// Semantic container for chat content.
@@ -83,6 +96,18 @@ pub enum ChatContainer {
 }
 
 impl ChatContainer {
+    /// The kind of this container (used for spacing decisions).
+    pub fn kind(&self) -> ContainerKind {
+        match self {
+            Self::UserMessage { .. } => ContainerKind::UserMessage,
+            Self::AssistantResponse { .. } => ContainerKind::AssistantResponse,
+            Self::ToolGroup { .. } => ContainerKind::ToolGroup,
+            Self::AgentTask { .. } => ContainerKind::AgentTask,
+            Self::ShellExecution { .. } => ContainerKind::ShellExecution,
+            Self::SystemMessage { .. } => ContainerKind::SystemMessage,
+        }
+    }
+
     /// Unique ID for this container (used for graduation)
     pub fn id(&self) -> &str {
         match self {
@@ -129,6 +154,7 @@ impl ChatContainer {
             },
             is_continuation,
             is_complete,
+            prev_is_tool_group: false,
         })
     }
 
@@ -163,42 +189,29 @@ impl ChatContainer {
             Self::ToolGroup { id, tools } => {
                 // Each tool call graduates individually when complete.
                 // Running tools stay in viewport so spinners animate.
-                let mut first_complete = true;
-                let mut tool_nodes: Vec<Node> = tools
+                // All tools use Continuation kind for tight spacing in graduation,
+                // EXCEPT the first tool of the first ToolGroup in a sequence (Block kind
+                // for blank-line separation from preceding non-tool content).
+                let first_is_continuation = params.prev_is_tool_group;
+                let tool_nodes: Vec<Node> = tools
                     .iter()
                     .enumerate()
                     .map(|(i, t)| {
                         let node =
                             render_tool_call_with_frame(t, params.render_state.spinner_frame);
                         if t.complete {
-                            // First completed tool uses Block (spacing from previous content).
-                            // Subsequent tools use Continuation (tight, no blank line between).
-                            let kind = if first_complete {
-                                first_complete = false;
-                                ElementKind::Block
+                            if i == 0 && !first_is_continuation {
+                                scrollback(format!("{id}-tool-{i}"), [node])
                             } else {
-                                ElementKind::Continuation
-                            };
-                            scrollback_with_kind(format!("{id}-tool-{i}"), kind, [node])
+                                scrollback_continuation(format!("{id}-tool-{i}"), [node])
+                            }
                         } else {
                             node
                         }
                     })
                     .collect();
 
-                let all_complete = tools.iter().all(|t| t.complete);
-                if all_complete && tools.len() > 1 {
-                    tool_nodes.push(scrollback_with_kind(
-                        format!("{id}-tool-end"),
-                        ElementKind::Block,
-                        [text(" ")],
-                    ));
-                }
-
-                col(tool_nodes).with_margin(Padding {
-                    top: 1,
-                    ..Default::default()
-                })
+                col(tool_nodes)
             }
 
             Self::AgentTask { id, agent } => {
@@ -248,17 +261,11 @@ fn render_assistant_blocks_with_graduation(
 
     if !params.complete && !has_text && !has_thinking_summary {
         let t = crate::tui::oil::theme::active();
-        nodes.push(
-            row([
-                text(" "),
-                spinner(None, render_state.spinner_frame)
-                    .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
-            ])
-            .with_margin(Padding {
-                top: 1,
-                ..Default::default()
-            }),
-        );
+        nodes.push(row([
+            text(" "),
+            spinner(None, render_state.spinner_frame)
+                .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
+        ]));
     } else if !params.complete && has_text {
         let t = crate::tui::oil::theme::active();
         nodes.push(row([
@@ -347,33 +354,16 @@ fn render_text_graduated(
         .into_iter()
         .enumerate()
         .map(|(i, child)| {
-            // First block: top margin only if NO preceding thinking block
-            // (graduation Block spacing handles thinking→text gap).
-            // Last block: bottom margin for separation from following content.
-            let needs_top = i == 0 && !has_thinking;
-            let needs_bottom = i + 1 == len;
-            let padding = match (needs_top, needs_bottom) {
-                (true, true) => Padding::xy(0, 1),
-                (true, false) => Padding { top: 1, ..Default::default() },
-                (false, true) => Padding { bottom: 1, ..Default::default() },
-                (false, false) => Padding::default(),
-            };
-            let block_node = if padding == Padding::default() {
-                child
-            } else {
-                child.with_margin(padding)
-            };
-
             // During streaming, all-but-last are stable (graduated).
             // When complete, all are stable.
             let is_stable = complete || i + 1 < len;
             if is_stable {
                 scrollback(
                     format!("{container_id}-md-{i}"),
-                    [block_node],
+                    [child],
                 )
             } else {
-                block_node
+                child
             }
         })
         .collect()
@@ -522,10 +512,6 @@ fn render_system_message(content: &str) -> Node {
             .fg(t.resolve_color(t.colors.system_message))
             .italic(),
     )
-    .with_margin(Padding {
-        top: 1,
-        ..Default::default()
-    })
 }
 
 /// Manages the list of chat containers.

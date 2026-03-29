@@ -9,10 +9,25 @@ use crate::tui::oil::component::Component;
 use crate::tui::oil::components::{PopupComponent, StatusComponent};
 use crate::tui::oil::node::*;
 use crate::tui::oil::render_state::RenderState;
-use crate::tui::oil::style::{Padding, Style};
+use crate::tui::oil::style::{Gap, Style};
 use crate::tui::oil::utils::wrap_chars;
 
+use crate::tui::oil::chat_container::ContainerKind;
+
 use super::{OilChatApp, FOCUS_INPUT, INPUT_MAX_CONTENT_LINES, POPUP_HEIGHT};
+
+/// Whether a blank line is needed between two adjacent container kinds.
+///
+/// Consecutive tool groups are tight (no blank line). Everything else
+/// gets a blank line for visual separation. Used by tests to verify
+/// that the grouping logic in `render_containers()` is consistent.
+#[cfg(test)]
+fn needs_spacing(prev: ContainerKind, next: ContainerKind) -> bool {
+    !matches!(
+        (prev, next),
+        (ContainerKind::ToolGroup, ContainerKind::ToolGroup)
+    )
+}
 
 impl OilChatApp {
     pub(super) fn render_messages_drawer(&self, ctx: &ViewContext<'_>) -> Node {
@@ -69,17 +84,22 @@ impl OilChatApp {
 
     /// Render chat content using the container-based architecture.
     ///
-    /// This renders all live containers (graduated ones are already dropped).
-    /// Each container is wrapped in scrollback with its stable ID.
+    /// Spacing follows Ink's model: the parent col uses `gap(1)` for blank lines
+    /// between groups. Consecutive ToolGroups are nested in a sub-col with `gap(0)`
+    /// so they render tight (no blank lines between them).
     pub(super) fn render_containers(&self) -> Node {
+        use crate::tui::oil::chat_container::{ChatContainer, ViewParams};
+
         let term_width = self.terminal_size.get().0 as usize;
         let containers = self.container_list.containers();
 
-        let mut nodes: Vec<Node> = containers
+        // Render each container to a (kind, node) pair, tracking predecessor kind
+        // for tight tool-to-tool graduation.
+        let mut prev_kind: Option<ContainerKind> = None;
+        let rendered: Vec<(ContainerKind, Node)> = containers
             .iter()
             .enumerate()
             .map(|(i, c)| {
-                use crate::tui::oil::chat_container::{ChatContainer, ViewParams};
                 let render_state = RenderState {
                     terminal_width: term_width as u16,
                     spinner_frame: self.spinner_frame(),
@@ -91,46 +111,66 @@ impl OilChatApp {
                     } => *is_continuation,
                     _ => false,
                 };
+                let kind = c.kind();
                 let params = ViewParams {
                     render_state,
                     is_continuation,
                     is_complete: self.container_list.is_response_complete(i),
+                    prev_is_tool_group: prev_kind == Some(ContainerKind::ToolGroup),
                 };
-                c.view_with_params(&params)
+                prev_kind = Some(kind);
+                (kind, c.view_with_params(&params))
             })
             .collect();
+
+        // Group consecutive ToolGroups into tight sub-cols, everything else
+        // becomes a direct sibling in the outer col.
+        let mut groups: Vec<Node> = Vec::new();
+        let mut current_tool_nodes: Vec<Node> = Vec::new();
+
+        for (kind, node) in rendered {
+            if kind == ContainerKind::ToolGroup {
+                current_tool_nodes.push(node);
+            } else {
+                // Flush accumulated tool group
+                if !current_tool_nodes.is_empty() {
+                    groups.push(col(current_tool_nodes.drain(..)).gap(Gap::row(0)));
+                }
+                groups.push(node);
+            }
+        }
+        // Flush remaining tool group
+        if !current_tool_nodes.is_empty() {
+            groups.push(col(current_tool_nodes).gap(Gap::row(0)));
+        }
 
         // Turn-level spinner: shown when the turn is active but no container
         // is currently displaying a spinner (e.g. after tools complete, before
         // next TextDelta or StreamComplete).
         if self.container_list.needs_turn_spinner() {
             let t = crate::tui::oil::theme::active();
-            nodes.push(
-                row([
-                    text(" "),
-                    spinner(None, self.spinner_frame())
-                        .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
-                ])
-                .with_margin(Padding {
-                    top: 1,
-                    ..Default::default()
-                }),
-            );
+            groups.push(row([
+                text(" "),
+                spinner(None, self.spinner_frame())
+                    .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
+            ]));
         }
 
-        // Only return empty if both viewport AND spinner produced nothing
-        if nodes.is_empty() {
+        if groups.is_empty() {
             return Node::Empty;
         }
 
-        // When graduated content exists above in stdout, insert a spacer line
-        // so the viewport starts with a blank line (visual separation from
-        // the graduated user prompt / previous content).
-        if self.container_list.has_graduated() {
-            nodes.insert(0, text(" "));
-        }
+        // One blank line between all groups (Ink-style gap)
+        let content_col = col(groups).gap(Gap::row(1));
 
-        col(nodes)
+        // When graduated content exists above in stdout, insert a spacer line
+        // before the content col for visual separation from graduated content.
+        // This sits outside the gap col so it doesn't get double-spaced.
+        if self.container_list.has_graduated() {
+            col([text(" "), content_col])
+        } else {
+            content_col
+        }
     }
 
     pub(super) fn render_status(&self) -> Node {

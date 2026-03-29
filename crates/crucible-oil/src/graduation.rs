@@ -119,7 +119,11 @@ impl GraduationState {
         for (i, item) in graduated.iter().enumerate() {
             let next_kind = graduated.get(i + 1).map(|g| g.kind);
 
-            if item.kind.wants_blank_line_before(prev_kind) {
+            // Blank line between consecutive Block items (mirrors Taffy gap in viewport)
+            if matches!(
+                (prev_kind, item.kind),
+                (Some(ElementKind::Block), ElementKind::Block)
+            ) {
                 output.push_str("\r\n");
             }
             output.push_str(&item.content);

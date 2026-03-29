@@ -10,9 +10,7 @@ expression: render_app(&app)
    │ file1.txt                                                                  
    │ file2.txt                                                                   ✓ Read File README.md → 1 lines ✓ Bash cat Cargo.toml
    │ [package]                                                                  
-   │ name = "test"                                                              
-                                                                                
-                                                                                
+   │ name = "test"                                                                                                                                              
  ◐                                                                              
                                                                                 
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄

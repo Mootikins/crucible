@@ -256,12 +256,13 @@ fn empty_static_node_not_graduated() {
     let tree = scrollback("empty", [Node::Empty]);
     runtime.render(&tree);
 
+    // Empty Block nodes now graduate (used as spacing markers).
+    // This is intentional — spacing should be preserved in graduation.
     assert_eq!(
         runtime.graduated_count(),
-        0,
-        "Empty static should not graduate"
+        1,
+        "Empty Block should graduate"
     );
-    assert_eq!(runtime.stdout_content(), "");
 }
 
 #[test]
@@ -374,10 +375,11 @@ fn graduation_skips_empty_static_content() {
 
     runtime.render(&tree);
 
+    // All Block nodes graduate, including empty ones (spacing markers).
     assert_eq!(
         runtime.graduated_count(),
-        1,
-        "Only non-empty should graduate"
+        3,
+        "All Block nodes graduate including empty"
     );
     assert!(runtime.stdout_content().contains("Real content"));
 }
