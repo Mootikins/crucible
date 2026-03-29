@@ -233,6 +233,24 @@ impl Terminal {
     }
 }
 
+impl crate::runtime::FrameRenderer for Terminal {
+    fn render_frame(&mut self, tree: &Node) -> Vec<String> {
+        self.render(tree).unwrap_or_default()
+    }
+
+    fn force_full_redraw(&mut self) {
+        let _ = self.force_full_redraw();
+    }
+
+    fn size(&self) -> (u16, u16) {
+        self.size()
+    }
+
+    fn set_scroll_offset(&mut self, offset: usize) {
+        self.set_scroll_offset(offset);
+    }
+}
+
 impl Drop for Terminal {
     fn drop(&mut self) {
         let _ = self.exit();

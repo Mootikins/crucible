@@ -70,7 +70,7 @@ pub use render::{
     render_to_plain_text, render_to_string, render_to_string_filtered, render_with_cursor,
     render_with_cursor_filtered, CursorInfo, NoFilter, RenderFilter, RenderResult,
 };
-pub use runtime::TestRuntime;
+pub use runtime::{FrameRenderer, TestRuntime};
 pub use style::{AlignItems, Border, Color, Gap, JustifyContent, Padding, Style};
 pub use terminal::Terminal;
 
