@@ -994,3 +994,254 @@ mod duplicate_content_prevention {
         }
     }
 }
+
+/// Braille spinners on running tool calls must animate between tick frames.
+mod spinner_animation {
+    use super::*;
+    use crate::tui::oil::Event;
+    use crucible_oil::node::BRAILLE_SPINNER_FRAMES;
+
+    #[test]
+    fn running_tool_spinner_changes_between_ticks() {
+        let mut app = OilChatApp::default();
+
+        // Start a tool call (not completed)
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "read_file".to_string(),
+            args: r#"{"path":"README.md"}"#.to_string(),
+            call_id: Some("call-1".to_string()),
+            description: None,
+            source: None,
+            lua_primary_arg: None,
+        });
+
+        // Render frame 1
+        let output1 = render_app(&app);
+
+        // Tick to advance spinner
+        app.update(Event::Tick);
+        let output2 = render_app(&app);
+
+        // Tick again
+        app.update(Event::Tick);
+        let output3 = render_app(&app);
+
+        // Find braille characters in each frame
+        let find_braille = |output: &str| -> Option<char> {
+            for c in output.chars() {
+                if BRAILLE_SPINNER_FRAMES.contains(&c) {
+                    return Some(c);
+                }
+            }
+            None
+        };
+
+        let b1 = find_braille(&output1);
+        let b2 = find_braille(&output2);
+        let b3 = find_braille(&output3);
+
+        assert!(
+            b1.is_some(),
+            "Frame 1 should contain a braille spinner character. Output:\n{}",
+            output1
+        );
+        assert!(
+            b2.is_some(),
+            "Frame 2 should contain a braille spinner character. Output:\n{}",
+            output2
+        );
+
+        // At least one frame should differ (spinner is animating)
+        assert!(
+            b1 != b2 || b2 != b3,
+            "Braille spinner should change between ticks.\n\
+             Frame 1: {:?}, Frame 2: {:?}, Frame 3: {:?}",
+            b1, b2, b3
+        );
+    }
+
+    #[test]
+    fn running_tool_spinner_animates_across_graduation_frames() {
+        let mut app = OilChatApp::default();
+        let mut runtime = TestRuntime::new(80, 24);
+        let focus = FocusContext::new();
+
+        // Text that will graduate
+        app.on_message(ChatAppMsg::TextDelta("First paragraph\n\n".to_string()));
+
+        // Running tool call
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "read_file".to_string(),
+            args: r#"{"path":"test.rs"}"#.to_string(),
+            call_id: Some("call-1".to_string()),
+            description: None,
+            source: None,
+            lua_primary_arg: None,
+        });
+
+        // Render frame 1 with graduation
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        runtime.render(&tree);
+        let graduated = runtime.last_graduated_keys();
+        if !graduated.is_empty() {
+            app.mark_graduated(graduated);
+        }
+        let viewport1 = strip_ansi(runtime.viewport_content());
+
+        // Tick and render frame 2
+        app.update(Event::Tick);
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        runtime.render(&tree);
+        let graduated = runtime.last_graduated_keys();
+        if !graduated.is_empty() {
+            app.mark_graduated(graduated);
+        }
+        let viewport2 = strip_ansi(runtime.viewport_content());
+
+        // The running tool should be in viewport (not graduated to stdout)
+        assert!(
+            viewport1.contains("Read File"),
+            "Running tool should be in viewport frame 1:\n{}",
+            viewport1
+        );
+        assert!(
+            viewport2.contains("Read File"),
+            "Running tool should be in viewport frame 2:\n{}",
+            viewport2
+        );
+
+        // Spinner should animate in viewport
+        let find_braille = |s: &str| -> Option<char> {
+            for c in s.chars() {
+                if BRAILLE_SPINNER_FRAMES.contains(&c) {
+                    return Some(c);
+                }
+            }
+            None
+        };
+
+        let b1 = find_braille(&viewport1);
+        let b2 = find_braille(&viewport2);
+        assert!(b1.is_some(), "Frame 1 viewport should have braille spinner");
+        assert!(b2.is_some(), "Frame 2 viewport should have braille spinner");
+
+        // The tool should NOT be in stdout (not graduated yet)
+        let stdout = strip_ansi(runtime.stdout_content());
+        assert!(
+            !stdout.contains("Read File"),
+            "Running tool should NOT be in stdout (graduated):\n{}",
+            stdout
+        );
+    }
+
+    #[test]
+    fn completed_tool_not_duplicated_when_more_content_follows() {
+        let mut app = OilChatApp::default();
+        let mut runtime = TestRuntime::new(80, 24);
+        let focus = FocusContext::new();
+
+        // Tool call + complete
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "glob".to_string(),
+            args: r#"{"pattern":"README*"}"#.to_string(),
+            call_id: Some("call-1".to_string()),
+            description: None,
+            source: None,
+            lua_primary_arg: None,
+        });
+        app.on_message(ChatAppMsg::ToolResultDelta {
+            name: "glob".to_string(),
+            delta: "README.md".to_string(),
+            call_id: Some("call-1".to_string()),
+        });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "glob".to_string(),
+            call_id: Some("call-1".to_string()),
+        });
+
+        // More content follows (makes tool group "complete" for graduation)
+        app.on_message(ChatAppMsg::TextDelta("Some text after tool\n\n".to_string()));
+
+        // Render with graduation
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        runtime.render(&tree);
+        let graduated = runtime.last_graduated_keys();
+        if !graduated.is_empty() {
+            app.mark_graduated(graduated);
+        }
+
+        let stdout = strip_ansi(runtime.stdout_content());
+        let viewport = strip_ansi(runtime.viewport_content());
+        let combined = format!("{}\n{}", stdout, viewport);
+
+        // "Glob" should appear exactly once
+        let glob_count = combined.matches("Glob").count();
+        assert_eq!(
+            glob_count, 1,
+            "Completed tool 'Glob' should appear exactly once.\n\
+             STDOUT:\n{}\nVIEWPORT:\n{}",
+            stdout, viewport
+        );
+    }
+
+    #[test]
+    fn running_tool_not_duplicated_in_output() {
+        let mut app = OilChatApp::default();
+        let mut runtime = TestRuntime::new(80, 24);
+        let focus = FocusContext::new();
+
+        // Text before tool
+        app.on_message(ChatAppMsg::TextDelta("Hello\n\n".to_string()));
+
+        // Tool call
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "read_file".to_string(),
+            args: r#"{"path":"test.rs"}"#.to_string(),
+            call_id: Some("call-1".to_string()),
+            description: None,
+            source: None,
+            lua_primary_arg: None,
+        });
+
+        // Tool completes
+        app.on_message(ChatAppMsg::ToolResultDelta {
+            name: "read_file".to_string(),
+            delta: "file content".to_string(),
+            call_id: Some("call-1".to_string()),
+        });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "read_file".to_string(),
+            call_id: Some("call-1".to_string()),
+        });
+
+        // More text after
+        app.on_message(ChatAppMsg::TextDelta("World".to_string()));
+
+        // Render with graduation
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        runtime.render(&tree);
+        let graduated = runtime.last_graduated_keys();
+        if !graduated.is_empty() {
+            app.mark_graduated(graduated);
+        }
+
+        let stdout = strip_ansi(runtime.stdout_content());
+        let viewport = strip_ansi(runtime.viewport_content());
+
+        // "Read File" should appear exactly once across stdout + viewport
+        let total = stdout.matches("Read File").count() + viewport.matches("Read File").count();
+        assert_eq!(
+            total, 1,
+            "Tool should appear exactly once. stdout matches: {}, viewport matches: {}\n\
+             STDOUT:\n{}\nVIEWPORT:\n{}",
+            stdout.matches("Read File").count(),
+            viewport.matches("Read File").count(),
+            stdout,
+            viewport
+        );
+    }
+}
