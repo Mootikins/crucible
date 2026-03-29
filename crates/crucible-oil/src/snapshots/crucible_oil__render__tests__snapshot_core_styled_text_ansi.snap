@@ -2,4 +2,4 @@
 source: crates/crucible-oil/src/render.rs
 expression: output.escape_debug().to_string()
 ---
-\u{1b}[48;5;8m\u{1b}[38;5;14m\u{1b}[1m\u{1b}[4mStyled\u{1b}[0m
+\u{1b}[48;5;8m\u{1b}[38;5;14m\u{1b}[1m\u{1b}[4mStyled                                                                          \u{1b}[0m

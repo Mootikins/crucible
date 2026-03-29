@@ -1,15 +1,14 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/component_isolation_tests.rs
-assertion_line: 843
 expression: "render_plain(&popup, 80)"
 ---
-
-
-
-
-
-
-
- ▸ Option A                                                                   
-   Option B                                                                   
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ ▸ Option A                                                                     
+   Option B                                                                     
    Option C

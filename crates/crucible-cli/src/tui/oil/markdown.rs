@@ -332,7 +332,11 @@ impl RenderContext {
 
     fn ensure_block_spacing(&mut self) {
         if self.needs_blank_line && !self.blocks.is_empty() && self.list_depth == 0 {
-            self.blocks.push(text(""));
+            // A space character gives this node height=1 in Taffy layout;
+            // empty string would get height=0 and collapse to nothing.
+            // CellGrid compact mode strips trailing spaces, so it renders
+            // as an empty line (visual blank line between blocks).
+            self.blocks.push(text(" "));
         }
         self.needs_blank_line = false;
     }
