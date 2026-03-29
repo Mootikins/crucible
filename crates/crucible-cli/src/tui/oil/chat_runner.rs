@@ -8,6 +8,7 @@ use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::terminal::Terminal;
 use crate::tui::oil::theme;
+use crucible_oil::FrameRenderer;
 use anyhow::{Context, Result};
 #[allow(unused_imports)] // WIP: KeyCode, KeyModifiers not yet used
 use crossterm::event::{Event as CtEvent, EventStream, KeyCode, KeyModifiers};
@@ -24,6 +25,39 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::tui::oil::commands::{SetEffect, SetRpcAction};
+
+/// Render one frame through the shared FrameRenderer trait.
+///
+/// This is the single rendering function used by all paths:
+/// - Live TUI (via Terminal)
+/// - Fixture tests (via TestRuntime)
+/// - Replay (via Terminal, same as live)
+///
+/// Handles: full redraw detection, scroll offset sync, view building,
+/// rendering, and graduation feedback.
+pub fn render_frame(
+    app: &mut OilChatApp,
+    renderer: &mut impl FrameRenderer,
+    focus: &FocusContext,
+) {
+    if app.take_needs_full_redraw() {
+        renderer.force_full_redraw();
+    }
+    renderer.set_scroll_offset(app.scroll_offset());
+
+    // Expire toast notifications (previously done on Event::Tick)
+    app.expire_toasts();
+
+    let terminal_size = renderer.size();
+    let ctx = ViewContext::with_terminal_size(focus, theme::active(), terminal_size);
+    let tree = app.view(&ctx);
+    let graduated_keys = renderer.render_frame(&tree);
+
+    // Pause graduation while scrolled up
+    if !graduated_keys.is_empty() && !app.is_scrolled() {
+        app.mark_graduated(graduated_keys);
+    }
+}
 
 /// Parameters for event_loop function.
 struct EventLoopParams<'a, A: AgentHandle> {
@@ -648,28 +682,20 @@ impl OilChatRunner {
     }
 
     fn render_app_frame(&mut self, app: &mut OilChatApp) -> Result<()> {
-        if app.take_needs_full_redraw() {
-            self.terminal.force_full_redraw()?;
-        }
-
-        // Sync scroll offset to the terminal's output buffer
-        self.terminal.set_scroll_offset(app.scroll_offset());
-
-        let terminal_size = self.terminal.size();
-        let ctx = ViewContext::with_terminal_size(&self.focus, theme::active(), terminal_size);
-        let tree = app.view(&ctx);
-
-        let graduated_keys = if app.has_shell_modal() {
-            self.terminal.render_fullscreen(&tree)?
+        if app.has_shell_modal() {
+            // Shell modal uses fullscreen rendering (Terminal-specific)
+            if app.take_needs_full_redraw() {
+                self.terminal.force_full_redraw()?;
+            }
+            let terminal_size = self.terminal.size();
+            let ctx =
+                ViewContext::with_terminal_size(&self.focus, theme::active(), terminal_size);
+            let tree = app.view(&ctx);
+            self.terminal.render_fullscreen(&tree)?;
         } else {
-            self.terminal.render(&tree)?
-        };
-        // Pause graduation while scrolled up — content stays in viewport tree
-        // so the user can see it. Resume when they snap back to bottom.
-        if !graduated_keys.is_empty() && !app.is_scrolled() {
-            app.mark_graduated(graduated_keys);
+            // Normal rendering through the shared FrameRenderer trait
+            render_frame(app, &mut self.terminal, &self.focus);
         }
-
         Ok(())
     }
 

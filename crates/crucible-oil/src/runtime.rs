@@ -4,6 +4,23 @@ use crate::node::Node;
 #[allow(unused_imports)] // WIP: GraduatedContent, GraduationState not yet used
 pub use crate::graduation::{GraduatedContent, GraduationState};
 
+/// Shared interface for rendering a frame. Implemented by Terminal (real I/O)
+/// and TestRuntime (in-memory buffer for tests).
+pub trait FrameRenderer {
+    /// Render a Node tree: graduate settled content, render viewport.
+    /// Returns the keys of newly graduated items.
+    fn render_frame(&mut self, tree: &Node) -> Vec<String>;
+
+    /// Force a full redraw on the next render (clear all cached state).
+    fn force_full_redraw(&mut self);
+
+    /// Current terminal dimensions (width, height).
+    fn size(&self) -> (u16, u16);
+
+    /// Set scroll offset (lines from bottom). 0 = pinned to bottom.
+    fn set_scroll_offset(&mut self, _offset: usize) {}
+}
+
 pub struct TestRuntime {
     planner: crate::planning::FramePlanner,
     last_snapshot: Option<crate::planning::FrameSnapshot>,
@@ -69,6 +86,21 @@ impl TestRuntime {
 
     pub fn pre_graduate_keys(&mut self, keys: impl IntoIterator<Item = String>) {
         self.planner.pre_graduate_keys(keys);
+    }
+}
+
+impl FrameRenderer for TestRuntime {
+    fn render_frame(&mut self, tree: &Node) -> Vec<String> {
+        self.render(tree);
+        self.last_graduated_keys()
+    }
+
+    fn force_full_redraw(&mut self) {
+        self.planner.reset_graduation();
+    }
+
+    fn size(&self) -> (u16, u16) {
+        (self.width(), self.height())
     }
 }
 

@@ -9,7 +9,7 @@
 use std::path::Path;
 
 use crate::tui::oil::ansi::strip_ansi;
-use crate::tui::oil::app::{App, ViewContext};
+use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::OilChatApp;
 use crate::tui::oil::chat_runner::session_event_to_chat_msgs;
 use crate::tui::oil::focus::FocusContext;
@@ -254,15 +254,8 @@ fn replay_fixture(path: &Path, width: u16, height: u16) -> ReplayResult {
     for msg in &messages {
         app.on_message(msg.clone());
 
-        let ctx = ViewContext::new(&focus);
-        let tree = app.view(&ctx);
-        runtime.render(&tree);
-
-        // Feed graduation back (simulates real chat_runner flow)
-        let graduated_keys = runtime.last_graduated_keys();
-        if !graduated_keys.is_empty() {
-            app.mark_graduated(graduated_keys);
-        }
+        // Use the same render_frame function as the live TUI
+        crate::tui::oil::chat_runner::render_frame(&mut app, &mut runtime, &focus);
 
         frame += 1;
 
@@ -316,14 +309,8 @@ fn replay_checking_thinking_order(
     for (frame, msg) in messages.iter().enumerate() {
         app.on_message(msg.clone());
 
-        let ctx = ViewContext::new(&focus);
-        let tree = app.view(&ctx);
-        runtime.render(&tree);
-
-        let graduated_keys = runtime.last_graduated_keys();
-        if !graduated_keys.is_empty() {
-            app.mark_graduated(graduated_keys);
-        }
+        // Use the same render_frame function as the live TUI
+        crate::tui::oil::chat_runner::render_frame(&mut app, &mut runtime, &focus);
 
         // Check every frame for thinking-after-text violations.
         // Only check the viewport — stdout contains graduated content from

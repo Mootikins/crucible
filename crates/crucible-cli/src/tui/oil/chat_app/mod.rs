@@ -318,6 +318,14 @@ impl OilChatApp {
         self.scroll_offset
     }
 
+    /// Expire stale toast notifications. Called each render frame.
+    pub fn expire_toasts(&mut self) {
+        self.notification_area.expire_toasts();
+        if self.notification_area.is_empty() {
+            self.notification_area.hide();
+        }
+    }
+
     pub fn is_scrolled(&self) -> bool {
         self.scroll_offset > 0
     }
