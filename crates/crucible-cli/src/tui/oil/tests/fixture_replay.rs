@@ -571,3 +571,18 @@ fn replay_reproduce_formatting_67x24() {
     let result = replay_fixture(&path, 67, 24);
     assert_no_violations(&result);
 }
+
+// ---------------------------------------------------------------------------
+// Tests: parity-test.jsonl (recorded via CLI, replayed through test framework)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn replay_parity_test_80x24() {
+    let path = fixture_path("parity-test.jsonl");
+    if !path.exists() {
+        eprintln!("SKIPPED: fixture not found at {}", path.display());
+        return;
+    }
+    let result = replay_fixture(&path, 80, 24);
+    assert_no_violations(&result);
+}

@@ -1,0 +1,74 @@
+{"version": 1, "session_id": "chat-2026-03-29T1203-dyjctx", "recording_mode": "granular", "started_at": "2026-03-29T12:04:04.225157+00:00"}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 1, "event": "user_message", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"message_id": "msg-c09ce543-70f9-4878-819e-75859593756e", "content": "Say exactly this numbered list and nothing else: 1. Alpha 2. Beta 3. Gamma"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 2, "event": "precognition_complete", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"notes_count": 5, "query_summary": "Say exactly this numbered list and nothing else: 1. Alpha 2. Beta 3. Gamma", "notes": [{"title": "Oil-Lua-API", "kiln_label": null}, {"title": "Johnny Decimal", "kiln_label": null}, {"title": "Zed System Prompt", "kiln_label": null}, {"title": "Tool Embedding Strategies", "kiln_label": null}, {"title": "Frontmatter", "kiln_label": null}]}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 3, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": "The"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 4, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " user"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 5, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " is"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 6, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " asking"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 7, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " me"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 8, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " to"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 9, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " say"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 10, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " exactly"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 11, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " a"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 12, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " specific"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 13, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " numbered"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 14, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " list"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 15, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " and"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 16, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " nothing"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 17, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " else"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 18, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": "."}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 19, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " They"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 20, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": "'ve"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 21, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " provided"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 22, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " some"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 23, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " context"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 24, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " about"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 25, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " relevant"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 26, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " notes"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 27, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": ","}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 28, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " but"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 29, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " the"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 30, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " instruction"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 31, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " is"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 32, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " clear"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 33, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " -"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 34, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " I"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 35, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " should"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 36, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " only"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 37, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " output"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 38, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " the"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 39, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " numbered"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 40, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " list"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 41, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " they"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 42, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": "'ve"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 43, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " specified"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 44, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": ":\n\n"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 45, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": "1"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 46, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": "."}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 47, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " Alpha"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 48, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": "\n"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 49, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": "2"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 50, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": "."}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 51, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " Beta"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 52, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": "\n"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 53, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": "3"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 54, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": "."}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 55, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " Gamma"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 56, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": "\n\n"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 57, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": "And"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 58, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " nothing"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 59, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " else"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 60, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": "."}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 61, "event": "text_delta", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": "1"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 62, "event": "text_delta", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": "."}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 63, "event": "text_delta", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " Alpha"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 64, "event": "text_delta", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " "}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 65, "event": "text_delta", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": "2"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 66, "event": "text_delta", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": "."}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 67, "event": "text_delta", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " Beta"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 68, "event": "text_delta", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " "}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 69, "event": "text_delta", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": "3"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 70, "event": "text_delta", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": "."}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 71, "event": "text_delta", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": " Gamma"}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 72, "event": "thinking", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"content": "The user is asking me to say exactly a specific numbered list and nothing else. They've provided some context about relevant notes, but the instruction is clear - I should only output the numbered list they've specified:\n\n1. Alpha\n2. Beta\n3. Gamma\n\nAnd nothing else."}}
+{"ts": "2026-03-29T12:04:04.225178+00:00", "seq": 73, "event": "message_complete", "session_id": "chat-2026-03-29T1203-dyjctx", "data": {"message_id": "msg-c09ce543-70f9-4878-819e-75859593756e", "full_response": "1. Alpha 2. Beta 3. Gamma"}}
