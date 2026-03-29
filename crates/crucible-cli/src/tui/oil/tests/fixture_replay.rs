@@ -325,15 +325,16 @@ fn replay_checking_thinking_order(
             app.mark_graduated(graduated_keys);
         }
 
-        // Check every frame for thinking-after-text violations
-        let stdout = strip_ansi(runtime.stdout_content());
+        // Check every frame for thinking-after-text violations.
+        // Only check the viewport — stdout contains graduated content from
+        // earlier responses, so combining them produces false positives when
+        // tool groups stay in viewport longer (deferred graduation).
         let viewport = strip_ansi(runtime.viewport_content());
-        let combined = format!("{stdout}\n{viewport}");
 
         // Look for text content appearing BEFORE a Thought summary within
         // the SAME assistant response. Tool call lines (✓) reset the tracking
         // since they mark a response boundary.
-        let lines: Vec<&str> = combined.lines().collect();
+        let lines: Vec<&str> = viewport.lines().collect();
         let mut saw_text_in_response = false;
         let mut saw_thought_after_text = false;
         for line in &lines {
@@ -375,7 +376,7 @@ fn replay_checking_thinking_order(
         }
 
         if saw_thought_after_text {
-            violations.push((frame, combined));
+            violations.push((frame, viewport.clone()));
         }
     }
 

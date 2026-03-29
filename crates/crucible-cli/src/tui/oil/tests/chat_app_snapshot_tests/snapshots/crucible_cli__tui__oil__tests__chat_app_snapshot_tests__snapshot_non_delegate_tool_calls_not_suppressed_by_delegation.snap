@@ -7,11 +7,11 @@ expression: render_app(&app)
  > Analyze auth                                                                 
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
 
- ✓ Bash ls
+ ⠋ delegation to cursor Analyze auth patterns  0s
+                                                                                
+ ✓ Bash ls                                                                      
    │ src                                                                        
    │ Cargo.toml                                                                 
-
- ⠋ delegation to cursor Analyze auth patterns  0s
                                                                                 
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  >                                                                              

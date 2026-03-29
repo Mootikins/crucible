@@ -87,3 +87,4 @@ crates/crucible-cli/proptest-regressions/
 .ruff_cache/
 .playwright-mcp/
 reproduce.jsonl
+reproduce.cast
