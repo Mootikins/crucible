@@ -136,6 +136,29 @@ impl CellGrid {
         self.to_lines().join("\r\n")
     }
 
+    /// Extract rows `[y_start, y_end)` as a compact string (trailing padding stripped).
+    ///
+    /// Each row is rendered with `cells_to_string_compact`, joined with `\r\n`.
+    /// Panics if indices are out of bounds.
+    pub fn extract_rows(&self, y_start: usize, y_end: usize) -> String {
+        self.cells[y_start..y_end]
+            .iter()
+            .map(|row| cells_to_string_compact(row))
+            .collect::<Vec<_>>()
+            .join("\r\n")
+    }
+
+    /// Find the last row with non-space (or styled) content, returning count of content rows.
+    ///
+    /// Returns 0 for an entirely blank grid.
+    pub fn content_height(&self) -> usize {
+        self.cells
+            .iter()
+            .rposition(|row| row.iter().any(|c| c.ch != ' ' || !c.style.is_empty()))
+            .map(|i| i + 1)
+            .unwrap_or(0)
+    }
+
     /// Render to compact string with trailing padding stripped per line.
     /// Used for graduation output where fixed-width padding is wasteful.
     pub fn to_string_compact(&self) -> String {
