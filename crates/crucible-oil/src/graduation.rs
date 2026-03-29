@@ -157,7 +157,7 @@ impl GraduationState {
                     let (raw, _cursor) = render_layout_tree_compact(&layout);
                     let content = collapse_graduated_blank_lines(&raw);
 
-                    if !content.is_empty() {
+                    if !content.is_empty() || static_node.kind == ElementKind::Block {
                         graduated.push(GraduatedContent {
                             key: static_node.key.clone(),
                             content,
