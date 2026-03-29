@@ -338,4 +338,89 @@ mod tests {
             second.plan.viewport.cursor.row_from_end
         );
     }
+
+    /// Verify that `text(" ")` spacers produce visually clean blank lines
+    /// in the production viewport rendering path (FramePlanner → Taffy → CellGrid → non-compact).
+    ///
+    /// The concern: `to_string_joined()` does NOT strip trailing spaces, so a `text(" ")`
+    /// spacer might render as a full-width line of spaces rather than a clean blank line.
+    /// This test checks whether the spacer line is identical to lines that were never
+    /// written to (pure CellGrid padding).
+    #[test]
+    fn text_space_spacer_produces_clean_blank_line_in_viewport() {
+        use crate::ansi::strip_ansi;
+
+        let mut planner = FramePlanner::new(80, 24);
+
+        // Build a tree with text(" ") spacers between paragraphs
+        let tree = col([text("Para 1"), text(" "), text("Para 2")]);
+
+        let snapshot = planner.plan(&tree);
+        let content = snapshot.viewport_content();
+
+        // Sanity: both paragraphs render
+        assert!(content.contains("Para 1"), "Para 1 should be in viewport");
+        assert!(content.contains("Para 2"), "Para 2 should be in viewport");
+
+        // Find the lines
+        let lines: Vec<&str> = content.lines().collect();
+
+        // Find Para 1 and Para 2 line indices
+        let para1_idx = lines
+            .iter()
+            .position(|l| l.contains("Para 1"))
+            .expect("Para 1 line not found");
+        let para2_idx = lines
+            .iter()
+            .position(|l| l.contains("Para 2"))
+            .expect("Para 2 line not found");
+
+        // There should be at least one line between them (the spacer)
+        assert!(
+            para2_idx > para1_idx + 1,
+            "Expected spacer line between Para 1 (line {}) and Para 2 (line {})",
+            para1_idx,
+            para2_idx
+        );
+
+        // Check the spacer line(s) between the two paragraphs
+        for spacer_idx in (para1_idx + 1)..para2_idx {
+            let spacer_line = lines[spacer_idx];
+            let stripped = strip_ansi(spacer_line);
+
+            // The spacer line should be visually empty — only spaces allowed,
+            // no styled/colored content
+            assert!(
+                stripped.chars().all(|c| c == ' '),
+                "Spacer line {} should contain only spaces after stripping ANSI, got: {:?}",
+                spacer_idx,
+                stripped
+            );
+
+            // Check for ANSI styling on the spacer line. A clean spacer should have
+            // NO ANSI escape sequences — it should be pure padding spaces from CellGrid.
+            // If there ARE escape sequences, the space character was styled, meaning
+            // text(" ") is being treated as styled content rather than a blank separator.
+            let has_ansi = spacer_line.contains('\x1b');
+            assert!(
+                !has_ansi,
+                "Spacer line {} has ANSI styling — text(\" \") is producing styled content \
+                 in the viewport, not a clean blank line. Line content: {:?}",
+                spacer_idx,
+                spacer_line
+            );
+
+            // The spacer line should be exactly 80 spaces (grid width) with no
+            // ANSI codes — identical to what CellGrid produces for untouched rows.
+            let expected_padding = " ".repeat(80);
+            assert_eq!(
+                spacer_line, expected_padding.as_str(),
+                "Spacer line should be identical to an untouched CellGrid padding line (80 spaces).\n\
+                 Spacer:  {:?} (len={})\n\
+                 Expected: {:?} (len={})",
+                spacer_line, spacer_line.len(),
+                expected_padding, expected_padding.len()
+            );
+        }
+    }
 }
