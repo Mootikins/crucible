@@ -1,18 +1,17 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
-assertion_line: 1756
 expression: render_app_raw(&app)
 ---
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-[48;2;50;56;68m ▸ tool semantic_search  Search notes by meaning                              [0m  
-[48;2;30;34;42m   tool create_note  Create a new note                                        [0m  
-[48;2;30;34;42m   command /mode  Cycle chat mode                                             [0m  
-[48;2;30;34;42m   command /help  Show help                                                   [0m  
+[48;2;30;34;42m                                                                                [0m
+[48;2;30;34;42m                                                                                [0m
+[48;2;30;34;42m                                                                                [0m
+[48;2;30;34;42m                                                                                [0m
+[48;2;30;34;42m                                                                                [0m
+[48;2;30;34;42m                                                                                [0m
+[48;2;50;56;68m ▸ tool semantic_search  Search notes by meaning                                [0m
+[48;2;30;34;42m   tool create_note  Create a new note                                          [0m
+[48;2;30;34;42m   command /mode  Cycle chat mode                                               [0m
+[48;2;30;34;42m   command /help  Show help                                                     [0m
 [38;2;60;64;72m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0m
 [48;2;60;64;72m >                                                                              [0m
 [38;2;60;64;72m▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀[0m
