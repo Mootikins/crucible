@@ -9,14 +9,9 @@ expression: render_app(&app)
 
  ✓ Bash ls -la
    │ file1.txt                                                                  
-   │ file2.txt                                                                  
-
- ✓ Read File README.md → 1 lines
-
- ✓ Bash cat Cargo.toml
+   │ file2.txt                                                                   ✓ Read File README.md → 1 lines ✓ Bash cat Cargo.toml
    │ [package]                                                                  
-   │ name = "test"                                                              
-                                                                                
+   │ name = "test"                                                                                                                                              
                                                                                 
  ◐                                                                              
                                                                                 

@@ -9,10 +9,7 @@ expression: render_app(&app)
 
  ● I'll read both files in parallel.
 
- ✓ Read File README.md → 1 lines
-
- ✓ Read File Cargo.toml → [package]
-                                                                                
+ ✓ Read File README.md → 1 lines ✓ Read File Cargo.toml → [package]                                                                                
                                                                                 
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  >                                                                              

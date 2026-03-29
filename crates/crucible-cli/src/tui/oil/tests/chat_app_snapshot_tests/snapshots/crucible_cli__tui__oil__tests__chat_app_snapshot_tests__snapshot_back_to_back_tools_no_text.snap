@@ -9,12 +9,7 @@ expression: render_app(&app)
 
  ● Let me read everything.
 
- ✓ Read File README.md → 1 lines
-
- ✓ Read File Cargo.toml → [package]
-
- ✓ Read File src/main.rs → 1 lines
-                                                                                
+ ✓ Read File README.md → 1 lines ✓ Read File Cargo.toml → [package] ✓ Read File src/main.rs → 1 lines                                                                                
                                                                                 
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  >                                                                              
