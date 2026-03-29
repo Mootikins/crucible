@@ -164,7 +164,7 @@ impl ChatContainer {
                 // Each tool call graduates individually when complete.
                 // Running tools stay in viewport so spinners animate.
                 let mut first_complete = true;
-                let tool_nodes: Vec<Node> = tools
+                let mut tool_nodes: Vec<Node> = tools
                     .iter()
                     .enumerate()
                     .map(|(i, t)| {
@@ -185,6 +185,15 @@ impl ChatContainer {
                         }
                     })
                     .collect();
+
+                let all_complete = tools.iter().all(|t| t.complete);
+                if all_complete && tools.len() > 1 {
+                    tool_nodes.push(scrollback_with_kind(
+                        format!("{id}-tool-end"),
+                        ElementKind::Block,
+                        [text(" ")],
+                    ));
+                }
 
                 col(tool_nodes).with_margin(Padding {
                     top: 1,

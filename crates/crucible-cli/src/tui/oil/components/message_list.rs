@@ -168,7 +168,7 @@ pub fn render_thinking_block(
     );
     let content_node = markdown_to_node_styled(&display_content, md_style);
 
-    col([header, content_node, text("")])
+    col([header, content_node])
 }
 
 #[cfg(test)]
