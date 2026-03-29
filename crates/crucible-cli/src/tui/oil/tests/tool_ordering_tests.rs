@@ -1144,7 +1144,7 @@ mod spinner_animation {
     }
 
     #[test]
-    fn completed_tool_stays_in_viewport_during_active_turn() {
+    fn completed_tool_graduates_individually() {
         let mut app = OilChatApp::default();
         let mut runtime = TestRuntime::new(80, 24);
         let focus = FocusContext::new();
@@ -1183,33 +1183,26 @@ mod spinner_animation {
         let stdout = strip_ansi(runtime.stdout_content());
         let viewport = strip_ansi(runtime.viewport_content());
 
-        // Tool should be in viewport (not graduated) during active turn
+        // Completed tool graduates individually — should be in stdout
         assert!(
-            !stdout.contains("Glob"),
-            "Completed tool should NOT be in stdout during active turn.\nSTDOUT:\n{}",
+            stdout.contains("Glob"),
+            "Completed tool should graduate to stdout immediately.\nSTDOUT:\n{}",
             stdout
         );
+
+        // Text after tool should be in viewport (still streaming)
         assert!(
-            viewport.contains("Glob"),
-            "Completed tool should be in viewport during active turn.\nVIEWPORT:\n{}",
+            viewport.contains("After tool"),
+            "Text after tool should be in viewport.\nVIEWPORT:\n{}",
             viewport
         );
 
-        // Now end the turn — tool should graduate
-        app.on_message(ChatAppMsg::StreamComplete);
-        let ctx = ViewContext::new(&focus);
-        let tree = app.view(&ctx);
-        runtime.render(&tree);
-        let graduated = runtime.last_graduated_keys();
-        if !graduated.is_empty() {
-            app.mark_graduated(graduated);
-        }
-
-        let stdout_after = strip_ansi(runtime.stdout_content());
-        assert!(
-            stdout_after.contains("Glob"),
-            "Tool should graduate to stdout after turn ends.\nSTDOUT:\n{}",
-            stdout_after
+        // Tool should appear exactly once total
+        let total = stdout.matches("Glob").count() + viewport.matches("Glob").count();
+        assert_eq!(
+            total, 1,
+            "Completed tool should appear exactly once.\nSTDOUT:\n{}\nVIEWPORT:\n{}",
+            stdout, viewport
         );
     }
 

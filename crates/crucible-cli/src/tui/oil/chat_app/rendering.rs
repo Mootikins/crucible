@@ -95,7 +95,6 @@ impl OilChatApp {
                     render_state,
                     is_continuation,
                     is_complete: self.container_list.is_response_complete(i),
-                    is_streaming: self.container_list.is_streaming(),
                 };
                 c.view_with_params(&params)
             })
