@@ -119,12 +119,8 @@ fn model_flow_log_repl_command_state() {
 
     let output = buf.output();
     assert!(
-        output.contains("handle_repl_command") && output.contains("model pressed"),
-        "Should log handle_repl_command: model pressed.\nCaptured:\n{output}"
-    );
-    assert!(
-        output.contains("NotLoaded"),
-        "Should log state=NotLoaded for initial model command.\nCaptured:\n{output}"
+        output.contains("FetchModels") && output.contains("Loading"),
+        "Should log FetchModels -> Loading when :model triggers fetch.\nCaptured:\n{output}"
     );
 }
 

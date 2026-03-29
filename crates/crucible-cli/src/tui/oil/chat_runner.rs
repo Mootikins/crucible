@@ -273,7 +273,6 @@ impl OilChatRunner {
         self.agent_name.is_some()
     }
 
-    #[cfg(test)]
     fn queue_model_prefetch(&self, msg_tx: &mpsc::UnboundedSender<ChatAppMsg>) {
         if self.is_acp_session() {
             return;
@@ -487,6 +486,10 @@ impl OilChatRunner {
                 }));
             }
         }
+
+        // Prefetch available models in background — daemon cache should be warm,
+        // so this returns near-instantly. Ensures :model popup has data immediately.
+        self.queue_model_prefetch(&msg_tx);
 
         let interaction_rx = agent.take_interaction_receiver();
         tracing::debug!(
