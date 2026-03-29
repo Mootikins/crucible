@@ -99,8 +99,8 @@ pub struct OilChatApp {
     interaction_modal: Option<InteractionModal>,
     /// Shell command modal overlay
     shell_modal: Option<ShellModal>,
-    /// Spinner animation frame counter
-    spinner_frame: usize,
+    /// Spinner animation start time (frame derived from elapsed time, not ticks)
+    spinner_epoch: std::time::Instant,
     /// Force a full terminal redraw on next tick
     needs_full_redraw: bool,
     /// Scroll offset (lines from bottom). 0 = pinned to bottom.
@@ -186,7 +186,6 @@ impl App for OilChatApp {
         match event {
             Event::Key(key) => self.handle_key(key),
             Event::Tick => {
-                self.spinner_frame = self.spinner_frame.wrapping_add(1);
                 self.tick_shell_modal();
                 self.notification_area.expire_toasts();
                 if self.notification_area.is_empty() {
@@ -307,6 +306,12 @@ impl OilChatApp {
 
     pub(super) fn snap_to_bottom(&mut self) {
         self.scroll_offset = 0;
+    }
+
+    /// Spinner frame derived from wall clock (100ms per frame).
+    /// Independent of tick events — animates even during rapid streaming.
+    pub fn spinner_frame(&self) -> usize {
+        (self.spinner_epoch.elapsed().as_millis() / 100) as usize
     }
 
     pub fn scroll_offset(&self) -> usize {

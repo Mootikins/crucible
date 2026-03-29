@@ -34,7 +34,7 @@ impl Default for OilChatApp {
             notification_area: NotificationArea::new(),
             interaction_modal: None,
             shell_modal: None,
-            spinner_frame: 0,
+            spinner_epoch: std::time::Instant::now(),
             needs_full_redraw: false,
             scroll_offset: 0,
             show_thinking: true,

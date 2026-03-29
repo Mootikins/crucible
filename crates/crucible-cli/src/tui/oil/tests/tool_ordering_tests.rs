@@ -975,7 +975,7 @@ mod spinner_animation {
     use crucible_oil::node::BRAILLE_SPINNER_FRAMES;
 
     #[test]
-    fn running_tool_spinner_changes_between_ticks() {
+    fn running_tool_spinner_changes_over_time() {
         let mut app = OilChatApp::default();
 
         // Start a tool call (not completed)
@@ -988,18 +988,12 @@ mod spinner_animation {
             lua_primary_arg: None,
         });
 
-        // Render frame 1
         let output1 = render_app(&app);
 
-        // Tick to advance spinner
-        app.update(Event::Tick);
+        // Wait 200ms for spinner frame to advance (100ms per frame)
+        std::thread::sleep(std::time::Duration::from_millis(200));
         let output2 = render_app(&app);
 
-        // Tick again
-        app.update(Event::Tick);
-        let output3 = render_app(&app);
-
-        // Find braille characters in each frame
         let find_braille = |output: &str| -> Option<char> {
             for c in output.chars() {
                 if BRAILLE_SPINNER_FRAMES.contains(&c) {
@@ -1011,25 +1005,14 @@ mod spinner_animation {
 
         let b1 = find_braille(&output1);
         let b2 = find_braille(&output2);
-        let b3 = find_braille(&output3);
 
+        assert!(b1.is_some(), "Frame 1 should have braille spinner");
+        assert!(b2.is_some(), "Frame 2 should have braille spinner");
         assert!(
-            b1.is_some(),
-            "Frame 1 should contain a braille spinner character. Output:\n{}",
-            output1
-        );
-        assert!(
-            b2.is_some(),
-            "Frame 2 should contain a braille spinner character. Output:\n{}",
-            output2
-        );
-
-        // At least one frame should differ (spinner is animating)
-        assert!(
-            b1 != b2 || b2 != b3,
-            "Braille spinner should change between ticks.\n\
-             Frame 1: {:?}, Frame 2: {:?}, Frame 3: {:?}",
-            b1, b2, b3
+            b1 != b2,
+            "Braille spinner should change over 200ms (wall clock, not ticks).\n\
+             Frame 1: {:?}, Frame 2: {:?}",
+            b1, b2
         );
     }
 
