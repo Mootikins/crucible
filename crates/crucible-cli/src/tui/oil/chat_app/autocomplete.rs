@@ -209,7 +209,21 @@ impl OilChatApp {
                 &filter,
             ),
             AutocompleteKind::Model => {
-                Self::filter_to_popup_items(&self.available_models, &filter, "model", 100)
+                if matches!(self.model_list_state, ModelListState::Loading) && self.available_models.is_empty() {
+                    vec![PopupItemNode {
+                        label: "Loading models...".to_string(),
+                        kind: Some("info".to_string()),
+                        description: None,
+                    }]
+                } else if matches!(self.model_list_state, ModelListState::Failed(_)) && self.available_models.is_empty() {
+                    vec![PopupItemNode {
+                        label: "Failed to load models".to_string(),
+                        kind: Some("error".to_string()),
+                        description: None,
+                    }]
+                } else {
+                    Self::filter_to_popup_items(&self.available_models, &filter, "model", 100)
+                }
             }
             AutocompleteKind::CommandArg {
                 ref command,

@@ -285,59 +285,24 @@ impl OilChatApp {
             return self.handle_set_command(&format!("set model {}", model_name));
         }
 
-        tracing::debug!(target: "crucible_cli::tui::oil::model_flow", state = ?self.model_list_state, "handle_repl_command: model pressed");
-        match &self.model_list_state {
-            ModelListState::NotLoaded => {
-                if !self.model_fetch_message_shown {
-                    self.add_system_message("Fetching available models...".to_string());
-                    self.model_fetch_message_shown = true;
-                }
-                Action::Send(ChatAppMsg::FetchModels)
-            }
-            ModelListState::Loading => {
-                if !self.model_fetch_message_shown {
-                    self.model_list_state = ModelListState::NotLoaded;
-                    self.add_system_message("Retrying model fetch...".to_string());
-                    self.model_fetch_message_shown = true;
-                }
-                Action::Send(ChatAppMsg::FetchModels)
-            }
-            ModelListState::Loaded => {
-                if self.available_models.is_empty() {
-                    self.add_system_message(
-                        "No models configured. Use :model <name> to switch manually.".to_string(),
-                    );
-                    Action::Continue
-                } else {
-                    let current = &self.model;
-                    let models_list = self
-                        .available_models
-                        .iter()
-                        .map(|m| {
-                            if m == current {
-                                format!("  \u{2022} {}  \u{2190} current", m)
-                            } else {
-                                format!("  \u{2022} {}", m)
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    let msg = format!(
-                        "Available models ({}):\n{}",
-                        self.available_models.len(),
-                        models_list
-                    );
-                    self.add_system_message(msg);
-                    Action::Send(ChatAppMsg::FetchModels)
-                }
-            }
-            ModelListState::Failed(reason) => {
-                self.add_system_message(format!(
-                    "Retrying model fetch (last error: {})...",
-                    reason
-                ));
-                Action::Send(ChatAppMsg::FetchModels)
-            }
+        // Open the model selection popup. Models are prefetched at startup
+        // (daemon cache is warm), so they should be available immediately.
+        // If not loaded yet, trigger a background fetch.
+        self.input.set_content(":model ");
+        self.popup.kind = super::state::AutocompleteKind::Model;
+        self.popup.trigger_pos = self.input.cursor();
+        self.popup.filter.clear();
+        self.popup.selected = 0;
+        self.popup.show = true;
+
+        if matches!(
+            self.model_list_state,
+            ModelListState::NotLoaded | ModelListState::Failed(_)
+        ) {
+            self.model_list_state = ModelListState::Loading;
+            Action::Send(ChatAppMsg::FetchModels)
+        } else {
+            Action::Continue
         }
     }
 

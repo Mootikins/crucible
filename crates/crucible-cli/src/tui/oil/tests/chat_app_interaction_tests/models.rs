@@ -361,7 +361,7 @@ fn model_command_popup_select_updates_model() {
 }
 
 #[test]
-fn model_command_no_models_shows_message() {
+fn model_command_no_models_opens_popup() {
     use crate::tui::oil::chat_app::ChatAppMsg;
 
     let mut app = OilChatApp::default();
@@ -375,19 +375,15 @@ fn model_command_no_models_shows_message() {
     // Simulate the fetch completing with empty model list
     app.on_message(ChatAppMsg::ModelsLoaded(vec![]));
 
-    // Now try :model again - should show "No models configured" message
+    // Now try :model again - should open popup (even with empty models)
     for c in ":model".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
     }
     app.update(Event::Key(key(KeyCode::Enter)));
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
-
     assert!(
-        output.contains("No models configured"),
-        "Should show 'No models configured' when no models available. Got: {}",
-        output
+        app.is_popup_visible(),
+        "Popup should be open after ':model' + Enter even with empty models"
     );
 }
 
@@ -400,53 +396,52 @@ fn model_popup_repl_command_keeps_open_when_typing_filter() {
         "openai/gpt-4".to_string(),
     ]);
 
-    // Open via REPL command path (NOT autocomplete path)
+    // Open via REPL command path: :model<Enter> now opens the popup
     for c in ":model".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
     }
     app.update(Event::Key(key(KeyCode::Enter)));
 
-    // Popup should NOT be open — REPL command shows message instead
     assert!(
-        !app.is_popup_visible(),
-        "Popup should NOT be open after ':model' + Enter (REPL command shows message)"
+        app.is_popup_visible(),
+        "Popup should be open after ':model' + Enter"
     );
 
-    // Check that the model list message is shown
+    // Type filter characters — popup should stay open
+    for c in "llama".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+
+    assert!(
+        app.is_popup_visible(),
+        "Popup should stay open while typing filter"
+    );
+
     let tree = view_with_default_ctx(&app);
     let output = render_to_string(&tree, 80);
     assert!(
-        output.contains("Available models"),
-        "Should show available models list in chat. Got: {}",
+        output.contains("llama"),
+        "Popup should show filtered models. Got: {}",
         output
     );
 }
 
 #[test]
-fn model_popup_repl_command_not_loaded_keeps_open_after_models_arrive() {
+fn model_popup_repl_command_not_loaded_stays_open_after_models_arrive() {
     use crate::tui::oil::chat_app::ChatAppMsg;
     let mut app = OilChatApp::default();
     // State is NotLoaded by default
 
-    // Open via REPL command (triggers lazy fetch)
+    // Open via REPL command (triggers lazy fetch and opens popup)
     for c in ":model".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
     }
     app.update(Event::Key(key(KeyCode::Enter)));
 
-    // Popup should NOT be open — REPL command shows "Fetching..." message
+    // Popup should be open — :model<Enter> now opens the popup
     assert!(
-        !app.is_popup_visible(),
-        "Popup should NOT be open after ':model' + Enter (REPL command shows message)"
-    );
-
-    // Check that the fetching message is shown
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
-    assert!(
-        output.contains("Fetching available models"),
-        "Should show 'Fetching available models' message. Got: {}",
-        output
+        app.is_popup_visible(),
+        "Popup should be open after ':model' + Enter"
     );
 
     // Simulate models arriving
@@ -456,10 +451,18 @@ fn model_popup_repl_command_not_loaded_keeps_open_after_models_arrive() {
         "anthropic/claude-3".to_string(),
     ]));
 
-    // Popup should still NOT be open
+    // Popup should stay open after models arrive
     assert!(
-        !app.is_popup_visible(),
-        "Popup should still NOT be open after models arrive"
+        app.is_popup_visible(),
+        "Popup should stay open after models arrive"
+    );
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+    assert!(
+        output.contains("llama3"),
+        "Popup should show newly loaded models. Got: {}",
+        output
     );
 }
 
@@ -473,29 +476,33 @@ fn model_popup_repl_command_multi_char_filter_narrows_results() {
         "openai/gpt-4".to_string(),
     ]);
 
-    // Open via REPL command path
+    // Open via REPL command path: :model<Enter> now opens the popup
     for c in ":model".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
     }
     app.update(Event::Key(key(KeyCode::Enter)));
 
-    // Popup should NOT be open — REPL command shows message instead
     assert!(
-        !app.is_popup_visible(),
-        "Popup should NOT be open after ':model' + Enter (REPL command shows message)"
+        app.is_popup_visible(),
+        "Popup should be open after ':model' + Enter"
     );
 
-    // Verify the model list is shown in chat with all models
+    // Type filter to narrow results
+    for c in "claude".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+
+    assert!(
+        app.is_popup_visible(),
+        "Popup should stay open while typing filter"
+    );
+
     let tree = view_with_default_ctx(&app);
     let output = render_to_string(&tree, 80);
     assert!(
-        output.contains("Available models"),
-        "Should show available models list. Got: {}",
+        output.contains("claude-3"),
+        "Popup should show claude-3 matching filter. Got: {}",
         output
-    );
-    assert!(
-        output.contains("llama3") && output.contains("claude-3") && output.contains("gpt-4"),
-        "Should show all models in the list"
     );
 }
 
@@ -785,11 +792,11 @@ fn set_available_models_does_not_set_loaded_state_when_empty() {
 }
 
 // =============================================================================
-// Model REPL Command State Tests (new behavior: :model<CR> shows chat listing)
+// Model REPL Command State Tests (new behavior: :model<CR> opens popup)
 // =============================================================================
 
 #[test]
-fn model_repl_loaded_lists_models_in_chat() {
+fn model_repl_loaded_opens_popup() {
     use crate::tui::oil::chat_app::ChatAppMsg;
 
     let mut app = OilChatApp::default();
@@ -805,58 +812,13 @@ fn model_repl_loaded_lists_models_in_chat() {
     app.update(Event::Key(key(KeyCode::Enter)));
 
     assert!(
-        !app.is_popup_visible(),
-        "Popup should NOT be open after ':model' + Enter (REPL command shows message)"
-    );
-
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
-
-    assert!(
-        output.contains("Available models"),
-        "Should show 'Available models' header. Got: {}",
-        output
-    );
-    assert!(
-        output.contains("ollama/llama3"),
-        "Should list ollama/llama3. Got: {}",
-        output
-    );
-    assert!(
-        output.contains("anthropic/claude-3"),
-        "Should list anthropic/claude-3. Got: {}",
-        output
+        app.is_popup_visible(),
+        "Popup should be open after ':model' + Enter with loaded models"
     );
 }
 
 #[test]
-fn model_repl_loaded_marks_current_model() {
-    use crate::tui::oil::chat_app::ChatAppMsg;
-
-    let mut app = OilChatApp::default();
-    app.set_available_models(vec![
-        "ollama/llama3".to_string(),
-        "anthropic/claude-3".to_string(),
-    ]);
-    app.on_message(ChatAppMsg::SwitchModel("ollama/llama3".to_string()));
-
-    for c in ":model".chars() {
-        app.update(Event::Key(key(KeyCode::Char(c))));
-    }
-    app.update(Event::Key(key(KeyCode::Enter)));
-
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
-
-    assert!(
-        output.contains("← current"),
-        "Should mark the current model with '← current'. Got: {}",
-        output
-    );
-}
-
-#[test]
-fn model_repl_loaded_empty_shows_not_configured() {
+fn model_repl_loaded_empty_opens_popup() {
     use crate::tui::oil::chat_app::ChatAppMsg;
 
     let mut app = OilChatApp::default();
@@ -868,23 +830,10 @@ fn model_repl_loaded_empty_shows_not_configured() {
     }
     app.update(Event::Key(key(KeyCode::Enter)));
 
+    // Popup opens even with empty models (user can type a model name)
     assert!(
-        !app.is_popup_visible(),
-        "Popup should NOT be open after ':model' + Enter"
-    );
-
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
-
-    assert!(
-        output.contains("No models configured"),
-        "Should show 'No models configured' when Loaded state has empty list. Got: {}",
-        output
-    );
-    assert!(
-        !output.contains("No models available"),
-        "Should NOT show old broken message 'No models available'. Got: {}",
-        output
+        app.is_popup_visible(),
+        "Popup should be open after ':model' + Enter even with empty models"
     );
 }
 
@@ -905,7 +854,7 @@ fn model_command_in_not_loaded_state_triggers_fetch() {
 }
 
 #[test]
-fn model_command_in_loading_state_triggers_refetch() {
+fn model_command_in_loading_state_opens_popup_without_refetch() {
     let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::FetchModels);
     assert_eq!(app.model_list_state(), &ModelListState::Loading);
@@ -915,20 +864,20 @@ fn model_command_in_loading_state_triggers_refetch() {
     }
     let action = app.update(Event::Key(key(KeyCode::Enter)));
 
+    // Popup opens, but no redundant fetch (already loading)
     assert!(
-        matches!(action, Action::Send(ChatAppMsg::FetchModels)),
-        ":model should re-trigger FetchModels when state is Loading, got: {:?}",
-        action
+        app.is_popup_visible(),
+        "Popup should be open during loading"
     );
-    assert_eq!(
-        app.model_list_state(),
-        &ModelListState::NotLoaded,
-        "Loading state should reset to NotLoaded before retry"
+    assert!(
+        matches!(action, Action::Continue),
+        ":model should NOT re-trigger FetchModels when already Loading, got: {:?}",
+        action
     );
 }
 
 #[test]
-fn model_repl_failed_retries_and_shows_message() {
+fn model_repl_failed_opens_popup_and_retries() {
     use crate::tui::oil::chat_app::ChatAppMsg;
 
     let mut app = OilChatApp::default();
@@ -939,25 +888,17 @@ fn model_repl_failed_retries_and_shows_message() {
     for c in ":model".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
     }
-    app.update(Event::Key(key(KeyCode::Enter)));
+    let action = app.update(Event::Key(key(KeyCode::Enter)));
 
+    // Popup opens and fetch is retried
     assert!(
-        !app.is_popup_visible(),
-        "Popup should NOT be open after ':model' + Enter"
-    );
-
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
-
-    assert!(
-        output.contains("Retrying"),
-        "Should show 'Retrying' message when state is Failed. Got: {}",
-        output
+        app.is_popup_visible(),
+        "Popup should be open after ':model' + Enter even on failure"
     );
     assert!(
-        output.contains("connection refused"),
-        "Should include the error reason in the message. Got: {}",
-        output
+        matches!(action, Action::Send(ChatAppMsg::FetchModels)),
+        ":model should retry FetchModels when state is Failed, got: {:?}",
+        action
     );
 }
 
@@ -1070,37 +1011,28 @@ fn model_loading_message_not_duplicated() {
 }
 
 #[test]
-fn model_fetch_message_shown_once() {
+fn model_repl_not_loaded_opens_popup_and_fetches() {
     let mut app = OilChatApp::default();
-    // State is NotLoaded by default
     assert_eq!(
         *app.model_list_state(),
         ModelListState::NotLoaded,
         "Initial state should be NotLoaded"
     );
 
-    // Press :model<CR> once
+    // Press :model<CR> — opens popup and triggers fetch
     for c in ":model".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
     }
     app.update(Event::Key(key(KeyCode::Enter)));
 
-    // Render and check that a fetch message appears
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
-
-    let has_fetch_message = output.contains("Fetching") || output.contains("Retrying");
     assert!(
-        has_fetch_message,
-        "Should show a fetch message on first :model press"
+        app.is_popup_visible(),
+        "Popup should be open after ':model' + Enter"
     );
-
-    // Count occurrences
-    let fetch_count = output.matches("Fetching").count() + output.matches("Retrying").count();
     assert_eq!(
-        fetch_count, 1,
-        "Should show exactly 1 fetch message, but found {}",
-        fetch_count
+        app.input_content(),
+        ":model ",
+        "Input should be set to ':model ' for autocomplete"
     );
 }
 
