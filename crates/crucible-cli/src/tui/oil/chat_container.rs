@@ -28,6 +28,8 @@ pub struct ViewParams {
     pub is_continuation: bool,
     /// Whether this response is complete (derived from turn state + position).
     pub is_complete: bool,
+    /// Whether the agent turn has fully ended (no more events expected).
+    pub turn_ended: bool,
 }
 
 /// A block of thinking content with token count.
@@ -127,6 +129,7 @@ impl ChatContainer {
             },
             is_continuation,
             is_complete,
+            turn_ended: is_complete,
         })
     }
 
@@ -160,13 +163,12 @@ impl ChatContainer {
 
             Self::ToolGroup { id, tools } => {
                 let content = render_tool_group(tools, &params.render_state);
-                // Only wrap in scrollback (allow graduation) when all tools are
-                // complete AND this container is "done" (turn ended or more content
-                // follows). This prevents a completed ToolGroup from graduating
-                // before the LLM sends the next tool call — which would cause the
-                // second tool to appear in a separate group.
+                // Only graduate tool groups when the turn has fully ended.
+                // During streaming, tool groups stay in viewport so spinners
+                // animate and completed tools don't duplicate (frozen in stdout
+                // + live in viewport).
                 let all_complete = tools.iter().all(|t| t.complete);
-                if all_complete && params.is_complete {
+                if all_complete && params.turn_ended {
                     scrollback(id.clone(), [content])
                 } else {
                     content
