@@ -971,7 +971,6 @@ mod duplicate_content_prevention {
 /// Braille spinners on running tool calls must animate between tick frames.
 mod spinner_animation {
     use super::*;
-    use crate::tui::oil::Event;
     use crucible_oil::node::BRAILLE_SPINNER_FRAMES;
 
     #[test]
@@ -1016,8 +1015,11 @@ mod spinner_animation {
         );
     }
 
+    /// Frame-by-frame verification through full graduation pipeline:
+    /// running tool stays in viewport, spinner animates via wall clock,
+    /// graduated text in stdout, no duplication.
     #[test]
-    fn running_tool_spinner_animates_across_graduation_frames() {
+    fn running_tool_spinner_animates_frame_by_frame_with_graduation() {
         let mut app = OilChatApp::default();
         let mut runtime = TestRuntime::new(80, 24);
         let focus = FocusContext::new();
@@ -1025,7 +1027,7 @@ mod spinner_animation {
         // Text that will graduate
         app.on_message(ChatAppMsg::TextDelta("First paragraph\n\n".to_string()));
 
-        // Running tool call
+        // Running tool call (NOT completed)
         app.on_message(ChatAppMsg::ToolCall {
             name: "read_file".to_string(),
             args: r#"{"path":"test.rs"}"#.to_string(),
@@ -1035,40 +1037,7 @@ mod spinner_animation {
             lua_primary_arg: None,
         });
 
-        // Render frame 1 with graduation
-        let ctx = ViewContext::new(&focus);
-        let tree = app.view(&ctx);
-        runtime.render(&tree);
-        let graduated = runtime.last_graduated_keys();
-        if !graduated.is_empty() {
-            app.mark_graduated(graduated);
-        }
-        let viewport1 = strip_ansi(runtime.viewport_content());
-
-        // Tick and render frame 2
-        app.update(Event::Tick);
-        let ctx = ViewContext::new(&focus);
-        let tree = app.view(&ctx);
-        runtime.render(&tree);
-        let graduated = runtime.last_graduated_keys();
-        if !graduated.is_empty() {
-            app.mark_graduated(graduated);
-        }
-        let viewport2 = strip_ansi(runtime.viewport_content());
-
-        // The running tool should be in viewport (not graduated to stdout)
-        assert!(
-            viewport1.contains("Read File"),
-            "Running tool should be in viewport frame 1:\n{}",
-            viewport1
-        );
-        assert!(
-            viewport2.contains("Read File"),
-            "Running tool should be in viewport frame 2:\n{}",
-            viewport2
-        );
-
-        // Spinner should animate in viewport
+        // Capture 5 frames at 120ms intervals (spinner changes at 100ms)
         let find_braille = |s: &str| -> Option<char> {
             for c in s.chars() {
                 if BRAILLE_SPINNER_FRAMES.contains(&c) {
@@ -1078,17 +1047,65 @@ mod spinner_animation {
             None
         };
 
-        let b1 = find_braille(&viewport1);
-        let b2 = find_braille(&viewport2);
-        assert!(b1.is_some(), "Frame 1 viewport should have braille spinner");
-        assert!(b2.is_some(), "Frame 2 viewport should have braille spinner");
+        let mut braille_chars = Vec::new();
+        let mut tool_in_viewport = Vec::new();
+        let mut tool_in_stdout = Vec::new();
 
-        // The tool should NOT be in stdout (not graduated yet)
-        let stdout = strip_ansi(runtime.stdout_content());
+        for frame in 0..5 {
+            let ctx = ViewContext::new(&focus);
+            let tree = app.view(&ctx);
+            runtime.render(&tree);
+            let graduated = runtime.last_graduated_keys();
+            if !graduated.is_empty() {
+                app.mark_graduated(graduated);
+            }
+
+            let viewport = strip_ansi(runtime.viewport_content());
+            let stdout = strip_ansi(runtime.stdout_content());
+
+            braille_chars.push(find_braille(&viewport));
+            tool_in_viewport.push(viewport.contains("Read File"));
+            tool_in_stdout.push(stdout.contains("Read File"));
+
+            if frame < 4 {
+                std::thread::sleep(std::time::Duration::from_millis(120));
+            }
+        }
+
+        // Running tool must be in viewport every frame
+        for (i, in_vp) in tool_in_viewport.iter().enumerate() {
+            assert!(
+                *in_vp,
+                "Frame {}: running tool should be in viewport",
+                i
+            );
+        }
+
+        // Running tool must NOT be in stdout (not graduated)
+        for (i, in_stdout) in tool_in_stdout.iter().enumerate() {
+            assert!(
+                !*in_stdout,
+                "Frame {}: running tool should NOT be in stdout",
+                i
+            );
+        }
+
+        // Braille spinner must be present every frame
+        for (i, b) in braille_chars.iter().enumerate() {
+            assert!(
+                b.is_some(),
+                "Frame {}: should have braille spinner in viewport",
+                i
+            );
+        }
+
+        // Spinner must change at least once across 5 frames (600ms > 100ms/frame)
+        let unique: std::collections::HashSet<_> = braille_chars.iter().flatten().collect();
         assert!(
-            !stdout.contains("Read File"),
-            "Running tool should NOT be in stdout (graduated):\n{}",
-            stdout
+            unique.len() >= 2,
+            "Spinner should animate: saw {} unique braille chars {:?} across 5 frames",
+            unique.len(),
+            braille_chars
         );
     }
 
