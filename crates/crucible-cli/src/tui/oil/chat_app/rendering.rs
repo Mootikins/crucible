@@ -82,7 +82,7 @@ impl OilChatApp {
                 use crate::tui::oil::chat_container::{ChatContainer, ViewParams};
                 let render_state = RenderState {
                     terminal_width: term_width as u16,
-                    spinner_frame: self.spinner_frame,
+                    spinner_frame: self.spinner_frame(),
                     show_thinking: self.show_thinking,
                 };
                 let is_continuation = match c {
@@ -109,7 +109,7 @@ impl OilChatApp {
             nodes.push(
                 row([
                     text(" "),
-                    spinner(None, self.spinner_frame)
+                    spinner(None, self.spinner_frame())
                         .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
                 ])
                 .with_margin(Padding {
