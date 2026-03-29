@@ -186,11 +186,10 @@ impl App for OilChatApp {
         match event {
             Event::Key(key) => self.handle_key(key),
             Event::Tick => {
+                // Shell modal tick polls for child process output.
+                // Also runs in render_frame() via expire_toasts(), but kept
+                // here for tests that call update(Tick) directly.
                 self.tick_shell_modal();
-                self.notification_area.expire_toasts();
-                if self.notification_area.is_empty() {
-                    self.notification_area.hide();
-                }
                 Action::Continue
             }
             Event::Resize { .. } => Action::Continue,
@@ -318,8 +317,10 @@ impl OilChatApp {
         self.scroll_offset
     }
 
-    /// Expire stale toast notifications. Called each render frame.
+    /// Periodic maintenance called each render frame.
+    /// Expires stale toasts and ticks shell modal.
     pub fn expire_toasts(&mut self) {
+        self.tick_shell_modal();
         self.notification_area.expire_toasts();
         if self.notification_area.is_empty() {
             self.notification_area.hide();

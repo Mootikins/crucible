@@ -1077,20 +1077,19 @@ impl OilChatRunner {
         while let Ok(msg) = msg_rx.try_recv() {
             processed_any = true;
 
-            if self.is_replay {
-                if matches!(msg, ChatAppMsg::Status(ref s) if s == "Replay complete") {
-                    self.replay_remaining_completes = 0;
-                    if self.replay_auto_exit.is_some() {
-                        *replay_auto_exit_deadline = Some(tokio::time::Instant::now());
-                    }
+            // Handle replay-complete signal (from replay_event_consumer)
+            if self.is_replay
+                && matches!(msg, ChatAppMsg::Status(ref s) if s == "Replay complete")
+            {
+                self.replay_remaining_completes = 0;
+                if self.replay_auto_exit.is_some() {
+                    *replay_auto_exit_deadline = Some(tokio::time::Instant::now());
                 }
-                let action = app.on_message(msg);
-                if action.is_quit() {
-                    return DrainMessagesOutcome::Quit;
-                }
-                continue;
             }
 
+            // Unified message processing for all paths.
+            // In replay mode, process_message still runs but the agent handle
+            // is a replay agent that doesn't re-send to LLM.
             let mut action = Self::process_message(&msg, app, agent, bridge, active_stream);
             while let Action::Send(follow_up) = action {
                 action = Self::process_message(&follow_up, app, agent, bridge, active_stream);
