@@ -338,15 +338,16 @@ fn render_text_graduated(
         .into_iter()
         .enumerate()
         .map(|(i, child)| {
-            // Only the first block gets top margin (separation from preceding
-            // thinking/user content). Only the last block gets bottom margin.
-            // Intermediate blocks have no extra margin — the markdown parser
-            // already handles inter-block spacing.
-            let padding = match (i == 0, i + 1 == len) {
-                (true, true) => Padding::xy(0, 1),   // single block: top + bottom
+            // First block: top margin only if NO preceding thinking block
+            // (graduation Block spacing handles thinking→text gap).
+            // Last block: bottom margin for separation from following content.
+            let needs_top = i == 0 && !has_thinking;
+            let needs_bottom = i + 1 == len;
+            let padding = match (needs_top, needs_bottom) {
+                (true, true) => Padding::xy(0, 1),
                 (true, false) => Padding { top: 1, ..Default::default() },
                 (false, true) => Padding { bottom: 1, ..Default::default() },
-                (false, false) => Padding::default(), // middle block: no extra margin
+                (false, false) => Padding::default(),
             };
             let block_node = if padding == Padding::default() {
                 child
@@ -384,10 +385,8 @@ fn render_blocks_full_thinking(
             render_state.width(),
             params.complete,
         )
-        .with_margin(Padding {
-            top: 1,
-            ..Default::default()
-        });
+        ;
+        // No explicit top margin — graduation Block spacing handles the gap.
         // Use "-thinking-summary" for the first block so toggling
         // show_thinking doesn't leave a ghost graduated node —
         // both renderers share the same key.
