@@ -4,7 +4,7 @@
 //! used by the production TUI (`FramePlanner`). These convenience wrappers
 //! build a standalone layout tree and render in compact mode.
 
-use crate::ansi::{strip_ansi, visible_width, visual_rows};
+use crate::ansi::{strip_ansi, visual_rows};
 use crate::layout::{build_layout_tree, render_layout_tree_compact};
 use crate::node::Node;
 
@@ -146,16 +146,6 @@ mod tests {
     use crate::node::*;
     use crate::style::{Border, Color, Gap, Padding, Style};
     use insta::assert_snapshot;
-
-    fn focused_input_node() -> Node {
-        Node::Input(InputNode {
-            value: "hello".to_string(),
-            cursor: 2,
-            placeholder: None,
-            style: Style::default(),
-            focused: true,
-        })
-    }
 
     #[test]
     fn test_render_empty_node() {

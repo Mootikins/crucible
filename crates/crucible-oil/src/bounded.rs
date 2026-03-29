@@ -187,6 +187,42 @@ mod tests {
     }
 
     #[test]
+    fn bounded_indicator_directly_adjacent_to_content() {
+        // Verify the overflow indicator sits directly next to content with no blank
+        // line spacer. This is intentional: bounded views are space-constrained, and
+        // the dim styling + parenthesized format provide sufficient visual separation.
+        let lines: Vec<String> = (1..=10).map(|i| format!("content line {i}")).collect();
+        let content = text(lines.join("\n"));
+        let result = bounded(content, 3);
+        let rendered = crate::render::render_to_string(&result, 80);
+        let stripped = crate::ansi::strip_ansi(&rendered);
+        let output_lines: Vec<&str> = stripped.lines().collect();
+
+        // Expect exactly 4 lines: indicator + 3 content lines, no blank spacers
+        assert_eq!(output_lines.len(), 4, "expected 4 lines, got: {output_lines:?}");
+        assert!(output_lines[0].contains("(7 more lines)"));
+        assert!(output_lines[1].contains("content line 8"));
+        assert!(output_lines[2].contains("content line 9"));
+        assert!(output_lines[3].contains("content line 10"));
+    }
+
+    #[test]
+    fn bounded_head_indicator_directly_adjacent_to_content() {
+        let lines: Vec<String> = (1..=10).map(|i| format!("content line {i}")).collect();
+        let content = text(lines.join("\n"));
+        let result = bounded_head(content, 3);
+        let rendered = crate::render::render_to_string(&result, 80);
+        let stripped = crate::ansi::strip_ansi(&rendered);
+        let output_lines: Vec<&str> = stripped.lines().collect();
+
+        assert_eq!(output_lines.len(), 4, "expected 4 lines, got: {output_lines:?}");
+        assert!(output_lines[0].contains("content line 1"));
+        assert!(output_lines[1].contains("content line 2"));
+        assert!(output_lines[2].contains("content line 3"));
+        assert!(output_lines[3].contains("(7 more lines)"));
+    }
+
+    #[test]
     fn bounded_max_usize_no_cap() {
         let content = text("line1\nline2\nline3");
         let result = bounded(content, usize::MAX);

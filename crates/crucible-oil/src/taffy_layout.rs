@@ -552,23 +552,17 @@ fn measure_text_lines(content: &str, width: usize) -> usize {
     total.max(1)
 }
 
-// NOTE: Tests commented out because they reference layout types (LayoutTree, LayoutBox, LayoutContent)
-// that will be moved into oil as part of Task 2. Until then, these tests cannot compile.
-// The taffy_layout module itself is dead code (not used externally) and will be replaced
-// by CLI's LayoutEngine in Task 2.
-/*
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::node::flex as oil_flex;
-    use crate::node::{col, row, text};
+    use crate::ansi::strip_ansi;
+    use crate::layout::{build_layout_tree, render_layout_tree_compact, LayoutContent};
+    use crate::node::{col, flex as oil_flex, row, text};
 
     #[test]
     fn test_simple_column() {
         let mut engine = LayoutEngine::new();
-
         let tree = col([text("Header"), text("Body content here"), text("Footer")]);
-
         let layouts = engine.compute(&tree, 80.0, 24.0);
         assert!(!layouts.is_empty());
     }
@@ -576,13 +570,11 @@ mod tests {
     #[test]
     fn test_flex_grow() {
         let mut engine = LayoutEngine::new();
-
         let tree = col([
             text("Fixed header"),
             oil_flex(1, col([text("Expanding body")])),
             text("Fixed footer"),
         ]);
-
         let layouts = engine.compute(&tree, 80.0, 24.0);
         assert!(!layouts.is_empty());
     }
@@ -590,9 +582,7 @@ mod tests {
     #[test]
     fn test_row_layout() {
         let mut engine = LayoutEngine::new();
-
         let tree = row([text("Left"), text("Center"), text("Right")]);
-
         let layouts = engine.compute(&tree, 80.0, 24.0);
         assert!(!layouts.is_empty());
     }
@@ -601,9 +591,7 @@ mod tests {
     fn to_layout_tree_simple_text() {
         let mut engine = LayoutEngine::new();
         let node = text("Hello");
-
         let layout_tree = engine.compute_layout_tree(&node, 80.0, 24.0);
-
         assert!(matches!(
             layout_tree.root.content,
             LayoutContent::Text { ref content, .. } if content == "Hello"
@@ -615,15 +603,9 @@ mod tests {
     fn to_layout_tree_column_with_children() {
         let mut engine = LayoutEngine::new();
         let node = col([text("Header"), text("Body"), text("Footer")]);
-
         let layout_tree = engine.compute_layout_tree(&node, 80.0, 24.0);
-
-        assert!(matches!(
-            layout_tree.root.content,
-            LayoutContent::Box { .. }
-        ));
+        assert!(matches!(layout_tree.root.content, LayoutContent::Box { .. }));
         assert_eq!(layout_tree.root.children.len(), 3);
-
         for (i, expected) in ["Header", "Body", "Footer"].iter().enumerate() {
             match &layout_tree.root.children[i].content {
                 LayoutContent::Text { content, .. } => assert_eq!(content, *expected),
@@ -636,12 +618,9 @@ mod tests {
     fn to_layout_tree_preserves_positions() {
         let mut engine = LayoutEngine::new();
         let node = col([text("Line 1"), text("Line 2")]);
-
         let layout_tree = engine.compute_layout_tree(&node, 80.0, 24.0);
-
         let child1 = &layout_tree.root.children[0];
         let child2 = &layout_tree.root.children[1];
-
         assert!(
             child2.rect.y > child1.rect.y,
             "Second child should be below first"
@@ -651,24 +630,18 @@ mod tests {
     #[test]
     fn to_layout_tree_static_preserves_key() {
         use crate::node::scrollback;
-
         let mut engine = LayoutEngine::new();
         let node = scrollback("msg-123", [text("Message content")]);
-
         let layout_tree = engine.compute_layout_tree(&node, 80.0, 24.0);
-
         assert_eq!(layout_tree.root.key, Some("msg-123".to_string()));
     }
 
     #[test]
     fn to_layout_tree_input_node() {
         use crate::node::text_input;
-
         let mut engine = LayoutEngine::new();
         let node = text_input("hello", 5);
-
         let layout_tree = engine.compute_layout_tree(&node, 80.0, 24.0);
-
         match &layout_tree.root.content {
             LayoutContent::Input {
                 value,
@@ -687,12 +660,9 @@ mod tests {
     #[test]
     fn to_layout_tree_spinner_node() {
         use crate::node::spinner;
-
         let mut engine = LayoutEngine::new();
         let node = spinner(Some("Loading...".to_string()), 2);
-
         let layout_tree = engine.compute_layout_tree(&node, 80.0, 24.0);
-
         match &layout_tree.root.content {
             LayoutContent::Spinner { label, frame, .. } => {
                 assert_eq!(label.as_deref(), Some("Loading..."));
@@ -705,16 +675,13 @@ mod tests {
     #[test]
     fn to_layout_tree_popup_node() {
         use crate::node::{popup, popup_item};
-
         let mut engine = LayoutEngine::new();
         let items = vec![
             popup_item("Item 1"),
             popup_item("Item 2").desc("Description"),
         ];
         let node = popup(items, 1, 5);
-
         let layout_tree = engine.compute_layout_tree(&node, 80.0, 24.0);
-
         match &layout_tree.root.content {
             LayoutContent::Popup {
                 items,
@@ -731,5 +698,202 @@ mod tests {
             _ => panic!("Expected Popup content"),
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Word-wrap measurement parity tests
+    //
+    // These tests verify that measure_text_lines (used by Taffy for height
+    // allocation) agrees with the renderer's wrap_and_style_padded (which
+    // uses textwrap::wrap). When these diverge, text gets clipped.
+    // -----------------------------------------------------------------------
+
+    /// Helper: count how many lines the OLD char-based measurement would produce.
+    fn old_char_measure(content: &str, width: usize) -> usize {
+        if content.is_empty() {
+            return 0;
+        }
+        if width == 0 {
+            return content.lines().count().max(1);
+        }
+        let mut total = 0;
+        for line in content.lines() {
+            if line.is_empty() {
+                total += 1;
+            } else {
+                total += line.chars().count().div_ceil(width);
+            }
+        }
+        total.max(1)
+    }
+
+    /// Helper: count how many lines the renderer actually produces for a text
+    /// node at a given width, going through the full Taffy -> CellGrid pipeline.
+    fn rendered_line_count(content: &str, width: u16) -> usize {
+        let node = text(content);
+        let layout_tree = build_layout_tree(&node, width, 500);
+        let (rendered, _) = render_layout_tree_compact(&layout_tree);
+        let plain = strip_ansi(&rendered);
+        // Count non-empty lines (compact mode trims trailing blanks)
+        plain.lines().count()
+    }
+
+    #[test]
+    fn word_wrap_measurement_matches_renderer_short_word_then_long() {
+        // "ab cdefgh" at width 5:
+        //   Old char-wrap: ceil(9/5) = 2 lines
+        //   Word-wrap:     "ab"  |  "cdefg"  |  "h"  = 3 lines
+        // The old measurement underestimates by 1 line, causing clipping.
+        let content = "ab cdefgh";
+        let width: usize = 5;
+
+        let old_lines = old_char_measure(content, width);
+        let new_lines = measure_text_lines(content, width);
+        let actual_rendered = rendered_line_count(content, width as u16);
+
+        assert_eq!(old_lines, 2, "old char-based should say 2 lines");
+        assert_eq!(new_lines, 3, "new word-wrap should say 3 lines");
+        assert_eq!(
+            actual_rendered, 3,
+            "renderer produces 3 lines, confirming old code would clip"
+        );
+        assert_eq!(
+            new_lines, actual_rendered,
+            "measurement must match renderer output"
+        );
+    }
+
+    #[test]
+    fn word_wrap_measurement_matches_renderer_multiple_words() {
+        // "The quick brown fox" at width 8:
+        //   Old char-wrap: ceil(19/8) = 3
+        //   Word-wrap:     "The"  |  "quick"  |  "brown"  |  "fox"  = 4
+        let content = "The quick brown fox";
+        let width: usize = 8;
+
+        let old_lines = old_char_measure(content, width);
+        let new_lines = measure_text_lines(content, width);
+        let actual_rendered = rendered_line_count(content, width as u16);
+
+        assert_eq!(old_lines, 3, "old char-based should say 3 lines");
+        assert_eq!(new_lines, 4, "new word-wrap should say 4 lines");
+        assert_eq!(
+            new_lines, actual_rendered,
+            "measurement must match renderer output"
+        );
+    }
+
+    #[test]
+    fn word_wrap_no_clipping_in_column_layout() {
+        // End-to-end: a column with two text nodes. The second node's text
+        // wraps to more lines under word-wrap than char-wrap. With the old
+        // measurement, Taffy would allocate too few rows and the CellGrid
+        // would clip the bottom of the second node.
+        let node = col([
+            text("Header line"),
+            // "ab cdefgh" at width 20 fits on 1 line, no divergence.
+            // But in a narrow viewport, the wrapping diverges.
+            text("ab cdefgh"),
+        ]);
+
+        let width: u16 = 5;
+        let height: u16 = 24;
+
+        let layout_tree = build_layout_tree(&node, width, height);
+        let (rendered, _) = render_layout_tree_compact(&layout_tree);
+        let plain = strip_ansi(&rendered);
+        let lines: Vec<&str> = plain.lines().collect();
+
+        // "Header line" at width 5 word-wraps to: "Heade" | "r" | "line" = 3 lines
+        // (textwrap breaks "Header" mid-word since it exceeds width)
+        // "ab cdefgh" at width 5 word-wraps to: "ab" | "cdefg" | "h" = 3 lines
+        // Total: 6 lines. All must be present (no clipping).
+        assert!(
+            lines.len() >= 6,
+            "Expected at least 6 rendered lines, got {}: {:?}",
+            lines.len(),
+            lines
+        );
+
+        // Verify the last word-wrapped fragment is present (would be clipped
+        // if Taffy allocated only 2 rows for the second text node).
+        let all_text = lines.join(" ");
+        assert!(
+            all_text.contains('h'),
+            "Final fragment 'h' from 'cdefgh' must not be clipped"
+        );
+    }
+
+    #[test]
+    fn word_wrap_no_excessive_blank_space() {
+        // Verify the fix doesn't introduce excessive blank space. When text
+        // fits on fewer lines than the maximum, compact rendering should
+        // trim trailing blanks.
+        let node = text("short");
+        let width: u16 = 80;
+
+        let layout_tree = build_layout_tree(&node, width, 24);
+        let (rendered, _) = render_layout_tree_compact(&layout_tree);
+        let plain = strip_ansi(&rendered);
+
+        assert_eq!(
+            plain.lines().count(),
+            1,
+            "Short text at wide width should render as exactly 1 line"
+        );
+    }
+
+    #[test]
+    fn word_wrap_multiline_content() {
+        // Embedded newlines: each line is wrapped independently.
+        // "hello world\nab cdefgh" at width 5:
+        //   Line 1 "hello world": "hello" | "world" = 2
+        //   Line 2 "ab cdefgh":   "ab" | "cdefg" | "h" = 3
+        //   Total: 5 lines
+        let content = "hello world\nab cdefgh";
+        let width: usize = 5;
+
+        let new_lines = measure_text_lines(content, width);
+        let actual_rendered = rendered_line_count(content, width as u16);
+
+        assert_eq!(new_lines, 5, "should measure 5 lines total");
+        assert_eq!(
+            new_lines, actual_rendered,
+            "measurement must match renderer output"
+        );
+    }
+
+    #[test]
+    fn word_wrap_long_word_exceeding_width() {
+        // A single word longer than the width gets force-broken by textwrap.
+        // "abcdefghij" at width 4: "abcd" | "efgh" | "ij" = 3 lines
+        let content = "abcdefghij";
+        let width: usize = 4;
+
+        let old_lines = old_char_measure(content, width);
+        let new_lines = measure_text_lines(content, width);
+        let actual_rendered = rendered_line_count(content, width as u16);
+
+        // Both old and new agree when there are no spaces: pure char-division.
+        assert_eq!(old_lines, 3);
+        assert_eq!(new_lines, 3);
+        assert_eq!(new_lines, actual_rendered);
+    }
+
+    #[test]
+    fn word_wrap_agrees_when_text_fits() {
+        // When text fits in one line, both approaches agree.
+        let content = "Hi";
+        let width: usize = 80;
+
+        assert_eq!(old_char_measure(content, width), 1);
+        assert_eq!(measure_text_lines(content, width), 1);
+        assert_eq!(rendered_line_count(content, width as u16), 1);
+    }
+
+    #[test]
+    fn measure_text_lines_empty_and_zero_width() {
+        assert_eq!(measure_text_lines("", 10), 0);
+        assert_eq!(measure_text_lines("hello", 0), 1);
+        assert_eq!(measure_text_lines("a\nb\nc", 0), 3);
+    }
 }
-*/
