@@ -19,14 +19,47 @@ use super::{OilChatApp, FOCUS_INPUT, INPUT_MAX_CONTENT_LINES, POPUP_HEIGHT};
 /// Whether a blank line is needed between two adjacent container kinds.
 ///
 /// Consecutive tool groups are tight (no blank line). Everything else
-/// gets a blank line for visual separation. Used by tests to verify
-/// that the grouping logic in `render_containers()` is consistent.
-#[cfg(test)]
+/// gets a blank line for visual separation. Drives the grouping logic
+/// in `render_containers()`.
 fn needs_spacing(prev: ContainerKind, next: ContainerKind) -> bool {
     !matches!(
         (prev, next),
         (ContainerKind::ToolGroup, ContainerKind::ToolGroup)
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verify that the spacing truth table is complete and correct:
+    /// only ToolGroup→ToolGroup is tight, everything else gets a blank line.
+    #[test]
+    fn needs_spacing_truth_table_is_complete() {
+        use ContainerKind::*;
+        let kinds = [
+            UserMessage,
+            AssistantResponse,
+            ToolGroup,
+            AgentTask,
+            ShellExecution,
+            SystemMessage,
+        ];
+
+        for prev in &kinds {
+            for next in &kinds {
+                let spacing = needs_spacing(*prev, *next);
+                if *prev == ToolGroup && *next == ToolGroup {
+                    assert!(!spacing, "Tool→Tool should be tight (no spacing)");
+                } else {
+                    assert!(
+                        spacing,
+                        "{prev:?}→{next:?} should have spacing but got tight"
+                    );
+                }
+            }
+        }
+    }
 }
 
 impl OilChatApp {
@@ -123,25 +156,35 @@ impl OilChatApp {
             })
             .collect();
 
-        // Group consecutive ToolGroups into tight sub-cols, everything else
-        // becomes a direct sibling in the outer col.
+        // Group runs of containers that don't need spacing into tight
+        // sub-cols (gap=0). When `needs_spacing()` returns true between
+        // adjacent kinds, start a new group separated by the outer gap(1).
         let mut groups: Vec<Node> = Vec::new();
-        let mut current_tool_nodes: Vec<Node> = Vec::new();
+        let mut tight_run: Vec<Node> = Vec::new();
+        let mut run_kind: Option<ContainerKind> = None;
 
         for (kind, node) in rendered {
-            if kind == ContainerKind::ToolGroup {
-                current_tool_nodes.push(node);
-            } else {
-                // Flush accumulated tool group
-                if !current_tool_nodes.is_empty() {
-                    groups.push(col(current_tool_nodes.drain(..)).gap(Gap::row(0)));
+            let should_break = run_kind
+                .map(|prev| needs_spacing(prev, kind))
+                .unwrap_or(false);
+
+            if should_break {
+                // Flush the accumulated tight run
+                if tight_run.len() == 1 {
+                    groups.push(tight_run.pop().unwrap());
+                } else if !tight_run.is_empty() {
+                    groups.push(col(tight_run.drain(..)).gap(Gap::row(0)));
                 }
-                groups.push(node);
             }
+
+            tight_run.push(node);
+            run_kind = Some(kind);
         }
-        // Flush remaining tool group
-        if !current_tool_nodes.is_empty() {
-            groups.push(col(current_tool_nodes).gap(Gap::row(0)));
+        // Flush remaining run
+        if tight_run.len() == 1 {
+            groups.push(tight_run.pop().unwrap());
+        } else if !tight_run.is_empty() {
+            groups.push(col(tight_run).gap(Gap::row(0)));
         }
 
         // Turn-level spinner: shown when the turn is active but no container

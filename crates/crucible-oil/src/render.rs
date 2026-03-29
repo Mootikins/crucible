@@ -127,7 +127,7 @@ pub fn render_with_cursor(node: &Node, width: usize) -> RenderResult {
 }
 
 /// Trim trailing blank lines from CellGrid compact output.
-fn trim_trailing_blank_lines(content: &str) -> String {
+pub(crate) fn trim_trailing_blank_lines(content: &str) -> String {
     let lines: Vec<&str> = content.lines().collect();
 
     // Find last line with visible content

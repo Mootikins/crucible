@@ -6,7 +6,7 @@ use crate::layout::{
 };
 use crate::node::{ElementKind, Node, OverlayNode};
 use crate::overlay::{extract_overlays, filter_overlays, OverlayAnchor};
-use crate::render::RenderResult;
+use crate::render::{trim_trailing_blank_lines, RenderResult};
 
 #[derive(Debug, Clone)]
 pub struct FrameTrace {
@@ -182,17 +182,8 @@ impl FramePlanner {
                     build_layout_tree(&overlay_node.child, self.width, self.height);
                 let (content, _) = render_layout_tree_compact(&layout_tree);
                 // Trim trailing blank lines from the full-height CellGrid
-                let lines: Vec<String> = content
-                    .lines()
-                    .collect::<Vec<_>>()
-                    .into_iter()
-                    .rev()
-                    .skip_while(|l| l.is_empty())
-                    .collect::<Vec<_>>()
-                    .into_iter()
-                    .rev()
-                    .map(String::from)
-                    .collect();
+                let trimmed = trim_trailing_blank_lines(&content);
+                let lines: Vec<String> = trimmed.lines().map(String::from).collect();
                 RenderedOverlay {
                     lines,
                     anchor: overlay_node.anchor,
