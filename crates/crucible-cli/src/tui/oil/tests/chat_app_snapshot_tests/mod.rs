@@ -254,6 +254,197 @@ fn snapshot_read_tool_preserves_closing_bracket() {
     assert_snapshot!(render_app(&app));
 }
 
+/// Two consecutive completed ToolGroups should render with NO blank line between them.
+/// This is the "tight" case in the spacing truth table.
+#[test]
+fn snapshot_tool_to_tool_tight() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Do two things".to_string()));
+
+    // First tool group
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "bash".to_string(),
+        args: r#"{"command":"echo hello"}"#.to_string(),
+        call_id: None,
+        description: None,
+        source: None,
+        lua_primary_arg: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "bash".to_string(),
+        delta: "hello".to_string(),
+        call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "bash".to_string(),
+        call_id: None,
+    });
+
+    // Second tool group — should be tight against first (no blank line)
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "bash".to_string(),
+        args: r#"{"command":"echo world"}"#.to_string(),
+        call_id: None,
+        description: None,
+        source: None,
+        lua_primary_arg: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "bash".to_string(),
+        delta: "world".to_string(),
+        call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "bash".to_string(),
+        call_id: None,
+    });
+
+    app.on_message(ChatAppMsg::StreamComplete);
+    assert_snapshot!(render_app(&app));
+}
+
+/// ToolGroup → AssistantResponse(thinking + text) → ToolGroup.
+/// Blank line around the thinking/text block, tools tight with themselves.
+#[test]
+fn snapshot_tool_thought_tool() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Analyze then fix".to_string()));
+
+    // First tool group
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "read_file".to_string(),
+        args: r#"{"path":"src/main.rs"}"#.to_string(),
+        call_id: None,
+        description: None,
+        source: None,
+        lua_primary_arg: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "read_file".to_string(),
+        delta: "fn main() {}".to_string(),
+        call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "read_file".to_string(),
+        call_id: None,
+    });
+
+    // Thinking then text — should have blank line from preceding tool
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "The main function is empty, I should add an entry point.".to_string(),
+    ));
+    app.on_message(ChatAppMsg::TextDelta(
+        "I see the issue. Let me fix it.".to_string(),
+    ));
+
+    // Second tool group — should have blank line from preceding text
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "write_file".to_string(),
+        args: r#"{"path":"src/main.rs","content":"fn main() { println!(\"hello\"); }"}"#
+            .to_string(),
+        call_id: None,
+        description: None,
+        source: None,
+        lua_primary_arg: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "write_file".to_string(),
+        delta: "OK".to_string(),
+        call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "write_file".to_string(),
+        call_id: None,
+    });
+
+    app.on_message(ChatAppMsg::StreamComplete);
+    assert_snapshot!(render_app(&app));
+}
+
+/// Multi-turn mixed conversation exercising all spacing rules:
+/// UserMessage, AssistantResponse(thinking+text), ToolGroup(2 tools),
+/// ToolGroup(1 tool), AssistantResponse(text only).
+#[test]
+fn snapshot_multi_turn_mixed() {
+    let mut app = OilChatApp::default();
+
+    // Turn 1: User message
+    app.on_message(ChatAppMsg::UserMessage(
+        "Explore the repo and summarize".to_string(),
+    ));
+
+    // Turn 2: Assistant with thinking + text
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "I should start by listing the files.".to_string(),
+    ));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Let me explore the repository structure.".to_string(),
+    ));
+
+    // Turn 3: ToolGroup with 2 tools
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "bash".to_string(),
+        args: r#"{"command":"ls"}"#.to_string(),
+        call_id: None,
+        description: None,
+        source: None,
+        lua_primary_arg: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "bash".to_string(),
+        delta: "Cargo.toml\nsrc/".to_string(),
+        call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "bash".to_string(),
+        call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "read_file".to_string(),
+        args: r#"{"path":"Cargo.toml"}"#.to_string(),
+        call_id: None,
+        description: None,
+        source: None,
+        lua_primary_arg: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "read_file".to_string(),
+        delta: "[package]\nname = \"example\"".to_string(),
+        call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "read_file".to_string(),
+        call_id: None,
+    });
+
+    // Turn 4: ToolGroup with 1 tool — tight against preceding tool group
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "read_file".to_string(),
+        args: r#"{"path":"src/main.rs"}"#.to_string(),
+        call_id: None,
+        description: None,
+        source: None,
+        lua_primary_arg: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "read_file".to_string(),
+        delta: "fn main() {\n    println!(\"hello\");\n}".to_string(),
+        call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "read_file".to_string(),
+        call_id: None,
+    });
+
+    // Turn 5: Assistant text only — should have blank line from preceding tool
+    app.on_message(ChatAppMsg::TextDelta(
+        "This is a simple Rust project with a hello-world entry point.".to_string(),
+    ));
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    assert_snapshot!(render_app(&app));
+}
+
 /// Issue: Multiple consecutive tool calls should not have gaps between them.
 /// They should be rendered tightly grouped.
 #[test]

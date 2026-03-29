@@ -331,6 +331,191 @@ That's the overview."#;
     assert_snapshot!("no_double_blank_lines", rendered);
 }
 
+/// Property: No container sequence should ever produce double blank lines.
+///
+/// Exercises multiple representative container patterns and asserts that
+/// no triple-newline (\n\n\n, which visually is two blank lines) appears
+/// in the rendered content area.
+#[test]
+fn no_double_blank_lines_in_any_container_sequence() {
+    // Each scenario is a sequence of ChatAppMsg events that produces
+    // a different combination of container kinds.
+    let scenarios: Vec<(&str, Vec<ChatAppMsg>)> = vec![
+        (
+            "user_assistant",
+            vec![
+                ChatAppMsg::UserMessage("Hello".to_string()),
+                ChatAppMsg::TextDelta("Hi there.".to_string()),
+                ChatAppMsg::StreamComplete,
+            ],
+        ),
+        (
+            "user_tool_tool_assistant",
+            vec![
+                ChatAppMsg::UserMessage("Do stuff".to_string()),
+                ChatAppMsg::ToolCall {
+                    name: "bash".to_string(),
+                    args: r#"{"command":"echo a"}"#.to_string(),
+                    call_id: None,
+                    description: None,
+                    source: None,
+                    lua_primary_arg: None,
+                },
+                ChatAppMsg::ToolResultDelta {
+                    name: "bash".to_string(),
+                    delta: "a".to_string(),
+                    call_id: None,
+                },
+                ChatAppMsg::ToolResultComplete {
+                    name: "bash".to_string(),
+                    call_id: None,
+                },
+                ChatAppMsg::ToolCall {
+                    name: "bash".to_string(),
+                    args: r#"{"command":"echo b"}"#.to_string(),
+                    call_id: None,
+                    description: None,
+                    source: None,
+                    lua_primary_arg: None,
+                },
+                ChatAppMsg::ToolResultDelta {
+                    name: "bash".to_string(),
+                    delta: "b".to_string(),
+                    call_id: None,
+                },
+                ChatAppMsg::ToolResultComplete {
+                    name: "bash".to_string(),
+                    call_id: None,
+                },
+                ChatAppMsg::TextDelta("Done.".to_string()),
+                ChatAppMsg::StreamComplete,
+            ],
+        ),
+        (
+            "user_thinking_text_tool_text",
+            vec![
+                ChatAppMsg::UserMessage("Analyze".to_string()),
+                ChatAppMsg::ThinkingDelta("Hmm...".to_string()),
+                ChatAppMsg::TextDelta("Let me check.".to_string()),
+                ChatAppMsg::ToolCall {
+                    name: "read_file".to_string(),
+                    args: r#"{"path":"f.rs"}"#.to_string(),
+                    call_id: None,
+                    description: None,
+                    source: None,
+                    lua_primary_arg: None,
+                },
+                ChatAppMsg::ToolResultDelta {
+                    name: "read_file".to_string(),
+                    delta: "fn main() {}".to_string(),
+                    call_id: None,
+                },
+                ChatAppMsg::ToolResultComplete {
+                    name: "read_file".to_string(),
+                    call_id: None,
+                },
+                ChatAppMsg::TextDelta("Looks good.".to_string()),
+                ChatAppMsg::StreamComplete,
+            ],
+        ),
+        (
+            "tool_tool_tool",
+            vec![
+                ChatAppMsg::UserMessage("Read everything".to_string()),
+                ChatAppMsg::ToolCall {
+                    name: "bash".to_string(),
+                    args: r#"{"command":"echo 1"}"#.to_string(),
+                    call_id: None,
+                    description: None,
+                    source: None,
+                    lua_primary_arg: None,
+                },
+                ChatAppMsg::ToolResultDelta {
+                    name: "bash".to_string(),
+                    delta: "1".to_string(),
+                    call_id: None,
+                },
+                ChatAppMsg::ToolResultComplete {
+                    name: "bash".to_string(),
+                    call_id: None,
+                },
+                ChatAppMsg::ToolCall {
+                    name: "bash".to_string(),
+                    args: r#"{"command":"echo 2"}"#.to_string(),
+                    call_id: None,
+                    description: None,
+                    source: None,
+                    lua_primary_arg: None,
+                },
+                ChatAppMsg::ToolResultDelta {
+                    name: "bash".to_string(),
+                    delta: "2".to_string(),
+                    call_id: None,
+                },
+                ChatAppMsg::ToolResultComplete {
+                    name: "bash".to_string(),
+                    call_id: None,
+                },
+                ChatAppMsg::ToolCall {
+                    name: "bash".to_string(),
+                    args: r#"{"command":"echo 3"}"#.to_string(),
+                    call_id: None,
+                    description: None,
+                    source: None,
+                    lua_primary_arg: None,
+                },
+                ChatAppMsg::ToolResultDelta {
+                    name: "bash".to_string(),
+                    delta: "3".to_string(),
+                    call_id: None,
+                },
+                ChatAppMsg::ToolResultComplete {
+                    name: "bash".to_string(),
+                    call_id: None,
+                },
+                ChatAppMsg::StreamComplete,
+            ],
+        ),
+    ];
+
+    for (label, events) in &scenarios {
+        let mut app = OilChatApp::default();
+        for event in events {
+            app.on_message(event.clone());
+        }
+
+        let rendered = render_app(&app);
+        let lines: Vec<&str> = rendered.lines().collect();
+
+        // Find where UI chrome starts (box-drawing separator)
+        let ui_chrome_start = lines
+            .iter()
+            .position(|l| l.chars().all(|c| c == '\u{2584}' || c == '\u{2580}'))
+            .unwrap_or(lines.len());
+
+        // Find last content line before chrome
+        let last_content = lines[..ui_chrome_start]
+            .iter()
+            .rposition(|l| !l.trim().is_empty())
+            .unwrap_or(0);
+
+        for i in 0..last_content {
+            let both_blank = lines[i].trim().is_empty() && lines[i + 1].trim().is_empty();
+            assert!(
+                !both_blank,
+                "[{label}] Double blank line at lines {i} and {}.\n\n{}",
+                i + 1,
+                lines
+                    .iter()
+                    .enumerate()
+                    .map(|(j, l)| format!("{j:02}: {l:?}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            );
+        }
+    }
+}
+
 /// Issue: Missing blank line between graduated user prompt and streaming assistant response.
 ///
 /// After the user prompt graduates to stdout, the first viewport element (the assistant
