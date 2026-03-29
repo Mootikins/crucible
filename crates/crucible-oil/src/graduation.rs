@@ -17,7 +17,6 @@
 
 use crate::layout::{build_layout_tree, render_layout_tree_compact};
 use crate::node::{ElementKind, Node};
-use crate::render::RenderFilter;
 use std::collections::{HashSet, VecDeque};
 use std::io;
 
@@ -188,12 +187,6 @@ impl GraduationState {
 
 fn needs_newline_after(current: ElementKind, next: Option<ElementKind>) -> bool {
     current.wants_newline_after() && !matches!(next, Some(ElementKind::Continuation))
-}
-
-impl RenderFilter for GraduationState {
-    fn skip_static(&self, key: &str) -> bool {
-        self.is_graduated(key)
-    }
 }
 
 /// Content that has graduated from viewport to stdout (water).

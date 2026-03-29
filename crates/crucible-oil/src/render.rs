@@ -9,18 +9,6 @@ use crate::render_helpers::format_popup_item_line;
 use crate::style::Style;
 use textwrap::{wrap, Options, WordSplitter};
 
-pub trait RenderFilter {
-    fn skip_static(&self, key: &str) -> bool;
-}
-
-pub struct NoFilter;
-
-impl RenderFilter for NoFilter {
-    fn skip_static(&self, _key: &str) -> bool {
-        false
-    }
-}
-
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CursorInfo {
     pub col: u16,
@@ -36,10 +24,6 @@ pub struct RenderResult {
 
 pub fn render_to_string(node: &Node, width: usize) -> String {
     render_with_cursor(node, width).content
-}
-
-pub fn render_to_string_filtered(node: &Node, width: usize, filter: &dyn RenderFilter) -> String {
-    render_with_cursor_filtered(node, width, filter).content
 }
 
 pub fn render_to_plain_text(node: &Node, width: usize) -> String {
@@ -82,28 +66,10 @@ fn render_node_plain_text(node: &Node, width: usize, output: &mut String) {
     }
 }
 
-/// Render a slice of nodes without cloning them into a Fragment.
-pub fn render_children_to_string(children: &[Node], width: usize) -> String {
-    let mut output = String::new();
-    let mut cursor_info = CursorInfo::default();
-    for child in children {
-        render_node_filtered(child, width, &NoFilter, &mut output, &mut cursor_info);
-    }
-    output
-}
-
 pub fn render_with_cursor(node: &Node, width: usize) -> RenderResult {
-    render_with_cursor_filtered(node, width, &NoFilter)
-}
-
-pub fn render_with_cursor_filtered(
-    node: &Node,
-    width: usize,
-    filter: &dyn RenderFilter,
-) -> RenderResult {
     let mut output = String::new();
     let mut cursor_info = CursorInfo::default();
-    render_node_filtered(node, width, filter, &mut output, &mut cursor_info);
+    render_node(node, width, &mut output, &mut cursor_info);
 
     if cursor_info.visible {
         let lines: Vec<&str> = output.lines().collect();
@@ -124,10 +90,9 @@ pub fn render_with_cursor_filtered(
     }
 }
 
-fn render_node_filtered(
+fn render_node(
     node: &Node,
     width: usize,
-    filter: &dyn RenderFilter,
     output: &mut String,
     cursor_info: &mut CursorInfo,
 ) {
@@ -139,15 +104,12 @@ fn render_node_filtered(
         }
 
         Node::Box(boxnode) => {
-            render_box_filtered(boxnode, width, filter, output, cursor_info);
+            render_box(boxnode, width, output, cursor_info);
         }
 
         Node::Static(static_node) => {
-            if filter.skip_static(&static_node.key) {
-                return;
-            }
             for child in &static_node.children {
-                render_node_filtered(child, width, filter, output, cursor_info);
+                render_node(child, width, output, cursor_info);
             }
         }
 
@@ -166,12 +128,12 @@ fn render_node_filtered(
 
         Node::Fragment(children) => {
             for child in children {
-                render_node_filtered(child, width, filter, output, cursor_info);
+                render_node(child, width, output, cursor_info);
             }
         }
 
         Node::Overlay(overlay) => {
-            render_node_filtered(&overlay.child, width, filter, output, cursor_info);
+            render_node(&overlay.child, width, output, cursor_info);
         }
 
         Node::Raw(raw) => {
@@ -206,10 +168,9 @@ fn render_input_tracking_cursor(
     }
 }
 
-fn render_box_filtered(
+fn render_box(
     boxnode: &BoxNode,
     width: usize,
-    filter: &dyn RenderFilter,
     output: &mut String,
     cursor_info: &mut CursorInfo,
 ) {
@@ -220,20 +181,18 @@ fn render_box_filtered(
 
     match boxnode.direction {
         Direction::Column => {
-            render_column_children_filtered(
+            render_column_children(
                 &boxnode.children,
                 inner_width,
                 boxnode.gap.row,
-                filter,
                 output,
                 cursor_info,
             );
         }
         Direction::Row => {
-            render_row_children_filtered(
+            render_row_children(
                 &boxnode.children,
                 inner_width,
-                filter,
                 output,
                 cursor_info,
             );
@@ -247,11 +206,10 @@ fn render_box_filtered(
     }
 }
 
-fn render_column_children_filtered(
+fn render_column_children(
     children: &[Node],
     width: usize,
     gap: u16,
-    filter: &dyn RenderFilter,
     output: &mut String,
     cursor_info: &mut CursorInfo,
 ) {
@@ -267,15 +225,14 @@ fn render_column_children_filtered(
                 output.push_str("\r\n");
             }
         }
-        render_node_filtered(child, width, filter, output, cursor_info);
+        render_node(child, width, output, cursor_info);
         rendered_any = true;
     }
 }
 
-fn render_row_children_filtered(
+fn render_row_children(
     children: &[Node],
     width: usize,
-    filter: &dyn RenderFilter,
     output: &mut String,
     cursor_info: &mut CursorInfo,
 ) {
@@ -300,7 +257,7 @@ fn render_row_children_filtered(
             Size::Fixed(w) => {
                 let mut temp = String::new();
                 let mut temp_cursor = CursorInfo::default();
-                render_node_filtered(child, w as usize, filter, &mut temp, &mut temp_cursor);
+                render_node(child, w as usize, &mut temp, &mut temp_cursor);
                 let line_count = temp.lines().count().max(1);
                 max_height = max_height.max(line_count);
                 measurements.push(ChildMeasurement::Fixed(w as usize));
@@ -313,7 +270,7 @@ fn render_row_children_filtered(
             Size::Content => {
                 let mut temp = String::new();
                 let mut temp_cursor = CursorInfo::default();
-                render_node_filtered(child, width, filter, &mut temp, &mut temp_cursor);
+                render_node(child, width, &mut temp, &mut temp_cursor);
                 let line_count = temp.lines().count().max(1);
                 max_height = max_height.max(line_count);
                 let content_width = temp.lines().map(visible_width).max().unwrap_or(0);
@@ -1018,37 +975,6 @@ mod tests {
         assert_eq!(lines[0], "line1");
         assert_eq!(lines[1], "line2");
         assert_eq!(lines[2], "line3");
-    }
-
-    #[test]
-    fn test_render_to_string_filtered_skips_matching_key() {
-        struct SkipFirst;
-        impl RenderFilter for SkipFirst {
-            fn skip_static(&self, key: &str) -> bool {
-                key == "msg-1"
-            }
-        }
-        let tree = col(vec![
-            scrollback("msg-1", vec![text("Hello")]),
-            scrollback("msg-2", vec![text("World")]),
-        ]);
-        let output = render_to_string_filtered(&tree, 80, &SkipFirst);
-        assert!(output.contains("World"), "Output should contain 'World'");
-        assert!(
-            !output.contains("Hello"),
-            "Output should not contain 'Hello'"
-        );
-    }
-
-    #[test]
-    fn test_render_to_string_filtered_with_no_filter() {
-        let tree = col(vec![
-            scrollback("msg-1", vec![text("Hello")]),
-            scrollback("msg-2", vec![text("World")]),
-        ]);
-        let output = render_to_string_filtered(&tree, 80, &NoFilter);
-        assert!(output.contains("Hello"), "Output should contain 'Hello'");
-        assert!(output.contains("World"), "Output should contain 'World'");
     }
 
     #[test]

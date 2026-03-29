@@ -25,11 +25,7 @@ fn pre_render_lines(content: &Node, max_lines: usize) -> Option<(Vec<String>, us
 
 fn overflow_indicator(hidden: usize, indent: usize) -> Node {
     let pad = " ".repeat(indent);
-    styled(format!("{pad}({hidden} more lines)"), Style::new().dim()).with_margin(crate::Padding {
-        top: 1,
-        bottom: 1,
-        ..Default::default()
-    })
+    styled(format!("{pad}({hidden} more lines)"), Style::new().dim())
 }
 
 /// Detect leading whitespace of the first non-empty line in the tail.

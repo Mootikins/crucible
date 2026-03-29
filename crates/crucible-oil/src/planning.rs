@@ -1,9 +1,12 @@
 use crate::ansi::visual_rows;
 use crate::graduation::{GraduatedContent, GraduationState};
-use crate::layout::{build_layout_tree_with_engine, render_layout_tree, LayoutEngine};
+use crate::layout::{
+    build_layout_tree, build_layout_tree_with_engine, render_layout_tree,
+    render_layout_tree_compact, LayoutEngine,
+};
 use crate::node::{ElementKind, Node, OverlayNode};
 use crate::overlay::{extract_overlays, filter_overlays, OverlayAnchor};
-use crate::render::{render_to_string, RenderResult};
+use crate::render::RenderResult;
 
 #[derive(Debug, Clone)]
 pub struct FrameTrace {
@@ -173,11 +176,23 @@ impl FramePlanner {
         overlay_nodes
             .iter()
             .map(|overlay_node| {
-                // Overlays use the legacy renderer because they need compact line output
-                // (no CellGrid padding). Taffy allocates a full terminal-height grid,
-                // but overlays are small widgets composited at anchored positions.
-                let content = render_to_string(&overlay_node.child, self.width as usize);
-                let lines: Vec<String> = content.lines().map(String::from).collect();
+                // Use Taffy compact mode: strips trailing padding per line so overlays
+                // get tight output suitable for compositing at anchored positions.
+                let layout_tree =
+                    build_layout_tree(&overlay_node.child, self.width, self.height);
+                let (content, _) = render_layout_tree_compact(&layout_tree);
+                // Trim trailing blank lines from the full-height CellGrid
+                let lines: Vec<String> = content
+                    .lines()
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .skip_while(|l| l.is_empty())
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .map(String::from)
+                    .collect();
                 RenderedOverlay {
                     lines,
                     anchor: overlay_node.anchor,

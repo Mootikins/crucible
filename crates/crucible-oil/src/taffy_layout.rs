@@ -124,8 +124,9 @@ impl LayoutEngine {
             Node::Spinner(_) => self.new_full_width_line(available_width),
 
             Node::Popup(popup) => {
-                let height = popup.max_visible.min(popup.items.len()) as f32;
-                self.new_leaf_size(available_width, height)
+                // Use max_visible for height — popup renderer fills blank lines
+                // above items for bottom-aligned popups.
+                self.new_leaf_size(available_width, popup.max_visible as f32)
             }
 
             Node::Fragment(children) => {
@@ -150,10 +151,11 @@ impl LayoutEngine {
                     .expect("taffy operation failed")
             }
 
-            Node::Overlay(_) => self
-                .tree
-                .new_leaf(taffy::style::Style::default())
-                .expect("failed to create taffy leaf node"),
+            Node::Overlay(overlay) => {
+                // Render overlay child content for standalone rendering.
+                // In FramePlanner, overlays are extracted before Taffy layout.
+                return self.build_node(&overlay.child, available_width);
+            }
 
             Node::Raw(raw) => {
                 self.new_leaf_size(raw.display_width as f32, raw.display_height as f32)
@@ -476,7 +478,10 @@ impl LayoutEngine {
                 }
             }
 
-            Node::Overlay(_) => LayoutBox::new(rect, LayoutContent::Empty),
+            Node::Overlay(overlay) => {
+                // Overlay child is laid out for standalone rendering
+                return self.node_to_layout_box(&overlay.child, taffy_id, offset_x, offset_y);
+            }
 
             Node::Raw(raw) => LayoutBox::new(
                 rect,
@@ -532,13 +537,16 @@ fn measure_text_lines(content: &str, width: usize) -> usize {
         return content.lines().count().max(1);
     }
 
+    // Use textwrap to match the word-wrapping used by the renderer.
+    use textwrap::{wrap, Options, WordSplitter};
+    let options = Options::new(width).word_splitter(WordSplitter::NoHyphenation);
+
     let mut total = 0;
     for line in content.lines() {
-        let chars = line.chars().count();
-        if chars == 0 {
+        if line.is_empty() {
             total += 1;
         } else {
-            total += chars.div_ceil(width);
+            total += wrap(line, &options).len();
         }
     }
     total.max(1)
