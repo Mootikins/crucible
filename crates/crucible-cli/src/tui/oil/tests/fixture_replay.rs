@@ -325,12 +325,10 @@ fn replay_checking_thinking_order(
             app.mark_graduated(graduated_keys);
         }
 
-        // Check viewport only for thinking-after-text violations.
-        // Stdout contains graduated content from earlier responses;
-        // mixing it with viewport content creates false positives
-        // when tool groups stay in viewport during streaming.
+        // Check every frame for thinking-after-text violations
+        let stdout = strip_ansi(runtime.stdout_content());
         let viewport = strip_ansi(runtime.viewport_content());
-        let combined = viewport;
+        let combined = format!("{stdout}\n{viewport}");
 
         // Look for text content appearing BEFORE a Thought summary within
         // the SAME assistant response. Tool call lines (✓) reset the tracking
@@ -346,27 +344,14 @@ fn replay_checking_thinking_order(
                 || trimmed.starts_with('◐')
                 || trimmed.starts_with('*')
                 || trimmed.starts_with("· ")
-                || trimmed.starts_with("* Found")
                 || trimmed.starts_with("NORMAL")
-                || trimmed.starts_with("PERMISSION")
                 || trimmed.starts_with("— ctx")
             {
                 continue;
             }
-            // Tool calls mark response boundaries — reset per-response tracking.
-            // Includes both completed (✓) and running (braille spinner) tool indicators.
+            // Tool calls mark response boundaries — reset per-response tracking
             if trimmed.starts_with('✓')
                 || trimmed.starts_with('●')
-                || trimmed.starts_with('⠋')
-                || trimmed.starts_with('⠙')
-                || trimmed.starts_with('⠹')
-                || trimmed.starts_with('⠸')
-                || trimmed.starts_with('⠼')
-                || trimmed.starts_with('⠴')
-                || trimmed.starts_with('⠦')
-                || trimmed.starts_with('⠧')
-                || trimmed.starts_with('⠇')
-                || trimmed.starts_with('⠏')
                 || trimmed.contains("Read Note")
                 || trimmed.contains("│ {")
                 || trimmed.contains("Read note content")

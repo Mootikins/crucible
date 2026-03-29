@@ -9,11 +9,11 @@ expression: render_app(&app)
 
  ● Let me look at the files.
 
-   Now let me read the main file.
-                                                                                
- ✓ Bash ls                                                                      
+ ✓ Bash ls
    │ src/                                                                       
    │ Cargo.toml                                                                 
+
+   Now let me read the main file.
                                                                                 
  ⠋ Read File src/main.rs                                                        
                                                                                 

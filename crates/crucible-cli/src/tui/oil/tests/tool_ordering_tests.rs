@@ -505,8 +505,6 @@ mod graduation_tracking {
             .map(|i| format!("LINE_{i:02}\n"))
             .collect::<String>();
         app.on_message(ChatAppMsg::TextDelta(long_text));
-        // End the turn so tool groups can graduate
-        app.on_message(ChatAppMsg::StreamComplete);
         flush_and_render(&mut app, &mut runtime);
 
         let output = combined_output(&runtime);
@@ -597,8 +595,6 @@ mod graduation_tracking {
         for i in 1..=25 {
             app.on_message(ChatAppMsg::TextDelta(format!("overflow_line_{i:02}\n")));
         }
-        // End the turn so tool groups can graduate
-        app.on_message(ChatAppMsg::StreamComplete);
         flush_and_render(&mut app, &mut runtime);
 
         let output = combined_output(&runtime);
