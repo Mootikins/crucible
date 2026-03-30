@@ -1035,6 +1035,42 @@ verbose = false
     }
 }
 
+/// Register a project in the global config file.
+///
+/// Reads the existing config (or creates a default), inserts a `ProjectEntry`
+/// under `[projects.<name>]`, and writes the file back with `toml::to_string_pretty`.
+#[cfg(feature = "toml")]
+pub fn register_project_in_config(
+    config_path: &std::path::Path,
+    name: &str,
+    project_path: &std::path::Path,
+    kilns: &[&str],
+    default_kiln: Option<&str>,
+) -> anyhow::Result<()> {
+    let mut config: CliAppConfig = if config_path.exists() {
+        let contents = std::fs::read_to_string(config_path)?;
+        toml::from_str(&contents)?
+    } else {
+        CliAppConfig::default()
+    };
+
+    config.projects.insert(
+        name.to_string(),
+        crate::config::registry::ProjectEntry {
+            path: project_path.to_path_buf(),
+            kilns: kilns.iter().map(|s| s.to_string()).collect(),
+            default_kiln: default_kiln.map(|s| s.to_string()),
+        },
+    );
+
+    let contents = toml::to_string_pretty(&config)?;
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(config_path, contents)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1213,5 +1249,73 @@ docs = "~/docs"
         let toml_str = r#"kiln_path = "~/vault""#;
         let config: CliAppConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.resolved_default_kiln(), "default");
+    }
+
+    #[test]
+    fn register_project_writes_to_config_file() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let config_path = tmp.path().join("config.toml");
+        std::fs::write(
+            &config_path,
+            "kiln_path = \"~/vault\"\n\n[kilns]\nvault = \"~/vault\"\n",
+        )
+        .unwrap();
+
+        register_project_in_config(
+            &config_path,
+            "myproject",
+            tmp.path(),
+            &["vault"],
+            Some("vault"),
+        )
+        .unwrap();
+
+        let contents = std::fs::read_to_string(&config_path).unwrap();
+        let config: CliAppConfig = toml::from_str(&contents).unwrap();
+        assert_eq!(config.projects.len(), 1);
+        assert_eq!(config.projects["myproject"].kilns, vec!["vault"]);
+        assert_eq!(
+            config.projects["myproject"].default_kiln.as_deref(),
+            Some("vault")
+        );
+        assert_eq!(config.projects["myproject"].path, tmp.path().to_path_buf());
+    }
+
+    #[test]
+    fn register_project_creates_config_if_missing() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let config_path = tmp.path().join("subdir").join("config.toml");
+
+        register_project_in_config(&config_path, "newproj", tmp.path(), &[], None).unwrap();
+
+        let contents = std::fs::read_to_string(&config_path).unwrap();
+        let config: CliAppConfig = toml::from_str(&contents).unwrap();
+        assert_eq!(config.projects.len(), 1);
+        assert!(config.projects.contains_key("newproj"));
+        assert!(config.projects["newproj"].kilns.is_empty());
+        assert!(config.projects["newproj"].default_kiln.is_none());
+    }
+
+    #[test]
+    fn register_project_preserves_existing_projects() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let config_path = tmp.path().join("config.toml");
+        std::fs::write(&config_path, "kiln_path = \"~/vault\"\n").unwrap();
+
+        register_project_in_config(&config_path, "proj1", tmp.path(), &["vault"], None).unwrap();
+        register_project_in_config(
+            &config_path,
+            "proj2",
+            &tmp.path().join("other"),
+            &["docs"],
+            Some("docs"),
+        )
+        .unwrap();
+
+        let contents = std::fs::read_to_string(&config_path).unwrap();
+        let config: CliAppConfig = toml::from_str(&contents).unwrap();
+        assert_eq!(config.projects.len(), 2);
+        assert!(config.projects.contains_key("proj1"));
+        assert!(config.projects.contains_key("proj2"));
     }
 }

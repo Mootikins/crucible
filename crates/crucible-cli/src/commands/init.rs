@@ -9,8 +9,9 @@ use crate::kiln_validate::{expand_tilde, validate_kiln_path, ValidationSeverity}
 use crate::provider_detect::{detect_providers, DetectedProvider};
 use crucible_config::components::DataClassification;
 use crucible_config::{
-    read_kiln_config, read_project_config, write_kiln_config, write_project_config, CliAppConfig,
-    KilnAttachment, KilnConfig, KilnMeta, ProjectConfig, SecurityConfig,
+    read_kiln_config, read_project_config, register_project_in_config, write_kiln_config,
+    write_project_config, CliAppConfig, KilnAttachment, KilnConfig, KilnMeta, ProjectConfig,
+    SecurityConfig,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -202,6 +203,29 @@ async fn run_project_init(target_path: &Path, force: bool, yes: bool) -> Result<
         Ok::<(), anyhow::Error>(())
     })
     .await??;
+
+    // Register the project in global config
+    let absolute_path = std::fs::canonicalize(&target_for_display).unwrap_or(target_for_display.clone());
+    let config_path = CliAppConfig::default_config_path();
+    let kiln_refs: Vec<&str> = kilns.iter().map(|s| s.as_str()).collect();
+    match register_project_in_config(
+        &config_path,
+        &name,
+        &absolute_path,
+        &kiln_refs,
+        default_kiln.as_deref(),
+    ) {
+        Ok(()) => {
+            println!("  {} Registered in global config", "\u{2713}".green());
+        }
+        Err(e) => {
+            eprintln!(
+                "{} Could not register project in global config: {}",
+                "Warning:".yellow().bold(),
+                e
+            );
+        }
+    }
 
     println!(
         "{} Project initialized at: {}",
