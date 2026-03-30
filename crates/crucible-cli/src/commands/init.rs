@@ -12,6 +12,26 @@ use crucible_config::{
     read_kiln_config, read_project_config, write_kiln_config, write_project_config, CliAppConfig,
     KilnAttachment, KilnConfig, KilnMeta, ProjectConfig, SecurityConfig,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InitType {
+    Kiln,
+    Project,
+    Unknown,
+}
+
+/// Detect whether a directory is a kiln, project, or uninitialized.
+pub fn detect_init_type(path: &Path) -> InitType {
+    let crucible_dir = path.join(".crucible");
+    if crucible_dir.join("kiln.toml").exists() {
+        InitType::Kiln
+    } else if crucible_dir.join("project.toml").exists() {
+        InitType::Project
+    } else {
+        InitType::Unknown
+    }
+}
+
 pub async fn execute(
     path: Option<PathBuf>,
     force: bool,
@@ -368,6 +388,42 @@ fn default_model_for(provider: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn detect_kiln_from_kiln_toml() {
+        let tmp = TempDir::new().unwrap();
+        let crucible_dir = tmp.path().join(".crucible");
+        fs::create_dir_all(&crucible_dir).unwrap();
+        fs::write(crucible_dir.join("kiln.toml"), "[kiln]\nname = \"test\"").unwrap();
+        assert_eq!(detect_init_type(tmp.path()), InitType::Kiln);
+    }
+
+    #[test]
+    fn detect_project_from_project_toml() {
+        let tmp = TempDir::new().unwrap();
+        let crucible_dir = tmp.path().join(".crucible");
+        fs::create_dir_all(&crucible_dir).unwrap();
+        fs::write(crucible_dir.join("project.toml"), "[project]\nname = \"test\"").unwrap();
+        assert_eq!(detect_init_type(tmp.path()), InitType::Project);
+    }
+
+    #[test]
+    fn detect_unknown_when_no_crucible_dir() {
+        let tmp = TempDir::new().unwrap();
+        assert_eq!(detect_init_type(tmp.path()), InitType::Unknown);
+    }
+
+    #[test]
+    fn detect_kiln_when_both_exist() {
+        let tmp = TempDir::new().unwrap();
+        let crucible_dir = tmp.path().join(".crucible");
+        fs::create_dir_all(&crucible_dir).unwrap();
+        fs::write(crucible_dir.join("kiln.toml"), "[kiln]\nname = \"test\"").unwrap();
+        fs::write(crucible_dir.join("project.toml"), "").unwrap();
+        // Kiln takes precedence (it's the primary identity)
+        assert_eq!(detect_init_type(tmp.path()), InitType::Kiln);
+    }
 
     #[test]
     fn test_generate_config_with_provider() {
