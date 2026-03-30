@@ -641,6 +641,38 @@ impl KilnManager {
         }
     }
 
+    /// Open kilns by name from a registry. Returns names of successfully opened kilns.
+    /// Logs warnings for names not found in the registry or that fail to open.
+    pub async fn open_named_kilns(
+        &self,
+        registry: &HashMap<String, crucible_config::KilnEntry>,
+        names: &[String],
+    ) -> Vec<String> {
+        let mut opened = Vec::new();
+        for name in names {
+            if let Some(entry) = registry.get(name) {
+                if entry.lazy() {
+                    tracing::debug!(kiln = %name, "Skipping lazy kiln");
+                    continue;
+                }
+                let raw_path = entry.path();
+                let path = expand_tilde_path(&raw_path);
+                match self.open(&path).await {
+                    Ok(()) => {
+                        info!(kiln = %name, path = %path.display(), "Opened project kiln");
+                        opened.push(name.clone());
+                    }
+                    Err(e) => {
+                        warn!(kiln = %name, error = %e, "Failed to open project kiln");
+                    }
+                }
+            } else {
+                warn!(kiln = %name, "Kiln not found in registry");
+            }
+        }
+        opened
+    }
+
     async fn start_watch_manager(&self, kiln_path: &Path) -> Option<WatchManager> {
         let event_tx = self.event_tx.as_ref()?;
 
@@ -788,6 +820,17 @@ fn discover_markdown_files(kiln_path: &Path) -> Vec<PathBuf> {
         .filter(|e| e.path().is_file() && is_markdown_file(e.path()))
         .map(|e| e.path().to_path_buf())
         .collect()
+}
+
+/// Expand a leading `~/` to the user's home directory.
+fn expand_tilde_path(path: &Path) -> PathBuf {
+    let s = path.to_string_lossy();
+    if s.starts_with("~/") || s == "~" {
+        if let Some(home) = dirs::home_dir() {
+            return home.join(&s[2..]);
+        }
+    }
+    path.to_path_buf()
 }
 
 fn read_kiln_name(kiln_path: &Path) -> Option<String> {
@@ -1195,6 +1238,77 @@ mod tests {
         let gamma = note_store.get("gamma.md").await.unwrap();
         assert!(gamma.is_some(), "gamma.md should still exist");
         assert_eq!(gamma.unwrap().title, "Gamma");
+    }
+
+    #[tokio::test]
+    async fn open_named_kilns_opens_matching_kilns() {
+        use crucible_config::KilnEntry;
+
+        let tmp1 = TempDir::new().unwrap();
+        let tmp2 = TempDir::new().unwrap();
+
+        // Create minimal .crucible dirs so open() succeeds
+        std::fs::create_dir_all(tmp1.path().join(".crucible")).unwrap();
+        std::fs::create_dir_all(tmp2.path().join(".crucible")).unwrap();
+
+        let mut kilns = HashMap::new();
+        kilns.insert(
+            "vault".to_string(),
+            KilnEntry::Path(tmp1.path().to_path_buf()),
+        );
+        kilns.insert(
+            "docs".to_string(),
+            KilnEntry::Path(tmp2.path().to_path_buf()),
+        );
+
+        let project_kilns = vec!["vault".to_string(), "docs".to_string()];
+
+        let manager = KilnManager::new();
+        let opened = manager.open_named_kilns(&kilns, &project_kilns).await;
+
+        assert_eq!(opened.len(), 2);
+        let listed = manager.list().await;
+        assert_eq!(listed.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn open_named_kilns_skips_lazy_kilns() {
+        use crucible_config::KilnEntry;
+
+        let tmp = TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".crucible")).unwrap();
+
+        let mut kilns = HashMap::new();
+        kilns.insert(
+            "active".to_string(),
+            KilnEntry::Path(tmp.path().to_path_buf()),
+        );
+        kilns.insert(
+            "lazy_one".to_string(),
+            KilnEntry::Config {
+                path: PathBuf::from("/should/not/be/opened"),
+                lazy: true,
+            },
+        );
+
+        let names = vec!["active".to_string(), "lazy_one".to_string()];
+        let manager = KilnManager::new();
+        let opened = manager.open_named_kilns(&kilns, &names).await;
+
+        assert_eq!(opened, vec!["active"]);
+        assert_eq!(manager.list().await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn open_named_kilns_warns_on_missing_name() {
+        let kilns = HashMap::new();
+        let names = vec!["nonexistent".to_string()];
+
+        let manager = KilnManager::new();
+        let opened = manager.open_named_kilns(&kilns, &names).await;
+
+        assert!(opened.is_empty());
+        assert!(manager.list().await.is_empty());
     }
 
     #[test]
