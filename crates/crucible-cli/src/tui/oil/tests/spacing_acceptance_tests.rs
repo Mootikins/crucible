@@ -286,24 +286,9 @@ fn multi_frame_graduation_spacing_consistent() {
     let a1_to_q2 = blank_lines_between(&output, "First answer", "Second question");
     let q2_to_a2 = blank_lines_between(&output, "Second question", "Second answer");
 
-    assert_eq!(
-        q1_to_a1,
-        Some(1),
-        "Q1→A1 spacing\nFull output:\n{}",
-        output
-    );
-    assert_eq!(
-        a1_to_q2,
-        Some(1),
-        "A1→Q2 spacing\nFull output:\n{}",
-        output
-    );
-    assert_eq!(
-        q2_to_a2,
-        Some(1),
-        "Q2→A2 spacing\nFull output:\n{}",
-        output
-    );
+    assert_eq!(q1_to_a1, Some(1), "Q1→A1 spacing\nFull output:\n{}", output);
+    assert_eq!(a1_to_q2, Some(1), "A1→Q2 spacing\nFull output:\n{}", output);
+    assert_eq!(q2_to_a2, Some(1), "Q2→A2 spacing\nFull output:\n{}", output);
     assert_no_double_blanks(&output, "multi_frame_graduation");
 }
 
@@ -321,7 +306,10 @@ fn thinking_tools_thinking_tools_text_spacing() {
     live_render(&mut app, &mut runtime);
 
     // Thought #1
-    think(&mut app, "I'll explore the repository to give you a comprehensive overview.");
+    think(
+        &mut app,
+        "I'll explore the repository to give you a comprehensive overview.",
+    );
     live_render(&mut app, &mut runtime);
 
     // Tool batch #1 (5 tools)
@@ -333,7 +321,10 @@ fn thinking_tools_thinking_tools_text_spacing() {
     live_render(&mut app, &mut runtime);
 
     // Thought #2 (short)
-    think(&mut app, "Let me check more details about the crate structure.");
+    think(
+        &mut app,
+        "Let me check more details about the crate structure.",
+    );
     live_render(&mut app, &mut runtime);
 
     // Tool batch #2 (2 tools)
@@ -343,7 +334,9 @@ fn thinking_tools_thinking_tools_text_spacing() {
 
     // Thought #3 + assistant text
     think(&mut app, "Now I have enough context to give a full answer.");
-    app.on_message(ChatAppMsg::TextDelta("Crucible is a knowledge-grounded agent runtime.".into()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Crucible is a knowledge-grounded agent runtime.".into(),
+    ));
     app.on_message(ChatAppMsg::StreamComplete);
     live_render(&mut app, &mut runtime);
 
@@ -392,7 +385,10 @@ fn thinking_tools_spacing_collapsed_mode() {
     live_render(&mut app, &mut runtime);
 
     // Thought #1
-    think(&mut app, "I'll explore the repository to give you a comprehensive overview.");
+    think(
+        &mut app,
+        "I'll explore the repository to give you a comprehensive overview.",
+    );
     live_render(&mut app, &mut runtime);
 
     // Tool batch #1
@@ -412,7 +408,9 @@ fn thinking_tools_spacing_collapsed_mode() {
 
     // Thought #3 + text
     think(&mut app, "Now I have enough context.");
-    app.on_message(ChatAppMsg::TextDelta("Crucible is a knowledge-grounded agent runtime.".into()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Crucible is a knowledge-grounded agent runtime.".into(),
+    ));
     app.on_message(ChatAppMsg::StreamComplete);
     live_render(&mut app, &mut runtime);
 
@@ -463,7 +461,10 @@ fn thinking_tools_collapsed_tick_per_event() {
     live_render(&mut app, &mut runtime);
 
     // Thought #1: 10 words
-    think(&mut app, "I will explore the repository to give you a comprehensive overview.");
+    think(
+        &mut app,
+        "I will explore the repository to give you a comprehensive overview.",
+    );
     live_render(&mut app, &mut runtime);
 
     // Each tool arrives with a render between them
@@ -530,7 +531,14 @@ fn thinking_tools_collapsed_tick_per_event() {
         if blanks != expected {
             spacing_issues.push(format!(
                 "Lines {}-{}: expected {} blank(s), got {}.\n  L{}: {:?}\n  L{}: {:?}",
-                i1, i2, expected, blanks, i1, l1.trim(), i2, l2.trim()
+                i1,
+                i2,
+                expected,
+                blanks,
+                i1,
+                l1.trim(),
+                i2,
+                l2.trim()
             ));
         }
     }

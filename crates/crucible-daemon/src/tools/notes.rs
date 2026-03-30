@@ -467,9 +467,7 @@ impl NoteTools {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
         // LLMs sometimes send the literal string "null" instead of omitting the field
-        let folder = params
-            .folder
-            .filter(|f| !f.is_empty() && f != "null");
+        let folder = params.folder.filter(|f| !f.is_empty() && f != "null");
         let include_frontmatter = params.include_frontmatter;
         let recursive = params.recursive;
 

@@ -85,7 +85,8 @@ path = "~/crucible"
 kilns = ["docs", "vault"]
 default_kiln = "vault"
 "#;
-        let map: std::collections::HashMap<String, ProjectEntry> = toml::from_str(toml_str).unwrap();
+        let map: std::collections::HashMap<String, ProjectEntry> =
+            toml::from_str(toml_str).unwrap();
         let entry = &map["crucible"];
         assert_eq!(entry.path, PathBuf::from("~/crucible"));
         assert_eq!(entry.kilns, vec!["docs", "vault"]);
@@ -97,7 +98,10 @@ default_kiln = "vault"
         // TOML requires a table at the root, so roundtrip through a map
         // (matches real usage: `[kilns]` is always a table in config)
         let mut map = std::collections::HashMap::new();
-        map.insert("vault".to_string(), KilnEntry::Path(PathBuf::from("~/vault")));
+        map.insert(
+            "vault".to_string(),
+            KilnEntry::Path(PathBuf::from("~/vault")),
+        );
         let serialized = toml::to_string(&map).unwrap();
         let deserialized: std::collections::HashMap<String, KilnEntry> =
             toml::from_str(&serialized).unwrap();
