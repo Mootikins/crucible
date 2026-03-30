@@ -9,9 +9,7 @@
 use anyhow::Result;
 use crucible_cli::commands::chat;
 use crucible_cli::config::CliConfig;
-use crucible_config::{
-    BackendType, LlmConfig, LlmProviderConfig,
-};
+use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
 use tempfile::TempDir;
 
 #[tokio::test]
