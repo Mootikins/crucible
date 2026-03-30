@@ -1,0 +1,26 @@
+name: kiln-expert
+version: "0.1.0"
+description: On-demand search across unmounted kilns via subagent delegation
+author: Crucible Team
+license: MIT
+
+main: init.lua
+
+capabilities:
+  - kiln
+  - agent
+  - config
+
+config:
+  properties:
+    kilns:
+      type: object
+      description: "Map of label → kiln path (e.g. { docs = '~/crucible/docs' })"
+      default: {}
+    timeout:
+      type: number
+      description: Subagent timeout in seconds
+      default: 30
+
+exports:
+  auto_discover: true
