@@ -466,7 +466,10 @@ impl NoteTools {
         params: Parameters<ListNotesParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let folder = params.folder.clone();
+        // LLMs sometimes send the literal string "null" instead of omitting the field
+        let folder = params
+            .folder
+            .filter(|f| !f.is_empty() && f != "null");
         let include_frontmatter = params.include_frontmatter;
         let recursive = params.recursive;
 
@@ -1901,6 +1904,28 @@ mod tests {
             .await;
 
         assert!(result.is_err(), "Should reject path traversal in folder");
+    }
+
+    #[tokio::test]
+    async fn test_list_notes_null_string_folder_treated_as_none() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+        let note_tools = NoteTools::new(kiln_path);
+
+        // LLMs sometimes send "null" as a string instead of omitting the field
+        let result = note_tools
+            .list_notes(Parameters(ListNotesParams {
+                folder: Some("null".to_string()),
+                include_frontmatter: false,
+                recursive: true,
+            }))
+            .await;
+
+        assert!(
+            result.is_ok(),
+            "folder=\"null\" should be treated as None, got: {:?}",
+            result.err()
+        );
     }
 
     #[tokio::test]

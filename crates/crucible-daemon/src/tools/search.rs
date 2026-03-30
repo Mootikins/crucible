@@ -175,7 +175,8 @@ impl SearchTools {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
         let query = params.query.clone();
-        let folder = params.folder.clone();
+        // LLMs sometimes send the literal string "null" instead of omitting the field
+        let folder = params.folder.filter(|f| !f.is_empty() && f != "null");
         let case_insensitive = params.case_insensitive;
         let limit = params.limit;
 
