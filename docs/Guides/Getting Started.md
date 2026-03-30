@@ -62,44 +62,92 @@ sudo ln -s /path/to/crucible/target/release/cru /usr/local/bin/cru
 
 ## Configuration
 
-### Set Your Kiln Path
+### Initialize with `cru init`
 
-Crucible stores notes in a "kiln", your markdown directory. The easiest way to get started is with `cru init`, which walks you through creating a config file interactively.
+Crucible stores notes in a **kiln** — a directory of markdown files that forms your knowledge graph. Projects (code repositories) can bind to one or more kilns.
+
+The fastest way to set up is `cru init`. It detects what kind of directory you are in and walks you through an interactive setup.
+
+#### Initializing a kiln
+
+Run `cru init` inside your notes directory:
 
 ```bash
+cd ~/notes
 cru init
 ```
 
-This creates `~/.config/crucible/config.toml` with your kiln path and provider settings.
+Crucible detects whether `.crucible/kiln.toml` or `.crucible/project.toml` already exists. If neither is found, it asks what this directory is:
 
-You can also set it up manually:
+```
+? What is this directory?
+> Kiln (knowledge store for notes and sessions)
+  Project (code repository with kiln bindings)
+```
 
-**Option 1: Configuration File**
+For a kiln, it prompts for a **name** and **data classification** (public, internal, confidential, restricted), then creates `.crucible/kiln.toml` and registers the kiln in your global config under `[kilns]`.
+
+#### Initializing a project
+
+Run `cru init` inside a code repository:
+
+```bash
+cd ~/myproject
+cru init
+```
+
+Choose "Project" when prompted. Crucible creates `.crucible/project.toml` and asks which of your registered kilns to bind. The project is registered in your global config under `[projects.*]`.
+
+#### Non-interactive mode
+
+Use `-y` to skip prompts and accept defaults (defaults to kiln, uses the directory name as the kiln name):
+
+```bash
+cru init -y
+```
+
+Use `--force` to reinitialize an already-configured directory.
+
+#### First-run setup wizard
+
+If no global config exists yet (`~/.config/crucible/config.toml`), `cru init` automatically runs a first-run wizard that walks you through choosing an LLM provider, model, and embedding backend before creating the kiln or project.
+
+### Manual configuration
+
+You can also create the config file by hand. See [[Configuration]] for the full reference.
 
 Create `~/.config/crucible/config.toml`:
 
 ```toml
-kiln_path = "/home/user/Documents/my-kiln"
+default_kiln = "notes"
 
-[llm]
-default = "local"
+[kilns]
+notes = "~/notes"
 
-[llm.providers.local]
-type = "ollama"
-default_model = "llama3.2"
-endpoint = "http://localhost:11434"
+[chat]
+provider = "ollama"
+model = "llama3.2"
 
-[enrichment.provider]
-type = "fastembed"
-
-[cli]
-show_progress = true
+[embedding]
+provider = "fastembed"
 ```
 
-**Option 2: Environment Variable**
-```bash
-export CRUCIBLE_KILN_PATH="/path/to/your/notes"
+For multiple kilns and project bindings:
+
+```toml
+default_kiln = "vault"
+
+[kilns]
+vault = "~/vault"
+docs = "~/crucible/docs"
+
+[projects.crucible]
+path = "~/crucible"
+kilns = ["docs", "vault"]
+default_kiln = "vault"
 ```
+
+See [[Configuration#Migrating from `kiln_path` to `[kilns]`]] if you have an existing `kiln_path` setup.
 
 ## Your First Commands
 
