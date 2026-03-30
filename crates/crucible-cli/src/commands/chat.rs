@@ -320,6 +320,11 @@ async fn run_preflight_checks(config: &mut CliConfig) -> Result<()> {
         info!("Using kiln from config: {}", config.kiln_path.display());
     }
 
+    // If cwd matches a registered project, open that project's kilns
+    if let Err(e) = open_project_kilns_if_matched(config).await {
+        debug!("Project kiln auto-open skipped: {}", e);
+    }
+
     if providers.is_empty() {
         warn!("No LLM providers detected");
         println!("{} No LLM provider configured.", "Error:".red().bold());
@@ -387,6 +392,53 @@ async fn run_preflight_checks(config: &mut CliConfig) -> Result<()> {
             providers.len(),
             providers.iter().map(|p| &p.name).collect::<Vec<_>>()
         );
+    }
+
+    Ok(())
+}
+
+/// If the current working directory matches a registered project, open that
+/// project's kilns via daemon RPC. This ensures multi-kiln projects have all
+/// their knowledge sources available at session start.
+async fn open_project_kilns_if_matched(config: &CliConfig) -> Result<()> {
+    let cwd = std::env::current_dir()?;
+
+    // Find a project whose expanded path matches cwd
+    let matched_project = config.projects.values().find(|project| {
+        let expanded = crate::kiln_validate::expand_tilde(&project.path.to_string_lossy());
+        expanded == cwd
+    });
+
+    let project = match matched_project {
+        Some(p) => p,
+        None => return Ok(()), // No project matches, nothing to do
+    };
+
+    if project.kilns.is_empty() {
+        return Ok(());
+    }
+
+    let registry = config.resolved_kilns();
+    let client = crate::common::daemon_client().await?;
+
+    for kiln_name in &project.kilns {
+        if let Some(entry) = registry.get(kiln_name) {
+            if entry.lazy() {
+                debug!(kiln = %kiln_name, "Skipping lazy kiln");
+                continue;
+            }
+            let path = crate::kiln_validate::expand_tilde(&entry.path().to_string_lossy());
+            match client.kiln_open(&path).await {
+                Ok(()) => {
+                    info!(kiln = %kiln_name, path = %path.display(), "Opened project kiln");
+                }
+                Err(e) => {
+                    warn!(kiln = %kiln_name, error = %e, "Failed to open project kiln");
+                }
+            }
+        } else {
+            warn!(kiln = %kiln_name, "Kiln not found in registry");
+        }
     }
 
     Ok(())
