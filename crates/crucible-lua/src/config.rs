@@ -26,7 +26,7 @@
 use crate::error::LuaError;
 use crate::statusline::{parse_statusline_config, StatuslineConfig};
 use crate::theme::ThemeConfig;
-use mlua::{Lua, Table, Value};
+use mlua::{Lua, LuaSerdeExt, Table, Value};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use tracing::{debug, info, warn};
@@ -39,6 +39,9 @@ const DEFAULT_THEME_LUA: &str = include_str!("../../../runtime/themes/default.lu
 pub struct ConfigState {
     pub statusline: Option<StatuslineConfig>,
     pub theme: Option<ThemeConfig>,
+    /// Daemon/app config values set via cru.config.set() or seeded from TOML.
+    /// Stored as JSON for easy extraction by Rust callers.
+    pub app_config: Option<serde_json::Value>,
 }
 
 /// Thread-safe config registry
@@ -70,6 +73,80 @@ fn set_theme_config(config: ThemeConfig) {
     if let Ok(mut state) = get_config().write() {
         state.theme = Some(config);
     }
+}
+
+/// Get the app config (set via `cru.config.set()` or seeded from TOML).
+pub fn get_app_config() -> Option<serde_json::Value> {
+    get_config().read().ok()?.app_config.clone()
+}
+
+/// Seed app config from TOML values (called before Lua init.lua runs).
+/// Lua's `cru.config.set()` can then override individual fields.
+pub fn seed_app_config(config: serde_json::Value) {
+    if let Ok(mut state) = get_config().write() {
+        state.app_config = Some(config);
+    }
+}
+
+/// Register `cru.config.set(table)` and `cru.config.get(key)` on the cru namespace.
+///
+/// - `set(table)`: Deep-merges the table into app_config (TOML values as base, Lua overrides)
+/// - `get(key)`: Returns a single top-level value from app_config
+///
+/// This is the bridge between TOML and Lua config. TOML seeds values first,
+/// then Lua's init.lua can override any field via `cru.config.set()`.
+pub fn register_app_config_api(lua: &Lua, cru_table: &Table) -> Result<(), LuaError> {
+    let config_table = lua.create_table()?;
+
+    // cru.config.set(table) — merge into app_config
+    let set_fn = lua.create_function(|lua, table: Table| {
+        let json_val: serde_json::Value =
+            lua.from_value(Value::Table(table)).map_err(mlua::Error::external)?;
+
+        let mut state = get_config()
+            .write()
+            .map_err(|e| mlua::Error::external(format!("config lock: {e}")))?;
+
+        match &mut state.app_config {
+            Some(existing) => {
+                // Deep merge: Lua values override TOML values
+                if let (serde_json::Value::Object(base), serde_json::Value::Object(overlay)) =
+                    (existing, &json_val)
+                {
+                    for (k, v) in overlay {
+                        base.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+            None => {
+                state.app_config = Some(json_val);
+            }
+        }
+        Ok(())
+    })?;
+    config_table.set("set", set_fn)?;
+
+    // cru.config.get(key) — read a single top-level value
+    let get_fn = lua.create_function(|lua, key: String| {
+        let state = get_config()
+            .read()
+            .map_err(|e| mlua::Error::external(format!("config lock: {e}")))?;
+
+        let val = state
+            .app_config
+            .as_ref()
+            .and_then(|c| c.get(&key))
+            .cloned();
+
+        match val {
+            Some(v) => lua.to_value(&v),
+            None => Ok(Value::Nil),
+        }
+    })?;
+    config_table.set("get", get_fn)?;
+
+    cru_table.set("config", config_table)?;
+    Ok(())
 }
 
 /// Reset config state (for testing)
@@ -587,6 +664,90 @@ mod tests {
 
         let themes = list_available_themes(tmp.path());
         assert_eq!(themes, vec!["dark".to_string(), "light".to_string()]);
+    }
+
+    #[test]
+    fn test_app_config_seed_then_lua_override() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+
+        // Simulate TOML seeding
+        seed_app_config(serde_json::json!({
+            "kiln_path": "/home/user/vault",
+            "timeout": 30,
+            "llm": { "provider": "ollama" }
+        }));
+
+        // Simulate Lua override via cru.config.set()
+        let lua = create_test_lua();
+        let cru = lua.create_table().unwrap();
+        register_app_config_api(&lua, &cru).unwrap();
+        lua.globals().set("cru", cru).unwrap();
+
+        // Lua overrides timeout but keeps kiln_path
+        lua.load(r#"cru.config.set({ timeout = 60, new_field = "from_lua" })"#)
+            .exec()
+            .unwrap();
+
+        let config = get_app_config().unwrap();
+        assert_eq!(config["kiln_path"], "/home/user/vault"); // TOML preserved
+        assert_eq!(config["timeout"], 60); // Lua overrode
+        assert_eq!(config["new_field"], "from_lua"); // Lua added
+        assert_eq!(config["llm"]["provider"], "ollama"); // Nested TOML preserved
+    }
+
+    #[test]
+    fn test_app_config_lua_get() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+
+        seed_app_config(serde_json::json!({
+            "kiln_path": "/vault",
+            "count": 42
+        }));
+
+        let lua = create_test_lua();
+        let cru = lua.create_table().unwrap();
+        register_app_config_api(&lua, &cru).unwrap();
+        lua.globals().set("cru", cru).unwrap();
+
+        let result: String = lua
+            .load(r#"return cru.config.get("kiln_path")"#)
+            .eval()
+            .unwrap();
+        assert_eq!(result, "/vault");
+
+        let count: i64 = lua
+            .load(r#"return cru.config.get("count")"#)
+            .eval()
+            .unwrap();
+        assert_eq!(count, 42);
+
+        // Missing key returns nil
+        let missing: Value = lua
+            .load(r#"return cru.config.get("nonexistent")"#)
+            .eval()
+            .unwrap();
+        assert!(matches!(missing, Value::Nil));
+    }
+
+    #[test]
+    fn test_app_config_set_without_seed() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+
+        // No TOML seed — pure Lua config
+        let lua = create_test_lua();
+        let cru = lua.create_table().unwrap();
+        register_app_config_api(&lua, &cru).unwrap();
+        lua.globals().set("cru", cru).unwrap();
+
+        lua.load(r#"cru.config.set({ kiln_path = "~/notes" })"#)
+            .exec()
+            .unwrap();
+
+        let config = get_app_config().unwrap();
+        assert_eq!(config["kiln_path"], "~/notes");
     }
 
     #[test]

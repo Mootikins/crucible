@@ -237,6 +237,9 @@ end
         // Register interaction module for unified interaction bindings
         register_interaction_module(lua)?;
 
+        // Register cru.config.set()/get() for unified config
+        crate::config::register_app_config_api(lua, &cru_ns)?;
+
         // Register stateless utility modules
         register_http_module(lua)?;
         register_fs_module(lua)?;
