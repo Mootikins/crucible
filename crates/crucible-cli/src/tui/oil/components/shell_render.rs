@@ -3,7 +3,7 @@
 //! Renders shell command executions with command line, exit code,
 //! output tail, and optional output file path.
 
-use crate::tui::oil::node::{col, row, scrollback, styled, Node};
+use crate::tui::oil::node::{col, row, styled, Node};
 use crate::tui::oil::style::Style;
 use crate::tui::oil::theme;
 use crate::tui::oil::viewport_cache::CachedShellExecution;
@@ -48,10 +48,9 @@ pub fn render_shell_execution(shell: &CachedShellExecution) -> Node {
         })
         .unwrap_or(Node::Empty);
 
-    let content = col(std::iter::once(header)
+    col(std::iter::once(header)
         .chain(tail_nodes)
-        .chain(std::iter::once(path_node)));
-    scrollback(&shell.id, [content])
+        .chain(std::iter::once(path_node)))
 }
 
 #[cfg(test)]

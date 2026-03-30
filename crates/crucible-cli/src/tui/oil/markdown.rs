@@ -213,13 +213,15 @@ fn parse_and_render_internal(
     let key = hasher.finish();
 
     if let Some(cached) = CACHE.with(|c| {
-        c.borrow().as_ref().and_then(|(k, node)| {
-            if *k == key {
-                Some(node.clone())
-            } else {
-                None
-            }
-        })
+        c.borrow().as_ref().and_then(
+            |(k, node)| {
+                if *k == key {
+                    Some(node.clone())
+                } else {
+                    None
+                }
+            },
+        )
     }) {
         return cached;
     }
@@ -591,8 +593,6 @@ fn render_code_block(node: &markdown_it::Node, ctx: &mut RenderContext) {
     ctx.blocks.push(text_node(&full_block));
     ctx.mark_block_end();
 }
-
-
 
 /// Build highlighted code lines as ANSI strings (one per visual line).
 fn build_highlighted_code_lines(

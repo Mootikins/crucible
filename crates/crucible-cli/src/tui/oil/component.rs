@@ -74,7 +74,7 @@ impl ComponentHarness {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::oil::node::{scrollback, text};
+    use crate::tui::oil::node::{col, text};
 
     struct SimpleComponent {
         message: String,
@@ -109,21 +109,19 @@ mod tests {
     }
 
     #[test]
-    fn component_with_static_graduates() {
+    fn component_renders_content_to_viewport() {
         let mut h = ComponentHarness::new(80, 24);
 
-        struct StaticComponent;
-        impl Component for StaticComponent {
+        struct ContentComponent;
+        impl Component for ContentComponent {
             fn view(&self, _ctx: &ViewContext<'_>) -> Node {
-                scrollback("static-1", [text("Graduated content")])
+                col([text("Some content")])
             }
         }
 
-        h.render_component(&StaticComponent);
+        h.render_component(&ContentComponent);
 
-        let trace = h.trace().expect("should have trace");
-        assert_eq!(trace.graduated_keys, vec!["static-1"]);
-        assert!(h.stdout_delta().contains("Graduated content"));
+        assert!(h.viewport().contains("Some content"));
     }
 
     #[test]
@@ -133,11 +131,7 @@ mod tests {
         struct MixedComponent;
         impl Component for MixedComponent {
             fn view(&self, _ctx: &ViewContext<'_>) -> Node {
-                use crate::tui::oil::node::col;
-                col([
-                    scrollback("msg-1", [text("Old message")]),
-                    text("Current viewport"),
-                ])
+                col([text("Old message"), text("Current viewport")])
             }
         }
 

@@ -1074,7 +1074,9 @@ mod tests {
         let result = summarize_tool_result("read_file", spill_ref);
         // Should not contain the full spill path
         assert!(
-            !result.as_ref().is_some_and(|s| s.contains("$CRU_SESSION_DIR")),
+            !result
+                .as_ref()
+                .is_some_and(|s| s.contains("$CRU_SESSION_DIR")),
             "Should not show spill path in summary: {:?}",
             result
         );

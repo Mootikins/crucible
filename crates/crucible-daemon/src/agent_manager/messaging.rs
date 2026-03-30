@@ -1098,17 +1098,28 @@ impl AgentManager {
         let spill_path = if should_spill {
             let counter = {
                 let state = stream_ctx.session_state.lock().await;
-                state.spill_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                state
+                    .spill_counter
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             };
-            match Self::spill_tool_output(&stream_ctx.session_dir, &tool_call.name, &result_str, counter).await {
+            match Self::spill_tool_output(
+                &stream_ctx.session_dir,
+                &tool_call.name,
+                &result_str,
+                counter,
+            )
+            .await
+            {
                 Ok((path, filename)) => {
                     // Count lines in the actual content, not the JSON-serialized string
                     let line_count = serde_json::from_str::<serde_json::Value>(&result_str)
                         .ok()
                         .and_then(|v| {
-                            v.as_str()
-                                .map(|s| s.lines().count())
-                                .or_else(|| v.get("result").and_then(|r| r.as_str()).map(|s| s.lines().count()))
+                            v.as_str().map(|s| s.lines().count()).or_else(|| {
+                                v.get("result")
+                                    .and_then(|r| r.as_str())
+                                    .map(|s| s.lines().count())
+                            })
                         })
                         .unwrap_or_else(|| result_str.lines().count());
                     let byte_kb = result_str.len() / 1024;

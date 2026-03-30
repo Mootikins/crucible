@@ -72,9 +72,7 @@ mod viewport_cache;
 
 pub use agent_selection::AgentSelection;
 pub use app::{Action, App, ViewContext};
-pub use chat_app::{
-    ChatAppMsg, ChatMode, McpServerDisplay, OilChatApp, PluginStatusEntry, Role,
-};
+pub use chat_app::{ChatAppMsg, ChatMode, McpServerDisplay, OilChatApp, PluginStatusEntry, Role};
 pub use chat_container::{ChatContainer, ContainerKind, ContainerList, ThinkingBlock};
 pub use chat_runner::OilChatRunner;
 pub use component::{Component, ComponentHarness};
@@ -82,7 +80,6 @@ pub use components::{InputArea, InputMode, StatusBar, INPUT_MAX_CONTENT_LINES};
 pub use composer::{pad_popup_region, ComposerConfig};
 pub use event::{Event, InputAction, InputBuffer};
 pub use focus::*;
-pub use graduation::{GraduatedContent, GraduationState};
 pub use layout::*;
 pub use lua_view::{LuaView, ViewAction};
 pub use node::*;

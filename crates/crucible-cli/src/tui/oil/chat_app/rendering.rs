@@ -12,21 +12,9 @@ use crate::tui::oil::render_state::RenderState;
 use crate::tui::oil::style::{Gap, Style};
 use crate::tui::oil::utils::wrap_chars;
 
-use crate::tui::oil::chat_container::ContainerKind;
+use crate::tui::oil::chat_container::{needs_spacing, ContainerKind};
 
 use super::{OilChatApp, FOCUS_INPUT, INPUT_MAX_CONTENT_LINES, POPUP_HEIGHT};
-
-/// Whether a blank line is needed between two adjacent container kinds.
-///
-/// Consecutive tool groups are tight (no blank line). Everything else
-/// gets a blank line for visual separation. Drives the grouping logic
-/// in `render_containers()`.
-fn needs_spacing(prev: ContainerKind, next: ContainerKind) -> bool {
-    !matches!(
-        (prev, next),
-        (ContainerKind::ToolGroup, ContainerKind::ToolGroup)
-    )
-}
 
 #[cfg(test)]
 mod tests {
@@ -126,9 +114,9 @@ impl OilChatApp {
         let term_width = self.terminal_size.get().0 as usize;
         let containers = self.container_list.containers();
 
-        // Render each container to a (kind, node) pair, tracking predecessor kind
-        // for tight tool-to-tool graduation.
-        let mut prev_kind: Option<ContainerKind> = None;
+        // Seed prev_kind from the last graduated container so the first
+        // viewport container gets correct prev_is_tool_group context.
+        let mut prev_kind: Option<ContainerKind> = self.container_list.last_graduated_kind();
         let rendered: Vec<(ContainerKind, Node)> = containers
             .iter()
             .enumerate()

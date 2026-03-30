@@ -123,13 +123,10 @@ impl DemoChat {
             Role::Assistant => (" . ", Style::new().fg(Color::DarkGray)),
         };
 
-        scrollback(
-            &msg.id,
-            [col([
-                text(""),
-                row([styled(prefix, prefix_style), text(&msg.content)]),
-            ])],
-        )
+        col([
+            text(""),
+            row([styled(prefix, prefix_style), text(&msg.content)]),
+        ])
     }
 
     fn render_streaming(&self) -> Node {
