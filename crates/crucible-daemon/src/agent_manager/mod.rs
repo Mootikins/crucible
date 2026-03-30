@@ -520,7 +520,10 @@ impl AgentManager {
                 Arc::new(
                     WorkspaceTools::new(&session.workspace)
                         .with_env("CRU_SESSION", &session.id)
-                        .with_env("CRU_SESSION_DIR", session.storage_path().to_string_lossy().to_string()),
+                        .with_env(
+                            "CRU_SESSION_DIR",
+                            session.storage_path().to_string_lossy().to_string(),
+                        ),
                 ) as Arc<dyn ToolExecutor>,
                 Arc::new(McpToolExecutor::new(mcp)),
             ]))

@@ -7,8 +7,8 @@ use crate::lua_util::register_in_namespaces;
 use crucible_oil::template::{html_to_node, parse_color};
 use crucible_oil::{
     badge, bullet_list, divider, fragment, horizontal_rule, if_else, key_value, numbered_list,
-    popup, popup_item, progress_bar, scrollback, spacer, spinner, styled, text, text_input, when,
-    AlignItems, Border, BoxNode, Direction, Gap, JustifyContent, Node, Padding, Style,
+    popup, popup_item, progress_bar, spacer, spinner, styled, text, text_input, when, AlignItems,
+    Border, BoxNode, Direction, Gap, JustifyContent, Node, Padding, Style,
 };
 use mlua::{
     FromLua, Function, Lua, MultiValue, Result as LuaResult, Table, UserData, UserDataMethods,
@@ -412,18 +412,12 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
     })?;
     oil.set("component", component_fn)?;
 
-    // cru.oil.scrollback(key, children...)
+    // scrollback was removed — kept as fragment for backward compatibility
     let scrollback_fn = lua.create_function(|_, args: MultiValue| {
         let mut args_iter = args.into_iter();
-        let key = match args_iter.next() {
-            Some(Value::String(s)) => s.to_str()?.to_string(),
-            _ => {
-                return Err(mlua::Error::RuntimeError(
-                    "scrollback requires a key".into(),
-                ))
-            }
-        };
-        Ok(LuaNode(scrollback(key, collect_child_nodes(args_iter))))
+        // Skip the key argument
+        let _key = args_iter.next();
+        Ok(LuaNode(fragment(collect_child_nodes(args_iter))))
     })?;
     oil.set("scrollback", scrollback_fn)?;
 
@@ -1151,7 +1145,6 @@ mod tests {
             err
         );
     }
-
 }
 
 #[cfg(test)]

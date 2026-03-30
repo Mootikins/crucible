@@ -8,7 +8,6 @@ use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::terminal::Terminal;
 use crate::tui::oil::theme;
-use crucible_oil::FrameRenderer;
 use anyhow::{Context, Result};
 #[allow(unused_imports)] // WIP: KeyCode, KeyModifiers not yet used
 use crossterm::event::{Event as CtEvent, EventStream, KeyCode, KeyModifiers};
@@ -16,6 +15,7 @@ use crucible_core::events::SessionEvent;
 use crucible_core::interaction::InteractionRequest;
 use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatResult, SubagentEventType};
 use crucible_lua::SessionCommand;
+use crucible_oil::FrameRenderer;
 use futures::stream::BoxStream;
 use futures::StreamExt;
 use std::io;
@@ -35,11 +35,7 @@ use crate::tui::oil::commands::{SetEffect, SetRpcAction};
 ///
 /// Handles: full redraw detection, scroll offset sync, view building,
 /// rendering, and graduation feedback.
-pub fn render_frame(
-    app: &mut OilChatApp,
-    renderer: &mut impl FrameRenderer,
-    focus: &FocusContext,
-) {
+pub fn render_frame(app: &mut OilChatApp, renderer: &mut impl FrameRenderer, focus: &FocusContext) {
     if app.take_needs_full_redraw() {
         renderer.force_full_redraw();
     }
@@ -48,15 +44,18 @@ pub fn render_frame(
     // Expire toast notifications (previously done on Event::Tick)
     app.expire_toasts();
 
+    // Drain completed containers → stdout (paused while scrolled up)
+    let stdout_delta = if !app.is_scrolled() {
+        let (width, _) = renderer.size();
+        app.drain_graduated(width)
+    } else {
+        String::new()
+    };
+
     let terminal_size = renderer.size();
     let ctx = ViewContext::with_terminal_size(focus, theme::active(), terminal_size);
     let tree = app.view(&ctx);
-    let graduated_keys = renderer.render_frame(&tree);
-
-    // Pause graduation while scrolled up
-    if !graduated_keys.is_empty() && !app.is_scrolled() {
-        app.mark_graduated(graduated_keys);
-    }
+    renderer.render_frame(&tree, &stdout_delta);
 }
 
 /// Parameters for event_loop function.
@@ -371,10 +370,7 @@ impl OilChatRunner {
         // Hydrate viewport with conversation history from a resumed session
         if let Some(events) = self.resume_history.take() {
             if !events.is_empty() {
-                tracing::info!(
-                    count = events.len(),
-                    "Loading resume history into viewport"
-                );
+                tracing::info!(count = events.len(), "Loading resume history into viewport");
                 app.load_history_events(events);
             }
         }
@@ -382,7 +378,7 @@ impl OilChatRunner {
         let terminal_size = self.terminal.size();
         let ctx = ViewContext::with_terminal_size(&self.focus, theme::active(), terminal_size);
         let tree = app.view(&ctx);
-        let _ = self.terminal.render(&tree)?;
+        self.terminal.render(&tree, "")?;
 
         let (msg_tx, msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
         let mut background_tasks: Vec<JoinHandle<()>> = Vec::new();
@@ -688,8 +684,7 @@ impl OilChatRunner {
                 self.terminal.force_full_redraw()?;
             }
             let terminal_size = self.terminal.size();
-            let ctx =
-                ViewContext::with_terminal_size(&self.focus, theme::active(), terminal_size);
+            let ctx = ViewContext::with_terminal_size(&self.focus, theme::active(), terminal_size);
             let tree = app.view(&ctx);
             self.terminal.render_fullscreen(&tree)?;
         } else {
@@ -1078,8 +1073,7 @@ impl OilChatRunner {
             processed_any = true;
 
             // Handle replay-complete signal (from replay_event_consumer)
-            if self.is_replay
-                && matches!(msg, ChatAppMsg::Status(ref s) if s == "Replay complete")
+            if self.is_replay && matches!(msg, ChatAppMsg::Status(ref s) if s == "Replay complete")
             {
                 self.replay_remaining_completes = 0;
                 if self.replay_auto_exit.is_some() {

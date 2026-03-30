@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use crate::tui::oil::chat_app::Role;
 use crate::tui::oil::component::Component;
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
-use crate::tui::oil::node::{col, scrollback, styled, text, Node};
+use crate::tui::oil::node::{col, styled, text, Node};
 use crate::tui::oil::style::Style;
 
 use crate::tui::oil::viewport_cache::{CachedChatItem, CachedMessage};
@@ -68,7 +68,7 @@ impl<'a> MessageList<'a> {
                 }),
             ]),
         };
-        scrollback(&msg.id, [content_node])
+        content_node
     }
 }
 

@@ -147,7 +147,8 @@ impl<A: App> AppHarness<A> {
     }
 
     pub fn graduated_count(&self) -> usize {
-        self.planner.graduation().graduated_count()
+        // Graduation is now drain-based at the app layer; count stdout lines as proxy
+        self.stdout_buffer.matches("\r\n").count()
     }
 
     pub fn is_focused(&self, id: &str) -> bool {

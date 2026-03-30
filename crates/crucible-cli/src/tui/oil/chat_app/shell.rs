@@ -232,8 +232,6 @@ impl OilChatApp {
         modal.save_output(&session_dir)
     }
 
-
-
     #[allow(dead_code)]
     pub(super) fn send_shell_output(&mut self, truncated: bool) {
         let path = self.save_shell_output();

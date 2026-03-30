@@ -10,6 +10,7 @@ pub struct ChatApp {
 }
 
 struct ChatMessage {
+    #[allow(dead_code)] // Identifier retained for future use
     id: String,
     role: Role,
     content: String,
@@ -153,11 +154,5 @@ fn render_message(msg: &ChatMessage) -> Node {
         Role::Assistant => (" . ", Style::new().fg(Color::DarkGray)),
     };
 
-    scrollback(
-        &msg.id,
-        [col([
-            text(""),
-            row([styled(prefix, style), text(&msg.content)]),
-        ])],
-    )
+    col([text(""), row([styled(prefix, style), text(&msg.content)])])
 }

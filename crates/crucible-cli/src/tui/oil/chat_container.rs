@@ -1,22 +1,17 @@
 //! Semantic containers for chat content.
 //!
-//! This module provides a layer of abstraction between raw cache items and the node tree.
-//! Each container represents a logical unit of content that graduates together:
-//! - UserMessage: A single user prompt
-//! - AssistantResponse: Text blocks + optional thinking (may span multiple deltas)
-//! - ToolGroup: Consecutive tool calls grouped together
-//! - SystemMessage: System-level messages
+//! Each container represents a logical unit of content that graduates together.
+//! Graduation is drain-based: completed containers are rendered, written to stdout,
+//! and removed from the list. No Node::Static or key tracking needed.
 
 use crate::tui::oil::components::{
     render_shell_execution, render_subagent, render_thinking_block, render_tool_call_with_frame,
     render_user_prompt,
 };
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
-use crate::tui::oil::node::{
-    col, row, scrollback, scrollback_continuation, spinner, styled, text, Direction, Node,
-};
+use crate::tui::oil::node::{col, row, spinner, styled, text, Node};
 use crate::tui::oil::render_state::RenderState;
-use crate::tui::oil::style::Style;
+use crate::tui::oil::style::{Gap, Style};
 
 use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
 
@@ -50,6 +45,57 @@ pub enum ContainerKind {
     AgentTask,
     ShellExecution,
     SystemMessage,
+}
+
+/// Whether a blank line is needed between two adjacent container kinds.
+///
+/// Consecutive tool groups are tight (no blank line). Everything else
+/// gets a blank line for visual separation.
+pub fn needs_spacing(prev: ContainerKind, next: ContainerKind) -> bool {
+    !matches!(
+        (prev, next),
+        (ContainerKind::ToolGroup, ContainerKind::ToolGroup)
+    )
+}
+
+/// Group (kind, node) pairs into a col with correct spacing.
+///
+/// Same logic as `render_containers()` in rendering.rs: consecutive ToolGroups
+/// are wrapped in a tight sub-col (`gap(0)`), everything else is separated by
+/// the outer `gap(1)`. Shared by both the graduation path and viewport path.
+pub(crate) fn group_container_nodes(items: Vec<(ContainerKind, Node)>) -> Node {
+    let mut groups: Vec<Node> = Vec::new();
+    let mut tight_run: Vec<Node> = Vec::new();
+    let mut run_kind: Option<ContainerKind> = None;
+
+    for (kind, node) in items {
+        let should_break = run_kind
+            .map(|prev| needs_spacing(prev, kind))
+            .unwrap_or(false);
+
+        if should_break {
+            if tight_run.len() == 1 {
+                groups.push(tight_run.pop().unwrap());
+            } else if !tight_run.is_empty() {
+                groups.push(col(tight_run.drain(..)).gap(Gap::row(0)));
+            }
+        }
+
+        tight_run.push(node);
+        run_kind = Some(kind);
+    }
+    // Flush remaining
+    if tight_run.len() == 1 {
+        groups.push(tight_run.pop().unwrap());
+    } else if !tight_run.is_empty() {
+        groups.push(col(tight_run).gap(Gap::row(0)));
+    }
+
+    if groups.len() == 1 {
+        groups.pop().unwrap()
+    } else {
+        col(groups).gap(Gap::row(1))
+    }
 }
 
 /// Semantic container for chat content.
@@ -160,24 +206,16 @@ impl ChatContainer {
 
     /// Render this container to a Node tree.
     ///
-    /// For most containers, content is wrapped in scrollback with the container's ID.
-    /// For AssistantResponse, each completed block gets its own scrollback to enable
-    /// incremental graduation during streaming.
+    /// Containers return plain content nodes — no scrollback wrappers.
+    /// Graduation is handled by draining completed containers at the app layer.
     pub fn view_with_params(&self, params: &ViewParams) -> Node {
         match self {
-            Self::UserMessage { id, content } => {
-                let content_node = render_user_prompt(content, params.render_state.width());
-                scrollback(id.clone(), [content_node])
+            Self::UserMessage { content, .. } => {
+                render_user_prompt(content, params.render_state.width())
             }
 
-            Self::AssistantResponse {
-                id,
-                text,
-                thinking,
-                ..
-            } => render_assistant_blocks_with_graduation(
+            Self::AssistantResponse { text, thinking, .. } => render_assistant_blocks(
                 &RenderBlocksParams {
-                    container_id: id,
                     text,
                     thinking,
                     complete: params.is_complete,
@@ -186,158 +224,69 @@ impl ChatContainer {
                 &params.render_state,
             ),
 
-            Self::ToolGroup { id, tools } => {
-                // Each tool call graduates individually when complete.
-                // Running tools stay in viewport so spinners animate.
-                // All tools use Continuation kind for tight spacing in graduation,
-                // EXCEPT the first tool of the first ToolGroup in a sequence (Block kind
-                // for blank-line separation from preceding non-tool content).
-                let first_is_continuation = params.prev_is_tool_group;
+            Self::ToolGroup { tools, .. } => {
                 let tool_nodes: Vec<Node> = tools
                     .iter()
-                    .enumerate()
-                    .map(|(i, t)| {
-                        let node =
-                            render_tool_call_with_frame(t, params.render_state.spinner_frame);
-                        if t.complete {
-                            if i == 0 && !first_is_continuation {
-                                scrollback(format!("{id}-tool-{i}"), [node])
-                            } else {
-                                scrollback_continuation(format!("{id}-tool-{i}"), [node])
-                            }
-                        } else {
-                            node
-                        }
-                    })
+                    .map(|t| render_tool_call_with_frame(t, params.render_state.spinner_frame))
                     .collect();
 
                 col(tool_nodes)
             }
 
-            Self::AgentTask { id, agent } => {
-                render_subagent_container(id, agent, params.render_state.spinner_frame)
+            Self::AgentTask { agent, .. } => {
+                render_subagent(agent, params.render_state.spinner_frame)
             }
 
-            Self::ShellExecution { id, shell } => {
-                let content = render_shell_execution(shell);
-                scrollback(id.clone(), [content])
-            }
+            Self::ShellExecution { shell, .. } => render_shell_execution(shell),
 
-            Self::SystemMessage { id, content } => {
-                let content_node = render_system_message(content);
-                scrollback(id.clone(), [content_node])
-            }
+            Self::SystemMessage { content, .. } => render_system_message(content),
         }
     }
 }
-/// Parameters for rendering assistant text with graduation support.
+/// Parameters for rendering assistant text.
 #[derive(Debug, Clone)]
 struct RenderBlocksParams<'a> {
-    pub container_id: &'a str,
     pub text: &'a str,
     pub thinking: &'a [ThinkingBlock],
     pub complete: bool,
     pub is_continuation: bool,
 }
 
-/// Render assistant text+thinking with graduation support.
-///
-/// Thinking blocks render before or interleaved with text (depending on
-/// show_thinking). Text is parsed as a single markdown string; top-level
-/// AST nodes are decomposed and graduated individually.
-fn render_assistant_blocks_with_graduation(
-    params: &RenderBlocksParams,
-    render_state: &RenderState,
-) -> Node {
+/// Render assistant text+thinking.
+fn render_assistant_blocks(params: &RenderBlocksParams, render_state: &RenderState) -> Node {
     let mut nodes = if render_state.show_thinking {
         render_blocks_full_thinking(params, render_state)
     } else {
         render_blocks_collapsed_thinking(params, render_state)
     };
 
-    // Streaming spinners (shared logic)
-    let has_text = !params.text.is_empty();
-    let has_thinking_summary = !render_state.show_thinking && !params.thinking.is_empty();
-
-    if !params.complete && !has_text && !has_thinking_summary {
-        let t = crate::tui::oil::theme::active();
-        nodes.push(row([
-            text(" "),
-            spinner(None, render_state.spinner_frame)
-                .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
-        ]));
-    } else if !params.complete && has_text {
-        let t = crate::tui::oil::theme::active();
-        nodes.push(row([
-            text(" "),
-            spinner(None, render_state.spinner_frame)
-                .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
-        ]));
+    // Streaming spinner: show when not complete, unless only the collapsed
+    // thinking summary is visible (it has its own spinner).
+    if !params.complete {
+        let has_text = !params.text.is_empty();
+        let has_thinking_summary = !render_state.show_thinking && !params.thinking.is_empty();
+        if has_text || !has_thinking_summary {
+            let t = crate::tui::oil::theme::active();
+            nodes.push(row([
+                text(" "),
+                spinner(None, render_state.spinner_frame)
+                    .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
+            ]));
+        }
     }
 
     col(nodes)
 }
 
-/// Decompose a markdown Node into graduatable block groups.
-///
-/// The markdown renderer produces a `col([...])` where children include:
-/// - Content nodes (text lines, styled spans, boxes for code/tables)
-/// - Spacer nodes (whitespace-only text between top-level blocks)
-///
-/// A single paragraph that word-wraps becomes multiple consecutive text
-/// nodes (one per line). We split ONLY at spacer boundaries to keep
-/// wrapped paragraphs and list items together.
-fn decompose_top_level_blocks(node: Node) -> Vec<Node> {
-    match node {
-        Node::Box(b) if b.direction == Direction::Column && b.children.len() > 1 => {
-            let mut groups: Vec<Vec<Node>> = vec![Vec::new()];
-
-            for child in b.children {
-                let is_spacer = matches!(&child, Node::Text(t) if t.content.trim().is_empty());
-                if is_spacer {
-                    // Start a new group (include the spacer in the next group
-                    // so inter-block spacing is preserved)
-                    if !groups.last().map_or(true, |g| g.is_empty()) {
-                        groups.push(vec![child]);
-                    }
-                } else {
-                    groups.last_mut().unwrap().push(child);
-                }
-            }
-
-            groups
-                .into_iter()
-                .filter(|g| !g.is_empty())
-                .map(|g| {
-                    if g.len() == 1 {
-                        g.into_iter().next().unwrap()
-                    } else {
-                        col(g)
-                    }
-                })
-                .collect()
-        }
-        Node::Empty => vec![],
-        other => vec![other],
-    }
-}
-
-/// Render the accumulated text string with per-block graduation.
-///
-/// Parses the full text through the markdown renderer, decomposes the AST
-/// into top-level blocks, and wraps completed blocks in scrollback nodes.
-/// During streaming only the last block is unstable; all preceding blocks
-/// are syntactically closed and safe to graduate.
-fn render_text_graduated(
-    text: &str,
-    container_id: &str,
-    complete: bool,
+/// Render text as markdown.
+fn render_text(
+    text_content: &str,
     is_continuation: bool,
     has_thinking: bool,
     render_state: &RenderState,
-) -> Vec<Node> {
-    if text.is_empty() {
-        return vec![];
+) -> Node {
+    if text_content.is_empty() {
+        return Node::Empty;
     }
 
     let margins = if is_continuation || has_thinking {
@@ -346,27 +295,7 @@ fn render_text_graduated(
         Margins::assistant()
     };
     let style = RenderStyle::natural_with_margins(render_state.width(), margins);
-    let md_node = markdown_to_node_styled(text, style);
-    let children = decompose_top_level_blocks(md_node);
-    let len = children.len();
-
-    children
-        .into_iter()
-        .enumerate()
-        .map(|(i, child)| {
-            // During streaming, all-but-last are stable (graduated).
-            // When complete, all are stable.
-            let is_stable = complete || i + 1 < len;
-            if is_stable {
-                scrollback(
-                    format!("{container_id}-md-{i}"),
-                    [child],
-                )
-            } else {
-                child
-            }
-        })
-        .collect()
+    markdown_to_node_styled(text_content, style)
 }
 
 /// Render with full thinking content visible (show_thinking=true).
@@ -376,37 +305,25 @@ fn render_blocks_full_thinking(
 ) -> Vec<Node> {
     let mut nodes = Vec::new();
 
-    // Render thinking blocks first
-    for (i, tb) in params.thinking.iter().enumerate() {
-        let thinking_node = render_thinking_block(
+    for tb in params.thinking.iter() {
+        nodes.push(render_thinking_block(
             &tb.content,
             tb.token_count,
             render_state.width(),
             params.complete,
-        )
-        ;
-        // No explicit top margin — graduation Block spacing handles the gap.
-        // Use "-thinking-summary" for the first block so toggling
-        // show_thinking doesn't leave a ghost graduated node —
-        // both renderers share the same key.
-        let key = if i == 0 {
-            format!("{}-thinking-summary", params.container_id)
-        } else {
-            format!("{}-thinking-{i}", params.container_id)
-        };
-        nodes.push(scrollback(key, [thinking_node]));
+        ));
     }
 
-    // Render text
     let has_thinking = !params.thinking.is_empty();
-    nodes.extend(render_text_graduated(
+    let text_node = render_text(
         params.text,
-        params.container_id,
-        params.complete,
         params.is_continuation,
         has_thinking,
         render_state,
-    ));
+    );
+    if text_node != Node::Empty {
+        nodes.push(text_node);
+    }
 
     nodes
 }
@@ -419,29 +336,19 @@ fn render_blocks_collapsed_thinking(
     let mut nodes = Vec::new();
     let has_thinking = !params.thinking.is_empty();
 
-    // Emit thinking summary first — before text.
     if has_thinking {
-        let has_text = !params.text.is_empty();
-        let summary_node = build_thinking_summary(params, render_state);
-        if params.complete || has_text {
-            nodes.push(scrollback(
-                format!("{}-thinking-summary", params.container_id),
-                [summary_node],
-            ));
-        } else {
-            nodes.push(summary_node);
-        }
+        nodes.push(build_thinking_summary(params, render_state));
     }
 
-    // Render text
-    nodes.extend(render_text_graduated(
+    let text_node = render_text(
         params.text,
-        params.container_id,
-        params.complete,
         params.is_continuation,
         has_thinking,
         render_state,
-    ));
+    );
+    if text_node != Node::Empty {
+        nodes.push(text_node);
+    }
 
     nodes
 }
@@ -490,16 +397,6 @@ fn build_thinking_summary(params: &RenderBlocksParams, render_state: &RenderStat
     }
 }
 
-fn render_subagent_container(id: &str, subagent: &CachedSubagent, spinner_frame: usize) -> Node {
-    let content = render_subagent(subagent, spinner_frame);
-    if subagent.is_terminal() {
-        scrollback(id.to_owned(), [content])
-    } else {
-        content
-    }
-}
-
-
 /// Render a system message.
 fn render_system_message(content: &str) -> Node {
     use crate::tui::oil::node::styled;
@@ -527,6 +424,10 @@ pub struct ContainerList {
     /// Whether the assistant turn is active (streaming). This stays true
     /// across tool calls until explicitly completed or cancelled.
     turn_active: bool,
+    /// Kind of the last container graduated to stdout. Used for cross-frame
+    /// spacing: the next batch's first container needs this to decide whether
+    /// a blank line separator is needed before it.
+    last_graduated_kind: Option<ContainerKind>,
 }
 
 impl Default for ContainerList {
@@ -542,6 +443,7 @@ impl ContainerList {
             has_graduated: false,
             id_counter: 0,
             turn_active: false,
+            last_graduated_kind: None,
         }
     }
 
@@ -783,19 +685,71 @@ impl ContainerList {
             .push(ChatContainer::SystemMessage { id, content });
     }
 
-    /// Drop graduated containers from the front.
+    /// Drain completed containers from the front and render them for stdout.
     ///
-    /// Graduated IDs form a monotonic prefix — count how many leading
-    /// containers are graduated, then drain them in a single operation.
-    pub fn graduate(&mut self, graduated_ids: &[String]) {
-        let count = self
-            .containers
-            .iter()
-            .take_while(|c| graduated_ids.iter().any(|id| id == c.id()))
-            .count();
-        if count > 0 {
-            self.containers.drain(0..count);
+    /// All graduating containers are rendered together through ONE Taffy pass
+    /// with the same grouping logic as the viewport (`gap(1)` between groups,
+    /// `gap(0)` for consecutive tool groups). This ensures stdout spacing is
+    /// identical to what Taffy would produce in the viewport.
+    ///
+    /// Cross-frame spacing uses `last_graduated_kind` — if the previous frame
+    /// graduated a container, this frame's batch gets a leading blank line
+    /// (unless both sides are ToolGroups).
+    pub fn drain_completed(
+        &mut self,
+        width: u16,
+        spinner_frame: usize,
+        show_thinking: bool,
+    ) -> String {
+        use crucible_oil::render::render_to_string;
+
+        let mut batch: Vec<(ContainerKind, Node)> = Vec::new();
+
+        while !self.containers.is_empty() {
+            if !self.is_container_graduatable(0) {
+                break;
+            }
+            let container = self.containers.remove(0);
+            let kind = container.kind();
+            let node = container.view(width as usize, spinner_frame, show_thinking, false, true);
+            batch.push((kind, node));
             self.has_graduated = true;
+        }
+
+        if batch.is_empty() {
+            return String::new();
+        }
+
+        let first_kind = batch[0].0;
+        let last_kind = batch[batch.len() - 1].0;
+
+        // Group using the same logic as render_containers():
+        // consecutive ToolGroups → tight sub-col (gap=0), everything else → gap(1)
+        let grouped = group_container_nodes(batch);
+
+        // One Taffy pass for the entire batch
+        let rendered = render_to_string(&grouped, width as usize);
+
+        // Cross-frame spacing: blank line between previous batch's last
+        // container and this batch's first, unless both are ToolGroups.
+        let mut output = String::new();
+        if let Some(prev) = self.last_graduated_kind {
+            if needs_spacing(prev, first_kind) {
+                output.push_str("\r\n");
+            }
+        }
+        output.push_str(&rendered);
+        output.push_str("\r\n");
+
+        self.last_graduated_kind = Some(last_kind);
+        output
+    }
+
+    /// Whether the container at the given index can be graduated.
+    fn is_container_graduatable(&self, index: usize) -> bool {
+        match &self.containers[index] {
+            ChatContainer::AssistantResponse { .. } => self.is_response_complete(index),
+            other => other.is_complete(),
         }
     }
 
@@ -809,6 +763,13 @@ impl ContainerList {
         self.has_graduated
     }
 
+    /// Kind of the last container that graduated to stdout.
+    /// Used by `render_containers()` to seed `prev_kind` for the first
+    /// viewport container's spacing/continuation decisions.
+    pub fn last_graduated_kind(&self) -> Option<ContainerKind> {
+        self.last_graduated_kind
+    }
+
     /// Check if there are any containers.
     pub fn is_empty(&self) -> bool {
         self.containers.is_empty()
@@ -817,6 +778,20 @@ impl ContainerList {
     /// Get container count.
     pub fn len(&self) -> usize {
         self.containers.len()
+    }
+
+    /// Drop containers from the front by ID (test helper).
+    #[cfg(test)]
+    pub fn graduate(&mut self, graduated_ids: &[String]) {
+        let count = self
+            .containers
+            .iter()
+            .take_while(|c| graduated_ids.iter().any(|id| id == c.id()))
+            .count();
+        if count > 0 {
+            self.containers.drain(0..count);
+            self.has_graduated = true;
+        }
     }
 
     /// Whether the assistant turn is active (streaming, tool calls, etc.)
@@ -933,6 +908,7 @@ impl ContainerList {
         self.containers.clear();
         self.has_graduated = false;
         self.turn_active = false;
+        self.last_graduated_kind = None;
     }
 }
 
@@ -1438,8 +1414,16 @@ mod tests {
                     ChatContainer::UserMessage { id, content } => {
                         eprintln!("{}: User({}): {:.30}", i, id, content);
                     }
-                    ChatContainer::AssistantResponse { id, text, thinking, .. } => {
-                        eprintln!("{}: Asst({}): text={:?} thinking={}", i, id, text, thinking.len());
+                    ChatContainer::AssistantResponse {
+                        id, text, thinking, ..
+                    } => {
+                        eprintln!(
+                            "{}: Asst({}): text={:?} thinking={}",
+                            i,
+                            id,
+                            text,
+                            thinking.len()
+                        );
                     }
                     ChatContainer::ToolGroup { id, tools } => {
                         for t in tools {
@@ -1462,8 +1446,16 @@ mod tests {
                 ChatContainer::UserMessage { id, content } => {
                     eprintln!("{}: User({}): {:.30}", i, id, content);
                 }
-                ChatContainer::AssistantResponse { id, text, thinking, .. } => {
-                    eprintln!("{}: Asst({}): text={:?} thinking={}", i, id, text, thinking.len());
+                ChatContainer::AssistantResponse {
+                    id, text, thinking, ..
+                } => {
+                    eprintln!(
+                        "{}: Asst({}): text={:?} thinking={}",
+                        i,
+                        id,
+                        text,
+                        thinking.len()
+                    );
                 }
                 ChatContainer::ToolGroup { id, tools } => {
                     for t in tools {
@@ -1587,7 +1579,6 @@ mod tests {
         }];
 
         let params = super::RenderBlocksParams {
-            container_id: "test-1",
             text: "First paragraph\n\nSecond paragraph",
             thinking: &thinking,
             complete: true,
@@ -1599,7 +1590,7 @@ mod tests {
             show_thinking: true,
         };
 
-        let node = super::render_assistant_blocks_with_graduation(&params, &render_state);
+        let node = super::render_assistant_blocks(&params, &render_state);
         let output = render_to_plain_text(&node, 80);
 
         let think_pos = output.find("my deep thought").expect("thinking missing");
@@ -1634,14 +1625,13 @@ mod tests {
         }];
 
         let params = super::RenderBlocksParams {
-            container_id: "test-2",
             text: "Response text",
             thinking: &thinking,
             complete: true,
             is_continuation: false,
         };
 
-        let full = super::render_assistant_blocks_with_graduation(
+        let full = super::render_assistant_blocks(
             &params,
             &super::RenderState {
                 terminal_width: 80,
@@ -1651,7 +1641,7 @@ mod tests {
         );
         let full_output = render_to_plain_text(&full, 80);
 
-        let bounded_node = super::render_assistant_blocks_with_graduation(
+        let bounded_node = super::render_assistant_blocks(
             &params,
             &super::RenderState {
                 terminal_width: 80,
@@ -1700,7 +1690,6 @@ mod tests {
         }];
 
         let params = super::RenderBlocksParams {
-            container_id: "test-spinner",
             text: "Here is my response so far",
             thinking: &thinking,
             complete: false,
@@ -1712,7 +1701,7 @@ mod tests {
             show_thinking: false,
         };
 
-        let node = super::render_assistant_blocks_with_graduation(&params, &render_state);
+        let node = super::render_assistant_blocks(&params, &render_state);
         let output = render_to_plain_text(&node, 80);
 
         let thinking_line = output
@@ -1746,7 +1735,6 @@ mod tests {
         }];
 
         let params = super::RenderBlocksParams {
-            container_id: "test-icon",
             text: "Here is my answer.",
             thinking: &thinking,
             complete: true,
@@ -1758,7 +1746,7 @@ mod tests {
             show_thinking: false,
         };
 
-        let node = super::render_assistant_blocks_with_graduation(&params, &render_state);
+        let node = super::render_assistant_blocks(&params, &render_state);
         let output = render_to_plain_text(&node, 80);
 
         let thought_line = output
@@ -1772,73 +1760,8 @@ mod tests {
         );
     }
 
-    /// Graduation decomposes markdown into top-level blocks: stable blocks
-    /// (all but last during streaming) get scrollback wrappers.
-    #[test]
-    fn graduation_wraps_stable_blocks_in_scrollback() {
-        let params = super::RenderBlocksParams {
-            container_id: "grad-test",
-            text: "Paragraph one.\n\nParagraph two.\n\nParagraph three.",
-            thinking: &[],
-            complete: false,
-            is_continuation: false,
-        };
-        let render_state = super::RenderState {
-            terminal_width: 80,
-            spinner_frame: 0,
-            show_thinking: false,
-        };
-
-        let node = super::render_assistant_blocks_with_graduation(&params, &render_state);
-
-        // The result should be a col with the graduated text blocks + spinner
-        fn count_scrollback(node: &Node) -> usize {
-            match node {
-                Node::Static(_) => 1,
-                Node::Box(b) => b.children.iter().map(count_scrollback).sum(),
-                _ => 0,
-            }
-        }
-
-        let sb_count = count_scrollback(&node);
-        // During streaming: 2 of 3 paragraphs should be wrapped in scrollback
-        assert!(
-            sb_count >= 2,
-            "Expected at least 2 scrollback wrappers during streaming, got {sb_count}"
-        );
-    }
-
-    /// When complete, all top-level blocks get scrollback wrappers.
-    #[test]
-    fn graduation_wraps_all_blocks_when_complete() {
-        let params = super::RenderBlocksParams {
-            container_id: "grad-complete",
-            text: "Paragraph one.\n\nParagraph two.",
-            thinking: &[],
-            complete: true,
-            is_continuation: false,
-        };
-        let render_state = super::RenderState {
-            terminal_width: 80,
-            spinner_frame: 0,
-            show_thinking: false,
-        };
-
-        let node = super::render_assistant_blocks_with_graduation(&params, &render_state);
-
-        fn count_scrollback(node: &Node) -> usize {
-            match node {
-                Node::Static(_) => 1,
-                Node::Box(b) => b.children.iter().map(count_scrollback).sum(),
-                _ => 0,
-            }
-        }
-
-        let sb_count = count_scrollback(&node);
-        // When complete: both paragraphs should be wrapped
-        assert!(
-            sb_count >= 2,
-            "Expected at least 2 scrollback wrappers when complete, got {sb_count}"
-        );
-    }
+    // Tests graduation_wraps_stable_blocks_in_scrollback and
+    // graduation_wraps_all_blocks_when_complete removed: they relied on
+    // Node::Static which no longer exists. Graduation is now automatic
+    // via drain_completed.
 }

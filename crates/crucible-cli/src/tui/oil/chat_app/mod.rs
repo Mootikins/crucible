@@ -385,9 +385,10 @@ impl OilChatApp {
         self.notification_area.clear();
     }
 
-    pub(crate) fn mark_graduated(&mut self, ids: impl IntoIterator<Item = String>) {
-        let ids: Vec<String> = ids.into_iter().collect();
-        self.container_list.graduate(&ids);
+    /// Drain completed containers and return their rendered content for stdout.
+    pub(crate) fn drain_graduated(&mut self, width: u16) -> String {
+        self.container_list
+            .drain_completed(width, self.spinner_frame(), self.show_thinking)
     }
 
     /// Replay stored session events through the live event path.

@@ -497,7 +497,9 @@ mod tests {
     #[tokio::test]
     async fn red_dispatch_get_kiln_info_is_not_unknown_tool() {
         let (_temp, dispatcher) = test_dispatcher_with_mcp();
-        let result = dispatcher.dispatch_tool("get_kiln_info", json!({}), Default::default()).await;
+        let result = dispatcher
+            .dispatch_tool("get_kiln_info", json!({}), Default::default())
+            .await;
 
         assert!(
             !matches!(result, Err(ref err) if err.contains("Unknown tool")),
@@ -508,7 +510,9 @@ mod tests {
     #[tokio::test]
     async fn red_dispatch_list_notes_is_not_unknown_tool() {
         let (_temp, dispatcher) = test_dispatcher_with_mcp();
-        let result = dispatcher.dispatch_tool("list_notes", json!({}), Default::default()).await;
+        let result = dispatcher
+            .dispatch_tool("list_notes", json!({}), Default::default())
+            .await;
 
         assert!(
             !matches!(result, Err(ref err) if err.contains("Unknown tool")),
@@ -520,7 +524,11 @@ mod tests {
     async fn red_dispatch_read_note_is_not_unknown_tool() {
         let (_temp, dispatcher) = test_dispatcher_with_mcp();
         let result = dispatcher
-            .dispatch_tool("read_note", json!({ "path": "test.md" }), Default::default())
+            .dispatch_tool(
+                "read_note",
+                json!({ "path": "test.md" }),
+                Default::default(),
+            )
             .await;
 
         assert!(
@@ -533,7 +541,11 @@ mod tests {
     async fn red_dispatch_text_search_is_not_unknown_tool() {
         let (_temp, dispatcher) = test_dispatcher_with_mcp();
         let result = dispatcher
-            .dispatch_tool("text_search", json!({ "query": "test" }), Default::default())
+            .dispatch_tool(
+                "text_search",
+                json!({ "query": "test" }),
+                Default::default(),
+            )
             .await;
 
         assert!(
