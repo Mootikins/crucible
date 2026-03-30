@@ -333,13 +333,8 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             commands::lua::execute(code).await?;
         }
 
-        Some(Commands::Init {
-            path,
-            force,
-            interactive,
-            personal,
-        }) => {
-            commands::init::execute(path, force, interactive, personal).await?;
+        Some(Commands::Init { path, force, yes }) => {
+            commands::init::execute(path, force, yes).await?;
         }
 
         Some(Commands::Session(cmd)) => {

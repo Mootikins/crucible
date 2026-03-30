@@ -7,7 +7,7 @@ async fn test_init_creates_config_with_provider() {
     let path = temp_dir.path().to_path_buf();
 
     // Run init (non-interactive mode with defaults)
-    crucible_cli::commands::init::execute(Some(path.clone()), false, false, false)
+    crucible_cli::commands::init::execute(Some(path.clone()), false, true)
         .await
         .unwrap();
 
@@ -40,7 +40,7 @@ async fn test_init_creates_required_directories() {
     let temp_dir = TempDir::new().unwrap();
     let path = temp_dir.path().to_path_buf();
 
-    crucible_cli::commands::init::execute(Some(path.clone()), false, false, false)
+    crucible_cli::commands::init::execute(Some(path.clone()), false, true)
         .await
         .unwrap();
 
@@ -62,13 +62,13 @@ async fn test_init_is_idempotent_on_existing_kiln() {
     let path = temp_dir.path().to_path_buf();
 
     // First init should succeed
-    crucible_cli::commands::init::execute(Some(path.clone()), false, false, false)
+    crucible_cli::commands::init::execute(Some(path.clone()), false, true)
         .await
         .unwrap();
 
     // Second init without force should succeed (idempotent — prints "already exists", returns Ok)
     let result =
-        crucible_cli::commands::init::execute(Some(path.clone()), false, false, false).await;
+        crucible_cli::commands::init::execute(Some(path.clone()), false, true).await;
     assert!(
         result.is_ok(),
         "re-init on existing kiln should be idempotent (Ok)"
@@ -88,7 +88,7 @@ async fn test_init_force_reinitializes() {
     let path = temp_dir.path().to_path_buf();
 
     // First init
-    crucible_cli::commands::init::execute(Some(path.clone()), false, false, false)
+    crucible_cli::commands::init::execute(Some(path.clone()), false, true)
         .await
         .unwrap();
 
@@ -98,7 +98,7 @@ async fn test_init_force_reinitializes() {
     assert!(marker.exists());
 
     // Force reinit should succeed and remove marker
-    crucible_cli::commands::init::execute(Some(path.clone()), true, false, false)
+    crucible_cli::commands::init::execute(Some(path.clone()), true, true)
         .await
         .unwrap();
 
