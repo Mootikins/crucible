@@ -962,14 +962,17 @@ mod rpc {
 
     pub(super) async fn list(
         client: &DaemonClient,
-        config: &CliConfig,
+        _config: &CliConfig,
         session_type: Option<&str>,
         state: Option<&str>,
         format: &str,
         limit: Option<u32>,
     ) -> Result<()> {
         let result = client
-            .session_list(Some(&config.kiln_path), None, session_type, state, None)
+            // Pass None to search all kilns + crucible home, not just config.kiln_path.
+            // Sessions may be stored under crucible_home (~/.crucible) regardless of
+            // which kiln_path is in the current config.
+            .session_list(None, None, session_type, state, None)
             .await?;
 
         let mut sessions = result["sessions"].as_array().cloned().unwrap_or_default();
