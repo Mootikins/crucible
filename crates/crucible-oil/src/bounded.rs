@@ -199,7 +199,11 @@ mod tests {
         let output_lines: Vec<&str> = stripped.lines().collect();
 
         // Expect exactly 4 lines: indicator + 3 content lines, no blank spacers
-        assert_eq!(output_lines.len(), 4, "expected 4 lines, got: {output_lines:?}");
+        assert_eq!(
+            output_lines.len(),
+            4,
+            "expected 4 lines, got: {output_lines:?}"
+        );
         assert!(output_lines[0].contains("(7 more lines)"));
         assert!(output_lines[1].contains("content line 8"));
         assert!(output_lines[2].contains("content line 9"));
@@ -215,7 +219,11 @@ mod tests {
         let stripped = crate::ansi::strip_ansi(&rendered);
         let output_lines: Vec<&str> = stripped.lines().collect();
 
-        assert_eq!(output_lines.len(), 4, "expected 4 lines, got: {output_lines:?}");
+        assert_eq!(
+            output_lines.len(),
+            4,
+            "expected 4 lines, got: {output_lines:?}"
+        );
         assert!(output_lines[0].contains("content line 1"));
         assert!(output_lines[1].contains("content line 2"));
         assert!(output_lines[2].contains("content line 3"));

@@ -117,21 +117,18 @@ impl Terminal {
         }
     }
 
-    pub fn render(&mut self, tree: &Node) -> io::Result<Vec<String>> {
-        let snapshot = self.planner.plan(tree);
-        self.apply(&snapshot)?;
-        Ok(snapshot.plan.trace.graduated_keys)
+    pub fn render(&mut self, tree: &Node, stdout_delta: &str) -> io::Result<()> {
+        let snapshot = self
+            .planner
+            .plan_with_stdout(tree, stdout_delta.to_string());
+        self.apply(&snapshot)
     }
 
     fn apply(&mut self, snapshot: &FrameSnapshot) -> io::Result<()> {
         execute!(self.stdout, Hide)?;
 
         if !snapshot.stdout_delta.is_empty() {
-            tracing::debug!(
-                count = snapshot.plan.graduated.len(),
-                keys = ?snapshot.plan.trace.graduated_keys,
-                "graduating"
-            );
+            tracing::debug!("graduating to stdout");
 
             let cursor_offset = self
                 .last_cursor
@@ -205,19 +202,14 @@ impl Terminal {
 
     pub fn force_full_redraw(&mut self) -> io::Result<()> {
         self.output.force_redraw();
-        self.planner.reset_graduation();
         Ok(())
     }
 
-    pub fn pre_graduate_keys(&mut self, keys: impl IntoIterator<Item = String>) {
-        self.planner.pre_graduate_keys(keys);
-    }
-
-    pub fn render_fullscreen(&mut self, tree: &Node) -> io::Result<Vec<String>> {
+    pub fn render_fullscreen(&mut self, tree: &Node) -> io::Result<()> {
         let layout = crate::layout::build_layout_tree(tree, self.width, self.height);
         let (content, _cursor) = crate::layout::render_layout_tree(&layout);
         self.output.render_fullscreen(&content)?;
-        Ok(Vec::new())
+        Ok(())
     }
 
     pub fn set_scroll_offset(&mut self, offset: usize) {
@@ -234,8 +226,8 @@ impl Terminal {
 }
 
 impl crate::runtime::FrameRenderer for Terminal {
-    fn render_frame(&mut self, tree: &Node) -> Vec<String> {
-        self.render(tree).unwrap_or_default()
+    fn render_frame(&mut self, tree: &Node, stdout_delta: &str) {
+        let _ = self.render(tree, stdout_delta);
     }
 
     fn force_full_redraw(&mut self) {

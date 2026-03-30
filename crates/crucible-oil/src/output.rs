@@ -375,8 +375,7 @@ mod tests {
         let lines: Vec<String> = vec!["line1".into(), "line2".into(), "line3".into()];
         let visual_rows = vec![1, 1, 1];
 
-        let (viewport, rows) =
-            buffer.clamp_to_viewport_with_scroll(&lines, &visual_rows, 3, 22, 0);
+        let (viewport, rows) = buffer.clamp_to_viewport_with_scroll(&lines, &visual_rows, 3, 22, 0);
 
         assert_eq!(viewport.len(), 3);
         assert_eq!(rows, 3);
@@ -388,8 +387,7 @@ mod tests {
         let lines: Vec<String> = (0..20).map(|i| format!("line{}", i)).collect();
         let visual_rows = vec![1; 20];
 
-        let (viewport, rows) =
-            buffer.clamp_to_viewport_with_scroll(&lines, &visual_rows, 20, 8, 0);
+        let (viewport, rows) = buffer.clamp_to_viewport_with_scroll(&lines, &visual_rows, 20, 8, 0);
 
         assert_eq!(viewport.len(), 8);
         assert_eq!(rows, 8);
@@ -407,8 +405,7 @@ mod tests {
         ];
         let visual_rows = vec![1, 2, 1];
 
-        let (viewport, rows) =
-            buffer.clamp_to_viewport_with_scroll(&lines, &visual_rows, 4, 3, 0);
+        let (viewport, rows) = buffer.clamp_to_viewport_with_scroll(&lines, &visual_rows, 4, 3, 0);
 
         assert_eq!(viewport.len(), 2);
         assert_eq!(rows, 3);

@@ -114,11 +114,6 @@ impl LayoutEngine {
 
             Node::Box(boxnode) => self.build_box(boxnode, available_width, false),
 
-            Node::Static(static_node) => {
-                let fragment = Node::Fragment(static_node.children.clone());
-                return self.build_node(&fragment, available_width);
-            }
-
             Node::Input(_) => self.new_full_width_line(available_width),
 
             Node::Spinner(_) => self.new_full_width_line(available_width),
@@ -404,14 +399,6 @@ impl LayoutEngine {
                 }
             }
 
-            Node::Static(static_node) => {
-                let fragment = Node::Fragment(static_node.children.clone());
-                let mut layout_box =
-                    self.node_to_layout_box(&fragment, taffy_id, offset_x, offset_y);
-                layout_box.key = Some(static_node.key.clone());
-                layout_box
-            }
-
             Node::Input(input) => LayoutBox::new(
                 rect,
                 LayoutContent::Input {
@@ -604,7 +591,10 @@ mod tests {
         let mut engine = LayoutEngine::new();
         let node = col([text("Header"), text("Body"), text("Footer")]);
         let layout_tree = engine.compute_layout_tree(&node, 80.0, 24.0);
-        assert!(matches!(layout_tree.root.content, LayoutContent::Box { .. }));
+        assert!(matches!(
+            layout_tree.root.content,
+            LayoutContent::Box { .. }
+        ));
         assert_eq!(layout_tree.root.children.len(), 3);
         for (i, expected) in ["Header", "Body", "Footer"].iter().enumerate() {
             match &layout_tree.root.children[i].content {
@@ -625,15 +615,6 @@ mod tests {
             child2.rect.y > child1.rect.y,
             "Second child should be below first"
         );
-    }
-
-    #[test]
-    fn to_layout_tree_static_preserves_key() {
-        use crate::node::scrollback;
-        let mut engine = LayoutEngine::new();
-        let node = scrollback("msg-123", [text("Message content")]);
-        let layout_tree = engine.compute_layout_tree(&node, 80.0, 24.0);
-        assert_eq!(layout_tree.root.key, Some("msg-123".to_string()));
     }
 
     #[test]

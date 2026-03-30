@@ -1,22 +1,6 @@
 use crate::overlay::OverlayAnchor;
 use crate::style::{AlignItems, Border, Color, Gap, JustifyContent, Padding, Style};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ElementKind {
-    #[default]
-    Block,
-    Continuation,
-}
-
-impl ElementKind {
-    pub fn wants_newline_after(self) -> bool {
-        match self {
-            ElementKind::Block => true,
-            ElementKind::Continuation => false,
-        }
-    }
-}
-
 /// Default popup background color (dark blue-gray).
 pub const DEFAULT_POPUP_BG: Color = Color::Rgb(30, 34, 42);
 
@@ -29,7 +13,6 @@ pub enum Node {
     Empty,
     Text(TextNode),
     Box(BoxNode),
-    Static(StaticNode),
     Input(InputNode),
     Spinner(SpinnerNode),
     Popup(PopupNode),
@@ -70,14 +53,6 @@ pub struct BoxNode {
     pub justify: JustifyContent,
     pub align: AlignItems,
     pub gap: Gap,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct StaticNode {
-    pub key: String,
-    pub children: Vec<Node>,
-    pub kind: ElementKind,
-    pub newline: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -200,30 +175,6 @@ pub fn row(children: impl IntoIterator<Item = Node>) -> Node {
         children: children.into_iter().collect(),
         direction: Direction::Row,
         ..Default::default()
-    })
-}
-
-pub fn scrollback(key: impl Into<String>, children: impl IntoIterator<Item = Node>) -> Node {
-    scrollback_with_kind(key, ElementKind::Block, children)
-}
-
-pub fn scrollback_continuation(
-    key: impl Into<String>,
-    children: impl IntoIterator<Item = Node>,
-) -> Node {
-    scrollback_with_kind(key, ElementKind::Continuation, children)
-}
-
-pub fn scrollback_with_kind(
-    key: impl Into<String>,
-    kind: ElementKind,
-    children: impl IntoIterator<Item = Node>,
-) -> Node {
-    Node::Static(StaticNode {
-        key: key.into(),
-        children: children.into_iter().collect(),
-        kind,
-        newline: kind.wants_newline_after(),
     })
 }
 
@@ -962,16 +913,5 @@ mod raw_node_tests {
             }
             _ => panic!("Expected Raw node"),
         }
-    }
-}
-
-#[cfg(test)]
-mod element_kind_tests {
-    use super::ElementKind;
-
-    #[test]
-    fn wants_newline_after_matches_kind() {
-        assert!(ElementKind::Block.wants_newline_after());
-        assert!(!ElementKind::Continuation.wants_newline_after());
     }
 }
