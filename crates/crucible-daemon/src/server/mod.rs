@@ -73,6 +73,7 @@ pub struct Server {
     event_tx: broadcast::Sender<SessionEventMessage>,
     dispatcher: Arc<RpcDispatcher>,
     plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
+    runtimepath: Vec<std::path::PathBuf>,
     plugin_watch: bool,
     auto_archive_hours: Option<u64>,
     llm_config: Option<LlmConfig>,
@@ -96,6 +97,7 @@ pub struct BindWithPluginConfigParams {
     pub path: std::path::PathBuf,
     pub mcp_config: Option<crucible_config::McpConfig>,
     pub plugin_config: std::collections::HashMap<String, serde_json::Value>,
+    pub runtimepath: Vec<std::path::PathBuf>,
     pub plugin_watch: bool,
     pub auto_archive_hours: Option<u64>,
     pub llm_config: Option<crucible_config::LlmConfig>,
@@ -118,6 +120,7 @@ impl Server {
             path: path.to_path_buf(),
             mcp_config: mcp_config.cloned(),
             plugin_config: std::collections::HashMap::new(),
+            runtimepath: Vec::new(),
             plugin_watch: false,
             auto_archive_hours: None,
             llm_config: None,
@@ -238,6 +241,7 @@ impl Server {
             event_tx,
             dispatcher,
             plugin_loader,
+            runtimepath: params.runtimepath,
             plugin_watch: params.plugin_watch,
             auto_archive_hours: params.auto_archive_hours,
             llm_config: params.llm_config.clone(),
@@ -311,7 +315,7 @@ impl Server {
                     }
                 }
 
-                let paths = crate::daemon_plugins::default_daemon_plugin_paths();
+                let paths = crate::daemon_plugins::daemon_plugin_paths(&self.runtimepath);
                 match loader.load_plugins(&paths).await {
                     Ok(specs) => {
                         if !specs.is_empty() {

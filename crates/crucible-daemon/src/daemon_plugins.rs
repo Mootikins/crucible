@@ -562,16 +562,21 @@ impl DaemonPluginLoader {
     }
 }
 
-/// Return the default plugin search paths with provenance.
+/// Build plugin search paths from config `runtimepath` + env vars + defaults.
 ///
-/// Uses the same paths as the CLI: `CRUCIBLE_PLUGIN_PATH` env var
-/// and `~/.config/crucible/plugins/`. Each path is tagged with its
-/// [`PluginSource`] for provenance tracking. Paths are ordered by
-/// priority (highest first), so same-named plugins at higher-priority
-/// paths shadow lower-priority ones.
-pub fn default_daemon_plugin_paths() -> Vec<(PathBuf, PluginSource)> {
+/// If `runtimepath` is non-empty, each entry's `plugins/` subdir is used as a
+/// Runtime source. Otherwise falls back to `CRUCIBLE_RUNTIME` env var and
+/// exe-relative detection.
+///
+/// `CRUCIBLE_PLUGIN_PATH` env var always prepends (highest priority).
+/// `~/.config/crucible/plugins/` is always included as User source.
+///
+/// Paths are ordered by priority (highest first) — same-named plugins at
+/// higher-priority paths shadow lower-priority ones.
+pub fn daemon_plugin_paths(runtimepath: &[std::path::PathBuf]) -> Vec<(PathBuf, PluginSource)> {
     let mut paths = Vec::new();
 
+    // 1. CRUCIBLE_PLUGIN_PATH env var (highest priority, for dev/CI)
     if let Ok(env_paths) = std::env::var("CRUCIBLE_PLUGIN_PATH") {
         let sep = if cfg!(windows) { ';' } else { ':' };
         for p in env_paths.split(sep) {
@@ -581,6 +586,7 @@ pub fn default_daemon_plugin_paths() -> Vec<(PathBuf, PluginSource)> {
         }
     }
 
+    // 2. User plugins (~/.config/crucible/plugins/)
     if let Some(config_dir) = dirs::config_dir() {
         paths.push((
             config_dir.join("crucible").join("plugins"),
@@ -588,40 +594,72 @@ pub fn default_daemon_plugin_paths() -> Vec<(PathBuf, PluginSource)> {
         ));
     }
 
-    if let Ok(runtime_base) = std::env::var("CRUCIBLE_RUNTIME") {
-        let runtime_plugins = PathBuf::from(runtime_base).join("plugins");
-        if runtime_plugins.exists() {
-            tracing::debug!("Adding runtime plugin path: {:?}", runtime_plugins);
-            paths.push((runtime_plugins, PluginSource::Runtime));
-        }
-    } else if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(exe_dir) = exe_path.parent() {
-            let installed_plugins = exe_dir
-                .join("..")
-                .join("share")
-                .join("crucible")
-                .join("runtime")
-                .join("plugins");
-            if installed_plugins.exists() {
-                tracing::debug!(
-                    "Adding installed runtime plugin path: {:?}",
-                    installed_plugins
-                );
-                paths.push((installed_plugins, PluginSource::Runtime));
+    // 3. Runtime paths — from config runtimepath or auto-detected
+    if !runtimepath.is_empty() {
+        for rtp in runtimepath {
+            let expanded = expand_tilde(rtp);
+            let plugins_dir = expanded.join("plugins");
+            if plugins_dir.exists() {
+                tracing::debug!("Adding runtimepath plugin dir: {:?}", plugins_dir);
+                paths.push((plugins_dir, PluginSource::Runtime));
             }
-            let dev_plugins = exe_dir
-                .join("..")
-                .join("..")
-                .join("runtime")
-                .join("plugins");
-            if dev_plugins.exists() {
-                tracing::debug!("Adding dev runtime plugin path: {:?}", dev_plugins);
-                paths.push((dev_plugins, PluginSource::Runtime));
+        }
+    } else {
+        // Auto-detect: CRUCIBLE_RUNTIME env → exe-relative fallback
+        if let Ok(runtime_base) = std::env::var("CRUCIBLE_RUNTIME") {
+            let runtime_plugins = PathBuf::from(runtime_base).join("plugins");
+            if runtime_plugins.exists() {
+                tracing::debug!("Adding runtime plugin path: {:?}", runtime_plugins);
+                paths.push((runtime_plugins, PluginSource::Runtime));
+            }
+        } else if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                // Installed: <prefix>/share/crucible/runtime/plugins/
+                let installed_plugins = exe_dir
+                    .join("..")
+                    .join("share")
+                    .join("crucible")
+                    .join("runtime")
+                    .join("plugins");
+                if installed_plugins.exists() {
+                    tracing::debug!(
+                        "Adding installed runtime plugin path: {:?}",
+                        installed_plugins
+                    );
+                    paths.push((installed_plugins, PluginSource::Runtime));
+                }
+                // Dev: <repo>/runtime/plugins/
+                let dev_plugins = exe_dir
+                    .join("..")
+                    .join("..")
+                    .join("runtime")
+                    .join("plugins");
+                if dev_plugins.exists() {
+                    tracing::debug!("Adding dev runtime plugin path: {:?}", dev_plugins);
+                    paths.push((dev_plugins, PluginSource::Runtime));
+                }
             }
         }
     }
 
     paths
+}
+
+/// Expand `~` at the start of a path to the user's home directory.
+fn expand_tilde(path: &std::path::Path) -> PathBuf {
+    let s = path.to_string_lossy();
+    if s.starts_with("~/") || s == "~" {
+        if let Some(home) = dirs::home_dir() {
+            return home.join(&s[2..]);
+        }
+    }
+    path.to_path_buf()
+}
+
+/// Return default plugin paths (no config runtimepath).
+/// Convenience for callers that don't have access to config.
+pub fn default_daemon_plugin_paths() -> Vec<(PathBuf, PluginSource)> {
+    daemon_plugin_paths(&[])
 }
 
 /// Bootstrap declared plugins by git-cloning any that are missing.

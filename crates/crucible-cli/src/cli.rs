@@ -422,6 +422,21 @@ Examples:
     },
 
     /// Generate shell completion scripts (bash, zsh)
+    /// Bootstrap the Crucible runtime (plugins, themes, default init.lua)
+    #[command(
+        long_about = "Bootstrap the Crucible runtime directory with bundled plugins, themes, and a template init.lua.\n\nRun this after installing Crucible to set up the runtime files that plugins and themes need.\n\nExamples:\n  # Bootstrap runtime to default location\n  cru setup\n\n  # Bootstrap to custom location\n  cru setup --runtime-dir ~/.config/crucible/runtime\n\n  # Force re-bootstrap (overwrites existing)\n  cru setup --force"
+    )]
+    Setup {
+        /// Custom runtime directory (default: ~/.config/crucible/runtime)
+        #[arg(long)]
+        runtime_dir: Option<PathBuf>,
+
+        /// Overwrite existing runtime files
+        #[arg(long)]
+        force: bool,
+    },
+
+    /// Generate shell completion scripts for bash and zsh
     #[command(
         long_about = "Generate shell completion scripts for bash and zsh.\n\nOutput completion script to stdout for installation in your shell configuration.\n\nExamples:\n  # Generate bash completions\n  cru completions bash\n\n  # Generate zsh completions\n  cru completions zsh\n\n  # Install bash completions\n  cru completions bash | sudo tee /etc/bash_completion.d/cru\n\n  # Install zsh completions\n  cru completions zsh | sudo tee /usr/share/zsh/site-functions/_cru"
     )]

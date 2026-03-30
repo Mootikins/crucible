@@ -89,6 +89,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
                 path: sock.clone(),
                 mcp_config: None,
                 plugin_config: config.plugins.clone(),
+                runtimepath: config.runtimepath.clone(),
                 plugin_watch: false,
                 auto_archive_hours: config.server.as_ref().and_then(|s| s.auto_archive_hours),
                 llm_config: Some(config.llm.clone()),
@@ -354,6 +355,13 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             session_id_flag,
         }) => {
             commands::set::execute(args, session_id_flag).await?;
+        }
+
+        Some(Commands::Setup {
+            runtime_dir,
+            force,
+        }) => {
+            commands::setup::execute(runtime_dir, force)?;
         }
 
         Some(Commands::Completions { shell }) => {
