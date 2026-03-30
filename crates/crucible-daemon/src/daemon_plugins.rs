@@ -206,10 +206,49 @@ impl DaemonPluginLoader {
     /// Returns the list of [`PluginSpec`]s extracted from successfully loaded
     /// plugins. Service functions are stored internally and can be retrieved
     /// via [`take_service_fns`].
+    /// Add plugin search paths to Lua's `package.path` so `require("plugin")`
+    /// works globally (from user init.lua, BUILTIN_INIT_LUA, or other plugins).
+    ///
+    /// Each search path gets two entries:
+    /// - `{path}/?.lua` — for single-file plugins
+    /// - `{path}/?/init.lua` — for directory plugins (e.g., `require("kiln-expert")` finds `kiln-expert/init.lua`)
+    fn configure_runtime_path(
+        &self,
+        plugin_paths: &[(PathBuf, PluginSource)],
+    ) -> anyhow::Result<()> {
+        let lua = self.executor.lua();
+        let mut entries = Vec::new();
+
+        for (path, _source) in plugin_paths {
+            if !path.exists() {
+                continue;
+            }
+            let path_str = path.to_string_lossy().replace('\\', "/");
+            entries.push(format!("{path_str}/?.lua"));
+            entries.push(format!("{path_str}/?/init.lua"));
+        }
+
+        if entries.is_empty() {
+            return Ok(());
+        }
+
+        let new_paths = entries.join(";");
+        let code = format!(r#"package.path = "{new_paths};" .. package.path"#);
+        lua.load(&code)
+            .exec()
+            .map_err(|e| anyhow::anyhow!("configure runtime path: {e}"))?;
+
+        tracing::debug!("Configured Lua runtime path with {} entries", entries.len());
+        Ok(())
+    }
+
     pub async fn load_plugins(
         &mut self,
         plugin_paths: &[(PathBuf, PluginSource)],
     ) -> anyhow::Result<Vec<PluginSpec>> {
+        // Set up global runtime path BEFORE discovery so require() works everywhere
+        self.configure_runtime_path(plugin_paths)?;
+
         for (path, source) in plugin_paths {
             self.plugin_manager
                 .add_search_path_with_source(path.clone(), *source);
