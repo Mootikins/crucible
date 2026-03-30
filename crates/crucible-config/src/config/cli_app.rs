@@ -65,6 +65,20 @@ pub struct CliAppConfig {
     #[serde(default)]
     pub session_kiln: Option<std::path::PathBuf>,
 
+    /// Named kilns registry. Each entry maps a name to a path (+ options).
+    /// If empty, falls back to `kiln_path` for backward compatibility.
+    #[serde(default)]
+    pub kilns: HashMap<String, crate::config::registry::KilnEntry>,
+
+    /// Registered projects with kiln bindings.
+    #[serde(default)]
+    pub projects: HashMap<String, crate::config::registry::ProjectEntry>,
+
+    /// Which named kiln is the default (session storage, tool scoping).
+    /// If unset and `kilns` is non-empty, uses the first kiln alphabetically.
+    #[serde(default)]
+    pub default_kiln: Option<String>,
+
     /// Additional directories to search for agent cards
     ///
     /// Paths can be absolute or relative (to config file location).
@@ -163,6 +177,9 @@ impl Default for CliAppConfig {
         Self {
             kiln_path: default_kiln_path(),
             session_kiln: None,
+            kilns: HashMap::new(),
+            projects: HashMap::new(),
+            default_kiln: None,
             agent_directories: Vec::new(),
             acp: AcpConfig::default(),
             chat: ChatConfig::default(),
@@ -1093,5 +1110,39 @@ api_key = "{env:SOME_VAR}"
         // Also verify the provider exists and api_key was resolved
         let provider = config.llm.providers.get("my-provider").unwrap();
         assert_eq!(provider.api_key.as_deref(), Some("test-value"));
+    }
+
+    #[test]
+    fn cli_app_config_deserializes_kilns_and_projects() {
+        let toml_str = r#"
+kiln_path = "~/vault"
+default_kiln = "vault"
+
+[kilns]
+vault = "~/vault"
+docs = "~/crucible/docs"
+
+[kilns.work]
+path = "~/work/notes"
+lazy = true
+
+[projects.crucible]
+path = "~/crucible"
+kilns = ["docs", "vault"]
+default_kiln = "vault"
+"#;
+        let config: CliAppConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.kilns.len(), 3);
+        assert_eq!(config.projects.len(), 1);
+        assert_eq!(config.default_kiln.as_deref(), Some("vault"));
+        assert!(config.kilns["work"].lazy());
+    }
+
+    #[test]
+    fn cli_app_config_empty_kilns_defaults() {
+        let toml_str = r#"kiln_path = "~/vault""#;
+        let config: CliAppConfig = toml::from_str(toml_str).unwrap();
+        assert!(config.kilns.is_empty());
+        assert!(config.projects.is_empty());
     }
 }
