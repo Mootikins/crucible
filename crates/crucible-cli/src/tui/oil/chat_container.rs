@@ -774,6 +774,16 @@ impl ContainerList {
         // One Taffy pass for the entire batch
         let rendered = render_to_string(&grouped, width as usize);
 
+        let rendered_lines = rendered.lines().count();
+        let ends_with_newline = rendered.ends_with('\n');
+        tracing::debug!(
+            rendered_lines,
+            ends_with_newline,
+            adds_spacing,
+            rendered_bytes = rendered.len(),
+            "[graduation] Rendered batch"
+        );
+
         // Cross-frame spacing: blank line between previous batch's last
         // container and this batch's first, unless both are ToolGroups.
         let mut output = String::new();
