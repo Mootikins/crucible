@@ -205,7 +205,8 @@ async fn run_project_init(target_path: &Path, force: bool, yes: bool) -> Result<
     .await??;
 
     // Register the project in global config
-    let absolute_path = std::fs::canonicalize(&target_for_display).unwrap_or(target_for_display.clone());
+    let absolute_path =
+        std::fs::canonicalize(&target_for_display).unwrap_or(target_for_display.clone());
     let config_path = CliAppConfig::default_config_path();
     let kiln_refs: Vec<&str> = kilns.iter().map(|s| s.as_str()).collect();
     match register_project_in_config(
@@ -247,10 +248,7 @@ fn dir_name_or_default(path: &Path) -> String {
     path.canonicalize()
         .ok()
         .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
-        .or_else(|| {
-            path.file_name()
-                .map(|n| n.to_string_lossy().to_string())
-        })
+        .or_else(|| path.file_name().map(|n| n.to_string_lossy().to_string()))
         .unwrap_or_else(|| "crucible".to_string())
 }
 
@@ -260,11 +258,14 @@ fn prompt_init_type() -> Result<InitType> {
     use dialoguer::{theme::ColorfulTheme, Select};
 
     let theme = ColorfulTheme::default();
-    let items = ["Kiln (knowledge store for notes and sessions)", "Project (code repository with kiln bindings)"];
+    let items = [
+        "Kiln (knowledge store for notes and sessions)",
+        "Project (code repository with kiln bindings)",
+    ];
 
     let selection = Select::with_theme(&theme)
         .with_prompt("What is this directory?")
-        .items(&items)
+        .items(items)
         .default(0)
         .interact()?;
 
@@ -601,7 +602,11 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let crucible_dir = tmp.path().join(".crucible");
         fs::create_dir_all(&crucible_dir).unwrap();
-        fs::write(crucible_dir.join("project.toml"), "[project]\nname = \"test\"").unwrap();
+        fs::write(
+            crucible_dir.join("project.toml"),
+            "[project]\nname = \"test\"",
+        )
+        .unwrap();
         assert_eq!(detect_init_type(tmp.path()), InitType::Project);
     }
 

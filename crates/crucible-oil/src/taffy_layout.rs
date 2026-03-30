@@ -467,7 +467,7 @@ impl LayoutEngine {
 
             Node::Overlay(overlay) => {
                 // Overlay child is laid out for standalone rendering
-                return self.node_to_layout_box(&overlay.child, taffy_id, offset_x, offset_y);
+                self.node_to_layout_box(&overlay.child, taffy_id, offset_x, offset_y)
             }
 
             Node::Raw(raw) => LayoutBox::new(

@@ -10,7 +10,7 @@ struct DemoChat {
 }
 
 struct Message {
-    id: String,
+    _id: String,
     role: Role,
     content: String,
 }
@@ -27,7 +27,7 @@ impl App for DemoChat {
     fn init() -> Self {
         Self {
             messages: vec![Message {
-                id: "welcome".into(),
+                _id: "welcome".into(),
                 role: Role::Assistant,
                 content: "Welcome to Ink TUI demo! Type a message and press Enter.".into(),
             }],
@@ -88,7 +88,7 @@ impl App for DemoChat {
                         let final_content = std::mem::take(content);
                         self.streaming = None;
                         self.messages.push(Message {
-                            id: format!("assistant-{}", self.messages.len()),
+                            _id: format!("assistant-{}", self.messages.len()),
                             role: Role::Assistant,
                             content: final_content,
                         });
@@ -110,7 +110,7 @@ impl App for DemoChat {
 impl DemoChat {
     fn submit_message(&mut self, content: String) {
         self.messages.push(Message {
-            id: format!("user-{}", self.messages.len()),
+            _id: format!("user-{}", self.messages.len()),
             role: Role::User,
             content,
         });
