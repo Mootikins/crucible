@@ -8,6 +8,7 @@ expression: render_app(&app)
                                                                                 
   ┌─ Thought (2 words)                                                          
     Simple arithmetic...                                                        
+                                                                                
    The answer is 4.                                                             
                                                                                 
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄

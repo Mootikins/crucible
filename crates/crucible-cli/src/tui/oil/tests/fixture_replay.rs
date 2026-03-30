@@ -181,14 +181,15 @@ fn check_stdout_paragraph_duplication(frame: usize, stdout: &str, violations: &m
     // Check for duplicate paragraphs (>20 chars to avoid false positives on short phrases).
     // Exclude structural headers that legitimately repeat across agent turns
     // (e.g., "┌─ Thinking…" appears once per thinking phase).
-    // Also allow exactly 2 occurrences — the user prompt and assistant response
-    // can legitimately contain the same text (e.g., "say exactly: X" → "X").
+    // Allow up to 3 occurrences — the user prompt, precognition query summary
+    // (which echoes the user text), and assistant response can all legitimately
+    // contain the same text (e.g., "say exactly: X" → precog query → "X").
     let mut para_counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
     for p in &paragraphs {
         *para_counts.entry(p.as_str()).or_insert(0) += 1;
     }
     for (para, count) in &para_counts {
-        if para.len() > 20 && *count > 2 && !is_repeatable_structural_header(para) {
+        if para.len() > 20 && *count > 3 && !is_repeatable_structural_header(para) {
             violations.push(Violation {
                 frame,
                 kind: ViolationKind::DuplicateInStdout,

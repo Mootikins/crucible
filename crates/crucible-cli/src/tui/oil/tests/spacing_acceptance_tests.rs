@@ -66,6 +66,29 @@ fn blank_lines_between(output: &str, before: &str, after: &str) -> Option<usize>
     Some(blanks)
 }
 
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+/// Send a thinking delta (creates/appends to AssistantResponse with thinking).
+fn think(app: &mut OilChatApp, content: &str) {
+    app.on_message(ChatAppMsg::ThinkingDelta(content.into()));
+}
+
+/// Send a tool call and complete it immediately.
+fn tool(app: &mut OilChatApp, name: &str, call_id: &str) {
+    app.on_message(ChatAppMsg::ToolCall {
+        name: name.into(),
+        args: format!(r#"{{"path": "{call_id}.rs"}}"#),
+        call_id: Some(call_id.into()),
+        description: None,
+        source: None,
+        lua_primary_arg: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: name.into(),
+        call_id: Some(call_id.into()),
+    });
+}
+
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 /// User message → assistant response: exactly one blank line between them
@@ -282,4 +305,314 @@ fn multi_frame_graduation_spacing_consistent() {
         output
     );
     assert_no_double_blanks(&output, "multi_frame_graduation");
+}
+
+/// Reproduce exact screenshot scenario: thinking → tools → thinking → tools → thinking+text.
+/// Each thinking block is an AssistantResponse; tools interrupt it, creating a new
+/// AssistantResponse for the next thinking block. Spacing rule: 1 blank line between
+/// every non-ToolGroup transition.
+#[test]
+fn thinking_tools_thinking_tools_text_spacing() {
+    let mut app = OilChatApp::init();
+    let mut runtime = TestRuntime::new(120, 40);
+
+    // User message
+    app.on_message(ChatAppMsg::UserMessage("tell me about this repo".into()));
+    live_render(&mut app, &mut runtime);
+
+    // Thought #1
+    think(&mut app, "I'll explore the repository to give you a comprehensive overview.");
+    live_render(&mut app, &mut runtime);
+
+    // Tool batch #1 (5 tools)
+    tool(&mut app, "get_kiln_info", "t1");
+    tool(&mut app, "read_file", "t2");
+    tool(&mut app, "glob", "t3");
+    tool(&mut app, "read_note", "t4");
+    tool(&mut app, "read_note", "t5");
+    live_render(&mut app, &mut runtime);
+
+    // Thought #2 (short)
+    think(&mut app, "Let me check more details about the crate structure.");
+    live_render(&mut app, &mut runtime);
+
+    // Tool batch #2 (2 tools)
+    tool(&mut app, "glob", "t6");
+    tool(&mut app, "read_note", "t7");
+    live_render(&mut app, &mut runtime);
+
+    // Thought #3 + assistant text
+    think(&mut app, "Now I have enough context to give a full answer.");
+    app.on_message(ChatAppMsg::TextDelta("Crucible is a knowledge-grounded agent runtime.".into()));
+    app.on_message(ChatAppMsg::StreamComplete);
+    live_render(&mut app, &mut runtime);
+
+    let output = screen(&runtime);
+
+    // Symptom 1: Thought#1 → tools should have 1 blank line
+    let thought1_to_tools = blank_lines_between(&output, "comprehensive overview", "Get Kiln Info");
+    assert_eq!(
+        thought1_to_tools,
+        Some(1),
+        "Symptom 1: No blank line after Thought #1 (before tools).\nFull output:\n{}",
+        output
+    );
+
+    // Symptom 2: tools → Thought#2 should have exactly 1 blank line (not 2)
+    let tools_to_thought2 = blank_lines_between(&output, "t5.rs", "crate structure");
+    assert_eq!(
+        tools_to_thought2,
+        Some(1),
+        "Symptom 2: Wrong number of blank lines between last tool and Thought #2.\nFull output:\n{}",
+        output
+    );
+
+    // Symptom 3: Thought#2 → tools should have 1 blank line
+    let thought2_to_tools = blank_lines_between(&output, "crate structure", "t6.rs");
+    assert_eq!(
+        thought2_to_tools,
+        Some(1),
+        "Symptom 3: No blank line after Thought #2 (before tools).\nFull output:\n{}",
+        output
+    );
+
+    assert_no_double_blanks(&output, "thinking_tools_thinking");
+}
+
+/// Same scenario but with show_thinking=false (collapsed ◇ Thought summary).
+/// This is the actual user-reported bug: spacing breaks in collapsed mode.
+#[test]
+fn thinking_tools_spacing_collapsed_mode() {
+    let mut app = OilChatApp::init();
+    app.set_show_thinking(false);
+    let mut runtime = TestRuntime::new(120, 40);
+
+    // User message
+    app.on_message(ChatAppMsg::UserMessage("tell me about this repo".into()));
+    live_render(&mut app, &mut runtime);
+
+    // Thought #1
+    think(&mut app, "I'll explore the repository to give you a comprehensive overview.");
+    live_render(&mut app, &mut runtime);
+
+    // Tool batch #1
+    tool(&mut app, "get_kiln_info", "t1");
+    tool(&mut app, "read_file", "t2");
+    tool(&mut app, "read_note", "t3");
+    live_render(&mut app, &mut runtime);
+
+    // Thought #2
+    think(&mut app, "Let me check more details.");
+    live_render(&mut app, &mut runtime);
+
+    // Tool batch #2
+    tool(&mut app, "glob", "t4");
+    tool(&mut app, "read_note", "t5");
+    live_render(&mut app, &mut runtime);
+
+    // Thought #3 + text
+    think(&mut app, "Now I have enough context.");
+    app.on_message(ChatAppMsg::TextDelta("Crucible is a knowledge-grounded agent runtime.".into()));
+    app.on_message(ChatAppMsg::StreamComplete);
+    live_render(&mut app, &mut runtime);
+
+    let output = screen(&runtime);
+
+    // Symptom 1: Thought#1 → tools should have 1 blank line
+    let thought1_to_tools = blank_lines_between(&output, "Thought (10", "Get Kiln Info");
+    assert_eq!(
+        thought1_to_tools,
+        Some(1),
+        "Symptom 1: No blank line after collapsed Thought #1.\nFull output:\n{}",
+        output
+    );
+
+    // Symptom 2: tools → Thought#2 should have exactly 1 blank line
+    let tools_to_thought2 = blank_lines_between(&output, "t3.rs", "Thought (5");
+    assert_eq!(
+        tools_to_thought2,
+        Some(1),
+        "Symptom 2: Wrong blank lines between tools and collapsed Thought #2.\nFull output:\n{}",
+        output
+    );
+
+    // Symptom 3: Between t3.rs and t4.rs there should be:
+    // 1 blank line, ◇ Thought, 1 blank line = 2 blank lines total
+    let thought2_to_tools = blank_lines_between(&output, "t3.rs", "t4.rs");
+    assert_eq!(
+        thought2_to_tools,
+        Some(2), // blank + Thought(5) + blank = 2 blank lines in between
+        "Symptom 3: Wrong spacing around collapsed Thought #2.\nFull output:\n{}",
+        output
+    );
+
+    assert_no_double_blanks(&output, "thinking_tools_collapsed");
+}
+
+/// Simulate realistic tick-per-event rendering like the real TUI.
+/// The real TUI calls render_frame on every tick, not just at convenient points.
+/// This tests that rapid-fire events with a render between each still space correctly.
+#[test]
+fn thinking_tools_collapsed_tick_per_event() {
+    let mut app = OilChatApp::init();
+    app.set_show_thinking(false);
+    let mut runtime = TestRuntime::new(120, 40);
+
+    // User message + render
+    app.on_message(ChatAppMsg::UserMessage("tell me about this repo".into()));
+    live_render(&mut app, &mut runtime);
+
+    // Thought #1: 10 words
+    think(&mut app, "I will explore the repository to give you a comprehensive overview.");
+    live_render(&mut app, &mut runtime);
+
+    // Each tool arrives with a render between them
+    tool(&mut app, "get_kiln_info", "t1");
+    live_render(&mut app, &mut runtime);
+    tool(&mut app, "read_file", "t2");
+    live_render(&mut app, &mut runtime);
+    tool(&mut app, "read_note", "t3");
+    live_render(&mut app, &mut runtime);
+
+    // Thought #2: 3 words
+    think(&mut app, "Let me check.");
+    live_render(&mut app, &mut runtime);
+
+    // More tools with renders
+    tool(&mut app, "glob", "t4");
+    live_render(&mut app, &mut runtime);
+    tool(&mut app, "read_note", "t5");
+    live_render(&mut app, &mut runtime);
+
+    // Final thought + text + complete: 5 words
+    think(&mut app, "Now I can answer fully.");
+    live_render(&mut app, &mut runtime);
+    app.on_message(ChatAppMsg::TextDelta("Crucible is great.".into()));
+    live_render(&mut app, &mut runtime);
+    app.on_message(ChatAppMsg::StreamComplete);
+    live_render(&mut app, &mut runtime);
+
+    let output = screen(&runtime);
+
+    // Verify spacing structure by counting blank lines between consecutive
+    // content lines. Content lines are non-blank stripped lines.
+    let lines: Vec<&str> = output.lines().collect();
+    let content_lines: Vec<(usize, &str)> = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| !l.trim().is_empty())
+        .map(|(i, l)| (i, *l))
+        .collect();
+
+    // Between each pair of content lines, count blank lines
+    let mut spacing_issues = Vec::new();
+    for window in content_lines.windows(2) {
+        let (i1, l1) = window[0];
+        let (i2, l2) = window[1];
+        let blanks = i2 - i1 - 1;
+
+        // Determine expected spacing:
+        // - Within the user input bar (▄/▀ decorations): 0
+        // - ToolGroup→ToolGroup: 0
+        // - Everything else: 1
+        let is_tool = |l: &str| l.contains("✓") || l.contains("✗") || l.contains("●");
+        let is_decoration = |l: &str| {
+            l.trim().chars().all(|c| c == '▄' || c == '▀' || c == ' ')
+                || l.contains("NORMAL")
+                || l.contains("ctx")
+        };
+        if is_decoration(l1) || is_decoration(l2) {
+            continue; // Skip UI chrome
+        }
+
+        let expected = if is_tool(l1) && is_tool(l2) { 0 } else { 1 };
+
+        if blanks != expected {
+            spacing_issues.push(format!(
+                "Lines {}-{}: expected {} blank(s), got {}.\n  L{}: {:?}\n  L{}: {:?}",
+                i1, i2, expected, blanks, i1, l1.trim(), i2, l2.trim()
+            ));
+        }
+    }
+
+    assert!(
+        spacing_issues.is_empty(),
+        "Spacing issues found:\n{}\n\nFull output:\n{}",
+        spacing_issues.join("\n"),
+        output
+    );
+}
+
+/// Simpler variant: single thinking → single tool group → assistant text.
+/// Isolates the thinking-to-tool spacing without multi-batch complexity.
+#[test]
+fn thinking_then_tools_has_one_blank_line() {
+    let mut app = OilChatApp::init();
+    let mut runtime = TestRuntime::new(80, 30);
+
+    app.on_message(ChatAppMsg::UserMessage("Hello".into()));
+    live_render(&mut app, &mut runtime);
+
+    // Thinking arrives
+    think(&mut app, "Let me look into this.");
+    live_render(&mut app, &mut runtime);
+
+    // Tool call arrives (closes the thinking AssistantResponse)
+    tool(&mut app, "read_file", "c1");
+    live_render(&mut app, &mut runtime);
+
+    // Complete
+    app.on_message(ChatAppMsg::TextDelta("Here is what I found.".into()));
+    app.on_message(ChatAppMsg::StreamComplete);
+    live_render(&mut app, &mut runtime);
+
+    let output = screen(&runtime);
+
+    // Thought → tool: 1 blank line
+    let thought_to_tool = blank_lines_between(&output, "Thought", "Read File");
+    assert_eq!(
+        thought_to_tool,
+        Some(1),
+        "Expected 1 blank line between thinking and tool.\nFull output:\n{}",
+        output
+    );
+
+    // Tool → text: 1 blank line
+    let tool_to_text = blank_lines_between(&output, "Read File", "Here is what I found");
+    assert_eq!(
+        tool_to_text,
+        Some(1),
+        "Expected 1 blank line between tool and assistant text.\nFull output:\n{}",
+        output
+    );
+}
+
+/// Tools → thinking: the reverse direction. One blank line expected.
+#[test]
+fn tools_then_thinking_has_one_blank_line() {
+    let mut app = OilChatApp::init();
+    let mut runtime = TestRuntime::new(80, 30);
+
+    app.on_message(ChatAppMsg::UserMessage("Check this".into()));
+
+    // Tool first (before any thinking)
+    tool(&mut app, "glob", "c1");
+    live_render(&mut app, &mut runtime);
+
+    // Thinking after tool
+    think(&mut app, "Interesting results from the glob.");
+    app.on_message(ChatAppMsg::TextDelta("Found the files.".into()));
+    app.on_message(ChatAppMsg::StreamComplete);
+    live_render(&mut app, &mut runtime);
+
+    let output = screen(&runtime);
+
+    // Tool → thought: 1 blank line
+    let tool_to_thought = blank_lines_between(&output, "Glob", "Thought");
+    assert_eq!(
+        tool_to_thought,
+        Some(1),
+        "Expected 1 blank line between tool and thinking.\nFull output:\n{}",
+        output
+    );
 }
