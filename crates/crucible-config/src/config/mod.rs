@@ -3,6 +3,7 @@
 mod cli_app;
 mod errors;
 mod provider;
+pub mod registry;
 mod server;
 mod types;
 
