@@ -24,6 +24,6 @@ mod popup_tests;
 mod property_tests;
 mod render_tests;
 mod rendering_regression_tests;
-mod streaming_tests;
 mod spacing_acceptance_tests;
+mod streaming_tests;
 mod tool_ordering_tests;

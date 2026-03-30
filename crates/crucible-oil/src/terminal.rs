@@ -212,8 +212,6 @@ impl Terminal {
         Ok(())
     }
 
-
-
     pub fn show_cursor_at(&mut self, x: u16, y: u16) -> io::Result<()> {
         execute!(self.stdout, MoveTo(x, y), Show)
     }
@@ -231,7 +229,6 @@ impl crate::runtime::FrameRenderer for Terminal {
     fn size(&self) -> (u16, u16) {
         self.size()
     }
-
 }
 
 impl Drop for Terminal {

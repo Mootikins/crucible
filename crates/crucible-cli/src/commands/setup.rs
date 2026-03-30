@@ -57,7 +57,11 @@ fn find_source_runtime() -> Option<PathBuf> {
     // 1. Exe-relative: <exe>/../share/crucible/runtime (installed)
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_dir) = exe.parent() {
-            let installed = exe_dir.join("..").join("share").join("crucible").join("runtime");
+            let installed = exe_dir
+                .join("..")
+                .join("share")
+                .join("crucible")
+                .join("runtime");
             if installed.join("plugins").exists() || installed.join("themes").exists() {
                 return Some(installed);
             }

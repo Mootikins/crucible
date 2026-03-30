@@ -100,8 +100,9 @@ pub fn register_app_config_api(lua: &Lua, cru_table: &Table) -> Result<(), LuaEr
 
     // cru.config.set(table) — merge into app_config
     let set_fn = lua.create_function(|lua, table: Table| {
-        let json_val: serde_json::Value =
-            lua.from_value(Value::Table(table)).map_err(mlua::Error::external)?;
+        let json_val: serde_json::Value = lua
+            .from_value(Value::Table(table))
+            .map_err(mlua::Error::external)?;
 
         let mut state = get_config()
             .write()
@@ -132,11 +133,7 @@ pub fn register_app_config_api(lua: &Lua, cru_table: &Table) -> Result<(), LuaEr
             .read()
             .map_err(|e| mlua::Error::external(format!("config lock: {e}")))?;
 
-        let val = state
-            .app_config
-            .as_ref()
-            .and_then(|c| c.get(&key))
-            .cloned();
+        let val = state.app_config.as_ref().and_then(|c| c.get(&key)).cloned();
 
         match val {
             Some(v) => lua.to_value(&v),
