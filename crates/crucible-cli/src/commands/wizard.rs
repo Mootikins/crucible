@@ -75,11 +75,7 @@ pub fn run_setup_wizard(config_path: &Path) -> Result<()> {
 
     // --- Embedding backend ---
 
-    let embedding_items = &[
-        "FastEmbed (local, no key needed)",
-        "Ollama",
-        "OpenAI",
-    ];
+    let embedding_items = &["FastEmbed (local, no key needed)", "Ollama", "OpenAI"];
     let embedding_idx = match dialoguer::Select::new()
         .with_prompt("  Embeddings")
         .items(embedding_items)
@@ -151,16 +147,14 @@ pub fn generate_initial_config(
 
     let mut out = String::new();
 
-    out.push_str(&format!(
-        "[kilns]\ndefault = \"{}\"\n\n",
-        default_kiln_path
-    ));
+    out.push_str("default_kiln = \"default\"\n\n");
+    out.push_str(&format!("[kilns]\ndefault = \"{}\"\n\n", default_kiln_path));
     out.push_str(&format!("[chat]\nmodel = \"{}\"\n\n", model));
-    out.push_str(&format!("[llm]\ndefault = \"{}\"\n\n", provider));
-    out.push_str(&format!(
-        "[enrichment.provider]\ntype = \"{}\"\n",
-        embedding_provider
-    ));
+    out.push_str(&format!("[llm]\ndefault = \"{}\"\n", provider));
+
+    // Enrichment provider is not written to config — the default (fastembed)
+    // works out of the box. Users can configure it later in config.toml.
+    let _ = embedding_provider;
 
     out
 }
@@ -191,7 +185,19 @@ mod tests {
         assert!(parsed.get("kilns").is_some());
         assert!(parsed.get("chat").is_some());
         assert!(parsed.get("llm").is_some());
-        assert!(parsed.get("enrichment").is_some());
+        assert_eq!(
+            parsed.get("default_kiln").and_then(|v| v.as_str()),
+            Some("default"),
+            "wizard config must explicitly set default_kiln"
+        );
+    }
+
+    #[test]
+    fn generate_initial_config_deserializes_as_cli_app_config() {
+        let config = generate_initial_config("anthropic", "fastembed", "~/vault");
+        let parsed: crucible_config::CliAppConfig = toml::from_str(&config).unwrap();
+        assert_eq!(parsed.default_kiln.as_deref(), Some("default"));
+        assert_eq!(parsed.kilns.len(), 1);
     }
 
     #[test]
@@ -204,10 +210,6 @@ mod tests {
             "claude-sonnet-4-20250514"
         );
         assert_eq!(parsed["llm"]["default"].as_str().unwrap(), "anthropic");
-        assert_eq!(
-            parsed["enrichment"]["provider"]["type"].as_str().unwrap(),
-            "fastembed"
-        );
     }
 
     #[test]
@@ -216,10 +218,6 @@ mod tests {
         let parsed: toml::Value = toml::from_str(&config).unwrap();
         assert_eq!(parsed["chat"]["model"].as_str().unwrap(), "llama3.2");
         assert_eq!(parsed["llm"]["default"].as_str().unwrap(), "ollama");
-        assert_eq!(
-            parsed["enrichment"]["provider"]["type"].as_str().unwrap(),
-            "ollama"
-        );
     }
 
     #[test]
