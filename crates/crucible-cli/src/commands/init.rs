@@ -32,17 +32,9 @@ pub fn detect_init_type(path: &Path) -> InitType {
     }
 }
 
-pub async fn execute(
-    path: Option<PathBuf>,
-    force: bool,
-    interactive: bool,
-    personal: bool,
-) -> Result<()> {
+pub async fn execute(path: Option<PathBuf>, force: bool, yes: bool) -> Result<()> {
     let target_path = match path {
-        Some(p) => {
-            let expanded = expand_tilde(&p.to_string_lossy());
-            expanded
-        }
+        Some(p) => expand_tilde(&p.to_string_lossy()),
         None => PathBuf::from("."),
     };
 
@@ -55,16 +47,7 @@ pub async fn execute(
                 eprintln!("  {}", suggestion);
             }
         }
-        anyhow::bail!("Cannot initialize kiln at {}", target_path.display());
-    }
-
-    if validation.is_existing_kiln && !force {
-        println!(
-            "{} Kiln already exists at {}. No changes made.",
-            "Info:".cyan().bold(),
-            target_path.display()
-        );
-        return Ok(());
+        anyhow::bail!("Cannot initialize at {}", target_path.display());
     }
 
     for finding in validation.findings_by_severity(ValidationSeverity::StrongWarning) {
@@ -78,11 +61,55 @@ pub async fn execute(
         eprintln!("{} {}", "Note:".blue().bold(), finding.message);
     }
 
+    // Detect what this directory already is
+    let init_type = detect_init_type(&target_path);
+
+    match init_type {
+        InitType::Kiln if !force => {
+            println!(
+                "{} Kiln already exists at {}. No changes made.",
+                "Info:".cyan().bold(),
+                target_path.display()
+            );
+            return Ok(());
+        }
+        InitType::Project if !force => {
+            println!(
+                "{} Project already exists at {}. No changes made.",
+                "Info:".cyan().bold(),
+                target_path.display()
+            );
+            return Ok(());
+        }
+        _ => {}
+    }
+
+    // Determine what to initialize
+    let resolved_type = match init_type {
+        InitType::Kiln => InitType::Kiln,
+        InitType::Project => InitType::Project,
+        InitType::Unknown if yes => InitType::Kiln,
+        InitType::Unknown => prompt_init_type()?,
+    };
+
+    match resolved_type {
+        InitType::Kiln => run_kiln_init(&target_path, force, yes, &validation).await,
+        InitType::Project => run_project_init(&target_path, force, yes).await,
+        InitType::Unknown => unreachable!(),
+    }
+}
+
+async fn run_kiln_init(
+    target_path: &Path,
+    force: bool,
+    yes: bool,
+    validation: &crate::kiln_validate::ValidationResult,
+) -> Result<()> {
     let crucible_dir = target_path.join(".crucible");
 
     let providers = detect_providers(&crucible_config::ChatConfig::default());
 
-    let (provider, model) = if interactive && !providers.is_empty() {
+    let (provider, model) = if !yes && !providers.is_empty() {
         prompt_provider_selection(&providers)?
     } else if !providers.is_empty() {
         let p = providers[0].provider_type.clone();
@@ -95,17 +122,22 @@ pub async fn execute(
         ("ollama".to_string(), "llama3.2".to_string())
     };
 
-    let classification = if interactive {
-        prompt_classification_selection()?
+    let (name, classification) = if yes {
+        let dir_name = dir_name_or_default(target_path);
+        (dir_name, DataClassification::Public)
     } else {
-        DataClassification::Public
+        prompt_kiln_init(target_path)?
     };
+
     let config_content = generate_config_with_provider(&provider, &model);
-    let target_for_display = target_path.clone();
-    let classification_for_write = classification;
+    let target_for_display = target_path.to_path_buf();
+    let markdown_count = validation.markdown_file_count;
+
+    let name_clone = name.clone();
+    let classification_copy = classification;
     task::spawn_blocking(move || {
         create_kiln_with_config(&crucible_dir, &config_content, force)?;
-        write_kiln_and_project_config(&crucible_dir, classification_for_write)?;
+        write_kiln_and_project_config(&crucible_dir, &name_clone, classification_copy)?;
         Ok::<(), anyhow::Error>(())
     })
     .await??;
@@ -115,35 +147,180 @@ pub async fn execute(
         "Success:".green().bold(),
         target_for_display.display()
     );
+    println!("  Name: {}", name.cyan());
     println!("  Provider: {}", provider.cyan());
     println!("  Model: {}", model.cyan());
     println!("  Classification: {}", classification.as_str().cyan());
 
-    if validation.markdown_file_count > 0 {
+    if markdown_count > 0 {
         println!(
             "  Found {} markdown file(s) — Crucible will index these.",
-            validation.markdown_file_count
-        );
-    }
-
-    // If --personal flag, update global config to set session_kiln
-    if personal {
-        let absolute_path = if target_for_display.is_absolute() {
-            target_for_display.clone()
-        } else {
-            std::env::current_dir()?.join(&target_for_display)
-        };
-        update_global_config_session_kiln(&absolute_path)?;
-        println!(
-            "  {} session_kiln set to {} in config",
-            "✓".green(),
-            absolute_path.display()
+            markdown_count
         );
     }
 
     Ok(())
 }
 
+async fn run_project_init(target_path: &Path, force: bool, yes: bool) -> Result<()> {
+    let crucible_dir = target_path.join(".crucible");
+
+    let (name, kilns, default_kiln) = if yes {
+        let dir_name = dir_name_or_default(target_path);
+        (dir_name, vec![], None)
+    } else {
+        prompt_project_init(target_path)?
+    };
+
+    let target_for_display = target_path.to_path_buf();
+    let name_clone = name.clone();
+    let kilns_clone = kilns.clone();
+    task::spawn_blocking(move || {
+        if force && crucible_dir.exists() {
+            fs::remove_dir_all(&crucible_dir)?;
+        }
+        fs::create_dir_all(&crucible_dir)?;
+
+        let project_config = ProjectConfig {
+            project: Some(crucible_config::ProjectMeta {
+                name: Some(name_clone),
+            }),
+            kilns: kilns_clone
+                .iter()
+                .map(|k| KilnAttachment {
+                    path: PathBuf::from(k),
+                    name: Some(k.clone()),
+                    data_classification: None,
+                })
+                .collect(),
+            security: SecurityConfig::default(),
+        };
+
+        let root_dir = crucible_dir.parent().unwrap_or(&crucible_dir);
+        write_project_config(root_dir, &project_config)?;
+
+        Ok::<(), anyhow::Error>(())
+    })
+    .await??;
+
+    println!(
+        "{} Project initialized at: {}",
+        "Success:".green().bold(),
+        target_for_display.display()
+    );
+    println!("  Name: {}", name.cyan());
+    if !kilns.is_empty() {
+        println!("  Kilns: {}", kilns.join(", ").cyan());
+    }
+    if let Some(dk) = &default_kiln {
+        println!("  Default kiln: {}", dk.cyan());
+    }
+
+    Ok(())
+}
+
+fn dir_name_or_default(path: &Path) -> String {
+    path.canonicalize()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+        .or_else(|| {
+            path.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+        })
+        .unwrap_or_else(|| "crucible".to_string())
+}
+
+// --- Interactive prompts ---
+
+fn prompt_init_type() -> Result<InitType> {
+    use dialoguer::{theme::ColorfulTheme, Select};
+
+    let theme = ColorfulTheme::default();
+    let items = ["Kiln (knowledge store for notes and sessions)", "Project (code repository with kiln bindings)"];
+
+    let selection = Select::with_theme(&theme)
+        .with_prompt("What is this directory?")
+        .items(&items)
+        .default(0)
+        .interact()?;
+
+    Ok(match selection {
+        0 => InitType::Kiln,
+        1 => InitType::Project,
+        _ => unreachable!(),
+    })
+}
+
+fn prompt_kiln_init(path: &Path) -> Result<(String, DataClassification)> {
+    use dialoguer::{theme::ColorfulTheme, Input};
+
+    let theme = ColorfulTheme::default();
+    let default_name = dir_name_or_default(path);
+
+    let name: String = Input::with_theme(&theme)
+        .with_prompt("Kiln name")
+        .default(default_name)
+        .interact_text()?;
+
+    let classification = prompt_classification_selection()?;
+
+    Ok((name, classification))
+}
+
+fn prompt_project_init(path: &Path) -> Result<(String, Vec<String>, Option<String>)> {
+    use dialoguer::{theme::ColorfulTheme, Input, MultiSelect, Select};
+
+    let theme = ColorfulTheme::default();
+    let default_name = dir_name_or_default(path);
+
+    let name: String = Input::with_theme(&theme)
+        .with_prompt("Project name")
+        .default(default_name)
+        .interact_text()?;
+
+    // Load global config to discover registered kilns
+    let config = CliAppConfig::load(None, None, None).ok();
+    let resolved = config
+        .as_ref()
+        .map(|c| c.resolved_kilns())
+        .unwrap_or_default();
+    let kiln_names: Vec<String> = resolved.keys().cloned().collect();
+
+    let selected_kilns = if kiln_names.is_empty() {
+        println!(
+            "{} No kilns registered in global config. You can attach kilns later.",
+            "Note:".blue().bold()
+        );
+        vec![]
+    } else {
+        let selections = MultiSelect::with_theme(&theme)
+            .with_prompt("Select kilns to attach (space to toggle, enter to confirm)")
+            .items(&kiln_names)
+            .interact()?;
+
+        selections.iter().map(|&i| kiln_names[i].clone()).collect()
+    };
+
+    let default_kiln = if selected_kilns.len() > 1 {
+        let idx = Select::with_theme(&theme)
+            .with_prompt("Default kiln")
+            .items(&selected_kilns)
+            .default(0)
+            .interact()?;
+        Some(selected_kilns[idx].clone())
+    } else if selected_kilns.len() == 1 {
+        Some(selected_kilns[0].clone())
+    } else {
+        None
+    };
+
+    Ok((name, selected_kilns, default_kiln))
+}
+
+// --- Existing helpers (kept) ---
+
+// Kept for Task 6 (global config registration).
+#[allow(dead_code)]
 /// Upsert a key=value line in config contents.
 ///
 /// Handles three cases:
@@ -194,6 +371,7 @@ fn upsert_kv_line(
     new_contents
 }
 
+#[allow(dead_code)]
 /// Update `~/.config/crucible/config.toml` to set `session_kiln`.
 ///
 /// If the config file exists, inserts or replaces the `session_kiln` line.
@@ -291,26 +469,22 @@ fn prompt_classification_selection() -> Result<DataClassification> {
 
 fn write_kiln_and_project_config(
     crucible_dir: &Path,
+    name: &str,
     classification: DataClassification,
 ) -> Result<()> {
-    // Get the root directory (parent of .crucible/)
     let root_dir = crucible_dir.parent().unwrap_or(crucible_dir);
 
     // Read or create kiln.toml
     let kiln_config = if let Some(config) = read_kiln_config(root_dir) {
         config
     } else {
-        let dir_name = root_dir
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("Crucible Kiln")
-            .to_string();
         KilnConfig {
-            kiln: KilnMeta { name: dir_name },
+            kiln: KilnMeta {
+                name: name.to_string(),
+            },
         }
     };
 
-    // Write kiln.toml
     write_kiln_config(root_dir, &kiln_config)?;
 
     // Read or create project.toml
@@ -339,7 +513,6 @@ fn write_kiln_and_project_config(
         });
     }
 
-    // Write project.toml
     write_project_config(root_dir, &project_config)?;
 
     Ok(())
@@ -469,5 +642,62 @@ mod tests {
         assert_eq!(default_model_for("openai"), "gpt-4o-mini");
         assert_eq!(default_model_for("anthropic"), "claude-3-5-sonnet-latest");
         assert_eq!(default_model_for("unknown"), "llama3.2");
+    }
+
+    #[test]
+    fn dir_name_or_default_returns_dir_name() {
+        let tmp = TempDir::new().unwrap();
+        let name = dir_name_or_default(tmp.path());
+        // tempdir names are random but non-empty
+        assert!(!name.is_empty());
+    }
+
+    #[test]
+    fn dir_name_or_default_falls_back() {
+        // A path like "." should resolve to something meaningful
+        let name = dir_name_or_default(Path::new("."));
+        assert!(!name.is_empty());
+    }
+
+    #[tokio::test]
+    async fn execute_yes_creates_kiln_by_default() {
+        let tmp = TempDir::new().unwrap();
+        execute(Some(tmp.path().to_path_buf()), false, true)
+            .await
+            .unwrap();
+
+        // Should have created kiln.toml (kiln is the default with --yes)
+        assert!(tmp.path().join(".crucible/kiln.toml").exists());
+        assert!(tmp.path().join(".crucible/config.toml").exists());
+    }
+
+    #[tokio::test]
+    async fn execute_skips_existing_kiln_without_force() {
+        let tmp = TempDir::new().unwrap();
+        let crucible_dir = tmp.path().join(".crucible");
+        fs::create_dir_all(&crucible_dir).unwrap();
+        fs::write(crucible_dir.join("kiln.toml"), "[kiln]\nname = \"test\"").unwrap();
+
+        // Should succeed without error (early return)
+        execute(Some(tmp.path().to_path_buf()), false, true)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn execute_skips_existing_project_without_force() {
+        let tmp = TempDir::new().unwrap();
+        let crucible_dir = tmp.path().join(".crucible");
+        fs::create_dir_all(&crucible_dir).unwrap();
+        fs::write(
+            crucible_dir.join("project.toml"),
+            "[project]\nname = \"test\"",
+        )
+        .unwrap();
+
+        // Should succeed without error (early return)
+        execute(Some(tmp.path().to_path_buf()), false, true)
+            .await
+            .unwrap();
     }
 }

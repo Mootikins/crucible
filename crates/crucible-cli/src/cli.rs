@@ -358,30 +358,23 @@ Examples:
         code: String,
     },
 
-    /// Initialize a new kiln (Crucible workspace)
+    /// Initialize a new kiln or project
     #[command(
-        long_about = "Initialize a new kiln (Crucible workspace) with configuration and directory structure.\n\nExamples:\n  # Initialize kiln in current directory\n  cru init\n\n  # Initialize in specific directory\n  cru init --path ~/my-kiln\n\n  # Interactive setup with provider selection\n  cru init --interactive\n\n  # Force overwrite existing kiln\n  cru init --force\n\n  # Initialize a personal kiln for session storage\n  cru init --personal --path ~/my-sessions",
+        long_about = "Initialize a directory as a Crucible kiln (knowledge store) or project.\n\nAuto-detects whether the directory is already a kiln or project. For new directories,\nan interactive prompt asks which type to create.\n\nExamples:\n  # Initialize in current directory (interactive)\n  cru init\n\n  # Initialize in specific directory\n  cru init --path ~/my-notes\n\n  # Skip prompts, use defaults (kiln)\n  cru init -y\n\n  # Force overwrite existing config\n  cru init --force",
         visible_alias = "i"
     )]
     Init {
-        /// Path where kiln should be created (defaults to current directory)
+        /// Path to initialize (defaults to current directory)
         #[arg(short, long)]
         path: Option<PathBuf>,
 
-        /// Overwrite existing kiln
+        /// Overwrite existing configuration
         #[arg(short = 'F', long)]
         force: bool,
 
-        /// Interactive provider/model selection
-        #[arg(short = 'i', long)]
-        interactive: bool,
-
-        /// Initialize as a personal session kiln and update config.toml
-        ///
-        /// Creates the kiln directory and sets session_kiln in
-        /// ~/.config/crucible/config.toml so sessions are stored here by default.
-        #[arg(long)]
-        personal: bool,
+        /// Skip interactive prompts, use defaults
+        #[arg(short = 'y', long)]
+        yes: bool,
     },
 
     /// Manage chat sessions (create, configure, send, pause, resume, end)
@@ -1158,8 +1151,7 @@ mod tests {
             Some(Commands::Init {
                 path: None,
                 force: false,
-                interactive: false,
-                personal: false,
+                yes: false,
             })
         ));
     }
@@ -1167,17 +1159,10 @@ mod tests {
     #[test]
     fn test_init_with_path_parses() {
         let cli = Cli::try_parse_from(["cru", "init", "--path", "/tmp/test"]).unwrap();
-        if let Some(Commands::Init {
-            path,
-            force,
-            interactive,
-            personal,
-        }) = cli.command
-        {
+        if let Some(Commands::Init { path, force, yes }) = cli.command {
             assert_eq!(path, Some(std::path::PathBuf::from("/tmp/test")));
             assert!(!force);
-            assert!(!interactive);
-            assert!(!personal);
+            assert!(!yes);
         } else {
             panic!("Expected Init command");
         }
@@ -1186,17 +1171,10 @@ mod tests {
     #[test]
     fn test_init_with_force_parses() {
         let cli = Cli::try_parse_from(["cru", "init", "--force"]).unwrap();
-        if let Some(Commands::Init {
-            path,
-            force,
-            interactive,
-            personal,
-        }) = cli.command
-        {
+        if let Some(Commands::Init { path, force, yes }) = cli.command {
             assert_eq!(path, None);
             assert!(force);
-            assert!(!interactive);
-            assert!(!personal);
+            assert!(!yes);
         } else {
             panic!("Expected Init command");
         }
@@ -1205,75 +1183,34 @@ mod tests {
     #[test]
     fn test_init_with_short_flags_parses() {
         let cli = Cli::try_parse_from(["cru", "init", "-p", "/tmp/test", "-F"]).unwrap();
-        if let Some(Commands::Init {
-            path,
-            force,
-            interactive,
-            personal,
-        }) = cli.command
-        {
+        if let Some(Commands::Init { path, force, yes }) = cli.command {
             assert_eq!(path, Some(std::path::PathBuf::from("/tmp/test")));
             assert!(force);
-            assert!(!interactive);
-            assert!(!personal);
+            assert!(!yes);
         } else {
             panic!("Expected Init command");
         }
     }
 
     #[test]
-    fn test_init_with_interactive_flag_parses() {
-        let cli = Cli::try_parse_from(["cru", "init", "--interactive"]).unwrap();
-        if let Some(Commands::Init {
-            path,
-            force,
-            interactive,
-            personal,
-        }) = cli.command
-        {
+    fn test_init_with_yes_flag_parses() {
+        let cli = Cli::try_parse_from(["cru", "init", "--yes"]).unwrap();
+        if let Some(Commands::Init { path, force, yes }) = cli.command {
             assert_eq!(path, None);
             assert!(!force);
-            assert!(interactive);
-            assert!(!personal);
+            assert!(yes);
         } else {
             panic!("Expected Init command");
         }
     }
 
     #[test]
-    fn test_init_with_interactive_short_flag_parses() {
-        let cli = Cli::try_parse_from(["cru", "init", "-i"]).unwrap();
-        if let Some(Commands::Init {
-            path,
-            force,
-            interactive,
-            personal,
-        }) = cli.command
-        {
+    fn test_init_with_yes_short_flag_parses() {
+        let cli = Cli::try_parse_from(["cru", "init", "-y"]).unwrap();
+        if let Some(Commands::Init { path, force, yes }) = cli.command {
             assert_eq!(path, None);
             assert!(!force);
-            assert!(interactive);
-            assert!(!personal);
-        } else {
-            panic!("Expected Init command");
-        }
-    }
-
-    #[test]
-    fn test_init_with_personal_flag_parses() {
-        let cli =
-            Cli::try_parse_from(["cru", "init", "--personal", "--path", "/tmp/sessions"]).unwrap();
-        if let Some(Commands::Init {
-            path,
-            force,
-            interactive,
-            personal,
-        }) = cli.command
-        {
-            assert_eq!(path, Some(std::path::PathBuf::from("/tmp/sessions")));
-            assert!(!force);
-            assert!(!interactive);
-            assert!(personal);
+            assert!(yes);
         } else {
             panic!("Expected Init command");
         }
