@@ -1924,10 +1924,9 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
                 .get("call_id")
                 .and_then(|v| v.as_str())
                 .map(String::from);
-            let description = data
-                .get("description")
-                .and_then(|v| v.as_str())
-                .map(String::from);
+            // Descriptions are not shown during live streaming (the LLM chunk
+            // doesn't include them), so omit them on resume for consistency.
+            let description = None;
             let source = data
                 .get("source")
                 .and_then(|v| v.as_str())
