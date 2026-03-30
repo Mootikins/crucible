@@ -14,6 +14,7 @@ pub mod process;
 pub mod search;
 pub mod session;
 pub mod set;
+pub mod setup;
 pub mod skills;
 pub mod stdin;
 pub mod tasks;

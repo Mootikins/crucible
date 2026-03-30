@@ -64,6 +64,7 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
             path: sock.clone(),
             mcp_config: None,
             plugin_config: config.plugins.clone(),
+            runtimepath: config.runtimepath.clone(),
             plugin_watch: false,
             auto_archive_hours: config.server.as_ref().and_then(|s| s.auto_archive_hours),
             llm_config: Some(config.llm.clone()),

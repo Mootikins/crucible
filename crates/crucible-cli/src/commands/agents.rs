@@ -356,6 +356,7 @@ mod tests {
             mcp: None,
             permissions: None,
             schedules: vec![],
+            runtimepath: vec![],
             plugins: std::collections::HashMap::new(),
             web: None,
             server: None,

@@ -67,7 +67,7 @@ pub use agent_manager::{AgentError, AgentManager, AgentManagerParams};
 pub use background_manager::{
     BackgroundError, BackgroundJobManager, SubagentContext, SubagentFactory,
 };
-pub use daemon_plugins::{default_daemon_plugin_paths, DaemonPluginLoader};
+pub use daemon_plugins::{daemon_plugin_paths, default_daemon_plugin_paths, DaemonPluginLoader};
 pub use file_watch_bridge::{create_event_bridge, DaemonEventBridge};
 pub use kiln_manager::KilnManager;
 pub use lifecycle::{remove_socket, socket_path, wait_for_shutdown};

@@ -120,6 +120,20 @@ pub struct CliAppConfig {
     #[serde(default)]
     pub schedules: Vec<super::types::ScheduleEntry>,
 
+    /// Runtime search path for plugins, themes, and skills.
+    ///
+    /// Directories are searched in order (first match wins). Each directory
+    /// can contain `plugins/`, `themes/`, and `skills/` subdirectories.
+    ///
+    /// Defaults to: `[~/.config/crucible, $CRUCIBLE_RUNTIME, <exe-relative>]`
+    /// Set `CRUCIBLE_PLUGIN_PATH` to prepend additional paths.
+    ///
+    /// ```toml
+    /// runtimepath = ["~/.config/crucible", "/opt/crucible/runtime"]
+    /// ```
+    #[serde(default)]
+    pub runtimepath: Vec<std::path::PathBuf>,
+
     /// Per-plugin configuration sections (e.g. `[plugins.discord]`)
     #[serde(default)]
     pub plugins: HashMap<String, serde_json::Value>,
@@ -162,6 +176,7 @@ impl Default for CliAppConfig {
             mcp: None,
             permissions: None,
             schedules: Vec::new(),
+            runtimepath: Vec::new(),
             plugins: HashMap::new(),
             web: None,
             server: None,
