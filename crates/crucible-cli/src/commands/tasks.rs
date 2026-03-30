@@ -227,31 +227,9 @@ mod tests {
 
     // Helper to create a test config
     fn test_config() -> CliConfig {
-        use crucible_config::{
-            AcpConfig, ChatConfig, CliConfig as CliAppConfig, LlmConfig, ProcessingConfig,
-        };
-
         CliConfig {
             kiln_path: test_path("test-kiln"),
-            session_kiln: None,
-            agent_directories: Vec::new(),
-            acp: AcpConfig::default(),
-            chat: ChatConfig::default(),
-            llm: LlmConfig::default(),
-            enrichment: None,
-            cli: CliAppConfig::default(),
-            logging: None,
-            processing: ProcessingConfig::default(),
-            context: None,
-            storage: None,
-            mcp: None,
-            permissions: None,
-            schedules: vec![],
-            runtimepath: vec![],
-            plugins: std::collections::HashMap::new(),
-            web: None,
-            server: None,
-            source_map: None,
+            ..Default::default()
         }
     }
 

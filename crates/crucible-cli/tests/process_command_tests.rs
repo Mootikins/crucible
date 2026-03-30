@@ -11,9 +11,9 @@
 
 use anyhow::Result;
 use crucible_cli::commands::process;
-use crucible_cli::config::{CliAppConfig, CliConfig};
+use crucible_cli::config::CliConfig;
 use crucible_config::{
-    AcpConfig, BackendType, ChatConfig, LlmConfig, LlmProviderConfig, ProcessingConfig,
+    AcpConfig, BackendType, LlmConfig, LlmProviderConfig,
     StorageConfig,
 };
 use crucible_core::test_support::fixtures::{create_kiln, KilnFixture};
@@ -58,30 +58,15 @@ fn create_process_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfi
 
     CliConfig {
         kiln_path,
-        session_kiln: None,
-        agent_directories: Vec::new(),
         acp: AcpConfig {
             default_agent: Some("test-agent".to_string()),
             ..Default::default()
         },
-        chat: ChatConfig::default(),
         llm: llm_config,
-        enrichment: None,
-        cli: CliAppConfig::default(),
-        logging: None,
-        processing: ProcessingConfig::default(),
-        context: None,
         storage: Some(StorageConfig {
             idle_timeout_secs: 300,
         }),
-        mcp: None,
-        permissions: None,
-        schedules: vec![],
-        runtimepath: vec![],
-        plugins: std::collections::HashMap::new(),
-        web: None,
-        server: None,
-        source_map: None,
+        ..Default::default()
     }
 }
 

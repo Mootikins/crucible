@@ -329,8 +329,6 @@ async fn validate(config: &CliConfig, verbose: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_config::CliConfig as CliAppConfig;
-    use crucible_config::{AcpConfig, ChatConfig, LlmConfig, ProcessingConfig};
     use std::fs;
     use tempfile::TempDir;
 
@@ -342,25 +340,7 @@ mod tests {
     fn test_config(kiln_path: PathBuf) -> CliConfig {
         CliConfig {
             kiln_path,
-            session_kiln: None,
-            agent_directories: Vec::new(),
-            acp: AcpConfig::default(),
-            chat: ChatConfig::default(),
-            llm: LlmConfig::default(),
-            enrichment: None,
-            cli: CliAppConfig::default(),
-            logging: None,
-            processing: ProcessingConfig::default(),
-            context: None,
-            storage: None,
-            mcp: None,
-            permissions: None,
-            schedules: vec![],
-            runtimepath: vec![],
-            plugins: std::collections::HashMap::new(),
-            web: None,
-            server: None,
-            source_map: None,
+            ..Default::default()
         }
     }
 
