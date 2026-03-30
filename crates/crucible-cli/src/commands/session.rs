@@ -707,7 +707,16 @@ async fn show(config: CliConfig, id: String, format: String) -> Result<()> {
                     println!("Type: {}", result["type"].as_str().unwrap_or("?"));
                     println!("State: {}", result["state"].as_str().unwrap_or("?"));
                     println!("Kiln: {}", result["kiln"].as_str().unwrap_or("?"));
-                    println!("Started: {}", result["started_at"].as_str().unwrap_or("?"));
+                    let started = result["started_at"]
+                        .as_str()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                        .map(|dt| {
+                            dt.with_timezone(&chrono::Local)
+                                .format("%Y-%m-%d %H:%M:%S")
+                                .to_string()
+                        })
+                        .unwrap_or_else(|| "?".to_string());
+                    println!("Started: {}", started);
                     if let Some(title) = result["title"].as_str() {
                         println!("Title: {}", title);
                     }
@@ -988,12 +997,21 @@ mod rpc {
                 println!("{}", "-".repeat(80));
 
                 for session in &sessions {
+                    let started = session["started_at"]
+                        .as_str()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                        .map(|dt| {
+                            dt.with_timezone(&chrono::Local)
+                                .format("%Y-%m-%d %H:%M")
+                                .to_string()
+                        })
+                        .unwrap_or_else(|| "?".to_string());
                     println!(
                         "{:<40} {:<10} {:<10} {}",
                         session["session_id"].as_str().unwrap_or("?"),
                         session["type"].as_str().unwrap_or("?"),
                         session["state"].as_str().unwrap_or("?"),
-                        session["started_at"].as_str().unwrap_or("?"),
+                        started,
                     );
                 }
             }
