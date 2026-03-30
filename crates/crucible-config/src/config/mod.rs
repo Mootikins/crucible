@@ -10,6 +10,8 @@ mod types;
 #[cfg(test)]
 mod tests;
 
+#[cfg(feature = "toml")]
+pub use cli_app::register_project_in_config;
 pub use cli_app::{CliAppConfig, ProcessingConfig};
 pub use errors::{ConfigError, ConfigValidationError};
 pub use provider::EffectiveLlmConfig;
