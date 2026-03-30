@@ -766,10 +766,7 @@ mod popup_overlay_tests {
         let ansi = render_ansi(&popup, 80);
 
         // Find the lines containing actual item text (not padding)
-        let item_lines: Vec<&str> = ansi
-            .lines()
-            .filter(|l| l.contains("Option"))
-            .collect();
+        let item_lines: Vec<&str> = ansi.lines().filter(|l| l.contains("Option")).collect();
         assert!(
             item_lines.len() >= 2,
             "Should have at least 2 item lines, got: {}",
@@ -839,10 +836,7 @@ mod popup_overlay_tests {
             "Popup always renders max_visible lines (with padding)"
         );
 
-        let item_lines: Vec<_> = lines
-            .iter()
-            .filter(|l| !l.trim().is_empty())
-            .collect();
+        let item_lines: Vec<_> = lines.iter().filter(|l| !l.trim().is_empty()).collect();
         assert_eq!(item_lines.len(), 3, "Should have 3 item lines");
     }
 

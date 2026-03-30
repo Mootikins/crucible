@@ -81,8 +81,8 @@ fn fragment_renders_all_children() {
 }
 
 #[test]
-fn static_node_renders_children() {
-    let node = scrollback("key", [text("Content")]);
+fn col_node_renders_children() {
+    let node = col([text("Content")]);
     let output = render_to_string(&node, 80);
     assert_eq!(output, "Content");
 }

@@ -143,8 +143,8 @@ fn input_single_line() {
 }
 
 #[test]
-fn static_node_layout_like_fragment() {
-    let node = scrollback("key", [text("Line 1"), text("Line 2")]);
+fn col_node_layout_stacks() {
+    let node = col([text("Line 1"), text("Line 2")]);
     let layout = build_layout_tree(&node, 80, 24).root;
 
     assert_eq!(layout.rect.height, 2);
@@ -155,8 +155,8 @@ fn chat_interface_layout() {
     // Fixed-size root needed for spacer (flex) to fill remaining space.
     let node = Node::Box(BoxNode {
         children: vec![
-            scrollback("msg-1", [text("User message")]),
-            scrollback("msg-2", [text("Assistant reply")]),
+            text("User message"),
+            text("Assistant reply"),
             spacer(),
             text_input("", 0),
         ],
@@ -267,11 +267,7 @@ fn builder_methods_work() {
 
 #[test]
 fn row_wrapped_spacer_fills_remaining_width() {
-    let node = row([
-        text(" NORMAL "),
-        spacer(),
-        text("50% ctx"),
-    ]);
+    let node = row([text(" NORMAL "), spacer(), text("50% ctx")]);
 
     let layout = build_layout_tree(&node, 80, 4).root;
 

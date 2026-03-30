@@ -47,30 +47,6 @@ fn row_creates_row_box() {
 }
 
 #[test]
-fn scrollback_creates_static_node_with_newline() {
-    let node = scrollback("msg-1", [text("Hello")]);
-    match node {
-        Node::Static(s) => {
-            assert_eq!(s.key, "msg-1");
-            assert!(s.newline);
-            assert_eq!(s.children.len(), 1);
-        }
-        _ => panic!("Expected Static node"),
-    }
-}
-
-#[test]
-fn scrollback_continuation_has_no_newline() {
-    let node = scrollback_continuation("msg-1-cont", [text("world")]);
-    match node {
-        Node::Static(s) => {
-            assert!(!s.newline);
-        }
-        _ => panic!("Expected Static node"),
-    }
-}
-
-#[test]
 fn text_input_creates_input_node() {
     let node = text_input("hello", 5);
     match node {

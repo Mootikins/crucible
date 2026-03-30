@@ -5,16 +5,14 @@ expression: render_app(&app)
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  > Check the project                                                            
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-
- ● Let me look at the files.
-
- ✓ Bash ls
+                                                                                
+ ● Let me look at the files.                                                    
+                                                                                
+ ✓ Bash ls                                                                      
    │ src/                                                                       
    │ Cargo.toml                                                                 
-
-   Now let me read the main file.
                                                                                 
-                                                                                
+   Now let me read the main file.                                               
                                                                                 
  ⠋ Read File src/main.rs                                                        
                                                                                 

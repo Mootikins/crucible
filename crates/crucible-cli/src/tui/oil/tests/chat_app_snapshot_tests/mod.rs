@@ -1414,9 +1414,7 @@ fn snapshot_collapsed_thinking_spinner_stops_when_text_streams() {
     app.on_message(ChatAppMsg::ThinkingDelta(
         "Let me reason through the problem carefully.".to_string(),
     ));
-    app.on_message(ChatAppMsg::TextDelta(
-        "Here is my explanation.".to_string(),
-    ));
+    app.on_message(ChatAppMsg::TextDelta("Here is my explanation.".to_string()));
     // Intentionally NO StreamComplete — still streaming
 
     let output = render_app(&app);

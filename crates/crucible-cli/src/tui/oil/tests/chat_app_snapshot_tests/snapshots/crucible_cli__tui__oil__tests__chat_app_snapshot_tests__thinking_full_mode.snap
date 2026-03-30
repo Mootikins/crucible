@@ -1,20 +1,18 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
-assertion_line: 1209
 expression: setup(true)
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  > Analyze this                                                                 
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-
+                                                                                
   ┌─ Thought (15 words)                                                         
-    Alpha: initial assessment.
-    Bravo: deeper analysis.
-    Charlie: cross-referencing data.
-    Delta: forming conclusion.
-    Echo: final verification.
-
-   Based on my analysis, here are the findings.
+    Alpha: initial assessment.                                                  
+    Bravo: deeper analysis.                                                     
+    Charlie: cross-referencing data.                                            
+    Delta: forming conclusion.                                                  
+    Echo: final verification.                                                   
+   Based on my analysis, here are the findings.                                 
                                                                                 
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  >                                                                              

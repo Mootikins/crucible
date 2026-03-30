@@ -1,23 +1,22 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/rendering_regression_tests.rs
-assertion_line: 59
 expression: rendered
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  > Show me a summary                                                            
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-
- ● Here's a summary:
-
-   ┌─────────┬─────────┐
-   │ Feature │ Status  │
-   ├─────────┼─────────┤
-   │ Tables  │ Working │
-   ├─────────┼─────────┤
-   │ Lists   │ Working │
-   └─────────┴─────────┘
-
-   That's the overview.
+                                                                                
+ ● Here's a summary:                                                            
+                                                                                
+   ┌─────────┬─────────┐                                                        
+   │ Feature │ Status  │                                                        
+   ├─────────┼─────────┤                                                        
+   │ Tables  │ Working │                                                        
+   ├─────────┼─────────┤                                                        
+   │ Lists   │ Working │                                                        
+   └─────────┴─────────┘                                                        
+                                                                                
+   That's the overview.                                                         
                                                                                 
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  >                                                                              

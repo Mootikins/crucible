@@ -91,8 +91,10 @@ fn graduated_table_fits_terminal_width() {
     runtime.render(&tree);
 
     let stdout = strip_ansi(runtime.stdout_content());
+    let viewport = strip_ansi(runtime.viewport_content());
+    let combined = format!("{}{}", stdout, viewport);
 
-    for line in stdout.lines() {
+    for line in combined.lines() {
         if line.contains('┌') || line.contains('│') || line.contains('└') {
             let width = visible_width(line);
             assert!(
@@ -189,7 +191,7 @@ fn streaming_incremental_code_block_no_duplicate_fences() {
 }
 
 #[test]
-fn live_graduation_does_not_duplicate_content() {
+fn content_not_duplicated_during_streaming() {
     let mut runtime = TestRuntime::new(80, 24);
     let mut app = OilChatApp::default();
 
@@ -216,32 +218,27 @@ fn live_graduation_does_not_duplicate_content() {
     runtime.render(&tree);
 
     let stdout = strip_ansi(runtime.stdout_content());
+    let viewport = strip_ansi(runtime.viewport_content());
+    let combined = format!("{}{}", stdout, viewport);
 
-    let first_count = stdout.matches("First paragraph").count();
-    let second_count = stdout.matches("Second paragraph").count();
+    let first_count = combined.matches("First paragraph").count();
+    let second_count = combined.matches("Second paragraph").count();
+    let third_count = combined.matches("Third paragraph").count();
 
     assert_eq!(
         first_count, 1,
-        "First paragraph appears {} times in stdout (should be 1):\n{}",
-        first_count, stdout
+        "First paragraph appears {} times (should be 1):\n{}",
+        first_count, combined
     );
     assert_eq!(
         second_count, 1,
-        "Second paragraph appears {} times in stdout (should be 1):\n{}",
-        second_count, stdout
+        "Second paragraph appears {} times (should be 1):\n{}",
+        second_count, combined
     );
-
-    assert!(
-        !stdout.contains("Third paragraph"),
-        "In-progress content should not be in stdout yet:\n{}",
-        stdout
-    );
-
-    let viewport = strip_ansi(runtime.viewport_content());
-    assert!(
-        viewport.contains("Third paragraph"),
-        "In-progress content should be in viewport:\n{}",
-        viewport
+    assert_eq!(
+        third_count, 1,
+        "Third paragraph appears {} times (should be 1):\n{}",
+        third_count, combined
     );
 }
 
@@ -268,17 +265,19 @@ fn streaming_only_first_block_gets_bullet() {
     runtime.render(&tree);
 
     let stdout = strip_ansi(runtime.stdout_content());
-    let bullet_count = stdout.matches('●').count();
+    let viewport = strip_ansi(runtime.viewport_content());
+    let combined = format!("{}{}", stdout, viewport);
+    let bullet_count = combined.matches('●').count();
 
     assert_eq!(
         bullet_count, 1,
         "Only one bullet should appear (for first block), found {}: {}",
-        bullet_count, stdout
+        bullet_count, combined
     );
 }
 
 #[test]
-fn stream_cancel_graduates_existing_content() {
+fn stream_cancel_preserves_existing_content() {
     let mut runtime = TestRuntime::new(80, 24);
     let mut app = OilChatApp::default();
 
@@ -305,11 +304,13 @@ fn stream_cancel_graduates_existing_content() {
     let tree = view_with_default_ctx(&app);
     runtime.render(&tree);
 
-    let post_cancel = strip_ansi(runtime.stdout_content());
+    let stdout = strip_ansi(runtime.stdout_content());
+    let viewport = strip_ansi(runtime.viewport_content());
+    let combined = format!("{}{}", stdout, viewport);
     assert!(
-        post_cancel.contains("First part"),
-        "Cancelled content should be graduated to stdout: {}",
-        post_cancel
+        combined.contains("First part"),
+        "Cancelled content should be visible in output: {}",
+        combined
     );
 }
 
@@ -364,24 +365,26 @@ fn overflow_graduation_does_not_duplicate_content() {
     runtime.render(&tree);
 
     let stdout = strip_ansi(runtime.stdout_content());
+    let viewport = strip_ansi(runtime.viewport_content());
+    let combined = format!("{}{}", stdout, viewport);
 
     for i in 1..=25 {
         let marker = format!("Line {} of the response", i);
-        let count = stdout.matches(&marker).count();
+        let count = combined.matches(&marker).count();
         assert!(
             count <= 1,
-            "Line {} appears {} times in stdout (should be 0 or 1):\n{}",
+            "Line {} appears {} times in output (should be 0 or 1):\n{}",
             i,
             count,
-            stdout
+            combined
         );
     }
 
-    let bullet_count = stdout.matches('●').count();
+    let bullet_count = combined.matches('●').count();
     assert!(
         bullet_count <= 2,
-        "Too many bullets in stdout: {} (expected at most 2 - one for user, one for assistant):\n{}",
-        bullet_count, stdout
+        "Too many bullets in output: {} (expected at most 2 - one for user, one for assistant):\n{}",
+        bullet_count, combined
     );
 }
 

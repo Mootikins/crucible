@@ -172,16 +172,13 @@ fn popup_renders_kind_indicator() {
 }
 
 #[test]
-fn popup_in_chat_view_with_scrollback() {
+fn popup_in_chat_view_with_messages() {
     let messages: Vec<Node> = (0..10)
         .map(|i| {
-            scrollback(
-                format!("msg-{}", i),
-                [col([
-                    text(format!("User message {}", i)),
-                    text(format!("Assistant response {} with lots of content", i)),
-                ])],
-            )
+            col([
+                text(format!("User message {}", i)),
+                text(format!("Assistant response {} with lots of content", i)),
+            ])
         })
         .collect();
 
@@ -320,19 +317,19 @@ mod overlay_graduation_tests {
     }
 
     #[test]
-    fn overlay_popup_not_duplicated_with_graduation() {
+    fn overlay_popup_not_duplicated() {
         let mut runtime = TestRuntime::new(80, 24);
 
-        // Chat view with scrollback messages and overlay popup
+        // Chat view with messages and overlay popup
         let tree = col([
-            scrollback("msg-1", [text("User message")]),
-            scrollback("msg-2", [text("Assistant response")]),
+            text("User message"),
+            text("Assistant response"),
             spacer(),
             text("▄".repeat(80)),
             text(" > /"),
             text("▀".repeat(80)),
             text(" NORMAL │ Ready"),
-            overlay_from_bottom(popup(sample_items(), 0, 10), 4), // offset from bottom: input + status
+            overlay_from_bottom(popup(sample_items(), 0, 10), 4),
         ]);
 
         runtime.render(&tree);
@@ -367,22 +364,21 @@ mod overlay_graduation_tests {
     }
 
     #[test]
-    fn overlay_popup_appears_after_graduation() {
+    fn overlay_popup_appears_after_initial_render() {
         let mut runtime = TestRuntime::new(80, 24);
 
-        // First render: messages graduate
+        // First render: messages
         let tree1 = col([
-            scrollback("msg-1", [text("First message")]),
-            scrollback("msg-2", [text("Second message")]),
+            text("First message"),
+            text("Second message"),
             text_input("typing here", 11),
         ]);
         runtime.render(&tree1);
-        assert_eq!(runtime.graduated_count(), 2, "Messages should graduate");
 
         // Second render: add overlay popup
         let tree2 = col([
-            scrollback("msg-1", [text("First message")]),
-            scrollback("msg-2", [text("Second message")]),
+            text("First message"),
+            text("Second message"),
             text_input("@", 1),
             overlay_from_bottom(popup(sample_items(), 0, 10), 1),
         ]);
@@ -395,39 +391,26 @@ mod overlay_graduation_tests {
         let popup_count = composited.matches("▸").count();
         assert_eq!(
             popup_count, 1,
-            "Popup should appear exactly once after graduation, found {}",
+            "Popup should appear exactly once, found {}",
             popup_count
         );
     }
 
     #[test]
-    fn overlay_compositing_does_not_include_graduated_content() {
+    fn overlay_compositing_includes_viewport_and_popup() {
         let mut runtime = TestRuntime::new(80, 24);
 
         let tree = col([
-            scrollback("msg-1", [text("GRADUATED_MARKER")]),
             text("VIEWPORT_MARKER"),
             overlay_from_bottom(popup(sample_items(), 0, 5), 1),
         ]);
 
         runtime.render(&tree);
 
-        // Graduated content should be in stdout, not viewport
-        assert!(
-            runtime.stdout_content().contains("GRADUATED_MARKER"),
-            "Graduated content should be in stdout"
-        );
-
         let snapshot = runtime.last_snapshot().expect("should have snapshot");
         let composited = snapshot.viewport_with_overlays(80);
 
-        // Composited output should NOT include graduated content
-        assert!(
-            !composited.contains("GRADUATED_MARKER"),
-            "Graduated content should not be in composited viewport"
-        );
-
-        // But should include viewport content and popup
+        // Should include viewport content and popup
         assert!(
             composited.contains("VIEWPORT_MARKER"),
             "Viewport content should be in composited output"

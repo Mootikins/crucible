@@ -1,25 +1,24 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
-assertion_line: 469
 expression: render_app(&app)
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  > Describe the architecture                                                    
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-
- ● The system has three layers:
-
-   1. Frontend
-     • React components
-     • State management
-     • Routing
-   • Backend
-     • REST API
-     • Authentication
-     • Database access
-   • Infrastructure
-     • Docker containers
-     • CI/CD pipeline
+                                                                                
+ ● The system has three layers:                                                 
+                                                                                
+   1. Frontend                                                                  
+     • React components                                                         
+     • State management                                                         
+     • Routing                                                                  
+   • Backend                                                                    
+     • REST API                                                                 
+     • Authentication                                                           
+     • Database access                                                          
+   • Infrastructure                                                             
+     • Docker containers                                                        
+     • CI/CD pipeline                                                           
                                                                                 
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  >                                                                              

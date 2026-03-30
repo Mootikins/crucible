@@ -1011,7 +1011,8 @@ mod spinner_animation {
             b1 != b2,
             "Braille spinner should change over 200ms (wall clock, not ticks).\n\
              Frame 1: {:?}, Frame 2: {:?}",
-            b1, b2
+            b1,
+            b2
         );
     }
 
@@ -1055,10 +1056,7 @@ mod spinner_animation {
             let ctx = ViewContext::new(&focus);
             let tree = app.view(&ctx);
             runtime.render(&tree);
-            let graduated = runtime.last_graduated_keys();
-            if !graduated.is_empty() {
-                app.mark_graduated(graduated);
-            }
+            // Graduation is now automatic via drain_completed
 
             let viewport = strip_ansi(runtime.viewport_content());
             let stdout = strip_ansi(runtime.stdout_content());
@@ -1074,11 +1072,7 @@ mod spinner_animation {
 
         // Running tool must be in viewport every frame
         for (i, in_vp) in tool_in_viewport.iter().enumerate() {
-            assert!(
-                *in_vp,
-                "Frame {}: running tool should be in viewport",
-                i
-            );
+            assert!(*in_vp, "Frame {}: running tool should be in viewport", i);
         }
 
         // Running tool must NOT be in stdout (not graduated)
@@ -1135,16 +1129,15 @@ mod spinner_animation {
         });
 
         // More content follows (makes tool group "complete" for graduation)
-        app.on_message(ChatAppMsg::TextDelta("Some text after tool\n\n".to_string()));
+        app.on_message(ChatAppMsg::TextDelta(
+            "Some text after tool\n\n".to_string(),
+        ));
 
         // Render with graduation
         let ctx = ViewContext::new(&focus);
         let tree = app.view(&ctx);
         runtime.render(&tree);
-        let graduated = runtime.last_graduated_keys();
-        if !graduated.is_empty() {
-            app.mark_graduated(graduated);
-        }
+        // Graduation is now automatic via drain_completed
 
         let stdout = strip_ansi(runtime.stdout_content());
         let viewport = strip_ansi(runtime.viewport_content());
@@ -1161,7 +1154,7 @@ mod spinner_animation {
     }
 
     #[test]
-    fn completed_tool_graduates_individually() {
+    fn completed_tool_visible_in_output() {
         let mut app = OilChatApp::default();
         let mut runtime = TestRuntime::new(80, 24);
         let focus = FocusContext::new();
@@ -1188,38 +1181,35 @@ mod spinner_animation {
         // More content follows (turn still active)
         app.on_message(ChatAppMsg::TextDelta("After tool\n\n".to_string()));
 
-        // Render with graduation
+        // Render (no graduation without render_frame/drain_completed)
         let ctx = ViewContext::new(&focus);
         let tree = app.view(&ctx);
         runtime.render(&tree);
-        let graduated = runtime.last_graduated_keys();
-        if !graduated.is_empty() {
-            app.mark_graduated(graduated);
-        }
 
         let stdout = strip_ansi(runtime.stdout_content());
         let viewport = strip_ansi(runtime.viewport_content());
+        let combined = format!("{}{}", stdout, viewport);
 
-        // Completed tool graduates individually — should be in stdout
+        // Completed tool should be visible in output
         assert!(
-            stdout.contains("Glob"),
-            "Completed tool should graduate to stdout immediately.\nSTDOUT:\n{}",
-            stdout
+            combined.contains("Glob"),
+            "Completed tool should be visible in output.\nCOMBINED:\n{}",
+            combined
         );
 
-        // Text after tool should be in viewport (still streaming)
+        // Text after tool should also be visible
         assert!(
-            viewport.contains("After tool"),
-            "Text after tool should be in viewport.\nVIEWPORT:\n{}",
-            viewport
+            combined.contains("After tool"),
+            "Text after tool should be visible.\nCOMBINED:\n{}",
+            combined
         );
 
         // Tool should appear exactly once total
-        let total = stdout.matches("Glob").count() + viewport.matches("Glob").count();
+        let total = combined.matches("Glob").count();
         assert_eq!(
             total, 1,
-            "Completed tool should appear exactly once.\nSTDOUT:\n{}\nVIEWPORT:\n{}",
-            stdout, viewport
+            "Completed tool should appear exactly once.\nCOMBINED:\n{}",
+            combined
         );
     }
 
@@ -1260,10 +1250,7 @@ mod spinner_animation {
         let ctx = ViewContext::new(&focus);
         let tree = app.view(&ctx);
         runtime.render(&tree);
-        let graduated = runtime.last_graduated_keys();
-        if !graduated.is_empty() {
-            app.mark_graduated(graduated);
-        }
+        // Graduation is now automatic via drain_completed
 
         let stdout = strip_ansi(runtime.stdout_content());
         let viewport = strip_ansi(runtime.viewport_content());
@@ -1271,7 +1258,8 @@ mod spinner_animation {
         // "Read File" should appear exactly once across stdout + viewport
         let total = stdout.matches("Read File").count() + viewport.matches("Read File").count();
         assert_eq!(
-            total, 1,
+            total,
+            1,
             "Tool should appear exactly once. stdout matches: {}, viewport matches: {}\n\
              STDOUT:\n{}\nVIEWPORT:\n{}",
             stdout.matches("Read File").count(),

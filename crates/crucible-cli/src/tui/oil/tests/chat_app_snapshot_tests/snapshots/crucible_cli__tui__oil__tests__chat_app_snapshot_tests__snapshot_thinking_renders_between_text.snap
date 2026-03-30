@@ -5,16 +5,15 @@ expression: render_app(&app)
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  > Explain ownership                                                            
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-
+                                                                                
   ┌─ Thought (28 words)                                                         
-    I should cover the three rules:
-
-    1. Each value has one owner
-    2. Only one owner at a time
-    3. Value dropped when owner goes out of scope
-
-   Let me explain Rust's ownership model. The key insight is that ownership
-   prevents data races at compile time.
+    I should cover the three rules:                                             
+                                                                                
+    1. Each value has one owner                                                 
+    2. Only one owner at a time                                                 
+    3. Value dropped when owner goes out of scope                               
+   Let me explain Rust's ownership model. The key insight is that ownership     
+   prevents data races at compile time.                                         
                                                                                 
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  >                                                                              

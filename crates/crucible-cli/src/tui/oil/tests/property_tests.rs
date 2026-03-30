@@ -220,71 +220,8 @@ proptest! {
     }
 }
 
-mod graduation_properties {
-    use crate::tui::oil::node::{col, scrollback, text, Node};
-    use crate::tui::oil::runtime::GraduationState;
-    use proptest::prelude::*;
-    use std::collections::HashSet;
-
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
-
-        #[test]
-        fn graduation_keys_always_unique(
-            key_set in prop::collection::hash_set("[a-z]{3,10}", 1..20)
-        ) {
-            let keys: Vec<_> = key_set.into_iter().collect();
-            let mut state = GraduationState::new();
-
-            let nodes: Vec<Node> = keys
-                .iter()
-                .map(|k| scrollback(k.as_str(), [text(k.as_str())]))
-                .collect();
-
-            let tree = col(nodes);
-            let graduated = state.graduate(&tree, 80).unwrap();
-
-            let graduated_keys: HashSet<_> = graduated.iter().map(|g| &g.key).collect();
-            prop_assert_eq!(
-                graduated_keys.len(),
-                graduated.len(),
-                "All graduated keys should be unique"
-            );
-        }
-
-        #[test]
-        fn graduation_preserves_insertion_order(
-            key_set in prop::collection::hash_set("[a-z]{3,8}", 2..10)
-        ) {
-            let keys: Vec<_> = key_set.into_iter().collect();
-            let mut state = GraduationState::new();
-
-            let nodes: Vec<Node> = keys
-                .iter()
-                .map(|k| scrollback(k.as_str(), [text(k.as_str())]))
-                .collect();
-
-            let tree = col(nodes);
-            let graduated = state.graduate(&tree, 80).unwrap();
-
-            let graduated_keys: Vec<_> = graduated.iter().map(|g| g.key.clone()).collect();
-
-            for (i, key) in keys.iter().enumerate() {
-                if let Some(pos) = graduated_keys.iter().position(|k| k == key) {
-                    for prev_key in keys.iter().take(i) {
-                        if let Some(prev_pos) = graduated_keys.iter().position(|k| k == prev_key) {
-                            prop_assert!(
-                                prev_pos < pos,
-                                "Key '{}' at {} should come before '{}' at {}",
-                                prev_key, prev_pos, key, pos
-                            );
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
+// graduation_properties module removed: GraduationState no longer exists.
+// Graduation is now automatic via drain_completed.
 
 mod focus_properties {
     use crate::tui::oil::focus::{FocusContext, FocusId};

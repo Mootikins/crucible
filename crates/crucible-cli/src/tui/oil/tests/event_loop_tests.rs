@@ -26,7 +26,7 @@ async fn event_loop_does_not_freeze_without_input() {
 
     for i in 0..iterations {
         let tree = view_with_default_ctx(&app);
-        terminal.render(&tree).unwrap();
+        terminal.render(&tree, "").unwrap();
 
         while let Ok(msg) = msg_rx.try_recv() {
             let _ = app.on_message(msg);
@@ -56,7 +56,7 @@ async fn render_loop_completes_many_iterations() {
 
     for _ in 0..500 {
         let tree = view_with_default_ctx(&app);
-        terminal.render(&tree).unwrap();
+        terminal.render(&tree, "").unwrap();
         let _ = app.update(Event::Tick);
     }
 
@@ -86,7 +86,7 @@ async fn render_with_messages_does_not_accumulate() {
 
     for _ in 0..100 {
         let tree = view_with_default_ctx(&app);
-        terminal.render(&tree).unwrap();
+        terminal.render(&tree, "").unwrap();
         let _ = app.update(Event::Tick);
     }
 
