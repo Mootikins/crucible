@@ -11,9 +11,6 @@ pub trait FrameRenderer {
 
     /// Current terminal dimensions (width, height).
     fn size(&self) -> (u16, u16);
-
-    /// Set scroll offset (lines from bottom). 0 = pinned to bottom.
-    fn set_scroll_offset(&mut self, _offset: usize) {}
 }
 
 pub struct TestRuntime {

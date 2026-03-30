@@ -212,13 +212,7 @@ impl Terminal {
         Ok(())
     }
 
-    pub fn set_scroll_offset(&mut self, offset: usize) {
-        self.output.set_scroll_offset(offset);
-    }
 
-    pub fn scroll_offset(&self) -> usize {
-        self.output.scroll_offset()
-    }
 
     pub fn show_cursor_at(&mut self, x: u16, y: u16) -> io::Result<()> {
         execute!(self.stdout, MoveTo(x, y), Show)
@@ -238,9 +232,6 @@ impl crate::runtime::FrameRenderer for Terminal {
         self.size()
     }
 
-    fn set_scroll_offset(&mut self, offset: usize) {
-        self.set_scroll_offset(offset);
-    }
 }
 
 impl Drop for Terminal {

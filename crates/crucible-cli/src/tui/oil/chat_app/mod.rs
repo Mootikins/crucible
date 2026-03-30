@@ -103,8 +103,6 @@ pub struct OilChatApp {
     spinner_epoch: std::time::Instant,
     /// Force a full terminal redraw on next tick
     needs_full_redraw: bool,
-    /// Scroll offset (lines from bottom). 0 = pinned to bottom.
-    scroll_offset: usize,
     /// Whether to render LLM thinking/reasoning blocks
     show_thinking: bool,
     /// Precognition state (auto-RAG settings)
@@ -295,26 +293,10 @@ impl OilChatApp {
         self.show_thinking = show;
     }
 
-    pub(super) fn scroll_up(&mut self, lines: usize) {
-        self.scroll_offset = self.scroll_offset.saturating_add(lines);
-    }
-
-    pub(super) fn scroll_down(&mut self, lines: usize) {
-        self.scroll_offset = self.scroll_offset.saturating_sub(lines);
-    }
-
-    pub(super) fn snap_to_bottom(&mut self) {
-        self.scroll_offset = 0;
-    }
-
     /// Spinner frame derived from wall clock (100ms per frame).
     /// Independent of tick events — animates even during rapid streaming.
     pub fn spinner_frame(&self) -> usize {
         (self.spinner_epoch.elapsed().as_millis() / 100) as usize
-    }
-
-    pub fn scroll_offset(&self) -> usize {
-        self.scroll_offset
     }
 
     /// Periodic maintenance called each render frame.
@@ -325,10 +307,6 @@ impl OilChatApp {
         if self.notification_area.is_empty() {
             self.notification_area.hide();
         }
-    }
-
-    pub fn is_scrolled(&self) -> bool {
-        self.scroll_offset > 0
     }
 
     pub(crate) fn set_precognition(&mut self, val: bool) {
@@ -536,7 +514,6 @@ impl OilChatApp {
     /// spinner renders while waiting for the first token.
     /// Use this (not `add_user_message`) when sending to the daemon.
     fn submit_user_message(&mut self, content: String) {
-        self.snap_to_bottom(); // Auto-scroll to bottom when sending
         self.add_user_message(content);
         self.container_list.mark_turn_active();
     }

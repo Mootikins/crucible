@@ -36,7 +36,6 @@ impl Default for OilChatApp {
             shell_modal: None,
             spinner_epoch: std::time::Instant::now(),
             needs_full_redraw: false,
-            scroll_offset: 0,
             show_thinking: true,
             precognition: PrecognitionState::default(),
             terminal_size: Cell::new((80, 24)),

@@ -205,11 +205,7 @@ impl OilChatApp {
     }
 
     pub(super) fn render_status(&self) -> Node {
-        let status_text = if self.is_scrolled() {
-            format!("{} \u{2191}{}L", self.status, self.scroll_offset)
-        } else {
-            self.status.clone()
-        };
+        let status_text = self.status.clone();
         let mut comp = StatusComponent::new()
             .mode(self.mode)
             .model(&self.model)

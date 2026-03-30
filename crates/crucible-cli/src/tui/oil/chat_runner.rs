@@ -39,18 +39,13 @@ pub fn render_frame(app: &mut OilChatApp, renderer: &mut impl FrameRenderer, foc
     if app.take_needs_full_redraw() {
         renderer.force_full_redraw();
     }
-    renderer.set_scroll_offset(app.scroll_offset());
 
     // Expire toast notifications (previously done on Event::Tick)
     app.expire_toasts();
 
-    // Drain completed containers → stdout (paused while scrolled up)
-    let stdout_delta = if !app.is_scrolled() {
-        let (width, _) = renderer.size();
-        app.drain_graduated(width)
-    } else {
-        String::new()
-    };
+    // Drain completed containers → stdout (terminal scrollback)
+    let (width, _) = renderer.size();
+    let stdout_delta = app.drain_graduated(width);
 
     let terminal_size = renderer.size();
     let ctx = ViewContext::with_terminal_size(focus, theme::active(), terminal_size);
