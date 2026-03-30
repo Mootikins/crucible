@@ -275,7 +275,15 @@ fn render_assistant_blocks(params: &RenderBlocksParams, render_state: &RenderSta
         }
     }
 
-    col(nodes)
+    // Gap between thinking summary/block and text content
+    let has_thinking = !params.thinking.is_empty();
+    let has_text = !params.text.is_empty();
+    let gap = if has_thinking && has_text {
+        Gap::row(1)
+    } else {
+        Gap::row(0)
+    };
+    col(nodes).gap(gap)
 }
 
 /// Render text as markdown.
