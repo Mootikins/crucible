@@ -8,6 +8,15 @@ local defaults = {
     timeout = 30,
 }
 
+--- Merge user-provided config into defaults.
+--- Called by setup() in init.lua.
+function M.init(cfg)
+    if not cfg then return end
+    for k, v in pairs(cfg) do
+        defaults[k] = v
+    end
+end
+
 function M.get(key, fallback)
     local cfg = cru.config and cru.config["kiln-expert"] or {}
     local val = cfg[key]
