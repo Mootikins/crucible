@@ -15,7 +15,6 @@ pub struct OutputBuffer {
     terminal_width: usize,
     terminal_height: usize,
     force_next_redraw: bool,
-    scroll_offset: usize,
 }
 
 fn lines_visually_equal(a: &str, b: &str) -> bool {
@@ -40,25 +39,12 @@ impl OutputBuffer {
             terminal_width: width,
             terminal_height: height,
             force_next_redraw: false,
-            scroll_offset: 0,
         }
     }
 
     pub fn set_size(&mut self, width: usize, height: usize) {
         self.terminal_width = width;
         self.terminal_height = height;
-    }
-
-    /// Set scroll offset (lines from bottom). 0 = pinned to bottom.
-    pub fn set_scroll_offset(&mut self, offset: usize) {
-        if offset != self.scroll_offset {
-            self.scroll_offset = offset;
-            self.force_next_redraw = true;
-        }
-    }
-
-    pub fn scroll_offset(&self) -> usize {
-        self.scroll_offset
     }
 
     #[allow(dead_code)] // WIP: render not yet used
@@ -96,7 +82,7 @@ impl OutputBuffer {
             &line_visual_rows,
             total_visual_rows,
             available_rows,
-            self.scroll_offset,
+            0,
         );
 
         let overlay_refs: Vec<Overlay> = overlays
