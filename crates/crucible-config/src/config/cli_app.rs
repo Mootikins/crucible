@@ -1008,6 +1008,31 @@ verbose = false
             field: "llm.default".to_string(),
         })
     }
+
+    /// Returns the effective kilns map, synthesizing from `kiln_path` if `kilns` is empty.
+    pub fn resolved_kilns(&self) -> HashMap<String, crate::config::registry::KilnEntry> {
+        if !self.kilns.is_empty() {
+            return self.kilns.clone();
+        }
+        let mut map = HashMap::new();
+        map.insert(
+            "default".to_string(),
+            crate::config::registry::KilnEntry::Path(self.kiln_path.clone()),
+        );
+        map
+    }
+
+    /// Returns the effective default kiln name.
+    pub fn resolved_default_kiln(&self) -> String {
+        if let Some(ref name) = self.default_kiln {
+            return name.clone();
+        }
+        if !self.kilns.is_empty() {
+            // First alphabetically
+            return self.kilns.keys().min().cloned().unwrap_or_default();
+        }
+        "default".to_string()
+    }
 }
 
 #[cfg(test)]
@@ -1144,5 +1169,49 @@ default_kiln = "vault"
         let config: CliAppConfig = toml::from_str(toml_str).unwrap();
         assert!(config.kilns.is_empty());
         assert!(config.projects.is_empty());
+    }
+
+    #[test]
+    fn resolved_kilns_falls_back_to_kiln_path() {
+        use std::path::PathBuf;
+        let toml_str = r#"kiln_path = "~/vault""#;
+        let config: CliAppConfig = toml::from_str(toml_str).unwrap();
+        let resolved = config.resolved_kilns();
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved["default"].path(), PathBuf::from("~/vault"));
+    }
+
+    #[test]
+    fn resolved_kilns_uses_explicit_kilns_when_present() {
+        let toml_str = r#"
+kiln_path = "~/old"
+[kilns]
+vault = "~/vault"
+docs = "~/docs"
+"#;
+        let config: CliAppConfig = toml::from_str(toml_str).unwrap();
+        let resolved = config.resolved_kilns();
+        assert_eq!(resolved.len(), 2);
+        assert!(resolved.contains_key("vault"));
+        assert!(resolved.contains_key("docs"));
+    }
+
+    #[test]
+    fn resolved_default_kiln_name() {
+        let toml_str = r#"
+default_kiln = "vault"
+[kilns]
+vault = "~/vault"
+docs = "~/docs"
+"#;
+        let config: CliAppConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.resolved_default_kiln(), "vault");
+    }
+
+    #[test]
+    fn resolved_default_kiln_falls_back() {
+        let toml_str = r#"kiln_path = "~/vault""#;
+        let config: CliAppConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.resolved_default_kiln(), "default");
     }
 }

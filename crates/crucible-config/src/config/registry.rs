@@ -6,7 +6,7 @@ use std::path::PathBuf;
 /// Supports shorthand (just a path string) and full form (table with options).
 /// Shorthand: `vault = "~/vault"`
 /// Full: `[kilns.work]\npath = "~/work/notes"\nlazy = true`
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum KilnEntry {
     /// Shorthand: just a path string.
@@ -40,7 +40,7 @@ impl KilnEntry {
 }
 
 /// A registered project in global config.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectEntry {
     /// Filesystem path to the project root.
     pub path: PathBuf,
