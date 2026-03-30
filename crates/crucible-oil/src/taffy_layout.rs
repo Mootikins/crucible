@@ -877,4 +877,5 @@ mod tests {
         assert_eq!(measure_text_lines("hello", 0), 1);
         assert_eq!(measure_text_lines("a\nb\nc", 0), 3);
     }
+
 }
