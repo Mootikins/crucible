@@ -534,9 +534,23 @@ impl OilChatRunner {
             })
             .await;
         Self::abort_background_tasks(&mut background_tasks);
+
+        // Capture session ID before dropping the agent
+        let session_id = agent.session_id().map(|s| s.to_string());
+
         event_loop_result?;
 
         self.terminal.exit()?;
+
+        // Print resume hint after terminal is restored
+        if let Some(id) = session_id {
+            use colored::Colorize;
+            eprintln!(
+                "  Resume with: {}",
+                format!("cru chat --resume {}", id).dimmed()
+            );
+        }
+
         Ok(())
     }
 

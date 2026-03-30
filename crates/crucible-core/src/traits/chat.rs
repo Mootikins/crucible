@@ -440,6 +440,11 @@ pub trait AgentHandle: Send + Sync {
     ) -> Option<tokio::sync::mpsc::UnboundedReceiver<crate::interaction::InteractionEvent>> {
         None
     }
+
+    /// The daemon session ID, if this agent is backed by a daemon session.
+    fn session_id(&self) -> Option<&str> {
+        None
+    }
 }
 
 /// Blanket implementation for boxed trait objects
@@ -642,6 +647,10 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
         &mut self,
     ) -> Option<tokio::sync::mpsc::UnboundedReceiver<crate::interaction::InteractionEvent>> {
         (**self).take_interaction_receiver()
+    }
+
+    fn session_id(&self) -> Option<&str> {
+        (**self).session_id()
     }
 }
 

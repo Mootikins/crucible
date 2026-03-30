@@ -508,6 +508,10 @@ impl AgentHandle for DaemonAgentHandle {
         self.interaction_rx.take()
     }
 
+    fn session_id(&self) -> Option<&str> {
+        Some(&self.session_id)
+    }
+
     async fn undo(
         &mut self,
         count: usize,
