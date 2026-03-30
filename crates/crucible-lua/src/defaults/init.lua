@@ -64,3 +64,19 @@ if crucible and type(crucible.on_session_start) == "function" then
     }, "\n")
   end)
 end
+
+-- Bundled plugin defaults
+--
+-- These load runtime plugins with default config. Override in your
+-- .crucible/lua/init.lua by calling setup() with custom config:
+--
+--   require("kiln-expert").setup({
+--     kilns = { docs = "~/crucible/docs" },
+--     timeout = 60,
+--   })
+--
+-- Or don't require a plugin at all to skip loading it.
+pcall(function()
+  local ke = require("kiln-expert")
+  if ke and ke.setup then ke.setup({}) end
+end)

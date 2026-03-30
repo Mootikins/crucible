@@ -137,7 +137,7 @@ return {
 
     setup = function(cfg)
         if cfg then
-            config.init = config.init or function() end
+            config.init(cfg)
         end
     end,
 }
