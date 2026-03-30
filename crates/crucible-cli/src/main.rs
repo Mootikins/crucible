@@ -1,3 +1,5 @@
+use std::io::IsTerminal;
+
 use anyhow::Result;
 use clap::Parser;
 use tracing::{error, info};
@@ -352,10 +354,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             commands::set::execute(args, session_id_flag).await?;
         }
 
-        Some(Commands::Setup {
-            runtime_dir,
-            force,
-        }) => {
+        Some(Commands::Setup { runtime_dir, force }) => {
             commands::setup::execute(runtime_dir, force)?;
         }
 
@@ -369,6 +368,13 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
         }
 
         None => {
+            // First-run wizard: if no config exists and stdin is a terminal,
+            // walk the user through initial setup before launching chat.
+            let config_path = crucible_config::CliAppConfig::default_config_path();
+            if commands::wizard::is_first_run(&config_path) && std::io::stdin().is_terminal() {
+                commands::wizard::run_setup_wizard(&config_path)?;
+            }
+
             commands::chat::execute(commands::chat::ExecuteParams {
                 config,
                 agent_name: None,

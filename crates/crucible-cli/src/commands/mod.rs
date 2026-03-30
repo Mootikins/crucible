@@ -21,6 +21,7 @@ pub mod tasks;
 pub mod tools;
 #[cfg(feature = "web")]
 pub mod web;
+pub mod wizard;
 
 // Existing commands (kept for compatibility)
 pub mod config;

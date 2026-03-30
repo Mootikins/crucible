@@ -12,10 +12,7 @@
 use anyhow::Result;
 use crucible_cli::commands::process;
 use crucible_cli::config::CliConfig;
-use crucible_config::{
-    AcpConfig, BackendType, LlmConfig, LlmProviderConfig,
-    StorageConfig,
-};
+use crucible_config::{AcpConfig, BackendType, LlmConfig, LlmProviderConfig, StorageConfig};
 use crucible_core::test_support::fixtures::{create_kiln, KilnFixture};
 use crucible_core::test_support::EnvVarGuard;
 use crucible_daemon::rpc_client::lifecycle;

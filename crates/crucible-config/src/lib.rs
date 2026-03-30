@@ -61,9 +61,9 @@ pub use components::{
     PermissionMode, StorageConfig, TransportType, TrustLevel, TypeDiscoveryConfig,
     UpstreamServerConfig,
 };
-pub use config::registry::{KilnEntry, ProjectEntry};
 #[cfg(feature = "toml")]
 pub use config::register_project_in_config;
+pub use config::registry::{KilnEntry, ProjectEntry};
 pub use config::{
     crucible_home, is_crucible_home, parse_duration_string, CliAppConfig, Config, ConfigError,
     ConfigValidationError, EffectiveLlmConfig, LoggingConfig, PluginEntry, PluginsConfig,

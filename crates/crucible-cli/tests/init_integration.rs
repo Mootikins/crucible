@@ -67,8 +67,7 @@ async fn test_init_is_idempotent_on_existing_kiln() {
         .unwrap();
 
     // Second init without force should succeed (idempotent — prints "already exists", returns Ok)
-    let result =
-        crucible_cli::commands::init::execute(Some(path.clone()), false, true).await;
+    let result = crucible_cli::commands::init::execute(Some(path.clone()), false, true).await;
     assert!(
         result.is_ok(),
         "re-init on existing kiln should be idempotent (Ok)"
