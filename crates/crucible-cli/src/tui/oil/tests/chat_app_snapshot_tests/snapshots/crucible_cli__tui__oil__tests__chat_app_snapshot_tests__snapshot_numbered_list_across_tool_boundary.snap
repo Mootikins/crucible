@@ -5,24 +5,22 @@ expression: render_app(&app)
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  > Steps to fix the bug                                                         
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-
- ● Here's the plan:
-
-   1. Read the failing test
-   2. Identify the root cause
-
+                                                                                
+ ● Here's the plan:                                                             
+                                                                                
+   1. Read the failing test                                                     
+   2. Identify the root cause                                                   
+                                                                                
  ✓ Read File tests/regression.rs → [test]                                       
                                  fn test_regression() {                         
                                      assert!(false);                            
                                  }                                              
-
-   Now I can see the issue. Continuing:
-
-   1. Fix the assertion
-   2. Run the test suite
-   3. Commit the fix
                                                                                 
+   Now I can see the issue. Continuing:                                         
                                                                                 
+   1. Fix the assertion                                                         
+   2. Run the test suite                                                        
+   3. Commit the fix                                                            
                                                                                 
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  >                                                                              

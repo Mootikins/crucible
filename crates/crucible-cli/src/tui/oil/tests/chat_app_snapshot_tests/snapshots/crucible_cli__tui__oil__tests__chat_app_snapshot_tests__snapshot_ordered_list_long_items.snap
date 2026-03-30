@@ -1,17 +1,16 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
-assertion_line: 176
 expression: render_app(&app)
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  > Features                                                                     
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-
-   1. Sessions as Notes — Every chat saves as markdown in your kiln workspace
-      searchable and linkable
-   2. MCP Server — Expose your knowledge base to Claude Desktop or any MCP-
-      compatible AI tool
-   3. Lua Plugins — Neovim-like extensibility with full API access
+                                                                                
+   1. Sessions as Notes — Every chat saves as markdown in your kiln workspace   
+      searchable and linkable                                                   
+   2. MCP Server — Expose your knowledge base to Claude Desktop or any MCP-     
+      compatible AI tool                                                        
+   3. Lua Plugins — Neovim-like extensibility with full API access              
                                                                                 
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  >                                                                              

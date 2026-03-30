@@ -546,10 +546,9 @@ fn rendering_is_idempotent_with_tool_calls() {
 // ============================================================================
 
 #[test]
-fn graduation_monotonic_count_never_decreases() {
+fn graduation_content_accumulates_across_messages() {
     let mut runtime = TestRuntime::new(80, 24);
     let mut app = OilChatApp::default();
-    let mut prev_count = 0;
 
     // First message
     app.on_message(ChatAppMsg::UserMessage("First".to_string()));
@@ -559,14 +558,11 @@ fn graduation_monotonic_count_never_decreases() {
     let tree = view_with_default_ctx(&app);
     runtime.render(&tree);
 
-    let count1 = runtime.graduated_count();
+    let combined1 = combined_content(&runtime);
     assert!(
-        count1 >= prev_count,
-        "Graduated count should not decrease: {} -> {}",
-        prev_count,
-        count1
+        combined1.contains("First"),
+        "First message should be present"
     );
-    prev_count = count1;
 
     // Second message
     app.on_message(ChatAppMsg::UserMessage("Second".to_string()));
@@ -576,14 +572,11 @@ fn graduation_monotonic_count_never_decreases() {
     let tree = view_with_default_ctx(&app);
     runtime.render(&tree);
 
-    let count2 = runtime.graduated_count();
+    let combined2 = combined_content(&runtime);
     assert!(
-        count2 >= prev_count,
-        "Graduated count should not decrease: {} -> {}",
-        prev_count,
-        count2
+        combined2.contains("First") && combined2.contains("Second"),
+        "Both messages should be present"
     );
-    prev_count = count2;
 
     // Third message
     app.on_message(ChatAppMsg::UserMessage("Third".to_string()));
@@ -593,12 +586,10 @@ fn graduation_monotonic_count_never_decreases() {
     let tree = view_with_default_ctx(&app);
     runtime.render(&tree);
 
-    let count3 = runtime.graduated_count();
+    let combined3 = combined_content(&runtime);
     assert!(
-        count3 >= prev_count,
-        "Graduated count should not decrease: {} -> {}",
-        prev_count,
-        count3
+        combined3.contains("First") && combined3.contains("Second") && combined3.contains("Third"),
+        "All messages should be present"
     );
 }
 
@@ -922,18 +913,17 @@ proptest! {
         verify_xor_invariant(&runtime, "paragraph breaks");
     }
 
-    /// Property 6: Monotonic graduation count for arbitrary message sequences.
+    /// Property 6: Content accumulates for arbitrary message sequences.
     ///
-    /// Generates multiple message/response pairs and verifies the graduated
-    /// count never decreases.
+    /// Generates multiple message/response pairs and verifies that all
+    /// messages appear in the combined output.
     #[test]
-    fn prop_graduation_count_monotonic(
+    fn prop_content_accumulates_across_messages(
         message_count in 1usize..5,
         response_lengths in prop::collection::vec(1usize..10, 1..5)
     ) {
         let mut runtime = TestRuntime::new(80, 24);
         let mut app = OilChatApp::default();
-        let mut prev_count = 0;
 
         for (msg_idx, &resp_len) in response_lengths.iter().take(message_count).enumerate() {
             app.on_message(ChatAppMsg::UserMessage(format!("Message {}", msg_idx)));
@@ -946,15 +936,17 @@ proptest! {
 
             let tree = view_with_default_ctx(&app);
             runtime.render(&tree);
+        }
 
-            let current_count = runtime.graduated_count();
+        let combined = combined_content(&runtime);
+        // Verify all messages are present
+        for msg_idx in 0..message_count.min(response_lengths.len()) {
+            let marker = format!("Message {}", msg_idx);
             prop_assert!(
-                current_count >= prev_count,
-                "Graduated count decreased: {} -> {}",
-                prev_count,
-                current_count
+                combined.contains(&marker),
+                "Message '{}' not found in combined output:\n{}",
+                marker, combined
             );
-            prev_count = current_count;
         }
     }
 }

@@ -35,21 +35,23 @@ proptest! {
         let tree = view_with_default_ctx(&app);
         runtime.render(&tree);
         let stdout = strip_ansi(runtime.stdout_content());
+        let viewport = strip_ansi(runtime.viewport_content());
+        let combined = format!("{}{}", stdout, viewport);
 
         for i in 0..(messages.len() - 1) {
-            let pos_i = stdout.find(&format!("USER_{}", i));
-            let pos_next = stdout.find(&format!("USER_{}", i + 1));
+            let pos_i = combined.find(&format!("USER_{}", i));
+            let pos_next = combined.find(&format!("USER_{}", i + 1));
 
             prop_assert!(
                 pos_i.is_some() && pos_next.is_some(),
                 "Both USER_{} and USER_{} should be in output:\n{}",
-                i, i + 1, stdout
+                i, i + 1, combined
             );
 
             prop_assert!(
                 pos_i.unwrap() < pos_next.unwrap(),
                 "USER_{} (pos {}) should appear before USER_{} (pos {})\n{}",
-                i, pos_i.unwrap(), i + 1, pos_next.unwrap(), stdout
+                i, pos_i.unwrap(), i + 1, pos_next.unwrap(), combined
             );
         }
     }
@@ -81,10 +83,12 @@ proptest! {
         runtime.render(&tree);
 
         let stdout = strip_ansi(runtime.stdout_content());
+        let viewport = strip_ansi(runtime.viewport_content());
+        let combined = format!("{}{}", stdout, viewport);
         prop_assert!(
-            stdout.contains("Question"),
+            combined.contains("Question"),
             "User message should be present: {}",
-            stdout
+            combined
         );
     }
 
@@ -171,6 +175,8 @@ proptest! {
         runtime.render(&tree);
 
         let stdout = strip_ansi(runtime.stdout_content());
+        let viewport = strip_ansi(runtime.viewport_content());
+        let combined = format!("{}{}", stdout, viewport);
 
         let mut last_response_pos = 0;
 
@@ -178,18 +184,18 @@ proptest! {
             let user_marker = format!("TURN_{}_USER", i);
             let response_marker = format!("TURN_{}_RESPONSE", i);
 
-            let user_pos = stdout.find(&user_marker);
-            let response_pos = stdout.find(&response_marker);
+            let user_pos = combined.find(&user_marker);
+            let response_pos = combined.find(&response_marker);
 
             prop_assert!(
                 user_pos.is_some(),
                 "Turn {} user message should be present:\n{}",
-                i, stdout
+                i, combined
             );
             prop_assert!(
                 response_pos.is_some(),
                 "Turn {} response should be present:\n{}",
-                i, stdout
+                i, combined
             );
 
             let user_pos = user_pos.unwrap();
@@ -238,6 +244,8 @@ proptest! {
         runtime.render(&tree);
 
         let stdout = strip_ansi(runtime.stdout_content());
+        let viewport = strip_ansi(runtime.viewport_content());
+        let combined = format!("{}{}", stdout, viewport);
         let all_content: String = chunks.iter().take(cancel_at).cloned().collect();
         let first_word = all_content.split_whitespace().next();
         if let Some(word) = first_word {
@@ -246,9 +254,9 @@ proptest! {
             if word.len() >= 3 && word.chars().all(|c| c.is_alphabetic()) {
                 let prefix = &word[..3];
                 prop_assert!(
-                    stdout.contains(prefix),
-                    "Cancelled content should have prefix '{}' in stdout:\n{}",
-                    prefix, stdout
+                    combined.contains(prefix),
+                    "Cancelled content should have prefix '{}' in output:\n{}",
+                    prefix, combined
                 );
             }
         }
@@ -271,23 +279,15 @@ proptest! {
 
             let tree = view_with_default_ctx(&app);
             runtime.render(&tree);
-
-            let graduated = runtime.last_graduated_keys();
-            if !graduated.is_empty() {
-                app.mark_graduated(graduated.iter().cloned());
-            }
         }
 
         let stdout = strip_ansi(runtime.stdout_content());
+        let viewport = strip_ansi(runtime.viewport_content());
+        let combined = format!("{}{}", stdout, viewport);
         prop_assert!(
-            !stdout.is_empty(),
+            !combined.is_empty(),
             "Should have some output after {} messages",
             message_count
-        );
-
-        prop_assert!(
-            runtime.graduated_count() > 0,
-            "Should have graduated some messages"
         );
     }
 }

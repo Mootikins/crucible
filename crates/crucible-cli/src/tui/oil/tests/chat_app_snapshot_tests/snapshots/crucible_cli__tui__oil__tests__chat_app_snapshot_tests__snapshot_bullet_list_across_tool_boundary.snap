@@ -5,21 +5,19 @@ expression: render_app(&app)
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  > Check the files                                                              
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-
- ● Checking these files:
-
-   • main.rs
-   • lib.rs
-
- ✓ Read File src/main.rs → 1 lines
-
-   The main file is minimal. Key observations:
-
-   • No error handling
-   • No logging setup
-   • Missing CLI argument parsing
                                                                                 
+ ● Checking these files:                                                        
                                                                                 
+   • main.rs                                                                    
+   • lib.rs                                                                     
+                                                                                
+ ✓ Read File src/main.rs → 1 lines                                              
+                                                                                
+   The main file is minimal. Key observations:                                  
+                                                                                
+   • No error handling                                                          
+   • No logging setup                                                           
+   • Missing CLI argument parsing                                               
                                                                                 
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  >                                                                              

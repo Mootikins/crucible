@@ -3,7 +3,6 @@
 //! These tests verify complete conversation flows with arbitrary message
 //! sequences, simulating what the daemon would send via RPC.
 
-use crate::tui::oil::ansi::strip_ansi;
 use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::TestRuntime;
@@ -15,15 +14,11 @@ use super::generators::{
 };
 use super::helpers::{apply_rpc_event, combined_output, view_with_default_ctx};
 
-/// Render and sync graduation state between runtime and app.
-/// This matches the real render loop behavior in chat_runner.
+/// Render the app's view tree through the runtime.
+/// Graduation is now automatic via drain_completed.
 fn render_and_graduate(runtime: &mut TestRuntime, app: &mut OilChatApp) {
     let tree = view_with_default_ctx(app);
     runtime.render(&tree);
-    let graduated = runtime.last_graduated_keys();
-    if !graduated.is_empty() {
-        app.mark_graduated(graduated);
-    }
 }
 
 proptest! {
@@ -68,16 +63,16 @@ proptest! {
             render_and_graduate(&mut runtime, &mut app);
         }
 
-        let stdout = strip_ansi(runtime.stdout_content());
+        let combined = combined_output(&runtime);
 
         for query in &expected_user_queries {
             let first_word = query.split_whitespace().next();
             if let Some(word) = first_word {
                 if word.len() >= 3 {
                     prop_assert!(
-                        stdout.contains(word),
+                        combined.contains(word),
                         "User query word '{}' should be in output:\n{}",
-                        word, stdout
+                        word, combined
                     );
                 }
             }
@@ -150,26 +145,20 @@ proptest! {
 
             // Use catch_unwind to handle any panics during rapid switching
             let tree = view_with_default_ctx(&app);
-            if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 runtime.render(&tree);
-            })).is_ok() {
-                // Sync graduation state only if render succeeded
-                let graduated = runtime.last_graduated_keys();
-                if !graduated.is_empty() {
-                    app.mark_graduated(graduated);
-                }
-            }
+            }));
         }
 
         app.on_message(ChatAppMsg::StreamComplete);
 
         render_and_graduate(&mut runtime, &mut app);
 
-        let stdout = strip_ansi(runtime.stdout_content());
+        let combined = combined_output(&runtime);
         prop_assert!(
-            stdout.contains("Q"),
+            combined.contains("Q"),
             "User message should persist:\n{}",
-            stdout
+            combined
         );
     }
 
@@ -201,13 +190,13 @@ proptest! {
 
         render_and_graduate(&mut runtime, &mut app);
 
-        let stdout = strip_ansi(runtime.stdout_content());
+        let combined = combined_output(&runtime);
 
         if !think_chunks.is_empty() {
             prop_assert!(
-                stdout.contains("Thought") || stdout.contains("Thinking"),
+                combined.contains("Thought") || combined.contains("Thinking"),
                 "Should show thinking indicator:\n{}",
-                stdout
+                combined
             );
         }
     }
@@ -276,16 +265,25 @@ proptest! {
         app.on_message(ChatAppMsg::TextDelta("Response".to_string()));
 
         render_and_graduate(&mut runtime, &mut app);
-        let before = strip_ansi(runtime.stdout_content());
+        let before = combined_output(&runtime);
 
         app.on_message(ChatAppMsg::ContextUsage { used, total });
 
         render_and_graduate(&mut runtime, &mut app);
-        let after = strip_ansi(runtime.stdout_content());
+        let after = combined_output(&runtime);
+
+        // Strip status bar lines (contain "NORMAL" mode indicator) before comparing,
+        // since context usage legitimately updates the status bar display.
+        let strip_status = |s: &str| -> String {
+            s.lines()
+                .filter(|l| !l.contains("NORMAL") && !l.contains("INSERT"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
 
         prop_assert_eq!(
-            before, after,
-            "Context usage should not affect stdout"
+            strip_status(&before), strip_status(&after),
+            "Context usage should not affect message content"
         );
     }
 
@@ -308,17 +306,17 @@ proptest! {
 
         render_and_graduate(&mut runtime, &mut app);
 
-        let stdout = strip_ansi(runtime.stdout_content());
+        let combined = combined_output(&runtime);
 
         prop_assert!(
-            stdout.contains("Q1"),
+            combined.contains("Q1"),
             "Previous user message should persist:\n{}",
-            stdout
+            combined
         );
         prop_assert!(
-            stdout.contains("R1"),
+            combined.contains("R1"),
             "Previous response should persist:\n{}",
-            stdout
+            combined
         );
     }
 }
@@ -534,7 +532,7 @@ mod e2e_edge_cases {
 
         render_and_graduate(&mut runtime, &mut app);
 
-        let stdout = strip_ansi(runtime.stdout_content());
-        assert!(stdout.contains("Part 1") || stdout.contains("Part 2"));
+        let combined = combined_output(&runtime);
+        assert!(combined.contains("Part 1") || combined.contains("Part 2"));
     }
 }
