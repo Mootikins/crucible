@@ -198,7 +198,29 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: &str) -> Res
         }
     }
 
-    // Check 7: Config validation (structural parse of config.toml)
+    // Check 7: Kiln References
+    if let Some(ref config) = loaded_config {
+        let warnings = validate_kiln_references(config);
+        if warnings.is_empty() {
+            if !config.projects.is_empty() {
+                results.push(DoctorCheckResult {
+                    check_name: "Kiln References".to_string(),
+                    status: "pass".to_string(),
+                    message: "All project kiln references are valid".to_string(),
+                });
+            }
+        } else {
+            for warning in &warnings {
+                results.push(DoctorCheckResult {
+                    check_name: "Kiln References".to_string(),
+                    status: "warn".to_string(),
+                    message: warning.clone(),
+                });
+            }
+        }
+    }
+
+    // Check 8: Config validation (structural parse of config.toml)
     if loaded_config.is_some() {
         results.push(DoctorCheckResult {
             check_name: "Config validation".to_string(),
@@ -346,6 +368,23 @@ fn display_path(path: &Path) -> String {
     path.to_string_lossy().to_string()
 }
 
+/// Validates that every kiln name referenced by a project actually exists in `resolved_kilns()`.
+pub fn validate_kiln_references(config: &CliConfig) -> Vec<String> {
+    let resolved = config.resolved_kilns();
+    let mut warnings = Vec::new();
+    for (project_name, project) in &config.projects {
+        for kiln_name in &project.kilns {
+            if !resolved.contains_key(kiln_name) {
+                warnings.push(format!(
+                    "Project '{}' references kiln '{}' which is not defined in [kilns]",
+                    project_name, kiln_name
+                ));
+            }
+        }
+    }
+    warnings
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -387,5 +426,51 @@ mod tests {
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed[0].status, "pass");
         assert_eq!(parsed[1].status, "fail");
+    }
+
+    #[test]
+    fn doctor_reports_missing_kiln_references() {
+        use crucible_config::ProjectEntry;
+
+        let mut config = CliConfig::default();
+        config.projects.insert(
+            "test".to_string(),
+            ProjectEntry {
+                path: PathBuf::from("/tmp/test"),
+                kilns: vec!["nonexistent".to_string()],
+                default_kiln: Some("nonexistent".to_string()),
+            },
+        );
+        let warnings = validate_kiln_references(&config);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("nonexistent"));
+        assert!(warnings[0].contains("test"));
+    }
+
+    #[test]
+    fn doctor_no_warnings_when_kiln_references_are_valid() {
+        use crucible_config::{KilnEntry, ProjectEntry};
+
+        let mut config = CliConfig::default();
+        config
+            .kilns
+            .insert("vault".to_string(), KilnEntry::Path("~/vault".into()));
+        config.projects.insert(
+            "myproject".to_string(),
+            ProjectEntry {
+                path: PathBuf::from("/tmp/myproject"),
+                kilns: vec!["vault".to_string()],
+                default_kiln: Some("vault".to_string()),
+            },
+        );
+        let warnings = validate_kiln_references(&config);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn doctor_no_warnings_when_no_projects() {
+        let config = CliConfig::default();
+        let warnings = validate_kiln_references(&config);
+        assert!(warnings.is_empty());
     }
 }
