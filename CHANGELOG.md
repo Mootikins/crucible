@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Markdown caching**: Parse results cached between frames, keyed on content + terminal width
+- **`cru.storage` Lua API**: Plugin-namespaced EAV properties for structured data
+- **Precognition daemon setting**: `precognition.results` wired as session-scoped config
+- **Note path normalization**: Daemon normalizes to kiln-relative paths at ingest
+- **SQLite v2 migration**: Note path dedup and schema versioning
+- **Prompt caching**: Anthropic prompt caching enabled via genai CacheControl
+- **Execution limits**: Context management, agent undo, output validation
+- **CLI-recorded parity test**: JSONL fixture captured from real session, replayed through test framework to catch rendering divergence
+- **Spacing acceptance tests**: 10 tests exercising the live rendering path (drain_graduated + viewport) covering user→assistant, tool→tool, thinking→tool, and multi-frame graduation transitions
 - **Plugin install**: `plugins.toml` declaration + git bootstrap on daemon startup; `cru plugin add/remove/update` CLI commands
 - **LuaCATS auto-ship**: Type stubs auto-generated at `~/.config/crucible/luals/` on daemon start for IDE autocomplete
 - **Declarative schedules**: `[[schedules]]` section in `crucible.toml` with human-readable intervals (`1h`, `30m`, `5s`)
@@ -31,14 +40,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Strict content checks in `validate-demos.sh`
 
 ### Changed
+- **Unified Taffy spacing**: Single spacing system via Taffy `gap()` for both graduated (stdout) and viewport content; drain-based graduation at app layer replaces key-tracked `GraduationState`
+- **Terminal scrollback for history**: Graduated content writes to stdout; removed PageUp/PageDown viewport scrolling in favor of terminal emulator native scrollback
+- **Unified event processing**: Removed `is_replay` branching; session resume uses same event path as live streaming
+- **Wall-clock spinner**: Spinner animation uses `Instant::elapsed()` instead of tick count for consistent animation during rapid streaming
+- **Model prefetch**: Models fetched at TUI startup; `:model` opens popup directly
 - Autocomplete filtering uses nucleo fuzzy scoring instead of substring matching
 - `lua.eval` RPC returns proper RPC errors instead of `{"error": ...}` JSON
 - `collect_jobs` uses shared deadline across all jobs (was per-job timeout)
 - Demo pipeline: modernized VHS tapes and justfile recipes
 - Regenerated all demo GIFs via VHS
-- Removed dead asciinema pipeline and redundant docs
 
 ### Fixed
+- **TUI spacing**: Consistent 1 blank line between all container types; consecutive tool groups tight (no gap); thinking summary spaced from text below it
+- **Code block spacing**: Eliminated extra blank lines in code blocks; code renders as single text node with embedded newlines
+- **Ordered list numbering**: Lazy list merging and incremental numbering across tool boundaries
+- **Tool graduation**: Individual tool calls graduate independently instead of waiting for entire group
+- **Thinking block rendering**: Collapsed thinking summary stops spinner when text starts streaming; correct ordering and contrast; shared graduation key between collapsed/expanded
+- **Bullet character**: Configurable via `theme.decorations.bullet_char`
+- **Tool output spilling**: Moved to daemon with env var injection; correct line count and summary
+- **`list_notes`/`search_notes`**: Treat LLM-sent `folder="null"` string as None instead of constructing invalid path
+- **Precognition dedup**: Deduplicate notes by normalized filename, not display title
+- **Bounded overflow indicator**: Auto-detect indent level
 - API key file written with `0o600` permissions (was world-readable)
 - Bearer auth constant-time token comparison (prevents timing attacks)
 - Bearer auth checks X-Forwarded-For to prevent proxy bypass
@@ -49,14 +72,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Empty plugin names from malformed URLs now rejected
 - Zero-duration schedules rejected with actionable config error
 - `session.fork` copies parent agent configuration (model, provider, etc.)
-- Flaky `replay_speed_zero` test uses behavioral assertion instead of wall-clock threshold
-- 5 missing RPC methods added to METHODS capability array
 - `delegate_session` filtered from `list_tools` when unavailable
 - Real providers passed to ACP agent MCP server
-- CLI integration test uses `CARGO_PKG_VERSION` instead of hardcoded version
-- HTTP MCP endpoint vs `list_tools()` filtering behavior documented
 
 ### Removed
+- **`Node::Static`**: Removed variant, `StaticNode`, `ElementKind`, `GraduationState`, `GraduatedContent`, `scrollback()` builders from crucible-oil
+- **Viewport scrolling**: PageUp/PageDown/End keybindings, `scroll_offset` field, `↑NL` status indicator
+- **Legacy renderer**: Removed non-Taffy rendering path; all rendering unified on Taffy pipeline
+- **Unused node variants**: `ErrorBoundary`, `Focusable` removed from `Node` enum
+- **Decrypt animation module** removed from crucible-oil
 - Dead `CrdtManager` (142 LOC) and `CanvasNode`/`CanvasEdge` (123 LOC) code stubs
 - `yrs` workspace dependency (only used by removed CRDT module)
 - Stale `TODO: METHODS array is incomplete` comment
