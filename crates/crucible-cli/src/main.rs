@@ -88,7 +88,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             crucible_daemon::BindWithPluginConfigParams {
                 path: sock.clone(),
                 mcp_config: None,
-                plugin_config: std::collections::HashMap::new(),
+                plugin_config: config.plugins.clone(),
                 plugin_watch: false,
                 auto_archive_hours: config.server.as_ref().and_then(|s| s.auto_archive_hours),
                 llm_config: Some(config.llm.clone()),
