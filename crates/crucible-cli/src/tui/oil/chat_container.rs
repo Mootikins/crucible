@@ -481,6 +481,7 @@ impl ContainerList {
             }) if text.is_empty() && thinking.is_empty()
         );
         if should_remove {
+            tracing::debug!("[containers] Removing empty trailing AssistantResponse");
             self.containers.pop();
         }
     }
@@ -508,6 +509,13 @@ impl ContainerList {
             }
         }
         let is_continuation = self.last_implies_continuation();
+        let last_kind = self.containers.last().map(|c| format!("{:?}", c.kind()));
+        tracing::debug!(
+            last_container = ?last_kind,
+            is_continuation,
+            total_containers = self.containers.len(),
+            "[containers] Creating NEW AssistantResponse"
+        );
         let id = self.next_id("assistant");
         self.containers.push(ChatContainer::AssistantResponse {
             id,
@@ -603,8 +611,13 @@ impl ContainerList {
     /// Add a tool call.
     /// Removes empty trailing responses to avoid graduation gaps.
     pub fn add_tool_call(&mut self, tool: CachedToolCall) {
+        let tool_name = tool.name.clone();
+        let last_kind = self.containers.last().map(|c| format!("{:?}", c.kind()));
+
         // Remove empty trailing AssistantResponse to avoid graduation gaps.
         self.remove_empty_trailing_response();
+
+        let last_kind_after = self.containers.last().map(|c| format!("{:?}", c.kind()));
 
         // Append to existing tool group if the last container is one.
         // Since graduated containers are already drained, any remaining
@@ -616,9 +629,21 @@ impl ContainerList {
 
         if can_append {
             if let Some(ChatContainer::ToolGroup { tools, .. }) = self.containers.last_mut() {
+                tracing::debug!(
+                    tool = %tool_name,
+                    group_size = tools.len() + 1,
+                    "[containers] Appending tool to existing ToolGroup"
+                );
                 tools.push(tool);
             }
         } else {
+            tracing::debug!(
+                tool = %tool_name,
+                last_before_cleanup = ?last_kind,
+                last_after_cleanup = ?last_kind_after,
+                total_containers = self.containers.len(),
+                "[containers] Creating NEW ToolGroup (could not append)"
+            );
             let id = self.next_id("tools");
             self.containers.push(ChatContainer::ToolGroup {
                 id,
@@ -730,6 +755,17 @@ impl ContainerList {
 
         let first_kind = batch[0].0;
         let last_kind = batch[batch.len() - 1].0;
+        let batch_kinds: Vec<_> = batch.iter().map(|(k, _)| format!("{:?}", k)).collect();
+        let prev_kind = self.last_graduated_kind;
+        let adds_spacing = prev_kind.map(|pk| needs_spacing(pk, first_kind)).unwrap_or(false);
+
+        tracing::debug!(
+            batch = ?batch_kinds,
+            prev_graduated = ?prev_kind.map(|k| format!("{:?}", k)),
+            adds_spacing,
+            remaining_containers = self.containers.len(),
+            "[graduation] Graduating batch"
+        );
 
         // Group using the same logic as render_containers():
         // consecutive ToolGroups → tight sub-col (gap=0), everything else → gap(1)
@@ -741,10 +777,8 @@ impl ContainerList {
         // Cross-frame spacing: blank line between previous batch's last
         // container and this batch's first, unless both are ToolGroups.
         let mut output = String::new();
-        if let Some(prev) = self.last_graduated_kind {
-            if needs_spacing(prev, first_kind) {
-                output.push_str("\r\n");
-            }
+        if adds_spacing {
+            output.push_str("\r\n");
         }
         output.push_str(&rendered);
         output.push_str("\r\n");
