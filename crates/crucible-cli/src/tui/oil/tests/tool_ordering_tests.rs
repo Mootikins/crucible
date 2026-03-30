@@ -993,17 +993,8 @@ mod spinner_animation {
         std::thread::sleep(std::time::Duration::from_millis(200));
         let output2 = render_app(&app);
 
-        let find_braille = |output: &str| -> Option<char> {
-            for c in output.chars() {
-                if BRAILLE_SPINNER_FRAMES.contains(&c) {
-                    return Some(c);
-                }
-            }
-            None
-        };
-
-        let b1 = find_braille(&output1);
-        let b2 = find_braille(&output2);
+        let b1 = output1.chars().find(|c| BRAILLE_SPINNER_FRAMES.contains(c));
+        let b2 = output2.chars().find(|c| BRAILLE_SPINNER_FRAMES.contains(c));
 
         assert!(b1.is_some(), "Frame 1 should have braille spinner");
         assert!(b2.is_some(), "Frame 2 should have braille spinner");
@@ -1039,14 +1030,8 @@ mod spinner_animation {
         });
 
         // Capture 5 frames at 120ms intervals (spinner changes at 100ms)
-        let find_braille = |s: &str| -> Option<char> {
-            for c in s.chars() {
-                if BRAILLE_SPINNER_FRAMES.contains(&c) {
-                    return Some(c);
-                }
-            }
-            None
-        };
+        let find_braille =
+            |s: &str| -> Option<char> { s.chars().find(|c| BRAILLE_SPINNER_FRAMES.contains(c)) };
 
         let mut braille_chars = Vec::new();
         let mut tool_in_viewport = Vec::new();

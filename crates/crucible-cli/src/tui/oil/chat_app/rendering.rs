@@ -16,40 +16,6 @@ use crate::tui::oil::chat_container::{needs_spacing, ContainerKind};
 
 use super::{OilChatApp, FOCUS_INPUT, INPUT_MAX_CONTENT_LINES, POPUP_HEIGHT};
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Verify that the spacing truth table is complete and correct:
-    /// only ToolGroup→ToolGroup is tight, everything else gets a blank line.
-    #[test]
-    fn needs_spacing_truth_table_is_complete() {
-        use ContainerKind::*;
-        let kinds = [
-            UserMessage,
-            AssistantResponse,
-            ToolGroup,
-            AgentTask,
-            ShellExecution,
-            SystemMessage,
-        ];
-
-        for prev in &kinds {
-            for next in &kinds {
-                let spacing = needs_spacing(*prev, *next);
-                if *prev == ToolGroup && *next == ToolGroup {
-                    assert!(!spacing, "Tool→Tool should be tight (no spacing)");
-                } else {
-                    assert!(
-                        spacing,
-                        "{prev:?}→{next:?} should have spacing but got tight"
-                    );
-                }
-            }
-        }
-    }
-}
-
 impl OilChatApp {
     pub(super) fn render_messages_drawer(&self, ctx: &ViewContext<'_>) -> Node {
         use crate::tui::oil::components::status_bar::NotificationToastKind;
@@ -273,5 +239,40 @@ impl OilChatApp {
         let lines = wrap_chars(display_content, content_width);
         let visible_lines = lines.len().min(INPUT_MAX_CONTENT_LINES);
         visible_lines + 2
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tui::oil::chat_container::ContainerKind;
+
+    /// Verify that the spacing truth table is complete and correct:
+    /// only ToolGroup→ToolGroup is tight, everything else gets a blank line.
+    #[test]
+    fn needs_spacing_truth_table_is_complete() {
+        use ContainerKind::*;
+        let kinds = [
+            UserMessage,
+            AssistantResponse,
+            ToolGroup,
+            AgentTask,
+            ShellExecution,
+            SystemMessage,
+        ];
+
+        for prev in &kinds {
+            for next in &kinds {
+                let spacing = needs_spacing(*prev, *next);
+                if *prev == ToolGroup && *next == ToolGroup {
+                    assert!(!spacing, "Tool→Tool should be tight (no spacing)");
+                } else {
+                    assert!(
+                        spacing,
+                        "{prev:?}→{next:?} should have spacing but got tight"
+                    );
+                }
+            }
+        }
     }
 }
