@@ -3,7 +3,7 @@ title: Roadmap
 description: Phase-based development timeline for Crucible
 type: roadmap
 status: active
-updated: 2026-02-21
+updated: 2026-03-29
 tags:
   - meta
   - planning

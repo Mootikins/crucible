@@ -3,7 +3,7 @@ title: Product
 description: Product feature map — capabilities, status, documentation, and dependencies
 type: product
 status: active
-updated: 2026-02-03
+updated: 2026-03-29
 tags:
   - meta
   - product
@@ -177,7 +177,7 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 
 ### Streaming & Display
 - [x] **Streaming Display** `P0` — Real-time token streaming with cancel (Esc/Ctrl+C) · `crucible-cli`
-- [x] **Streaming Graduation** `P0` — Dual-zone: viewport (live) → stdout (permanent); XOR placement, monotonic, atomic · `crucible-cli`
+- [x] **Streaming Graduation** `P0` — Drain-based: completed containers render through Taffy, write to stdout (terminal scrollback); viewport shows only live content · `crucible-cli`
 - [x] **Thinking Display** `P0` — Streaming thinking blocks with token count; Ctrl+T toggles; `:set thinking`; note: token count is inaccurate (counts delta messages, not actual tokens) · `crucible-cli`
 - [x] **Markdown Rendering** `P0` — Full markdown-to-node rendering with styled output · `crucible-cli`, `crucible-oil`
 - [x] **Context Usage Display** `P0` — Token usage (used/total) in statusline; daemon pipes prompt/completion tokens via `message_complete` event · `crucible-cli`
@@ -212,7 +212,7 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 
 ### Rendering Engine
 - [x] **Oil Renderer** `P0` — Custom terminal rendering engine (replaced ratatui) · [[Help/TUI/Component Architecture]] · `crucible-oil`
-- [x] **Taffy Layout** `P0` — Flexbox-based terminal layout engine · `crucible-oil`
+- [x] **Taffy Layout** `P0` — Flexbox-based terminal layout engine; single spacing system via `gap()` for both graduated and viewport content · `crucible-oil`
 - [x] **Theme System** `P0` — Token-based theming with configurable colors · [[Meta/TUI-Style-Guide]] · `crucible-oil`
 - [x] **Viewport Caching** `P0` — Cached messages, tool calls, shell executions, subagents with lazy line-wrapping · `crucible-cli`
 - [x] **Drawer Component** `P0` — Bordered expandable panels with title/footer badges · `crucible-cli`

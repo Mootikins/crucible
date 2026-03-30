@@ -18,7 +18,18 @@ Use **half-block** Unicode characters for modal and panel borders:
 
 Half-blocks reduce vertical padding compared to full-block characters. The design intent is compact, dense information display.
 
-## Vertical Spacing
+## Container Spacing
+
+All chat content is organized into containers. Spacing between them follows one rule:
+
+- **1 blank line** between all container types (user message, assistant response, thinking, agent task, shell execution, system message)
+- **0 blank lines** between consecutive tool groups (tight grouping)
+
+This is enforced by Taffy `gap()` — the same layout pass handles both graduated (stdout) and viewport content. The canonical spacing function is `needs_spacing()` in `chat_container.rs`.
+
+Within an `AssistantResponse`, thinking summary/block and text are also separated by `gap(1)`.
+
+## Vertical Spacing (Modals)
 
 Prefer **removing** padding over adding it. When vertical symmetry is needed, eliminate the extra spacer rather than doubling up.
 
