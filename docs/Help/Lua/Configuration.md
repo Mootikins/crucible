@@ -16,7 +16,12 @@ Crucible loads Lua configuration from `~/.config/crucible/init.lua` at startup. 
 Create `~/.config/crucible/init.lua`:
 
 ```lua
--- Configure the statusline (cru.* is canonical, crucible.* still works)
+-- Configure plugins
+require("kiln-expert").setup({
+  kilns = { docs = "~/crucible/docs" },
+})
+
+-- Configure the statusline
 cru.statusline.setup({
     left = {
         cru.statusline.mode(),
@@ -32,12 +37,32 @@ cru.statusline.setup({
 
 ## Config Locations
 
-| Location | Purpose |
-|----------|---------|
-| `~/.config/crucible/init.lua` | Global config (always loaded) |
-| `<kiln>/.crucible/init.lua` | Kiln-specific config (loaded after global) |
+| Location | Purpose | Load Order |
+|----------|---------|------------|
+| Built-in defaults | Precognition format, session defaults, bundled plugins | First (embedded) |
+| `~/.config/crucible/init.lua` | Your config — overrides defaults | Second |
+| `<kiln>/.crucible/lua/init.lua` | Kiln-specific config | Third |
 
-Kiln config runs after global config, so it can override settings.
+Your init.lua runs after the built-in defaults, so you can override anything. Kiln config runs last and can override both.
+
+## Configuring Plugins
+
+Plugins are configured via `require("name").setup({...})` — the same pattern as Neovim plugins.
+
+```lua
+-- Configure a bundled plugin with custom settings
+require("kiln-expert").setup({
+  kilns = {
+    docs = "~/crucible/docs",
+    research = "~/notes/research",
+  },
+  timeout = 60,
+})
+```
+
+Bundled plugins (in `runtime/plugins/`) load with defaults automatically. Your `setup()` call overrides those defaults. To skip a bundled plugin entirely, don't call `require()` for it.
+
+See [[Help/Extending/Creating Plugins]] for writing your own plugins.
 
 ## Built-in Modules
 

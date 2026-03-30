@@ -22,23 +22,75 @@ Plugins are executable extensions that add capabilities to Crucible. A plugin ca
 
 ## Plugin Location
 
-Plugins live in `.crucible/plugins/`:
+Plugins are discovered from these directories (highest priority first):
+
+| Location | Source | Use Case |
+|----------|--------|----------|
+| `CRUCIBLE_PLUGIN_PATH` dirs | EnvPath | Development, CI |
+| `~/.config/crucible/plugins/` | User | Personal plugins |
+| `<kiln>/.crucible/plugins/` | Kiln | Kiln-specific plugins |
+| `$CRUCIBLE_RUNTIME/plugins/` | Runtime | Bundled with Crucible |
+
+Same-name plugins at higher priority shadow lower ones.
 
 ```
-your-kiln/
-├── .crucible/
-│   └── plugins/
-│       ├── tasks/           # Directory plugin
-│       │   ├── init.lua     # Main module
-│       │   ├── parser.lua   # Helper module
-│       │   └── README.md    # Documentation
-│       └── quick-tag.lua    # Single-file plugin
+~/.config/crucible/plugins/
+├── tasks/               # Directory plugin
+│   ├── init.lua         # Main module
+│   ├── lua/parser.lua   # Helper modules
+│   └── plugin.yaml      # Manifest (optional)
+└── quick-tag.lua        # Single-file plugin
 ```
 
-Plugins are also discovered from global config:
-- Linux: `~/.config/crucible/plugins/`
-- macOS: `~/Library/Application Support/crucible/plugins/`
-- Windows: `%APPDATA%\crucible\plugins\`
+All plugin directories are also added to Lua's `package.path`, so `require("tasks")` works from anywhere — your init.lua, other plugins, or the built-in defaults.
+
+## The Setup Pattern
+
+Plugins export a module table with an optional `setup()` function. Users configure plugins in their `init.lua`:
+
+```lua
+-- ~/.config/crucible/init.lua
+require("kiln-expert").setup({
+  kilns = { docs = "~/crucible/docs" },
+  timeout = 60,
+})
+```
+
+Bundled plugins (in `runtime/plugins/`) load with defaults automatically. Your `setup()` call overrides those defaults. To skip a bundled plugin entirely, don't call `require()` for it.
+
+A plugin's `setup()` merges user config into its defaults:
+
+```lua
+-- In your plugin's init.lua
+local config = require("config")
+
+return {
+    name = "my-plugin",
+    -- ... tools, commands, handlers ...
+
+    setup = function(cfg)
+        if cfg then config.init(cfg) end
+    end,
+}
+```
+
+```lua
+-- In your plugin's lua/config.lua
+local M = {}
+local defaults = { timeout = 30, verbose = false }
+
+function M.init(cfg)
+    for k, v in pairs(cfg) do defaults[k] = v end
+end
+
+function M.get(key, fallback)
+    local val = defaults[key]
+    if val ~= nil then return val end
+    return fallback
+end
+
+return M
+```
 
 ## Plugin Languages
 

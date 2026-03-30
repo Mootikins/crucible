@@ -59,6 +59,20 @@ http.get(url)                     -- standalone global
 | `cru.graph` | Knowledge graph queries |
 | `cru.sessions` | Daemon session management (create, send messages, subscribe to events) |
 
+### Plugin & Agent Modules
+
+| Module | Description |
+|--------|-------------|
+| `cru.storage` | Plugin-scoped key-value store: `set(entity, key, val)`, `get(entity, key)`, `list(entity)`, `find(key, val)`, `delete(entity, key)` |
+| `cru.schedule` | Interval tasks: `cru.schedule({every=N}, fn)` returns handle; `cru.schedule.cancel(handle)` |
+| `cru.tools` | Tool registry: `get_tools()`, `run(name, args)` |
+| `cru.mcp` | MCP servers: `call(server, tool, input)`, `list_tools(server)` |
+| `cru.interaction` | UI modals: `ask(opts)`, `popup(opts)`, `panel(opts)`, `permission(opts)` |
+| `crucible.notify` | Notifications: `notify(msg, level?, opts?)`, `notify_once(msg)` |
+| `crucible.messages` | Notification panel: `toggle()`, `show()`, `hide()`, `clear()` |
+| `cru.oil` | UI building: `text()`, `col()`, `row()`, `spacer()`, `maybe()`, `match_state()` |
+| `cru.errors` | Plugin error log: `recent(n?)` returns recent errors |
+
 ### Utility Modules
 
 | Module | Description |
