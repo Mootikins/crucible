@@ -1981,7 +1981,19 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
                 ]
             }
         }
-        "message_complete" => vec![ChatAppMsg::StreamComplete],
+        "message_complete" => {
+            let mut msgs = Vec::new();
+            // Reconstruct the full response text from the persisted snapshot.
+            // text_delta events are not persisted (too granular), so this is
+            // the only source of assistant text on resume.
+            if let Some(text) = data.get("full_response").and_then(|v| v.as_str()) {
+                if !text.is_empty() {
+                    msgs.push(ChatAppMsg::TextDelta(text.to_string()));
+                }
+            }
+            msgs.push(ChatAppMsg::StreamComplete);
+            msgs
+        }
         "precognition_complete" => {
             let notes_count = data
                 .get("notes_count")
