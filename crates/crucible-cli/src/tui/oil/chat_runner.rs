@@ -542,10 +542,10 @@ impl OilChatRunner {
 
         self.terminal.exit()?;
 
-        // Print resume hint after terminal is restored
+        // Print resume hint after terminal is restored to main screen
         if let Some(id) = session_id {
             use colored::Colorize;
-            eprintln!(
+            println!(
                 "  Resume with: {}",
                 format!("cru chat --resume {}", id).dimmed()
             );
