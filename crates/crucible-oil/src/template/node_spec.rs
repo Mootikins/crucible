@@ -172,7 +172,8 @@ fn parse_element(arr: &[NodeSpec]) -> NodeSpecResult<Node> {
         "input" => parse_input(&attrs),
         "popup" => parse_popup(&attrs, &children),
         "fragment" => parse_fragment(&children),
-        "scrollback" => parse_scrollback(&attrs, &children),
+        // "scrollback" was removed — treat as a fragment for backward compatibility
+        "scrollback" => parse_fragment(&children),
         "overlay" => parse_overlay(&attrs, &children),
         "divider" => parse_divider(&attrs),
         "hr" => Ok(horizontal_rule()),
@@ -347,23 +348,6 @@ fn parse_fragment(children: &[NodeSpec]) -> NodeSpecResult<Node> {
         .map(spec_to_node)
         .collect::<NodeSpecResult<Vec<_>>>()?;
     Ok(fragment(child_nodes))
-}
-
-fn parse_scrollback(attrs: &NodeAttrs, children: &[NodeSpec]) -> NodeSpecResult<Node> {
-    let key = required_attr(attrs, "key", "scrollback")?;
-    let newline = optional_bool(attrs, "newline", true);
-
-    let child_nodes: Vec<Node> = children
-        .iter()
-        .map(spec_to_node)
-        .collect::<NodeSpecResult<Vec<_>>>()?;
-
-    Ok(Node::Static(StaticNode {
-        key: key.to_string(),
-        children: child_nodes,
-        kind: ElementKind::default(),
-        newline,
-    }))
 }
 
 fn parse_overlay(attrs: &NodeAttrs, children: &[NodeSpec]) -> NodeSpecResult<Node> {
@@ -989,20 +973,15 @@ mod tests {
     }
 
     #[test]
-    fn test_scrollback_node() {
+    fn test_scrollback_node_becomes_fragment() {
         let hiccup = arr(vec![
             s("scrollback"),
             obj(vec![("key", s("msg-1")), ("newline", b(false))]),
             arr(vec![s("text"), s("content")]),
         ]);
         let node = spec_to_node(&hiccup).unwrap();
-        if let Node::Static(st) = node {
-            assert_eq!(st.key, "msg-1");
-            assert!(!st.newline);
-            assert_eq!(st.children.len(), 1);
-        } else {
-            panic!("Expected Static node");
-        }
+        // scrollback is now treated as fragment for backward compatibility
+        assert!(matches!(node, Node::Fragment(_)));
     }
 
     #[test]

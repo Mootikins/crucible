@@ -53,11 +53,6 @@ fn render_node_plain_text(node: &Node, width: usize, output: &mut String) {
                 render_node_plain_text(child, width, output);
             }
         }
-        Node::Static(static_node) => {
-            for child in &static_node.children {
-                render_node_plain_text(child, width, output);
-            }
-        }
         Node::Overlay(o) => render_node_plain_text(&o.child, width, output),
         other => {
             let rendered = render_to_string(other, width);
@@ -101,8 +96,7 @@ pub fn render_with_cursor(node: &Node, width: usize) -> RenderResult {
     if cursor_info.visible {
         let full_line_count = full_content.lines().count();
         let line_count = content.lines().count();
-        let cursor_abs_row =
-            full_line_count.saturating_sub(cursor_info.row_from_end as usize + 1);
+        let cursor_abs_row = full_line_count.saturating_sub(cursor_info.row_from_end as usize + 1);
 
         // Adjust for visual wrapping
         let lines: Vec<&str> = content.lines().collect();
@@ -320,13 +314,6 @@ mod tests {
     }
 
     #[test]
-    fn test_render_static_node() {
-        let node = scrollback("key1", vec![text("Static content")]);
-        let result = render_to_string(&node, 80);
-        assert_eq!(result, "Static content");
-    }
-
-    #[test]
     fn test_cursor_tracking_simple_input() {
         let node = Node::Input(InputNode {
             value: "hello".to_string(),
@@ -380,7 +367,11 @@ mod tests {
         let result = render_to_string(&node, 80);
         let lines: Vec<&str> = result.lines().collect();
         // 3 items + 2 gaps of 2 = 3 + 4 = 7 lines
-        assert!(lines.len() >= 5, "Expected at least 5 lines with gap=2, got {}", lines.len());
+        assert!(
+            lines.len() >= 5,
+            "Expected at least 5 lines with gap=2, got {}",
+            lines.len()
+        );
     }
 
     #[test]

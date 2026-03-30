@@ -136,10 +136,6 @@ fn collect_overlays(node: &Node, overlays: &mut Vec<OverlayNode>) {
             .iter()
             .for_each(|c| collect_overlays(c, overlays)),
         Node::Fragment(children) => children.iter().for_each(|c| collect_overlays(c, overlays)),
-        Node::Static(s) => s
-            .children
-            .iter()
-            .for_each(|c| collect_overlays(c, overlays)),
         _ => {}
     }
 }
@@ -153,10 +149,6 @@ pub fn filter_overlays(node: Node) -> Node {
         }
         Node::Fragment(children) => {
             Node::Fragment(children.into_iter().map(filter_overlays).collect())
-        }
-        Node::Static(mut s) => {
-            s.children = s.children.into_iter().map(filter_overlays).collect();
-            Node::Static(s)
         }
         other => other,
     }
