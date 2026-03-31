@@ -684,6 +684,176 @@ mod tests {
         );
     }
 
+    /// Check that the final vt100 screen + accumulated stdout never contain
+    /// standalone spinner lines in graduated content. The stdout_buffer
+    /// accumulates rendered graduation content (what goes to scrollback).
+    /// If a spinner appears there, graduation is broken.
+    ///
+    /// This test also captures EVERY intermediate screen state to detect
+    /// viewport spinner "ghosts" that could leak to scrollback in real terminals.
+    #[test]
+    fn vt100_no_spinner_in_any_graduated_content() {
+        let mut app = OilChatApp::init();
+        let mut vt = Vt100TestRuntime::new(124, 59);
+
+        let spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '◐', '◓', '◑', '◒'];
+        let is_standalone_spinner = |l: &str| -> bool {
+            let trimmed = l.trim();
+            !trimmed.is_empty() && trimmed.len() <= 2
+                && trimmed.chars().any(|c| spinner_chars.contains(&c))
+        };
+
+        // Track all screen states to find where spinner appears
+        let mut screen_history: Vec<(String, String)> = vec![]; // (phase, screen)
+
+        app.on_message(ChatAppMsg::UserMessage("go".into()));
+        vt.render_frame(&mut app);
+        screen_history.push(("after_user_msg".into(), vt.screen_contents()));
+
+        think(&mut app, "Planning the approach carefully.");
+        for i in 0..5 {
+            vt.render_frame(&mut app);
+            screen_history.push((format!("thinking_frame_{}", i), vt.screen_contents()));
+        }
+
+        // Tool 1 arrives and completes
+        tool(&mut app, "get_kiln_info", "c1");
+        vt.render_frame(&mut app);
+        screen_history.push(("after_tool1".into(), vt.screen_contents()));
+
+        // Several frames with completed tool + possible turn spinner
+        for i in 0..5 {
+            vt.render_frame(&mut app);
+            screen_history.push((format!("post_tool1_frame_{}", i), vt.screen_contents()));
+        }
+
+        // Tool 2
+        tool(&mut app, "bash", "c2");
+        vt.render_frame(&mut app);
+        screen_history.push(("after_tool2".into(), vt.screen_contents()));
+
+        // Complete
+        app.on_message(ChatAppMsg::TextDelta("Done.".into()));
+        app.on_message(ChatAppMsg::StreamComplete);
+        vt.render_frame(&mut app);
+        screen_history.push(("after_complete".into(), vt.screen_contents()));
+
+        // Now check: the stdout buffer (accumulated graduation content)
+        // should have NO standalone spinner lines
+        let stdout = vt.inner().stdout_content();
+        let stdout_plain = crucible_oil::ansi::strip_ansi(stdout);
+
+        let spinner_in_stdout: Vec<(usize, &str)> = stdout_plain
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| is_standalone_spinner(l))
+            .collect();
+
+        if !spinner_in_stdout.is_empty() {
+            // Print the screen history to help debug
+            for (phase, screen) in &screen_history {
+                let has_spinner = screen.lines().any(|l| is_standalone_spinner(l));
+                if has_spinner {
+                    eprintln!("=== {} (has spinner) ===\n{}\n", phase, screen);
+                }
+            }
+        }
+
+        assert!(
+            spinner_in_stdout.is_empty(),
+            "Spinner in graduated stdout content:\n{:?}\n\nFull stdout:\n{}",
+            spinner_in_stdout,
+            stdout_plain
+        );
+
+        // Also check the final screen for stale spinners
+        let final_screen = vt.screen_contents();
+        let spinner_in_screen: Vec<(usize, &str)> = final_screen
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| is_standalone_spinner(l))
+            .collect();
+
+        assert!(
+            spinner_in_screen.is_empty(),
+            "Spinner in final vt100 screen:\n{:?}\n\nScreen:\n{}",
+            spinner_in_screen,
+            final_screen
+        );
+    }
+
+    /// SMALL TERMINAL: Forces scrolling during graduation write.
+    /// When graduation content is tall enough to push old viewport content
+    /// past the terminal height, the old viewport (with spinner) should NOT
+    /// survive in scrollback.
+    #[test]
+    fn vt100_small_terminal_spinner_no_leak_on_scroll() {
+        let mut app = OilChatApp::init();
+        // Very small terminal — 10 rows. Viewport + graduation will exceed this.
+        let mut vt = Vt100TestRuntime::new(80, 10);
+
+        let spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '◐', '◓', '◑', '◒'];
+        let is_standalone_spinner = |l: &str| -> bool {
+            let trimmed = l.trim();
+            !trimmed.is_empty() && trimmed.len() <= 2
+                && trimmed.chars().any(|c| spinner_chars.contains(&c))
+        };
+
+        app.on_message(ChatAppMsg::UserMessage("go".into()));
+        vt.render_frame(&mut app);
+
+        think(&mut app, "Planning.");
+        vt.render_frame(&mut app); // spinner shows in viewport
+
+        // Tool completes — thinking + tool graduate on next frame
+        tool(&mut app, "bash", "c1");
+        vt.render_frame(&mut app); // graduation write — may scroll in 10-row terminal
+
+        // More renders to stabilize
+        for _ in 0..3 {
+            vt.render_frame(&mut app);
+        }
+
+        // Second tool
+        tool(&mut app, "read_file", "c2");
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::StreamComplete);
+        vt.render_frame(&mut app);
+
+        // Check graduated content
+        let stdout = vt.inner().stdout_content();
+        let stdout_plain = crucible_oil::ansi::strip_ansi(stdout);
+
+        let spinner_lines: Vec<(usize, &str)> = stdout_plain
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| is_standalone_spinner(l))
+            .collect();
+
+        assert!(
+            spinner_lines.is_empty(),
+            "Spinner leaked in 10-row terminal:\n{:?}\n\nStdout:\n{}",
+            spinner_lines,
+            stdout_plain
+        );
+
+        // Also check vt100 screen
+        let screen = vt.screen_contents();
+        let screen_spinners: Vec<(usize, &str)> = screen
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| is_standalone_spinner(l))
+            .collect();
+
+        assert!(
+            screen_spinners.is_empty(),
+            "Spinner in vt100 screen (10-row):\n{:?}\n\nScreen:\n{}",
+            screen_spinners,
+            screen
+        );
+    }
+
     /// Check vt100 SCREEN (not stdout buffer) for spinners after graduation.
     /// This uses the actual vt100 screen state which models real terminal behavior.
     #[test]
