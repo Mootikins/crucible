@@ -191,6 +191,11 @@ web-test-unit:
     cd crates/crucible-web/web && bunx vitest run
 # === Daemon Management ===
 
+# Build and restart daemon (kills stale daemon so next cru auto-spawns fresh)
+dev:
+    -pkill -f "cru daemon serve" 2>/dev/null
+    cargo build
+
 # Start the background daemon
 daemon-start:
     cru daemon start
@@ -198,6 +203,11 @@ daemon-start:
 # Stop the background daemon
 daemon-stop:
     cru daemon stop
+
+# Restart daemon with current binary
+daemon-restart:
+    -pkill -f "cru daemon serve" 2>/dev/null
+    @echo "Daemon killed. Next cru command will auto-spawn fresh."
 
 # Check daemon status
 daemon-status:
