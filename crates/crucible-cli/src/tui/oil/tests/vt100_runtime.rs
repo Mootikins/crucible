@@ -119,23 +119,28 @@ impl Vt100TestRuntime {
     /// important because the visible screen may legitimately contain spinners
     /// (they're part of the active viewport), but scrollback should not.
     pub fn scrollback_contents(&mut self) -> String {
-        // Use the tall parser (1000 rows) — nothing scrolls off its top,
-        // so contents() shows everything. Subtract the current visible
-        // screen lines to get only the "scrollback" portion.
+        // Use the tall parser — nothing scrolls off in a 1000-row terminal,
+        // so contents() shows the full history. Extract the scrollback portion
+        // by subtracting the normal parser's visible screen.
         let tall_contents = self.tall_vt.screen().contents();
         let screen_contents = self.vt.screen().contents();
 
         let tall_lines: Vec<&str> = tall_contents.lines().collect();
         let screen_lines: Vec<&str> = screen_contents.lines().collect();
 
-        // The scrollback is everything in the tall parser that isn't
-        // the current screen content (which is at the bottom)
         let scrollback_count = tall_lines.len().saturating_sub(screen_lines.len());
         if scrollback_count > 0 {
             tall_lines[..scrollback_count].join("\n")
         } else {
             String::new()
         }
+    }
+
+    /// Get the full history from the tall parser (scrollback + screen).
+    /// Since the tall parser has 1000 rows, nothing scrolls off — this
+    /// captures everything the terminal has ever displayed.
+    pub fn full_history(&self) -> String {
+        self.tall_vt.screen().contents()
     }
 
     /// Assert no spinner characters appear in scrollback content.
@@ -1260,18 +1265,26 @@ mod tests {
         }
     }
 
-    // ─── Bug 4: Reproduce exact user scenario ─────────────────────────
+    // ─── Bug 4: Permission modal triggers spinner-in-scrollback ───────
     //
-    // Exact sequence from user's terminal showing spinners between
-    // graduated tools in scrollback. Uses a SMALL terminal (10 rows)
-    // to force content into scrollback, and renders between every event
-    // with extra idle frames to simulate real-time behavior.
+    // The daemon sends OpenInteraction(Permission) BEFORE ToolCall.
+    // This causes the trailing AssistantResponse (thinking) to graduate
+    // via permission_pending, and the viewport gets a turn spinner.
+    // The turn spinner then leaks into scrollback during the next
+    // graduation cycle.
 
-    /// Reproduce: multi-tool sequence on a small terminal.
-    /// Small terminal forces scrollback. Render between every event with
-    /// idle frames where the turn spinner ticks.
+    /// The exact event sequence that triggers the spinner leak:
+    /// 1. User message
+    /// 2. Thinking (spinner in viewport)
+    /// 3. OpenInteraction(Permission) → thinking graduates, turn spinner appears
+    /// 4. Render frames with turn spinner visible
+    /// 5. ToolCall arrives → graduation happens, spinner may leak
+    /// 6. Repeat with more permission tools
+    ///
+    /// Uses the user's terminal size (124x59) to match production behavior.
     #[test]
-    fn reproduce_spinner_leak_small_terminal() {
+    fn reproduce_permission_modal_spinner_leak() {
+        use crucible_core::interaction::{InteractionRequest, PermRequest};
         use crucible_oil::node::{BRAILLE_SPINNER_FRAMES, SPINNER_FRAMES};
 
         let all_spinner_chars: Vec<char> = SPINNER_FRAMES
@@ -1280,125 +1293,161 @@ mod tests {
             .copied()
             .collect();
 
-        // Small terminal — content WILL scroll into scrollback
         let mut app = OilChatApp::init();
-        let mut vt = Vt100TestRuntime::new(80, 10);
+        let mut vt = Vt100TestRuntime::new(124, 59);
 
-        let mut frame = 0;
-        let mut check_frame = |vt: &mut Vt100TestRuntime, label: &str| {
-            frame += 1;
-            // Check scrollback after every frame
-            let sb = vt.scrollback_contents();
-            if !sb.is_empty() {
-                let sb_plain = crucible_oil::ansi::strip_ansi(&sb);
-                for (i, line) in sb_plain.lines().enumerate() {
-                    let trimmed = line.trim();
-                    if !trimmed.is_empty()
+        // Helper: check full history for spinners after each phase
+        let check = |vt: &Vt100TestRuntime, phase: &str| {
+            let history = vt.full_history();
+            let history_plain = crucible_oil::ansi::strip_ansi(&history);
+            let spinners: Vec<(usize, String)> = history_plain
+                .lines()
+                .enumerate()
+                .filter(|(_, l)| {
+                    let trimmed = l.trim();
+                    !trimmed.is_empty()
                         && trimmed.len() <= 4
                         && trimmed.chars().any(|c| all_spinner_chars.contains(&c))
-                    {
-                        panic!(
-                            "Frame {} ({}): spinner '{}' in scrollback line {}.\n\
-                             Scrollback:\n{}",
-                            frame, label, trimmed, i, sb_plain
-                        );
+                })
+                .map(|(i, l)| (i, l.to_string()))
+                .collect();
+
+            if !spinners.is_empty() {
+                let lines: Vec<&str> = history_plain.lines().collect();
+                eprintln!("=== SPINNER LEAK at phase '{}' ===", phase);
+                for (i, line) in &spinners {
+                    let start = i.saturating_sub(2);
+                    let end = (*i + 3).min(lines.len());
+                    eprintln!("  Spinner '{}' at line {}:", line.trim(), i);
+                    for j in start..end {
+                        let marker = if j == *i { " <<<" } else { "" };
+                        eprintln!("    [{:3}] {}{}", j, lines[j], marker);
                     }
                 }
             }
+
+            assert!(
+                spinners.is_empty(),
+                "Phase '{}': spinners in history:\n{:?}",
+                phase,
+                spinners
+            );
         };
 
-        app.on_message(ChatAppMsg::UserMessage("go".into()));
+        // ── Turn 1: User message ──
+        app.on_message(ChatAppMsg::UserMessage("tell me about this repo".into()));
         vt.render_frame(&mut app);
-        check_frame(&mut vt, "user_msg");
 
-        think(&mut app, "I'll explore.");
+        // ── Thinking arrives (spinner shows in viewport) ──
+        think(&mut app, "I'll explore the repository structure.");
         vt.render_frame(&mut app);
-        check_frame(&mut vt, "think1");
+        vt.render_frame(&mut app); // spinner ticks
 
-        // Idle frames — spinner ticks in viewport
-        for i in 0..3 {
-            vt.render_frame(&mut app);
-            check_frame(&mut vt, &format!("idle_think_{}", i));
-        }
-
-        // Tool 1 arrives and completes
+        // ── Tool 1: get_kiln_info (no permission needed) ──
         tool(&mut app, "get_kiln_info", "c1");
         vt.render_frame(&mut app);
-        check_frame(&mut vt, "tool1_complete");
 
-        // Idle frames — turn spinner shows (all tools complete)
-        for i in 0..3 {
-            vt.render_frame(&mut app);
-            check_frame(&mut vt, &format!("idle_after_tool1_{}", i));
-        }
-
-        // Tool 2
-        tool(&mut app, "bash", "c2");
+        // Idle frames — turn spinner shows (tool complete, waiting for next)
         vt.render_frame(&mut app);
-        check_frame(&mut vt, "tool2_complete");
-
-        for i in 0..3 {
-            vt.render_frame(&mut app);
-            check_frame(&mut vt, &format!("idle_after_tool2_{}", i));
-        }
-
-        // Tool 3
-        tool(&mut app, "glob", "c3");
         vt.render_frame(&mut app);
-        check_frame(&mut vt, "tool3_complete");
 
-        // Second thinking
-        think(&mut app, "Checking details.");
+        // ── Tool 2: bash (PERMISSION REQUIRED) ──
+        // Daemon sends OpenInteraction BEFORE ToolCall
+        app.on_message(ChatAppMsg::OpenInteraction {
+            request_id: "perm-1".into(),
+            request: InteractionRequest::Permission(PermRequest::bash(["ls", "-la"])),
+        });
+        vt.render_frame(&mut app); // thinking graduates, modal + turn spinner
+
+        // User approves (simulated — just send the tool call)
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "bash".into(),
+            args: r#"{"cmd": "ls -la"}"#.into(),
+            call_id: Some("c2".into()),
+            description: None,
+            source: None,
+            lua_primary_arg: None,
+        });
         vt.render_frame(&mut app);
-        check_frame(&mut vt, "think2");
 
-        for i in 0..2 {
-            vt.render_frame(&mut app);
-            check_frame(&mut vt, &format!("idle_think2_{}", i));
-        }
-
-        // Tool 4
-        tool(&mut app, "read_file", "c4");
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "bash".into(),
+            call_id: Some("c2".into()),
+        });
         vt.render_frame(&mut app);
-        check_frame(&mut vt, "tool4_complete");
 
-        for i in 0..3 {
-            vt.render_frame(&mut app);
-            check_frame(&mut vt, &format!("idle_after_tool4_{}", i));
-        }
+        check(&vt, "after_first_permission_tool");
 
-        // Tool 5
-        tool(&mut app, "bash", "c5");
+        // Idle frames — turn spinner between tools
         vt.render_frame(&mut app);
-        check_frame(&mut vt, "tool5_complete");
+        vt.render_frame(&mut app);
 
-        // Final text
-        think(&mut app, "Done analyzing.");
-        app.on_message(ChatAppMsg::TextDelta("This is Crucible.".into()));
+        // ── Tool 3: bash find (PERMISSION REQUIRED) ──
+        app.on_message(ChatAppMsg::OpenInteraction {
+            request_id: "perm-2".into(),
+            request: InteractionRequest::Permission(PermRequest::bash([
+                "find", ".", "-maxdepth", "2", "-name", "README*",
+            ])),
+        });
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "bash".into(),
+            args: r#"{"cmd": "find . -maxdepth 2 -name README*"}"#.into(),
+            call_id: Some("c3".into()),
+            description: None,
+            source: None,
+            lua_primary_arg: None,
+        });
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "bash".into(),
+            call_id: Some("c3".into()),
+        });
+        vt.render_frame(&mut app);
+
+        check(&vt, "after_second_permission_tool");
+
+        // ── Second thinking block ──
+        think(&mut app, "Let me check the crate structure.");
+        vt.render_frame(&mut app);
+        vt.render_frame(&mut app);
+
+        // ── Tool 4: bash ls crates (PERMISSION REQUIRED) ──
+        app.on_message(ChatAppMsg::OpenInteraction {
+            request_id: "perm-3".into(),
+            request: InteractionRequest::Permission(PermRequest::bash(["ls", "-la", "crates/"])),
+        });
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "bash".into(),
+            args: r#"{"cmd": "ls -la crates/"}"#.into(),
+            call_id: Some("c4".into()),
+            description: None,
+            source: None,
+            lua_primary_arg: None,
+        });
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "bash".into(),
+            call_id: Some("c4".into()),
+        });
+        vt.render_frame(&mut app);
+
+        check(&vt, "after_third_permission_tool");
+
+        // ── Final response ──
+        think(&mut app, "Now I have enough context.");
+        app.on_message(ChatAppMsg::TextDelta(
+            "Crucible is a knowledge-grounded agent runtime.".into(),
+        ));
         app.on_message(ChatAppMsg::StreamComplete);
         vt.render_frame(&mut app);
-        check_frame(&mut vt, "complete");
 
-        // Final check on stdout_buffer too
-        let stdout = vt.inner().stdout_content();
-        let stdout_plain = crucible_oil::ansi::strip_ansi(stdout);
-        let stdout_spinners: Vec<(usize, &str)> = stdout_plain
-            .lines()
-            .enumerate()
-            .filter(|(_, l)| {
-                let trimmed = l.trim();
-                !trimmed.is_empty()
-                    && trimmed.len() <= 4
-                    && trimmed.chars().any(|c| all_spinner_chars.contains(&c))
-            })
-            .collect();
-
-        assert!(
-            stdout_spinners.is_empty(),
-            "Spinner in graduated stdout:\n{:?}\n\nFull stdout:\n{}",
-            stdout_spinners,
-            stdout_plain
-        );
+        check(&vt, "final");
     }
 
     /// Variant 3 (original): Permission for non-tool interaction — no crash.
