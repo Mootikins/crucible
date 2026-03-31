@@ -45,16 +45,6 @@ impl Vt100TestRuntime {
         self.vt.screen().contents()
     }
 
-    /// Get the vt100 screen for direct inspection.
-    pub fn screen(&self) -> &vt100::Screen {
-        self.vt.screen()
-    }
-
-    /// Number of lines in scrollback (graduated content that scrolled off screen).
-    pub fn scrollback_len(&self) -> usize {
-        self.vt.screen().scrollback()
-    }
-
     /// Get the underlying TestRuntime for legacy API access.
     pub fn inner(&self) -> &TestRuntime {
         &self.inner
