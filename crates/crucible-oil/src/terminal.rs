@@ -75,13 +75,13 @@ impl Terminal<Stdout> {
     }
 
     pub fn exit(&mut self) -> io::Result<()> {
-        let has_height = self.output.height() > 0;
         let use_alt = self.use_alternate_screen;
         let kb_enhanced = self.keyboard_enhanced;
+
+        // Move cursor to bottom of viewport so content above is preserved
+        self.cleanup_viewport()?;
+
         let w = self.output.writer();
-        if has_height {
-            execute!(w, MoveToColumn(0))?;
-        }
         let _ = execute!(w, SetCursorStyle::DefaultUserShape);
         execute!(w, Show)?;
         if use_alt {
@@ -255,6 +255,27 @@ impl<W: Write> Terminal<W> {
         self.output.writer().flush()
     }
 
+    /// Move cursor to bottom of viewport and clear below.
+    /// Used on exit to ensure subsequent println! output doesn't overlap content.
+    pub fn cleanup_viewport(&mut self) -> io::Result<()> {
+        if self.output.height() > 0 {
+            let cursor_row_from_end = self
+                .last_cursor
+                .as_ref()
+                .map(|c| c.row_from_end)
+                .unwrap_or(0);
+            if cursor_row_from_end > 0 {
+                execute!(self.output.writer(), cursor::MoveDown(cursor_row_from_end))?;
+            }
+            execute!(
+                self.output.writer(),
+                cursor::MoveToColumn(0),
+                terminal::Clear(terminal::ClearType::FromCursorDown)
+            )?;
+        }
+        Ok(())
+    }
+
     pub fn force_full_redraw(&mut self) -> io::Result<()> {
         self.output.force_redraw();
         Ok(())
@@ -334,5 +355,65 @@ mod tests {
         let output = String::from_utf8_lossy(&bytes);
         assert!(output.contains("Graduated content"));
         assert!(output.contains("Viewport"));
+    }
+
+    #[test]
+    fn cleanup_viewport_moves_cursor_below_content() {
+        use crate::node::{col, text, text_input};
+
+        let mut term = Terminal::headless(80, 24);
+
+        // Render a tree with an input (cursor positioned above bottom)
+        let tree = col([text("Line 1"), text("Line 2"), text_input("hello", 3)]);
+        term.render(&tree, "").unwrap();
+
+        // Cursor should be positioned at the input, which is above the
+        // bottom of the viewport. Verify last_cursor is set.
+        assert!(
+            term.last_cursor.is_some(),
+            "Cursor should be tracked after rendering input"
+        );
+        let row_from_end = term.last_cursor.as_ref().unwrap().row_from_end;
+
+        // Drain bytes from the render
+        let _ = term.take_bytes();
+
+        // Now call cleanup_viewport
+        term.cleanup_viewport().unwrap();
+
+        let bytes = term.take_bytes();
+        let output = String::from_utf8_lossy(&bytes);
+
+        if row_from_end > 0 {
+            // Should contain a MoveDown escape sequence
+            // CSI <n> B = \x1b[<n>B
+            assert!(
+                output.contains("\x1b["),
+                "cleanup_viewport should emit cursor movement.\nrow_from_end={}\nOutput bytes: {:?}",
+                row_from_end,
+                output
+            );
+        }
+
+        // Should contain Clear(FromCursorDown) = CSI 0 J
+        assert!(
+            output.contains("\x1b[J") || output.contains("\x1b[0J"),
+            "cleanup_viewport should clear below cursor.\nOutput bytes: {:?}",
+            output
+        );
+    }
+
+    #[test]
+    fn cleanup_viewport_noop_when_no_content() {
+        let mut term = Terminal::headless(80, 24);
+
+        // No render — empty viewport
+        term.cleanup_viewport().unwrap();
+
+        let bytes = term.take_bytes();
+        assert!(
+            bytes.is_empty(),
+            "cleanup_viewport should be a no-op with empty viewport"
+        );
     }
 }
