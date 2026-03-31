@@ -82,13 +82,12 @@ fn replay_cast_no_spinner_in_scrollback() {
         .map(|(i, l)| (i, l.to_string()))
         .collect();
 
-    // Try to read scrollback by noting that screen.contents() only shows
-    // visible rows. If scrollback > 0, there's content above that we can't
-    // directly read through the public API. But the scrollback_count tells
-    // us if content has been pushed off screen.
-    //
-    // For a full check, we'd need screen_mut().set_scrollback() which isn't
-    // available. Instead, check if the visible screen is correct.
+    // Read scrollback content by shifting viewport into scrollback.
+    // Parser::set_scrollback() is public and shifts the visible area.
+    let mut parser = parser;
+    parser.set_scrollback(usize::MAX);
+    let scrollback_contents = parser.screen().contents();
+    parser.set_scrollback(0);
 
     eprintln!("\n=== Final screen contents ===");
     for (i, line) in screen_contents.lines().enumerate() {
@@ -103,20 +102,33 @@ fn replay_cast_no_spinner_in_scrollback() {
         }
     }
 
-    // The visible screen after the session ends should not have standalone
-    // spinners — they should have been cleared by graduation.
+    // Check visible screen for standalone spinners
     assert!(
         screen_spinners.is_empty(),
         "Spinners found in final screen:\n{:?}",
         screen_spinners
     );
 
-    // Report scrollback for investigation
+    // Check scrollback content for standalone spinners
     if scrollback_count > 0 {
-        eprintln!(
-            "\nWARNING: {} lines pushed to scrollback. Cannot inspect scrollback \
-             content via vt100 public API. The spinner leak may be in scrollback.",
-            scrollback_count
+        eprintln!("\n=== Scrollback contents ({} lines offset) ===", scrollback_count);
+        let scrollback_spinners: Vec<(usize, String)> = scrollback_contents
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| is_standalone_spinner(l))
+            .map(|(i, l)| (i, l.to_string()))
+            .collect();
+
+        if !scrollback_spinners.is_empty() {
+            for (i, line) in &scrollback_spinners {
+                eprintln!("  [{:2}] {} ← SPINNER IN SCROLLBACK", i, line);
+            }
+        }
+
+        assert!(
+            scrollback_spinners.is_empty(),
+            "Spinners leaked into scrollback:\n{:?}",
+            scrollback_spinners
         );
     }
 }
@@ -136,16 +148,34 @@ fn replay_cast_check_scrollback_exists() {
     }
 
     let parser = replay_cast_through_vt100(&cast_path, 59, 124, 1000);
+    let mut parser = parser;
     let scrollback = parser.screen().scrollback();
 
     eprintln!("Scrollback lines after full replay: {}", scrollback);
 
-    // If scrollback > 0, content has been pushed off screen.
-    // This is where spinners could hide.
-    if scrollback > 0 {
-        eprintln!(
-            "Content DID scroll off screen during the session. \
-             This is the mechanism by which spinners leak to scrollback."
-        );
+    // Read actual scrollback content
+    parser.set_scrollback(usize::MAX);
+    let scrollback_contents = parser.screen().contents();
+    let actual_depth = parser.screen().scrollback();
+    parser.set_scrollback(0);
+
+    eprintln!("Actual scrollback depth: {}", actual_depth);
+
+    if actual_depth > 0 {
+        let spinner_lines: Vec<(usize, String)> = scrollback_contents
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| is_standalone_spinner(l))
+            .map(|(i, l)| (i, l.to_string()))
+            .collect();
+
+        if !spinner_lines.is_empty() {
+            eprintln!("Found {} spinner lines in scrollback:", spinner_lines.len());
+            for (i, line) in &spinner_lines {
+                eprintln!("  [{:2}] {}", i, line);
+            }
+        } else {
+            eprintln!("No standalone spinners found in scrollback.");
+        }
     }
 }

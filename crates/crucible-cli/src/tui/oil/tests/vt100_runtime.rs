@@ -16,6 +16,8 @@ use crucible_oil::TestRuntime;
 pub struct Vt100TestRuntime {
     inner: TestRuntime,
     vt: vt100::Parser,
+    /// Raw bytes from the last render_frame call (captured before feeding to vt100).
+    last_frame_bytes: Vec<u8>,
 }
 
 impl Vt100TestRuntime {
@@ -25,6 +27,7 @@ impl Vt100TestRuntime {
         Self {
             inner: TestRuntime::new(width, height),
             vt: vt100::Parser::new(height, width, scrollback),
+            last_frame_bytes: Vec::new(),
         }
     }
 
@@ -35,6 +38,7 @@ impl Vt100TestRuntime {
 
         // Feed all new terminal bytes to the vt100 parser
         let bytes = self.inner.take_bytes();
+        self.last_frame_bytes = bytes.clone();
         if !bytes.is_empty() {
             self.vt.process(&bytes);
         }
@@ -48,6 +52,66 @@ impl Vt100TestRuntime {
     /// Get the underlying TestRuntime for legacy API access.
     pub fn inner(&self) -> &TestRuntime {
         &self.inner
+    }
+
+    /// Read only the scrollback content (content that has scrolled off the top).
+    ///
+    /// Uses vt100's `set_scrollback()` to shift the viewport, then extracts
+    /// only the scrollback rows (not the current visible screen). This is
+    /// important because the visible screen may legitimately contain spinners
+    /// (they're part of the active viewport), but scrollback should not.
+    pub fn scrollback_contents(&mut self) -> String {
+        // Get the scrollback depth (how many rows have scrolled off)
+        self.vt.set_scrollback(usize::MAX);
+        let depth = self.vt.screen().scrollback();
+
+        if depth == 0 {
+            self.vt.set_scrollback(0);
+            return String::new();
+        }
+
+        // When scrolled to max, contents() shows scrollback rows at the top
+        // followed by visible rows. Extract only the scrollback portion.
+        let full_contents = self.vt.screen().contents();
+        self.vt.set_scrollback(0);
+
+        // The scrollback rows are the first `depth` lines of the full contents
+        let lines: Vec<&str> = full_contents.lines().collect();
+        if depth <= lines.len() {
+            lines[..depth].join("\n")
+        } else {
+            full_contents
+        }
+    }
+
+    /// Assert no spinner characters appear in scrollback content.
+    ///
+    /// Uses canonical spinner character sets from crucible_oil::node to avoid
+    /// hardcoded character lists drifting out of sync.
+    pub fn assert_no_spinners_in_scrollback(&mut self) {
+        use crucible_oil::node::{BRAILLE_SPINNER_FRAMES, SPINNER_FRAMES};
+
+        let contents = self.scrollback_contents();
+        if contents.is_empty() {
+            return;
+        }
+
+        for ch in SPINNER_FRAMES.iter().chain(BRAILLE_SPINNER_FRAMES.iter()) {
+            assert!(
+                !contents.contains(*ch),
+                "Spinner char '{}' found in scrollback:\n{}",
+                ch,
+                contents
+            );
+        }
+    }
+
+    /// Get the raw bytes from the last render_frame call.
+    ///
+    /// Useful for verifying escape sequence structure like synchronized
+    /// update boundaries.
+    pub fn last_frame_bytes(&self) -> &[u8] {
+        &self.last_frame_bytes
     }
 }
 
@@ -981,6 +1045,165 @@ mod tests {
             spinner_lines,
             stdout_plain
         );
+    }
+
+    // ─── Bug 3: Spinner leaks to scrollback via vt100 inspection ──────
+    //
+    // These tests use vt100::set_scrollback() to read actual scrollback
+    // content — the previous tests only checked the stdout_buffer string.
+    // These catch the class of bugs where spinner chars end up in real
+    // terminal scrollback during graduation.
+
+    /// Permission modal graduation: thinking graduates, viewport gets turn
+    /// spinner, then tool arrives. Scrollback must not contain spinner chars.
+    #[test]
+    fn vt100_scrollback_no_spinner_after_permission_graduation() {
+        use crucible_core::interaction::{InteractionRequest, PermRequest};
+
+        let mut app = OilChatApp::init();
+        let mut vt = Vt100TestRuntime::new(80, 24);
+
+        // User message
+        app.on_message(ChatAppMsg::UserMessage("Do something risky".into()));
+        vt.render_frame(&mut app);
+
+        // Thinking arrives
+        think(&mut app, "I need to run a dangerous command.");
+
+        // Render with spinner in viewport
+        for _ in 0..3 {
+            vt.render_frame(&mut app);
+        }
+
+        // Permission request arrives — thinking becomes graduatable
+        app.on_message(ChatAppMsg::OpenInteraction {
+            request_id: "perm-1".into(),
+            request: InteractionRequest::Permission(PermRequest::bash(["rm", "-rf", "/tmp/test"])),
+        });
+
+        // This render graduates the thinking, viewport now has turn spinner + modal
+        vt.render_frame(&mut app);
+
+        // Tool call arrives (simulating user approval)
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "bash".into(),
+            args: r#"{"cmd": "rm -rf /tmp/test"}"#.into(),
+            call_id: Some("c1".into()),
+            description: None,
+            source: None,
+            lua_primary_arg: None,
+        });
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "bash".into(),
+            call_id: Some("c1".into()),
+        });
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::StreamComplete);
+        vt.render_frame(&mut app);
+
+        // Inspect scrollback via vt100 — the actual terminal scrollback
+        vt.assert_no_spinners_in_scrollback();
+    }
+
+    /// Rapid sequential graduations: 5 quick graduation cycles.
+    /// Mimics the 25ms burst from the production log.
+    #[test]
+    fn vt100_rapid_sequential_graduations_clean_scrollback() {
+        let mut app = OilChatApp::init();
+        let mut vt = Vt100TestRuntime::new(80, 24);
+
+        app.on_message(ChatAppMsg::UserMessage("Do many things".into()));
+        vt.render_frame(&mut app);
+
+        // 5 rapid tool cycles — each graduates the previous content
+        for i in 0..5 {
+            let id = format!("c{}", i);
+            think(&mut app, &format!("Step {}.", i));
+            tool(&mut app, "bash", &id);
+            vt.render_frame(&mut app); // graduation happens here
+        }
+
+        app.on_message(ChatAppMsg::TextDelta("All done.".into()));
+        app.on_message(ChatAppMsg::StreamComplete);
+        vt.render_frame(&mut app);
+
+        // Inspect scrollback for spinner leak
+        vt.assert_no_spinners_in_scrollback();
+    }
+
+    /// Verify graduation writes are inside synchronized update blocks.
+    /// Captures raw terminal bytes and checks escape sequence structure.
+    ///
+    /// The clear() sequence (MoveUp + ClearFromCursorDown) and graduation
+    /// content must be inside the same synchronized update block as the
+    /// viewport render. This prevents the terminal from showing intermediate
+    /// states where old spinner content is visible.
+    #[test]
+    fn vt100_graduation_bytes_inside_sync_update() {
+        let mut app = OilChatApp::init();
+        let mut vt = Vt100TestRuntime::new(80, 24);
+
+        app.on_message(ChatAppMsg::UserMessage("go".into()));
+        vt.render_frame(&mut app);
+
+        // This frame will trigger graduation (user message graduates
+        // because thinking + tool follow it)
+        think(&mut app, "Planning.");
+        tool(&mut app, "bash", "c1");
+        vt.render_frame(&mut app);
+
+        // Get raw bytes from this graduation frame
+        let bytes = vt.last_frame_bytes();
+        let byte_str = String::from_utf8_lossy(bytes);
+
+        let begin_sync = "\x1b[?2026h";
+        let end_sync = "\x1b[?2026l";
+
+        // Find the FIRST begin_sync and LAST end_sync
+        let first_begin = byte_str.find(begin_sync);
+        let last_end = byte_str.rfind(end_sync);
+
+        // There must be sync markers in a graduation frame
+        assert!(
+            first_begin.is_some() && last_end.is_some(),
+            "Graduation frame must contain synchronized update markers.\nBytes:\n{}",
+            byte_str.replace('\x1b', "ESC")
+        );
+
+        let begin_pos = first_begin.unwrap();
+        let end_pos = last_end.unwrap();
+
+        // Find ClearFromCursorDown: \x1b[0J or \x1b[J
+        // This is the clear() operation that erases the viewport
+        let clear_pattern_positions: Vec<usize> = byte_str
+            .match_indices("\x1b[")
+            .filter_map(|(pos, _)| {
+                let rest = &byte_str[pos + 2..];
+                if rest.starts_with("0J") || rest.starts_with("J") {
+                    Some(pos)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // The clear() during graduation should be AFTER begin_sync
+        for clear_pos in &clear_pattern_positions {
+            assert!(
+                *clear_pos > begin_pos && *clear_pos < end_pos,
+                "Clear(FromCursorDown) at byte {} must be inside sync block [{}, {}].\n\
+                 Graduation writes must be inside synchronized update to prevent\n\
+                 terminal from showing intermediate states with spinner content.\n\
+                 Bytes:\n{}",
+                clear_pos,
+                begin_pos,
+                end_pos,
+                byte_str.replace('\x1b', "ESC")
+            );
+        }
     }
 
     /// Variant 3 (original): Permission for non-tool interaction — no crash.
