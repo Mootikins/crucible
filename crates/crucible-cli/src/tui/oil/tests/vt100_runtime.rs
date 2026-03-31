@@ -613,6 +613,206 @@ mod tests {
         );
     }
 
+    /// Reproduce: spinner leaks to scrollback between graduated tools.
+    /// Exact sequence from user's real session.
+    #[test]
+    fn vt100_spinner_does_not_leak_to_scrollback() {
+        let mut app = OilChatApp::init();
+        let mut vt = Vt100TestRuntime::new(124, 59);
+
+        // User message
+        app.on_message(ChatAppMsg::UserMessage("tell me about this repo".into()));
+        vt.render_frame(&mut app);
+
+        // Thinking arrives
+        think(&mut app, "I'll explore the repository to give you an overview of what it contains.");
+
+        // Render a few frames with spinner showing (simulates time passing)
+        for _ in 0..5 {
+            vt.render_frame(&mut app);
+        }
+
+        // Tool 1: Get Kiln Info (no permission needed)
+        tool(&mut app, "get_kiln_info", "c1");
+
+        // Render with completed tool + turn spinner showing
+        for _ in 0..3 {
+            vt.render_frame(&mut app);
+        }
+
+        // Tool 2: Bash (would normally need permission, but we skip the modal)
+        tool(&mut app, "bash", "c2");
+        vt.render_frame(&mut app);
+
+        // Tool 3: Bash find
+        tool(&mut app, "bash", "c3");
+        vt.render_frame(&mut app);
+
+        // Second thought block
+        think(&mut app, "Let me check more details.");
+
+        // More tools
+        tool(&mut app, "read_file", "c4");
+        tool(&mut app, "read_file", "c5");
+        vt.render_frame(&mut app);
+
+        // Third thought + final text
+        think(&mut app, "Now I have enough context.");
+        app.on_message(ChatAppMsg::TextDelta("Crucible is a knowledge-grounded agent runtime.".into()));
+        app.on_message(ChatAppMsg::StreamComplete);
+        vt.render_frame(&mut app);
+
+        // Check the combined output for spinner characters in scrollback
+        let stdout = vt.inner().stdout_content();
+        let stdout_plain = crucible_oil::ansi::strip_ansi(stdout);
+
+        let spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '◐', '◓', '◑', '◒'];
+        let spinner_lines: Vec<(usize, &str)> = stdout_plain
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| {
+                let trimmed = l.trim();
+                trimmed.len() <= 2 && trimmed.chars().any(|c| spinner_chars.contains(&c))
+            })
+            .collect();
+
+        assert!(
+            spinner_lines.is_empty(),
+            "Spinner characters found in graduated scrollback:\n{:?}\n\nFull stdout:\n{}",
+            spinner_lines,
+            stdout_plain
+        );
+    }
+
+    /// Check vt100 SCREEN (not stdout buffer) for spinners after graduation.
+    /// This uses the actual vt100 screen state which models real terminal behavior.
+    #[test]
+    fn vt100_screen_no_spinner_after_graduation() {
+        let mut app = OilChatApp::init();
+        let mut vt = Vt100TestRuntime::new(124, 59);
+
+        app.on_message(ChatAppMsg::UserMessage("go".into()));
+        vt.render_frame(&mut app);
+
+        think(&mut app, "Planning the approach.");
+
+        // Render several frames so spinner appears in viewport
+        for _ in 0..5 {
+            vt.render_frame(&mut app);
+        }
+
+        // Tool arrives and completes — thinking can graduate
+        tool(&mut app, "bash", "c1");
+        vt.render_frame(&mut app);
+
+        // Render a few more frames with completed tool + turn spinner
+        for _ in 0..3 {
+            vt.render_frame(&mut app);
+        }
+
+        // Second tool
+        tool(&mut app, "read_file", "c2");
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::StreamComplete);
+        vt.render_frame(&mut app);
+
+        // Check the vt100 SCREEN (not stdout buffer) for spinners
+        let screen = vt.screen_contents();
+        let spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '◐', '◓', '◑', '◒'];
+
+        // Look for standalone spinner lines in the screen content
+        let spinner_lines: Vec<(usize, &str)> = screen
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| {
+                let trimmed = l.trim();
+                !trimmed.is_empty() && trimmed.len() <= 2
+                    && trimmed.chars().any(|c| spinner_chars.contains(&c))
+            })
+            .collect();
+
+        assert!(
+            spinner_lines.is_empty(),
+            "Spinner found in vt100 screen after graduation:\n{:?}\n\nFull screen:\n{}",
+            spinner_lines,
+            screen
+        );
+    }
+
+    /// Same test but with tick-per-event (renders between every event).
+    #[test]
+    fn vt100_spinner_no_leak_tick_per_event() {
+        let mut app = OilChatApp::init();
+        let mut vt = Vt100TestRuntime::new(124, 59);
+
+        app.on_message(ChatAppMsg::UserMessage("go".into()));
+        vt.render_frame(&mut app);
+
+        think(&mut app, "Planning.");
+        vt.render_frame(&mut app);
+
+        // Tool arrives — creates ToolGroup, thinking becomes graduatable
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "bash".into(),
+            args: r#"{"cmd": "ls"}"#.into(),
+            call_id: Some("c1".into()),
+            description: None,
+            source: None,
+            lua_primary_arg: None,
+        });
+        vt.render_frame(&mut app); // thinking + tool in viewport, spinner may show
+
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "bash".into(),
+            call_id: Some("c1".into()),
+        });
+        vt.render_frame(&mut app); // tool complete, turn spinner shows
+
+        // Another tool
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "read_file".into(),
+            args: r#"{"path": "README.md"}"#.into(),
+            call_id: Some("c2".into()),
+            description: None,
+            source: None,
+            lua_primary_arg: None,
+        });
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "read_file".into(),
+            call_id: Some("c2".into()),
+        });
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::TextDelta("Done.".into()));
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::StreamComplete);
+        vt.render_frame(&mut app);
+
+        let stdout = vt.inner().stdout_content();
+        let stdout_plain = crucible_oil::ansi::strip_ansi(stdout);
+
+        let spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '◐', '◓', '◑', '◒'];
+        let spinner_lines: Vec<(usize, &str)> = stdout_plain
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| {
+                let trimmed = l.trim();
+                trimmed.len() <= 2 && trimmed.chars().any(|c| spinner_chars.contains(&c))
+            })
+            .collect();
+
+        assert!(
+            spinner_lines.is_empty(),
+            "Spinner leaked to scrollback:\n{:?}\n\nFull stdout:\n{}",
+            spinner_lines,
+            stdout_plain
+        );
+    }
+
     /// Variant 3 (original): Permission for non-tool interaction — no crash.
     #[test]
     fn non_permission_interaction_does_not_affect_graduation() {
