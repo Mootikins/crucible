@@ -1,6 +1,7 @@
 mod generators;
 mod helpers;
 mod layout_test_helpers;
+mod vt100_runtime;
 
 mod chat_app_interaction_tests;
 mod chat_app_snapshot_tests;
