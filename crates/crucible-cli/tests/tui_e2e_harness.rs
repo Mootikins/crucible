@@ -203,7 +203,8 @@ impl TuiTestSession {
 
         let session = spawn(&cmd)?;
 
-        let vt_parser = Vt100Parser::new(config.rows, config.cols, 0);
+        // Track scrollback so tests can detect content that scrolled off screen
+        let vt_parser = Vt100Parser::new(config.rows, config.cols, 1000);
 
         Ok(Self {
             session,
