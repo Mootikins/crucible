@@ -202,6 +202,12 @@ impl<W: Write> Terminal<W> {
         }
 
         if !snapshot.stdout_delta.is_empty() {
+            tracing::debug!(
+                graduation_len = snapshot.stdout_delta.len(),
+                viewport_rows = self.output.height(),
+                has_spinner = snapshot.stdout_delta.chars().any(|c| "◐◓◑◒⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏".contains(c)),
+                "[apply] graduation write"
+            );
             // Clear viewport, write graduation content to scrollback.
             // Cursor is at viewport bottom, so clear() only needs previous_visual_rows.
             self.output.clear()?;
