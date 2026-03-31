@@ -227,8 +227,12 @@ impl AdaptiveColor {
 /// If bg < 8, terminal is dark; if bg >= 8, terminal is light.
 /// Defaults to dark (true) if COLORFGBG is not set or cannot be parsed.
 pub fn detect_dark_terminal() -> bool {
-    match std::env::var("COLORFGBG") {
-        Ok(value) => {
+    detect_dark_from_colorfgbg(std::env::var("COLORFGBG").ok().as_deref())
+}
+
+fn detect_dark_from_colorfgbg(colorfgbg: Option<&str>) -> bool {
+    match colorfgbg {
+        Some(value) => {
             // Format is "foreground;background"
             if let Some(bg_str) = value.split(';').nth(1) {
                 if let Ok(bg) = bg_str.parse::<u8>() {
@@ -239,7 +243,7 @@ pub fn detect_dark_terminal() -> bool {
             // Default to dark if parsing fails
             true
         }
-        Err(_) => {
+        None => {
             // Default to dark if COLORFGBG is not set
             true
         }
@@ -528,36 +532,7 @@ mod tests {
         assert_eq!(g4.column, 2);
     }
 
-    struct EnvGuard {
-        key: &'static str,
-        old: Option<String>,
-    }
-
-    impl EnvGuard {
-        fn new(key: &'static str, value: &str) -> Self {
-            let old = std::env::var(key).ok();
-            std::env::set_var(key, value);
-            EnvGuard { key, old }
-        }
-
-        fn remove(key: &'static str) -> Self {
-            let old = std::env::var(key).ok();
-            std::env::remove_var(key);
-            EnvGuard { key, old }
-        }
-    }
-
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            if let Some(old) = self.old.clone() {
-                std::env::set_var(self.key, old);
-            } else {
-                std::env::remove_var(self.key);
-            }
-        }
-    }
-
-    #[test]
+#[test]
     fn test_adaptive_color_from_single() {
         let ac = AdaptiveColor::from_single(Color::Red);
         assert_eq!(ac.dark, Color::Red);
@@ -594,40 +569,27 @@ mod tests {
 
     #[test]
     fn test_detect_dark_terminal_dark_bg() {
-        // bg < 8 means dark terminal
-        let _guard = EnvGuard::new("COLORFGBG", "15;0");
-        assert!(detect_dark_terminal());
+        assert!(detect_dark_from_colorfgbg(Some("15;0")));
     }
 
     #[test]
     fn test_detect_dark_terminal_light_bg() {
-        // bg >= 8 means light terminal
-        let _guard = EnvGuard::new("COLORFGBG", "0;15");
-        assert!(!detect_dark_terminal());
+        assert!(!detect_dark_from_colorfgbg(Some("0;15")));
     }
 
     #[test]
     fn test_detect_dark_terminal_not_set() {
-        // Default to dark if not set
-        let _guard = EnvGuard::remove("COLORFGBG");
-        assert!(detect_dark_terminal());
+        assert!(detect_dark_from_colorfgbg(None));
     }
 
     #[test]
     fn test_detect_dark_terminal_invalid_format() {
-        // Default to dark if format is invalid
-        let _guard = EnvGuard::new("COLORFGBG", "invalid");
-        assert!(detect_dark_terminal());
+        assert!(detect_dark_from_colorfgbg(Some("invalid")));
     }
 
     #[test]
     fn test_detect_dark_terminal_boundary() {
-        // Test boundary: bg = 7 (dark), bg = 8 (light)
-        let _guard = EnvGuard::new("COLORFGBG", "15;7");
-        assert!(detect_dark_terminal());
-        // Now test bg = 8 (light) - drop guard and create new one
-        drop(_guard);
-        let _guard2 = EnvGuard::new("COLORFGBG", "15;8");
-        assert!(!detect_dark_terminal());
+        assert!(detect_dark_from_colorfgbg(Some("15;7")));
+        assert!(!detect_dark_from_colorfgbg(Some("15;8")));
     }
 }
