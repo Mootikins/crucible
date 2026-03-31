@@ -220,7 +220,7 @@ impl<W: Write> Terminal<W> {
             self.last_cursor = None;
         }
 
-        let did_render = self.output.render_with_overlays(
+        self.output.render_with_overlays(
             &snapshot.plan.viewport.content,
             &snapshot.plan.overlays,
         )?;
@@ -231,7 +231,7 @@ impl<W: Write> Terminal<W> {
 
         if snapshot.plan.viewport.cursor.visible {
             self.last_cursor = Some(snapshot.plan.viewport.cursor);
-            self.position_cursor(&snapshot.plan.viewport.cursor, did_render)?;
+            self.position_cursor(&snapshot.plan.viewport.cursor)?;
         } else {
             self.last_cursor = None;
         }
@@ -239,33 +239,19 @@ impl<W: Write> Terminal<W> {
         Ok(())
     }
 
-    fn position_cursor(&mut self, cursor_info: &CursorInfo, did_render: bool) -> io::Result<()> {
+    fn position_cursor(&mut self, cursor_info: &CursorInfo) -> io::Result<()> {
         if self.output.height() == 0 {
             return Ok(());
         }
 
-        let (move_up, move_down) = if did_render {
-            (cursor_info.row_from_end, 0)
-        } else if let Some(last) = &self.last_cursor {
-            (
-                cursor_info.row_from_end.saturating_sub(last.row_from_end),
-                last.row_from_end.saturating_sub(cursor_info.row_from_end),
-            )
-        } else {
-            (0, 0)
-        };
+        // Cursor is always at viewport bottom (invariant from apply()).
+        // Move up by row_from_end to reach the input position.
+        let move_up = cursor_info.row_from_end;
 
         if move_up > 0 {
             execute!(
                 self.output.writer(),
                 MoveUp(move_up),
-                MoveToColumn(cursor_info.col),
-                Show
-            )?;
-        } else if move_down > 0 {
-            execute!(
-                self.output.writer(),
-                MoveDown(move_down),
                 MoveToColumn(cursor_info.col),
                 Show
             )?;
