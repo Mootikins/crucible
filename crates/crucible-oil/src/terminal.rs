@@ -200,12 +200,11 @@ impl<W: Write> Terminal<W> {
                 self.pending_leading_blank = false;
             }
             write!(self.output.writer(), "{}", snapshot.stdout_delta)?;
+            // Graduation content needs a trailing \r\n so the viewport render
+            // starts on a new line and doesn't overwrite the last graduation line.
+            write!(self.output.writer(), "\r\n")?;
             self.output.writer().flush()?;
 
-            // force_redraw ensures full viewport repaint after graduation.
-            // DO NOT add \r\n here — the old code included it in stdout_delta,
-            // our Graduation type does not. The viewport render handles
-            // cursor positioning without needing an extra line break.
             self.output.force_redraw();
             self.last_cursor = None;
         }
