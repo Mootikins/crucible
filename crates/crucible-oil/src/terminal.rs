@@ -25,6 +25,8 @@ pub struct Terminal<W: Write = Stdout> {
     last_cursor: Option<CursorInfo>,
     cursor_style: SetCursorStyle,
     last_snapshot: Option<FrameSnapshot>,
+    /// Transient: whether the next graduation needs a leading blank line.
+    pub(crate) pending_leading_blank: bool,
 }
 
 // --- Real terminal (Stdout) only ---
@@ -46,6 +48,7 @@ impl Terminal<Stdout> {
             last_cursor: None,
             cursor_style: SetCursorStyle::SteadyBlock,
             last_snapshot: None,
+            pending_leading_blank: false,
         }
     }
 
@@ -130,6 +133,7 @@ impl Terminal<Vec<u8>> {
             last_cursor: None,
             cursor_style: SetCursorStyle::SteadyBlock,
             last_snapshot: None,
+            pending_leading_blank: false,
         }
     }
 
@@ -190,6 +194,11 @@ impl<W: Write> Terminal<W> {
 
             // Clear viewport, write graduation content to scrollback
             self.output.clear(cursor_offset)?;
+            // Cross-frame blank line (e.g., ToolGroup → AssistantResponse)
+            if self.pending_leading_blank {
+                write!(self.output.writer(), "\r\n")?;
+                self.pending_leading_blank = false;
+            }
             write!(self.output.writer(), "{}", snapshot.stdout_delta)?;
             write!(self.output.writer(), "\r\n")?;
             self.output.writer().flush()?;
@@ -296,6 +305,7 @@ impl<W: Write> Terminal<W> {
 impl crate::runtime::FrameRenderer for Terminal<Stdout> {
     fn render_frame(&mut self, tree: &Node, graduation: Option<&crate::planning::Graduation>) {
         if let Some(grad) = graduation {
+            self.pending_leading_blank = grad.leading_blank;
             let rendered = grad.render();
             let _ = self.render(tree, &rendered);
         } else {

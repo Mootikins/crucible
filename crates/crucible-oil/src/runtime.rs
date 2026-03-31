@@ -47,8 +47,14 @@ impl TestRuntime {
     pub fn render_with_graduation(&mut self, tree: &Node, graduation: Option<&Graduation>) {
         if let Some(grad) = graduation {
             let rendered = grad.render();
+            // Mirror Terminal::apply() leading blank for cross-frame spacing
+            if grad.leading_blank {
+                self.stdout_buffer.push_str("\r\n");
+            }
             self.stdout_buffer.push_str(&rendered);
             self.stdout_buffer.push_str("\r\n");
+            // Set the flag on the headless terminal so apply() also writes it
+            self.terminal.pending_leading_blank = grad.leading_blank;
             let _ = self.terminal.render(tree, &rendered);
         } else {
             let _ = self.terminal.render(tree, "");
@@ -157,6 +163,7 @@ mod tests {
         let grad = Graduation {
             node: col([text("Graduated via node")]),
             width: 80,
+            leading_blank: false,
         };
         runtime.render_with_graduation(&tree, Some(&grad));
 
@@ -190,6 +197,7 @@ mod tests {
         let grad_a = Graduation {
             node: col([text("Content A")]),
             width: 80,
+            leading_blank: false,
         };
         runtime.render_with_graduation(&tree, Some(&grad_a));
 
@@ -197,6 +205,7 @@ mod tests {
         let grad_b = Graduation {
             node: col([text("Content B")]),
             width: 80,
+            leading_blank: false,
         };
         runtime.render_with_graduation(&tree, Some(&grad_b));
 
@@ -216,6 +225,7 @@ mod tests {
         let grad = Graduation {
             node: col([text("Scrollback")]),
             width: 80,
+            leading_blank: false,
         };
 
         // Use the FrameRenderer trait method
