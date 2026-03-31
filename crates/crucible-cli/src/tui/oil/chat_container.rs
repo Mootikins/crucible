@@ -697,6 +697,10 @@ impl ContainerList {
 
         let mut items: Vec<Node> = Vec::new();
         let mut last_kind: Option<ContainerKind> = None;
+        // Cross-frame spacing: does the first item need a blank line before it?
+        // Terminal::apply() writes \r\n after each graduation, providing one line
+        // break. leading_blank adds a second \r\n for the visual blank line.
+        let mut leading_blank = false;
 
         while !self.containers.is_empty() {
             if !self.is_container_graduatable(0) {
@@ -706,12 +710,17 @@ impl ContainerList {
             let kind = container.kind();
             let node = container.view(width as usize, spinner_frame, show_thinking, false, true);
 
-            // Lazy separator: emitted BEFORE each item based on what precedes it
+            // Spacing between items
             let prev = last_kind.or(self.last_graduated_kind);
             if let Some(pk) = prev {
                 if needs_spacing(pk, kind) {
-                    // Blank line between different container types
-                    items.push(text(" "));
+                    if last_kind.is_none() {
+                        // Cross-frame: signal terminal to add leading \r\n
+                        leading_blank = true;
+                    } else {
+                        // Within batch: spacer node in the tree
+                        items.push(text(" "));
+                    }
                 }
             }
 
@@ -723,6 +732,7 @@ impl ContainerList {
 
         tracing::debug!(
             items = items.len(),
+            leading_blank,
             prev_graduated = ?self.last_graduated_kind.map(|k| format!("{:?}", k)),
             last_kind = ?format!("{:?}", last_kind),
             remaining_containers = self.containers.len(),
@@ -737,7 +747,11 @@ impl ContainerList {
         };
 
         self.last_graduated_kind = Some(last_kind);
-        Some(Graduation { node, width })
+        Some(Graduation {
+            node,
+            width,
+            leading_blank,
+        })
     }
 
     /// Whether the container at the given index can be graduated.
@@ -1807,9 +1821,20 @@ mod tests {
     }
 
     /// Test 1: consecutive tool graduations produce zero blank lines.
-    /// Render a Graduation to string, or empty string if None.
+    /// Render a Graduation to string, including leading blank if set.
+    /// Mirrors what Terminal::apply() does.
     fn render_grad(grad: Option<Graduation>) -> String {
-        grad.map(|g| g.render()).unwrap_or_default()
+        match grad {
+            Some(g) => {
+                let mut s = String::new();
+                if g.leading_blank {
+                    s.push('\n');
+                }
+                s.push_str(&g.render());
+                s
+            }
+            None => String::new(),
+        }
     }
 
     /// Simulates live streaming: tool A completes → drain → tool B completes → drain.

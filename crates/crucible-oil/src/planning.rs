@@ -18,6 +18,11 @@ pub struct Graduation {
     pub node: Node,
     /// Terminal width for rendering.
     pub width: u16,
+    /// Whether a blank line should precede this graduation in scrollback.
+    /// Set for cross-frame transitions between different container types
+    /// (e.g., ToolGroup → AssistantResponse). Within-batch spacing uses
+    /// spacer nodes in the node tree instead.
+    pub leading_blank: bool,
 }
 
 impl Graduation {
@@ -307,7 +312,7 @@ mod tests {
     #[test]
     fn graduation_renders_node_to_string() {
         let node = col([text("Hello"), text("World")]);
-        let grad = Graduation { node, width: 80 };
+        let grad = Graduation { node, width: 80, leading_blank: false };
         let rendered = grad.render();
         assert!(rendered.contains("Hello"));
         assert!(rendered.contains("World"));
@@ -321,6 +326,7 @@ mod tests {
         let graduation = Graduation {
             node: grad_node,
             width: 80,
+            leading_blank: false,
         };
         let snapshot = planner.plan_with_graduation(&tree, Some(graduation));
 
@@ -347,6 +353,7 @@ mod tests {
         let graduation = Graduation {
             node: col([text("Graduated")]),
             width: 80,
+            leading_blank: false,
         };
         let snapshot = planner.plan_with_graduation(&tree, Some(graduation));
 
