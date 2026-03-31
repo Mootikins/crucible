@@ -878,4 +878,53 @@ mod tests {
         assert_eq!(measure_text_lines("a\nb\nc", 0), 3);
     }
 
+    /// Reproduces the tool rendering structure: a col containing a mix of
+    /// plain rows (header-only tools) and nested cols (tools with result bodies).
+    /// No blank lines should appear between them.
+    #[test]
+    fn mixed_row_and_col_children_in_col_no_blank_lines() {
+        use crate::node::styled;
+        use crate::render::render_to_string;
+        use crate::style::Style;
+
+        // Tool 1: header only (like Read File → [208 lines])
+        let tool1 = row([text(" ok "), text("Read File → [208 lines]")]);
+
+        // Tool 2: header only
+        let tool2 = row([text(" ok "), text("Read File → [193 lines]")]);
+
+        // Tool 3: header + result body (like Bash ls with │ lines)
+        let tool3 = col([
+            row([text(" ok "), text("Bash ls -la")]),
+            col([
+                styled("   | (41 more lines)", Style::new()),
+                styled("   | last-dir", Style::new()),
+                styled("   | last-file", Style::new()),
+            ]),
+        ]);
+
+        let group = col([tool1, tool2, tool3]);
+        let rendered = render_to_string(&group, 80);
+        let plain = strip_ansi(&rendered);
+        let lines: Vec<&str> = plain.lines().collect();
+
+        eprintln!("Rendered {} lines:", lines.len());
+        for (i, line) in lines.iter().enumerate() {
+            eprintln!("  {}: {:?} blank={}", i, line, line.trim().is_empty());
+        }
+
+        // No blank lines between any content
+        for i in 1..lines.len().saturating_sub(1) {
+            if lines[i].trim().is_empty() {
+                let prev = lines[i - 1];
+                let next = if i + 1 < lines.len() { lines[i + 1] } else { "" };
+                if !prev.trim().is_empty() && !next.trim().is_empty() {
+                    panic!(
+                        "Blank line at index {} between content:\n  prev: {:?}\n  next: {:?}\nFull output:\n{}",
+                        i, prev, next, plain
+                    );
+                }
+            }
+        }
+    }
 }

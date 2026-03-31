@@ -69,6 +69,17 @@ impl OutputBuffer {
     ) -> io::Result<bool> {
         let all_lines: Vec<String> = collapse_blank_lines(content);
 
+        // Debug: check if viewport starts with a blank line
+        if let Some(first) = all_lines.first() {
+            let stripped = crate::ansi::strip_ansi(first);
+            if stripped.trim().is_empty() && all_lines.len() > 1 {
+                tracing::debug!(
+                    total_lines = all_lines.len(),
+                    "[viewport] WARNING: viewport starts with blank line"
+                );
+            }
+        }
+
         let line_visual_rows: Vec<usize> = all_lines
             .iter()
             .map(|line| visual_rows(line, self.terminal_width))
