@@ -395,6 +395,9 @@ pub struct ContainerList {
     /// Kind of the last container graduated to stdout. Used for cross-frame
     /// spacing and viewport continuation logic.
     last_graduated_kind: Option<ContainerKind>,
+    /// Whether a permission request is pending. When true, the trailing
+    /// AssistantResponse can graduate before the tool call arrives.
+    permission_pending: bool,
 }
 
 impl Default for ContainerList {
@@ -410,6 +413,7 @@ impl ContainerList {
             id_counter: 0,
             turn_active: false,
             last_graduated_kind: None,
+            permission_pending: false,
         }
     }
 
@@ -569,6 +573,10 @@ impl ContainerList {
     /// Add a tool call.
     /// Removes empty trailing responses to avoid graduation gaps.
     pub fn add_tool_call(&mut self, tool: CachedToolCall) {
+        // Tool arrived — clear the permission_pending flag (it served its purpose:
+        // letting the thinking AssistantResponse graduate while the modal was up).
+        self.permission_pending = false;
+
         let tool_name = tool.name.clone();
         let last_kind = self.containers.last().map(|c| format!("{:?}", c.kind()));
 
@@ -820,7 +828,18 @@ impl ContainerList {
             return true;
         }
         // Complete if anything follows this response
-        index + 1 < self.containers.len()
+        if index + 1 < self.containers.len() {
+            return true;
+        }
+        // Complete if a permission is pending (tool call will follow)
+        self.permission_pending
+    }
+
+    /// Mark that a permission request is pending. This allows the trailing
+    /// AssistantResponse to graduate before the tool call arrives, since
+    /// the daemon sends interaction_requested before tool_call.
+    pub fn set_permission_pending(&mut self, pending: bool) {
+        self.permission_pending = pending;
     }
 
     /// Whether the container list needs a turn-level spinner appended.

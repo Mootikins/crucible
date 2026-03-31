@@ -438,6 +438,11 @@ impl OilChatApp {
         }
 
         if let InteractionRequest::Permission(perm) = &request {
+            // Allow the trailing AssistantResponse (thinking) to graduate.
+            // The daemon sends interaction_requested before tool_call, so
+            // without this the thinking stays as a spinner in the viewport.
+            self.container_list.set_permission_pending(true);
+
             if self.interaction_modal.is_some() {
                 self.permission
                     .permission_queue
