@@ -2,8 +2,8 @@ use crate::node::Node;
 use crate::planning::Graduation;
 use crate::terminal::Terminal;
 
-/// Shared interface for rendering a frame. Implemented by Terminal (real I/O)
-/// and TestRuntime (in-memory buffer for tests).
+/// Shared interface for rendering a frame. Implemented by Terminal<W> for all
+/// writers, giving tests the exact same render path as the real TUI.
 pub trait FrameRenderer {
     /// Render a Node tree to the viewport, writing any graduated content first.
     fn render_frame(&mut self, tree: &Node, graduation: Option<&Graduation>);
@@ -15,15 +15,15 @@ pub trait FrameRenderer {
     fn size(&self) -> (u16, u16);
 }
 
-/// Test runtime that exercises the real Terminal write path.
+/// Test runtime wrapping `Terminal<Vec<u8>>`.
 ///
-/// Internally wraps `Terminal<Vec<u8>>` — the same escape sequence generation,
-/// cursor math, and viewport diff logic as the real TUI. Output bytes can be
-/// fed to a vt100 parser for screen-level assertions.
+/// Delegates to the real `Terminal` implementation — same escape sequence
+/// generation, cursor math, and viewport diff logic as the production TUI.
+/// The only additions are convenience methods for test assertions.
 pub struct TestRuntime {
     terminal: Terminal<Vec<u8>>,
     /// Accumulated graduation content (rendered strings, not escape sequences).
-    /// Used by `stdout_content()` for test assertions.
+    /// Mirrors what goes to scrollback for test assertions via `stdout_content()`.
     stdout_buffer: String,
 }
 
@@ -35,34 +35,31 @@ impl TestRuntime {
         }
     }
 
+    /// Render a tree with no graduation (convenience for simple tests).
     pub fn render(&mut self, tree: &Node) {
-        self.render_with_stdout(tree, "");
+        self.render_with_graduation(tree, None);
     }
 
-    pub fn render_with_stdout(&mut self, tree: &Node, stdout_delta: &str) {
-        self.stdout_buffer.push_str(stdout_delta);
-        let _ = self.terminal.render(tree, stdout_delta);
-    }
-
+    /// Render a tree with optional graduation, tracking stdout for assertions.
     pub fn render_with_graduation(&mut self, tree: &Node, graduation: Option<&Graduation>) {
+        // Track graduation content for stdout_content() assertions
         if let Some(grad) = graduation {
             let rendered = grad.render();
-            // Mirror Terminal::apply() leading blank for cross-frame spacing
             if grad.leading_blank {
                 self.stdout_buffer.push_str("\r\n");
             }
             self.stdout_buffer.push_str(&rendered);
-            // Graduation content needs a trailing line break for stdout_content()
-            // to correctly separate from subsequent graduation or viewport content.
-            // In Terminal::apply(), the viewport render handles this implicitly via
-            // force_redraw() starting at the cursor position after the graduation write.
             self.stdout_buffer.push_str("\r\n");
-            // Set the flag on the headless terminal so apply() also writes it
-            self.terminal.pending_leading_blank = grad.leading_blank;
-            let _ = self.terminal.render(tree, &rendered);
-        } else {
-            let _ = self.terminal.render(tree, "");
         }
+
+        // Delegate to the real Terminal implementation via FrameRenderer
+        FrameRenderer::render_frame(&mut self.terminal, tree, graduation);
+    }
+
+    /// Render with a pre-rendered stdout_delta string (legacy API).
+    pub fn render_with_stdout(&mut self, tree: &Node, stdout_delta: &str) {
+        self.stdout_buffer.push_str(stdout_delta);
+        let _ = self.terminal.render(tree, stdout_delta);
     }
 
     /// Accumulated graduation content as rendered strings.
@@ -111,7 +108,7 @@ impl FrameRenderer for TestRuntime {
     }
 
     fn force_full_redraw(&mut self) {
-        let _ = self.terminal.force_full_redraw();
+        FrameRenderer::force_full_redraw(&mut self.terminal);
     }
 
     fn size(&self) -> (u16, u16) {
