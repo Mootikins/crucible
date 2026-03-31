@@ -543,7 +543,77 @@ mod tests {
         );
     }
 
-    /// Variant 3: Permission for non-tool interaction — no crash.
+    /// Variant 3: Graduated thinking must NOT contain a spinner character.
+    #[test]
+    fn graduated_thinking_has_no_spinner() {
+        use crucible_core::interaction::{InteractionRequest, PermRequest};
+
+        let mut app = OilChatApp::init();
+        let mut runtime = TestRuntime::new(80, 24);
+
+        app.on_message(ChatAppMsg::UserMessage("Do something".into()));
+        let focus = FocusContext::new();
+        render_frame(&mut app, &mut runtime, &focus);
+
+        think(&mut app, "Planning the command.");
+
+        // Permission arrives — thinking should become graduatable
+        app.on_message(ChatAppMsg::OpenInteraction {
+            request_id: "perm-1".into(),
+            request: InteractionRequest::Permission(PermRequest::bash(["rm", "-rf", "/tmp"])),
+        });
+
+        // Render — thinking should graduate
+        render_frame(&mut app, &mut runtime, &focus);
+
+        let stdout = runtime.stdout_content();
+
+        // Spinner characters: braille spinners ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ and circle ◐◓◑◒
+        let spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '◐', '◓', '◑', '◒'];
+        let has_spinner = stdout.chars().any(|c| spinner_chars.contains(&c));
+        assert!(
+            !has_spinner,
+            "Graduated thinking should NOT contain spinner characters.\nStdout:\n{}",
+            crucible_oil::ansi::strip_ansi(stdout)
+        );
+    }
+
+    /// Variant 4: Missing blank line between user message and first thought.
+    #[test]
+    fn user_then_thought_has_blank_line_after_permission_graduation() {
+        use crucible_core::interaction::{InteractionRequest, PermRequest};
+
+        let mut app = OilChatApp::init();
+        let mut runtime = TestRuntime::new(120, 40);
+
+        app.on_message(ChatAppMsg::UserMessage("Hello".into()));
+        let focus = FocusContext::new();
+        render_frame(&mut app, &mut runtime, &focus);
+
+        think(&mut app, "Let me think about this.");
+
+        // Permission arrives
+        app.on_message(ChatAppMsg::OpenInteraction {
+            request_id: "perm-1".into(),
+            request: InteractionRequest::Permission(PermRequest::bash(["ls"])),
+        });
+
+        render_frame(&mut app, &mut runtime, &focus);
+
+        let stdout = runtime.stdout_content();
+        let screen = crucible_oil::ansi::strip_ansi(stdout);
+
+        // Should have exactly 1 blank line between user message and thought
+        let blanks = blank_lines_between(&screen, "Hello", "Thought");
+        assert_eq!(
+            blanks,
+            Some(1),
+            "Expected 1 blank between user message and thought after permission graduation.\nScreen:\n{}",
+            screen
+        );
+    }
+
+    /// Variant 3 (original): Permission for non-tool interaction — no crash.
     #[test]
     fn non_permission_interaction_does_not_affect_graduation() {
         use crucible_core::interaction::{AskRequest, InteractionRequest};
