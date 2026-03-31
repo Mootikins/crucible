@@ -230,12 +230,8 @@ impl<W: Write> OutputBuffer<W> {
     /// measured as rows from the bottom of the viewport. This is needed
     /// to correctly calculate how many rows to move up before clearing.
     pub fn clear(&mut self, cursor_offset_from_end: u16) -> io::Result<()> {
-        // Use the larger of previous_visual_rows and terminal_height to ensure
-        // we clear ALL viewport content, even if the viewport size changed
-        // (e.g., permission modal overlay changed the layout).
-        let rows = self.previous_visual_rows.max(self.terminal_height.saturating_sub(1));
-        if rows > 0 {
-            let move_up_amount = (rows as u16)
+        if self.previous_visual_rows > 0 {
+            let move_up_amount = (self.previous_visual_rows as u16)
                 .saturating_sub(1)
                 .saturating_sub(cursor_offset_from_end);
             if move_up_amount > 0 {
