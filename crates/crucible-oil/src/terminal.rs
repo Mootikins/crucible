@@ -128,46 +128,20 @@ impl Terminal {
         execute!(self.stdout, Hide)?;
 
         if !snapshot.stdout_delta.is_empty() {
-            let delta_lines = snapshot.stdout_delta.lines().count();
-            let delta_ends_newline = snapshot.stdout_delta.ends_with('\n')
-                || snapshot.stdout_delta.ends_with("\r\n");
             let cursor_offset = self
                 .last_cursor
                 .as_ref()
                 .map(|c| c.row_from_end)
                 .unwrap_or(0);
-            let delta_first_stripped = crate::ansi::strip_ansi(
-                snapshot.stdout_delta.lines().next().unwrap_or(""),
-            );
-            let delta_first_10: String = delta_first_stripped.chars().take(40).collect();
-            tracing::debug!(
-                delta_lines,
-                delta_ends_newline,
-                delta_first_10,
-                cursor_offset,
-                prev_visual_rows = self.output.height(),
-                delta_bytes = snapshot.stdout_delta.len(),
-                delta_starts_with_newline = snapshot.stdout_delta.starts_with("\r\n"),
-                "[graduation] Writing stdout_delta"
-            );
-            // Dump first 80 chars of raw delta for debugging
-            let raw_start: String = snapshot.stdout_delta.chars().take(80).map(|c| {
-                match c {
-                    '\r' => '⏎',
-                    '\n' => '↵',
-                    '\x1b' => '␛',
-                    c if c.is_control() => '·',
-                    c => c,
-                }
-            }).collect();
-            tracing::debug!(raw_start, "[graduation] Raw delta start");
 
+            // Clear viewport, write graduation content to scrollback
             self.output.clear(cursor_offset)?;
-
             write!(self.stdout, "{}", snapshot.stdout_delta)?;
+            write!(self.stdout, "\r\n")?;
             self.stdout.flush()?;
 
-            self.output.force_redraw();
+            // clear() already resets previous_lines/previous_visual_rows,
+            // so render_with_overlays will do a full redraw
             self.last_cursor = None;
         }
 
@@ -245,8 +219,13 @@ impl Terminal {
 }
 
 impl crate::runtime::FrameRenderer for Terminal {
-    fn render_frame(&mut self, tree: &Node, stdout_delta: &str) {
-        let _ = self.render(tree, stdout_delta);
+    fn render_frame(&mut self, tree: &Node, graduation: Option<&crate::planning::Graduation>) {
+        if let Some(grad) = graduation {
+            let rendered = grad.render();
+            let _ = self.render(tree, &rendered);
+        } else {
+            let _ = self.render(tree, "");
+        }
     }
 
     fn force_full_redraw(&mut self) {

@@ -11,6 +11,7 @@ use crate::tui::oil::components::{
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
 use crate::tui::oil::node::{col, row, spinner, styled, text, Node};
 use crate::tui::oil::render_state::RenderState;
+use crate::tui::oil::planning::Graduation;
 use crate::tui::oil::style::{Gap, Style};
 
 use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
@@ -58,45 +59,6 @@ pub fn needs_spacing(prev: ContainerKind, next: ContainerKind) -> bool {
     )
 }
 
-/// Group (kind, node) pairs into a col with correct spacing.
-///
-/// Same logic as `render_containers()` in rendering.rs: consecutive ToolGroups
-/// are wrapped in a tight sub-col (`gap(0)`), everything else is separated by
-/// the outer `gap(1)`. Shared by both the graduation path and viewport path.
-pub(crate) fn group_container_nodes(items: Vec<(ContainerKind, Node)>) -> Node {
-    let mut groups: Vec<Node> = Vec::new();
-    let mut tight_run: Vec<Node> = Vec::new();
-    let mut run_kind: Option<ContainerKind> = None;
-
-    for (kind, node) in items {
-        let should_break = run_kind
-            .map(|prev| needs_spacing(prev, kind))
-            .unwrap_or(false);
-
-        if should_break {
-            if tight_run.len() == 1 {
-                groups.push(tight_run.pop().unwrap());
-            } else if !tight_run.is_empty() {
-                groups.push(col(tight_run.drain(..)).gap(Gap::row(0)));
-            }
-        }
-
-        tight_run.push(node);
-        run_kind = Some(kind);
-    }
-    // Flush remaining
-    if tight_run.len() == 1 {
-        groups.push(tight_run.pop().unwrap());
-    } else if !tight_run.is_empty() {
-        groups.push(col(tight_run).gap(Gap::row(0)));
-    }
-
-    if groups.len() == 1 {
-        groups.pop().unwrap()
-    } else {
-        col(groups).gap(Gap::row(1))
-    }
-}
 
 /// Semantic container for chat content.
 ///
@@ -425,16 +387,13 @@ fn render_system_message(content: &str) -> Node {
 /// to stdout, the backing containers are drained from the front immediately.
 pub struct ContainerList {
     containers: Vec<ChatContainer>,
-    /// Whether any containers have ever graduated (for spacer logic).
-    has_graduated: bool,
     /// Counter for generating unique IDs
     id_counter: u64,
     /// Whether the assistant turn is active (streaming). This stays true
     /// across tool calls until explicitly completed or cancelled.
     turn_active: bool,
     /// Kind of the last container graduated to stdout. Used for cross-frame
-    /// spacing: the next batch's first container needs this to decide whether
-    /// a blank line separator is needed before it.
+    /// spacing and viewport continuation logic.
     last_graduated_kind: Option<ContainerKind>,
 }
 
@@ -448,7 +407,6 @@ impl ContainerList {
     pub fn new() -> Self {
         Self {
             containers: Vec::new(),
-            has_graduated: false,
             id_counter: 0,
             turn_active: false,
             last_graduated_kind: None,
@@ -733,10 +691,13 @@ impl ContainerList {
         width: u16,
         spinner_frame: usize,
         show_thinking: bool,
-    ) -> String {
-        use crucible_oil::render::render_to_string;
+    ) -> Option<Graduation> {
+        use crucible_oil::node::{col, text};
+        use crucible_oil::style::Gap;
 
-        let mut batch: Vec<(ContainerKind, Node)> = Vec::new();
+        let mut items: Vec<Node> = Vec::new();
+        let mut first_kind: Option<ContainerKind> = None;
+        let mut last_kind: Option<ContainerKind> = None;
 
         while !self.containers.is_empty() {
             if !self.is_container_graduatable(0) {
@@ -745,56 +706,42 @@ impl ContainerList {
             let container = self.containers.remove(0);
             let kind = container.kind();
             let node = container.view(width as usize, spinner_frame, show_thinking, false, true);
-            batch.push((kind, node));
-            self.has_graduated = true;
+
+            // Lazy separator: emitted BEFORE each item based on what precedes it
+            let prev = last_kind.or(self.last_graduated_kind);
+            if let Some(pk) = prev {
+                if needs_spacing(pk, kind) {
+                    // Blank line between different container types
+                    items.push(text(" "));
+                }
+            }
+
+            items.push(node);
+            if first_kind.is_none() {
+                first_kind = Some(kind);
+            }
+            last_kind = Some(kind);
         }
 
-        if batch.is_empty() {
-            return String::new();
-        }
-
-        let first_kind = batch[0].0;
-        let last_kind = batch[batch.len() - 1].0;
-        let batch_kinds: Vec<_> = batch.iter().map(|(k, _)| format!("{:?}", k)).collect();
-        let prev_kind = self.last_graduated_kind;
-        let adds_spacing = prev_kind.map(|pk| needs_spacing(pk, first_kind)).unwrap_or(false);
+        let last_kind = last_kind?; // None if no items drained
 
         tracing::debug!(
-            batch = ?batch_kinds,
-            prev_graduated = ?prev_kind.map(|k| format!("{:?}", k)),
-            adds_spacing,
+            items = items.len(),
+            prev_graduated = ?self.last_graduated_kind.map(|k| format!("{:?}", k)),
+            last_kind = ?format!("{:?}", last_kind),
             remaining_containers = self.containers.len(),
             "[graduation] Graduating batch"
         );
 
-        // Group using the same logic as render_containers():
-        // consecutive ToolGroups → tight sub-col (gap=0), everything else → gap(1)
-        let grouped = group_container_nodes(batch);
-
-        // One Taffy pass for the entire batch
-        let rendered = render_to_string(&grouped, width as usize);
-
-        let rendered_lines = rendered.lines().count();
-        let ends_with_newline = rendered.ends_with('\n');
-        tracing::debug!(
-            rendered_lines,
-            ends_with_newline,
-            adds_spacing,
-            rendered_bytes = rendered.len(),
-            "[graduation] Rendered batch"
-        );
-
-        // Cross-frame spacing: blank line between previous batch's last
-        // container and this batch's first, unless both are ToolGroups.
-        let mut output = String::new();
-        if adds_spacing {
-            output.push_str("\r\n");
-        }
-        output.push_str(&rendered);
-        output.push_str("\r\n");
+        // Build the graduation node tree
+        let node = if items.len() == 1 {
+            items.pop().unwrap()
+        } else {
+            col(items).gap(Gap::row(0))
+        };
 
         self.last_graduated_kind = Some(last_kind);
-        output
+        Some(Graduation { node, width })
     }
 
     /// Whether the container at the given index can be graduated.
@@ -812,7 +759,7 @@ impl ContainerList {
 
     /// Whether any containers have ever graduated to stdout.
     pub fn has_graduated(&self) -> bool {
-        self.has_graduated
+        self.last_graduated_kind.is_some()
     }
 
     /// Kind of the last container that graduated to stdout.
@@ -841,8 +788,11 @@ impl ContainerList {
             .take_while(|c| graduated_ids.iter().any(|id| id == c.id()))
             .count();
         if count > 0 {
+            // Track the last graduated container's kind for spacing
+            if let Some(last) = self.containers.get(count - 1) {
+                self.last_graduated_kind = Some(last.kind());
+            }
             self.containers.drain(0..count);
-            self.has_graduated = true;
         }
     }
 
@@ -958,7 +908,6 @@ impl ContainerList {
     /// Clear all containers.
     pub fn clear(&mut self) {
         self.containers.clear();
-        self.has_graduated = false;
         self.turn_active = false;
         self.last_graduated_kind = None;
     }
@@ -1862,6 +1811,11 @@ mod tests {
     }
 
     /// Test 1: consecutive tool graduations produce zero blank lines.
+    /// Render a Graduation to string, or empty string if None.
+    fn render_grad(grad: Option<Graduation>) -> String {
+        grad.map(|g| g.render()).unwrap_or_default()
+    }
+
     /// Simulates live streaming: tool A completes → drain → tool B completes → drain.
     #[test]
     fn consecutive_tool_graduations_have_no_blank_lines() {
@@ -1870,15 +1824,15 @@ mod tests {
         // Tool A arrives and completes
         list.add_tool_call(make_complete_tool("bash", "call-1"));
         let output_a = list.drain_completed(80, 0, false);
-        assert!(!output_a.is_empty(), "Tool A should graduate");
+        assert!(output_a.is_some(), "Tool A should graduate");
 
         // Tool B arrives and completes (separate frame)
         list.add_tool_call(make_complete_tool("read_file", "call-2"));
         let output_b = list.drain_completed(80, 0, false);
-        assert!(!output_b.is_empty(), "Tool B should graduate");
+        assert!(output_b.is_some(), "Tool B should graduate");
 
         // Concatenated output should have no blank lines between tools
-        let combined = format!("{}{}", output_a, output_b);
+        let combined = format!("{}\n{}", render_grad(output_a), render_grad(output_b));
         let plain = crucible_oil::ansi::strip_ansi(&combined);
         assert!(
             !has_blank_line(&plain),
@@ -1894,15 +1848,15 @@ mod tests {
 
         // Tool completes and graduates
         list.add_tool_call(make_complete_tool("bash", "call-1"));
-        let output_tool = list.drain_completed(80, 0, false);
+        let output_tool = render_grad(list.drain_completed(80, 0, false));
 
         // Text arrives and graduates
         list.start_assistant_response();
         list.append_text("Hello world");
         list.complete_response();
-        let output_text = list.drain_completed(80, 0, false);
+        let output_text = render_grad(list.drain_completed(80, 0, false));
 
-        let combined = format!("{}{}", output_tool, output_text);
+        let combined = format!("{}\n{}", output_tool, output_text);
         let plain = crucible_oil::ansi::strip_ansi(&combined);
         let lines: Vec<&str> = plain.lines().collect();
 
@@ -1929,6 +1883,10 @@ mod tests {
 
     /// Test 3: sequential tool arrival produces identical output to batch arrival.
     /// This is the strongest test: proves the lazy-newline approach works.
+    ///
+    /// With the Graduation approach, sequential drains produce separate Graduation
+    /// nodes while batch produces one col. Both render identically when the terminal
+    /// adds line breaks between graduations (tested here via \n separator).
     #[test]
     fn sequential_tools_match_batch_tools() {
         // Path A: all 3 tools arrive at once → 1 ToolGroup → drain
@@ -1936,20 +1894,23 @@ mod tests {
         list_batch.add_tool_call(make_complete_tool("bash", "call-1"));
         list_batch.add_tool_call(make_complete_tool("read_file", "call-2"));
         list_batch.add_tool_call(make_complete_tool("search", "call-3"));
-        let output_batch = list_batch.drain_completed(80, 0, false);
+        let output_batch = render_grad(list_batch.drain_completed(80, 0, false));
 
-        // Path B: tools arrive one at a time with drains between
+        // Path B: tools arrive one at a time with drains between.
+        // Terminal adds \n between separate graduations.
         let mut list_seq = ContainerList::new();
-        let mut output_seq = String::new();
+        let mut parts: Vec<String> = Vec::new();
 
         list_seq.add_tool_call(make_complete_tool("bash", "call-1"));
-        output_seq.push_str(&list_seq.drain_completed(80, 0, false));
+        parts.push(render_grad(list_seq.drain_completed(80, 0, false)));
 
         list_seq.add_tool_call(make_complete_tool("read_file", "call-2"));
-        output_seq.push_str(&list_seq.drain_completed(80, 0, false));
+        parts.push(render_grad(list_seq.drain_completed(80, 0, false)));
 
         list_seq.add_tool_call(make_complete_tool("search", "call-3"));
-        output_seq.push_str(&list_seq.drain_completed(80, 0, false));
+        parts.push(render_grad(list_seq.drain_completed(80, 0, false)));
+
+        let output_seq = parts.join("\r\n");
 
         // Strip ANSI and compare
         let plain_batch = crucible_oil::ansi::strip_ansi(&output_batch);

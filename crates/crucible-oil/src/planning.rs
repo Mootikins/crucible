@@ -8,6 +8,25 @@ use crate::render::{trim_trailing_blank_lines, RenderResult};
 
 use crate::ansi::visual_rows;
 
+/// Graduated content ready for terminal output.
+///
+/// A thin wrapper around a Node tree and the width it should be rendered at.
+/// The terminal layer renders this to a string and writes it to scrollback.
+#[derive(Debug, Clone)]
+pub struct Graduation {
+    /// The rendered node tree for graduated content.
+    pub node: Node,
+    /// Terminal width for rendering.
+    pub width: u16,
+}
+
+impl Graduation {
+    /// Render the graduated node tree to an ANSI string.
+    pub fn render(&self) -> String {
+        crate::render::render_to_string(&self.node, self.width as usize)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct FrameTrace {
     pub frame_no: u64,
@@ -34,6 +53,8 @@ pub struct FrameSnapshot {
     /// Content to write to stdout before rendering viewport.
     /// Set by the app layer (drain-based container graduation), not by the planner.
     pub stdout_delta: String,
+    /// Graduated content as a node tree. Replaces stdout_delta.
+    pub graduation: Option<Graduation>,
 }
 
 impl FrameSnapshot {
@@ -72,13 +93,22 @@ impl FrameSnapshot {
         composited.join("\r\n")
     }
 
+    /// Stdout content: rendered graduation if present, else legacy stdout_delta.
+    fn stdout_content(&self) -> String {
+        if let Some(grad) = &self.graduation {
+            grad.render()
+        } else {
+            self.stdout_delta.clone()
+        }
+    }
+
     pub fn screen(&self) -> String {
-        format!("{}{}", self.stdout_delta, self.plan.viewport.content)
+        format!("{}{}", self.stdout_content(), self.plan.viewport.content)
     }
 
     pub fn screen_with_overlays(&self, width: usize) -> String {
         let viewport_with_overlays = self.viewport_with_overlays(width);
-        format!("{}{}", self.stdout_delta, viewport_with_overlays)
+        format!("{}{}", self.stdout_content(), viewport_with_overlays)
     }
 }
 
@@ -109,6 +139,23 @@ impl FramePlanner {
     }
 
     pub fn plan_with_stdout(&mut self, tree: &Node, stdout_delta: String) -> FrameSnapshot {
+        self.plan_inner(tree, stdout_delta, None)
+    }
+
+    pub fn plan_with_graduation(
+        &mut self,
+        tree: &Node,
+        graduation: Option<Graduation>,
+    ) -> FrameSnapshot {
+        self.plan_inner(tree, String::new(), graduation)
+    }
+
+    fn plan_inner(
+        &mut self,
+        tree: &Node,
+        stdout_delta: String,
+        graduation: Option<Graduation>,
+    ) -> FrameSnapshot {
         self.frame_no += 1;
 
         let overlay_nodes = extract_overlays(tree);
@@ -135,6 +182,7 @@ impl FramePlanner {
         };
 
         FrameSnapshot {
+            graduation,
             plan: FramePlan {
                 frame_no: self.frame_no,
                 viewport,
@@ -254,5 +302,56 @@ mod tests {
             assert!(stripped.chars().all(|c| c == ' '));
             assert!(!spacer_line.contains('\x1b'));
         }
+    }
+
+    #[test]
+    fn graduation_renders_node_to_string() {
+        let node = col([text("Hello"), text("World")]);
+        let grad = Graduation { node, width: 80 };
+        let rendered = grad.render();
+        assert!(rendered.contains("Hello"));
+        assert!(rendered.contains("World"));
+    }
+
+    #[test]
+    fn plan_with_graduation_includes_graduation() {
+        let mut planner = FramePlanner::new(80, 24);
+        let tree = col([text("Live content")]);
+        let grad_node = col([text("Graduated")]);
+        let graduation = Graduation {
+            node: grad_node,
+            width: 80,
+        };
+        let snapshot = planner.plan_with_graduation(&tree, Some(graduation));
+
+        assert!(snapshot.graduation.is_some());
+        let rendered = snapshot.graduation.as_ref().unwrap().render();
+        assert!(rendered.contains("Graduated"));
+        assert!(snapshot.viewport_content().contains("Live content"));
+    }
+
+    #[test]
+    fn plan_with_graduation_none_has_no_graduation() {
+        let mut planner = FramePlanner::new(80, 24);
+        let tree = col([text("Live content")]);
+        let snapshot = planner.plan_with_graduation(&tree, None);
+
+        assert!(snapshot.graduation.is_none());
+        assert!(snapshot.viewport_content().contains("Live content"));
+    }
+
+    #[test]
+    fn graduation_screen_combines_graduation_and_viewport() {
+        let mut planner = FramePlanner::new(80, 24);
+        let tree = col([text("Live")]);
+        let graduation = Graduation {
+            node: col([text("Graduated")]),
+            width: 80,
+        };
+        let snapshot = planner.plan_with_graduation(&tree, Some(graduation));
+
+        let screen = snapshot.screen();
+        assert!(screen.contains("Graduated"));
+        assert!(screen.contains("Live"));
     }
 }
