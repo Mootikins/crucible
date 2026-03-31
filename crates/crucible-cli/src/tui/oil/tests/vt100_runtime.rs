@@ -236,4 +236,345 @@ mod tests {
             );
         }
     }
+
+    // ─── Helpers for spacing assertions ────────────────────────────────
+
+    /// Count blank lines between two content patterns in screen text.
+    fn blank_lines_between(screen: &str, before: &str, after: &str) -> Option<usize> {
+        let lines: Vec<&str> = screen.lines().collect();
+        let before_end = lines.iter().rposition(|l| l.contains(before))?;
+        let after_start = lines[before_end + 1..]
+            .iter()
+            .position(|l| l.contains(after))
+            .map(|p| p + before_end + 1)?;
+        let blanks = lines[before_end + 1..after_start]
+            .iter()
+            .filter(|l| l.trim().is_empty())
+            .count();
+        Some(blanks)
+    }
+
+    /// Assert no triple-blank lines (always a bug).
+    fn assert_no_triple_blanks(screen: &str, context: &str) {
+        let lines: Vec<&str> = screen.lines().collect();
+        for (i, window) in lines.windows(3).enumerate() {
+            let all_blank = window.iter().all(|l| l.trim().is_empty());
+            assert!(
+                !all_blank,
+                "{}: triple blank at lines {}-{}.\nScreen:\n{}",
+                context, i, i + 2, screen
+            );
+        }
+    }
+
+    fn think(app: &mut OilChatApp, content: &str) {
+        app.on_message(ChatAppMsg::ThinkingDelta(content.into()));
+    }
+
+    fn tool(app: &mut OilChatApp, name: &str, call_id: &str) {
+        app.on_message(ChatAppMsg::ToolCall {
+            name: name.into(),
+            args: format!(r#"{{"path": "{call_id}.rs"}}"#),
+            call_id: Some(call_id.into()),
+            description: None,
+            source: None,
+            lua_primary_arg: None,
+        });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: name.into(),
+            call_id: Some(call_id.into()),
+        });
+    }
+
+    // ─── Bug 1: Spacing between graduated content and viewport ────────
+    //
+    // The user sees two blank lines between the graduated user message
+    // and the first thought/tool in the viewport. The root cause is
+    // the unconditional text(" ") at chat_app/mod.rs:176 combining
+    // with Terminal::apply()'s \r\n separator.
+
+    /// Variant 1: User message graduates, then thinking appears.
+    /// Exactly 1 blank line between graduated user box and the thought.
+    #[test]
+    fn vt100_user_then_thought_one_blank_line() {
+        let mut app = OilChatApp::init();
+        let mut vt = Vt100TestRuntime::new(120, 40);
+
+        app.on_message(ChatAppMsg::UserMessage("Hello".into()));
+        vt.render_frame(&mut app); // user graduates
+
+        think(&mut app, "Let me think about this.");
+        vt.render_frame(&mut app);
+
+        // Complete so thought graduates
+        tool(&mut app, "bash", "c1");
+        vt.render_frame(&mut app);
+
+        let combined = format!(
+            "{}{}",
+            vt.inner().stdout_content(),
+            vt.inner().viewport_content()
+        );
+        let screen = crucible_oil::ansi::strip_ansi(&combined);
+
+        let blanks = blank_lines_between(&screen, "Hello", "Thought");
+        assert_eq!(
+            blanks,
+            Some(1),
+            "Expected 1 blank between user message and thought.\nScreen:\n{}",
+            screen
+        );
+        assert_no_triple_blanks(&screen, "user_then_thought");
+    }
+
+    /// Variant 2: User message graduates, then tool appears.
+    /// Exactly 1 blank line.
+    #[test]
+    fn vt100_user_then_tool_one_blank_line() {
+        let mut app = OilChatApp::init();
+        let mut vt = Vt100TestRuntime::new(120, 40);
+
+        app.on_message(ChatAppMsg::UserMessage("Do stuff".into()));
+        vt.render_frame(&mut app);
+
+        tool(&mut app, "bash", "c1");
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::StreamComplete);
+        vt.render_frame(&mut app);
+
+        let combined = format!(
+            "{}{}",
+            vt.inner().stdout_content(),
+            vt.inner().viewport_content()
+        );
+        let screen = crucible_oil::ansi::strip_ansi(&combined);
+
+        let blanks = blank_lines_between(&screen, "Do stuff", "Bash");
+        assert_eq!(
+            blanks,
+            Some(1),
+            "Expected 1 blank between user message and tool.\nScreen:\n{}",
+            screen
+        );
+    }
+
+    /// Variant 3: Tool graduates, then thought. Cross-frame. Exactly 1 blank.
+    #[test]
+    fn vt100_tool_then_thought_cross_frame_one_blank() {
+        let mut app = OilChatApp::init();
+        let mut vt = Vt100TestRuntime::new(120, 40);
+
+        app.on_message(ChatAppMsg::UserMessage("Go".into()));
+        vt.render_frame(&mut app);
+
+        tool(&mut app, "bash", "c1");
+        vt.render_frame(&mut app);
+
+        // Thought in next frame (cross-frame)
+        think(&mut app, "Interesting results.");
+        app.on_message(ChatAppMsg::TextDelta("Done.".into()));
+        app.on_message(ChatAppMsg::StreamComplete);
+        vt.render_frame(&mut app);
+
+        let combined = format!(
+            "{}{}",
+            vt.inner().stdout_content(),
+            vt.inner().viewport_content()
+        );
+        let screen = crucible_oil::ansi::strip_ansi(&combined);
+
+        let blanks = blank_lines_between(&screen, "Bash", "Thought");
+        assert_eq!(
+            blanks,
+            Some(1),
+            "Expected 1 blank between tool and thought (cross-frame).\nScreen:\n{}",
+            screen
+        );
+        assert_no_triple_blanks(&screen, "tool_then_thought");
+    }
+
+    /// Variant 4: Full conversation — no triple blanks anywhere.
+    #[test]
+    fn vt100_full_conversation_no_triple_blanks() {
+        let mut app = OilChatApp::init();
+        let mut vt = Vt100TestRuntime::new(120, 40);
+
+        // Turn 1
+        app.on_message(ChatAppMsg::UserMessage("Question 1".into()));
+        vt.render_frame(&mut app);
+
+        think(&mut app, "Thinking about question 1.");
+        tool(&mut app, "bash", "c1");
+        tool(&mut app, "read_file", "c2");
+        vt.render_frame(&mut app);
+
+        think(&mut app, "Got the results.");
+        app.on_message(ChatAppMsg::TextDelta("Answer 1.".into()));
+        app.on_message(ChatAppMsg::StreamComplete);
+        vt.render_frame(&mut app);
+
+        // Turn 2
+        app.on_message(ChatAppMsg::UserMessage("Question 2".into()));
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::TextDelta("Answer 2.".into()));
+        app.on_message(ChatAppMsg::StreamComplete);
+        vt.render_frame(&mut app);
+
+        let combined = format!(
+            "{}{}",
+            vt.inner().stdout_content(),
+            vt.inner().viewport_content()
+        );
+        let screen = crucible_oil::ansi::strip_ansi(&combined);
+
+        assert_no_triple_blanks(&screen, "full_conversation");
+    }
+
+    /// Variant 5: Rapid tick-per-event rendering — no triple blanks.
+    #[test]
+    fn vt100_tick_per_event_no_triple_blanks() {
+        let mut app = OilChatApp::init();
+        let mut vt = Vt100TestRuntime::new(120, 40);
+
+        app.on_message(ChatAppMsg::UserMessage("Go".into()));
+        vt.render_frame(&mut app);
+
+        think(&mut app, "Let me check.");
+        vt.render_frame(&mut app);
+
+        tool(&mut app, "bash", "c1");
+        vt.render_frame(&mut app);
+
+        tool(&mut app, "read_file", "c2");
+        vt.render_frame(&mut app);
+
+        think(&mut app, "Almost done.");
+        vt.render_frame(&mut app);
+
+        tool(&mut app, "glob", "c3");
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::TextDelta("All done.".into()));
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::StreamComplete);
+        vt.render_frame(&mut app);
+
+        let combined = format!(
+            "{}{}",
+            vt.inner().stdout_content(),
+            vt.inner().viewport_content()
+        );
+        let screen = crucible_oil::ansi::strip_ansi(&combined);
+
+        assert_no_triple_blanks(&screen, "tick_per_event");
+    }
+
+    // ─── Bug 2: Thinking graduation before permission modal ───────────
+    //
+    // When a permission-requiring tool call arrives, the daemon sends
+    // OpenInteraction BEFORE ToolCall. The thinking AssistantResponse
+    // can't graduate without a following container, so it stays as a
+    // spinner. Fix: when OpenInteraction(Permission) arrives, mark the
+    // current AssistantResponse as graduatable.
+
+    /// Variant 1: Thinking should be graduatable after permission opens.
+    #[test]
+    fn thinking_graduates_when_permission_opens() {
+        use crucible_core::interaction::{InteractionRequest, PermRequest};
+
+        let mut app = OilChatApp::init();
+
+        app.on_message(ChatAppMsg::UserMessage("Do something".into()));
+        think(&mut app, "Let me run a dangerous command.");
+
+        // Simulate daemon sending permission request before tool call
+        app.on_message(ChatAppMsg::OpenInteraction {
+            request_id: "perm-1".into(),
+            request: InteractionRequest::Permission(PermRequest::bash(["rm", "-rf", "/tmp/test"])),
+        });
+
+        // After render, the thinking should graduate to stdout
+        let mut runtime = TestRuntime::new(80, 24);
+        let focus = FocusContext::new();
+        render_frame(&mut app, &mut runtime, &focus);
+
+        let stdout = runtime.stdout_content();
+        assert!(
+            stdout.contains("Thought") || stdout.contains("dangerous command"),
+            "Thinking should have graduated after permission opened.\nStdout: {}\nViewport: {}",
+            stdout,
+            runtime.viewport_content()
+        );
+    }
+
+    /// Variant 2: Multiple thinks then permission — all graduate.
+    #[test]
+    fn multiple_thinks_graduate_on_permission() {
+        use crucible_core::interaction::{InteractionRequest, PermRequest};
+
+        let mut app = OilChatApp::init();
+
+        app.on_message(ChatAppMsg::UserMessage("Plan".into()));
+        think(&mut app, "First thought.");
+
+        // Second thought (tool interrupts first, creating new response)
+        tool(&mut app, "read_file", "c1");
+        think(&mut app, "Second thought after reading.");
+
+        // Permission arrives
+        app.on_message(ChatAppMsg::OpenInteraction {
+            request_id: "perm-2".into(),
+            request: InteractionRequest::Permission(PermRequest::bash(["make", "install"])),
+        });
+
+        let mut runtime = TestRuntime::new(120, 40);
+        let focus = FocusContext::new();
+        render_frame(&mut app, &mut runtime, &focus);
+
+        let stdout = runtime.stdout_content();
+        // Both thoughts should have graduated
+        assert!(
+            stdout.contains("First thought") || stdout.contains("Thought"),
+            "First thinking should graduate.\nStdout: {}",
+            stdout
+        );
+    }
+
+    /// Variant 3: Permission for non-tool interaction — no crash.
+    #[test]
+    fn non_permission_interaction_does_not_affect_graduation() {
+        use crucible_core::interaction::{AskRequest, InteractionRequest};
+
+        let mut app = OilChatApp::init();
+
+        app.on_message(ChatAppMsg::UserMessage("Question".into()));
+        think(&mut app, "I need to ask something.");
+
+        // Ask interaction (not permission) — should NOT mark response complete
+        app.on_message(ChatAppMsg::OpenInteraction {
+            request_id: "ask-1".into(),
+            request: InteractionRequest::Ask(AskRequest {
+                question: "Which option?".into(),
+                choices: Some(vec!["A".into(), "B".into()]),
+                multi_select: false,
+                allow_other: false,
+            }),
+        });
+
+        // Thinking should NOT have graduated (Ask != Permission)
+        let mut runtime = TestRuntime::new(80, 24);
+        let focus = FocusContext::new();
+        render_frame(&mut app, &mut runtime, &focus);
+
+        // The thinking is still in the viewport (not graduated)
+        let viewport = runtime.viewport_content();
+        assert!(
+            viewport.contains("Thinking") || viewport.contains("ask something"),
+            "Thinking should still be in viewport for Ask interaction.\nViewport: {}",
+            viewport
+        );
+    }
 }
