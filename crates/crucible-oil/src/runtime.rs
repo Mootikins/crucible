@@ -52,6 +52,10 @@ impl TestRuntime {
                 self.stdout_buffer.push_str("\r\n");
             }
             self.stdout_buffer.push_str(&rendered);
+            // Graduation content needs a trailing line break for stdout_content()
+            // to correctly separate from subsequent graduation or viewport content.
+            // In Terminal::apply(), the viewport render handles this implicitly via
+            // force_redraw() starting at the cursor position after the graduation write.
             self.stdout_buffer.push_str("\r\n");
             // Set the flag on the headless terminal so apply() also writes it
             self.terminal.pending_leading_blank = grad.leading_blank;

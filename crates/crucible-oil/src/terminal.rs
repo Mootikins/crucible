@@ -200,11 +200,13 @@ impl<W: Write> Terminal<W> {
                 self.pending_leading_blank = false;
             }
             write!(self.output.writer(), "{}", snapshot.stdout_delta)?;
-            write!(self.output.writer(), "\r\n")?;
             self.output.writer().flush()?;
 
-            // clear() already resets previous_lines/previous_visual_rows,
-            // so render_with_overlays will do a full redraw
+            // force_redraw ensures full viewport repaint after graduation.
+            // DO NOT add \r\n here — the old code included it in stdout_delta,
+            // our Graduation type does not. The viewport render handles
+            // cursor positioning without needing an extra line break.
+            self.output.force_redraw();
             self.last_cursor = None;
         }
 
