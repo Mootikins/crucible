@@ -160,14 +160,9 @@ impl OilChatApp {
         // One blank line between all groups (Ink-style gap)
         let content_col = col(groups).gap(Gap::row(1));
 
-        // When graduated content exists above in stdout, insert a spacer line
-        // before the content col for visual separation from graduated content.
-        // This sits outside the gap col so it doesn't get double-spaced.
-        if self.container_list.has_graduated() {
-            col([text(" "), content_col])
-        } else {
-            content_col
-        }
+        // Terminal::apply() writes \r\n after graduation content, providing
+        // visual separation between scrollback and viewport. No extra spacer needed.
+        content_col
     }
 
     pub(super) fn render_status(&self) -> Node {
