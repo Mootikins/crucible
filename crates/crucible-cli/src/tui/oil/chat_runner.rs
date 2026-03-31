@@ -423,9 +423,10 @@ impl OilChatRunner {
                 })
                 .await;
             Self::abort_background_tasks(&mut background_tasks);
-            event_loop_result?;
 
-            self.terminal.exit()?;
+            // Always restore terminal before propagating errors
+            let _ = self.terminal.exit();
+            event_loop_result?;
             return Ok(());
         }
 
@@ -538,9 +539,9 @@ impl OilChatRunner {
         // Capture session ID before dropping the agent
         let session_id = agent.session_id().map(|s| s.to_string());
 
+        // Always restore terminal before propagating errors
+        let _ = self.terminal.exit();
         event_loop_result?;
-
-        self.terminal.exit()?;
 
         // Print resume hint after terminal is restored to main screen
         if let Some(id) = session_id {

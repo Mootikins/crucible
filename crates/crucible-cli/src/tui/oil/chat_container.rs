@@ -696,7 +696,6 @@ impl ContainerList {
         use crucible_oil::style::Gap;
 
         let mut items: Vec<Node> = Vec::new();
-        let mut first_kind: Option<ContainerKind> = None;
         let mut last_kind: Option<ContainerKind> = None;
 
         while !self.containers.is_empty() {
@@ -717,9 +716,6 @@ impl ContainerList {
             }
 
             items.push(node);
-            if first_kind.is_none() {
-                first_kind = Some(kind);
-            }
             last_kind = Some(kind);
         }
 
