@@ -374,7 +374,7 @@ async fn create_new_daemon_session(
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: config.kiln_path.clone(),
+            kiln: config.session_storage_path(),
             workspace: Some(workspace.to_path_buf()),
             connect_kilns: vec![],
             recording_mode: recording_mode.map(|m| m.to_string()),

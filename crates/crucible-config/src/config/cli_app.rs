@@ -1033,6 +1033,16 @@ verbose = false
         }
         "default".to_string()
     }
+
+    /// Returns the kiln path where sessions should be stored.
+    ///
+    /// Uses `session_kiln` if explicitly set, otherwise `crucible_home()` (~/.crucible).
+    /// Sessions are user-scoped — they shouldn't be scattered across kiln directories.
+    pub fn session_storage_path(&self) -> std::path::PathBuf {
+        self.session_kiln
+            .clone()
+            .unwrap_or_else(super::crucible_home)
+    }
 }
 
 /// Register a project in the global config file.
