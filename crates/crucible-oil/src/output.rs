@@ -5,8 +5,8 @@ use crate::planning::RenderedOverlay;
 use crossterm::{cursor, execute, terminal};
 use std::io::{self, Stdout, Write};
 
-const BEGIN_SYNCHRONIZED_UPDATE: &str = "\x1b[?2026h";
-const END_SYNCHRONIZED_UPDATE: &str = "\x1b[?2026l";
+pub(crate) const BEGIN_SYNCHRONIZED_UPDATE: &str = "\x1b[?2026h";
+pub(crate) const END_SYNCHRONIZED_UPDATE: &str = "\x1b[?2026l";
 
 pub struct OutputBuffer<W: Write = Stdout> {
     stdout: W,
@@ -60,22 +60,12 @@ impl<W: Write> OutputBuffer<W> {
 
     #[allow(dead_code)] // WIP: render not yet used
     pub fn render(&mut self, content: &str) -> io::Result<bool> {
-        self.render_with_overlays(content, 0, &[])
-    }
-
-    #[allow(dead_code)] // WIP: render_with_cursor_restore not yet used
-    pub fn render_with_cursor_restore(
-        &mut self,
-        content: &str,
-        cursor_offset_from_end: u16,
-    ) -> io::Result<bool> {
-        self.render_with_overlays(content, cursor_offset_from_end, &[])
+        self.render_with_overlays(content, &[])
     }
 
     pub fn render_with_overlays(
         &mut self,
         content: &str,
-        cursor_offset_from_end: u16,
         overlays: &[RenderedOverlay],
     ) -> io::Result<bool> {
         let all_lines: Vec<String> = collapse_blank_lines(content);
@@ -139,24 +129,19 @@ impl<W: Write> OutputBuffer<W> {
             width = self.terminal_width,
             height = self.terminal_height,
             force = self.force_next_redraw,
-            cursor_offset_from_end,
             "render"
         );
 
         self.force_next_redraw = false;
 
-        write!(self.stdout, "{}", BEGIN_SYNCHRONIZED_UPDATE)?;
-
-        // Move cursor to top of viewport
+        // Move cursor to top of viewport.
+        // Caller ensures cursor is at viewport bottom before calling.
         if self.previous_visual_rows > 0 {
-            let move_up_amount = (self.previous_visual_rows as u16)
-                .saturating_sub(1)
-                .saturating_sub(cursor_offset_from_end);
+            let move_up_amount = (self.previous_visual_rows as u16).saturating_sub(1);
             tracing::debug!(
                 previous_visual_rows = self.previous_visual_rows,
-                cursor_offset_from_end,
                 move_up_amount,
-                "render: moving cursor up before clear"
+                "render: moving cursor up before diff"
             );
             if move_up_amount > 0 {
                 execute!(
@@ -216,7 +201,6 @@ impl<W: Write> OutputBuffer<W> {
             }
         }
 
-        write!(self.stdout, "{}", END_SYNCHRONIZED_UPDATE)?;
         self.stdout.flush()?;
         self.previous_lines = viewport_lines;
         self.previous_visual_rows = viewport_visual_rows;
@@ -226,20 +210,17 @@ impl<W: Write> OutputBuffer<W> {
 
     /// Clear the viewport from terminal.
     ///
-    /// `cursor_offset_from_end` indicates where the cursor currently is,
-    /// measured as rows from the bottom of the viewport. This is needed
-    /// to correctly calculate how many rows to move up before clearing.
-    pub fn clear(&mut self, cursor_offset_from_end: u16) -> io::Result<()> {
+    /// The caller must ensure the cursor is at the bottom of the viewport
+    /// before calling this. This simplifies the math: we only need
+    /// `previous_visual_rows` to compute how far up to move.
+    pub fn clear(&mut self) -> io::Result<()> {
         tracing::debug!(
             previous_visual_rows = self.previous_visual_rows,
-            cursor_offset_from_end,
             terminal_height = self.terminal_height,
             "[clear] clearing viewport"
         );
         if self.previous_visual_rows > 0 {
-            let move_up_amount = (self.previous_visual_rows as u16)
-                .saturating_sub(1)
-                .saturating_sub(cursor_offset_from_end);
+            let move_up_amount = (self.previous_visual_rows as u16).saturating_sub(1);
             if move_up_amount > 0 {
                 execute!(
                     self.stdout,

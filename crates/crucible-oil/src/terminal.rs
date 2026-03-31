@@ -183,17 +183,28 @@ impl<W: Write> Terminal<W> {
     }
 
     fn apply(&mut self, snapshot: &FrameSnapshot) -> io::Result<()> {
+        use crate::output::{BEGIN_SYNCHRONIZED_UPDATE, END_SYNCHRONIZED_UPDATE};
+
         execute!(self.output.writer(), Hide)?;
 
-        if !snapshot.stdout_delta.is_empty() {
-            let cursor_offset = self
-                .last_cursor
-                .as_ref()
-                .map(|c| c.row_from_end)
-                .unwrap_or(0);
+        // Begin synchronized update — wraps everything (clear, graduation,
+        // viewport render) in a single atomic block. This prevents the terminal
+        // from rendering intermediate states where old spinner content is visible.
+        write!(self.output.writer(), "{}", BEGIN_SYNCHRONIZED_UPDATE)?;
 
-            // Clear viewport, write graduation content to scrollback
-            self.output.clear(cursor_offset)?;
+        // Normalize cursor to viewport bottom before any clearing/rendering.
+        // This eliminates cursor_offset_from_end as a variable — clear() and
+        // render_with_overlays() always know the cursor is at the bottom.
+        if let Some(cursor) = &self.last_cursor {
+            if cursor.row_from_end > 0 {
+                execute!(self.output.writer(), MoveDown(cursor.row_from_end))?;
+            }
+        }
+
+        if !snapshot.stdout_delta.is_empty() {
+            // Clear viewport, write graduation content to scrollback.
+            // Cursor is at viewport bottom, so clear() only needs previous_visual_rows.
+            self.output.clear()?;
             // Cross-frame blank line (e.g., ToolGroup → AssistantResponse)
             if self.pending_leading_blank {
                 write!(self.output.writer(), "\r\n")?;
@@ -211,12 +222,12 @@ impl<W: Write> Terminal<W> {
 
         let did_render = self.output.render_with_overlays(
             &snapshot.plan.viewport.content,
-            self.last_cursor
-                .as_ref()
-                .map(|c| c.row_from_end)
-                .unwrap_or(0),
             &snapshot.plan.overlays,
         )?;
+
+        // End synchronized update — terminal can now process all writes atomically.
+        write!(self.output.writer(), "{}", END_SYNCHRONIZED_UPDATE)?;
+        self.output.writer().flush()?;
 
         if snapshot.plan.viewport.cursor.visible {
             self.last_cursor = Some(snapshot.plan.viewport.cursor);
