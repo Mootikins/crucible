@@ -1,5 +1,6 @@
 use crate::node::Node;
 use crate::planning::Graduation;
+use crate::terminal::Terminal;
 
 /// Shared interface for rendering a frame. Implemented by Terminal (real I/O)
 /// and TestRuntime (in-memory buffer for tests).
@@ -14,17 +15,22 @@ pub trait FrameRenderer {
     fn size(&self) -> (u16, u16);
 }
 
+/// Test runtime that exercises the real Terminal write path.
+///
+/// Internally wraps `Terminal<Vec<u8>>` — the same escape sequence generation,
+/// cursor math, and viewport diff logic as the real TUI. Output bytes can be
+/// fed to a vt100 parser for screen-level assertions.
 pub struct TestRuntime {
-    planner: crate::planning::FramePlanner,
-    last_snapshot: Option<crate::planning::FrameSnapshot>,
+    terminal: Terminal<Vec<u8>>,
+    /// Accumulated graduation content (rendered strings, not escape sequences).
+    /// Used by `stdout_content()` for test assertions.
     stdout_buffer: String,
 }
 
 impl TestRuntime {
     pub fn new(width: u16, height: u16) -> Self {
         Self {
-            planner: crate::planning::FramePlanner::new(width, height),
-            last_snapshot: None,
+            terminal: Terminal::headless(width, height),
             stdout_buffer: String::new(),
         }
     }
@@ -35,54 +41,57 @@ impl TestRuntime {
 
     pub fn render_with_stdout(&mut self, tree: &Node, stdout_delta: &str) {
         self.stdout_buffer.push_str(stdout_delta);
-        let snapshot = self
-            .planner
-            .plan_with_stdout(tree, stdout_delta.to_string());
-        self.last_snapshot = Some(snapshot);
+        let _ = self.terminal.render(tree, stdout_delta);
     }
 
     pub fn render_with_graduation(&mut self, tree: &Node, graduation: Option<&Graduation>) {
         if let Some(grad) = graduation {
-            self.stdout_buffer.push_str(&grad.render());
-            // Mirror Terminal::apply() which writes \r\n after graduation
-            // to separate scrollback from viewport
+            let rendered = grad.render();
+            self.stdout_buffer.push_str(&rendered);
             self.stdout_buffer.push_str("\r\n");
+            let _ = self.terminal.render(tree, &rendered);
+        } else {
+            let _ = self.terminal.render(tree, "");
         }
-        let snapshot = self
-            .planner
-            .plan_with_graduation(tree, graduation.cloned());
-        self.last_snapshot = Some(snapshot);
     }
 
+    /// Accumulated graduation content as rendered strings.
     pub fn stdout_content(&self) -> &str {
         &self.stdout_buffer
     }
 
+    /// Current viewport content from the last render.
     pub fn viewport_content(&self) -> &str {
-        self.last_snapshot
-            .as_ref()
+        self.terminal
+            .snapshot()
             .map(|s| s.viewport_content())
             .unwrap_or("")
     }
 
     pub fn trace(&self) -> Option<&crate::planning::FrameTrace> {
-        self.last_snapshot.as_ref().map(|s| s.trace())
+        self.terminal.snapshot().map(|s| s.trace())
     }
 
     pub fn last_snapshot(&self) -> Option<&crate::planning::FrameSnapshot> {
-        self.last_snapshot.as_ref()
+        self.terminal.snapshot()
     }
 
     pub fn resize(&mut self, width: u16, height: u16) {
-        self.planner.set_size(width, height);
+        self.terminal.set_size(width, height);
     }
 
     pub fn width(&self) -> u16 {
-        self.planner.width()
+        self.terminal.size().0
     }
 
     pub fn height(&self) -> u16 {
-        self.planner.height()
+        self.terminal.size().1
+    }
+
+    /// Take the raw terminal output bytes (escape sequences + content).
+    /// Useful for feeding to a vt100 parser.
+    pub fn take_bytes(&mut self) -> Vec<u8> {
+        self.terminal.take_bytes()
     }
 }
 
@@ -92,11 +101,11 @@ impl FrameRenderer for TestRuntime {
     }
 
     fn force_full_redraw(&mut self) {
-        // No-op for test runtime
+        let _ = self.terminal.force_full_redraw();
     }
 
     fn size(&self) -> (u16, u16) {
-        (self.width(), self.height())
+        self.terminal.size()
     }
 }
 
@@ -214,5 +223,29 @@ mod tests {
 
         assert!(runtime.stdout_content().contains("Scrollback"));
         assert!(runtime.viewport_content().contains("Viewport"));
+    }
+
+    #[test]
+    fn test_runtime_exercises_real_terminal_path() {
+        use crate::node::{col, text};
+
+        let mut runtime = TestRuntime::new(80, 24);
+
+        let tree = col([text("Hello")]);
+        runtime.render(&tree);
+
+        // The headless terminal should have produced real escape sequences
+        let bytes = runtime.take_bytes();
+        assert!(!bytes.is_empty(), "Terminal should write escape sequences");
+        let output = String::from_utf8_lossy(&bytes);
+        assert!(
+            output.contains("Hello"),
+            "Terminal output should contain rendered text"
+        );
+        // Should contain ANSI escape sequences (hide cursor, etc.)
+        assert!(
+            output.contains("\x1b["),
+            "Terminal output should contain escape sequences"
+        );
     }
 }

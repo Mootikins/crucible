@@ -8,8 +8,8 @@ use std::io::{self, Stdout, Write};
 const BEGIN_SYNCHRONIZED_UPDATE: &str = "\x1b[?2026h";
 const END_SYNCHRONIZED_UPDATE: &str = "\x1b[?2026l";
 
-pub struct OutputBuffer {
-    stdout: Stdout,
+pub struct OutputBuffer<W: Write = Stdout> {
+    stdout: W,
     previous_lines: Vec<String>,
     previous_visual_rows: usize,
     terminal_width: usize,
@@ -21,7 +21,7 @@ fn lines_visually_equal(a: &str, b: &str) -> bool {
     strip_ansi(a) == strip_ansi(b)
 }
 
-impl Default for OutputBuffer {
+impl Default for OutputBuffer<Stdout> {
     fn default() -> Self {
         let (width, height) = terminal::size()
             .map(|(w, h)| (w as usize, h as usize))
@@ -30,16 +30,27 @@ impl Default for OutputBuffer {
     }
 }
 
-impl OutputBuffer {
+impl OutputBuffer<Stdout> {
     pub fn new(width: usize, height: usize) -> Self {
+        Self::with_writer(io::stdout(), width, height)
+    }
+}
+
+impl<W: Write> OutputBuffer<W> {
+    pub fn with_writer(writer: W, width: usize, height: usize) -> Self {
         Self {
-            stdout: io::stdout(),
+            stdout: writer,
             previous_lines: Vec::new(),
             previous_visual_rows: 0,
             terminal_width: width,
             terminal_height: height,
             force_next_redraw: false,
         }
+    }
+
+    /// Get a mutable reference to the underlying writer.
+    pub fn writer(&mut self) -> &mut W {
+        &mut self.stdout
     }
 
     pub fn set_size(&mut self, width: usize, height: usize) {
