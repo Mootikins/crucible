@@ -45,12 +45,12 @@ pub fn render_frame(app: &mut OilChatApp, renderer: &mut impl FrameRenderer, foc
 
     // Drain completed containers → stdout (terminal scrollback)
     let (width, _) = renderer.size();
-    let stdout_delta = app.drain_graduated(width);
+    let graduation = app.drain_graduated(width);
 
     let terminal_size = renderer.size();
     let ctx = ViewContext::with_terminal_size(focus, theme::active(), terminal_size);
     let tree = app.view(&ctx);
-    renderer.render_frame(&tree, &stdout_delta);
+    renderer.render_frame(&tree, graduation.as_ref());
 }
 
 /// Parameters for event_loop function.

@@ -1,10 +1,11 @@
 use crate::node::Node;
+use crate::planning::Graduation;
 
 /// Shared interface for rendering a frame. Implemented by Terminal (real I/O)
 /// and TestRuntime (in-memory buffer for tests).
 pub trait FrameRenderer {
-    /// Render a Node tree to the viewport, writing any stdout_delta first.
-    fn render_frame(&mut self, tree: &Node, stdout_delta: &str);
+    /// Render a Node tree to the viewport, writing any graduated content first.
+    fn render_frame(&mut self, tree: &Node, graduation: Option<&Graduation>);
 
     /// Force a full redraw on the next render (clear all cached state).
     fn force_full_redraw(&mut self);
@@ -37,6 +38,19 @@ impl TestRuntime {
         let snapshot = self
             .planner
             .plan_with_stdout(tree, stdout_delta.to_string());
+        self.last_snapshot = Some(snapshot);
+    }
+
+    pub fn render_with_graduation(&mut self, tree: &Node, graduation: Option<&Graduation>) {
+        if let Some(grad) = graduation {
+            self.stdout_buffer.push_str(&grad.render());
+            // Mirror Terminal::apply() which writes \r\n after graduation
+            // to separate scrollback from viewport
+            self.stdout_buffer.push_str("\r\n");
+        }
+        let snapshot = self
+            .planner
+            .plan_with_graduation(tree, graduation.cloned());
         self.last_snapshot = Some(snapshot);
     }
 
@@ -73,8 +87,8 @@ impl TestRuntime {
 }
 
 impl FrameRenderer for TestRuntime {
-    fn render_frame(&mut self, tree: &Node, stdout_delta: &str) {
-        self.render_with_stdout(tree, stdout_delta);
+    fn render_frame(&mut self, tree: &Node, graduation: Option<&Graduation>) {
+        self.render_with_graduation(tree, graduation);
     }
 
     fn force_full_redraw(&mut self) {
@@ -121,5 +135,84 @@ mod tests {
 
         assert!(runtime.stdout_content().contains("Graduated content"));
         assert!(runtime.viewport_content().contains("Live"));
+    }
+
+    #[test]
+    fn test_runtime_renders_graduation_node() {
+        use crate::node::{col, text};
+        use crate::planning::Graduation;
+
+        let mut runtime = TestRuntime::new(80, 24);
+
+        let tree = col([text("Live")]);
+        let grad = Graduation {
+            node: col([text("Graduated via node")]),
+            width: 80,
+        };
+        runtime.render_with_graduation(&tree, Some(&grad));
+
+        assert!(runtime.stdout_content().contains("Graduated via node"));
+        assert!(runtime.viewport_content().contains("Live"));
+    }
+
+    #[test]
+    fn test_runtime_graduation_none_no_stdout() {
+        use crate::node::{col, text};
+
+        let mut runtime = TestRuntime::new(80, 24);
+
+        let tree = col([text("Live")]);
+        runtime.render_with_graduation(&tree, None);
+
+        assert!(runtime.stdout_content().is_empty());
+        assert!(runtime.viewport_content().contains("Live"));
+    }
+
+    #[test]
+    fn test_runtime_graduation_accumulates_across_frames() {
+        use crate::node::{col, text};
+        use crate::planning::Graduation;
+
+        let mut runtime = TestRuntime::new(80, 24);
+
+        let tree = col([text("Live")]);
+
+        // Frame 1: graduate content A
+        let grad_a = Graduation {
+            node: col([text("Content A")]),
+            width: 80,
+        };
+        runtime.render_with_graduation(&tree, Some(&grad_a));
+
+        // Frame 2: graduate content B
+        let grad_b = Graduation {
+            node: col([text("Content B")]),
+            width: 80,
+        };
+        runtime.render_with_graduation(&tree, Some(&grad_b));
+
+        let stdout = runtime.stdout_content();
+        assert!(stdout.contains("Content A"));
+        assert!(stdout.contains("Content B"));
+    }
+
+    #[test]
+    fn test_frame_renderer_with_graduation() {
+        use crate::node::{col, text};
+        use crate::planning::Graduation;
+
+        let mut runtime = TestRuntime::new(80, 24);
+
+        let tree = col([text("Viewport")]);
+        let grad = Graduation {
+            node: col([text("Scrollback")]),
+            width: 80,
+        };
+
+        // Use the FrameRenderer trait method
+        FrameRenderer::render_frame(&mut runtime, &tree, Some(&grad));
+
+        assert!(runtime.stdout_content().contains("Scrollback"));
+        assert!(runtime.viewport_content().contains("Viewport"));
     }
 }

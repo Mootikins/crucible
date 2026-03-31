@@ -63,7 +63,7 @@ pub use node::{
 };
 pub use output::OutputBuffer;
 pub use overlay::{composite_overlays, Overlay, OverlayAnchor};
-pub use planning::{FramePlan, FramePlanner, FrameSnapshot, FrameTrace, RenderedOverlay};
+pub use planning::{FramePlan, FramePlanner, FrameSnapshot, FrameTrace, Graduation, RenderedOverlay};
 pub use render::{
     render_to_plain_text, render_to_string, render_with_cursor, CursorInfo, RenderResult,
 };

@@ -363,8 +363,8 @@ impl OilChatApp {
         self.notification_area.clear();
     }
 
-    /// Drain completed containers and return their rendered content for stdout.
-    pub(crate) fn drain_graduated(&mut self, width: u16) -> String {
+    /// Drain completed containers and return graduation content for stdout.
+    pub(crate) fn drain_graduated(&mut self, width: u16) -> Option<crucible_oil::Graduation> {
         self.container_list
             .drain_completed(width, self.spinner_frame(), self.show_thinking)
     }
