@@ -1816,4 +1816,159 @@ mod tests {
     // graduation_wraps_all_blocks_when_complete removed: they relied on
     // Node::Static which no longer exists. Graduation is now automatic
     // via drain_completed.
+
+    fn make_complete_tool(name: &str, call_id: &str) -> CachedToolCall {
+        CachedToolCall {
+            id: format!("tool-{}", call_id),
+            name: std::sync::Arc::from(name),
+            args: std::sync::Arc::from(r#"{"test":true}"#),
+            call_id: Some(call_id.to_string()),
+            output_tail: std::collections::VecDeque::new(),
+            output_path: None,
+            output_total_bytes: 0,
+            error: None,
+            started_at: std::time::Instant::now(),
+            complete: true,
+            superseded: false,
+            description: None,
+            source: None,
+            lua_primary_arg: None,
+        }
+    }
+
+    fn has_blank_line(output: &str) -> bool {
+        let lines: Vec<&str> = output.lines().collect();
+        for window in lines.windows(2) {
+            if window[0].trim().is_empty() && window[1].trim().is_empty() {
+                return true; // two consecutive blank = blank line between content
+            }
+        }
+        // Also check: any line that's blank between non-blank lines
+        for i in 1..lines.len().saturating_sub(1) {
+            let stripped = crucible_oil::ansi::strip_ansi(lines[i]);
+            if stripped.trim().is_empty() {
+                let prev_stripped = crucible_oil::ansi::strip_ansi(lines[i - 1]);
+                let next_stripped = if i + 1 < lines.len() {
+                    crucible_oil::ansi::strip_ansi(lines[i + 1])
+                } else {
+                    String::new()
+                };
+                if !prev_stripped.trim().is_empty() && !next_stripped.trim().is_empty() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Test 1: consecutive tool graduations produce zero blank lines.
+    /// Simulates live streaming: tool A completes → drain → tool B completes → drain.
+    #[test]
+    fn consecutive_tool_graduations_have_no_blank_lines() {
+        let mut list = ContainerList::new();
+
+        // Tool A arrives and completes
+        list.add_tool_call(make_complete_tool("bash", "call-1"));
+        let output_a = list.drain_completed(80, 0, false);
+        assert!(!output_a.is_empty(), "Tool A should graduate");
+
+        // Tool B arrives and completes (separate frame)
+        list.add_tool_call(make_complete_tool("read_file", "call-2"));
+        let output_b = list.drain_completed(80, 0, false);
+        assert!(!output_b.is_empty(), "Tool B should graduate");
+
+        // Concatenated output should have no blank lines between tools
+        let combined = format!("{}{}", output_a, output_b);
+        let plain = crucible_oil::ansi::strip_ansi(&combined);
+        assert!(
+            !has_blank_line(&plain),
+            "No blank lines between consecutive tools.\nOutput:\n{}",
+            plain
+        );
+    }
+
+    /// Test 2: tool then text produces exactly one blank line separator.
+    #[test]
+    fn tool_then_text_has_one_blank_line() {
+        let mut list = ContainerList::new();
+
+        // Tool completes and graduates
+        list.add_tool_call(make_complete_tool("bash", "call-1"));
+        let output_tool = list.drain_completed(80, 0, false);
+
+        // Text arrives and graduates
+        list.start_assistant_response();
+        list.append_text("Hello world");
+        list.complete_response();
+        let output_text = list.drain_completed(80, 0, false);
+
+        let combined = format!("{}{}", output_tool, output_text);
+        let plain = crucible_oil::ansi::strip_ansi(&combined);
+        let lines: Vec<&str> = plain.lines().collect();
+
+        // Find the blank line between tool output and text
+        let mut blank_count = 0;
+        let mut found_tool = false;
+        for line in &lines {
+            if line.contains("bash") || line.contains("✓") || line.contains("│") {
+                found_tool = true;
+            }
+            if found_tool && line.trim().is_empty() {
+                blank_count += 1;
+            }
+            if found_tool && !line.trim().is_empty() && blank_count > 0 {
+                break; // found content after blank lines
+            }
+        }
+        assert_eq!(
+            blank_count, 1,
+            "Expected exactly 1 blank line between tool and text, got {}.\nOutput:\n{}",
+            blank_count, plain
+        );
+    }
+
+    /// Test 3: sequential tool arrival produces identical output to batch arrival.
+    /// This is the strongest test: proves the lazy-newline approach works.
+    #[test]
+    fn sequential_tools_match_batch_tools() {
+        // Path A: all 3 tools arrive at once → 1 ToolGroup → drain
+        let mut list_batch = ContainerList::new();
+        list_batch.add_tool_call(make_complete_tool("bash", "call-1"));
+        list_batch.add_tool_call(make_complete_tool("read_file", "call-2"));
+        list_batch.add_tool_call(make_complete_tool("search", "call-3"));
+        let output_batch = list_batch.drain_completed(80, 0, false);
+
+        // Path B: tools arrive one at a time with drains between
+        let mut list_seq = ContainerList::new();
+        let mut output_seq = String::new();
+
+        list_seq.add_tool_call(make_complete_tool("bash", "call-1"));
+        output_seq.push_str(&list_seq.drain_completed(80, 0, false));
+
+        list_seq.add_tool_call(make_complete_tool("read_file", "call-2"));
+        output_seq.push_str(&list_seq.drain_completed(80, 0, false));
+
+        list_seq.add_tool_call(make_complete_tool("search", "call-3"));
+        output_seq.push_str(&list_seq.drain_completed(80, 0, false));
+
+        // Strip ANSI and compare
+        let plain_batch = crucible_oil::ansi::strip_ansi(&output_batch);
+        let plain_seq = crucible_oil::ansi::strip_ansi(&output_seq);
+
+        assert_eq!(
+            plain_batch.lines().count(),
+            plain_seq.lines().count(),
+            "Line counts must match.\nBatch ({} lines):\n{}\n\nSequential ({} lines):\n{}",
+            plain_batch.lines().count(),
+            plain_batch,
+            plain_seq.lines().count(),
+            plain_seq
+        );
+
+        assert_eq!(
+            plain_batch, plain_seq,
+            "Content must be identical.\nBatch:\n{}\n\nSequential:\n{}",
+            plain_batch, plain_seq
+        );
+    }
 }
