@@ -15,19 +15,21 @@ use crossterm::{
 use std::io::{self, Stdout, Write};
 use std::time::Duration;
 
-pub struct Terminal {
-    stdout: Stdout,
+pub struct Terminal<W: Write = Stdout> {
     width: u16,
     height: u16,
     planner: FramePlanner,
     use_alternate_screen: bool,
-    output: OutputBuffer,
+    output: OutputBuffer<W>,
     keyboard_enhanced: bool,
     last_cursor: Option<CursorInfo>,
     cursor_style: SetCursorStyle,
+    last_snapshot: Option<FrameSnapshot>,
 }
 
-impl Terminal {
+// --- Real terminal (Stdout) only ---
+
+impl Terminal<Stdout> {
     pub fn new() -> io::Result<Self> {
         let (width, height) = terminal::size()?;
         Ok(Self::with_size(width, height))
@@ -35,7 +37,6 @@ impl Terminal {
 
     pub fn with_size(width: u16, height: u16) -> Self {
         Self {
-            stdout: io::stdout(),
             width,
             height,
             planner: FramePlanner::new(width, height),
@@ -44,24 +45,16 @@ impl Terminal {
             keyboard_enhanced: false,
             last_cursor: None,
             cursor_style: SetCursorStyle::SteadyBlock,
+            last_snapshot: None,
         }
-    }
-
-    pub fn with_alternate_screen(mut self, use_alt: bool) -> Self {
-        self.use_alternate_screen = use_alt;
-        self
-    }
-
-    pub fn cursor_style(mut self, style: SetCursorStyle) -> Self {
-        self.cursor_style = style;
-        self
     }
 
     pub fn enter(&mut self) -> io::Result<()> {
         terminal::enable_raw_mode()?;
+        let w = self.output.writer();
 
         if execute!(
-            self.stdout,
+            w,
             PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
         )
         .is_ok()
@@ -70,34 +63,37 @@ impl Terminal {
             tracing::debug!("kitty keyboard enhancement enabled");
         }
 
+        let w = self.output.writer();
         if self.use_alternate_screen {
-            execute!(self.stdout, EnterAlternateScreen, Hide)?;
+            execute!(w, EnterAlternateScreen, Hide)?;
         } else {
-            execute!(self.stdout, Hide)?;
+            execute!(w, Hide)?;
         }
-        let _ = execute!(self.stdout, self.cursor_style);
+        let w = self.output.writer();
+        let _ = execute!(w, self.cursor_style);
         Ok(())
     }
 
     pub fn exit(&mut self) -> io::Result<()> {
-        if self.output.height() > 0 {
-            execute!(self.stdout, MoveToColumn(0))?;
+        let has_height = self.output.height() > 0;
+        let use_alt = self.use_alternate_screen;
+        let kb_enhanced = self.keyboard_enhanced;
+        let w = self.output.writer();
+        if has_height {
+            execute!(w, MoveToColumn(0))?;
         }
-        let _ = execute!(self.stdout, SetCursorStyle::DefaultUserShape);
-        execute!(self.stdout, Show)?;
-        if self.use_alternate_screen {
-            execute!(self.stdout, LeaveAlternateScreen)?;
+        let _ = execute!(w, SetCursorStyle::DefaultUserShape);
+        execute!(w, Show)?;
+        if use_alt {
+            execute!(w, LeaveAlternateScreen)?;
         }
-        if self.keyboard_enhanced {
-            let _ = execute!(self.stdout, PopKeyboardEnhancementFlags);
+        if kb_enhanced {
+            let _ = execute!(w, PopKeyboardEnhancementFlags);
         }
         terminal::disable_raw_mode()?;
-        writeln!(self.stdout)?;
-        self.stdout.flush()
-    }
-
-    pub fn size(&self) -> (u16, u16) {
-        (self.width, self.height)
+        let w = self.output.writer();
+        writeln!(w)?;
+        w.flush()
     }
 
     pub fn handle_resize(&mut self) -> io::Result<()> {
@@ -116,16 +112,74 @@ impl Terminal {
             Ok(None)
         }
     }
+}
+
+// --- Headless (Vec<u8>) for testing ---
+
+impl Terminal<Vec<u8>> {
+    /// Create a headless terminal that writes to an in-memory buffer.
+    /// No raw mode, no alternate screen, no keyboard enhancement.
+    pub fn headless(width: u16, height: u16) -> Self {
+        Self {
+            width,
+            height,
+            planner: FramePlanner::new(width, height),
+            use_alternate_screen: false,
+            output: OutputBuffer::with_writer(Vec::new(), width as usize, height as usize),
+            keyboard_enhanced: false,
+            last_cursor: None,
+            cursor_style: SetCursorStyle::SteadyBlock,
+            last_snapshot: None,
+        }
+    }
+
+    /// Get the raw bytes written by the terminal (escape sequences + content).
+    pub fn take_bytes(&mut self) -> Vec<u8> {
+        std::mem::take(self.output.writer())
+    }
+
+    /// Set the terminal dimensions (for resize testing).
+    pub fn set_size(&mut self, width: u16, height: u16) {
+        self.width = width;
+        self.height = height;
+        self.output.set_size(width as usize, height as usize);
+        self.planner.set_size(width, height);
+    }
+}
+
+// --- Generic: works with any writer ---
+
+impl<W: Write> Terminal<W> {
+    pub fn with_alternate_screen(mut self, use_alt: bool) -> Self {
+        self.use_alternate_screen = use_alt;
+        self
+    }
+
+    pub fn cursor_style(mut self, style: SetCursorStyle) -> Self {
+        self.cursor_style = style;
+        self
+    }
+
+    pub fn size(&self) -> (u16, u16) {
+        (self.width, self.height)
+    }
 
     pub fn render(&mut self, tree: &Node, stdout_delta: &str) -> io::Result<()> {
         let snapshot = self
             .planner
             .plan_with_stdout(tree, stdout_delta.to_string());
-        self.apply(&snapshot)
+        self.apply(&snapshot)?;
+        self.last_snapshot = Some(snapshot);
+        Ok(())
+    }
+
+    /// Get the last rendered FrameSnapshot (for test inspection).
+    pub fn snapshot(&self) -> Option<&FrameSnapshot> {
+        self.last_snapshot.as_ref()
     }
 
     fn apply(&mut self, snapshot: &FrameSnapshot) -> io::Result<()> {
-        execute!(self.stdout, Hide)?;
+        execute!(self.output.writer(), Hide)?;
 
         if !snapshot.stdout_delta.is_empty() {
             let cursor_offset = self
@@ -136,9 +190,9 @@ impl Terminal {
 
             // Clear viewport, write graduation content to scrollback
             self.output.clear(cursor_offset)?;
-            write!(self.stdout, "{}", snapshot.stdout_delta)?;
-            write!(self.stdout, "\r\n")?;
-            self.stdout.flush()?;
+            write!(self.output.writer(), "{}", snapshot.stdout_delta)?;
+            write!(self.output.writer(), "\r\n")?;
+            self.output.writer().flush()?;
 
             // clear() already resets previous_lines/previous_visual_rows,
             // so render_with_overlays will do a full redraw
@@ -182,23 +236,23 @@ impl Terminal {
 
         if move_up > 0 {
             execute!(
-                self.stdout,
+                self.output.writer(),
                 MoveUp(move_up),
                 MoveToColumn(cursor_info.col),
                 Show
             )?;
         } else if move_down > 0 {
             execute!(
-                self.stdout,
+                self.output.writer(),
                 MoveDown(move_down),
                 MoveToColumn(cursor_info.col),
                 Show
             )?;
         } else {
-            execute!(self.stdout, MoveToColumn(cursor_info.col), Show)?;
+            execute!(self.output.writer(), MoveToColumn(cursor_info.col), Show)?;
         }
 
-        self.stdout.flush()
+        self.output.writer().flush()
     }
 
     pub fn force_full_redraw(&mut self) -> io::Result<()> {
@@ -214,11 +268,11 @@ impl Terminal {
     }
 
     pub fn show_cursor_at(&mut self, x: u16, y: u16) -> io::Result<()> {
-        execute!(self.stdout, MoveTo(x, y), Show)
+        execute!(self.output.writer(), MoveTo(x, y), Show)
     }
 }
 
-impl crate::runtime::FrameRenderer for Terminal {
+impl crate::runtime::FrameRenderer for Terminal<Stdout> {
     fn render_frame(&mut self, tree: &Node, graduation: Option<&crate::planning::Graduation>) {
         if let Some(grad) = graduation {
             let rendered = grad.render();
@@ -229,17 +283,11 @@ impl crate::runtime::FrameRenderer for Terminal {
     }
 
     fn force_full_redraw(&mut self) {
-        let _ = self.force_full_redraw();
+        let _ = Terminal::force_full_redraw(self);
     }
 
     fn size(&self) -> (u16, u16) {
-        self.size()
-    }
-}
-
-impl Drop for Terminal {
-    fn drop(&mut self) {
-        let _ = self.exit();
+        Terminal::size(self)
     }
 }
 
@@ -258,5 +306,33 @@ mod tests {
     fn terminal_has_cursor_style_builder() {
         let term = Terminal::with_size(80, 24).cursor_style(SetCursorStyle::BlinkingBar);
         assert_eq!(term.cursor_style, SetCursorStyle::BlinkingBar);
+    }
+
+    #[test]
+    fn headless_terminal_renders_to_buffer() {
+        use crate::node::{col, text};
+
+        let mut term = Terminal::headless(80, 24);
+        let tree = col([text("Hello World")]);
+        term.render(&tree, "").unwrap();
+
+        let bytes = term.take_bytes();
+        assert!(!bytes.is_empty());
+        let output = String::from_utf8_lossy(&bytes);
+        assert!(output.contains("Hello World"));
+    }
+
+    #[test]
+    fn headless_terminal_graduation_writes_to_buffer() {
+        use crate::node::{col, text};
+
+        let mut term = Terminal::headless(80, 24);
+        let tree = col([text("Viewport")]);
+        term.render(&tree, "Graduated content").unwrap();
+
+        let bytes = term.take_bytes();
+        let output = String::from_utf8_lossy(&bytes);
+        assert!(output.contains("Graduated content"));
+        assert!(output.contains("Viewport"));
     }
 }
