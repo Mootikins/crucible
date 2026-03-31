@@ -206,7 +206,12 @@ impl AdaptiveColor {
     /// Resolve the color based on terminal background detection.
     /// Returns Color::Reset if NO_COLOR environment variable is set.
     pub fn resolve(self, is_dark: bool) -> Color {
-        if std::env::var("NO_COLOR").is_ok() {
+        let no_color = std::env::var("NO_COLOR").is_ok();
+        self.resolve_inner(is_dark, no_color)
+    }
+
+    fn resolve_inner(self, is_dark: bool, no_color: bool) -> Color {
+        if no_color {
             return Color::Reset;
         }
         if is_dark {
@@ -565,7 +570,7 @@ mod tests {
             dark: Color::Red,
             light: Color::Blue,
         };
-        assert_eq!(ac.resolve(true), Color::Red);
+        assert_eq!(ac.resolve_inner(true, false), Color::Red);
     }
 
     #[test]
@@ -574,19 +579,17 @@ mod tests {
             dark: Color::Red,
             light: Color::Blue,
         };
-        assert_eq!(ac.resolve(false), Color::Blue);
+        assert_eq!(ac.resolve_inner(false, false), Color::Blue);
     }
 
     #[test]
-    fn test_adaptive_color_no_color_env() {
+    fn test_adaptive_color_no_color() {
         let ac = AdaptiveColor {
             dark: Color::Red,
             light: Color::Blue,
         };
-        // Use guard to ensure cleanup even if test panics
-        let _guard = EnvGuard::new("NO_COLOR", "1");
-        assert_eq!(ac.resolve(true), Color::Reset);
-        assert_eq!(ac.resolve(false), Color::Reset);
+        assert_eq!(ac.resolve_inner(true, true), Color::Reset);
+        assert_eq!(ac.resolve_inner(false, true), Color::Reset);
     }
 
     #[test]
