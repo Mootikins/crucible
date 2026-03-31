@@ -12,6 +12,13 @@ use crate::tui::oil::chat_runner::render_frame;
 use crate::tui::oil::focus::FocusContext;
 use crucible_oil::TestRuntime;
 
+/// Find a byte subsequence in a byte slice. Returns the start position.
+fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
 /// A test runtime that feeds terminal output through vt100 for screen-level assertions.
 pub struct Vt100TestRuntime {
     inner: TestRuntime,
@@ -36,11 +43,54 @@ impl Vt100TestRuntime {
         let focus = FocusContext::new();
         render_frame(app, &mut self.inner, &focus);
 
-        // Feed all new terminal bytes to the vt100 parser
+        // Feed terminal bytes to vt100, respecting synchronized update
+        // boundaries. Content inside sync blocks is fed atomically (as real
+        // terminals buffer it). Content OUTSIDE sync blocks is fed
+        // byte-by-byte (real terminals process it incrementally).
         let bytes = self.inner.take_bytes();
         self.last_frame_bytes = bytes.clone();
         if !bytes.is_empty() {
-            self.vt.process(&bytes);
+            self.feed_bytes_respecting_sync(&bytes);
+        }
+    }
+
+    /// Feed bytes to vt100, processing synchronized update blocks atomically
+    /// and non-sync content incrementally. This models real terminal behavior.
+    fn feed_bytes_respecting_sync(&mut self, bytes: &[u8]) {
+        let begin = b"\x1b[?2026h";
+        let end = b"\x1b[?2026l";
+
+        let mut pos = 0;
+        while pos < bytes.len() {
+            // Look for BEGIN_SYNCHRONIZED_UPDATE
+            if let Some(sync_start) = find_subsequence(&bytes[pos..], begin) {
+                let abs_start = pos + sync_start;
+
+                // Feed everything before the sync block incrementally
+                if abs_start > pos {
+                    for &b in &bytes[pos..abs_start] {
+                        self.vt.process(&[b]);
+                    }
+                }
+
+                // Find matching END_SYNCHRONIZED_UPDATE
+                if let Some(sync_end) = find_subsequence(&bytes[abs_start..], end) {
+                    let abs_end = abs_start + sync_end + end.len();
+                    // Feed the entire sync block atomically
+                    self.vt.process(&bytes[abs_start..abs_end]);
+                    pos = abs_end;
+                } else {
+                    // No end marker — feed rest atomically
+                    self.vt.process(&bytes[abs_start..]);
+                    pos = bytes.len();
+                }
+            } else {
+                // No more sync blocks — feed remaining incrementally
+                for &b in &bytes[pos..] {
+                    self.vt.process(&[b]);
+                }
+                pos = bytes.len();
+            }
         }
     }
 
@@ -1204,6 +1254,221 @@ mod tests {
                 byte_str.replace('\x1b', "ESC")
             );
         }
+    }
+
+    // ─── Bug 4: Reproduce exact user scenario ─────────────────────────
+    //
+    // Exact sequence from user's terminal showing spinners between
+    // graduated tools in scrollback. Each event gets its own render
+    // frame to simulate real-time behavior.
+
+    /// Reproduce: "tell me about this repo" multi-tool sequence.
+    /// Render between EVERY event. Check stdout_buffer AND vt100 scrollback.
+    #[test]
+    fn reproduce_multi_tool_spinner_in_scrollback() {
+        use crucible_oil::node::{BRAILLE_SPINNER_FRAMES, SPINNER_FRAMES};
+
+        let mut app = OilChatApp::init();
+        let mut vt = Vt100TestRuntime::new(124, 59);
+
+        // User message
+        app.on_message(ChatAppMsg::UserMessage("tell me about this repo".into()));
+        vt.render_frame(&mut app);
+
+        // Thinking arrives
+        think(&mut app, "I'll explore this repository to give you an overview.");
+        vt.render_frame(&mut app);
+
+        // Spinner ticks while thinking
+        vt.render_frame(&mut app);
+        vt.render_frame(&mut app);
+
+        // Tool 1: Get Kiln Info (arrives and completes)
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "get_kiln_info".into(),
+            args: "{}".into(),
+            call_id: Some("c1".into()),
+            description: None,
+            source: None,
+            lua_primary_arg: None,
+        });
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "get_kiln_info".into(),
+            call_id: Some("c1".into()),
+        });
+        vt.render_frame(&mut app);
+
+        // *** KEY: several frames with completed tool + turn spinner ***
+        // This is where the turn spinner (◑) shows in the viewport
+        // between tool completions
+        vt.render_frame(&mut app);
+        vt.render_frame(&mut app);
+        vt.render_frame(&mut app);
+
+        // Tool 2: Bash ls (arrives)
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "bash".into(),
+            args: r#"{"cmd": "ls -la"}"#.into(),
+            call_id: Some("c2".into()),
+            description: None,
+            source: None,
+            lua_primary_arg: None,
+        });
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "bash".into(),
+            call_id: Some("c2".into()),
+        });
+        vt.render_frame(&mut app);
+
+        // More frames with turn spinner
+        vt.render_frame(&mut app);
+        vt.render_frame(&mut app);
+
+        // Tool 3: Glob
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "glob".into(),
+            args: r#"{"pattern": "README*"}"#.into(),
+            call_id: Some("c3".into()),
+            description: None,
+            source: None,
+            lua_primary_arg: None,
+        });
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "glob".into(),
+            call_id: Some("c3".into()),
+        });
+        vt.render_frame(&mut app);
+
+        // Tool 4: another Glob
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "glob".into(),
+            args: r#"{"pattern": "*.toml"}"#.into(),
+            call_id: Some("c4".into()),
+            description: None,
+            source: None,
+            lua_primary_arg: None,
+        });
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "glob".into(),
+            call_id: Some("c4".into()),
+        });
+        vt.render_frame(&mut app);
+        vt.render_frame(&mut app);
+
+        // Second thinking block
+        think(&mut app, "Let me check more details.");
+        vt.render_frame(&mut app);
+
+        // Tool 5: Read File
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "read_file".into(),
+            args: r#"{"path": "README.md"}"#.into(),
+            call_id: Some("c5".into()),
+            description: None,
+            source: None,
+            lua_primary_arg: None,
+        });
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "read_file".into(),
+            call_id: Some("c5".into()),
+        });
+        vt.render_frame(&mut app);
+        vt.render_frame(&mut app);
+
+        // Tool 6: Read File
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "read_file".into(),
+            args: r#"{"path": "Cargo.toml"}"#.into(),
+            call_id: Some("c6".into()),
+            description: None,
+            source: None,
+            lua_primary_arg: None,
+        });
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "read_file".into(),
+            call_id: Some("c6".into()),
+        });
+        vt.render_frame(&mut app);
+        vt.render_frame(&mut app);
+
+        // Tool 7: Bash
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "bash".into(),
+            args: r#"{"cmd": "ls -la crates/"}"#.into(),
+            call_id: Some("c7".into()),
+            description: None,
+            source: None,
+            lua_primary_arg: None,
+        });
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "bash".into(),
+            call_id: Some("c7".into()),
+        });
+        vt.render_frame(&mut app);
+
+        // Third thinking + final text
+        think(&mut app, "Now I have enough context.");
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::TextDelta(
+            "Crucible is a knowledge-grounded AI agent runtime.".into(),
+        ));
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::StreamComplete);
+        vt.render_frame(&mut app);
+
+        // === CHECK 1: stdout_buffer (accumulated graduation content) ===
+        let stdout = vt.inner().stdout_content();
+        let stdout_plain = crucible_oil::ansi::strip_ansi(stdout);
+
+        let all_spinner_chars: Vec<char> = SPINNER_FRAMES
+            .iter()
+            .chain(BRAILLE_SPINNER_FRAMES.iter())
+            .copied()
+            .collect();
+
+        let stdout_spinner_lines: Vec<(usize, &str)> = stdout_plain
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| {
+                let trimmed = l.trim();
+                !trimmed.is_empty()
+                    && trimmed.len() <= 4
+                    && trimmed.chars().any(|c| all_spinner_chars.contains(&c))
+            })
+            .collect();
+
+        if !stdout_spinner_lines.is_empty() {
+            eprintln!("=== SPINNER IN STDOUT (graduation content) ===");
+            for (i, line) in &stdout_spinner_lines {
+                eprintln!("  [{:3}] {:?}", i, line);
+            }
+            eprintln!("\n=== Full stdout ===\n{}", stdout_plain);
+        }
+
+        assert!(
+            stdout_spinner_lines.is_empty(),
+            "Spinner characters found in graduated stdout content:\n{:?}",
+            stdout_spinner_lines
+        );
+
+        // === CHECK 2: vt100 scrollback ===
+        vt.assert_no_spinners_in_scrollback();
     }
 
     /// Variant 3 (original): Permission for non-tool interaction — no crash.
