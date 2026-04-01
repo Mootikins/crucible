@@ -4,8 +4,8 @@
 
 use crate::tui::oil::app::ViewContext;
 use crate::tui::oil::component::Component;
-use crate::tui::oil::node::{text, Node};
-use crate::tui::oil::style::{Color, Style};
+use crucible_oil::node::{text, Node};
+use crucible_oil::style::{Color, Style};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crucible_lua::{DiscoveredView, LuaExecutor};
 use std::path::PathBuf;

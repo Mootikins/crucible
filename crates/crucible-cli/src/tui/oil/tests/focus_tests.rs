@@ -1,5 +1,5 @@
 use crate::tui::oil::app::ViewContext;
-use crate::tui::oil::focus::{FocusContext, FocusId};
+use crucible_oil::focus::{FocusContext, FocusId};
 
 #[test]
 fn view_context_is_focused_returns_correct_state() {

@@ -5,8 +5,8 @@
 use crate::formatting::{HighlightedLine, SyntaxHighlighter};
 #[allow(unused_imports)] // WIP: diff_to_node not yet used
 use crate::tui::oil::diff::{diff_to_node, diff_to_node_width};
-use crate::tui::oil::node::{col, row, styled, Node};
-use crate::tui::oil::style::{Color, Style};
+use crucible_oil::node::{col, row, styled, Node};
+use crucible_oil::style::{Color, Style};
 
 /// Maximum number of lines to display before truncating.
 #[allow(dead_code)] // WIP: MAX_LINES not yet used
@@ -262,7 +262,7 @@ fn truncate_content(content: &str, max_lines: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::oil::render::render_to_string;
+    use crucible_oil::render::render_to_string;
     use insta::assert_snapshot;
 
     #[test]

@@ -1,8 +1,8 @@
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::status_bar::NotificationToastKind;
 use crate::tui::oil::components::{Drawer, DrawerKind};
-use crate::tui::oil::node::{row, styled, Node};
-use crate::tui::oil::style::Style;
+use crucible_oil::node::{row, styled, Node};
+use crucible_oil::style::Style;
 
 use crate::tui::oil::utils::wrap::wrap_to_width;
 use crate::tui::oil::ViewContext;
@@ -167,7 +167,7 @@ impl Component for NotificationComponent {
 mod tests {
     use super::*;
     use crate::tui::oil::component::ComponentHarness;
-    use crate::tui::oil::render::render_to_plain_text;
+    use crucible_oil::render::render_to_plain_text;
 
     fn info_entry(msg: &str, ts: &str) -> NotificationEntry {
         NotificationEntry::new(msg, NotificationToastKind::Info, ts)

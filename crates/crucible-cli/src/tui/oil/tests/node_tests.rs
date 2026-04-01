@@ -309,7 +309,7 @@ fn numbered_list_creates_column() {
 
 #[test]
 fn spacer_fills_remaining_space_in_row() {
-    use crate::tui::oil::render::render_to_string;
+    use crucible_oil::render::render_to_string;
 
     let node = row([text("Left"), spacer(), text("Right")]);
     let output = render_to_string(&node, 20);
@@ -321,7 +321,7 @@ fn spacer_fills_remaining_space_in_row() {
 
 #[test]
 fn multiple_spacers_distribute_space_evenly() {
-    use crate::tui::oil::render::render_to_string;
+    use crucible_oil::render::render_to_string;
 
     let node = row([text("A"), spacer(), text("B"), spacer(), text("C")]);
     let output = render_to_string(&node, 17);
@@ -337,7 +337,7 @@ fn multiple_spacers_distribute_space_evenly() {
 /// as auto-sized content. The total output fills the available width.
 #[test]
 fn flex_with_weights_distributes_proportionally() {
-    use crate::tui::oil::render::render_to_string;
+    use crucible_oil::render::render_to_string;
 
     // Use spacer() (which is flex(1, empty)) for cleaner flex distribution
     let node = row([text("X"), spacer(), text("Y"), spacer(), text("Z")]);

@@ -3,17 +3,17 @@
 //! These tests verify that individual components render correctly in isolation,
 //! checking both structural output (plain text) and styled output (ANSI codes).
 
-use crate::tui::oil::ansi::{strip_ansi, visible_width};
+use crucible_oil::ansi::{strip_ansi, visible_width};
 use crate::tui::oil::app::ViewContext;
 use crate::tui::oil::chat_app::ChatMode;
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::{
     popup_item, popup_item_with_desc, InputArea, PopupOverlay, StatusBar, INPUT_MAX_CONTENT_LINES,
 };
-use crate::tui::oil::focus::FocusContext;
-use crate::tui::oil::node::{col, row, spacer, styled, text, PopupItemNode};
-use crate::tui::oil::render::{render_to_plain_text, render_to_string, render_with_cursor};
-use crate::tui::oil::style::{Color, Style};
+use crucible_oil::focus::FocusContext;
+use crucible_oil::node::{col, row, spacer, styled, text, PopupItemNode};
+use crucible_oil::render::{render_to_plain_text, render_to_string, render_with_cursor};
+use crucible_oil::style::{Color, Style};
 use insta::assert_snapshot;
 
 fn render_plain(component: &impl Component, width: usize) -> String {

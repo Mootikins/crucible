@@ -13,10 +13,10 @@
 //! - **Natural**: Text uses large width (terminal wraps), but tables use terminal width
 //!   for correct column sizing. Use for graduated/scrollback content that won't be redrawn.
 
-use crate::tui::oil::ansi::{visible_width, wrap_styled_text};
-use crate::tui::oil::node::*;
+use crucible_oil::ansi::{visible_width, wrap_styled_text};
+use crucible_oil::node::*;
 #[allow(unused_imports)] // WIP: Color not yet used
-use crate::tui::oil::style::{Color, Style};
+use crucible_oil::style::{Color, Style};
 use crate::tui::oil::theme;
 use markdown_it::parser::inline::Text;
 use markdown_it::plugins::cmark::block::blockquote::Blockquote;
@@ -602,7 +602,7 @@ fn build_highlighted_code_lines(
     width: usize,
 ) -> Vec<String> {
     use crate::formatting::SyntaxHighlighter;
-    use crate::tui::oil::ansi::wrap_styled_text;
+    use crucible_oil::ansi::wrap_styled_text;
 
     let mut result = Vec::new();
 
@@ -655,7 +655,7 @@ fn render_list_item(node: &markdown_it::Node, ctx: &mut RenderContext) {
     } else {
         let t = theme::active();
         let b = format!("{} ", t.decorations.bullet_char);
-        let w = crate::tui::oil::ansi::visible_width(&b);
+        let w = crucible_oil::ansi::visible_width(&b);
         (b, w)
     };
 
@@ -1104,7 +1104,7 @@ fn normalize_br_tags(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::oil::render::render_to_string;
+    use crucible_oil::render::render_to_string;
 
     #[test]
     fn test_plain_text() {
@@ -1577,8 +1577,8 @@ mod tests {
 
     #[test]
     fn table_with_bullet_prefix_at_67_columns() {
-        use crate::tui::oil::node::{row, styled};
-        use crate::tui::oil::style::{Color, Style};
+        use crucible_oil::node::{row, styled};
+        use crucible_oil::style::{Color, Style};
 
         let table = r#"| Command | Description | Example Usage |
 |---------|-------------|---------------|

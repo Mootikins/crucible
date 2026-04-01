@@ -3,8 +3,8 @@
 //! Renders subagent executions with status (running/completed/failed),
 //! prompt preview, and result summary or error message.
 
-use crate::tui::oil::node::{col, row, styled, text, Node, BRAILLE_SPINNER_FRAMES};
-use crate::tui::oil::style::Style;
+use crucible_oil::node::{col, row, styled, text, Node, BRAILLE_SPINNER_FRAMES};
+use crucible_oil::style::Style;
 use crate::tui::oil::theme;
 use crate::tui::oil::utils::{terminal_width, truncate_first_line};
 use crate::tui::oil::viewport_cache::{CachedSubagent, SubagentStatus};
@@ -101,7 +101,7 @@ fn format_elapsed_display(elapsed: Duration) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::oil::render::render_to_plain_text;
+    use crucible_oil::render::render_to_plain_text;
     use std::sync::Arc;
 
     #[test]
