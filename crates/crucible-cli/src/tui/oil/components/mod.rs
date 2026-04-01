@@ -13,6 +13,7 @@ mod shell_render;
 pub(crate) mod status_bar;
 pub(crate) mod status_component;
 mod subagent_render;
+pub(crate) mod thinking_component;
 pub(crate) mod tool_render;
 
 pub use crucible_oil::components::DrawerKind;
@@ -26,7 +27,8 @@ pub use interaction_modal::{
 };
 #[allow(unused_imports)] // WIP: MessageList not yet used
 pub(crate) use message_list::MessageList;
-pub use message_list::{render_thinking_block, render_user_prompt};
+pub use message_list::render_user_prompt;
+pub use thinking_component::ThinkingComponent;
 pub use notification_area::NotificationArea;
 pub use notification_component::{NotificationComponent, NotificationEntry};
 pub use popup_component::PopupComponent;

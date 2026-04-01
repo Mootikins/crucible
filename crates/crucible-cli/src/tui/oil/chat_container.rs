@@ -5,11 +5,11 @@
 //! and removed from the list. No Node::Static or key tracking needed.
 
 use crate::tui::oil::components::{
-    render_shell_execution, render_subagent, render_thinking_block, render_tool_call_with_frame,
-    render_user_prompt,
+    render_shell_execution, render_subagent, render_tool_call_with_frame, render_user_prompt,
+    ThinkingComponent,
 };
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
-use crate::tui::oil::node::{col, row, spinner, styled, text, Node};
+use crate::tui::oil::node::{col, row, spinner, text, Node};
 use crate::tui::oil::render_state::RenderState;
 use crate::tui::oil::planning::Graduation;
 use crate::tui::oil::style::{Gap, Style};
@@ -28,13 +28,6 @@ pub struct ViewParams {
     pub is_complete: bool,
     /// Whether the previous container was a ToolGroup (for tight tool-to-tool graduation).
     pub prev_is_tool_group: bool,
-}
-
-/// A block of thinking content with token count.
-#[derive(Debug, Clone)]
-pub struct ThinkingBlock {
-    pub content: String,
-    pub token_count: usize,
 }
 
 /// What kind of container this is, for spacing decisions.
@@ -76,7 +69,7 @@ pub enum ChatContainer {
     AssistantResponse {
         id: String,
         text: String,
-        thinking: Vec<ThinkingBlock>,
+        thinking: Vec<ThinkingComponent>,
         /// Whether this response follows a tool/subagent/delegation/shell container,
         /// meaning the assistant is continuing after an interruption rather than
         /// starting fresh. Stored at creation time because the preceding container
@@ -209,24 +202,46 @@ impl ChatContainer {
 #[derive(Debug, Clone)]
 struct RenderBlocksParams<'a> {
     pub text: &'a str,
-    pub thinking: &'a [ThinkingBlock],
+    pub thinking: &'a [ThinkingComponent],
     pub complete: bool,
     pub is_continuation: bool,
 }
 
 /// Render assistant text+thinking.
+///
+/// Each ThinkingComponent renders itself based on its state and the
+/// render_state. The `is_complete` passed to thinking components accounts
+/// for both response completion and whether text has started streaming
+/// (which finalizes the thinking phase).
 fn render_assistant_blocks(params: &RenderBlocksParams, render_state: &RenderState) -> Node {
-    let mut nodes = if render_state.show_thinking {
-        render_blocks_full_thinking(params, render_state)
-    } else {
-        render_blocks_collapsed_thinking(params, render_state)
-    };
+    let has_thinking = !params.thinking.is_empty();
+    let has_text = !params.text.is_empty();
+
+    // Thinking is finalized when the response is complete OR text has started.
+    let thinking_complete = params.complete || has_text;
+
+    let mut nodes = Vec::new();
+
+    // Render each thinking component
+    for tc in params.thinking.iter() {
+        nodes.push(tc.render(render_state, thinking_complete));
+    }
+
+    // Render text content
+    if has_text {
+        let margins = if params.is_continuation || has_thinking {
+            Margins::assistant_continuation()
+        } else {
+            Margins::assistant()
+        };
+        let style = RenderStyle::natural_with_margins(render_state.width(), margins);
+        nodes.push(markdown_to_node_styled(params.text, style));
+    }
 
     // Streaming spinner: show when not complete, unless only the collapsed
     // thinking summary is visible (it has its own spinner).
     if !params.complete {
-        let has_text = !params.text.is_empty();
-        let has_thinking_summary = !render_state.show_thinking && !params.thinking.is_empty();
+        let has_thinking_summary = !render_state.show_thinking && has_thinking;
         if has_text || !has_thinking_summary {
             let t = crate::tui::oil::theme::active();
             nodes.push(row([
@@ -238,133 +253,12 @@ fn render_assistant_blocks(params: &RenderBlocksParams, render_state: &RenderSta
     }
 
     // Gap between thinking summary/block and text content
-    let has_thinking = !params.thinking.is_empty();
-    let has_text = !params.text.is_empty();
     let gap = if has_thinking && has_text {
         Gap::row(1)
     } else {
         Gap::row(0)
     };
     col(nodes).gap(gap)
-}
-
-/// Render text as markdown.
-fn render_text(
-    text_content: &str,
-    is_continuation: bool,
-    has_thinking: bool,
-    render_state: &RenderState,
-) -> Node {
-    if text_content.is_empty() {
-        return Node::Empty;
-    }
-
-    let margins = if is_continuation || has_thinking {
-        Margins::assistant_continuation()
-    } else {
-        Margins::assistant()
-    };
-    let style = RenderStyle::natural_with_margins(render_state.width(), margins);
-    markdown_to_node_styled(text_content, style)
-}
-
-/// Render with full thinking content visible (show_thinking=true).
-fn render_blocks_full_thinking(
-    params: &RenderBlocksParams,
-    render_state: &RenderState,
-) -> Vec<Node> {
-    let mut nodes = Vec::new();
-
-    for tb in params.thinking.iter() {
-        nodes.push(render_thinking_block(
-            &tb.content,
-            tb.token_count,
-            render_state.width(),
-            params.complete,
-        ));
-    }
-
-    let has_thinking = !params.thinking.is_empty();
-    let text_node = render_text(
-        params.text,
-        params.is_continuation,
-        has_thinking,
-        render_state,
-    );
-    if text_node != Node::Empty {
-        nodes.push(text_node);
-    }
-
-    nodes
-}
-
-/// Render with thinking collapsed to a one-line summary (show_thinking=false).
-fn render_blocks_collapsed_thinking(
-    params: &RenderBlocksParams,
-    render_state: &RenderState,
-) -> Vec<Node> {
-    let mut nodes = Vec::new();
-    let has_thinking = !params.thinking.is_empty();
-
-    if has_thinking {
-        nodes.push(build_thinking_summary(params, render_state));
-    }
-
-    let text_node = render_text(
-        params.text,
-        params.is_continuation,
-        has_thinking,
-        render_state,
-    );
-    if text_node != Node::Empty {
-        nodes.push(text_node);
-    }
-
-    nodes
-}
-
-/// Build the collapsed thinking summary node.
-fn build_thinking_summary(params: &RenderBlocksParams, render_state: &RenderState) -> Node {
-    let t = crate::tui::oil::theme::active();
-    let total_words: usize = params
-        .thinking
-        .iter()
-        .map(|tb| tb.content.split_whitespace().count())
-        .sum();
-
-    let has_text = !params.text.is_empty();
-
-    let muted = Style::new()
-        .fg(t.resolve_color(t.colors.text_muted))
-        .italic();
-
-    if !params.complete && total_words == 0 {
-        // Just started thinking, no words yet
-        row([
-            text(" "),
-            spinner(None, render_state.spinner_frame)
-                .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
-            text(" Thinking…").with_style(muted),
-        ])
-    } else if params.complete || has_text {
-        // Thinking is done (either turn complete or text has started streaming).
-        // Use ◇ aligned with other chat node icons (✓, ✗, ●) at col 1.
-        // Contrast hierarchy: icon + label in text_dim, word count in text_muted + italic.
-        let dim = Style::new().fg(t.resolve_color(t.colors.text_dim));
-        row([
-            styled(" \u{25C7} ", dim),
-            styled("Thought", dim),
-            styled(format!(" ({} words)", total_words), muted),
-        ])
-    } else {
-        // Still thinking, accumulating words, no text yet
-        row([
-            text(" "),
-            spinner(None, render_state.spinner_frame)
-                .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
-            styled(format!(" Thinking… ({} words)", total_words), muted),
-        ])
-    }
 }
 
 /// Render a system message.
@@ -535,13 +429,9 @@ impl ContainerList {
             self.containers.get_mut(idx)
         {
             if let Some(first) = thinking.first_mut() {
-                first.content = content;
-                first.token_count = token_count;
+                first.replace(content, token_count);
             } else {
-                thinking.push(ThinkingBlock {
-                    content,
-                    token_count,
-                });
+                thinking.push(ThinkingComponent::new(content, token_count));
             }
         }
     }
@@ -552,13 +442,9 @@ impl ContainerList {
         let idx = self.ensure_open_response();
         if let ChatContainer::AssistantResponse { thinking, .. } = &mut self.containers[idx] {
             if let Some(last) = thinking.last_mut() {
-                last.content.push_str(delta);
-                last.token_count += 1;
+                last.append(delta);
             } else {
-                thinking.push(ThinkingBlock {
-                    content: delta.to_string(),
-                    token_count: 1,
-                });
+                thinking.push(ThinkingComponent::new(delta.to_string(), 1));
             }
         }
     }
@@ -570,7 +456,6 @@ impl ContainerList {
 
     /// Add a tool call.
     /// Groups with previous tool group if one exists and is incomplete.
-    /// Add a tool call.
     /// Removes empty trailing responses to avoid graduation gaps.
     pub fn add_tool_call(&mut self, tool: CachedToolCall) {
         // Tool arrived — clear the permission_pending flag (it served its purpose:
@@ -714,8 +599,16 @@ impl ContainerList {
             if !self.is_container_graduatable(0) {
                 break;
             }
-            let container = self.containers.remove(0);
+            let mut container = self.containers.remove(0);
             let kind = container.kind();
+
+            // Graduate thinking components so they render collapsed in scrollback.
+            if let ChatContainer::AssistantResponse { thinking, .. } = &mut container {
+                for tc in thinking.iter_mut() {
+                    tc.graduate();
+                }
+            }
+
             let node = container.view(width as usize, spinner_frame, show_thinking, false, true);
 
             // Spacing between items
@@ -1603,10 +1496,7 @@ mod tests {
     fn thinking_renders_before_text() {
         use crucible_oil::render::render_to_plain_text;
 
-        let thinking = vec![ThinkingBlock {
-            content: "my deep thought".to_string(),
-            token_count: 5,
-        }];
+        let thinking = vec![ThinkingComponent::new("my deep thought".to_string(), 5)];
 
         let params = super::RenderBlocksParams {
             text: "First paragraph\n\nSecond paragraph",
@@ -1649,10 +1539,7 @@ mod tests {
             "juliet",
         ];
         let long_thinking = lines.join("\n");
-        let thinking = vec![ThinkingBlock {
-            content: long_thinking,
-            token_count: 50,
-        }];
+        let thinking = vec![ThinkingComponent::new(long_thinking, 50)];
 
         let params = super::RenderBlocksParams {
             text: "Response text",
@@ -1714,10 +1601,10 @@ mod tests {
 
         let spinner_chars: Vec<char> = vec!['\u{25D0}', '\u{25D3}', '\u{25D1}', '\u{25D2}'];
 
-        let thinking = vec![ThinkingBlock {
-            content: "let me reason about this carefully".to_string(),
-            token_count: 10,
-        }];
+        let thinking = vec![ThinkingComponent::new(
+            "let me reason about this carefully".to_string(),
+            10,
+        )];
 
         let params = super::RenderBlocksParams {
             text: "Here is my response so far",
@@ -1759,10 +1646,10 @@ mod tests {
     fn completed_thinking_summary_uses_thinking_icon_not_box_corner() {
         use crucible_oil::render::render_to_plain_text;
 
-        let thinking = vec![ThinkingBlock {
-            content: "deep thoughts about architecture".to_string(),
-            token_count: 8,
-        }];
+        let thinking = vec![ThinkingComponent::new(
+            "deep thoughts about architecture".to_string(),
+            8,
+        )];
 
         let params = super::RenderBlocksParams {
             text: "Here is my answer.",
@@ -1790,10 +1677,64 @@ mod tests {
         );
     }
 
-    // Tests graduation_wraps_stable_blocks_in_scrollback and
-    // graduation_wraps_all_blocks_when_complete removed: they relied on
-    // Node::Static which no longer exists. Graduation is now automatic
-    // via drain_completed.
+    #[test]
+    fn graduated_thinking_always_renders_collapsed() {
+        use crucible_oil::render::render_to_plain_text;
+
+        // Create a component, graduate it, then render with show_thinking=true.
+        // Even with show_thinking=true, graduated thinking should be collapsed.
+        let mut tc = ThinkingComponent::new("detailed reasoning about architecture".to_string(), 10);
+        tc.graduate();
+
+        let state = super::RenderState {
+            terminal_width: 80,
+            spinner_frame: 0,
+            show_thinking: true,
+        };
+        let node = tc.render(&state, false);
+        let output = render_to_plain_text(&node, 80);
+
+        assert!(
+            output.contains("Thought"),
+            "Graduated thinking should show 'Thought' summary, got: {output}"
+        );
+        assert!(
+            !output.contains("detailed reasoning"),
+            "Graduated thinking should NOT show full content, got: {output}"
+        );
+    }
+
+    #[test]
+    fn drain_completed_graduates_thinking_components() {
+        // When an AssistantResponse with thinking graduates via drain_completed,
+        // the thinking should render collapsed in the graduation output.
+        let mut list = ContainerList::new();
+        list.start_assistant_response();
+        list.append_thinking("let me think about this very carefully and at length");
+        list.append_text("Here is my answer.");
+        list.complete_response();
+
+        // Drain with show_thinking=true — thinking should still be collapsed
+        // in scrollback because graduate() is called.
+        let graduation = list
+            .drain_completed(80, 0, true)
+            .expect("should graduate");
+
+        let output = crucible_oil::render::render_to_string(&graduation.node, 80);
+
+        assert!(
+            output.contains("Thought"),
+            "Graduated thinking should show collapsed summary, got: {output}"
+        );
+        assert!(
+            !output.contains("let me think about"),
+            "Graduated thinking should NOT show full content in scrollback, got: {output}"
+        );
+        assert!(
+            output.contains("Here is my answer"),
+            "Response text should still appear, got: {output}"
+        );
+    }
 
     fn make_complete_tool(name: &str, call_id: &str) -> CachedToolCall {
         CachedToolCall {

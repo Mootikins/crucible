@@ -3,8 +3,6 @@
 //! Renders a sequence of chat items including messages, tool calls,
 //! shell executions, and subagent invocations.
 
-use std::borrow::Cow;
-
 use crate::tui::oil::chat_app::Role;
 use crate::tui::oil::component::Component;
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
@@ -114,63 +112,6 @@ pub fn render_user_prompt(content: &str, width: usize) -> Node {
     col(rows)
 }
 
-/// Render a thinking block with header.
-pub fn render_thinking_block(
-    content: &str,
-    _token_count: usize,
-    width: usize,
-    complete: bool,
-) -> Node {
-    let t = crate::tui::oil::theme::active();
-    let label = if complete {
-        let word_count = content.split_whitespace().count();
-        format!(
-            "  \u{250C}{} Thought ({} words)",
-            t.decorations.divider_char, word_count
-        )
-    } else {
-        format!("  \u{250C}{} Thinking\u{2026}", t.decorations.divider_char)
-    };
-    let header = styled(
-        label,
-        Style::new()
-            .fg(t.resolve_color(t.colors.text_muted))
-            .italic(),
-    );
-
-    let display_content: Cow<'_, str> = if content.len() > 1200 {
-        let char_count = content.chars().count();
-        let start = if char_count > 1200 {
-            content
-                .char_indices()
-                .nth(char_count - 1200)
-                .map(|(i, _)| i)
-                .unwrap_or(0)
-        } else {
-            0
-        };
-        let boundary = content[start..]
-            .find(char::is_whitespace)
-            .map(|i| start + i + 1)
-            .unwrap_or(start);
-        Cow::Owned(format!("…{}", &content[boundary..]))
-    } else {
-        Cow::Borrowed(content)
-    };
-
-    let md_style = RenderStyle::viewport_with_margins(
-        width.saturating_sub(4),
-        Margins {
-            left: 4,
-            right: 0,
-            show_bullet: false,
-        },
-    );
-    let content_node = markdown_to_node_styled(&display_content, md_style);
-
-    col([header, content_node])
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -221,71 +162,7 @@ mod tests {
         assert!(plain.contains("Test Tool"));
     }
 
-    #[test]
-    fn render_thinking_block_boundary_1200_chars() {
-        let content_exactly_1200 = "a".repeat(1200);
-        let node = render_thinking_block(&content_exactly_1200, 100, 80, true);
-        let plain = render_to_plain_text(&node, 80);
-        assert!(plain.contains("Thought"));
-        assert!(!plain.contains("…"));
-    }
-
-    #[test]
-    fn render_thinking_block_over_1200_chars() {
-        let content_over_1200 = "a".repeat(1201);
-        let node = render_thinking_block(&content_over_1200, 100, 80, true);
-        let plain = render_to_plain_text(&node, 80);
-        assert!(plain.contains("Thought"));
-        assert!(plain.contains("…"));
-    }
-
-    #[test]
-    fn render_thinking_block_cjk_does_not_panic() {
-        // CJK characters: "你好世界" = 4 chars, 12 bytes each = 48 bytes per repeat
-        // 125 repeats = 500 chars, 1500 bytes (> 1200 byte limit)
-        let content_cjk = "你好世界".repeat(125);
-        assert!(
-            content_cjk.len() > 1200,
-            "CJK content should exceed 1200 bytes"
-        );
-        // This should not panic on UTF-8 boundary
-        let node = render_thinking_block(&content_cjk, 100, 80, true);
-        let plain = render_to_plain_text(&node, 80);
-        assert!(plain.contains("Thought"));
-        assert!(plain.contains("…"));
-    }
-
-    #[test]
-    fn render_thinking_block_emoji_boundary() {
-        // Emoji: "🔥🌊⚡" = 3 chars, 4 bytes each = 12 bytes per repeat
-        // 200 repeats = 600 chars, 2400 bytes (> 1200 byte limit)
-        let content_emoji = "🔥🌊⚡".repeat(200);
-        assert!(
-            content_emoji.len() > 1200,
-            "Emoji content should exceed 1200 bytes"
-        );
-        // This should not panic on UTF-8 boundary
-        let node = render_thinking_block(&content_emoji, 100, 80, true);
-        let plain = render_to_plain_text(&node, 80);
-        assert!(plain.contains("Thought"));
-        assert!(plain.contains("…"));
-    }
-
-    #[test]
-    fn render_thinking_block_mixed_utf8() {
-        // Mixed: "Hello 你好 🔥 " = 13 chars, 27 bytes per repeat
-        // 200 repeats = 2600 chars, 5400 bytes (> 1200 byte limit)
-        let content_mixed = "Hello 你好 🔥 ".repeat(200);
-        assert!(
-            content_mixed.len() > 1200,
-            "Mixed content should exceed 1200 bytes"
-        );
-        // This should not panic on UTF-8 boundary
-        let node = render_thinking_block(&content_mixed, 100, 80, true);
-        let plain = render_to_plain_text(&node, 80);
-        assert!(plain.contains("Thought"));
-        assert!(plain.contains("…"));
-    }
+    // render_thinking_block tests moved to thinking_component.rs
 
     #[test]
     fn col_of_row_and_col_no_blank_between() {

@@ -1,20 +1,16 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
-expression: render_app(&app)
+assertion_line: 1346
+expression: render_app(&mut app)
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  > Explain ownership                                                            
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-                                                                                
-  ┌─ Thought (28 words)                                                         
-    I should cover the three rules:                                             
-                                                                                
-    1. Each value has one owner                                                 
-    2. Only one owner at a time                                                 
-    3. Value dropped when owner goes out of scope                               
-                                                                                
-   Let me explain Rust's ownership model. The key insight is that ownership     
-   prevents data races at compile time.                                         
+
+ ◇ Thought (28 words)
+
+   Let me explain Rust's ownership model. The key insight is that ownership
+   prevents data races at compile time.
                                                                                 
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  >                                                                              

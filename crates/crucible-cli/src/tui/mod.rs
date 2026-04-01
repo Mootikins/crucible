@@ -7,5 +7,5 @@ pub use oil::{
     FramePlan, FramePlanner, FrameSnapshot, FrameTrace, InputAction, InputArea, InputBuffer,
     InputMode, LuaView, McpServerDisplay, OilChatApp, OilChatRunner, OilRunner, Overlay,
     OverlayAnchor, PluginStatusEntry, RenderState, Role, StatusBar, Terminal, TestRuntime,
-    ThinkingBlock, ViewAction, ViewContext, INPUT_MAX_CONTENT_LINES,
+    ViewAction, ViewContext, INPUT_MAX_CONTENT_LINES,
 };
