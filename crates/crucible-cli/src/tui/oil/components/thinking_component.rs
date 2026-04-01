@@ -6,7 +6,7 @@
 use std::borrow::Cow;
 
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
-use crate::tui::oil::node::{col, row, spinner, styled, text, Node};
+use crate::tui::oil::node::{col, row, styled, Node};
 use crate::tui::oil::render_state::RenderState;
 use crate::tui::oil::style::Style;
 
@@ -149,32 +149,22 @@ impl ThinkingComponent {
     }
 
     /// Collapsed summary while live (show_thinking=false, not graduated).
-    fn render_collapsed_live(&self, state: &RenderState, is_complete: bool) -> Node {
-        let t = crate::tui::oil::theme::active();
+    ///
+    /// No spinners — spinners are viewport chrome only (prevents scrollback
+    /// leaks). The turn spinner covers all spinner display.
+    fn render_collapsed_live(&self, _state: &RenderState, is_complete: bool) -> Node {
         let (_, muted) = Self::thinking_styles();
         let words = self.word_count();
 
         if !is_complete && words == 0 {
-            // Just started thinking, no words yet
-            row([
-                text(" "),
-                spinner(None, state.spinner_frame)
-                    .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
-                text(" Thinking\u{2026}").with_style(muted),
-            ])
+            // Just started thinking, no words yet — show label only
+            styled(" Thinking\u{2026}", muted)
         } else if is_complete {
             // Response finished but component wasn't graduated yet (viewport render).
-            // Shows same collapsed output as graduated — correct because thinking
-            // is finalized whether or not drain_completed has run yet.
             self.render_collapsed_complete()
         } else {
             // Still thinking, accumulating words
-            row([
-                text(" "),
-                spinner(None, state.spinner_frame)
-                    .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
-                styled(format!(" Thinking\u{2026} ({} words)", words), muted),
-            ])
+            styled(format!(" Thinking\u{2026} ({} words)", words), muted)
         }
     }
 }
