@@ -1,21 +1,17 @@
 //! Regression tests for rendering issues
 //!
 //! These tests reproduce specific rendering bugs to prevent regressions.
+//! All rendering goes through the real terminal path (Terminal<Vec<u8>> → vt100).
 
-use crate::tui::oil::ansi::strip_ansi;
-use crate::tui::oil::app::{App, ViewContext};
+use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
-use crate::tui::oil::focus::FocusContext;
-use crate::tui::oil::planning::FramePlanner;
 use insta::assert_snapshot;
 
-fn render_app(app: &OilChatApp) -> String {
-    let focus = FocusContext::new();
-    let ctx = ViewContext::new(&focus);
-    let tree = app.view(&ctx);
-    let mut planner = FramePlanner::new(80, 24);
-    let snapshot = planner.plan(&tree);
-    strip_ansi(&snapshot.screen())
+use super::helpers::vt_render_sized;
+
+/// Render through real terminal path with tall viewport (content checks need all rows visible).
+fn render_app(app: &mut OilChatApp) -> String {
+    vt_render_sized(app, 80, 60)
 }
 
 /// Issue: Table content duplicated after graduation
@@ -45,7 +41,7 @@ That's the overview."#;
     app.on_message(ChatAppMsg::TextDelta(markdown_with_table.to_string()));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let rendered = render_app(&app);
+    let rendered = render_app(&mut app);
 
     // Count occurrences of "Tables" - should appear exactly once in the table
     let tables_count = rendered.matches("Tables").count();
@@ -81,7 +77,7 @@ fn table_cell_wrapping_preserves_spacing() {
     ));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let rendered = render_app(&app);
+    let rendered = render_app(&mut app);
 
     // Check that bullet points aren't orphaned on separate lines
     let lines: Vec<&str> = rendered.lines().collect();
@@ -116,14 +112,14 @@ fn no_duplication_during_graduation_transition() {
     app.on_message(ChatAppMsg::TextDelta(unique_content.to_string()));
 
     // Capture state before completion
-    let before_graduation = render_app(&app);
+    let before_graduation = render_app(&mut app);
     let before_count = before_graduation.matches("XYZ123").count();
 
     // Complete streaming (triggers graduation)
     app.on_message(ChatAppMsg::StreamComplete);
 
     // Capture state after graduation
-    let after_graduation = render_app(&app);
+    let after_graduation = render_app(&mut app);
     let after_count = after_graduation.matches("XYZ123").count();
 
     // Content should appear exactly once before and after
@@ -154,7 +150,7 @@ Final paragraph."#;
     app.on_message(ChatAppMsg::TextDelta(markdown_with_spacing.to_string()));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let rendered = render_app(&app);
+    let rendered = render_app(&mut app);
     let lines: Vec<&str> = rendered.lines().collect();
 
     // Find "Second paragraph" and check there's spacing before it
@@ -196,7 +192,7 @@ Why it matters
     app.on_message(ChatAppMsg::TextDelta(complex_markdown.to_string()));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let rendered = render_app(&app);
+    let rendered = render_app(&mut app);
 
     // Check for duplication - "Crucible" should appear a reasonable number of times
     let crucible_count = rendered.matches("Crucible").count();
@@ -226,7 +222,7 @@ fn heading_after_paragraph_has_spacing() {
     app.on_message(ChatAppMsg::TextDelta(md_with_heading.to_string()));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let rendered = render_app(&app);
+    let rendered = render_app(&mut app);
     let lines: Vec<&str> = rendered.lines().collect();
 
     let para_idx = lines.iter().position(|l| l.contains("can do")).unwrap();
@@ -273,7 +269,7 @@ That's the overview."#;
     app.on_message(ChatAppMsg::TextDelta(md.to_string()));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let rendered = render_app(&app);
+    let rendered = render_app(&mut app);
     let lines: Vec<&str> = rendered.lines().collect();
 
     let fmt_lines = || {
@@ -484,7 +480,7 @@ fn no_double_blank_lines_in_any_container_sequence() {
             app.on_message(event.clone());
         }
 
-        let rendered = render_app(&app);
+        let rendered = render_app(&mut app);
         let lines: Vec<&str> = rendered.lines().collect();
 
         // Find where UI chrome starts (box-drawing separator)

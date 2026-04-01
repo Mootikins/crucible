@@ -1,7 +1,6 @@
 use super::*;
 use crate::tui::oil::chat_container::ChatContainer;
-use crate::tui::oil::focus::FocusContext;
-use crate::tui::oil::render::render_to_string;
+use crate::tui::oil::tests::helpers::vt_render;
 use crucible_core::traits::chat::PrecognitionNoteInfo;
 
 #[test]
@@ -183,22 +182,15 @@ fn test_autocomplete_reload_command() {
 
 #[test]
 fn test_view_renders() {
-    use crate::tui::oil::focus::FocusContext;
-
     let mut app = OilChatApp::init();
     app.add_user_message("Hello".to_string());
     app.on_message(ChatAppMsg::TextDelta("Hi there".to_string()));
 
-    let focus = FocusContext::new();
-    let ctx = ViewContext::new(&focus);
-    let _node = app.view(&ctx);
+    let _output = vt_render(&mut app);
 }
 
 #[test]
 fn test_tool_call_renders_with_result() {
-    use crate::tui::oil::focus::FocusContext;
-    use crate::tui::oil::render::render_to_string;
-
     let mut app = OilChatApp::init();
 
     app.on_message(ChatAppMsg::ToolCall {
@@ -210,10 +202,7 @@ fn test_tool_call_renders_with_result() {
         lua_primary_arg: None,
     });
 
-    let focus = FocusContext::new();
-    let ctx = ViewContext::new(&focus);
-    let node = app.view(&ctx);
-    let output = render_to_string(&node, 80);
+    let output = vt_render(&mut app);
 
     assert!(output.contains("Read File"), "should show tool name");
     assert!(output.contains("README.md"), "should show primary arg");
@@ -224,8 +213,7 @@ fn test_tool_call_renders_with_result() {
         call_id: None,
     });
 
-    let node = app.view(&ctx);
-    let output = render_to_string(&node, 80);
+    let output = vt_render(&mut app);
     assert!(
         output.contains("README") || output.contains("content"),
         "should show streaming output while running"
@@ -236,8 +224,7 @@ fn test_tool_call_renders_with_result() {
         call_id: None,
     });
 
-    let node = app.view(&ctx);
-    let output = render_to_string(&node, 80);
+    let output = vt_render(&mut app);
     assert!(output.contains("✓"), "should show checkmark when complete");
     assert!(
         output.contains("2 lines"),
@@ -254,10 +241,7 @@ fn test_context_usage_updates() {
         total: 128000,
     });
 
-    let focus = FocusContext::new();
-    let ctx = ViewContext::new(&focus);
-    let tree = app.view(&ctx);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
 
     assert!(output.contains("50%"), "Should show 50% context usage");
 }
@@ -271,10 +255,7 @@ fn test_context_display_unknown_total() {
         total: 0,
     });
 
-    let focus = FocusContext::new();
-    let ctx = ViewContext::new(&focus);
-    let tree = app.view(&ctx);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
 
     assert!(
         output.contains("5k tok"),
@@ -289,12 +270,9 @@ fn test_context_display_unknown_total() {
 
 #[test]
 fn test_context_display_no_usage_shows_placeholder() {
-    let app = OilChatApp::init();
+    let mut app = OilChatApp::init();
 
-    let focus = FocusContext::new();
-    let ctx = ViewContext::new(&focus);
-    let tree = app.view(&ctx);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
 
     assert!(
         output.contains("— ctx"),
@@ -319,10 +297,7 @@ fn test_context_percentage_calculation() {
         let mut app = OilChatApp::init();
         app.on_message(ChatAppMsg::ContextUsage { used, total });
 
-        let focus = FocusContext::new();
-        let ctx = ViewContext::new(&focus);
-        let tree = app.view(&ctx);
-        let output = render_to_string(&tree, 80);
+        let output = vt_render(&mut app);
 
         assert!(
             output.contains(expected_pct),
@@ -346,10 +321,7 @@ fn test_status_shows_mode_indicator() {
     let mut app = OilChatApp::init();
     app.set_mode(ChatMode::Plan);
 
-    let focus = FocusContext::new();
-    let ctx = ViewContext::new(&focus);
-    let tree = app.view(&ctx);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
 
     assert!(output.contains("PLAN"), "Status should show PLAN mode");
 }
@@ -467,10 +439,7 @@ fn test_perm_request_bash_renders() {
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install", "lodash"]));
     app.open_interaction("perm-1".to_string(), request);
 
-    let focus = FocusContext::new();
-    let ctx = ViewContext::new(&focus);
-    let tree = app.view(&ctx);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
 
     assert!(
         output.contains("PERMISSION"),
@@ -496,10 +465,7 @@ fn test_perm_request_write_renders() {
     ]));
     app.open_interaction("perm-2".to_string(), request);
 
-    let focus = FocusContext::new();
-    let ctx = ViewContext::new(&focus);
-    let tree = app.view(&ctx);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
 
     assert!(output.contains("WRITE"), "Should show WRITE type label");
     assert!(
@@ -739,10 +705,7 @@ fn test_perm_queue_indicator_shows_in_header() {
     let request3 = InteractionRequest::Permission(PermRequest::bash(["rm"]));
     app.open_interaction("perm-3".to_string(), request3);
 
-    let focus = FocusContext::new();
-    let ctx = ViewContext::new(&focus);
-    let tree = app.view(&ctx);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
 
     assert!(
         output.contains("[1/3]"),
@@ -760,10 +723,7 @@ fn test_perm_queue_no_indicator_for_single_request() {
     let request = InteractionRequest::Permission(PermRequest::bash(["ls"]));
     app.open_interaction("perm-1".to_string(), request);
 
-    let focus = FocusContext::new();
-    let ctx = ViewContext::new(&focus);
-    let tree = app.view(&ctx);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
 
     assert!(
         !output.contains("[1/1]"),
@@ -905,10 +865,7 @@ fn test_mode_change_does_not_duplicate_in_status() {
         app.set_mode(mode);
         app.status = "Ready".to_string();
 
-        let focus = FocusContext::new();
-        let ctx = ViewContext::new(&focus);
-        let tree = app.view(&ctx);
-        let output = render_to_string(&tree, 80);
+        let output = vt_render(&mut app);
 
         let label = mode.as_str().to_uppercase();
         let count = output.matches(&label).count();

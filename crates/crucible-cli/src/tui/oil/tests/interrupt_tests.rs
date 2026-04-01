@@ -1,8 +1,9 @@
-use crate::tui::oil::app::{Action, App, ViewContext};
+use crate::tui::oil::app::{Action, App};
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::event::Event;
-use crate::tui::oil::focus::FocusContext;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+use super::helpers::vt_render;
 
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
@@ -10,12 +11,6 @@ fn key(code: KeyCode) -> KeyEvent {
 
 fn ctrl(c: char) -> KeyEvent {
     KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
-}
-
-fn view_with_default_ctx(app: &OilChatApp) -> crate::tui::oil::node::Node {
-    let focus = FocusContext::new();
-    let ctx = ViewContext::new(&focus);
-    app.view(&ctx)
 }
 
 #[test]
@@ -196,8 +191,7 @@ fn status_shows_queued_count() {
         app.on_message(msg);
     }
 
-    let tree = view_with_default_ctx(&app);
-    let output = crate::tui::oil::render::render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
 
     assert!(
         output.contains("1 message queued") || output.contains("queued"),
@@ -275,8 +269,7 @@ fn cancelled_status_shows_after_cancel() {
     app.on_message(ChatAppMsg::TextDelta("partial...".to_string()));
     app.on_message(ChatAppMsg::StreamCancelled);
 
-    let tree = view_with_default_ctx(&app);
-    let output = crate::tui::oil::render::render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
 
     assert!(
         output.contains("Cancelled") || output.contains("cancelled"),
@@ -341,10 +334,7 @@ fn cancel_drains_stale_events_from_old_stream() {
     app.on_message(ChatAppMsg::TextDelta("Second response\n".to_string()));
 
     // Get the rendered output
-    let focus = FocusContext::new();
-    let ctx = ViewContext::new(&focus);
-    let tree = app.view(&ctx);
-    let output = crate::tui::oil::render::render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
 
     // Pre-cancel content IS preserved (correct behavior)
     // Post-cancel stale events should NOT appear
@@ -373,10 +363,7 @@ fn cancel_prevents_stale_text_delta_after_new_message() {
     // (This can happen due to async buffering in the broadcast channel)
     app.on_message(ChatAppMsg::TextDelta("STALE_AFTER_CANCEL".to_string()));
 
-    let focus = FocusContext::new();
-    let ctx = ViewContext::new(&focus);
-    let tree = app.view(&ctx);
-    let output = crate::tui::oil::render::render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
 
     // CRITICAL: stale text sent AFTER cancel should NOT appear
     assert!(

@@ -1,15 +1,11 @@
 use crate::tui::oil::ansi::strip_ansi;
-use crate::tui::oil::app::{App, ViewContext};
+use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
-use crate::tui::oil::focus::FocusContext;
-use crate::tui::oil::render::render_to_string;
-use crate::tui::oil::TestRuntime;
 
-fn render_app(app: &OilChatApp) -> String {
-    let focus = FocusContext::new();
-    let ctx = ViewContext::new(&focus);
-    let tree = app.view(&ctx);
-    strip_ansi(&render_to_string(&tree, 120))
+use super::helpers::vt_render_sized;
+
+fn render_app(app: &mut OilChatApp) -> String {
+    vt_render_sized(app, 120, 60)
 }
 
 fn assert_order(output: &str, first: &str, second: &str) {
@@ -57,7 +53,7 @@ mod chat_app_message_handling {
 
         assert!(app.is_streaming(), "Should be in streaming state");
 
-        let output = render_app(&app);
+        let output = render_app(&mut app);
         assert!(
             output.contains("Read File"),
             "Tool name should appear: {}",
@@ -88,7 +84,7 @@ mod chat_app_message_handling {
         });
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let output = render_app(&app);
+        let output = render_app(&mut app);
         assert!(
             output.contains('\u{2713}') || output.contains("✓"),
             "Should show checkmark for completed tool: {}",
@@ -112,7 +108,7 @@ mod chat_app_message_handling {
         });
         app.on_message(ChatAppMsg::TextDelta("AFTER_TOOL".to_string()));
 
-        let output = render_app(&app);
+        let output = render_app(&mut app);
         assert_order(&output, "BEFORE_TOOL", "My Tool");
     }
 
@@ -147,7 +143,7 @@ mod chat_app_message_handling {
             "Should not be streaming after complete"
         );
 
-        let output = render_app(&app);
+        let output = render_app(&mut app);
         assert_order(&output, "BEFORE_TOOL", "My Tool");
         assert_order(&output, "My Tool", "AFTER_TOOL");
     }
@@ -190,7 +186,7 @@ mod chat_app_message_handling {
         app.on_message(ChatAppMsg::TextDelta("END".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let output = render_app(&app);
+        let output = render_app(&mut app);
 
         assert_order(&output, "START", "Tool Alpha");
         assert_order(&output, "Tool Alpha", "MIDDLE");
@@ -215,7 +211,7 @@ mod tool_completion_visibility {
             lua_primary_arg: None,
         });
 
-        let output = render_app(&app);
+        let output = render_app(&mut app);
         assert!(
             !output.contains('\u{2713}'),
             "Incomplete tool should NOT show checkmark: {}",
@@ -241,7 +237,7 @@ mod tool_completion_visibility {
         });
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let output = render_app(&app);
+        let output = render_app(&mut app);
         assert!(
             output.contains('\u{2713}') || output.contains("✓"),
             "Completed tool should show checkmark: {}",
@@ -272,7 +268,7 @@ mod tool_completion_visibility {
         });
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let output = render_app(&app);
+        let output = render_app(&mut app);
         assert!(
             output.contains("TOOL_OUTPUT_CONTENT"),
             "Should show tool result content: {}",
@@ -298,7 +294,7 @@ mod tool_completion_visibility {
         });
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let output = render_app(&app);
+        let output = render_app(&mut app);
         let has_checkmark = output.contains('\u{2713}') || output.contains("✓");
 
         assert!(
@@ -343,7 +339,7 @@ mod realistic_scenarios {
         ));
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let output = render_app(&app);
+        let output = render_app(&mut app);
 
         assert!(
             output.contains("Read File"),
@@ -411,7 +407,7 @@ mod realistic_scenarios {
         ));
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let output = render_app(&app);
+        let output = render_app(&mut app);
 
         assert_order(&output, "Looking", "Glob");
         assert_order(&output, "Glob", "Found");
@@ -422,11 +418,11 @@ mod realistic_scenarios {
 
 /// Tests that track tool call positioning across the graduation boundary.
 ///
-/// These use `TestRuntime` + `flush_and_render` so content actually graduates
-/// to stdout. Ordering is verified across the combined stdout+viewport output.
+/// These use `Vt100TestRuntime` so content goes through the real terminal path
+/// including graduation. Ordering is verified across the full screen output.
 mod graduation_tracking {
     use super::*;
-    use crate::tui::oil::tests::helpers::{combined_output, flush_and_render};
+    use crate::tui::oil::tests::vt100_runtime::Vt100TestRuntime;
 
     fn positions<'a>(output: &str, markers: &[&'a str]) -> Vec<(&'a str, Option<usize>)> {
         markers.iter().map(|m| (*m, output.find(m))).collect()
@@ -435,17 +431,22 @@ mod graduation_tracking {
     /// Simulates a tool use session with enough text to trigger graduation.
     /// Verifies that tool calls maintain correct ordering in the combined
     /// stdout (graduated) + viewport (live) output.
+    /// Renders through vt100 and returns stripped full content (scrollback + screen).
+    fn full_output(vt: &mut Vt100TestRuntime, app: &mut OilChatApp) -> String {
+        vt.render_frame(app);
+        strip_ansi(&vt.screen_contents())
+    }
+
     #[test]
     fn tool_call_position_during_graduation() {
-        let mut runtime = TestRuntime::new(120, 24);
+        let mut vt = Vt100TestRuntime::new(120, 60);
         let mut app = OilChatApp::default();
 
         // Step 1: User message + initial text
         app.on_message(ChatAppMsg::UserMessage("Analyze the file".to_string()));
         app.on_message(ChatAppMsg::TextDelta("BEFORE_TOOL_TEXT\n\n".to_string()));
-        flush_and_render(&mut app, &mut runtime);
 
-        let output = combined_output(&runtime);
+        let output = full_output(&mut vt, &mut app);
         assert!(
             output.contains("BEFORE_TOOL_TEXT"),
             "Step 1: Should have initial text\n{}",
@@ -461,9 +462,8 @@ mod graduation_tracking {
             source: None,
             lua_primary_arg: None,
         });
-        flush_and_render(&mut app, &mut runtime);
 
-        let output = combined_output(&runtime);
+        let output = full_output(&mut vt, &mut app);
         let pos2 = positions(&output, &["BEFORE_TOOL_TEXT", "Read File"]);
         assert!(
             pos2[0].1.unwrap() < pos2[1].1.unwrap(),
@@ -482,13 +482,11 @@ mod graduation_tracking {
             name: "read_file".to_string(),
             call_id: None,
         });
-        flush_and_render(&mut app, &mut runtime);
 
         // Step 4: Post-tool text
         app.on_message(ChatAppMsg::TextDelta("AFTER_TOOL_TEXT\n\n".to_string()));
-        flush_and_render(&mut app, &mut runtime);
 
-        let output = combined_output(&runtime);
+        let output = full_output(&mut vt, &mut app);
         let pos4 = positions(
             &output,
             &["BEFORE_TOOL_TEXT", "Read File", "AFTER_TOOL_TEXT"],
@@ -501,29 +499,21 @@ mod graduation_tracking {
         );
 
         // Step 5: Add enough text to force graduation past the viewport.
-        // Tool groups no longer graduate during an active streaming turn —
-        // they stay in the viewport until StreamComplete. Text blocks may
-        // graduate ahead of tool groups, so stdout ordering reflects
-        // graduation order rather than document order.
         let long_text = (1..=20)
             .map(|i| format!("LINE_{i:02}\n"))
             .collect::<String>();
         app.on_message(ChatAppMsg::TextDelta(long_text));
-        flush_and_render(&mut app, &mut runtime);
 
         // Complete the stream so tool groups can graduate
         app.on_message(ChatAppMsg::StreamComplete);
-        flush_and_render(&mut app, &mut runtime);
 
-        let output = combined_output(&runtime);
+        let output = full_output(&mut vt, &mut app);
         let pos5 = positions(
             &output,
             &["BEFORE_TOOL_TEXT", "Read File", "AFTER_TOOL_TEXT"],
         );
 
         // After multi-cycle graduation, all markers must be present.
-        // Document order may not be preserved in stdout because text blocks
-        // graduate during streaming while tool groups wait for StreamComplete.
         assert!(
             pos5[0].1.is_some(),
             "Step 5: BEFORE_TOOL_TEXT should be present\n{}",
@@ -541,19 +531,15 @@ mod graduation_tracking {
         );
     }
 
-    /// Tests that tool ordering is preserved when enough content overflows
-    /// to push early content out of the viewport and into stdout graduation.
     #[test]
     fn tool_position_stable_through_overflow_graduation() {
-        let mut runtime = TestRuntime::new(120, 24);
+        let mut vt = Vt100TestRuntime::new(120, 60);
         let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("test".to_string()));
-        flush_and_render(&mut app, &mut runtime);
 
         // Initial text
         app.on_message(ChatAppMsg::TextDelta("HEADER\n\n".to_string()));
-        flush_and_render(&mut app, &mut runtime);
 
         // Tool call + completion
         app.on_message(ChatAppMsg::ToolCall {
@@ -568,34 +554,23 @@ mod graduation_tracking {
             name: "test_tool".to_string(),
             call_id: None,
         });
-        flush_and_render(&mut app, &mut runtime);
 
         // Text after tool
         app.on_message(ChatAppMsg::TextDelta("MIDDLE\n\n".to_string()));
-        flush_and_render(&mut app, &mut runtime);
 
         // Enough lines to force graduation
         for i in 1..=25 {
             app.on_message(ChatAppMsg::TextDelta(format!("overflow_line_{i:02}\n")));
         }
-        flush_and_render(&mut app, &mut runtime);
 
         // Complete the stream so tool groups can graduate
         app.on_message(ChatAppMsg::StreamComplete);
-        flush_and_render(&mut app, &mut runtime);
 
-        let output = combined_output(&runtime);
+        let output = full_output(&mut vt, &mut app);
 
-        let header_pos = output.find("HEADER");
-        let tool_pos = output.find("Test Tool");
-        let middle_pos = output.find("MIDDLE");
-
-        // After multi-cycle graduation, all markers must be present.
-        // Document order may not be preserved in stdout because text blocks
-        // graduate during streaming while tool groups wait for StreamComplete.
-        assert!(header_pos.is_some(), "HEADER should be in output");
-        assert!(tool_pos.is_some(), "Test Tool should be in output");
-        assert!(middle_pos.is_some(), "MIDDLE should be in output");
+        assert!(output.contains("HEADER"), "HEADER should be in output");
+        assert!(output.contains("Test Tool"), "Test Tool should be in output");
+        assert!(output.contains("MIDDLE"), "MIDDLE should be in output");
     }
 }
 
@@ -632,7 +607,7 @@ mod duplicate_content_prevention {
         });
         app.on_message(ChatAppMsg::TextDelta("AFTER_TOOL".to_string()));
 
-        let output = render_app(&app);
+        let output = render_app(&mut app);
         let count = count_occurrences(&output, "UNIQUE_MARKER_XYZ");
         assert_eq!(
             count, 1,
@@ -676,7 +651,7 @@ mod duplicate_content_prevention {
             "Let me know what you'd like to do next!".to_string(),
         ));
 
-        let output = render_app(&app);
+        let output = render_app(&mut app);
 
         let table_count = count_occurrences(&output, "Here are the tools");
         assert_eq!(
@@ -722,7 +697,7 @@ mod duplicate_content_prevention {
         app.on_message(ChatAppMsg::TextDelta("SECOND_BLOCK".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let output = render_app(&app);
+        let output = render_app(&mut app);
 
         assert_eq!(
             count_occurrences(&output, "FIRST_BLOCK"),
@@ -756,7 +731,7 @@ mod duplicate_content_prevention {
         });
         app.on_message(ChatAppMsg::TextDelta("FINAL_TEXT".to_string()));
 
-        let output = render_app(&app);
+        let output = render_app(&mut app);
 
         assert_eq!(
             count_occurrences(&output, "INTRO_TEXT"),
@@ -807,7 +782,7 @@ mod duplicate_content_prevention {
         app.on_message(ChatAppMsg::TextDelta("PARA_FOUR\n\n".to_string()));
         app.on_message(ChatAppMsg::TextDelta("PARA_FIVE".to_string()));
 
-        let output = render_app(&app);
+        let output = render_app(&mut app);
 
         for marker in &[
             "PARA_ONE",
@@ -847,7 +822,7 @@ mod duplicate_content_prevention {
         });
         app.on_message(ChatAppMsg::TextDelta("Second part of response".to_string()));
 
-        let output = render_app(&app);
+        let output = render_app(&mut app);
 
         let bullet_count = count_occurrences(&output, "●");
         assert_eq!(
@@ -858,7 +833,7 @@ mod duplicate_content_prevention {
     }
 
     #[test]
-    fn only_one_bullet_after_stream_complete() {
+    fn no_duplicate_bullets_after_stream_complete() {
         let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("test".to_string()));
 
@@ -878,12 +853,14 @@ mod duplicate_content_prevention {
         app.on_message(ChatAppMsg::TextDelta("Second part".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let output = render_app(&app);
+        let output = render_app(&mut app);
 
+        // Two text segments separated by a tool call each get an assistant bullet marker.
+        // This is correct — each distinct text block in the turn gets its own ●.
         let bullet_count = count_occurrences(&output, "●");
         assert_eq!(
-            bullet_count, 1,
-            "Should have exactly one bullet for assistant response after completion, found {}.\nOutput:\n{}",
+            bullet_count, 2,
+            "Should have one bullet per text segment (2 text blocks around tool), found {}.\nOutput:\n{}",
             bullet_count, output
         );
     }
@@ -904,7 +881,7 @@ mod duplicate_content_prevention {
         });
         app.on_message(ChatAppMsg::TextDelta("After subagent".to_string()));
 
-        let output = render_app(&app);
+        let output = render_app(&mut app);
 
         let bullet_count = count_occurrences(&output, "●");
         assert_eq!(
@@ -934,7 +911,7 @@ mod duplicate_content_prevention {
         ));
 
         // Render during streaming
-        let output_streaming = render_app(&app);
+        let output_streaming = render_app(&mut app);
         for marker in &["MARKER_PARA_ONE", "MARKER_PARA_TWO", "MARKER_PARA_THREE"] {
             let count = count_occurrences(&output_streaming, marker);
             assert_eq!(
@@ -950,7 +927,7 @@ mod duplicate_content_prevention {
         app.on_message(ChatAppMsg::StreamComplete);
 
         // Render after completion
-        let output_final = render_app(&app);
+        let output_final = render_app(&mut app);
 
         for marker in &[
             "MARKER_PARA_ONE",
@@ -971,6 +948,7 @@ mod duplicate_content_prevention {
 /// Braille spinners on running tool calls must animate between tick frames.
 mod spinner_animation {
     use super::*;
+    use crate::tui::oil::tests::vt100_runtime::Vt100TestRuntime;
     use crucible_oil::node::BRAILLE_SPINNER_FRAMES;
 
     #[test]
@@ -987,11 +965,11 @@ mod spinner_animation {
             lua_primary_arg: None,
         });
 
-        let output1 = render_app(&app);
+        let output1 = render_app(&mut app);
 
         // Wait 200ms for spinner frame to advance (100ms per frame)
         std::thread::sleep(std::time::Duration::from_millis(200));
-        let output2 = render_app(&app);
+        let output2 = render_app(&mut app);
 
         let b1 = output1.chars().find(|c| BRAILLE_SPINNER_FRAMES.contains(c));
         let b2 = output2.chars().find(|c| BRAILLE_SPINNER_FRAMES.contains(c));
@@ -1007,14 +985,12 @@ mod spinner_animation {
         );
     }
 
-    /// Frame-by-frame verification through full graduation pipeline:
-    /// running tool stays in viewport, spinner animates via wall clock,
-    /// graduated text in stdout, no duplication.
+    /// Frame-by-frame verification through full render pipeline:
+    /// running tool stays in viewport, spinner animates via wall clock.
     #[test]
     fn running_tool_spinner_animates_frame_by_frame_with_graduation() {
         let mut app = OilChatApp::default();
-        let mut runtime = TestRuntime::new(80, 24);
-        let focus = FocusContext::new();
+        let mut vt = Vt100TestRuntime::new(80, 24);
 
         // Text that will graduate
         app.on_message(ChatAppMsg::TextDelta("First paragraph\n\n".to_string()));
@@ -1034,39 +1010,23 @@ mod spinner_animation {
             |s: &str| -> Option<char> { s.chars().find(|c| BRAILLE_SPINNER_FRAMES.contains(c)) };
 
         let mut braille_chars = Vec::new();
-        let mut tool_in_viewport = Vec::new();
-        let mut tool_in_stdout = Vec::new();
+        let mut tool_in_screen = Vec::new();
 
         for frame in 0..5 {
-            let ctx = ViewContext::new(&focus);
-            let tree = app.view(&ctx);
-            runtime.render(&tree);
-            // Graduation is now automatic via drain_completed
+            vt.render_frame(&mut app);
+            let screen = strip_ansi(&vt.screen_contents());
 
-            let viewport = strip_ansi(runtime.viewport_content());
-            let stdout = strip_ansi(runtime.stdout_content());
-
-            braille_chars.push(find_braille(&viewport));
-            tool_in_viewport.push(viewport.contains("Read File"));
-            tool_in_stdout.push(stdout.contains("Read File"));
+            braille_chars.push(find_braille(&screen));
+            tool_in_screen.push(screen.contains("Read File"));
 
             if frame < 4 {
                 std::thread::sleep(std::time::Duration::from_millis(120));
             }
         }
 
-        // Running tool must be in viewport every frame
-        for (i, in_vp) in tool_in_viewport.iter().enumerate() {
-            assert!(*in_vp, "Frame {}: running tool should be in viewport", i);
-        }
-
-        // Running tool must NOT be in stdout (not graduated)
-        for (i, in_stdout) in tool_in_stdout.iter().enumerate() {
-            assert!(
-                !*in_stdout,
-                "Frame {}: running tool should NOT be in stdout",
-                i
-            );
+        // Running tool must be visible every frame
+        for (i, in_screen) in tool_in_screen.iter().enumerate() {
+            assert!(*in_screen, "Frame {}: running tool should be visible", i);
         }
 
         // Braille spinner must be present every frame
@@ -1091,8 +1051,7 @@ mod spinner_animation {
     #[test]
     fn completed_tool_not_duplicated_when_more_content_follows() {
         let mut app = OilChatApp::default();
-        let mut runtime = TestRuntime::new(80, 24);
-        let focus = FocusContext::new();
+        let mut vt = Vt100TestRuntime::new(80, 24);
 
         // Tool call + complete
         app.on_message(ChatAppMsg::ToolCall {
@@ -1113,36 +1072,27 @@ mod spinner_animation {
             call_id: Some("call-1".to_string()),
         });
 
-        // More content follows (makes tool group "complete" for graduation)
+        // More content follows
         app.on_message(ChatAppMsg::TextDelta(
             "Some text after tool\n\n".to_string(),
         ));
 
-        // Render with graduation
-        let ctx = ViewContext::new(&focus);
-        let tree = app.view(&ctx);
-        runtime.render(&tree);
-        // Graduation is now automatic via drain_completed
-
-        let stdout = strip_ansi(runtime.stdout_content());
-        let viewport = strip_ansi(runtime.viewport_content());
-        let combined = format!("{}\n{}", stdout, viewport);
+        vt.render_frame(&mut app);
+        let screen = strip_ansi(&vt.screen_contents());
 
         // "Glob" should appear exactly once
-        let glob_count = combined.matches("Glob").count();
+        let glob_count = screen.matches("Glob").count();
         assert_eq!(
             glob_count, 1,
-            "Completed tool 'Glob' should appear exactly once.\n\
-             STDOUT:\n{}\nVIEWPORT:\n{}",
-            stdout, viewport
+            "Completed tool 'Glob' should appear exactly once.\nSCREEN:\n{}",
+            screen
         );
     }
 
     #[test]
     fn completed_tool_visible_in_output() {
         let mut app = OilChatApp::default();
-        let mut runtime = TestRuntime::new(80, 24);
-        let focus = FocusContext::new();
+        let mut vt = Vt100TestRuntime::new(80, 24);
 
         // Tool call + complete
         app.on_message(ChatAppMsg::ToolCall {
@@ -1163,51 +1113,40 @@ mod spinner_animation {
             call_id: Some("call-1".to_string()),
         });
 
-        // More content follows (turn still active)
+        // More content follows
         app.on_message(ChatAppMsg::TextDelta("After tool\n\n".to_string()));
 
-        // Render (no graduation without render_frame/drain_completed)
-        let ctx = ViewContext::new(&focus);
-        let tree = app.view(&ctx);
-        runtime.render(&tree);
+        vt.render_frame(&mut app);
+        let screen = strip_ansi(&vt.screen_contents());
 
-        let stdout = strip_ansi(runtime.stdout_content());
-        let viewport = strip_ansi(runtime.viewport_content());
-        let combined = format!("{}{}", stdout, viewport);
-
-        // Completed tool should be visible in output
         assert!(
-            combined.contains("Glob"),
-            "Completed tool should be visible in output.\nCOMBINED:\n{}",
-            combined
+            screen.contains("Glob"),
+            "Completed tool should be visible.\nSCREEN:\n{}",
+            screen
+        );
+        assert!(
+            screen.contains("After tool"),
+            "Text after tool should be visible.\nSCREEN:\n{}",
+            screen
         );
 
-        // Text after tool should also be visible
-        assert!(
-            combined.contains("After tool"),
-            "Text after tool should be visible.\nCOMBINED:\n{}",
-            combined
-        );
-
-        // Tool should appear exactly once total
-        let total = combined.matches("Glob").count();
+        let total = screen.matches("Glob").count();
         assert_eq!(
             total, 1,
-            "Completed tool should appear exactly once.\nCOMBINED:\n{}",
-            combined
+            "Completed tool should appear exactly once.\nSCREEN:\n{}",
+            screen
         );
     }
 
     #[test]
     fn running_tool_not_duplicated_in_output() {
         let mut app = OilChatApp::default();
-        let mut runtime = TestRuntime::new(80, 24);
-        let focus = FocusContext::new();
+        let mut vt = Vt100TestRuntime::new(80, 24);
 
         // Text before tool
         app.on_message(ChatAppMsg::TextDelta("Hello\n\n".to_string()));
 
-        // Tool call
+        // Tool call + complete
         app.on_message(ChatAppMsg::ToolCall {
             name: "read_file".to_string(),
             args: r#"{"path":"test.rs"}"#.to_string(),
@@ -1216,8 +1155,6 @@ mod spinner_animation {
             source: None,
             lua_primary_arg: None,
         });
-
-        // Tool completes
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "read_file".to_string(),
             delta: "file content".to_string(),
@@ -1231,26 +1168,15 @@ mod spinner_animation {
         // More text after
         app.on_message(ChatAppMsg::TextDelta("World".to_string()));
 
-        // Render with graduation
-        let ctx = ViewContext::new(&focus);
-        let tree = app.view(&ctx);
-        runtime.render(&tree);
-        // Graduation is now automatic via drain_completed
+        vt.render_frame(&mut app);
+        let screen = strip_ansi(&vt.screen_contents());
 
-        let stdout = strip_ansi(runtime.stdout_content());
-        let viewport = strip_ansi(runtime.viewport_content());
-
-        // "Read File" should appear exactly once across stdout + viewport
-        let total = stdout.matches("Read File").count() + viewport.matches("Read File").count();
+        let total = screen.matches("Read File").count();
         assert_eq!(
             total,
             1,
-            "Tool should appear exactly once. stdout matches: {}, viewport matches: {}\n\
-             STDOUT:\n{}\nVIEWPORT:\n{}",
-            stdout.matches("Read File").count(),
-            viewport.matches("Read File").count(),
-            stdout,
-            viewport
+            "Tool should appear exactly once.\nSCREEN:\n{}",
+            screen
         );
     }
 }

@@ -20,7 +20,7 @@ fn snapshot_messages_drawer_with_history() {
     let mut settings = insta::Settings::clone_current();
     settings.add_filter(r"\d{2}:\d{2}:\d{2}", "[TIME]");
     settings.bind(|| {
-        assert_snapshot!(render_app(&app));
+        assert_snapshot!(render_app(&mut app));
     });
 }
 
@@ -38,7 +38,7 @@ fn snapshot_messages_drawer_during_streaming() {
     let mut settings = insta::Settings::clone_current();
     settings.add_filter(r"\d{2}:\d{2}:\d{2}", "[TIME]");
     settings.bind(|| {
-        assert_snapshot!(render_app(&app));
+        assert_snapshot!(render_app(&mut app));
     });
 }
 
@@ -66,7 +66,7 @@ fn snapshot_statusline_info_toast() {
     let mut app = OilChatApp::default();
     app.add_notification(Notification::toast("Session saved"));
     app.hide_messages();
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Scenario 3: Warning toast on statusline (drawer closed)
@@ -75,7 +75,7 @@ fn snapshot_statusline_warning_toast() {
     let mut app = OilChatApp::default();
     app.add_notification(Notification::warning("Context at 85%"));
     app.hide_messages();
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Drawer with conversation content above
@@ -93,7 +93,7 @@ fn snapshot_messages_drawer_with_conversation() {
     let mut settings = insta::Settings::clone_current();
     settings.add_filter(r"\d{2}:\d{2}:\d{2}", "[TIME]");
     settings.bind(|| {
-        assert_snapshot!(render_app(&app));
+        assert_snapshot!(render_app(&mut app));
     });
 }
 
@@ -105,7 +105,7 @@ fn snapshot_messages_drawer_empty() {
     let mut settings = insta::Settings::clone_current();
     settings.add_filter(r"\d{2}:\d{2}:\d{2}", "[TIME]");
     settings.bind(|| {
-        assert_snapshot!(render_app(&app));
+        assert_snapshot!(render_app(&mut app));
     });
 }
 
@@ -120,7 +120,7 @@ fn snapshot_raw_drawer_with_history() {
     let mut settings = insta::Settings::clone_current();
     settings.add_filter(r"\d{2}:\d{2}:\d{2}", "[TIME]");
     settings.bind(|| {
-        assert_snapshot!(render_app_raw(&app));
+        assert_snapshot!(render_app_raw(&mut app));
     });
 }
 
@@ -129,7 +129,7 @@ fn snapshot_raw_statusline_info_toast() {
     let mut app = OilChatApp::default();
     app.add_notification(Notification::toast("Session saved"));
     app.hide_messages();
-    assert_snapshot!(render_app_raw(&app));
+    assert_snapshot!(render_app_raw(&mut app));
 }
 
 #[test]
@@ -137,7 +137,7 @@ fn snapshot_raw_statusline_warning_toast() {
     let mut app = OilChatApp::default();
     app.add_notification(Notification::warning("Context at 85%"));
     app.hide_messages();
-    assert_snapshot!(render_app_raw(&app));
+    assert_snapshot!(render_app_raw(&mut app));
 }
 
 #[test]
@@ -164,7 +164,7 @@ fn snapshot_raw_perm_bash() {
         crucible_core::interaction::PermRequest::bash(["npm", "install", "lodash"]),
     );
     app.open_interaction("perm-bash".to_string(), request);
-    assert_snapshot!(render_app_raw(&app));
+    assert_snapshot!(render_app_raw(&mut app));
 }
 
 #[test]
@@ -188,7 +188,7 @@ fn snapshot_tool_call_visible_under_permission_prompt() {
     );
     app.open_interaction("perm-build".to_string(), request);
 
-    let output = render_app(&app);
+    let output = render_app(&mut app);
     assert!(
         output.contains("cargo build"),
         "Tool call should be visible under permission prompt"

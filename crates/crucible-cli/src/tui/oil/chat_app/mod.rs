@@ -11,7 +11,7 @@ use crate::tui::oil::config::RuntimeConfig;
 use crate::tui::oil::event::InputAction;
 use crate::tui::oil::event::{Event, InputBuffer};
 use crate::tui::oil::node::*;
-use crate::tui::oil::style::Gap;
+use crate::tui::oil::style::{Gap, Padding};
 #[allow(unused_imports)] // WIP: KeyCode not yet used
 use crossterm::event::KeyCode;
 #[allow(unused_imports)] // WIP: AskRequest, AskResponse, PermAction, PermRequest not yet used
@@ -172,9 +172,9 @@ impl App for OilChatApp {
 
         col([
             self.render_containers(),
+            self.render_turn_spinner(),
             spacer(),
-            text(" "),
-            bottom,
+            bottom.with_margin(Padding { top: 1, ..Padding::all(0) }),
             self.render_popup_overlay(ctx),
         ])
         .gap(Gap::row(0))

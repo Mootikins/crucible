@@ -1,22 +1,22 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
-expression: render_app(&app)
+expression: render_app(&mut app)
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  > Analyze the project                                                          
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-                                                                                
- ● Let me check the project structure.                                          
-                                                                                
- ✓ Bash ls src/                                                                 
+
+ ● Let me check the project structure.
+
+ ✓ Bash ls src/
    │ main.rs                                                                    
    │ lib.rs                                                                     
-                                                                                
-   Found two source files. Let me read the main one.                            
-                                                                                
- ✓ Read File src/main.rs → 3 lines                                              
-                                                                                
-   The project has a simple main function that prints hello.                    
+
+ ● Found two source files. Let me read the main one.
+
+ ✓ Read File src/main.rs → 3 lines
+
+ ● The project has a simple main function that prints hello.
                                                                                 
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  >                                                                              

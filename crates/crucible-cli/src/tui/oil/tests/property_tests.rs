@@ -399,16 +399,13 @@ mod chat_mode_properties {
 }
 
 mod composer_stability_properties {
-    use crate::tui::oil::app::App;
     use crate::tui::oil::chat_app::{OilChatApp, INPUT_MAX_CONTENT_LINES};
     use crate::tui::oil::event::InputAction;
-    use crate::tui::oil::focus::FocusContext;
-    use crate::tui::oil::render::render_to_string;
-    use crate::tui::ViewContext;
+    use crate::tui::oil::tests::helpers::vt_render;
     use proptest::prelude::*;
 
     fn extract_input_region(output: &str) -> Vec<&str> {
-        let lines: Vec<&str> = output.split("\r\n").collect();
+        let lines: Vec<&str> = output.lines().collect();
         let mut in_input = false;
         let mut input_lines = Vec::new();
 
@@ -426,22 +423,19 @@ mod composer_stability_properties {
         input_lines
     }
 
-    fn render_app(app: &OilChatApp) -> String {
-        let focus = FocusContext::new();
-        let ctx = ViewContext::new(&focus);
-        let node = app.view(&ctx);
-        render_to_string(&node, 80)
+    fn render_app(app: &mut OilChatApp) -> String {
+        vt_render(app)
     }
 
-    fn measure_input_height(app: &OilChatApp) -> usize {
+    fn measure_input_height(app: &mut OilChatApp) -> usize {
         let output = render_app(app);
         extract_input_region(&output).len()
     }
 
     #[test]
     fn input_region_has_expected_height_when_empty() {
-        let app = OilChatApp::default();
-        let height = measure_input_height(&app);
+        let mut app = OilChatApp::default();
+        let height = measure_input_height(&mut app);
         assert_eq!(
             height, 3,
             "Empty input should have 3 lines (top_edge + 1 content + bottom_edge), got {}",
@@ -457,7 +451,7 @@ mod composer_stability_properties {
             let mut app = OilChatApp::default();
             app.set_input_content(&text);
 
-            let height = measure_input_height(&app);
+            let height = measure_input_height(&mut app);
             let max_height = INPUT_MAX_CONTENT_LINES + 2;
 
             prop_assert!(
@@ -482,7 +476,7 @@ mod composer_stability_properties {
                 app.handle_input_action(InputAction::Insert(c));
             }
 
-            let height = measure_input_height(&app);
+            let height = measure_input_height(&mut app);
             let max_height = INPUT_MAX_CONTENT_LINES + 2;
             prop_assert!(
                 height >= 3 && height <= max_height,
@@ -513,7 +507,7 @@ mod composer_stability_properties {
 
             for action in actions {
                 app.handle_input_action(action);
-                let height = measure_input_height(&app);
+                let height = measure_input_height(&mut app);
                 prop_assert!(
                     height >= 3 && height <= max_height,
                     "Input height {} should be between 3 and {}",
@@ -535,7 +529,7 @@ mod composer_stability_properties {
 
             app.set_input_content(&text);
 
-            let height = measure_input_height(&app);
+            let height = measure_input_height(&mut app);
             let max_height = INPUT_MAX_CONTENT_LINES + 2;
 
             prop_assert!(
@@ -564,7 +558,7 @@ mod composer_stability_properties {
 
             for action in nav_actions {
                 app.handle_input_action(action);
-                let height = measure_input_height(&app);
+                let height = measure_input_height(&mut app);
                 prop_assert!(
                     height >= 3 && height <= max_height,
                     "Height {} out of bounds [3, {}] during navigation",
@@ -873,11 +867,8 @@ mod ordered_list_rendering_properties {
 
 mod cli_invariants {
     use super::super::generators::arb_short_text;
-    use crate::tui::oil::app::App;
     use crate::tui::oil::chat_app::{ChatMode, OilChatApp};
-    use crate::tui::oil::focus::FocusContext;
-    use crate::tui::oil::render::render_to_string;
-    use crate::tui::ViewContext;
+    use crate::tui::oil::tests::helpers::vt_render;
     use proptest::prelude::*;
 
     fn arb_chat_mode() -> impl Strategy<Value = ChatMode> {
@@ -888,11 +879,8 @@ mod cli_invariants {
         ]
     }
 
-    fn render_app(app: &OilChatApp) -> String {
-        let focus = FocusContext::new();
-        let ctx = ViewContext::new(&focus);
-        let node = app.view(&ctx);
-        render_to_string(&node, 80)
+    fn render_app(app: &mut OilChatApp) -> String {
+        vt_render(app)
     }
 
     proptest! {
@@ -909,11 +897,11 @@ mod cli_invariants {
 
             // Switch to mode M
             app.set_mode(mode);
-            let rendered_once = render_app(&app);
+            let rendered_once = render_app(&mut app);
 
             // Switch to mode M again
             app.set_mode(mode);
-            let rendered_twice = render_app(&app);
+            let rendered_twice = render_app(&mut app);
 
             prop_assert_eq!(
                 rendered_once, rendered_twice,

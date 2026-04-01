@@ -12,7 +12,7 @@ fn snapshot_popup_hidden_baseline() {
         "src/lib.rs".to_string(),
         "Cargo.toml".to_string(),
     ]);
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -26,13 +26,13 @@ fn snapshot_popup_visible_same_height() {
 
     app.update(crate::tui::oil::event::Event::Key(key(KeyCode::Char('@'))));
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
 fn snapshot_input_empty() {
-    let app = OilChatApp::default();
-    assert_snapshot!(render_app(&app));
+    let mut app = OilChatApp::default();
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -41,7 +41,7 @@ fn snapshot_input_short_text() {
     for c in "Hello".chars() {
         app.update(crate::tui::oil::event::Event::Key(key(KeyCode::Char(c))));
     }
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -51,22 +51,22 @@ fn snapshot_input_long_text_clamped() {
     for c in long_text.chars() {
         app.update(crate::tui::oil::event::Event::Key(key(KeyCode::Char(c))));
     }
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
 fn verify_input_height_grows_with_content() {
     use crate::tui::oil::chat_app::INPUT_MAX_CONTENT_LINES;
 
-    let app_empty = OilChatApp::default();
+    let mut app_empty = OilChatApp::default();
 
     let mut app_long = OilChatApp::default();
     for c in "x".repeat(300).chars() {
         app_long.update(crate::tui::oil::event::Event::Key(key(KeyCode::Char(c))));
     }
 
-    let empty_output = render_app(&app_empty);
-    let long_output = render_app(&app_long);
+    let empty_output = render_app(&mut app_empty);
+    let long_output = render_app(&mut app_long);
 
     let empty_lines = empty_output.lines().count();
     let long_lines = long_output.lines().count();

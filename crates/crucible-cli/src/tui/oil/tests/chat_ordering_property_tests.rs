@@ -1,13 +1,12 @@
 use crate::tui::oil::ansi::strip_ansi;
 use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
-use crate::tui::oil::TestRuntime;
 use proptest::prelude::*;
 
 use super::generators::{
     arb_text_content, arb_valid_stream_sequence, StreamEvent, TextStreamEvent,
 };
-use super::helpers::view_with_default_ctx;
+use super::vt100_runtime::Vt100TestRuntime;
 
 fn arb_text_stream_event() -> impl Strategy<Value = TextStreamEvent> {
     prop_oneof![
@@ -31,27 +30,24 @@ proptest! {
             app.on_message(ChatAppMsg::StreamComplete);
         }
 
-        let mut runtime = TestRuntime::new(80, 24);
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
-        let stdout = strip_ansi(runtime.stdout_content());
-        let viewport = strip_ansi(runtime.viewport_content());
-        let combined = format!("{}{}", stdout, viewport);
+        let mut vt = Vt100TestRuntime::new(80, 60);
+        vt.render_frame(&mut app);
+        let screen = strip_ansi(&vt.full_history());
 
         for i in 0..(messages.len() - 1) {
-            let pos_i = combined.find(&format!("USER_{}", i));
-            let pos_next = combined.find(&format!("USER_{}", i + 1));
+            let pos_i = screen.find(&format!("USER_{}", i));
+            let pos_next = screen.find(&format!("USER_{}", i + 1));
 
             prop_assert!(
                 pos_i.is_some() && pos_next.is_some(),
                 "Both USER_{} and USER_{} should be in output:\n{}",
-                i, i + 1, combined
+                i, i + 1, screen
             );
 
             prop_assert!(
                 pos_i.unwrap() < pos_next.unwrap(),
                 "USER_{} (pos {}) should appear before USER_{} (pos {})\n{}",
-                i, pos_i.unwrap(), i + 1, pos_next.unwrap(), combined
+                i, pos_i.unwrap(), i + 1, pos_next.unwrap(), screen
             );
         }
     }
@@ -78,17 +74,13 @@ proptest! {
 
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let mut runtime = TestRuntime::new(80, 24);
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
-
-        let stdout = strip_ansi(runtime.stdout_content());
-        let viewport = strip_ansi(runtime.viewport_content());
-        let combined = format!("{}{}", stdout, viewport);
+        let mut vt = Vt100TestRuntime::new(80, 60);
+        vt.render_frame(&mut app);
+        let screen = strip_ansi(&vt.full_history());
         prop_assert!(
-            combined.contains("Question"),
+            screen.contains("Question"),
             "User message should be present: {}",
-            combined
+            screen
         );
     }
 
@@ -133,13 +125,9 @@ proptest! {
 
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let mut runtime = TestRuntime::new(80, 24);
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
-
-        let stdout = strip_ansi(runtime.stdout_content());
-        let viewport = strip_ansi(runtime.viewport_content());
-        let combined = format!("{}{}", stdout, viewport);
+        let mut vt = Vt100TestRuntime::new(80, 60);
+        vt.render_frame(&mut app);
+        let screen = strip_ansi(&vt.full_history());
 
         let tool_names: Vec<String> = sequence.iter().filter_map(|e| {
             if let StreamEvent::ToolCall { name, .. } = e {
@@ -153,9 +141,9 @@ proptest! {
 
         for name in &tool_names {
             prop_assert!(
-                combined.contains(name.as_str()),
+                screen.contains(name.as_str()),
                 "Tool '{}' should appear in output:\n{}",
-                name, combined
+                name, screen
             );
         }
     }
@@ -170,13 +158,9 @@ proptest! {
             app.on_message(ChatAppMsg::StreamComplete);
         }
 
-        let mut runtime = TestRuntime::new(80, 24);
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
-
-        let stdout = strip_ansi(runtime.stdout_content());
-        let viewport = strip_ansi(runtime.viewport_content());
-        let combined = format!("{}{}", stdout, viewport);
+        let mut vt = Vt100TestRuntime::new(80, 60);
+        vt.render_frame(&mut app);
+        let screen = strip_ansi(&vt.full_history());
 
         let mut last_response_pos = 0;
 
@@ -184,18 +168,18 @@ proptest! {
             let user_marker = format!("TURN_{}_USER", i);
             let response_marker = format!("TURN_{}_RESPONSE", i);
 
-            let user_pos = combined.find(&user_marker);
-            let response_pos = combined.find(&response_marker);
+            let user_pos = screen.find(&user_marker);
+            let response_pos = screen.find(&response_marker);
 
             prop_assert!(
                 user_pos.is_some(),
                 "Turn {} user message should be present:\n{}",
-                i, combined
+                i, screen
             );
             prop_assert!(
                 response_pos.is_some(),
                 "Turn {} response should be present:\n{}",
-                i, combined
+                i, screen
             );
 
             let user_pos = user_pos.unwrap();
@@ -239,13 +223,9 @@ proptest! {
 
         app.on_message(ChatAppMsg::StreamCancelled);
 
-        let mut runtime = TestRuntime::new(80, 24);
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
-
-        let stdout = strip_ansi(runtime.stdout_content());
-        let viewport = strip_ansi(runtime.viewport_content());
-        let combined = format!("{}{}", stdout, viewport);
+        let mut vt = Vt100TestRuntime::new(80, 60);
+        vt.render_frame(&mut app);
+        let screen = strip_ansi(&vt.full_history());
         let all_content: String = chunks.iter().take(cancel_at).cloned().collect();
         let first_word = all_content.split_whitespace().next();
         if let Some(word) = first_word {
@@ -254,9 +234,9 @@ proptest! {
             if word.len() >= 3 && word.chars().all(|c| c.is_alphabetic()) {
                 let prefix = &word[..3];
                 prop_assert!(
-                    combined.contains(prefix),
+                    screen.contains(prefix),
                     "Cancelled content should have prefix '{}' in output:\n{}",
-                    prefix, combined
+                    prefix, screen
                 );
             }
         }
@@ -269,7 +249,7 @@ proptest! {
 
     #[test]
     fn many_messages_render_stable(message_count in 10usize..50) {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 60);
         let mut app = OilChatApp::default();
 
         for i in 0..message_count {
@@ -277,15 +257,12 @@ proptest! {
             app.on_message(ChatAppMsg::TextDelta(format!("Response {}", i)));
             app.on_message(ChatAppMsg::StreamComplete);
 
-            let tree = view_with_default_ctx(&app);
-            runtime.render(&tree);
+            vt.render_frame(&mut app);
         }
 
-        let stdout = strip_ansi(runtime.stdout_content());
-        let viewport = strip_ansi(runtime.viewport_content());
-        let combined = format!("{}{}", stdout, viewport);
+        let screen = strip_ansi(&vt.full_history());
         prop_assert!(
-            !combined.is_empty(),
+            !screen.is_empty(),
             "Should have some output after {} messages",
             message_count
         );
@@ -298,7 +275,7 @@ mod segment_ordering_tests {
 
     #[test]
     fn alternating_content_types_render_in_order() {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 60);
         let mut app = OilChatApp::default();
         app.set_show_thinking(true);
 
@@ -309,17 +286,14 @@ mod segment_ordering_tests {
         app.on_message(ChatAppMsg::TextDelta("TEXT_MARKER_CONTENT".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        vt.render_frame(&mut app);
 
-        let stdout = strip_ansi(runtime.stdout_content());
-        let viewport = strip_ansi(runtime.viewport_content());
-        let combined = format!("{}{}", stdout, viewport);
+        let screen = strip_ansi(&vt.full_history());
 
         assert!(
-            combined.contains("TEXT_MARKER_CONTENT"),
+            screen.contains("TEXT_MARKER_CONTENT"),
             "Should show text content:\n{}",
-            combined
+            screen
         );
     }
 }

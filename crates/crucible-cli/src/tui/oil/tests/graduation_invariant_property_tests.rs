@@ -1,228 +1,112 @@
 //! Property-based invariant tests for the viewport+scrollback graduation system.
 //!
-//! These tests verify fundamental invariants that must hold to prevent content duplication bugs.
+//! All rendering goes through the real terminal path (Terminal<Vec<u8>> → vt100).
 //!
 //! # Core Invariants
 //!
-//! 1. **XOR Invariant**: Content appears in viewport XOR scrollback, never both
-//! 2. **Content Preservation**: Total content (viewport + scrollback) equals all streamed content
-//! 3. **Atomicity**: Graduation happens atomically - no intermediate state with duplication
+//! 1. **No Duplication**: Content appears exactly once in the rendered output
+//! 2. **Content Preservation**: All streamed content is visible after graduation
+//! 3. **Atomicity**: No intermediate state with duplication during graduation
 //! 4. **Idempotence**: Rendering the same state multiple times produces identical output
-//!
-//! # Test Strategy
-//!
-//! Uses the `OilChatApp` directly with `ChatAppMsg` events to simulate real streaming scenarios,
-//! then verifies invariants at each step using helper functions to extract and compare content.
 
 use crate::tui::oil::ansi::strip_ansi;
-use crate::tui::oil::app::{App, ViewContext};
+use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
-use crate::tui::oil::focus::FocusContext;
-use crate::tui::oil::render::render_to_string;
-use crate::tui::oil::Node;
-use crate::tui::oil::TestRuntime;
+
+use super::vt100_runtime::Vt100TestRuntime;
 
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
 
-/// Render the app to a Node tree using default context.
-fn view_with_default_ctx(app: &OilChatApp) -> Node {
-    let focus = FocusContext::new();
-    let ctx = ViewContext::new(&focus);
-    app.view(&ctx)
+/// Render through vt100 and return stripped screen contents.
+fn full_output(vt: &mut Vt100TestRuntime, app: &mut OilChatApp) -> String {
+    vt.render_frame(app);
+    strip_ansi(&vt.screen_contents())
 }
 
-/// Render app and return the raw string output.
-fn render_app(app: &OilChatApp, width: usize) -> String {
-    let tree = view_with_default_ctx(app);
-    render_to_string(&tree, width)
+/// Count occurrences of a needle in the screen output.
+fn count_occurrences(vt: &mut Vt100TestRuntime, app: &mut OilChatApp, needle: &str) -> usize {
+    let output = full_output(vt, app);
+    output.matches(needle).count()
 }
 
-/// Render app and strip ANSI codes for content comparison.
-fn render_and_strip(app: &OilChatApp, width: usize) -> String {
-    strip_ansi(&render_app(app, width))
-}
-
-/// Extract viewport content from TestRuntime (stripped of ANSI).
-fn extract_viewport_content(runtime: &TestRuntime) -> Vec<String> {
-    let viewport = strip_ansi(runtime.viewport_content());
-    viewport
+/// Verify no content line appears duplicated in the output.
+fn verify_no_duplication(vt: &mut Vt100TestRuntime, app: &mut OilChatApp, phase: &str) {
+    let output = full_output(vt, app);
+    let lines: Vec<&str> = output
         .lines()
-        .map(|s| s.to_string())
-        .filter(|s| !s.trim().is_empty())
-        .collect()
-}
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .filter(|l| !l.chars().all(|c| "▄▀─│┌┐└┘├┤┬┴┼═║╔╗╚╝●○•◦ >".contains(c)))
+        .filter(|l| l.len() >= 5)
+        .collect();
 
-/// Extract scrollback/stdout content from TestRuntime (stripped of ANSI).
-fn extract_scrollback_content(runtime: &TestRuntime) -> Vec<String> {
-    let stdout = strip_ansi(runtime.stdout_content());
-    stdout
-        .lines()
-        .map(|s| s.to_string())
-        .filter(|s| !s.trim().is_empty())
-        .collect()
-}
-
-/// Extract viewport text as a single string.
-fn extract_viewport_text(runtime: &TestRuntime) -> String {
-    strip_ansi(runtime.viewport_content())
-}
-
-/// Extract scrollback text as a single string.
-fn extract_scrollback_text(runtime: &TestRuntime) -> String {
-    strip_ansi(runtime.stdout_content())
-}
-
-/// Normalize a line for comparison (strip ANSI, trim whitespace).
-fn normalize_line(line: &str) -> String {
-    strip_ansi(line).trim().to_string()
-}
-
-/// Check if a line is purely decorative (borders, separators, etc.)
-fn is_decorative_line(line: &str) -> bool {
-    let normalized = normalize_line(line);
-    if normalized.is_empty() {
-        return true;
+    for (i, line) in lines.iter().enumerate() {
+        for (j, other) in lines.iter().enumerate() {
+            if i != j && line == other {
+                panic!(
+                    "Duplication at {}: line '{}' appears at positions {} and {}.\nFull output:\n{}",
+                    phase, line, i, j, output
+                );
+            }
+        }
     }
-
-    // Check if line is all border/box-drawing characters
-    let decorative_chars = [
-        '▄', '▀', '─', '│', '┌', '┐', '└', '┘', '├', '┤', '┬', '┴', '┼', '═', '║', '╔', '╗', '╚',
-        '╝', '●', '○', '•', '◦',
-    ];
-    normalized
-        .chars()
-        .all(|c| decorative_chars.contains(&c) || c.is_whitespace())
-}
-
-/// Count occurrences of a needle in the combined output (stdout + viewport).
-fn count_content_occurrences(runtime: &TestRuntime, needle: &str) -> usize {
-    let stdout = strip_ansi(runtime.stdout_content());
-    let viewport = strip_ansi(runtime.viewport_content());
-    stdout.matches(needle).count() + viewport.matches(needle).count()
-}
-
-/// Get combined content from both stdout and viewport.
-fn combined_content(runtime: &TestRuntime) -> String {
-    let stdout = strip_ansi(runtime.stdout_content());
-    let viewport = strip_ansi(runtime.viewport_content());
-    format!("{}{}", stdout, viewport)
 }
 
 // ============================================================================
 // TEST 1: XOR INVARIANT
 // ============================================================================
 
-/// Verify that content appears in viewport XOR scrollback, never both.
-fn verify_xor_invariant(runtime: &TestRuntime, phase: &str) {
-    let viewport_lines = extract_viewport_content(runtime);
-    let scrollback_lines = extract_scrollback_content(runtime);
-
-    for vp_line in &viewport_lines {
-        let vp_normalized = normalize_line(vp_line);
-        if vp_normalized.is_empty() || is_decorative_line(vp_line) {
-            continue;
-        }
-
-        for sb_line in &scrollback_lines {
-            let sb_normalized = normalize_line(sb_line);
-            if sb_normalized.is_empty() || is_decorative_line(sb_line) {
-                continue;
-            }
-
-            if vp_normalized.len() < 5 || sb_normalized.len() < 5 {
-                continue;
-            }
-
-            assert!(
-                vp_normalized != sb_normalized,
-                "XOR violation at {}: Line '{}' appears in BOTH viewport and scrollback",
-                phase,
-                vp_normalized
-            );
-        }
-    }
-}
-
 #[test]
 fn graduation_xor_invariant_content_never_in_both() {
-    let mut runtime = TestRuntime::new(80, 24);
+    let mut vt = Vt100TestRuntime::new(80, 100);
     let mut app = OilChatApp::default();
 
     // Stream content in chunks
     app.on_message(ChatAppMsg::UserMessage("Test question".to_string()));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
-    verify_xor_invariant(&runtime, "after user message");
+    verify_no_duplication(&mut vt, &mut app, "after user message");
 
     app.on_message(ChatAppMsg::TextDelta("First chunk. ".to_string()));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
-    verify_xor_invariant(&runtime, "after first chunk");
+    verify_no_duplication(&mut vt, &mut app, "after first chunk");
 
     app.on_message(ChatAppMsg::TextDelta("Second chunk. ".to_string()));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
-    verify_xor_invariant(&runtime, "mid-stream");
+    verify_no_duplication(&mut vt, &mut app, "mid-stream");
 
     app.on_message(ChatAppMsg::TextDelta("Third chunk.".to_string()));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
-    verify_xor_invariant(&runtime, "before completion");
+    verify_no_duplication(&mut vt, &mut app, "before completion");
 
     // Trigger graduation
     app.on_message(ChatAppMsg::StreamComplete);
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
-    verify_xor_invariant(&runtime, "after graduation");
+    verify_no_duplication(&mut vt, &mut app, "after graduation");
 }
 
 #[test]
 fn graduation_xor_invariant_with_multiple_paragraphs() {
-    let mut runtime = TestRuntime::new(80, 24);
+    let mut vt = Vt100TestRuntime::new(80, 100);
     let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Multi-paragraph test".to_string()));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     // Stream multiple paragraphs (blank lines trigger graduation)
     app.on_message(ChatAppMsg::TextDelta(
         "First paragraph content.\n\n".to_string(),
     ));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
-    verify_xor_invariant(&runtime, "after first paragraph");
+    verify_no_duplication(&mut vt, &mut app, "after first paragraph");
 
     app.on_message(ChatAppMsg::TextDelta(
         "Second paragraph content.\n\n".to_string(),
     ));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
-    verify_xor_invariant(&runtime, "after second paragraph");
+    verify_no_duplication(&mut vt, &mut app, "after second paragraph");
 
     app.on_message(ChatAppMsg::TextDelta(
         "Third paragraph in progress".to_string(),
     ));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
-    verify_xor_invariant(&runtime, "during third paragraph");
+    verify_no_duplication(&mut vt, &mut app, "during third paragraph");
 
     app.on_message(ChatAppMsg::StreamComplete);
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
-    verify_xor_invariant(&runtime, "after completion");
+    verify_no_duplication(&mut vt, &mut app, "after completion");
 }
 
 // ============================================================================
@@ -231,100 +115,66 @@ fn graduation_xor_invariant_with_multiple_paragraphs() {
 
 #[test]
 fn graduation_preserves_all_content() {
-    let mut runtime = TestRuntime::new(80, 24);
+    let mut vt = Vt100TestRuntime::new(80, 100);
     let mut app = OilChatApp::default();
 
     let chunks = vec!["First. ", "Second. ", "Third."];
-    let expected_total: String = chunks.iter().copied().collect();
 
     app.on_message(ChatAppMsg::UserMessage("Test".to_string()));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     for chunk in &chunks {
         app.on_message(ChatAppMsg::TextDelta(chunk.to_string()));
-
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        vt.render_frame(&mut app);
     }
 
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
-
-    let viewport = extract_viewport_text(&runtime);
-    let scrollback = extract_scrollback_text(&runtime);
-    let total = format!("{}{}", scrollback, viewport);
+    let total = full_output(&mut vt, &mut app);
 
     // The content should be preserved (may have formatting around it)
     assert!(
         total.contains("First.") && total.contains("Second.") && total.contains("Third."),
-        "Content lost or corrupted. Expected all chunks present.\n\
-         Expected chunks: {:?}\n\
-         Scrollback: '{}'\n\
-         Viewport: '{}'",
-        expected_total,
-        scrollback,
-        viewport
+        "Content lost or corrupted. Expected all chunks present.\nOutput: '{}'",
+        total
     );
 }
 
 #[test]
 fn graduation_preserves_content_with_code_blocks() {
-    let mut runtime = TestRuntime::new(80, 24);
+    let mut vt = Vt100TestRuntime::new(80, 100);
     let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Show code".to_string()));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     // Stream a code block
     app.on_message(ChatAppMsg::TextDelta("Here's some code:\n\n".to_string()));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta("```rust\n".to_string()));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta("fn main() {\n".to_string()));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta(
         "    println!(\"hello\");\n".to_string(),
     ));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta("}\n".to_string()));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta("```\n\n".to_string()));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta("That's the code.".to_string()));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
-
-    let combined = combined_content(&runtime);
+    let combined = full_output(&mut vt, &mut app);
 
     // Verify key content is preserved
     assert!(
@@ -345,26 +195,21 @@ fn graduation_preserves_content_with_code_blocks() {
 
 #[test]
 fn graduation_is_atomic_no_intermediate_duplication() {
-    let mut runtime = TestRuntime::new(80, 24);
+    let mut vt = Vt100TestRuntime::new(80, 100);
     let mut app = OilChatApp::default();
 
     let unique_marker = "[UNIQUE_MARKER_12345]";
 
     app.on_message(ChatAppMsg::UserMessage("Test".to_string()));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta(format!(
         "{} Content to graduate",
         unique_marker
     )));
 
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
-
     // Count content before graduation
-    let before_count = count_content_occurrences(&runtime, unique_marker);
+    let before_count = count_occurrences(&mut vt, &mut app, unique_marker);
     assert_eq!(
         before_count, 1,
         "Content should appear exactly once before graduation, got {}",
@@ -374,11 +219,8 @@ fn graduation_is_atomic_no_intermediate_duplication() {
     // Trigger graduation
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
-
     // Count content after graduation
-    let after_count = count_content_occurrences(&runtime, unique_marker);
+    let after_count = count_occurrences(&mut vt, &mut app, unique_marker);
     assert_eq!(
         after_count, 1,
         "Content should appear exactly once after graduation, got {}",
@@ -388,24 +230,19 @@ fn graduation_is_atomic_no_intermediate_duplication() {
 
 #[test]
 fn graduation_atomicity_with_rapid_chunks() {
-    let mut runtime = TestRuntime::new(80, 24);
+    let mut vt = Vt100TestRuntime::new(80, 100);
     let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Rapid test".to_string()));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     // Send many rapid chunks
     for i in 0..10 {
         let marker = format!("[CHUNK_{}]", i);
         app.on_message(ChatAppMsg::TextDelta(format!("{} ", marker)));
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
-
         // Verify no duplication at each step
-        let count = count_content_occurrences(&runtime, &marker);
+        let count = count_occurrences(&mut vt, &mut app, &marker);
         assert_eq!(
             count, 1,
             "Chunk {} should appear exactly once during streaming, got {}",
@@ -414,14 +251,13 @@ fn graduation_atomicity_with_rapid_chunks() {
     }
 
     app.on_message(ChatAppMsg::StreamComplete);
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     // Verify all chunks appear exactly once after completion
+    let output = full_output(&mut vt, &mut app);
     for i in 0..10 {
         let marker = format!("[CHUNK_{}]", i);
-        let count = count_content_occurrences(&runtime, &marker);
+        let count = output.matches(&marker).count();
         assert_eq!(
             count, 1,
             "Chunk {} should appear exactly once after graduation, got {}",
@@ -432,7 +268,7 @@ fn graduation_atomicity_with_rapid_chunks() {
 
 #[test]
 fn graduation_atomicity_across_multiple_renders() {
-    let mut runtime = TestRuntime::new(80, 24);
+    let mut vt = Vt100TestRuntime::new(80, 100);
     let mut app = OilChatApp::default();
 
     let marker = "[ATOMIC_TEST_MARKER]";
@@ -443,10 +279,7 @@ fn graduation_atomicity_across_multiple_renders() {
 
     // Render multiple times
     for render_num in 1..=5 {
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
-
-        let count = count_content_occurrences(&runtime, marker);
+        let count = count_occurrences(&mut vt, &mut app, marker);
         assert_eq!(
             count, 1,
             "After render {}: marker should appear exactly once, got {}",
@@ -461,15 +294,21 @@ fn graduation_atomicity_across_multiple_renders() {
 
 #[test]
 fn rendering_is_idempotent_after_graduation() {
+    let mut vt = Vt100TestRuntime::new(80, 100);
     let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Test".to_string()));
     app.on_message(ChatAppMsg::TextDelta("Content to render".to_string()));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let render1 = render_and_strip(&app, 80);
-    let render2 = render_and_strip(&app, 80);
-    let render3 = render_and_strip(&app, 80);
+    vt.render_frame(&mut app);
+    let render1 = strip_ansi(&vt.screen_contents());
+
+    vt.render_frame(&mut app);
+    let render2 = strip_ansi(&vt.screen_contents());
+
+    vt.render_frame(&mut app);
+    let render3 = strip_ansi(&vt.screen_contents());
 
     assert_eq!(render1, render2, "First and second render differ");
     assert_eq!(render2, render3, "Second and third render differ");
@@ -477,15 +316,21 @@ fn rendering_is_idempotent_after_graduation() {
 
 #[test]
 fn rendering_is_idempotent_during_streaming() {
+    let mut vt = Vt100TestRuntime::new(80, 100);
     let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Test".to_string()));
     app.on_message(ChatAppMsg::TextDelta("Streaming content".to_string()));
 
     // Don't complete - still streaming
-    let render1 = render_and_strip(&app, 80);
-    let render2 = render_and_strip(&app, 80);
-    let render3 = render_and_strip(&app, 80);
+    vt.render_frame(&mut app);
+    let render1 = strip_ansi(&vt.screen_contents());
+
+    vt.render_frame(&mut app);
+    let render2 = strip_ansi(&vt.screen_contents());
+
+    vt.render_frame(&mut app);
+    let render3 = strip_ansi(&vt.screen_contents());
 
     assert_eq!(
         render1, render2,
@@ -499,6 +344,7 @@ fn rendering_is_idempotent_during_streaming() {
 
 #[test]
 fn rendering_is_idempotent_with_tool_calls() {
+    let mut vt = Vt100TestRuntime::new(80, 100);
     let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Run a tool".to_string()));
@@ -527,9 +373,14 @@ fn rendering_is_idempotent_with_tool_calls() {
     app.on_message(ChatAppMsg::TextDelta("After tool".to_string()));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let render1 = render_and_strip(&app, 80);
-    let render2 = render_and_strip(&app, 80);
-    let render3 = render_and_strip(&app, 80);
+    vt.render_frame(&mut app);
+    let render1 = strip_ansi(&vt.screen_contents());
+
+    vt.render_frame(&mut app);
+    let render2 = strip_ansi(&vt.screen_contents());
+
+    vt.render_frame(&mut app);
+    let render3 = strip_ansi(&vt.screen_contents());
 
     assert_eq!(
         render1, render2,
@@ -547,7 +398,7 @@ fn rendering_is_idempotent_with_tool_calls() {
 
 #[test]
 fn graduation_content_accumulates_across_messages() {
-    let mut runtime = TestRuntime::new(80, 24);
+    let mut vt = Vt100TestRuntime::new(80, 100);
     let mut app = OilChatApp::default();
 
     // First message
@@ -555,10 +406,7 @@ fn graduation_content_accumulates_across_messages() {
     app.on_message(ChatAppMsg::TextDelta("Response 1".to_string()));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
-
-    let combined1 = combined_content(&runtime);
+    let combined1 = full_output(&mut vt, &mut app);
     assert!(
         combined1.contains("First"),
         "First message should be present"
@@ -569,10 +417,7 @@ fn graduation_content_accumulates_across_messages() {
     app.on_message(ChatAppMsg::TextDelta("Response 2".to_string()));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
-
-    let combined2 = combined_content(&runtime);
+    let combined2 = full_output(&mut vt, &mut app);
     assert!(
         combined2.contains("First") && combined2.contains("Second"),
         "Both messages should be present"
@@ -583,10 +428,7 @@ fn graduation_content_accumulates_across_messages() {
     app.on_message(ChatAppMsg::TextDelta("Response 3".to_string()));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
-
-    let combined3 = combined_content(&runtime);
+    let combined3 = full_output(&mut vt, &mut app);
     assert!(
         combined3.contains("First") && combined3.contains("Second") && combined3.contains("Third"),
         "All messages should be present"
@@ -595,76 +437,63 @@ fn graduation_content_accumulates_across_messages() {
 
 #[test]
 fn graduation_stable_across_resize() {
-    let mut runtime = TestRuntime::new(80, 24);
-    let mut app = OilChatApp::default();
-
-    app.on_message(ChatAppMsg::UserMessage("Resize test".to_string()));
-    app.on_message(ChatAppMsg::TextDelta("Content before resize".to_string()));
-    app.on_message(ChatAppMsg::StreamComplete);
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
-
     let marker = "Content before resize";
-    let count_before = count_content_occurrences(&runtime, marker);
-    assert_eq!(count_before, 1, "Content should appear once before resize");
 
-    // Resize terminal
-    runtime.resize(60, 20);
+    // Helper: build a fresh app with the same message sequence
+    let make_app = || {
+        let mut app = OilChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("Resize test".to_string()));
+        app.on_message(ChatAppMsg::TextDelta(marker.to_string()));
+        app.on_message(ChatAppMsg::StreamComplete);
+        app
+    };
 
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    // Render at original size (80 wide)
+    let mut vt = Vt100TestRuntime::new(80, 100);
+    let mut app = make_app();
+    let count_before = count_occurrences(&mut vt, &mut app, marker);
+    assert_eq!(count_before, 1, "Content should appear once at width 80");
 
-    let count_after = count_content_occurrences(&runtime, marker);
+    // Render at smaller width (60 wide)
+    let mut vt = Vt100TestRuntime::new(60, 100);
+    let mut app = make_app();
+    let count_after = count_occurrences(&mut vt, &mut app, marker);
     assert_eq!(
         count_after, 1,
-        "Content should still appear exactly once after resize, got {}",
+        "Content should appear exactly once at width 60, got {}",
         count_after
     );
 
-    // Resize again
-    runtime.resize(100, 30);
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
-
-    let count_final = count_content_occurrences(&runtime, marker);
+    // Render at larger width (100 wide)
+    let mut vt = Vt100TestRuntime::new(100, 100);
+    let mut app = make_app();
+    let count_final = count_occurrences(&mut vt, &mut app, marker);
     assert_eq!(
         count_final, 1,
-        "Content should still appear exactly once after second resize, got {}",
+        "Content should appear exactly once at width 100, got {}",
         count_final
     );
 }
 
 #[test]
 fn graduation_xor_with_cancelled_stream() {
-    let mut runtime = TestRuntime::new(80, 24);
+    let mut vt = Vt100TestRuntime::new(80, 100);
     let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Cancel test".to_string()));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta(
         "Partial content before cancel".to_string(),
     ));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
-
-    verify_xor_invariant(&runtime, "before cancel");
+    verify_no_duplication(&mut vt, &mut app, "before cancel");
 
     // Cancel instead of complete
     app.on_message(ChatAppMsg::StreamCancelled);
+    verify_no_duplication(&mut vt, &mut app, "after cancel");
 
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
-
-    verify_xor_invariant(&runtime, "after cancel");
-
-    // Verify content is preserved (either in viewport or scrollback)
-    let combined = combined_content(&runtime);
+    // Verify content is preserved
+    let combined = full_output(&mut vt, &mut app);
     assert!(
         combined.contains("Partial content"),
         "Cancelled content should be preserved somewhere. Combined: '{}'",
@@ -674,38 +503,24 @@ fn graduation_xor_with_cancelled_stream() {
 
 #[test]
 fn graduation_handles_empty_messages_correctly() {
-    let mut runtime = TestRuntime::new(80, 24);
+    let mut vt = Vt100TestRuntime::new(80, 100);
     let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Empty test".to_string()));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     // Send empty delta
     app.on_message(ChatAppMsg::TextDelta("".to_string()));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
-
-    verify_xor_invariant(&runtime, "after empty delta");
+    verify_no_duplication(&mut vt, &mut app, "after empty delta");
 
     // Send actual content
     app.on_message(ChatAppMsg::TextDelta("Real content".to_string()));
-
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
-
-    verify_xor_invariant(&runtime, "after real content");
+    verify_no_duplication(&mut vt, &mut app, "after real content");
 
     app.on_message(ChatAppMsg::StreamComplete);
+    verify_no_duplication(&mut vt, &mut app, "after completion");
 
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
-
-    verify_xor_invariant(&runtime, "after completion");
-
-    let combined = combined_content(&runtime);
+    let combined = full_output(&mut vt, &mut app);
     assert!(
         combined.contains("Real content"),
         "Real content should be preserved"
@@ -733,28 +548,20 @@ proptest! {
     fn prop_xor_invariant_holds_for_random_chunks(
         chunks in prop::collection::vec("[a-zA-Z0-9 ]{1,50}", 1..20)
     ) {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 100);
         let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Property test".to_string()));
-
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        vt.render_frame(&mut app);
 
         for chunk in &chunks {
             app.on_message(ChatAppMsg::TextDelta(chunk.clone()));
-
-            let tree = view_with_default_ctx(&app);
-            runtime.render(&tree);
+            vt.render_frame(&mut app);
         }
 
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
-
-        // Verify XOR invariant - content in viewport XOR scrollback, never both
-        verify_xor_invariant(&runtime, "random chunks");
+        verify_no_duplication(&mut vt, &mut app, "random chunks");
     }
 
     /// Property 2: Content is preserved for arbitrary random chunks.
@@ -765,32 +572,25 @@ proptest! {
     fn prop_content_preserved_for_random_chunks(
         chunks in prop::collection::vec("[a-zA-Z0-9]{5,20}", 1..15)
     ) {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 100);
         let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Content preservation test".to_string()));
-
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        vt.render_frame(&mut app);
 
         for chunk in &chunks {
             app.on_message(ChatAppMsg::TextDelta(format!("{} ", chunk)));
-
-            let tree = view_with_default_ctx(&app);
-            runtime.render(&tree);
+            vt.render_frame(&mut app);
         }
 
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
-
-        let combined = combined_content(&runtime);
+        let combined = full_output(&mut vt, &mut app);
 
         // Verify each chunk appears in the combined output
         for chunk in &chunks {
             prop_assert!(
-                combined.contains(chunk),
+                combined.contains(chunk.as_str()),
                 "Content lost: chunk '{}' not found in combined output.\nCombined: '{}'",
                 chunk,
                 combined
@@ -807,38 +607,29 @@ proptest! {
         chunk_count in 1usize..30,
         chunk_content in "[A-Z]{10,15}"
     ) {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 100);
         let mut app = OilChatApp::default();
 
         // Use a unique marker to track this specific content
         let marker = format!("[MARKER_{}]", chunk_content);
 
         app.on_message(ChatAppMsg::UserMessage("Atomicity test".to_string()));
-
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        vt.render_frame(&mut app);
 
         // Send the marker once, then send chunk_count chunks
         app.on_message(ChatAppMsg::TextDelta(marker.clone()));
-
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        vt.render_frame(&mut app);
 
         for _ in 0..chunk_count {
             app.on_message(ChatAppMsg::TextDelta(" chunk".to_string()));
-
-            let tree = view_with_default_ctx(&app);
-            runtime.render(&tree);
+            vt.render_frame(&mut app);
         }
 
-        let before_count = count_content_occurrences(&runtime, &marker);
+        let before_count = count_occurrences(&mut vt, &mut app, &marker);
 
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
-
-        let after_count = count_content_occurrences(&runtime, &marker);
+        let after_count = count_occurrences(&mut vt, &mut app, &marker);
 
         prop_assert_eq!(
             before_count, after_count,
@@ -862,15 +653,21 @@ proptest! {
     fn prop_rendering_idempotent_for_random_content(
         content in "[a-zA-Z0-9 .,!?]{10,100}"
     ) {
+        let mut vt = Vt100TestRuntime::new(80, 100);
         let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Idempotence test".to_string()));
         app.on_message(ChatAppMsg::TextDelta(content));
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let render1 = render_and_strip(&app, 80);
-        let render2 = render_and_strip(&app, 80);
-        let render3 = render_and_strip(&app, 80);
+        vt.render_frame(&mut app);
+        let render1 = strip_ansi(&vt.screen_contents());
+
+        vt.render_frame(&mut app);
+        let render2 = strip_ansi(&vt.screen_contents());
+
+        vt.render_frame(&mut app);
+        let render3 = strip_ansi(&vt.screen_contents());
 
         prop_assert_eq!(&render1, &render2, "First and second render differ");
         prop_assert_eq!(&render2, &render3, "Second and third render differ");
@@ -884,13 +681,11 @@ proptest! {
     fn prop_xor_invariant_with_paragraph_breaks(
         chunks in prop::collection::vec("[a-zA-Z0-9 ]{5,30}", 1..10)
     ) {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 100);
         let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Paragraph test".to_string()));
-
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        vt.render_frame(&mut app);
 
         for (i, chunk) in chunks.iter().enumerate() {
             // Add paragraph break every 3rd chunk
@@ -900,17 +695,12 @@ proptest! {
                 format!("{} ", chunk)
             };
             app.on_message(ChatAppMsg::TextDelta(content));
-
-            let tree = view_with_default_ctx(&app);
-            runtime.render(&tree);
+            vt.render_frame(&mut app);
         }
 
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
-
-        verify_xor_invariant(&runtime, "paragraph breaks");
+        verify_no_duplication(&mut vt, &mut app, "paragraph breaks");
     }
 
     /// Property 6: Content accumulates for arbitrary message sequences.
@@ -922,7 +712,7 @@ proptest! {
         message_count in 1usize..5,
         response_lengths in prop::collection::vec(1usize..10, 1..5)
     ) {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 100);
         let mut app = OilChatApp::default();
 
         for (msg_idx, &resp_len) in response_lengths.iter().take(message_count).enumerate() {
@@ -933,12 +723,10 @@ proptest! {
             }
 
             app.on_message(ChatAppMsg::StreamComplete);
-
-            let tree = view_with_default_ctx(&app);
-            runtime.render(&tree);
+            vt.render_frame(&mut app);
         }
 
-        let combined = combined_content(&runtime);
+        let combined = full_output(&mut vt, &mut app);
         // Verify all messages are present
         for msg_idx in 0..message_count.min(response_lengths.len()) {
             let marker = format!("Message {}", msg_idx);

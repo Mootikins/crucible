@@ -141,18 +141,6 @@ impl OilChatApp {
             groups.push(col(tight_run).gap(Gap::row(0)));
         }
 
-        // Turn-level spinner: shown when the turn is active but no container
-        // is currently displaying a spinner (e.g. after tools complete, before
-        // next TextDelta or StreamComplete).
-        if self.container_list.needs_turn_spinner() {
-            let t = crate::tui::oil::theme::active();
-            groups.push(row([
-                text(" "),
-                spinner(None, self.spinner_frame())
-                    .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
-            ]));
-        }
-
         if groups.is_empty() {
             return Node::Empty;
         }
@@ -163,6 +151,21 @@ impl OilChatApp {
         // Terminal::apply() writes \r\n after graduation content, providing
         // visual separation between scrollback and viewport. No extra spacer needed.
         content_col
+    }
+
+    /// Turn-level spinner: viewport chrome, never part of container content.
+    /// Shown when the turn is active but no container is displaying a spinner
+    /// (e.g. after tools complete, before next TextDelta or StreamComplete).
+    pub(super) fn render_turn_spinner(&self) -> Node {
+        if !self.container_list.needs_turn_spinner() {
+            return Node::Empty;
+        }
+        let t = crate::tui::oil::theme::active();
+        row([
+            text(" "),
+            spinner(None, self.spinner_frame())
+                .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
+        ])
     }
 
     pub(super) fn render_status(&self) -> Node {

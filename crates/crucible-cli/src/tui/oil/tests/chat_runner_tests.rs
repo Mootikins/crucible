@@ -1,11 +1,11 @@
 //! Tests for OilChatRunner event handling and action processing
 
-use crate::tui::oil::app::{Action, App, ViewContext};
+use crate::tui::oil::app::{Action, App};
 use crate::tui::oil::chat_app::{ChatAppMsg, ChatMode, OilChatApp};
 use crate::tui::oil::chat_runner::{replay_event_consumer, OilChatRunner};
-use crate::tui::oil::focus::FocusContext;
-use crate::tui::oil::render::render_to_string;
 use crate::tui::oil::terminal::Terminal;
+
+use super::helpers::{vt_render, vt_render_sized};
 use async_trait::async_trait;
 use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolResult};
 use futures::stream::{self, BoxStream};
@@ -380,14 +380,7 @@ fn app_handles_context_usage_update() {
         total: 100000,
     });
 
-    use crate::tui::oil::app::ViewContext;
-    use crate::tui::oil::focus::FocusContext;
-    use crate::tui::oil::render::render_to_string;
-
-    let focus = FocusContext::new();
-    let ctx = ViewContext::new(&focus);
-    let tree = app.view(&ctx);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
 
     assert!(
         output.contains("50%") || output.contains("ctx"),
@@ -398,7 +391,6 @@ fn app_handles_context_usage_update() {
 
 mod daemon_event_to_tui_tests {
     use super::*;
-    use crate::tui::oil::ansi::strip_ansi;
     use crucible_core::traits::llm::TokenUsage;
 
     const TEST_CONTEXT_LIMIT: usize = 128000;
@@ -481,10 +473,7 @@ mod daemon_event_to_tui_tests {
 
         assert!(app.is_streaming(), "App should be in streaming state");
 
-        let focus = FocusContext::new();
-        let ctx = ViewContext::new(&focus);
-        let tree = app.view(&ctx);
-        let output = render_to_string(&tree, 80);
+        let output = vt_render(&mut app);
         assert!(
             output.contains("World"),
             "Streamed content should appear in UI: {}",
@@ -517,10 +506,7 @@ mod daemon_event_to_tui_tests {
             app.on_message(msg);
         }
 
-        let focus = FocusContext::new();
-        let ctx = ViewContext::new(&focus);
-        let tree = app.view(&ctx);
-        let output = render_to_string(&tree, 80);
+        let output = vt_render(&mut app);
         assert!(
             output.contains("Read File"),
             "Tool call should appear in UI: {}",
@@ -563,10 +549,7 @@ mod daemon_event_to_tui_tests {
             app.on_message(msg);
         }
 
-        let focus = FocusContext::new();
-        let ctx = ViewContext::new(&focus);
-        let tree = app.view(&ctx);
-        let output = render_to_string(&tree, 80);
+        let output = vt_render(&mut app);
         assert!(
             output.contains("fn main()") || output.contains("Read File"),
             "Tool result should appear in UI: {}",
@@ -650,10 +633,7 @@ mod daemon_event_to_tui_tests {
 
         assert!(!app.is_streaming(), "Should end streaming after done chunk");
 
-        let focus = FocusContext::new();
-        let ctx = ViewContext::new(&focus);
-        let tree = app.view(&ctx);
-        let output = render_to_string(&tree, 80);
+        let output = vt_render(&mut app);
 
         assert!(
             output.contains("Claude"),
@@ -689,10 +669,7 @@ mod daemon_event_to_tui_tests {
             app.on_message(msg);
         }
 
-        let focus = FocusContext::new();
-        let ctx = ViewContext::new(&focus);
-        let tree = app.view(&ctx);
-        let output = render_to_string(&tree, 80);
+        let output = vt_render(&mut app);
 
         assert!(
             output.contains("15%") || output.contains("ctx"),
@@ -728,10 +705,7 @@ mod daemon_event_to_tui_tests {
             app.on_message(msg);
         }
 
-        let focus = FocusContext::new();
-        let ctx = ViewContext::new(&focus);
-        let tree = app.view(&ctx);
-        let output = render_to_string(&tree, 80);
+        let output = vt_render(&mut app);
 
         assert!(
             output.contains("2k tok") || output.contains("tok"),
@@ -768,11 +742,7 @@ mod daemon_event_to_tui_tests {
 
         assert!(!app.is_streaming());
 
-        let focus = FocusContext::new();
-        let ctx = ViewContext::new(&focus);
-        let tree = app.view(&ctx);
-        let output = render_to_string(&tree, 120);
-        let stripped = strip_ansi(&output);
+        let stripped = vt_render_sized(&mut app, 120, 60);
 
         let text_pos = stripped.find("search").unwrap_or(usize::MAX);
         let tool_pos = stripped.find("Glob").unwrap_or(usize::MAX);
@@ -818,10 +788,7 @@ mod daemon_event_to_tui_tests {
         });
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let focus = FocusContext::new();
-        let ctx = ViewContext::new(&focus);
-        let tree = app.view(&ctx);
-        let output = render_to_string(&tree, 80);
+        let output = vt_render(&mut app);
 
         assert!(
             output.contains('\u{2713}') || output.contains("✓"),
@@ -840,10 +807,7 @@ mod daemon_event_to_tui_tests {
             prompt: "Research the codebase for patterns".to_string(),
         });
 
-        let focus = FocusContext::new();
-        let ctx = ViewContext::new(&focus);
-        let tree = app.view(&ctx);
-        let output = render_to_string(&tree, 100);
+        let output = vt_render_sized(&mut app, 100, 60);
 
         assert!(
             output.contains("subagent"),
@@ -871,10 +835,7 @@ mod daemon_event_to_tui_tests {
             summary: "Found 3 patterns in codebase".to_string(),
         });
 
-        let focus = FocusContext::new();
-        let ctx = ViewContext::new(&focus);
-        let tree = app.view(&ctx);
-        let output = render_to_string(&tree, 100);
+        let output = vt_render_sized(&mut app, 100, 60);
 
         assert!(
             output.contains('\u{2713}') || output.contains("✓"),
@@ -902,10 +863,7 @@ mod daemon_event_to_tui_tests {
             error: "Connection timeout".to_string(),
         });
 
-        let focus = FocusContext::new();
-        let ctx = ViewContext::new(&focus);
-        let tree = app.view(&ctx);
-        let output = render_to_string(&tree, 100);
+        let output = vt_render_sized(&mut app, 100, 60);
 
         assert!(
             output.contains('\u{2717}') || output.contains("✗"),
@@ -937,10 +895,7 @@ mod daemon_event_to_tui_tests {
             summary: "Done".to_string(),
         });
 
-        let focus = FocusContext::new();
-        let ctx = ViewContext::new(&focus);
-        let tree = app.view(&ctx);
-        let output = render_to_string(&tree, 100);
+        let output = vt_render_sized(&mut app, 100, 60);
 
         assert!(
             output.contains("First task"),

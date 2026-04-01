@@ -1,10 +1,7 @@
 ---
-source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests.rs
-assertion_line: 1338
-expression: render_app(&app)
+source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/interaction_modal_snapshots.rs
+expression: render_app(&mut app)
 ---
-                                                                                
-▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  View                                                                           
   Line number 6                                                                 
   Line number 7                                                                 

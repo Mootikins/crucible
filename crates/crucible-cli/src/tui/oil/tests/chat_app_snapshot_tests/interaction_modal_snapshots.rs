@@ -18,7 +18,7 @@ fn snapshot_ask_modal_with_choices_first_selected() {
     );
     app.open_interaction("ask-1".to_string(), request);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Snapshot test: AskRequest with 3 choices, second selected
@@ -37,7 +37,7 @@ fn snapshot_ask_modal_with_choices_second_selected() {
     // Navigate down to select second option
     app.update(crate::tui::oil::event::Event::Key(key(KeyCode::Down)));
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Snapshot test: AskRequest with allow_other showing "Other..." option
@@ -51,7 +51,7 @@ fn snapshot_ask_modal_with_allow_other() {
     );
     app.open_interaction("ask-3".to_string(), request);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Snapshot test: AskRequest free-text only (no choices)
@@ -62,7 +62,7 @@ fn snapshot_ask_modal_free_text_only() {
         InteractionRequest::Ask(AskRequest::new("Enter your custom value:").allow_other());
     app.open_interaction("ask-4".to_string(), request);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Snapshot test: PermRequest for bash command
@@ -72,7 +72,7 @@ fn snapshot_perm_modal_bash_command() {
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install", "lodash"]));
     app.open_interaction("perm-bash".to_string(), request);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Snapshot test: PermRequest for file write
@@ -84,7 +84,7 @@ fn snapshot_perm_modal_file_write() {
     ]));
     app.open_interaction("perm-write".to_string(), request);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Snapshot test: PermRequest for file read
@@ -94,7 +94,7 @@ fn snapshot_perm_modal_file_read() {
     let request = InteractionRequest::Permission(PermRequest::read(["etc", "hosts"]));
     app.open_interaction("perm-read".to_string(), request);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Snapshot test: PermRequest for tool execution
@@ -107,7 +107,7 @@ fn snapshot_perm_modal_tool() {
     ));
     app.open_interaction("perm-tool".to_string(), request);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Snapshot test: AskRequest with many choices (scrolling)
@@ -126,7 +126,7 @@ fn snapshot_ask_modal_many_choices() {
     ]));
     app.open_interaction("ask-many".to_string(), request);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Snapshot test: AskRequest after navigating to last choice
@@ -143,7 +143,7 @@ fn snapshot_ask_modal_last_selected() {
         app.update(crate::tui::oil::event::Event::Key(key(KeyCode::Down)));
     }
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 // =========================================================================
@@ -160,7 +160,7 @@ fn snapshot_ask_modal_multi_select() {
     );
     app.open_interaction("ask-multi".to_string(), request);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -185,7 +185,7 @@ fn snapshot_ask_modal_multi_select_with_selection() {
         KeyModifiers::NONE,
     )));
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 // =========================================================================
@@ -205,7 +205,7 @@ fn snapshot_ask_modal_after_escape() {
     app.update(crate::tui::oil::event::Event::Key(key(KeyCode::Esc)));
 
     // Modal should be closed - snapshot shows regular view
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -224,7 +224,7 @@ fn snapshot_ask_modal_after_ctrl_c() {
     )));
 
     // Modal should be closed - snapshot shows regular view
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -240,7 +240,7 @@ fn snapshot_perm_modal_after_allow() {
     )));
 
     // Modal should be closed
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -256,7 +256,7 @@ fn snapshot_perm_modal_after_deny() {
     )));
 
     // Modal should be closed
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 // =========================================================================
@@ -272,7 +272,7 @@ fn snapshot_ask_modal_long_question_text() {
     );
     app.open_interaction("ask-long".to_string(), request);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -287,7 +287,7 @@ fn snapshot_ask_modal_long_choice_text() {
     );
     app.open_interaction("ask-long-choice".to_string(), request);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -304,7 +304,7 @@ fn snapshot_ask_modal_unicode_content() {
     );
     app.open_interaction("ask-unicode".to_string(), request);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -325,7 +325,7 @@ fn snapshot_perm_modal_long_command() {
     ]));
     app.open_interaction("perm-long-cmd".to_string(), request);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -346,7 +346,7 @@ fn snapshot_perm_modal_deeply_nested_path() {
     ]));
     app.open_interaction("perm-deep-path".to_string(), request);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 // =========================================================================
@@ -362,7 +362,7 @@ fn snapshot_show_modal_basic() {
     let request = InteractionRequest::Show(ShowRequest::new(content).title("Preview"));
     app.open_interaction("show-1".to_string(), request);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -379,7 +379,7 @@ fn snapshot_show_modal_after_scroll() {
         app.update(crate::tui::oil::event::Event::Key(key(KeyCode::Char('j'))));
     }
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 // =========================================================================
@@ -400,7 +400,7 @@ fn snapshot_popup_modal_basic() {
     );
     app.open_interaction("popup-1".to_string(), request);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -419,7 +419,7 @@ fn snapshot_popup_modal_second_selected() {
 
     app.update(crate::tui::oil::event::Event::Key(key(KeyCode::Down)));
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -436,7 +436,7 @@ fn snapshot_popup_modal_with_allow_other() {
     );
     app.open_interaction("popup-other".to_string(), request);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 // =========================================================================
@@ -452,7 +452,7 @@ fn snapshot_edit_modal_normal_mode() {
     let request = InteractionRequest::Edit(EditRequest::new(content).hint("Edit the function"));
     app.open_interaction("edit-1".to_string(), request);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -466,7 +466,7 @@ fn snapshot_edit_modal_insert_mode() {
 
     app.update(crate::tui::oil::event::Event::Key(key(KeyCode::Char('i'))));
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -482,7 +482,7 @@ fn snapshot_edit_modal_cursor_moved() {
     app.update(crate::tui::oil::event::Event::Key(key(KeyCode::Char('l'))));
     app.update(crate::tui::oil::event::Event::Key(key(KeyCode::Char('l'))));
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 // =========================================================================
@@ -503,7 +503,7 @@ fn snapshot_panel_modal_basic() {
         ]));
     app.open_interaction("panel-1".to_string(), request);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -534,7 +534,7 @@ fn snapshot_panel_modal_multi_select_with_checks() {
         KeyModifiers::NONE,
     )));
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -555,7 +555,7 @@ fn snapshot_panel_modal_filterable() {
     );
     app.open_interaction("panel-filter".to_string(), request);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -575,5 +575,5 @@ fn snapshot_panel_modal_with_initial_selection() {
     );
     app.open_interaction("panel-presel".to_string(), request);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }

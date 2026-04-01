@@ -1,5 +1,5 @@
 mod generators;
-mod helpers;
+pub(crate) mod helpers;
 mod layout_test_helpers;
 mod vt100_runtime;
 

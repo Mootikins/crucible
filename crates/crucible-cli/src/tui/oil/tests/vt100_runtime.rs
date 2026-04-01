@@ -107,6 +107,12 @@ impl Vt100TestRuntime {
         self.vt.screen().contents()
     }
 
+    /// Get the screen contents with ANSI escape codes preserved.
+    /// Use this for "raw" snapshot tests that verify styling (colors, bold, etc.).
+    pub fn screen_contents_styled(&self) -> String {
+        String::from_utf8_lossy(&self.vt.screen().contents_formatted()).into_owned()
+    }
+
     /// Get the underlying TestRuntime for legacy API access.
     pub fn inner(&self) -> &TestRuntime {
         &self.inner
@@ -139,6 +145,7 @@ impl Vt100TestRuntime {
     /// Get the full history from the tall parser (scrollback + screen).
     /// Since the tall parser has 1000 rows, nothing scrolls off — this
     /// captures everything the terminal has ever displayed.
+    #[allow(dead_code)]
     pub fn full_history(&self) -> String {
         self.tall_vt.screen().contents()
     }
@@ -1296,10 +1303,13 @@ mod tests {
         let mut app = OilChatApp::init();
         let mut vt = Vt100TestRuntime::new(124, 59);
 
-        // Helper: check full history for spinners after each phase
-        let check = |vt: &Vt100TestRuntime, phase: &str| {
-            let history = vt.full_history();
-            let history_plain = crucible_oil::ansi::strip_ansi(&history);
+        // Helper: check scrollback for spinners after each phase.
+        // Scrollback = tall parser contents minus normal parser screen.
+        // The viewport may legitimately contain a turn spinner (it's chrome,
+        // not content), so we only assert on what has scrolled off.
+        let check = |vt: &mut Vt100TestRuntime, phase: &str| {
+            let scrollback = vt.scrollback_contents();
+            let history_plain = crucible_oil::ansi::strip_ansi(&scrollback);
             let spinners: Vec<(usize, String)> = history_plain
                 .lines()
                 .enumerate()
@@ -1376,7 +1386,7 @@ mod tests {
         });
         vt.render_frame(&mut app);
 
-        check(&vt, "after_first_permission_tool");
+        check(&mut vt, "after_first_permission_tool");
 
         // Idle frames — turn spinner between tools
         vt.render_frame(&mut app);
@@ -1407,7 +1417,7 @@ mod tests {
         });
         vt.render_frame(&mut app);
 
-        check(&vt, "after_second_permission_tool");
+        check(&mut vt, "after_second_permission_tool");
 
         // ── Second thinking block ──
         think(&mut app, "Let me check the crate structure.");
@@ -1437,7 +1447,7 @@ mod tests {
         });
         vt.render_frame(&mut app);
 
-        check(&vt, "after_third_permission_tool");
+        check(&mut vt, "after_third_permission_tool");
 
         // ── Final response ──
         think(&mut app, "Now I have enough context.");
@@ -1447,7 +1457,7 @@ mod tests {
         app.on_message(ChatAppMsg::StreamComplete);
         vt.render_frame(&mut app);
 
-        check(&vt, "final");
+        check(&mut vt, "final");
     }
 
     /// Variant 3 (original): Permission for non-tool interaction — no crash.

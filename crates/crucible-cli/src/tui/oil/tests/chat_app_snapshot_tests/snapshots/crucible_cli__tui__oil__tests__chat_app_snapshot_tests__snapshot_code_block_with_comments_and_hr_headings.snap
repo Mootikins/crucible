@@ -1,49 +1,26 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
-expression: render_app(&app)
+expression: render_app(&mut app)
 ---
-▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
- > Describe the project                                                         
-▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-                                                                                
- ● 🏗 Architecture                                                               
-                                                                                
-   ```                                                                          
-   crucible/                                                                    
-   ├── crates/                                                                  
-   │   ├── crucible-cli/      # CLI commands                                    
-   │   ├── crucible-core/     # Core types                                      
-   │   └── crucible-daemon/   # Background daemon                               
-   ├── docs/                  # Documentation                                   
-   └── plugins/              # Example plugins                                  
-   ```                                                                          
-                                                                                
-   🚀 Quick Commands                                                            
-                                                                                
-   ```bash                                                                      
-   # Install                                                                    
-   curl -fsSL https://example.com/install.sh | sh                               
-   ```                                                                          
-                                                                                
-   ```bash                                                                      
-   # Chat with AI                                                               
-   cru chat                                                                     
-                                                                                
-   # Start MCP server                                                           
-   cru mcp                                                                      
-   ```                                                                          
-                                                                                
-   📊 Comparison                                                                
-                                                                                
-   ┌──────────────────────┬────────────────┬───────┐                            
-   │ Feature              │ Crucible       │ Other │                            
-   ├──────────────────────┼────────────────┼───────┤                            
-   │ Local-first          │ ✅             │ ❌    │                            
-   ├──────────────────────┼────────────────┼───────┤                            
-   │ Sessions as markdown │ ✅             │ ❌    │                            
-   ├──────────────────────┼────────────────┼───────┤                            
-   │ Semantic search      │ ✅ Block-level │ ❌    │                            
-   └──────────────────────┴────────────────┴───────┘                            
+   ```bash
+   # Chat with AI
+   cru chat
+
+   # Start MCP server
+   cru mcp
+   ```
+
+   📊 Comparison
+
+   ┌──────────────────────┬────────────────┬───────┐
+   │ Feature              │ Crucible       │ Other │
+   ├──────────────────────┼────────────────┼───────┤
+   │ Local-first          │ ✅             │ ❌    │
+   ├──────────────────────┼────────────────┼───────┤
+   │ Sessions as markdown │ ✅             │ ❌    │
+   ├──────────────────────┼────────────────┼───────┤
+   │ Semantic search      │ ✅ Block-level │ ❌    │
+   └──────────────────────┴────────────────┴───────┘
                                                                                 
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  >                                                                              

@@ -26,7 +26,11 @@ pub struct Graduation {
 }
 
 impl Graduation {
-    /// Render the graduated node tree to an ANSI string.
+    /// Render the graduated node tree to an ANSI string (standalone, compact).
+    ///
+    /// Prefer using `FramePlanner::plan_with_graduation()` which renders through
+    /// the shared layout engine. This standalone method exists for contexts
+    /// without a planner (e.g., Lua API).
     pub fn render(&self) -> String {
         crate::render::render_to_string(&self.node, self.width as usize)
     }
@@ -98,12 +102,16 @@ impl FrameSnapshot {
         composited.join("\r\n")
     }
 
-    /// Stdout content: rendered graduation if present, else legacy stdout_delta.
+    /// Stdout content (graduated scrollback text).
+    /// When graduation is rendered through the planner, stdout_delta contains
+    /// the result. Falls back to Graduation::render() for standalone use.
     fn stdout_content(&self) -> String {
-        if let Some(grad) = &self.graduation {
+        if !self.stdout_delta.is_empty() {
+            self.stdout_delta.clone()
+        } else if let Some(grad) = &self.graduation {
             grad.render()
         } else {
-            self.stdout_delta.clone()
+            String::new()
         }
     }
 
@@ -162,6 +170,22 @@ impl FramePlanner {
         graduation: Option<Graduation>,
     ) -> FrameSnapshot {
         self.frame_no += 1;
+
+        // Render graduation through the same layout engine as viewport.
+        // This replaces the standalone render_to_string() path — graduation
+        // and viewport now share a single LayoutEngine for consistent layout.
+        let stdout_delta = if let Some(ref grad) = graduation {
+            let grad_layout = build_layout_tree_with_engine(
+                &mut self.layout_engine,
+                &grad.node,
+                grad.width,
+                500, // tall enough for any graduated content
+            );
+            let (content, _) = render_layout_tree_compact(&grad_layout);
+            trim_trailing_blank_lines(&content)
+        } else {
+            stdout_delta
+        };
 
         let overlay_nodes = extract_overlays(tree);
         let main_tree = filter_overlays(tree.clone());
