@@ -483,8 +483,18 @@ impl OilChatApp {
         if !self.popup.show {
             return Node::Empty;
         }
-        // TODO(rewrite): wire popup items from autocomplete state
-        Node::Empty
+
+        let items = self.get_popup_items();
+        if items.is_empty() {
+            return Node::Empty;
+        }
+
+        use crate::tui::oil::components::PopupOverlay;
+
+        PopupOverlay::new(items)
+            .selected(self.popup.selected)
+            .max_visible(POPUP_HEIGHT)
+            .view(&crucible_oil::focus::FocusContext::default())
     }
 
     /// Periodic maintenance called each render frame.
