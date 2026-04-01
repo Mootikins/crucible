@@ -207,16 +207,10 @@ impl OilChatApp {
     }
 
     /// Update shell modal state after closing: increment counter, add execution.
+    /// TODO(rewrite): Phase 5 — wire to new container state
     fn update_shell_modal(&mut self, history_item: &ShellHistoryItem) {
         self.message_queue.message_counter += 1;
-        self.container_list
-            .add_shell_execution(CachedShellExecution::new(
-                format!("shell-{}", self.message_queue.message_counter),
-                &history_item.command,
-                history_item.exit_code,
-                history_item.output_tail.clone(),
-                history_item.output_path.clone(),
-            ));
+        let _ = &history_item; // suppress unused warning
     }
 
     /// Finalize shell modal: update state and leave alternate screen.

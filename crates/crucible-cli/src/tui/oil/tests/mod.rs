@@ -1,30 +1,18 @@
 mod generators;
 pub(crate) mod helpers;
 mod layout_test_helpers;
-mod vt100_runtime;
+pub(crate) mod vt100_runtime;
 
-mod chat_app_interaction_tests;
-mod chat_app_snapshot_tests;
-mod chat_e2e_property_tests;
-mod chat_ordering_property_tests;
-mod chat_rendering_property_tests;
-mod chat_runner_tests;
+// Surviving framework tests
 mod component_isolation_tests;
 mod event_loop_tests;
 mod event_tests;
-mod fixture_replay;
 mod focus_tests;
-mod graduation_invariant_property_tests;
-mod interrupt_tests;
 mod layout_tests;
 mod markdown_fuzz_tests;
 mod node_tests;
-mod permission_integration_tests;
-mod permission_invariant_tests;
 mod popup_tests;
 mod property_tests;
 mod render_tests;
-mod rendering_regression_tests;
-mod spacing_acceptance_tests;
-mod streaming_tests;
-mod tool_ordering_tests;
+
+// TODO(rewrite): Phase 7 — new tests for component model

@@ -1,6 +1,5 @@
 use std::cell::Cell;
 
-use crate::tui::oil::chat_container::ContainerList;
 use crate::tui::oil::components::NotificationArea;
 use crate::tui::oil::config::RuntimeConfig;
 use crate::tui::oil::event::InputBuffer;
@@ -14,7 +13,7 @@ impl Default for OilChatApp {
     fn default() -> Self {
         Self {
             // Viewport Projection
-            container_list: ContainerList::new(),
+            // TODO(rewrite): Phase 1 — add new Container vec here
             mode: ChatMode::Normal,
             model: String::new(),
             status: String::new(),
