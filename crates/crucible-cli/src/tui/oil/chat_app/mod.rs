@@ -61,7 +61,8 @@ pub struct OilChatApp {
     // ─── Viewport Projection (daemon-derived state) ───────────────────
     // These fields mirror information received from the daemon and
     // represent the authoritative view of the current session.
-    // TODO(rewrite): Replace with new Container vec + component model
+    /// Container list: ordered chat content with graduation support
+    container_list: crate::tui::oil::containers::ContainerList,
     /// Current chat mode (Normal / Plan / Auto)
     mode: ChatMode,
     /// Display name of the active LLM model
@@ -182,7 +183,8 @@ impl App for OilChatApp {
         };
 
         col([
-            // Content area: TODO(rewrite) Phase 3 — container components
+            // Content area: container components rendered with spacing
+            self.render_content(),
             spacer(),
             // Chrome: pinned at bottom, never scrolls
             bottom.with_margin(Padding {
@@ -400,6 +402,62 @@ impl OilChatApp {
             .view(ctx)
     }
 
+    /// Render all in-viewport containers with spacing.
+    fn render_content(&self) -> Node {
+        use crate::tui::oil::containers::{needs_spacing, ContainerViewContext};
+
+        let ctx = ContainerViewContext {
+            width: self.terminal_size.get().0 as usize,
+            spinner_frame: self.spinner_frame(),
+            show_thinking: self.show_thinking,
+        };
+
+        let containers = self.container_list.containers();
+        if containers.is_empty() {
+            return Node::Empty;
+        }
+
+        let mut prev_kind: Option<crate::tui::oil::containers::ContainerKind> =
+            self.container_list.last_graduated_kind();
+        let mut groups: Vec<Node> = Vec::new();
+        let mut tight_run: Vec<Node> = Vec::new();
+        let mut run_kind: Option<crate::tui::oil::containers::ContainerKind> = None;
+
+        for container in containers {
+            let kind = container.kind;
+            let node = container.view(&ctx);
+
+            let should_break = run_kind
+                .or(if groups.is_empty() { prev_kind } else { None })
+                .map(|prev| needs_spacing(prev, kind))
+                .unwrap_or(false);
+
+            if should_break {
+                if tight_run.len() == 1 {
+                    groups.push(tight_run.pop().unwrap());
+                } else if !tight_run.is_empty() {
+                    groups.push(col(tight_run.drain(..).collect::<Vec<_>>()).gap(Gap::row(0)));
+                }
+            }
+
+            tight_run.push(node);
+            run_kind = Some(kind);
+            prev_kind = Some(kind);
+        }
+
+        if tight_run.len() == 1 {
+            groups.push(tight_run.pop().unwrap());
+        } else if !tight_run.is_empty() {
+            groups.push(col(tight_run).gap(Gap::row(0)));
+        }
+
+        if groups.is_empty() {
+            return Node::Empty;
+        }
+
+        col(groups).gap(Gap::row(1))
+    }
+
     /// Popup overlay for command completion.
     fn popup_overlay_view(&self, _ctx: &ViewContext<'_>) -> Node {
         if !self.popup.show {
@@ -443,7 +501,13 @@ impl OilChatApp {
         self.permission.perm_autoconfirm_session
     }
 
-    // TODO(rewrite): container_list() accessor — needs new Container vec
+    pub(crate) fn container_list(&self) -> &crate::tui::oil::containers::ContainerList {
+        &self.container_list
+    }
+
+    pub(crate) fn container_list_mut(&mut self) -> &mut crate::tui::oil::containers::ContainerList {
+        &mut self.container_list
+    }
 
     pub(crate) fn add_notification(&mut self, notification: crucible_core::types::Notification) {
         self.notification_area.add(notification);
@@ -470,9 +534,9 @@ impl OilChatApp {
     }
 
     /// Drain completed containers and return graduation content for stdout.
-    /// TODO(rewrite): Phase 4 — implement with new Container vec
-    pub(crate) fn drain_graduated(&mut self, _width: u16) -> Option<crucible_oil::Graduation> {
-        None
+    pub(crate) fn drain_graduated(&mut self, width: u16) -> Option<crucible_oil::Graduation> {
+        self.container_list
+            .drain_completed(width, self.spinner_frame(), self.show_thinking)
     }
 
     /// Replay stored session events through the live event path.
@@ -496,9 +560,8 @@ impl OilChatApp {
         self.shell_history.shell_history.push_back(cmd);
     }
 
-    /// TODO(rewrite): Phase 5 — derive from container state
     pub(crate) fn is_streaming(&self) -> bool {
-        false
+        self.container_list.is_streaming()
     }
 
     pub(crate) fn input_content(&self) -> &str {
@@ -610,8 +673,8 @@ impl OilChatApp {
         std::mem::take(&mut self.needs_full_redraw)
     }
 
-    // TODO(rewrite): Phase 5 — wire to new container state
-    fn add_user_message(&mut self, _content: String) {
+    fn add_user_message(&mut self, content: String) {
+        self.container_list.add_user_message(content);
         self.message_queue.message_counter += 1;
     }
 
@@ -619,7 +682,8 @@ impl OilChatApp {
         self.add_user_message(content);
     }
 
-    pub(crate) fn add_system_message(&mut self, _content: String) {
+    pub(crate) fn add_system_message(&mut self, content: String) {
+        self.container_list.add_system_message(content);
         self.message_queue.message_counter += 1;
     }
 
@@ -628,6 +692,7 @@ impl OilChatApp {
     }
 
     pub(crate) fn reset_session(&mut self) {
+        self.container_list.clear();
         self.message_queue.message_counter = 0;
         self.message_queue.deferred_messages.clear();
         self.context_used = 0;
