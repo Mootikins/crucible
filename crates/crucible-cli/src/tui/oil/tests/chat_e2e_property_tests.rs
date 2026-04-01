@@ -3,23 +3,17 @@
 //! These tests verify complete conversation flows with arbitrary message
 //! sequences, simulating what the daemon would send via RPC.
 
+use crate::tui::oil::ansi::strip_ansi;
 use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
-use crate::tui::oil::TestRuntime;
 use proptest::prelude::*;
 
 use super::generators::{
     arb_multi_turn_conversation, arb_rpc_sequence_with_tools, arb_subagent_sequence,
     arb_text_content, arb_tool_name, RpcEvent, SubagentOutcome,
 };
-use super::helpers::{apply_rpc_event, combined_output, view_with_default_ctx};
-
-/// Render the app's view tree through the runtime.
-/// Graduation is now automatic via drain_completed.
-fn render_and_graduate(runtime: &mut TestRuntime, app: &mut OilChatApp) {
-    let tree = view_with_default_ctx(app);
-    runtime.render(&tree);
-}
+use super::helpers::apply_rpc_event;
+use super::vt100_runtime::Vt100TestRuntime;
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(50))]
@@ -29,7 +23,7 @@ proptest! {
     fn full_conversation_flow_invariants(
         turns in arb_multi_turn_conversation()
     ) {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 60);
         let mut app = OilChatApp::default();
         app.set_show_thinking(true);
 
@@ -51,7 +45,7 @@ proptest! {
                 }
                 apply_rpc_event(&mut app, event);
 
-                render_and_graduate(&mut runtime, &mut app);
+                vt.render_frame(&mut app);
             }
 
             if turn.cancelled {
@@ -60,10 +54,10 @@ proptest! {
                 app.on_message(ChatAppMsg::StreamComplete);
             }
 
-            render_and_graduate(&mut runtime, &mut app);
+            vt.render_frame(&mut app);
         }
 
-        let combined = combined_output(&runtime);
+        let combined = strip_ansi(&vt.screen_contents());
 
         for query in &expected_user_queries {
             let first_word = query.split_whitespace().next();
@@ -84,7 +78,7 @@ proptest! {
     fn tool_calls_complete_in_conversation(
         sequence in arb_rpc_sequence_with_tools()
     ) {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 60);
         let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Query with tools".to_string()));
@@ -97,14 +91,14 @@ proptest! {
             }
             apply_rpc_event(&mut app, event);
 
-            render_and_graduate(&mut runtime, &mut app);
+            vt.render_frame(&mut app);
         }
 
         app.on_message(ChatAppMsg::StreamComplete);
 
-        render_and_graduate(&mut runtime, &mut app);
+        vt.render_frame(&mut app);
 
-        let combined = combined_output(&runtime);
+        let combined = strip_ansi(&vt.screen_contents());
 
         for tool in &expected_tools {
             let humanized = crucible_acp::streaming::humanize_tool_title(tool);
@@ -134,7 +128,7 @@ proptest! {
             5..30
         )
     ) {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 60);
         let mut app = OilChatApp::default();
         app.set_show_thinking(true);
 
@@ -144,17 +138,16 @@ proptest! {
             apply_rpc_event(&mut app, event);
 
             // Use catch_unwind to handle any panics during rapid switching
-            let tree = view_with_default_ctx(&app);
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                runtime.render(&tree);
+                vt.render_frame(&mut app);
             }));
         }
 
         app.on_message(ChatAppMsg::StreamComplete);
 
-        render_and_graduate(&mut runtime, &mut app);
+        vt.render_frame(&mut app);
 
-        let combined = combined_output(&runtime);
+        let combined = strip_ansi(&vt.screen_contents());
         prop_assert!(
             combined.contains("Q"),
             "User message should persist:\n{}",
@@ -168,7 +161,7 @@ proptest! {
         think_chunks in prop::collection::vec("[a-zA-Z]{5,20}", 1..5),
         text_chunks in prop::collection::vec("[a-zA-Z]{5,20}", 1..5)
     ) {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 60);
         let mut app = OilChatApp::default();
         app.set_show_thinking(true);
 
@@ -183,14 +176,14 @@ proptest! {
                 app.on_message(ChatAppMsg::TextDelta(text_chunks[i].clone()));
             }
 
-            render_and_graduate(&mut runtime, &mut app);
+            vt.render_frame(&mut app);
         }
 
         app.on_message(ChatAppMsg::StreamComplete);
 
-        render_and_graduate(&mut runtime, &mut app);
+        vt.render_frame(&mut app);
 
-        let combined = combined_output(&runtime);
+        let combined = strip_ansi(&vt.screen_contents());
 
         if !think_chunks.is_empty() {
             prop_assert!(
@@ -207,7 +200,7 @@ proptest! {
         tool_names in prop::collection::hash_set(arb_tool_name(), 2..5)
     ) {
         let tools: Vec<_> = tool_names.into_iter().collect();
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 60);
         let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Multi-tool query".to_string()));
@@ -228,15 +221,15 @@ proptest! {
             });
             app.on_message(ChatAppMsg::ToolResultComplete { name: tool.clone(), call_id: None });
 
-            render_and_graduate(&mut runtime, &mut app);
+            vt.render_frame(&mut app);
         }
 
         app.on_message(ChatAppMsg::TextDelta("All tools complete.".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
 
-        render_and_graduate(&mut runtime, &mut app);
+        vt.render_frame(&mut app);
 
-        let combined = combined_output(&runtime);
+        let combined = strip_ansi(&vt.screen_contents());
 
         let mut last_pos = 0;
         for tool in &tools {
@@ -258,19 +251,19 @@ proptest! {
         used in 0usize..100000,
         total in 100000usize..200000
     ) {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 60);
         let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Q".to_string()));
         app.on_message(ChatAppMsg::TextDelta("Response".to_string()));
 
-        render_and_graduate(&mut runtime, &mut app);
-        let before = combined_output(&runtime);
+        vt.render_frame(&mut app);
+        let before = strip_ansi(&vt.screen_contents());
 
         app.on_message(ChatAppMsg::ContextUsage { used, total });
 
-        render_and_graduate(&mut runtime, &mut app);
-        let after = combined_output(&runtime);
+        vt.render_frame(&mut app);
+        let after = strip_ansi(&vt.screen_contents());
 
         // Strip status bar lines (contain "NORMAL" mode indicator) before comparing,
         // since context usage legitimately updates the status bar display.
@@ -292,21 +285,21 @@ proptest! {
     fn error_messages_preserve_history(
         error_msg in "[a-zA-Z ]{10,50}"
     ) {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 60);
         let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Q1".to_string()));
         app.on_message(ChatAppMsg::TextDelta("R1".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
 
-        render_and_graduate(&mut runtime, &mut app);
+        vt.render_frame(&mut app);
 
         app.on_message(ChatAppMsg::UserMessage("Q2".to_string()));
         app.on_message(ChatAppMsg::Error(error_msg.clone()));
 
-        render_and_graduate(&mut runtime, &mut app);
+        vt.render_frame(&mut app);
 
-        let combined = combined_output(&runtime);
+        let combined = strip_ansi(&vt.screen_contents());
 
         prop_assert!(
             combined.contains("Q1"),
@@ -329,7 +322,7 @@ proptest! {
         subagents in arb_subagent_sequence(),
         response in arb_text_content()
     ) {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 60);
         let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Q".to_string()));
@@ -339,7 +332,7 @@ proptest! {
                 id: sa.id.clone(),
                 prompt: sa.prompt.clone(),
             });
-            render_and_graduate(&mut runtime, &mut app);
+            vt.render_frame(&mut app);
         }
 
         for sa in &subagents {
@@ -358,14 +351,14 @@ proptest! {
                 }
                 SubagentOutcome::Pending => {}
             }
-            render_and_graduate(&mut runtime, &mut app);
+            vt.render_frame(&mut app);
         }
 
         app.on_message(ChatAppMsg::TextDelta(response));
         app.on_message(ChatAppMsg::StreamComplete);
-        render_and_graduate(&mut runtime, &mut app);
+        vt.render_frame(&mut app);
 
-        let combined = combined_output(&runtime);
+        let combined = strip_ansi(&vt.screen_contents());
         prop_assert!(
             combined.contains("Q"),
             "User message should persist through subagent events:\n{}",
@@ -377,7 +370,7 @@ proptest! {
     fn subagent_prompts_appear_in_output(
         subagents in arb_subagent_sequence()
     ) {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 60);
         let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Q".to_string()));
@@ -407,9 +400,9 @@ proptest! {
 
         app.on_message(ChatAppMsg::TextDelta("Done".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
-        render_and_graduate(&mut runtime, &mut app);
+        vt.render_frame(&mut app);
 
-        let combined = combined_output(&runtime);
+        let combined = strip_ansi(&vt.screen_contents());
 
         for sa in &subagents {
             let prompt_word = sa.prompt.split_whitespace().next();
@@ -430,7 +423,7 @@ proptest! {
         subagents in arb_subagent_sequence(),
         tool_sequence in arb_rpc_sequence_with_tools()
     ) {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 60);
         let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Complex query".to_string()));
@@ -463,18 +456,18 @@ proptest! {
                 SubagentOutcome::Pending => {}
             }
 
-            render_and_graduate(&mut runtime, &mut app);
+            vt.render_frame(&mut app);
         }
 
         for event in tool_iter {
             apply_rpc_event(&mut app, event);
-            render_and_graduate(&mut runtime, &mut app);
+            vt.render_frame(&mut app);
         }
 
         app.on_message(ChatAppMsg::StreamComplete);
-        render_and_graduate(&mut runtime, &mut app);
+        vt.render_frame(&mut app);
 
-        let combined = combined_output(&runtime);
+        let combined = strip_ansi(&vt.screen_contents());
         prop_assert!(
             combined.contains("Complex query"),
             "User message should persist:\n{}",
@@ -489,7 +482,7 @@ mod e2e_edge_cases {
 
     #[test]
     fn empty_tool_result_completes() {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 60);
         let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Q".to_string()));
@@ -508,9 +501,9 @@ mod e2e_edge_cases {
         app.on_message(ChatAppMsg::TextDelta("Done".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
 
-        render_and_graduate(&mut runtime, &mut app);
+        vt.render_frame(&mut app);
 
-        let combined = combined_output(&runtime);
+        let combined = strip_ansi(&vt.screen_contents());
 
         assert!(combined.contains("Empty Tool"));
         assert!(combined.contains("\u{2713}") || combined.contains("Done"));
@@ -518,21 +511,21 @@ mod e2e_edge_cases {
 
     #[test]
     fn mode_change_during_streaming() {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 60);
         let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Q".to_string()));
         app.on_message(ChatAppMsg::TextDelta("Part 1".to_string()));
 
-        render_and_graduate(&mut runtime, &mut app);
+        vt.render_frame(&mut app);
 
         app.on_message(ChatAppMsg::ModeChanged("plan".to_string()));
         app.on_message(ChatAppMsg::TextDelta(" Part 2".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
 
-        render_and_graduate(&mut runtime, &mut app);
+        vt.render_frame(&mut app);
 
-        let combined = combined_output(&runtime);
+        let combined = strip_ansi(&vt.screen_contents());
         assert!(combined.contains("Part 1") || combined.contains("Part 2"));
     }
 }

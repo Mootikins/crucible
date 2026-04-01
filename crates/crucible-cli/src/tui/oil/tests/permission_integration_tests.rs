@@ -6,23 +6,20 @@
 //! 3. User responds
 //! 4. Response sent back to daemon
 
-use crate::tui::oil::app::{App, ViewContext};
+use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::event::Event;
-use crate::tui::oil::focus::FocusContext;
-use crate::tui::oil::render::render_to_string;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crucible_core::interaction::{InteractionRequest, PermRequest};
+
+use super::helpers::vt_render;
 
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }
 
-fn render_app(app: &OilChatApp) -> String {
-    let focus = FocusContext::new();
-    let ctx = ViewContext::new(&focus);
-    let tree = app.view(&ctx);
-    render_to_string(&tree, 80)
+fn render_app(app: &mut OilChatApp) -> String {
+    vt_render(app)
 }
 
 fn assert_contains(output: &str, needle: &str, context: &str) {
@@ -54,7 +51,7 @@ fn test_permission_modal_opens_on_interaction_request() {
     let mut app = OilChatApp::default();
 
     // Initially no modal
-    let _output = render_app(&app);
+    let _output = render_app(&mut app);
     assert!(
         !app.interaction_visible(),
         "Modal should be closed initially"
@@ -69,7 +66,7 @@ fn test_permission_modal_opens_on_interaction_request() {
         app.interaction_visible(),
         "Modal should be open after request"
     );
-    let output = render_app(&app);
+    let output = render_app(&mut app);
     assert_contains(&output, "npm", "bash command should be displayed");
 }
 
@@ -79,7 +76,7 @@ fn test_permission_modal_displays_bash_command() {
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install", "lodash"]));
     app.open_interaction("perm-bash".to_string(), request);
 
-    let output = render_app(&app);
+    let output = render_app(&mut app);
     assert_contains(&output, "npm", "should show npm command");
     assert_contains(&output, "install", "should show install argument");
     assert_contains(&output, "lodash", "should show package name");
@@ -91,7 +88,7 @@ fn test_permission_modal_shows_keybinding_hints() {
     let request = InteractionRequest::Permission(PermRequest::bash(["rm", "-rf", "/"]));
     app.open_interaction("perm-dangerous".to_string(), request);
 
-    let output = render_app(&app);
+    let output = render_app(&mut app);
     // Should show keybinding hints for y/n/h/Esc
     assert_contains(&output, "y", "should show 'y' keybinding hint for allow");
     assert_contains(&output, "n", "should show 'n' keybinding hint for deny");
@@ -197,12 +194,12 @@ fn test_permission_h_key_toggles_diff_visibility() {
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
-    let _output_before = render_app(&app);
+    let _output_before = render_app(&mut app);
 
     // Press 'h' to toggle diff visibility
     app.update(Event::Key(key(KeyCode::Char('h'))));
 
-    let output_after = render_app(&app);
+    let output_after = render_app(&mut app);
 
     // Modal should still be visible
     assert!(
@@ -271,7 +268,7 @@ fn test_permission_queue_shows_first() {
     app.open_interaction("perm-1".to_string(), req1);
     app.open_interaction("perm-2".to_string(), req2);
 
-    let output = render_app(&app);
+    let output = render_app(&mut app);
 
     // First request should be displayed
     assert_contains(&output, "npm", "first request should be visible");
@@ -291,7 +288,7 @@ fn test_permission_queue_shows_indicator() {
     app.open_interaction("perm-2".to_string(), req2);
     app.open_interaction("perm-3".to_string(), req3);
 
-    let output = render_app(&app);
+    let output = render_app(&mut app);
 
     // Should show queue indicator like "[1/3]"
     assert_contains(&output, "1", "should show current position in queue");
@@ -309,14 +306,14 @@ fn test_permission_queue_advances_after_response() {
     app.open_interaction("perm-1".to_string(), req1);
     app.open_interaction("perm-2".to_string(), req2);
 
-    let output_before = render_app(&app);
+    let output_before = render_app(&mut app);
     assert_contains(&output_before, "npm", "first request should be visible");
 
     // Respond to first request
     app.update(Event::Key(key(KeyCode::Char('y'))));
 
     // Second request should now be displayed
-    let output_after = render_app(&app);
+    let output_after = render_app(&mut app);
     assert_contains(
         &output_after,
         "cargo",
@@ -448,7 +445,7 @@ fn test_permission_read_scope_displayed() {
     let request = InteractionRequest::Permission(PermRequest::read(["etc", "hosts"]));
     app.open_interaction("perm-read".to_string(), request);
 
-    let output = render_app(&app);
+    let output = render_app(&mut app);
     assert_contains(&output, "READ", "should indicate read operation");
     assert_contains(&output, "hosts", "should show file path");
 }
@@ -462,7 +459,7 @@ fn test_permission_tool_scope_displayed() {
     ));
     app.open_interaction("perm-tool".to_string(), request);
 
-    let output = render_app(&app);
+    let output = render_app(&mut app);
     assert_contains(&output, "semantic_search", "should show tool name");
 }
 
@@ -476,12 +473,12 @@ fn test_permission_down_arrow_navigates() {
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
-    let output_before = render_app(&app);
+    let output_before = render_app(&mut app);
     assert_contains(&output_before, "> ", "should show cursor on first option");
 
     app.update(Event::Key(key(KeyCode::Down)));
 
-    let output_after = render_app(&app);
+    let output_after = render_app(&mut app);
     assert!(
         app.interaction_visible(),
         "Modal should remain open after navigation"
@@ -701,7 +698,7 @@ fn test_permission_shows_selectable_options() {
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
-    let output = render_app(&app);
+    let output = render_app(&mut app);
     assert_contains(&output, "Yes", "should show Yes option");
     assert_contains(&output, "No", "should show No option");
     assert_contains(&output, "Allowlist", "should show Allowlist option");
@@ -726,7 +723,7 @@ fn test_permission_long_command_displayed() {
     let request = InteractionRequest::Permission(PermRequest::bash(long_cmd));
     app.open_interaction("perm-long".to_string(), request);
 
-    let output = render_app(&app);
+    let output = render_app(&mut app);
     assert_contains(&output, "npm", "should show npm");
     assert_contains(&output, "typescript", "should show package name");
 }

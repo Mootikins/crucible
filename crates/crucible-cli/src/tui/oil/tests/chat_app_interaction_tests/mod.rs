@@ -2,15 +2,14 @@
 //!
 //! Tests popup behavior, Ctrl+C handling, command processing, and error states.
 
-use crate::tui::oil::ansi::strip_ansi;
 use crate::tui::oil::app::{Action, App, ViewContext};
 use crate::tui::oil::chat_app::{ChatAppMsg, ModelListState, OilChatApp};
 use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
-use crate::tui::oil::planning::FramePlanner;
-use crate::tui::oil::render::render_to_string;
 use crate::tui::oil::test_harness::AppHarness;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+use super::helpers::vt_render;
 
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
@@ -26,10 +25,8 @@ fn view_with_default_ctx(app: &OilChatApp) -> crate::tui::oil::node::Node {
     app.view(&ctx)
 }
 
-fn composited_output(app: &OilChatApp) -> String {
-    let tree = view_with_default_ctx(app);
-    let mut planner = FramePlanner::new(80, 24);
-    strip_ansi(&planner.plan(&tree).viewport_with_overlays(80))
+fn composited_output(app: &mut OilChatApp) -> String {
+    vt_render(app)
 }
 
 fn count_half_block_border_rows(rendered: &str) -> usize {
@@ -51,8 +48,7 @@ fn popup_opens_on_f1() {
     let mut app = OilChatApp::default();
 
     // Initially popup is closed
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(
         !output.contains("semantic_search"),
         "Popup should be closed initially"
@@ -61,8 +57,7 @@ fn popup_opens_on_f1() {
     // Press F1 to open popup
     app.update(Event::Key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE)));
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(
         output.contains("semantic_search"),
         "Popup should be open after F1"
@@ -76,15 +71,13 @@ fn popup_closes_on_f1_toggle() {
     // Open popup
     app.update(Event::Key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE)));
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(output.contains("semantic_search"), "Popup should be open");
 
     // Press F1 again to close
     app.update(Event::Key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE)));
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(
         !output.contains("semantic_search"),
         "Popup should be closed after second F1"
@@ -98,15 +91,13 @@ fn popup_closes_on_escape() {
     // Open popup
     app.update(Event::Key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE)));
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(output.contains("semantic_search"), "Popup should be open");
 
     // Press Escape to close
     app.update(Event::Key(key(KeyCode::Esc)));
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(
         !output.contains("semantic_search"),
         "Popup should be closed after Escape"
@@ -121,14 +112,12 @@ fn popup_navigates_down() {
     app.update(Event::Key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE)));
 
     // First item should be selected (semantic_search)
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
 
     // Navigate down
     app.update(Event::Key(key(KeyCode::Down)));
 
-    let tree_after = view_with_default_ctx(&app);
-    let output_after = render_to_string(&tree_after, 80);
+    let output_after = vt_render(&mut app);
 
     // The selection indicator should have moved
     let indicator_pos_before = output
@@ -153,14 +142,12 @@ fn popup_navigates_up() {
     app.update(Event::Key(key(KeyCode::Down)));
     app.update(Event::Key(key(KeyCode::Down)));
 
-    let tree_before = view_with_default_ctx(&app);
-    let output_before = render_to_string(&tree_before, 80);
+    let output_before = vt_render(&mut app);
 
     // Navigate up
     app.update(Event::Key(key(KeyCode::Up)));
 
-    let tree_after = view_with_default_ctx(&app);
-    let output_after = render_to_string(&tree_after, 80);
+    let output_after = vt_render(&mut app);
 
     let indicator_pos_before = output_before
         .find('▸')
@@ -182,14 +169,12 @@ fn popup_up_at_top_stays_at_top() {
     // Open popup (selection at top)
     app.update(Event::Key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE)));
 
-    let tree_before = view_with_default_ctx(&app);
-    let output_before = render_to_string(&tree_before, 80);
+    let output_before = vt_render(&mut app);
 
     // Try to navigate up (should stay at top)
     app.update(Event::Key(key(KeyCode::Up)));
 
-    let tree_after = view_with_default_ctx(&app);
-    let output_after = render_to_string(&tree_after, 80);
+    let output_after = vt_render(&mut app);
 
     let indicator_pos_before = output_before
         .find('▸')
@@ -216,14 +201,12 @@ fn popup_down_at_bottom_stays_at_bottom() {
         app.update(Event::Key(key(KeyCode::Down)));
     }
 
-    let tree_before = view_with_default_ctx(&app);
-    let output_before = render_to_string(&tree_before, 80);
+    let output_before = vt_render(&mut app);
 
     // Try to navigate down again (should stay at bottom)
     app.update(Event::Key(key(KeyCode::Down)));
 
-    let tree_after = view_with_default_ctx(&app);
-    let output_after = render_to_string(&tree_after, 80);
+    let output_after = vt_render(&mut app);
 
     let indicator_pos_before = output_before
         .find('▸')
@@ -305,8 +288,7 @@ fn ctrl_c_shows_notification_when_empty() {
         "First Ctrl+C should return Continue"
     );
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(
         output.contains("Ctrl+C again to quit"),
         "Should show quit notification"
@@ -335,8 +317,7 @@ fn ctrl_c_after_timeout_shows_notification_again() {
 
     // Simulate time passing by resetting the internal state
     // We can't easily simulate time, but we can verify the notification shows
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(output.contains("Ctrl+C again to quit"));
 
     // Type something to reset the Ctrl+C state
@@ -358,15 +339,13 @@ fn notification_persists_until_timeout() {
     // Show notification
     app.update(Event::Key(ctrl('c')));
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(output.contains("Ctrl+C again to quit"));
 
     // Press any other key - notification should still be visible (timeout-based clearing)
     app.update(Event::Key(key(KeyCode::Char('a'))));
 
-    let tree_after = view_with_default_ctx(&app);
-    let output_after = render_to_string(&tree_after, 80);
+    let output_after = vt_render(&mut app);
     assert!(
         output_after.contains("Ctrl+C again to quit"),
         "Notification should persist until timeout"
@@ -378,8 +357,7 @@ fn tick_hides_notification_area_when_empty() {
     let mut app = OilChatApp::default();
 
     app.update(Event::Key(ctrl('c')));
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(
         output.contains("Ctrl+C again to quit"),
         "Notification should be visible after Ctrl+C"
@@ -388,8 +366,7 @@ fn tick_hides_notification_area_when_empty() {
     app.clear_notifications();
     app.update(Event::Tick);
 
-    let tree_after = view_with_default_ctx(&app);
-    let output_after = render_to_string(&tree_after, 80);
+    let output_after = vt_render(&mut app);
     assert!(
         !output_after.contains("Ctrl+C again to quit"),
         "Notification should be hidden after tick when empty"
@@ -430,8 +407,7 @@ fn error_shows_as_notification_toast() {
 
     app.on_message(ChatAppMsg::Error("Test error".to_string()));
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(
         output.contains("Test error"),
         "Error should be displayed as notification toast in status bar"
@@ -479,8 +455,7 @@ fn error_renders_with_warning_styling() {
 
     app.on_message(ChatAppMsg::Error("Test error".to_string()));
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
 
     assert!(
         output.contains("Test error"),
@@ -495,8 +470,7 @@ fn multiple_errors_show_latest_as_toast() {
     app.on_message(ChatAppMsg::Error("First error".to_string()));
     app.on_message(ChatAppMsg::Error("Second error".to_string()));
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(
         output.contains("Second error"),
         "Should show most recent error as toast"
@@ -548,8 +522,7 @@ fn help_shows_both_slash_and_colon_commands() {
     }
     app.update(Event::Key(key(KeyCode::Enter)));
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
 
     assert!(
         output.contains("[system]") || output.contains("/mode") || output.contains(":quit"),
@@ -584,8 +557,7 @@ fn repl_help_adds_system_message() {
     }
     app.update(Event::Key(key(KeyCode::Enter)));
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
 
     assert!(
         output.contains("REPL") || output.contains(":q"),
@@ -599,8 +571,7 @@ fn slash_mode_cycles_through_modes() {
     let mut app = OilChatApp::default();
 
     // Start in Normal mode
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(output.contains("NORMAL"), "Should start in Normal mode");
 
     // Type /mode and submit
@@ -609,8 +580,7 @@ fn slash_mode_cycles_through_modes() {
     }
     app.update(Event::Key(key(KeyCode::Enter)));
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(output.contains("PLAN"), "Should cycle to Plan mode");
 
     // Type /mode again
@@ -619,8 +589,7 @@ fn slash_mode_cycles_through_modes() {
     }
     app.update(Event::Key(key(KeyCode::Enter)));
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(output.contains("AUTO"), "Should cycle to Auto mode");
 
     // Type /mode again
@@ -629,8 +598,7 @@ fn slash_mode_cycles_through_modes() {
     }
     app.update(Event::Key(key(KeyCode::Enter)));
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(
         output.contains("NORMAL"),
         "Should cycle back to Normal mode"
@@ -654,8 +622,7 @@ fn at_symbol_triggers_file_autocomplete() {
         app.update(Event::Key(key(KeyCode::Char(c))));
     }
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(
         output.contains("main.rs"),
         "Should show file popup with main.rs"
@@ -674,8 +641,7 @@ fn double_bracket_triggers_note_autocomplete() {
         app.update(Event::Key(key(KeyCode::Char(c))));
     }
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(
         output.contains("Projects/README.md"),
         "Should show note popup with Projects"
@@ -691,8 +657,7 @@ fn autocomplete_closes_on_space_after_at() {
         app.update(Event::Key(key(KeyCode::Char(c))));
     }
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(!output.contains("file"), "Popup should close after space");
 }
 
@@ -737,8 +702,7 @@ fn palette_command_opens_command_popup() {
     }
     app.update(Event::Key(key(KeyCode::Enter)));
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(
         output.contains("semantic_search"),
         "Palette command should open command popup"
@@ -754,8 +718,7 @@ fn commands_command_opens_command_popup() {
     }
     app.update(Event::Key(key(KeyCode::Enter)));
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(
         output.contains("/mode"),
         "Commands should open command popup"
@@ -831,8 +794,7 @@ fn double_ctrl_c_after_popup_close_and_clear_triggers_quit_flow() {
         "Second Ctrl+C should enter quit flow"
     );
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(
         output.contains("Ctrl+C again to quit"),
         "Second Ctrl+C should trigger quit notification"
@@ -1073,8 +1035,6 @@ fn shell_modal_immediate_render_then_poll() {
 
 #[test]
 fn shell_modal_render_shows_first_line_in_small_viewport() {
-    use crate::tui::oil::render::render_to_string;
-
     let mut app = OilChatApp::default();
 
     for c in "!seq 1 100".chars() {
@@ -1095,8 +1055,14 @@ fn shell_modal_render_shows_first_line_in_small_viewport() {
         output.len()
     );
 
+    // Shell modal renders as an overlay — use FramePlanner path which
+    // composites overlays into the viewport (vt100 path doesn't composite
+    // shell modal output the same way since it runs a real shell process).
     let tree = view_with_default_ctx(&app);
-    let rendered = render_to_string(&tree, 80);
+    let mut planner = crate::tui::oil::planning::FramePlanner::new(80, 24);
+    let rendered = crate::tui::oil::ansi::strip_ansi(
+        &planner.plan(&tree).viewport_with_overlays(80),
+    );
 
     let lines: Vec<&str> = rendered.lines().collect();
 

@@ -1,22 +1,21 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
-expression: render_app(&app)
+expression: render_app(&mut app)
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  > Analyze everything                                                           
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-                                                                                
- ● Starting analysis.                                                           
-                                                                                
- ✓ Bash ls -la                                                                  
+
+ ● Starting analysis.
+
+ ✓ Bash ls -la
    │ total 42                                                                   
    │ drwxr-xr-x  5 user                                                         
-                                                                                
-   Found the directory listing. Let me check the config.                        
-                                                                                
- ✓ Read File Cargo.toml → [package]                                             
-                        name = "myproject"                                      
-                                                                                
+
+ ● Found the directory listing. Let me check the config.
+
+ ✓ Read File Cargo.toml → [package]                   
+                        name = "myproject"            
  ◐                                                                              
                                                                                 
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄

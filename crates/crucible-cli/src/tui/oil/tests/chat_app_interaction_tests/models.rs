@@ -22,8 +22,7 @@ fn model_command_opens_popup_with_available_models() {
         "Popup should open when typing ':model '"
     );
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
 
     assert!(output.contains("llama3"), "Popup should show llama3 model");
     assert!(
@@ -54,8 +53,7 @@ fn model_space_with_preloaded_models_shows_popup_immediately() {
         "Loaded model list should not trigger a new fetch"
     );
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(
         output.contains("llama3"),
         "Popup should include preloaded models"
@@ -82,8 +80,7 @@ fn model_command_filters_models() {
         "Filter should be 'clau'"
     );
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
 
     assert!(
         output.contains("claude-3"),
@@ -176,8 +173,7 @@ fn model_popup_shows_exactly_fifteen_models() {
 
     let mut rendered_states = String::new();
     for _ in 0..models.len() {
-        let tree = view_with_default_ctx(&app);
-        rendered_states.push_str(&render_to_string(&tree, 80));
+        rendered_states.push_str(&vt_render(&mut app));
         app.update(Event::Key(key(KeyCode::Down)));
     }
 
@@ -268,8 +264,7 @@ fn model_popup_filter_across_all_provider_prefixes() {
         "Filter should be 'visioncraft'"
     );
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
 
     assert!(
         output.contains("ollama/visioncraft-alpha"),
@@ -417,8 +412,7 @@ fn model_popup_repl_command_keeps_open_when_typing_filter() {
         "Popup should stay open while typing filter"
     );
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(
         output.contains("llama"),
         "Popup should show filtered models. Got: {}",
@@ -457,8 +451,7 @@ fn model_popup_repl_command_not_loaded_stays_open_after_models_arrive() {
         "Popup should stay open after models arrive"
     );
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(
         output.contains("llama3"),
         "Popup should show newly loaded models. Got: {}",
@@ -497,8 +490,7 @@ fn model_popup_repl_command_multi_char_filter_narrows_results() {
         "Popup should stay open while typing filter"
     );
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(
         output.contains("claude-3"),
         "Popup should show claude-3 matching filter. Got: {}",
@@ -516,8 +508,7 @@ fn model_repl_command_in_popup_list() {
 
     assert!(app.is_popup_visible(), "Popup should open on :");
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
 
     assert!(
         output.contains(":model"),
@@ -577,16 +568,14 @@ fn config_show_command_displays_values() {
 // BackTab Mode Cycling Tests
 // =============================================================================
 
-fn rendered_status_bar(app: &OilChatApp) -> String {
-    let tree = view_with_default_ctx(app);
-    let output = render_to_string(&tree, 80);
-    crate::tui::oil::ansi::strip_ansi(&output)
+fn rendered_status_bar(app: &mut OilChatApp) -> String {
+    vt_render(app)
 }
 
 #[test]
 fn backtab_cycles_mode_from_default() {
     let mut app = OilChatApp::default();
-    let initial = rendered_status_bar(&app);
+    let initial = rendered_status_bar(&mut app);
     assert!(
         initial.contains("NORMAL"),
         "Default mode should be NORMAL: {}",
@@ -597,7 +586,7 @@ fn backtab_cycles_mode_from_default() {
         KeyCode::BackTab,
         KeyModifiers::SHIFT,
     )));
-    let after = rendered_status_bar(&app);
+    let after = rendered_status_bar(&mut app);
     assert!(
         after.contains("PLAN") || after.contains("AUTO"),
         "BackTab should cycle to PLAN or AUTO: {}",
@@ -611,7 +600,7 @@ fn backtab_cycles_through_all_modes() {
 
     let mut modes_seen = Vec::new();
     for _ in 0..4 {
-        let bar = rendered_status_bar(&app);
+        let bar = rendered_status_bar(&mut app);
         if bar.contains("PLAN") {
             modes_seen.push("PLAN");
         } else if bar.contains("NORMAL") {
@@ -643,12 +632,12 @@ fn backtab_during_streaming_still_cycles() {
     app.on_message(ChatAppMsg::UserMessage("Hello".to_string()));
     app.on_message(ChatAppMsg::TextDelta("Hi there".to_string()));
 
-    let bar_before = rendered_status_bar(&app);
+    let bar_before = rendered_status_bar(&mut app);
     app.update(Event::Key(KeyEvent::new(
         KeyCode::BackTab,
         KeyModifiers::SHIFT,
     )));
-    let bar_after = rendered_status_bar(&app);
+    let bar_after = rendered_status_bar(&mut app);
     assert_ne!(
         bar_before, bar_after,
         "BackTab should change mode during streaming"
@@ -684,8 +673,7 @@ fn error_notification_appears_and_app_stays_responsive() {
     let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::Error("Database connection failed".to_string()));
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(
         output.contains("Database connection failed"),
         "Error should be visible: {}",
@@ -695,8 +683,7 @@ fn error_notification_appears_and_app_stays_responsive() {
     for c in "still typing".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
     }
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(
         output.contains("still typing"),
         "Input should still work after error: {}",
@@ -722,8 +709,7 @@ fn models_loaded_updates_popup_content() {
     }
     app.update(Event::Key(key(KeyCode::Enter)));
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(
         output.contains("llama3.2") || output.contains("mistral"),
         "Model popup should show loaded models: {}",
@@ -743,8 +729,7 @@ fn model_fetch_failed_shows_error_in_popup() {
     }
     app.update(Event::Key(key(KeyCode::Enter)));
 
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
     assert!(
         output.contains("Connection refused")
             || output.contains("error")
@@ -993,8 +978,7 @@ fn model_loading_message_not_duplicated() {
     }
 
     // Render the chat and count occurrences of "Retrying" or "Fetching"
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
+    let output = vt_render(&mut app);
 
     // Count how many times "Retrying" appears
     let retrying_count = output.matches("Retrying").count();
@@ -1064,7 +1048,7 @@ fn model_space_backspace_renders_single_border_row() {
         "Popup should stay visible and switch to REPL command completion"
     );
 
-    let rendered = composited_output(&app);
+    let rendered = composited_output(&mut app);
     let border_rows = count_half_block_border_rows(&rendered);
     assert_eq!(
         border_rows, 1,
@@ -1094,7 +1078,7 @@ fn set_space_backspace_renders_single_border_row() {
         "Popup should stay visible and switch to REPL command completion"
     );
 
-    let rendered = composited_output(&app);
+    let rendered = composited_output(&mut app);
     let border_rows = count_half_block_border_rows(&rendered);
     assert_eq!(
         border_rows, 1,

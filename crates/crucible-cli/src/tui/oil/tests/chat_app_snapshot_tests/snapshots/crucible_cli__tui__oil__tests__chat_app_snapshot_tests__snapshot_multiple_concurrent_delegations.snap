@@ -1,15 +1,14 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
-expression: render_app(&app)
+expression: render_app(&mut app)
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  > Research multiple topics                                                     
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-                                                                                
- ● Delegating to multiple agents...                                             
-                                                                                
- ✓ delegation to cursor Search for auth patterns → Found 5 auth patterns        
-                                                                                
+
+ ● Delegating to multiple agents...
+
+ ✓ delegation to cursor Search for auth patterns → Found 5 auth patterns
  ⠋ delegation to opencode Analyze security module  0s                           
                                                                                 
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄

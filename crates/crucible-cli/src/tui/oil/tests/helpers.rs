@@ -3,9 +3,9 @@ use crate::tui::oil::app::{App, ViewContext};
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::Node;
-use crate::tui::oil::TestRuntime;
 
 use super::generators::RpcEvent;
+use super::vt100_runtime::Vt100TestRuntime;
 
 pub fn view_with_default_ctx(app: &OilChatApp) -> Node {
     let focus = FocusContext::new();
@@ -13,20 +13,18 @@ pub fn view_with_default_ctx(app: &OilChatApp) -> Node {
     app.view(&ctx)
 }
 
-pub fn combined_output(runtime: &TestRuntime) -> String {
-    let stdout = strip_ansi(runtime.stdout_content());
-    let viewport = strip_ansi(runtime.viewport_content());
-    format!("{}{}", stdout, viewport)
+/// Render app through the real terminal path (Terminal<Vec<u8>> → vt100)
+/// and return stripped screen contents. This is the canonical test render
+/// function — it exercises the same code path as production.
+pub fn vt_render(app: &mut OilChatApp) -> String {
+    vt_render_sized(app, 80, 24)
 }
 
-/// Render the app's view tree through the runtime, triggering graduation.
-///
-/// This mirrors the real chat_runner loop: build the view tree from app state,
-/// then render it through the planner which graduates static nodes to stdout
-/// and renders the remaining viewport.
-pub fn flush_and_render(app: &mut OilChatApp, runtime: &mut TestRuntime) {
-    let tree = view_with_default_ctx(app);
-    runtime.render(&tree);
+/// Like vt_render but with custom terminal dimensions.
+pub fn vt_render_sized(app: &mut OilChatApp, width: u16, height: u16) -> String {
+    let mut vt = Vt100TestRuntime::new(width, height);
+    vt.render_frame(app);
+    strip_ansi(&vt.screen_contents())
 }
 
 pub fn apply_rpc_event(app: &mut OilChatApp, event: &RpcEvent) {

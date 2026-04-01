@@ -1,18 +1,18 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
-expression: render_app_raw(&app)
+expression: render_app_raw(&mut app)
 ---
-[48;2;30;34;42m                                                                                [0m
-[48;2;30;34;42m                                                                                [0m
-[48;2;30;34;42m                                                                                [0m
-[48;2;30;34;42m                                                                                [0m
-[48;2;30;34;42m                                                                                [0m
-[48;2;30;34;42m                                                                                [0m
-[48;2;50;56;68m ▸ tool semantic_search  Search notes by meaning                                [0m
-[48;2;30;34;42m   tool create_note  Create a new note                                          [0m
-[48;2;30;34;42m   command /mode  Cycle chat mode                                               [0m
-[48;2;30;34;42m   command /help  Show help                                                     [0m
-[38;2;60;64;72m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0m
-[48;2;60;64;72m >                                                                              [0m
-[38;2;60;64;72m▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀[0m
-[48;5;10m[38;5;0m[1m NORMAL [0m[38;5;8m [0m[38;5;14m...[0m                                                              [38;5;8m— ctx[0m
+[?25l[m[H[J[48;2;30;34;42m                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+[48;2;50;56;68m ▸ tool semantic_search  Search notes by meaning                                
+[48;2;30;34;42m   tool create_note  Create a new note                                          
+   command /mode  Cycle chat mode                                               
+   command /help  Show help                                                     
+[38;2;60;64;72;49m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+[39;48;2;60;64;72m >                                                                              
+[38;2;60;64;72;49m▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+[30;102;1m NORMAL [90;49;22m [96m...[m                                                              [90m— ctx[m

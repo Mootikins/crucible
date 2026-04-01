@@ -2,11 +2,11 @@ use crate::tui::oil::ansi::{strip_ansi, visible_width};
 use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::render::render_to_string;
-use crate::tui::oil::TestRuntime;
+use crate::tui::oil::tests::helpers::{vt_render_sized, view_with_default_ctx};
+use crate::tui::oil::tests::vt100_runtime::Vt100TestRuntime;
 use proptest::prelude::*;
 
 use super::generators::{arb_markdown_content, arb_text_content};
-use super::helpers::view_with_default_ctx;
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(100))]
@@ -21,11 +21,10 @@ proptest! {
         app.on_message(ChatAppMsg::TextDelta(content));
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let tree = view_with_default_ctx(&app);
-        let rendered = render_to_string(&tree, width);
+        let rendered = vt_render_sized(&mut app, width as u16, 60);
 
         let max_allowed = width + 5;
-        for (i, line) in rendered.split("\r\n").enumerate() {
+        for (i, line) in rendered.lines().enumerate() {
             let line_width = visible_width(line);
             prop_assert!(
                 line_width <= max_allowed,
@@ -39,7 +38,7 @@ proptest! {
     fn graduated_content_present_after_streaming(
         chunks in prop::collection::vec(arb_text_content(), 2..5)
     ) {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 60);
         let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
@@ -49,23 +48,19 @@ proptest! {
             app.on_message(ChatAppMsg::TextDelta(marked));
             app.on_message(ChatAppMsg::TextDelta("\n\n".to_string()));
 
-            let tree = view_with_default_ctx(&app);
-            runtime.render(&tree);
+            vt.render_frame(&mut app);
         }
 
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        vt.render_frame(&mut app);
 
-        let stdout = strip_ansi(runtime.stdout_content());
-        let viewport = strip_ansi(runtime.viewport_content());
-        let combined = format!("{}{}", stdout, viewport);
+        let screen = strip_ansi(&vt.screen_contents());
 
         prop_assert!(
-            combined.contains("PARA0"),
+            screen.contains("PARA0"),
             "First paragraph should be present:\n{}",
-            combined
+            screen
         );
     }
 
@@ -73,7 +68,7 @@ proptest! {
     fn viewport_stdout_no_overlap(
         chunks in prop::collection::vec(arb_text_content(), 2..6)
     ) {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 60);
         let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
@@ -82,28 +77,24 @@ proptest! {
             app.on_message(ChatAppMsg::TextDelta(chunk.clone()));
             app.on_message(ChatAppMsg::TextDelta("\n\n".to_string()));
 
-            let tree = view_with_default_ctx(&app);
-            runtime.render(&tree);
+            vt.render_frame(&mut app);
         }
 
         let last_chunk = &chunks[chunks.len()-1];
         app.on_message(ChatAppMsg::TextDelta(last_chunk.clone()));
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        vt.render_frame(&mut app);
 
-        let stdout = strip_ansi(runtime.stdout_content());
-        let viewport = strip_ansi(runtime.viewport_content());
+        let screen = strip_ansi(&vt.screen_contents());
 
         let last_word = last_chunk.split_whitespace().next();
         if let Some(word) = last_word {
             if word.len() >= 4 {
-                let in_stdout = stdout.contains(word);
-                let in_viewport = viewport.contains(word);
+                let count = screen.matches(word).count();
                 prop_assert!(
-                    !(in_stdout && in_viewport),
-                    "Content '{}' should not appear in both stdout and viewport (XOR invariant):\nstdout: {}\nviewport: {}",
-                    word, stdout, viewport
+                    count <= 1,
+                    "Content '{}' should not appear more than once in screen:\n{}",
+                    word, screen
                 );
             }
         }
@@ -125,19 +116,19 @@ proptest! {
         app2.on_message(ChatAppMsg::TextDelta(content));
         app2.on_message(ChatAppMsg::StreamComplete);
 
-        let tree1 = view_with_default_ctx(&app1);
-        let tree2 = view_with_default_ctx(&app2);
-
-        let render1 = render_to_string(&tree1, width);
-        let render2 = render_to_string(&tree2, width);
+        let render1 = vt_render_sized(&mut app1, width as u16, 60);
+        let render2 = vt_render_sized(&mut app2, width as u16, 60);
 
         prop_assert_eq!(
-            strip_ansi(&render1),
-            strip_ansi(&render2),
+            render1,
+            render2,
             "Same input should produce same output"
         );
     }
 
+    /// This test explicitly verifies render_to_string doesn't panic — keep
+    /// render_to_string here since it tests render engine robustness via
+    /// catch_unwind, not the terminal path.
     #[test]
     fn markdown_renders_at_any_width(
         content in arb_markdown_content(),
@@ -163,7 +154,7 @@ proptest! {
         cell2 in "[a-zA-Z]{2,8}",
         width in 60u16..100u16
     ) {
-        let mut runtime = TestRuntime::new(width, 24);
+        let mut vt = Vt100TestRuntime::new(width, 60);
         let mut app = OilChatApp::default();
 
         let table = format!(
@@ -175,17 +166,14 @@ proptest! {
         app.on_message(ChatAppMsg::TextDelta(table));
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        vt.render_frame(&mut app);
 
-        let stdout = strip_ansi(runtime.stdout_content());
-        let viewport = strip_ansi(runtime.viewport_content());
-        let combined = format!("{}{}", stdout, viewport);
+        let screen = strip_ansi(&vt.screen_contents());
 
         prop_assert!(
-            combined.contains(&col1) || combined.contains(&col2),
+            screen.contains(&col1) || screen.contains(&col2),
             "Table columns should be present:\n{}",
-            combined
+            screen
         );
     }
 
@@ -193,37 +181,32 @@ proptest! {
     fn rapid_streaming_no_duplication(
         chunk_count in 10usize..50
     ) {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 60);
         let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Generate".to_string()));
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        vt.render_frame(&mut app);
 
         for i in 0..chunk_count {
             app.on_message(ChatAppMsg::TextDelta(format!("W{} ", i)));
 
-            let tree = view_with_default_ctx(&app);
-            runtime.render(&tree);
+            vt.render_frame(&mut app);
         }
 
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        vt.render_frame(&mut app);
 
-        let stdout = strip_ansi(runtime.stdout_content());
-        let viewport = strip_ansi(runtime.viewport_content());
-        let combined = format!("{}{}", stdout, viewport);
+        let screen = strip_ansi(&vt.screen_contents());
 
         for i in 0..chunk_count.min(20) {
             let marker = format!("W{} ", i);
-            let count = combined.matches(&marker).count();
+            let count = screen.matches(&marker).count();
             prop_assert!(
                 count <= 1,
                 "{} appears {} times (should be 0 or 1):\n{}",
-                marker, count, combined
+                marker, count, screen
             );
         }
     }
@@ -233,7 +216,7 @@ proptest! {
         thinking in arb_text_content(),
         response in arb_text_content()
     ) {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 60);
         let mut app = OilChatApp::default();
         app.set_show_thinking(false);
 
@@ -242,17 +225,14 @@ proptest! {
         app.on_message(ChatAppMsg::TextDelta(response.clone()));
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        vt.render_frame(&mut app);
 
-        let stdout = strip_ansi(runtime.stdout_content());
-        let viewport = strip_ansi(runtime.viewport_content());
-        let combined = format!("{}{}", stdout, viewport);
+        let screen = strip_ansi(&vt.screen_contents());
 
         prop_assert!(
-            !combined.is_empty(),
+            !screen.is_empty(),
             "Output should not be empty:\n{}",
-            combined
+            screen
         );
     }
 
@@ -261,7 +241,7 @@ proptest! {
         thinking in "[a-zA-Z]{10,30}",
         response in "[a-zA-Z]{10,30}"
     ) {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 60);
         let mut app = OilChatApp::default();
         app.set_show_thinking(true);
 
@@ -270,36 +250,30 @@ proptest! {
         app.on_message(ChatAppMsg::TextDelta(response.clone()));
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        vt.render_frame(&mut app);
 
-        let stdout = strip_ansi(runtime.stdout_content());
-        let viewport = strip_ansi(runtime.viewport_content());
-        let combined = format!("{}{}", stdout, viewport);
+        let screen = strip_ansi(&vt.screen_contents());
 
         prop_assert!(
-            combined.contains(&response),
+            screen.contains(&response),
             "Response content should be present:\n{}",
-            combined
+            screen
         );
     }
 
     #[test]
     fn user_prompt_borders_balanced(message in arb_text_content()) {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 60);
         let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage(message));
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        vt.render_frame(&mut app);
 
-        let stdout = strip_ansi(runtime.stdout_content());
-        let viewport = strip_ansi(runtime.viewport_content());
-        let combined = format!("{}{}", stdout, viewport);
+        let screen = strip_ansi(&vt.screen_contents());
 
-        let top_border_count = combined.chars().filter(|&c| c == '\u{2584}').count();
-        let bottom_border_count = combined.chars().filter(|&c| c == '\u{2580}').count();
+        let top_border_count = screen.chars().filter(|&c| c == '\u{2584}').count();
+        let bottom_border_count = screen.chars().filter(|&c| c == '\u{2580}').count();
 
         prop_assert!(
             top_border_count > 0,
@@ -315,40 +289,35 @@ proptest! {
     /// all content stays in viewport. Verify all chunks are visible in screen output.
     #[test]
     fn all_chunks_visible_in_output(chunk_count in 3usize..10) {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 60);
         let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        vt.render_frame(&mut app);
 
         for i in 0..chunk_count {
             app.on_message(ChatAppMsg::TextDelta(format!("CHUNK{}\n\n", i)));
 
-            let tree = view_with_default_ctx(&app);
-            runtime.render(&tree);
+            vt.render_frame(&mut app);
         }
 
         app.on_message(ChatAppMsg::TextDelta("FINAL_IN_PROGRESS".to_string()));
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        vt.render_frame(&mut app);
 
-        let stdout = strip_ansi(runtime.stdout_content());
-        let viewport = strip_ansi(runtime.viewport_content());
-        let combined = format!("{}{}", stdout, viewport);
+        let screen = strip_ansi(&vt.screen_contents());
 
         prop_assert!(
-            combined.contains("CHUNK0"),
+            screen.contains("CHUNK0"),
             "First chunk should be visible in output:\n{}",
-            combined
+            screen
         );
 
         prop_assert!(
-            combined.contains("FINAL_IN_PROGRESS"),
+            screen.contains("FINAL_IN_PROGRESS"),
             "In-progress content should be visible in output:\n{}",
-            combined
+            screen
         );
     }
 }
@@ -359,21 +328,21 @@ mod rendering_edge_cases {
 
     #[test]
     fn empty_streaming_completes_cleanly() {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 60);
         let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Q".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        vt.render_frame(&mut app);
 
-        let stdout = strip_ansi(runtime.stdout_content());
-        let viewport = strip_ansi(runtime.viewport_content());
-        let combined = format!("{}{}", stdout, viewport);
-        assert!(combined.contains("Q"), "User message should be present");
+        let screen = strip_ansi(&vt.screen_contents());
+        assert!(screen.contains("Q"), "User message should be present");
     }
 
+    /// This test explicitly verifies render_to_string doesn't panic — keep
+    /// render_to_string here since it tests render engine robustness via
+    /// catch_unwind, not the terminal path.
     #[test]
     fn very_narrow_width_does_not_panic() {
         let mut app = OilChatApp::default();
@@ -396,19 +365,16 @@ mod rendering_edge_cases {
 
     #[test]
     fn unicode_content_renders_correctly() {
-        let mut runtime = TestRuntime::new(80, 24);
+        let mut vt = Vt100TestRuntime::new(80, 60);
         let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Test".to_string()));
         app.on_message(ChatAppMsg::TextDelta("Hello world".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        vt.render_frame(&mut app);
 
-        let stdout = strip_ansi(runtime.stdout_content());
-        let viewport = strip_ansi(runtime.viewport_content());
-        let combined = format!("{}{}", stdout, viewport);
-        assert!(combined.contains("Hello") || combined.contains("world"));
+        let screen = strip_ansi(&vt.screen_contents());
+        assert!(screen.contains("Hello") || screen.contains("world"));
     }
 }

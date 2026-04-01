@@ -310,8 +310,12 @@ impl<W: Write> crate::runtime::FrameRenderer for Terminal<W> {
     fn render_frame(&mut self, tree: &Node, graduation: Option<&crate::planning::Graduation>) {
         if let Some(grad) = graduation {
             self.pending_leading_blank = grad.leading_blank;
-            let rendered = grad.render();
-            let _ = self.render(tree, &rendered);
+            // Graduation rendered through planner's layout engine (same as viewport).
+            let snapshot = self
+                .planner
+                .plan_with_graduation(tree, Some(grad.clone()));
+            let _ = self.apply(&snapshot);
+            self.last_snapshot = Some(snapshot);
         } else {
             let _ = self.render(tree, "");
         }

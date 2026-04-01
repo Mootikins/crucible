@@ -1,9 +1,9 @@
 use crate::tui::oil::ansi::strip_ansi;
+use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
-use crate::tui::oil::render::render_to_string;
-use crate::tui::oil::*;
 
-use super::helpers::view_with_default_ctx;
+use super::helpers::vt_render;
+use super::vt100_runtime::Vt100TestRuntime;
 
 #[test]
 fn streaming_content_grows_incrementally() {
@@ -15,9 +15,7 @@ fn streaming_content_grows_incrementally() {
     for chunk in chunks {
         app.on_message(ChatAppMsg::TextDelta(chunk.to_string()));
 
-        let tree = view_with_default_ctx(&app);
-        let rendered = render_to_string(&tree, 80);
-        let stripped = strip_ansi(&rendered);
+        let stripped = vt_render(&mut app);
 
         assert!(
             stripped.contains(chunk.trim()),
@@ -29,9 +27,7 @@ fn streaming_content_grows_incrementally() {
 
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let tree = view_with_default_ctx(&app);
-    let rendered = render_to_string(&tree, 80);
-    let stripped = strip_ansi(&rendered);
+    let stripped = vt_render(&mut app);
 
     assert!(
         stripped.contains("The answer is 42."),
@@ -42,7 +38,7 @@ fn streaming_content_grows_incrementally() {
 
 #[test]
 fn multiline_streaming_renders_correctly() {
-    let mut runtime = TestRuntime::new(80, 24);
+    let mut vt = Vt100TestRuntime::new(80, 60);
     let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Tell me about rust".to_string()));
@@ -58,15 +54,14 @@ fn multiline_streaming_renders_correctly() {
     for chunk in multiline_chunks {
         app.on_message(ChatAppMsg::TextDelta(chunk.to_string()));
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        vt.render_frame(&mut app);
 
-        let viewport = strip_ansi(runtime.viewport_content());
-        let line_count = viewport.lines().count();
+        let screen = strip_ansi(&vt.screen_contents());
+        let line_count = screen.lines().count();
 
         assert!(
-            line_count < 30,
-            "Viewport should not explode in size, got {} lines",
+            line_count < 70,
+            "Screen should not explode in size, got {} lines",
             line_count
         );
     }
@@ -76,7 +71,7 @@ fn multiline_streaming_renders_correctly() {
 fn graduated_table_fits_terminal_width() {
     use crate::tui::oil::ansi::visible_width;
 
-    let mut runtime = TestRuntime::new(60, 24);
+    let mut vt = Vt100TestRuntime::new(60, 60);
     let mut app = OilChatApp::default();
 
     let table = r#"| Header A | Header B | Header C |
@@ -87,14 +82,11 @@ fn graduated_table_fits_terminal_width() {
     app.on_message(ChatAppMsg::TextDelta(table.to_string()));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
-    let stdout = strip_ansi(runtime.stdout_content());
-    let viewport = strip_ansi(runtime.viewport_content());
-    let combined = format!("{}{}", stdout, viewport);
+    let screen = strip_ansi(&vt.full_history());
 
-    for line in combined.lines() {
+    for line in screen.lines() {
         if line.contains('┌') || line.contains('│') || line.contains('└') {
             let width = visible_width(line);
             assert!(
@@ -119,9 +111,7 @@ fn code_block_with_blank_line_not_split_into_separate_blocks() {
     app.on_message(ChatAppMsg::TextDelta("```".to_string()));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let tree = view_with_default_ctx(&app);
-    let rendered = render_to_string(&tree, 80);
-    let stripped = strip_ansi(&rendered);
+    let stripped = vt_render(&mut app);
 
     let backtick_count = stripped.matches("```").count();
     assert!(
@@ -153,9 +143,7 @@ fn streaming_code_block_fence_not_tripled() {
     ));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let tree = view_with_default_ctx(&app);
-    let rendered = render_to_string(&tree, 80);
-    let stripped = strip_ansi(&rendered);
+    let stripped = vt_render(&mut app);
 
     let backtick_count = stripped.matches("```").count();
     assert_eq!(
@@ -178,9 +166,7 @@ fn streaming_incremental_code_block_no_duplicate_fences() {
     app.on_message(ChatAppMsg::TextDelta("That's all.".to_string()));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let tree = view_with_default_ctx(&app);
-    let rendered = render_to_string(&tree, 80);
-    let stripped = strip_ansi(&rendered);
+    let stripped = vt_render(&mut app);
 
     let backtick_count = stripped.matches("```").count();
     assert_eq!(
@@ -192,136 +178,118 @@ fn streaming_incremental_code_block_no_duplicate_fences() {
 
 #[test]
 fn content_not_duplicated_during_streaming() {
-    let mut runtime = TestRuntime::new(80, 24);
+    let mut vt = Vt100TestRuntime::new(80, 60);
     let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
 
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta("First paragraph.\n\n".to_string()));
 
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta("Second paragraph.\n\n".to_string()));
 
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta(
         "Third paragraph in progress".to_string(),
     ));
 
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
-    let stdout = strip_ansi(runtime.stdout_content());
-    let viewport = strip_ansi(runtime.viewport_content());
-    let combined = format!("{}{}", stdout, viewport);
+    let screen = strip_ansi(&vt.full_history());
 
-    let first_count = combined.matches("First paragraph").count();
-    let second_count = combined.matches("Second paragraph").count();
-    let third_count = combined.matches("Third paragraph").count();
+    let first_count = screen.matches("First paragraph").count();
+    let second_count = screen.matches("Second paragraph").count();
+    let third_count = screen.matches("Third paragraph").count();
 
     assert_eq!(
         first_count, 1,
         "First paragraph appears {} times (should be 1):\n{}",
-        first_count, combined
+        first_count, screen
     );
     assert_eq!(
         second_count, 1,
         "Second paragraph appears {} times (should be 1):\n{}",
-        second_count, combined
+        second_count, screen
     );
     assert_eq!(
         third_count, 1,
         "Third paragraph appears {} times (should be 1):\n{}",
-        third_count, combined
+        third_count, screen
     );
 }
 
 #[test]
 fn streaming_only_first_block_gets_bullet() {
-    let mut runtime = TestRuntime::new(80, 24);
+    let mut vt = Vt100TestRuntime::new(80, 60);
     let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
 
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta("First paragraph.\n\n".to_string()));
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta("Second paragraph.\n\n".to_string()));
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta("Third paragraph.".to_string()));
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
-    let stdout = strip_ansi(runtime.stdout_content());
-    let viewport = strip_ansi(runtime.viewport_content());
-    let combined = format!("{}{}", stdout, viewport);
-    let bullet_count = combined.matches('●').count();
+    let screen = strip_ansi(&vt.full_history());
+    let bullet_count = screen.matches('●').count();
 
     assert_eq!(
         bullet_count, 1,
         "Only one bullet should appear (for first block), found {}: {}",
-        bullet_count, combined
+        bullet_count, screen
     );
 }
 
 #[test]
 fn stream_cancel_preserves_existing_content() {
-    let mut runtime = TestRuntime::new(80, 24);
+    let mut vt = Vt100TestRuntime::new(80, 60);
     let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
 
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta("First part of answer. ".to_string()));
     app.on_message(ChatAppMsg::TextDelta("More content here.".to_string()));
 
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
-    let pre_cancel_viewport = strip_ansi(runtime.viewport_content());
+    let pre_cancel_screen = strip_ansi(&vt.screen_contents());
     assert!(
-        pre_cancel_viewport.contains("First part"),
+        pre_cancel_screen.contains("First part"),
         "Content should be visible before cancel: {}",
-        pre_cancel_viewport
+        pre_cancel_screen
     );
 
     app.on_message(ChatAppMsg::StreamCancelled);
 
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
-    let stdout = strip_ansi(runtime.stdout_content());
-    let viewport = strip_ansi(runtime.viewport_content());
-    let combined = format!("{}{}", stdout, viewport);
+    let screen = strip_ansi(&vt.full_history());
     assert!(
-        combined.contains("First part"),
+        screen.contains("First part"),
         "Cancelled content should be visible in output: {}",
-        combined
+        screen
     );
 }
 
 #[test]
 fn overflow_graduation_does_not_duplicate_content() {
-    let mut runtime = TestRuntime::new(80, 24);
+    let mut vt = Vt100TestRuntime::new(80, 60);
     let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("run ls".to_string()));
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::ToolCall {
         name: "bash".to_string(),
@@ -331,23 +299,20 @@ fn overflow_graduation_does_not_duplicate_content() {
         source: None,
         lua_primary_arg: None,
     });
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "bash".to_string(),
         delta: "total 100\n".to_string(),
         call_id: None,
     });
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "bash".to_string(),
         call_id: None,
     });
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     let mut long_response = String::new();
     for i in 1..=25 {
@@ -356,46 +321,41 @@ fn overflow_graduation_does_not_duplicate_content() {
             "Line {} of the response\n",
             i
         )));
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        vt.render_frame(&mut app);
     }
 
     app.on_message(ChatAppMsg::StreamComplete);
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
-    let stdout = strip_ansi(runtime.stdout_content());
-    let viewport = strip_ansi(runtime.viewport_content());
-    let combined = format!("{}{}", stdout, viewport);
+    let screen = strip_ansi(&vt.full_history());
 
     for i in 1..=25 {
         let marker = format!("Line {} of the response", i);
-        let count = combined.matches(&marker).count();
+        let count = screen.matches(&marker).count();
         assert!(
             count <= 1,
             "Line {} appears {} times in output (should be 0 or 1):\n{}",
             i,
             count,
-            combined
+            screen
         );
     }
 
-    let bullet_count = combined.matches('●').count();
+    let bullet_count = screen.matches('●').count();
     assert!(
         bullet_count <= 2,
         "Too many bullets in output: {} (expected at most 2 - one for user, one for assistant):\n{}",
-        bullet_count, combined
+        bullet_count, screen
     );
 }
 
 #[test]
 fn incremental_text_after_tool_no_duplication() {
-    let mut runtime = TestRuntime::new(80, 24);
+    let mut vt = Vt100TestRuntime::new(80, 60);
     let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("test".to_string()));
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::ToolCall {
         name: "bash".to_string(),
@@ -405,8 +365,7 @@ fn incremental_text_after_tool_no_duplication() {
         source: None,
         lua_primary_arg: None,
     });
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "bash".to_string(),
@@ -422,58 +381,45 @@ fn incremental_text_after_tool_no_duplication() {
         name: "bash".to_string(),
         call_id: None,
     });
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta("```\n".to_string()));
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta("total 100\n".to_string()));
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta("drwxr-xr-x file1\n".to_string()));
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta("```\n".to_string()));
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta("```\n".to_string()));
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta("total 100\n".to_string()));
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta("drwxr-xr-x file1\n".to_string()));
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta("drwxr-xr-x file2\n".to_string()));
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta("```\n".to_string()));
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::StreamComplete);
-    let tree = view_with_default_ctx(&app);
-    runtime.render(&tree);
+    vt.render_frame(&mut app);
 
-    let stdout = strip_ansi(runtime.stdout_content());
-    let viewport = strip_ansi(runtime.viewport_content());
-    let combined = format!("{}\n---VIEWPORT---\n{}", stdout, viewport);
+    let screen = strip_ansi(&vt.full_history());
 
-    let total_count = combined.matches("total 100").count();
+    let total_count = screen.matches("total 100").count();
     assert!(
         total_count <= 4,
         "'total 100' appears {} times (expected at most 4 - two code blocks):\n{}",
         total_count,
-        combined
+        screen
     );
 }

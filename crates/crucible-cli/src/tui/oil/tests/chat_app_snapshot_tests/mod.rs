@@ -1,32 +1,27 @@
 //! Snapshot tests for ChatApp visual states
+//!
+//! All rendering goes through the real terminal path (Terminal<Vec<u8>> → vt100)
+//! to match production behavior exactly.
 
 use crate::tui::oil::ansi::strip_ansi;
-use crate::tui::oil::app::{App, ViewContext};
+use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, ChatMode, OilChatApp};
-use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::planning::FramePlanner;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crucible_core::traits::chat::PrecognitionNoteInfo;
 use insta::assert_snapshot;
 
-fn render_app(app: &OilChatApp) -> String {
-    let focus = FocusContext::new();
-    let ctx = ViewContext::new(&focus);
-    let tree = app.view(&ctx);
-    let mut planner = FramePlanner::new(80, 24);
-    let snapshot = planner.plan(&tree);
-    // Use screen_with_overlays() to get graduated stdout, viewport, and overlay content
-    // This shows what the user would see in the terminal including popups/notifications
-    strip_ansi(&snapshot.screen_with_overlays(80))
+use super::helpers::vt_render;
+use super::vt100_runtime::Vt100TestRuntime;
+
+fn render_app(app: &mut OilChatApp) -> String {
+    vt_render(app)
 }
 
-fn render_app_raw(app: &OilChatApp) -> String {
-    let focus = FocusContext::new();
-    let ctx = ViewContext::new(&focus);
-    let tree = app.view(&ctx);
-    let mut planner = FramePlanner::new(80, 24);
-    let snapshot = planner.plan(&tree);
-    snapshot.viewport_with_overlays(80)
+fn render_app_raw(app: &mut OilChatApp) -> String {
+    let mut vt = Vt100TestRuntime::new(80, 24);
+    vt.render_frame(app);
+    vt.screen_contents_styled()
 }
 
 fn render_node_with_planner(node: &crate::tui::oil::Node, width: u16, height: u16) -> String {
@@ -37,8 +32,8 @@ fn render_node_with_planner(node: &crate::tui::oil::Node, width: u16, height: u1
 
 #[test]
 fn snapshot_empty_chat_view() {
-    let app = OilChatApp::default();
-    assert_snapshot!(render_app(&app));
+    let mut app = OilChatApp::default();
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -54,7 +49,7 @@ fn snapshot_notification_overlays_content() {
         KeyCode::Char('c'),
         KeyModifiers::CONTROL,
     )));
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -64,7 +59,7 @@ fn snapshot_user_and_assistant_exchange() {
     app.on_message(ChatAppMsg::TextDelta("The answer is ".to_string()));
     app.on_message(ChatAppMsg::TextDelta("4.".to_string()));
     app.on_message(ChatAppMsg::StreamComplete);
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -72,7 +67,7 @@ fn snapshot_streaming_in_progress() {
     let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::UserMessage("Tell me a story".to_string()));
     app.on_message(ChatAppMsg::TextDelta("Once upon a time".to_string()));
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -86,7 +81,7 @@ fn snapshot_streaming_with_spinner() {
         app.update(crate::tui::oil::event::Event::Tick);
     }
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -95,7 +90,7 @@ fn snapshot_streaming_no_text_yet() {
     // before any tokens arrive from the daemon
     let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::UserMessage("Do something".to_string()));
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -107,7 +102,7 @@ fn snapshot_ordered_list_numbering() {
     app.on_message(ChatAppMsg::TextDelta("2. Second item\n\n".to_string()));
     app.on_message(ChatAppMsg::TextDelta("3. Third item".to_string()));
     app.on_message(ChatAppMsg::StreamComplete);
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -119,7 +114,7 @@ fn snapshot_lazy_numbered_list_renders_incrementing() {
     app.on_message(ChatAppMsg::TextDelta("1. Second feature\n\n".to_string()));
     app.on_message(ChatAppMsg::TextDelta("1. Third feature".to_string()));
     app.on_message(ChatAppMsg::StreamComplete);
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -131,7 +126,7 @@ fn snapshot_ordered_list_bulk_send() {
         "1. First\n2. Second\n3. Third\n4. Fourth\n5. Fifth".to_string(),
     ));
     app.on_message(ChatAppMsg::StreamComplete);
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -149,7 +144,7 @@ fn snapshot_ordered_list_long_items() {
         "3. Lua Plugins — Neovim-like extensibility with full API access".to_string(),
     ));
     app.on_message(ChatAppMsg::StreamComplete);
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -161,7 +156,7 @@ fn snapshot_two_separate_ordered_lists() {
         "1. Alpha\n\n2. Beta\n\nSome text between\n\n1. X\n\n2. Y".to_string(),
     ));
     app.on_message(ChatAppMsg::StreamComplete);
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -176,7 +171,7 @@ fn snapshot_tool_call_pending() {
         source: None,
         lua_primary_arg: None,
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -200,7 +195,7 @@ fn snapshot_tool_call_complete() {
         name: "read_file".to_string(),
         call_id: None,
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -226,7 +221,7 @@ fn snapshot_tool_output_many_lines_shows_count() {
         name: "mcp_bash".to_string(),
         call_id: None,
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -251,7 +246,7 @@ fn snapshot_read_tool_preserves_closing_bracket() {
         name: "mcp_read".to_string(),
         call_id: None,
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Two consecutive completed ToolGroups should render with NO blank line between them.
@@ -300,7 +295,7 @@ fn snapshot_tool_to_tool_tight() {
     });
 
     app.on_message(ChatAppMsg::StreamComplete);
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// ToolGroup → AssistantResponse(thinking + text) → ToolGroup.
@@ -358,7 +353,7 @@ fn snapshot_tool_thought_tool() {
     });
 
     app.on_message(ChatAppMsg::StreamComplete);
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Multi-turn mixed conversation exercising all spacing rules:
@@ -442,7 +437,7 @@ fn snapshot_multi_turn_mixed() {
     ));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Issue: Multiple consecutive tool calls should not have gaps between them.
@@ -509,7 +504,7 @@ fn snapshot_multiple_tools_no_gaps() {
         call_id: None,
     });
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Issue: Text before tool call, then tool, then more text.
@@ -551,7 +546,7 @@ fn snapshot_text_tool_text_spacing() {
     ));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Text → Tool → Text → Tool → Text: multiple tool interruptions with continuation text.
@@ -614,7 +609,7 @@ fn snapshot_sequential_tool_calls_with_text() {
     ));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Bullet (unordered) list rendering.
@@ -631,7 +626,7 @@ fn snapshot_bullet_list() {
             .to_string(),
     ));
     app.on_message(ChatAppMsg::StreamComplete);
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Nested list: numbered items with bullet sub-items.
@@ -657,7 +652,7 @@ fn snapshot_nested_list_numbered_with_bullets() {
             .to_string(),
     ));
     app.on_message(ChatAppMsg::StreamComplete);
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Numbered list interrupted by a tool call, then continued.
@@ -703,7 +698,7 @@ fn snapshot_numbered_list_across_tool_boundary() {
     ));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Bullet list interrupted by tool call — checks continuation indentation.
@@ -749,7 +744,7 @@ fn snapshot_bullet_list_across_tool_boundary() {
     ));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Deeply nested list: bullets inside numbered inside bullets.
@@ -774,7 +769,7 @@ fn snapshot_deeply_nested_list() {
             .to_string(),
     ));
     app.on_message(ChatAppMsg::StreamComplete);
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Sequential tool calls mid-stream: text → tool1 (complete) → tool2 (running).
@@ -824,7 +819,7 @@ fn snapshot_sequential_tools_mid_stream() {
     });
 
     // Snapshot mid-stream: second tool is pending
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Sequential tool calls: text → tool1 complete → text → tool2 complete → still streaming.
@@ -881,7 +876,7 @@ fn snapshot_sequential_tools_all_complete_still_streaming() {
     });
 
     // No StreamComplete — still streaming. Turn spinner should show.
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Parallel tool calls: two tools with the same name issued before either gets results.
@@ -936,7 +931,7 @@ fn snapshot_parallel_tool_calls_same_name() {
     });
 
     app.on_message(ChatAppMsg::StreamComplete);
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Back-to-back tool calls without text between them — should be grouped.
@@ -1006,7 +1001,7 @@ fn snapshot_back_to_back_tools_no_text() {
     });
 
     app.on_message(ChatAppMsg::StreamComplete);
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1014,7 +1009,7 @@ fn snapshot_error_displayed_as_notification() {
     let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::UserMessage("Do something".to_string()));
     app.on_message(ChatAppMsg::Error("Connection failed: timeout".to_string()));
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1027,7 +1022,7 @@ fn snapshot_popup_open() {
         KeyModifiers::NONE,
     )));
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1050,7 +1045,7 @@ fn snapshot_popup_with_selection_moved() {
         KeyModifiers::NONE,
     )));
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1061,7 +1056,7 @@ fn snapshot_status_bar_plan_mode() {
         used: 5000,
         total: 128000,
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1072,7 +1067,7 @@ fn snapshot_status_bar_normal_mode() {
         used: 64000,
         total: 128000,
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1083,7 +1078,7 @@ fn snapshot_status_bar_auto_mode() {
         used: 100000,
         total: 128000,
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1215,7 +1210,7 @@ fn snapshot_notification_no_content_above() {
         KeyCode::Char('c'),
         KeyModifiers::CONTROL,
     )));
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1232,7 +1227,7 @@ fn snapshot_notification_overlays_streaming_content() {
         NotificationKind::Toast,
         "Test notification",
     ));
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1249,7 +1244,7 @@ fn snapshot_multiple_notifications_stacked() {
         NotificationKind::Warning,
         "Context at 85%",
     ));
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1272,7 +1267,7 @@ fn snapshot_multi_turn_conversation() {
     ));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1290,7 +1285,7 @@ fn snapshot_system_message() {
         KeyModifiers::NONE,
     )));
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 mod composer_stability_snapshots;
@@ -1311,7 +1306,7 @@ fn snapshot_thinking_delta_during_stream() {
     app.on_message(ChatAppMsg::ThinkingDelta(
         "\nFirst, I need to consider the constraints.".to_string(),
     ));
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1323,7 +1318,7 @@ fn snapshot_thinking_then_text_response() {
     ));
     app.on_message(ChatAppMsg::TextDelta("The answer is 4.".to_string()));
     app.on_message(ChatAppMsg::StreamComplete);
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 // =============================================================================
@@ -1348,7 +1343,7 @@ fn snapshot_thinking_renders_between_text() {
         " The key insight is that ownership prevents data races at compile time.".to_string(),
     ));
     app.on_message(ChatAppMsg::StreamComplete);
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// T7: With show_thinking=false, thinking shows bounded tail preview (last 3 lines)
@@ -1371,7 +1366,7 @@ fn snapshot_thinking_preview_mode_shows_bounded() {
         "After careful analysis, the answer is 42.".to_string(),
     ));
     app.on_message(ChatAppMsg::StreamComplete);
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// T7: Compare full thinking (show_thinking=true) vs preview mode (show_thinking=false).
@@ -1394,7 +1389,7 @@ fn snapshot_thinking_full_vs_preview() {
             "Based on my analysis, here are the findings.".to_string(),
         ));
         app.on_message(ChatAppMsg::StreamComplete);
-        render_app(&app)
+        render_app(&mut app)
     };
 
     assert_snapshot!("thinking_full_mode", setup(true));
@@ -1417,7 +1412,7 @@ fn snapshot_collapsed_thinking_spinner_stops_when_text_streams() {
     app.on_message(ChatAppMsg::TextDelta("Here is my explanation.".to_string()));
     // Intentionally NO StreamComplete — still streaming
 
-    let output = render_app(&app);
+    let output = render_app(&mut app);
 
     // Verify: thinking summary should NOT have a spinner
     let thinking_line = output
@@ -1469,7 +1464,7 @@ fn snapshot_tool_with_lua_primary_arg() {
         name: "sql_query".to_string(),
         call_id: None,
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 // =============================================================================
@@ -1483,7 +1478,7 @@ fn snapshot_context_usage_in_status_bar() {
         used: 1500,
         total: 8192,
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1498,7 +1493,7 @@ fn snapshot_context_usage_near_limit() {
         "I see the context is nearly full.".to_string(),
     ));
     app.on_message(ChatAppMsg::StreamComplete);
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 // =============================================================================
@@ -1516,7 +1511,7 @@ fn snapshot_subagent_spawned() {
         id: "sub-1".to_string(),
         prompt: "Search for Rust memory safety patterns".to_string(),
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1534,7 +1529,7 @@ fn snapshot_subagent_completed() {
         id: "sub-1".to_string(),
         summary: "Found 5 relevant patterns in the codebase".to_string(),
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1549,7 +1544,7 @@ fn snapshot_subagent_failed() {
         id: "sub-err".to_string(),
         error: "Connection timeout after 30s".to_string(),
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1571,7 +1566,7 @@ fn snapshot_multiple_subagents_parallel() {
         id: "sub-a".to_string(),
         summary: "Found 3 database modules".to_string(),
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1588,7 +1583,7 @@ fn snapshot_delegation_spawned_with_target() {
         prompt: "Research authentication patterns in Rust".to_string(),
         target_agent: Some("cursor".to_string()),
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1603,7 +1598,7 @@ fn snapshot_delegation_spawned_without_target() {
         prompt: "Analyze the code".to_string(),
         target_agent: None,
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1626,7 +1621,7 @@ fn snapshot_delegate_session_tool_call_suppressed() {
         prompt: "Explain ACP".to_string(),
         target_agent: Some("opencode".to_string()),
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1655,7 +1650,7 @@ fn snapshot_non_delegate_tool_calls_not_suppressed_by_delegation() {
         prompt: "Analyze auth patterns".to_string(),
         target_agent: Some("cursor".to_string()),
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1675,7 +1670,7 @@ fn snapshot_delegate_session_suppressed_when_delegation_arrives_first() {
         source: None,
         lua_primary_arg: None,
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1691,7 +1686,7 @@ fn snapshot_delegation_completed() {
         id: "deleg-3".to_string(),
         summary: "Found 3 security patterns in the codebase".to_string(),
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1707,7 +1702,7 @@ fn snapshot_delegation_failed() {
         id: "deleg-fail-1".to_string(),
         error: "Connection timeout".to_string(),
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1736,7 +1731,7 @@ fn snapshot_multiple_concurrent_delegations() {
         summary: "Found 5 auth patterns".to_string(),
     });
     // Second still running
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 // =============================================================================
@@ -1776,7 +1771,7 @@ fn snapshot_precognition_with_results() {
         "Based on your notes about authentication...".to_string(),
     ));
     app.on_message(ChatAppMsg::StreamComplete);
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 // =============================================================================
@@ -1837,7 +1832,7 @@ fn snapshot_multi_turn_with_tool_calls() {
     app.on_message(ChatAppMsg::TextDelta("\nDone! Config updated.".to_string()));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 // =============================================================================
@@ -1854,7 +1849,7 @@ fn snapshot_error_interrupts_streaming() {
     app.on_message(ChatAppMsg::Error(
         "Connection lost: daemon unreachable".to_string(),
     ));
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -1865,7 +1860,7 @@ fn snapshot_stream_cancelled_by_user() {
         "Here is my comprehensive analysis of the topic...".to_string(),
     ));
     app.on_message(ChatAppMsg::StreamCancelled);
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 // =============================================================================
@@ -1874,8 +1869,8 @@ fn snapshot_stream_cancelled_by_user() {
 
 #[test]
 fn snapshot_raw_empty_chat_view() {
-    let app = OilChatApp::default();
-    assert_snapshot!(render_app_raw(&app));
+    let mut app = OilChatApp::default();
+    assert_snapshot!(render_app_raw(&mut app));
 }
 
 #[test]
@@ -1885,7 +1880,7 @@ fn snapshot_raw_user_and_assistant_exchange() {
     app.on_message(ChatAppMsg::TextDelta("The answer is ".to_string()));
     app.on_message(ChatAppMsg::TextDelta("4.".to_string()));
     app.on_message(ChatAppMsg::StreamComplete);
-    assert_snapshot!(render_app_raw(&app));
+    assert_snapshot!(render_app_raw(&mut app));
 }
 
 #[test]
@@ -1893,7 +1888,7 @@ fn snapshot_raw_streaming_in_progress() {
     let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::UserMessage("Tell me a story".to_string()));
     app.on_message(ChatAppMsg::TextDelta("Once upon a time".to_string()));
-    assert_snapshot!(render_app_raw(&app));
+    assert_snapshot!(render_app_raw(&mut app));
 }
 
 #[test]
@@ -1908,7 +1903,7 @@ fn snapshot_raw_tool_call_pending() {
         source: None,
         lua_primary_arg: None,
     });
-    assert_snapshot!(render_app_raw(&app));
+    assert_snapshot!(render_app_raw(&mut app));
 }
 
 #[test]
@@ -1932,7 +1927,7 @@ fn snapshot_raw_tool_call_complete() {
         name: "read_file".to_string(),
         call_id: None,
     });
-    assert_snapshot!(render_app_raw(&app));
+    assert_snapshot!(render_app_raw(&mut app));
 }
 
 #[test]
@@ -1942,7 +1937,7 @@ fn snapshot_raw_popup_open() {
         KeyCode::F(1),
         KeyModifiers::NONE,
     )));
-    assert_snapshot!(render_app_raw(&app));
+    assert_snapshot!(render_app_raw(&mut app));
 }
 
 #[test]
@@ -1953,7 +1948,7 @@ fn snapshot_raw_status_bar_plan_mode() {
         used: 5000,
         total: 128000,
     });
-    assert_snapshot!(render_app_raw(&app));
+    assert_snapshot!(render_app_raw(&mut app));
 }
 
 #[test]
@@ -1964,7 +1959,7 @@ fn snapshot_raw_status_bar_auto_mode() {
         used: 100000,
         total: 128000,
     });
-    assert_snapshot!(render_app_raw(&app));
+    assert_snapshot!(render_app_raw(&mut app));
 }
 
 #[test]
@@ -1972,7 +1967,7 @@ fn snapshot_raw_error_displayed_as_notification() {
     let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::UserMessage("Do something".to_string()));
     app.on_message(ChatAppMsg::Error("Connection failed: timeout".to_string()));
-    assert_snapshot!(render_app_raw(&app));
+    assert_snapshot!(render_app_raw(&mut app));
 }
 
 #[test]
@@ -1982,7 +1977,7 @@ fn snapshot_raw_notification_no_content_above() {
         KeyCode::Char('c'),
         KeyModifiers::CONTROL,
     )));
-    let plain = crucible_oil::ansi::strip_ansi(&render_app_raw(&app));
+    let plain = crucible_oil::ansi::strip_ansi(&render_app_raw(&mut app));
     let statusline = plain.lines().last().expect("statusline should exist");
     let notification_col = statusline
         .find("Ctrl+C")
@@ -1992,7 +1987,7 @@ fn snapshot_raw_notification_no_content_above() {
         "Ctrl+C notification should be right-aligned (col >= 30), but starts at col {notification_col}. \
          Statusline: {statusline:?}"
     );
-    assert_snapshot!(render_app_raw(&app));
+    assert_snapshot!(render_app_raw(&mut app));
 }
 
 #[test]
@@ -2005,7 +2000,7 @@ fn snapshot_raw_thinking_delta_during_stream() {
     app.on_message(ChatAppMsg::ThinkingDelta(
         "\nFirst, I need to consider the constraints.".to_string(),
     ));
-    assert_snapshot!(render_app_raw(&app));
+    assert_snapshot!(render_app_raw(&mut app));
 }
 
 #[test]
@@ -2015,7 +2010,7 @@ fn snapshot_raw_perm_modal_bash_command() {
         crucible_core::interaction::PermRequest::bash(["npm", "install", "lodash"]),
     );
     app.open_interaction("perm-bash".to_string(), request);
-    assert_snapshot!(render_app_raw(&app));
+    assert_snapshot!(render_app_raw(&mut app));
 }
 
 // =============================================================================
@@ -2043,7 +2038,7 @@ fn snapshot_tool_with_description_only() {
         name: "semantic_search".to_string(),
         call_id: None,
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -2067,7 +2062,7 @@ fn snapshot_tool_with_source_only() {
         name: "read_file".to_string(),
         call_id: None,
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -2091,7 +2086,7 @@ fn snapshot_tool_with_description_and_source() {
         name: "semantic_search".to_string(),
         call_id: None,
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -2115,7 +2110,7 @@ fn snapshot_tool_with_mcp_source() {
         name: "list_issues".to_string(),
         call_id: None,
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -2139,7 +2134,7 @@ fn snapshot_tool_without_metadata_unchanged() {
         name: "read_file".to_string(),
         call_id: None,
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 #[test]
@@ -2154,7 +2149,7 @@ fn snapshot_tool_pending_with_metadata() {
         source: Some("Crucible".to_string()),
         lua_primary_arg: None,
     });
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }
 
 /// Reproduces formatting bugs from real LLM output:
@@ -2205,5 +2200,5 @@ fn snapshot_code_block_with_comments_and_hr_headings() {
     ));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    assert_snapshot!(render_app(&app));
+    assert_snapshot!(render_app(&mut app));
 }

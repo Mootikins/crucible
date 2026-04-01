@@ -1,6 +1,6 @@
 //! JSONL fixture replay tests
 //!
-//! Replay the actual demo JSONL recordings through OilChatApp + TestRuntime,
+//! Replay the actual demo JSONL recordings through OilChatApp + Vt100TestRuntime,
 //! checking for content duplication and rendering invariants frame-by-frame.
 //!
 //! These tests catch the same bugs visible in demo GIFs without needing
@@ -12,8 +12,8 @@ use crate::tui::oil::ansi::strip_ansi;
 use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::OilChatApp;
 use crate::tui::oil::chat_runner::session_event_to_chat_msgs;
-use crate::tui::oil::focus::FocusContext;
-use crate::tui::oil::TestRuntime;
+
+use super::vt100_runtime::Vt100TestRuntime;
 
 // ---------------------------------------------------------------------------
 // JSONL parsing
@@ -249,8 +249,7 @@ fn replay_fixture(path: &Path, width: u16, height: u16) -> ReplayResult {
     );
 
     let mut app = OilChatApp::default();
-    let mut runtime = TestRuntime::new(width, height);
-    let focus = FocusContext::new();
+    let mut vt = Vt100TestRuntime::new(width, height);
     let mut violations = Vec::new();
     let mut frame = 0;
 
@@ -258,13 +257,13 @@ fn replay_fixture(path: &Path, width: u16, height: u16) -> ReplayResult {
         app.on_message(msg.clone());
 
         // Use the same render_frame function as the live TUI
-        crate::tui::oil::chat_runner::render_frame(&mut app, &mut runtime, &focus);
+        vt.render_frame(&mut app);
 
         frame += 1;
 
         // Run checks on every frame
-        let stdout = strip_ansi(runtime.stdout_content());
-        let viewport = strip_ansi(runtime.viewport_content());
+        let stdout = strip_ansi(vt.inner().stdout_content());
+        let viewport = strip_ansi(vt.inner().viewport_content());
 
         check_cross_boundary_duplication(frame, &stdout, &viewport, &mut violations);
         check_stdout_paragraph_duplication(frame, &stdout, &mut violations);
@@ -305,21 +304,20 @@ fn replay_checking_thinking_order(
 
     let mut app = OilChatApp::default();
     app.set_show_thinking(false);
-    let mut runtime = TestRuntime::new(width, height);
-    let focus = FocusContext::new();
+    let mut vt = Vt100TestRuntime::new(width, height);
     let mut violations = Vec::new();
 
     for (frame, msg) in messages.iter().enumerate() {
         app.on_message(msg.clone());
 
         // Use the same render_frame function as the live TUI
-        crate::tui::oil::chat_runner::render_frame(&mut app, &mut runtime, &focus);
+        vt.render_frame(&mut app);
 
         // Check every frame for thinking-after-text violations.
         // Only check the viewport — stdout contains graduated content from
         // earlier responses, so combining them produces false positives when
         // tool groups stay in viewport longer (deferred graduation).
-        let viewport = strip_ansi(runtime.viewport_content());
+        let viewport = strip_ansi(vt.inner().viewport_content());
 
         // Look for text content appearing BEFORE a Thought summary within
         // the SAME assistant response. Tool call lines (✓) reset the tracking
@@ -370,8 +368,8 @@ fn replay_checking_thinking_order(
         }
     }
 
-    let stdout = strip_ansi(runtime.stdout_content());
-    let viewport = strip_ansi(runtime.viewport_content());
+    let stdout = strip_ansi(vt.inner().stdout_content());
+    let viewport = strip_ansi(vt.inner().viewport_content());
     let final_output = format!("=== STDOUT ===\n{stdout}\n=== VIEWPORT ===\n{viewport}");
     (final_output, violations)
 }
