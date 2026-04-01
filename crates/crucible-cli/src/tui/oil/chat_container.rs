@@ -9,10 +9,10 @@ use crate::tui::oil::components::{
     ThinkingComponent,
 };
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
-use crate::tui::oil::node::{col, row, spinner, text, Node};
+use crate::tui::oil::node::{col, Node};
 use crate::tui::oil::render_state::RenderState;
 use crate::tui::oil::planning::Graduation;
-use crate::tui::oil::style::{Gap, Style};
+use crate::tui::oil::style::Gap;
 
 use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
 
@@ -238,19 +238,9 @@ fn render_assistant_blocks(params: &RenderBlocksParams, render_state: &RenderSta
         nodes.push(markdown_to_node_styled(params.text, style));
     }
 
-    // Streaming spinner: show when not complete, unless only the collapsed
-    // thinking summary is visible (it has its own spinner).
-    if !params.complete {
-        let has_thinking_summary = !render_state.show_thinking && has_thinking;
-        if has_text || !has_thinking_summary {
-            let t = crate::tui::oil::theme::active();
-            nodes.push(row([
-                text(" "),
-                spinner(None, render_state.spinner_frame)
-                    .with_style(Style::new().fg(t.resolve_color(t.colors.text))),
-            ]));
-        }
-    }
+    // No streaming spinner here — spinners are viewport chrome only
+    // (render_turn_spinner). Container content must never contain spinners
+    // because it can be scrolled into terminal scrollback.
 
     // Gap between thinking summary/block and text content
     let gap = if has_thinking && has_text {
@@ -737,18 +727,14 @@ impl ContainerList {
 
     /// Whether the container list needs a turn-level spinner appended.
     ///
-    /// Returns true when the turn is active but the last container doesn't
-    /// already show a spinner (e.g. all tools are complete, no open
-    /// AssistantResponse). This fills the gap between tool completion and
-    /// the next event (TextDelta, another ToolCall, or StreamComplete).
+    /// Returns true when the turn is active but no container is already
+    /// showing a spinner. Spinners are viewport chrome only — container
+    /// content never contains spinners (prevents scrollback leaks).
     pub fn needs_turn_spinner(&self) -> bool {
         if !self.turn_active {
             return false;
         }
         match self.containers.last() {
-            // AssistantResponse at the end of an active turn is incomplete
-            // and already shows its own spinner
-            Some(ChatContainer::AssistantResponse { .. }) => false,
             // ToolGroup with any pending tool already shows braille spinners
             Some(ChatContainer::ToolGroup { tools, .. }) => tools.iter().all(|t| t.complete),
             Some(ChatContainer::AgentTask { agent, .. }) => agent.is_terminal(),
@@ -1596,7 +1582,7 @@ mod tests {
     }
 
     #[test]
-    fn thinking_summary_spinner_stops_when_text_starts_streaming() {
+    fn container_content_never_contains_spinners() {
         use crucible_oil::render::render_to_plain_text;
 
         let spinner_chars: Vec<char> = vec!['\u{25D0}', '\u{25D3}', '\u{25D1}', '\u{25D2}'];
@@ -1606,6 +1592,8 @@ mod tests {
             10,
         )];
 
+        // Incomplete response with thinking and text — no spinners should appear
+        // in container content (spinners are viewport chrome only).
         let params = super::RenderBlocksParams {
             text: "Here is my response so far",
             thinking: &thinking,
@@ -1621,25 +1609,13 @@ mod tests {
         let node = super::render_assistant_blocks(&params, &render_state);
         let output = render_to_plain_text(&node, 80);
 
-        let thinking_line = output
-            .lines()
-            .find(|l| l.contains("Thinking") || l.contains("Thought"))
-            .expect("should have thinking summary line");
-
-        assert!(
-            !spinner_chars.iter().any(|c| thinking_line.contains(*c)),
-            "Thinking summary should not show spinner once text is streaming.\nLine: {thinking_line}\nFull output:\n{output}"
-        );
-
-        let has_trailing_spinner = output
-            .lines()
-            .last()
-            .map(|l| spinner_chars.iter().any(|c| l.contains(*c)))
-            .unwrap_or(false);
-        assert!(
-            has_trailing_spinner,
-            "Should have a trailing spinner for streaming text.\nFull output:\n{output}"
-        );
+        for ch in &spinner_chars {
+            assert!(
+                !output.contains(*ch),
+                "Container content must never contain spinner '{}'. Spinners are viewport chrome.\nOutput:\n{output}",
+                ch
+            );
+        }
     }
 
     #[test]
