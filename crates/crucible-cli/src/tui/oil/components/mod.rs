@@ -3,7 +3,6 @@ mod drawer;
 mod input_area;
 mod input_component;
 mod interaction_modal;
-mod message_list;
 mod notification_area;
 mod notification_component;
 mod popup_component;
@@ -25,9 +24,6 @@ pub use input_component::InputComponent;
 pub use interaction_modal::{
     InteractionModal, InteractionModalMsg, InteractionModalOutput, InteractionMode,
 };
-#[allow(unused_imports)] // WIP: MessageList not yet used
-pub(crate) use message_list::MessageList;
-pub use message_list::render_user_prompt;
 pub use thinking_component::ThinkingComponent;
 pub use notification_area::NotificationArea;
 pub use notification_component::{NotificationComponent, NotificationEntry};

@@ -1,5 +1,4 @@
 use crate::tui::oil::app::{Action, App, ViewContext};
-use crate::tui::oil::chat_container::ContainerList;
 #[allow(unused_imports)] // WIP: Drawer, DrawerKind not yet used
 use crate::tui::oil::components::{
     Drawer, DrawerKind, InteractionModal, InteractionModalMsg, InteractionModalOutput,
@@ -44,7 +43,6 @@ mod message_handlers;
 pub mod messages;
 pub mod model_state;
 pub mod popup_state;
-mod rendering;
 mod shell;
 pub mod state;
 
@@ -62,8 +60,7 @@ pub struct OilChatApp {
     // ─── Viewport Projection (daemon-derived state) ───────────────────
     // These fields mirror information received from the daemon and
     // represent the authoritative view of the current session.
-    /// Semantic containers for chat content (container architecture)
-    container_list: ContainerList,
+    // TODO(rewrite): Replace with new Container vec + component model
     /// Current chat mode (Normal / Plan / Auto)
     mode: ChatMode,
     /// Display name of the active LLM model
@@ -153,29 +150,16 @@ impl App for OilChatApp {
 
     fn view(&self, ctx: &ViewContext<'_>) -> Node {
         self.terminal_size.set(ctx.terminal_size);
-        if self.shell_modal.is_some() {
-            return self.render_shell_modal();
-        }
 
-        tracing::debug!(target: "crucible_cli::tui::oil::model_flow",
-            has_modal = self.interaction_modal.is_some(),
-            notification_visible = self.notification_area.is_visible(),
-            "view: layout branch selected");
-        let bottom = if let Some(modal) = &self.interaction_modal {
-            let term_width = ctx.terminal_size.0 as usize;
-            modal.view(term_width, self.permission.permission_queue.len())
-        } else if self.notification_area.is_visible() {
-            self.render_messages_drawer(ctx)
-        } else {
-            col([self.render_input(ctx), self.render_status()])
-        };
+        // TODO(rewrite): Phase 2+ will build the real component tree here.
+        // For now, minimal stub that shows chrome only.
+        let _term_width = ctx.terminal_size.0 as usize;
 
         col([
-            self.render_containers(),
-            self.render_turn_spinner(),
+            // Content area: TODO(rewrite) — container components go here
             spacer(),
-            bottom.with_margin(Padding { top: 1, ..Padding::all(0) }),
-            self.render_popup_overlay(ctx),
+            // Chrome: pinned at bottom
+            text(" [TUI rewrite in progress]"),
         ])
         .gap(Gap::row(0))
     }
@@ -333,11 +317,7 @@ impl OilChatApp {
         self.permission.perm_autoconfirm_session
     }
 
-    /// Get access to the container list for testing/inspection.
-    #[cfg(test)]
-    pub(crate) fn container_list(&self) -> &ContainerList {
-        &self.container_list
-    }
+    // TODO(rewrite): container_list() accessor — needs new Container vec
 
     pub(crate) fn add_notification(&mut self, notification: crucible_core::types::Notification) {
         self.notification_area.add(notification);
@@ -364,18 +344,16 @@ impl OilChatApp {
     }
 
     /// Drain completed containers and return graduation content for stdout.
-    pub(crate) fn drain_graduated(&mut self, width: u16) -> Option<crucible_oil::Graduation> {
-        self.container_list
-            .drain_completed(width, self.spinner_frame(), self.show_thinking)
+    /// TODO(rewrite): Phase 4 — implement with new Container vec
+    pub(crate) fn drain_graduated(&mut self, _width: u16) -> Option<crucible_oil::Graduation> {
+        None
     }
 
     /// Replay stored session events through the live event path.
-    /// This ensures resume reconstructs the same state as live streaming —
-    /// user messages, thinking, tools, and delegation all come through for free.
+    /// TODO(rewrite): Phase 5 — reimplement with new Container vec
     pub(crate) fn load_history_events(&mut self, events: Vec<serde_json::Value>) {
         use crate::tui::oil::chat_runner::session_event_to_chat_msgs;
 
-        self.container_list.clear();
         for event in &events {
             let event_type = event.get("event").and_then(|e| e.as_str()).unwrap_or("");
             let data = event.get("data").cloned().unwrap_or_default();
@@ -383,9 +361,6 @@ impl OilChatApp {
                 self.on_message(msg);
             }
         }
-        // Mark the loaded history as complete (not actively streaming)
-        self.container_list.complete_response();
-        self.message_queue.message_counter = self.container_list.len();
     }
 
     fn push_shell_history(&mut self, cmd: String) {
@@ -395,8 +370,9 @@ impl OilChatApp {
         self.shell_history.shell_history.push_back(cmd);
     }
 
+    /// TODO(rewrite): Phase 5 — derive from container state
     pub(crate) fn is_streaming(&self) -> bool {
-        self.container_list.is_streaming()
+        false
     }
 
     pub(crate) fn input_content(&self) -> &str {
@@ -438,10 +414,8 @@ impl OilChatApp {
         }
 
         if let InteractionRequest::Permission(perm) = &request {
-            // Allow the trailing AssistantResponse (thinking) to graduate.
-            // The daemon sends interaction_requested before tool_call, so
-            // without this the thinking stays as a spinner in the viewport.
-            self.container_list.set_permission_pending(true);
+            // TODO(rewrite): permission_pending is no longer needed — the new
+            // component model handles graduation via explicit state transitions.
 
             if self.interaction_modal.is_some() {
                 self.permission
@@ -510,35 +484,24 @@ impl OilChatApp {
         std::mem::take(&mut self.needs_full_redraw)
     }
 
-    fn add_user_message(&mut self, content: String) {
+    // TODO(rewrite): Phase 5 — wire to new container state
+    fn add_user_message(&mut self, _content: String) {
         self.message_queue.message_counter += 1;
-        self.container_list.add_user_message(content);
     }
 
-    /// Add user message and mark the turn as active so the turn-level
-    /// spinner renders while waiting for the first token.
-    /// Use this (not `add_user_message`) when sending to the daemon.
     fn submit_user_message(&mut self, content: String) {
         self.add_user_message(content);
-        self.container_list.mark_turn_active();
     }
 
-    pub(crate) fn add_system_message(&mut self, content: String) {
+    pub(crate) fn add_system_message(&mut self, _content: String) {
         self.message_queue.message_counter += 1;
-        self.container_list.add_system_message(content);
     }
 
     fn finalize_streaming(&mut self) {
-        if self.container_list.is_streaming() {
-            self.message_queue.message_counter += 1;
-            self.container_list.complete_response();
-        }
-
         self.status = "Ready".to_string();
     }
 
     pub(crate) fn reset_session(&mut self) {
-        self.container_list.clear();
         self.message_queue.message_counter = 0;
         self.message_queue.deferred_messages.clear();
         self.context_used = 0;

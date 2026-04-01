@@ -50,6 +50,7 @@ pub use viewport_cache::CachedMessage;
 
 // Re-export commonly used crucible-oil types
 pub use crucible_oil::focus::*;
+pub use crucible_oil::layout::*;
 pub use crucible_oil::node::*;
 pub use crucible_oil::overlay::{composite_overlays, Overlay, OverlayAnchor};
 pub use crucible_oil::planning::{FramePlan, FramePlanner, FrameSnapshot, FrameTrace};
