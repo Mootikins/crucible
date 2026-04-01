@@ -319,10 +319,30 @@ impl OilChatApp {
     // ─── View Helpers (chrome composition) ─────────────────────────────
 
     /// Turn indicator: spinner + thinking status in chrome.
-    fn turn_indicator_view(&self, _spinner_frame: usize) -> Node {
-        // TODO(rewrite): Phase 5 — derive active/thinking_words from container state
-        // For now, always inactive
-        Node::Empty
+    fn turn_indicator_view(&self, spinner_frame: usize) -> Node {
+        use crate::tui::oil::components::TurnIndicator;
+        use crate::tui::oil::containers::ContainerContent;
+
+        let mut indicator = TurnIndicator::new();
+        indicator.active = self.container_list.is_streaming();
+
+        // Derive thinking word count from the most recent assistant response
+        if let Some(container) = self
+            .container_list
+            .containers()
+            .iter()
+            .rev()
+            .find(|c| matches!(&c.content, ContainerContent::AssistantResponse { thinking, .. } if !thinking.is_empty()))
+        {
+            if let ContainerContent::AssistantResponse { thinking, .. } = &container.content {
+                let total_words: usize = thinking.iter().map(|t| t.word_count()).sum();
+                if total_words > 0 {
+                    indicator.thinking_words = Some(total_words);
+                }
+            }
+        }
+
+        indicator.view(spinner_frame)
     }
 
     /// Input box composition.
@@ -540,9 +560,13 @@ impl OilChatApp {
     }
 
     /// Replay stored session events through the live event path.
-    /// TODO(rewrite): Phase 5 — reimplement with new Container vec
+    ///
+    /// Clears existing containers first, replays all events, then marks
+    /// the response complete so graduated content flows to scrollback.
     pub(crate) fn load_history_events(&mut self, events: Vec<serde_json::Value>) {
         use crate::tui::oil::chat_runner::session_event_to_chat_msgs;
+
+        self.container_list.clear();
 
         for event in &events {
             let event_type = event.get("event").and_then(|e| e.as_str()).unwrap_or("");
@@ -551,6 +575,8 @@ impl OilChatApp {
                 self.on_message(msg);
             }
         }
+
+        self.container_list.complete_response();
     }
 
     fn push_shell_history(&mut self, cmd: String) {
@@ -680,6 +706,7 @@ impl OilChatApp {
 
     fn submit_user_message(&mut self, content: String) {
         self.add_user_message(content);
+        self.container_list.mark_turn_active();
     }
 
     pub(crate) fn add_system_message(&mut self, content: String) {

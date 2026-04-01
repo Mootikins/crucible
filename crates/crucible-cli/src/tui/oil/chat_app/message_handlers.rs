@@ -1,21 +1,98 @@
 //! Message dispatch handlers for OilChatApp.
-//!
-//! TODO(rewrite): Phase 5 — reimplement with new Container vec.
-//! Currently stubbed to make the crate compile.
+
+use std::collections::VecDeque;
+use std::sync::Arc;
+use std::time::Instant;
 
 use crate::tui::oil::app::Action;
+use crate::tui::oil::viewport_cache::{CachedSubagent, CachedToolCall, ToolSourceDisplay};
 
 use super::messages::ChatAppMsg;
 use super::model_state::ModelListState;
 use super::OilChatApp;
 
+/// Parse a tool source provenance string into a display type.
+fn parse_tool_source(s: &str) -> Option<ToolSourceDisplay> {
+    match s {
+        "Core" => Some(ToolSourceDisplay::Core),
+        "Crucible" => Some(ToolSourceDisplay::Crucible),
+        s if s.starts_with("Mcp:") => Some(ToolSourceDisplay::Mcp {
+            server: Arc::from(&s[4..]),
+        }),
+        s if s.starts_with("Plugin:") => Some(ToolSourceDisplay::Plugin {
+            name: Arc::from(&s[7..]),
+        }),
+        _ => None,
+    }
+}
+
 impl OilChatApp {
     /// Handle streaming events (TextDelta, ThinkingDelta, ToolCall, etc.)
-    /// TODO(rewrite): Phase 5 — wire to new container state mutations
     pub(super) fn handle_stream_msg(&mut self, msg: ChatAppMsg) -> Action<ChatAppMsg> {
         match msg {
-            ChatAppMsg::StreamComplete | ChatAppMsg::StreamCancelled => {
-                tracing::debug!("[stub] stream ended");
+            ChatAppMsg::TextDelta(delta) => {
+                if !self.drop_stream_deltas {
+                    if !self.container_list.is_streaming() {
+                        self.container_list.mark_turn_active();
+                    }
+                    self.container_list.append_text(&delta);
+                }
+            }
+            ChatAppMsg::ThinkingDelta(delta) => {
+                if !self.drop_stream_deltas {
+                    if !self.container_list.is_streaming() {
+                        self.container_list.mark_turn_active();
+                    }
+                    self.container_list.append_thinking(&delta);
+                }
+            }
+            ChatAppMsg::ToolCall {
+                name,
+                args,
+                call_id,
+                description,
+                source,
+                lua_primary_arg,
+            } => {
+                let tool = CachedToolCall {
+                    id: format!("tool-{}", name),
+                    name: Arc::from(name.as_str()),
+                    args: Arc::from(args.as_str()),
+                    call_id,
+                    output_tail: VecDeque::new(),
+                    output_path: None,
+                    output_total_bytes: 0,
+                    error: None,
+                    started_at: Instant::now(),
+                    complete: false,
+                    superseded: false,
+                    description: description.map(|d| Arc::from(d.as_str())),
+                    source: source.as_deref().and_then(parse_tool_source),
+                    lua_primary_arg: lua_primary_arg.map(|a| Arc::from(a.as_str())),
+                };
+                self.container_list.add_tool_call(tool);
+            }
+            ChatAppMsg::ToolResultDelta { name, delta, call_id } => {
+                self.container_list
+                    .update_tool(&name, call_id.as_deref(), |t| t.append_output(&delta));
+            }
+            ChatAppMsg::ToolResultComplete { name, call_id } => {
+                self.container_list
+                    .update_tool(&name, call_id.as_deref(), |t| t.mark_complete());
+            }
+            ChatAppMsg::ToolResultError { name, error, call_id } => {
+                self.container_list
+                    .update_tool(&name, call_id.as_deref(), |t| t.set_error(error.clone()));
+            }
+            ChatAppMsg::StreamComplete => {
+                self.container_list.complete_response();
+                self.finalize_streaming();
+                self.drop_stream_deltas = false;
+            }
+            ChatAppMsg::StreamCancelled => {
+                self.container_list.cancel_streaming();
+                self.finalize_streaming();
+                self.drop_stream_deltas = false;
             }
             ChatAppMsg::ContextUsage { used, total } => {
                 self.context_used = used;
@@ -25,8 +102,7 @@ impl OilChatApp {
                 self.add_notification(crucible_core::types::Notification::warning(err));
             }
             _ => {
-                // TODO(rewrite): TextDelta, ThinkingDelta, ToolCall, ToolResult*, etc.
-                tracing::trace!("[stub] stream msg ignored: {:?}", msg.category());
+                tracing::trace!("[stub] stream msg: {:?}", msg.category());
             }
         }
         Action::Continue
@@ -59,9 +135,45 @@ impl OilChatApp {
     }
 
     /// Handle delegation events (Subagent*, Delegation*)
-    /// TODO(rewrite): Phase 5 — wire to new container state
     pub(super) fn handle_delegation_msg(&mut self, msg: ChatAppMsg) -> Action<ChatAppMsg> {
-        tracing::trace!("[stub] delegation msg: {:?}", msg.category());
+        match msg {
+            ChatAppMsg::SubagentSpawned { id, prompt } => {
+                let agent = CachedSubagent::new(id, prompt, "subagent");
+                self.container_list.add_agent_task(agent, "subagent");
+            }
+            ChatAppMsg::SubagentCompleted { id, summary } => {
+                self.container_list
+                    .update_agent_task(&id, |s| s.mark_completed(&summary));
+            }
+            ChatAppMsg::SubagentFailed { id, error } => {
+                self.container_list
+                    .update_agent_task(&id, |s| s.mark_failed(&error));
+            }
+            ChatAppMsg::DelegationSpawned {
+                id,
+                prompt,
+                target_agent,
+            } => {
+                // If this delegation supersedes a pending tool, mark it
+                if self.pending_delegate_supersessions.contains(&id) {
+                    self.pending_delegate_supersessions.remove(&id);
+                }
+                let mut agent = CachedSubagent::new(&id, prompt, "delegation");
+                agent.target_agent = target_agent;
+                self.container_list.add_agent_task(agent, "delegation");
+            }
+            ChatAppMsg::DelegationCompleted { id, summary } => {
+                self.container_list
+                    .update_agent_task(&id, |s| s.mark_completed(&summary));
+            }
+            ChatAppMsg::DelegationFailed { id, error } => {
+                self.container_list
+                    .update_agent_task(&id, |s| s.mark_failed(&error));
+            }
+            _ => {
+                tracing::trace!("[stub] delegation msg: {:?}", msg.category());
+            }
+        }
         Action::Continue
     }
 
@@ -79,6 +191,39 @@ impl OilChatApp {
             }
             ChatAppMsg::ModeChanged(mode) => {
                 self.mode = super::state::ChatMode::parse(&mode);
+            }
+            ChatAppMsg::ContextUsage { used, total } => {
+                self.context_used = used;
+                self.context_total = total;
+            }
+            ChatAppMsg::LoadHistoryEvents(events) => {
+                self.load_history_events(events);
+            }
+            ChatAppMsg::PrecognitionResult {
+                notes_count,
+                notes,
+            } => {
+                self.precognition.last_notes_count = Some(notes_count);
+                self.precognition.last_notes = notes;
+            }
+            ChatAppMsg::EnrichedMessage { original, enriched } => {
+                // The enriched message replaces the original for sending.
+                // The original was already displayed as a user message.
+                tracing::debug!(
+                    original_len = original.len(),
+                    enriched_len = enriched.len(),
+                    "enriched message ready"
+                );
+                // The chat_runner handles the actual send; nothing to update in state.
+            }
+            ChatAppMsg::UndoComplete {
+                turns,
+                messages_removed,
+            } => {
+                self.add_notification(crucible_core::types::Notification::toast(format!(
+                    "Undid {turns} turn(s), removed {messages_removed} message(s)"
+                )));
+                // Reload will come via LoadHistoryEvents
             }
             _ => {
                 tracing::trace!("[stub] ui msg: {:?}", msg.category());
