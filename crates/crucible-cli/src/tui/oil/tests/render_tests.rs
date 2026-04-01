@@ -1,4 +1,4 @@
-use crate::tui::oil::render::render_with_cursor;
+use crucible_oil::render::render_with_cursor;
 use crate::tui::oil::*;
 use insta::assert_snapshot;
 
@@ -599,7 +599,7 @@ fn default_gap_has_no_extra_blank_lines() {
 
 #[test]
 fn spinner_with_theme_style_renders_with_ansi_codes() {
-    use crate::tui::oil::style::Style;
+    use crucible_oil::style::Style;
     use crate::tui::oil::theme::ThemeConfig;
 
     // Create a spinner with a theme-derived style

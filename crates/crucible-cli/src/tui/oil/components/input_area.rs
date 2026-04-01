@@ -1,6 +1,6 @@
 use crate::tui::oil::component::Component;
-use crate::tui::oil::node::Node;
-use crate::tui::oil::style::Color;
+use crucible_oil::node::Node;
+use crucible_oil::style::Color;
 use crate::tui::oil::theme;
 use crate::tui::oil::ViewContext;
 use crucible_oil::InputStyle;
@@ -130,7 +130,7 @@ impl Component for InputArea {
 mod tests {
     use super::*;
     use crate::tui::oil::component::ComponentHarness;
-    use crate::tui::oil::render::render_to_plain_text;
+    use crucible_oil::render::render_to_plain_text;
 
     #[test]
     fn input_mode_detection() {

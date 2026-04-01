@@ -4,7 +4,7 @@ pub use crucible_oil::components::{
 };
 
 use crate::tui::oil::component::Component;
-use crate::tui::oil::node::Node;
+use crucible_oil::node::Node;
 use crate::tui::oil::ViewContext;
 
 impl Component for PopupOverlay {

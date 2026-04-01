@@ -9,7 +9,7 @@
 use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::chat_runner::render_frame;
-use crate::tui::oil::focus::FocusContext;
+use crucible_oil::focus::FocusContext;
 use crucible_oil::TestRuntime;
 
 /// Find a byte subsequence in a byte slice. Returns the start position.

@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use crate::tui::oil::style::Color;
+use crucible_oil::style::Color;
 use crate::tui::oil::theme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

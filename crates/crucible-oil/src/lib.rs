@@ -21,7 +21,6 @@ pub mod bounded;
 pub mod cell_grid;
 pub mod components;
 pub mod focus;
-pub mod graduation;
 pub mod layout;
 pub mod node;
 pub mod output;

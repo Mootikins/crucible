@@ -1,9 +1,9 @@
 use crate::tui::oil::app::{App, ViewContext};
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::event::Event;
-use crate::tui::oil::focus::FocusContext;
-use crate::tui::oil::node::Node;
-use crate::tui::oil::terminal::Terminal;
+use crucible_oil::focus::FocusContext;
+use crucible_oil::node::Node;
+use crucible_oil::terminal::Terminal;
 use crossterm::event::EventStream;
 use futures::StreamExt;
 use std::time::{Duration, Instant};

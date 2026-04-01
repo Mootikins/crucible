@@ -74,7 +74,7 @@ fn popup_selection_moves_with_index() {
 /// the content should be empty or whitespace-only with no item labels.
 #[test]
 fn popup_empty_items_renders_empty() {
-    use crate::tui::oil::ansi::strip_ansi;
+    use crucible_oil::ansi::strip_ansi;
 
     let node = popup(vec![], 0, 10);
     let output = render_to_string(&node, 80);
@@ -242,11 +242,11 @@ fn popup_positioned_above_input_bar() {
 
 mod overlay_graduation_tests {
     use super::*;
-    use crate::tui::oil::ansi::strip_ansi;
+    use crucible_oil::ansi::strip_ansi;
     use crate::tui::oil::app::App;
     use crate::tui::oil::chat_app::OilChatApp;
     use crate::tui::oil::event::Event;
-    use crate::tui::oil::planning::FramePlanner;
+    use crucible_oil::planning::FramePlanner;
     use crate::tui::oil::tests::helpers::view_with_default_ctx;
     use crate::tui::oil::TestRuntime;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -292,7 +292,7 @@ mod overlay_graduation_tests {
     #[test]
     fn composited_viewport_height_includes_overlays() {
         let base_content = "line1\nline2\nline3";
-        let overlays = [crate::tui::oil::planning::RenderedOverlay {
+        let overlays = [crucible_oil::planning::RenderedOverlay {
             lines: vec!["overlay1".into(), "overlay2".into(), "overlay3".into()],
             anchor: crate::tui::oil::OverlayAnchor::FromBottom(1),
         }];
@@ -424,7 +424,7 @@ mod overlay_graduation_tests {
 
 mod composer_stability_tests {
     use super::*;
-    use crate::tui::oil::ansi::strip_ansi;
+    use crucible_oil::ansi::strip_ansi;
     use crate::tui::oil::app::App;
     use crate::tui::oil::chat_app::OilChatApp;
     use crate::tui::oil::event::Event;
@@ -437,7 +437,7 @@ mod composer_stability_tests {
 
     #[test]
     fn popup_overlay_does_not_affect_base_height() {
-        use crate::tui::oil::planning::FramePlanner;
+        use crucible_oil::planning::FramePlanner;
 
         let mut app = OilChatApp::default();
         app.set_workspace_files(vec![
@@ -475,7 +475,7 @@ mod composer_stability_tests {
 
     #[test]
     fn popup_overlay_preserves_input_status_at_bottom() {
-        use crate::tui::oil::planning::FramePlanner;
+        use crucible_oil::planning::FramePlanner;
 
         let mut app = OilChatApp::default();
         app.set_workspace_files(vec!["file1.rs".to_string()]);

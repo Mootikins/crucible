@@ -1,8 +1,8 @@
-use crate::tui::oil::ansi::visible_width;
+use crucible_oil::ansi::visible_width;
 use crate::tui::oil::markdown::markdown_to_node_with_width;
-use crate::tui::oil::node::{row, styled};
-use crate::tui::oil::render::render_to_string;
-use crate::tui::oil::style::{Color, Style};
+use crucible_oil::node::{row, styled};
+use crucible_oil::render::render_to_string;
+use crucible_oil::style::{Color, Style};
 use proptest::prelude::*;
 
 fn assert_lines_fit_width(output: &str, max_width: usize) -> Result<(), TestCaseError> {
@@ -224,7 +224,7 @@ proptest! {
 // Graduation is now automatic via drain_completed.
 
 mod focus_properties {
-    use crate::tui::oil::focus::{FocusContext, FocusId};
+    use crucible_oil::focus::{FocusContext, FocusId};
     use proptest::prelude::*;
 
     proptest! {
@@ -573,7 +573,7 @@ mod markdown_block_spacing_properties {
     use crate::tui::oil::markdown::{
         markdown_to_node, markdown_to_node_styled, Margins, RenderStyle,
     };
-    use crate::tui::oil::render::render_to_string;
+    use crucible_oil::render::render_to_string;
     use proptest::prelude::*;
 
     fn render_md(md: &str, width: usize) -> String {
@@ -745,7 +745,7 @@ mod markdown_block_spacing_properties {
 
 mod ordered_list_rendering_properties {
     use crate::tui::oil::markdown::markdown_to_node;
-    use crate::tui::oil::render::render_to_string;
+    use crucible_oil::render::render_to_string;
     use proptest::prelude::*;
 
     fn render_md(md: &str, width: usize) -> String {

@@ -5,8 +5,8 @@ use crate::tui::oil::chat_app::{
     ChatAppMsg, ChatMode, McpServerDisplay, OilChatApp, PluginStatusEntry,
 };
 use crate::tui::oil::event::Event;
-use crate::tui::oil::focus::FocusContext;
-use crate::tui::oil::terminal::Terminal;
+use crucible_oil::focus::FocusContext;
+use crucible_oil::terminal::Terminal;
 use crate::tui::oil::theme;
 use anyhow::{Context, Result};
 #[allow(unused_imports)] // WIP: KeyCode, KeyModifiers not yet used

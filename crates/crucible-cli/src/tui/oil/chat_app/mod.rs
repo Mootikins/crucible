@@ -10,8 +10,8 @@ use crate::tui::oil::config::RuntimeConfig;
 #[cfg(test)]
 use crate::tui::oil::event::InputAction;
 use crate::tui::oil::event::{Event, InputBuffer};
-use crate::tui::oil::node::*;
-use crate::tui::oil::style::{Gap, Padding};
+use crucible_oil::node::*;
+use crucible_oil::style::{Gap, Padding};
 #[allow(unused_imports)] // WIP: KeyCode not yet used
 use crossterm::event::KeyCode;
 #[allow(unused_imports)] // WIP: AskRequest, AskResponse, PermAction, PermRequest not yet used
