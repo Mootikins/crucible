@@ -1,19 +1,19 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests/mod.rs
-expression: render_app(&app)
+assertion_line: 356
+expression: render_app(&mut app)
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  > Analyze then fix                                                             
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-                                                                                
- ✓ Read File src/main.rs → 1 lines                                              
-                                                                                
-  ┌─ Thought (11 words)                                                         
-    The main function is empty, I should add an entry point.                    
-                                                                                
-   I see the issue. Let me fix it.                                              
-                                                                                
- ✓ Write File src/main.rs → OK                                                  
+
+ ✓ Read File src/main.rs → 1 lines
+
+ ◇ Thought (11 words)
+
+   I see the issue. Let me fix it.
+
+ ✓ Write File src/main.rs → OK
                                                                                 
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  >                                                                              

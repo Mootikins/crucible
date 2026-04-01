@@ -1,9 +1,10 @@
 //! Spacing acceptance tests — exercises the LIVE rendering path.
 //!
-//! These tests use `chat_runner::render_frame()` which calls `drain_graduated()`
-//! before rendering, matching the real TUI flow. This is critical because
-//! snapshot tests use a fresh FramePlanner per call and never graduate content,
-//! so they only test viewport spacing (Taffy gap), not stdout spacing.
+//! These tests use `Vt100TestRuntime` which calls `render_frame()` through
+//! the real terminal path (Terminal<Vec<u8>> → vt100), matching the real TUI
+//! flow. This is critical because snapshot tests use a fresh FramePlanner per
+//! call and never graduate content, so they only test viewport spacing (Taffy
+//! gap), not stdout spacing.
 //!
 //! The spacing rule is simple: one blank line between all non-tool-group
 //! containers. Consecutive tool groups are tight (no blank line).
@@ -11,24 +12,17 @@
 use crate::tui::oil::ansi::strip_ansi;
 use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
-use crate::tui::oil::chat_runner::render_frame;
-use crate::tui::oil::focus::FocusContext;
-use crucible_oil::TestRuntime;
 
-/// Simulate the live rendering loop: drain_graduated + render viewport.
-///
-/// This is the ONLY correct way to test what the user sees. It mirrors
-/// `chat_runner::render_frame()` exactly.
-fn live_render(app: &mut OilChatApp, runtime: &mut TestRuntime) {
-    let focus = FocusContext::new();
-    render_frame(app, runtime, &focus);
+use super::vt100_runtime::Vt100TestRuntime;
+
+/// Simulate the live rendering loop via Vt100TestRuntime.
+fn live_render(app: &mut OilChatApp, vt: &mut Vt100TestRuntime) {
+    vt.render_frame(app);
 }
 
-/// Get the full screen content (stdout + viewport), ANSI-stripped.
-fn screen(runtime: &TestRuntime) -> String {
-    let stdout = runtime.stdout_content();
-    let viewport = runtime.viewport_content();
-    strip_ansi(&format!("{}{}", stdout, viewport))
+/// Get the full screen content (scrollback + viewport), ANSI-stripped.
+fn screen(vt: &Vt100TestRuntime) -> String {
+    strip_ansi(&vt.full_history())
 }
 
 /// Assert no double blank lines appear anywhere in the output.
@@ -96,18 +90,18 @@ fn tool(app: &mut OilChatApp, name: &str, call_id: &str) {
 #[test]
 fn user_then_assistant_has_one_blank_line() {
     let mut app = OilChatApp::init();
-    let mut runtime = TestRuntime::new(80, 24);
+    let mut vt = Vt100TestRuntime::new(80, 60);
 
     // Frame 1: user message
     app.on_message(ChatAppMsg::UserMessage("What is 2+2?".into()));
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
     // Frame 2: assistant streams
     app.on_message(ChatAppMsg::TextDelta("The answer is 4.".into()));
     app.on_message(ChatAppMsg::StreamComplete);
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
-    let output = screen(&runtime);
+    let output = screen(&vt);
 
     let blanks = blank_lines_between(&output, "What is 2+2?", "The answer is 4.");
     assert_eq!(
@@ -123,25 +117,25 @@ fn user_then_assistant_has_one_blank_line() {
 #[test]
 fn user_system_assistant_spacing() {
     let mut app = OilChatApp::init();
-    let mut runtime = TestRuntime::new(80, 24);
+    let mut vt = Vt100TestRuntime::new(80, 60);
 
     // Frame 1: user message arrives and graduates
     app.on_message(ChatAppMsg::UserMessage("Hello".into()));
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
     // Frame 2: system message (Precognition) arrives and graduates
     app.on_message(ChatAppMsg::PrecognitionResult {
         notes_count: 3,
         notes: vec![],
     });
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
     // Frame 3: assistant streams
     app.on_message(ChatAppMsg::TextDelta("Response text".into()));
     app.on_message(ChatAppMsg::StreamComplete);
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
-    let output = screen(&runtime);
+    let output = screen(&vt);
 
     // User → System: 1 blank line
     let user_to_system = blank_lines_between(&output, "Hello", "Found 3 relevant notes");
@@ -169,7 +163,7 @@ fn user_system_assistant_spacing() {
 #[test]
 fn consecutive_tools_are_tight() {
     let mut app = OilChatApp::init();
-    let mut runtime = TestRuntime::new(80, 24);
+    let mut vt = Vt100TestRuntime::new(80, 60);
 
     app.on_message(ChatAppMsg::UserMessage("Do stuff".into()));
 
@@ -202,10 +196,10 @@ fn consecutive_tools_are_tight() {
 
     // Render enough frames for graduation
     for _ in 0..3 {
-        live_render(&mut app, &mut runtime);
+        live_render(&mut app, &mut vt);
     }
 
-    let output = screen(&runtime);
+    let output = screen(&vt);
 
     // Both tool calls should appear with no blank line between them
     let blanks = blank_lines_between(&output, "a.rs", "b.rs");
@@ -221,7 +215,7 @@ fn consecutive_tools_are_tight() {
 #[test]
 fn tool_then_assistant_has_one_blank_line() {
     let mut app = OilChatApp::init();
-    let mut runtime = TestRuntime::new(80, 24);
+    let mut vt = Vt100TestRuntime::new(80, 60);
 
     app.on_message(ChatAppMsg::UserMessage("Do stuff".into()));
 
@@ -237,14 +231,14 @@ fn tool_then_assistant_has_one_blank_line() {
         name: "bash".into(),
         call_id: Some("c1".into()),
     });
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
     // Assistant responds after tool
     app.on_message(ChatAppMsg::TextDelta("Here are the files.".into()));
     app.on_message(ChatAppMsg::StreamComplete);
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
-    let output = screen(&runtime);
+    let output = screen(&vt);
 
     let blanks = blank_lines_between(&output, "Bash", "Here are the files");
     assert_eq!(
@@ -261,25 +255,25 @@ fn tool_then_assistant_has_one_blank_line() {
 #[test]
 fn multi_frame_graduation_spacing_consistent() {
     let mut app = OilChatApp::init();
-    let mut runtime = TestRuntime::new(80, 24);
+    let mut vt = Vt100TestRuntime::new(80, 60);
 
     // Turn 1: user → assistant (each graduates on different frames)
     app.on_message(ChatAppMsg::UserMessage("First question".into()));
-    live_render(&mut app, &mut runtime); // user graduates
+    live_render(&mut app, &mut vt); // user graduates
 
     app.on_message(ChatAppMsg::TextDelta("First answer".into()));
     app.on_message(ChatAppMsg::StreamComplete);
-    live_render(&mut app, &mut runtime); // assistant graduates
+    live_render(&mut app, &mut vt); // assistant graduates
 
     // Turn 2: user → assistant
     app.on_message(ChatAppMsg::UserMessage("Second question".into()));
-    live_render(&mut app, &mut runtime); // user graduates
+    live_render(&mut app, &mut vt); // user graduates
 
     app.on_message(ChatAppMsg::TextDelta("Second answer".into()));
     app.on_message(ChatAppMsg::StreamComplete);
-    live_render(&mut app, &mut runtime); // assistant graduates
+    live_render(&mut app, &mut vt); // assistant graduates
 
-    let output = screen(&runtime);
+    let output = screen(&vt);
 
     // Every non-tool transition should have exactly 1 blank line
     let q1_to_a1 = blank_lines_between(&output, "First question", "First answer");
@@ -299,18 +293,18 @@ fn multi_frame_graduation_spacing_consistent() {
 #[test]
 fn thinking_tools_thinking_tools_text_spacing() {
     let mut app = OilChatApp::init();
-    let mut runtime = TestRuntime::new(120, 40);
+    let mut vt = Vt100TestRuntime::new(120, 60);
 
     // User message
     app.on_message(ChatAppMsg::UserMessage("tell me about this repo".into()));
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
-    // Thought #1
+    // Thought #1 (10 words → collapsed as "10 words")
     think(
         &mut app,
         "I'll explore the repository to give you a comprehensive overview.",
     );
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
     // Tool batch #1 (5 tools)
     tool(&mut app, "get_kiln_info", "t1");
@@ -318,32 +312,38 @@ fn thinking_tools_thinking_tools_text_spacing() {
     tool(&mut app, "glob", "t3");
     tool(&mut app, "read_note", "t4");
     tool(&mut app, "read_note", "t5");
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
-    // Thought #2 (short)
+    // Thought #2 (8 words → collapsed as "8 words")
     think(
         &mut app,
-        "Let me check more details about the crate structure.",
+        "Let me check more details about crate structure.",
     );
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
     // Tool batch #2 (2 tools)
     tool(&mut app, "glob", "t6");
     tool(&mut app, "read_note", "t7");
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
-    // Thought #3 + assistant text
-    think(&mut app, "Now I have enough context to give a full answer.");
+    // Thought #3 (11 words) + assistant text
+    think(
+        &mut app,
+        "Now I have enough context to give a full and thorough answer.",
+    );
     app.on_message(ChatAppMsg::TextDelta(
         "Crucible is a knowledge-grounded agent runtime.".into(),
     ));
     app.on_message(ChatAppMsg::StreamComplete);
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
-    let output = screen(&runtime);
+    let output = screen(&vt);
 
-    // Symptom 1: Thought#1 → tools should have 1 blank line
-    let thought1_to_tools = blank_lines_between(&output, "comprehensive overview", "Get Kiln Info");
+    // Thinking graduates collapsed as "◇ Thought (N words)".
+    // Use unique word counts to identify each thought block.
+
+    // Symptom 1: Thought#1 (10 words) → tools should have 1 blank line
+    let thought1_to_tools = blank_lines_between(&output, "10 words", "Get Kiln Info");
     assert_eq!(
         thought1_to_tools,
         Some(1),
@@ -351,8 +351,8 @@ fn thinking_tools_thinking_tools_text_spacing() {
         output
     );
 
-    // Symptom 2: tools → Thought#2 should have exactly 1 blank line (not 2)
-    let tools_to_thought2 = blank_lines_between(&output, "t5.rs", "crate structure");
+    // Symptom 2: tools → Thought#2 (8 words) should have exactly 1 blank line (not 2)
+    let tools_to_thought2 = blank_lines_between(&output, "t5.rs", "8 words");
     assert_eq!(
         tools_to_thought2,
         Some(1),
@@ -360,8 +360,8 @@ fn thinking_tools_thinking_tools_text_spacing() {
         output
     );
 
-    // Symptom 3: Thought#2 → tools should have 1 blank line
-    let thought2_to_tools = blank_lines_between(&output, "crate structure", "t6.rs");
+    // Symptom 3: Thought#2 (8 words) → tools should have 1 blank line
+    let thought2_to_tools = blank_lines_between(&output, "8 words", "t6.rs");
     assert_eq!(
         thought2_to_tools,
         Some(1),
@@ -378,33 +378,33 @@ fn thinking_tools_thinking_tools_text_spacing() {
 fn thinking_tools_spacing_collapsed_mode() {
     let mut app = OilChatApp::init();
     app.set_show_thinking(false);
-    let mut runtime = TestRuntime::new(120, 40);
+    let mut vt = Vt100TestRuntime::new(120, 60);
 
     // User message
     app.on_message(ChatAppMsg::UserMessage("tell me about this repo".into()));
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
     // Thought #1
     think(
         &mut app,
         "I'll explore the repository to give you a comprehensive overview.",
     );
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
     // Tool batch #1
     tool(&mut app, "get_kiln_info", "t1");
     tool(&mut app, "read_file", "t2");
     tool(&mut app, "read_note", "t3");
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
     // Thought #2
     think(&mut app, "Let me check more details.");
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
     // Tool batch #2
     tool(&mut app, "glob", "t4");
     tool(&mut app, "read_note", "t5");
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
     // Thought #3 + text
     think(&mut app, "Now I have enough context.");
@@ -412,9 +412,9 @@ fn thinking_tools_spacing_collapsed_mode() {
         "Crucible is a knowledge-grounded agent runtime.".into(),
     ));
     app.on_message(ChatAppMsg::StreamComplete);
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
-    let output = screen(&runtime);
+    let output = screen(&vt);
 
     // Symptom 1: Thought#1 → tools should have 1 blank line
     let thought1_to_tools = blank_lines_between(&output, "Thought (10", "Get Kiln Info");
@@ -454,46 +454,46 @@ fn thinking_tools_spacing_collapsed_mode() {
 fn thinking_tools_collapsed_tick_per_event() {
     let mut app = OilChatApp::init();
     app.set_show_thinking(false);
-    let mut runtime = TestRuntime::new(120, 40);
+    let mut vt = Vt100TestRuntime::new(120, 60);
 
     // User message + render
     app.on_message(ChatAppMsg::UserMessage("tell me about this repo".into()));
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
     // Thought #1: 10 words
     think(
         &mut app,
         "I will explore the repository to give you a comprehensive overview.",
     );
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
     // Each tool arrives with a render between them
     tool(&mut app, "get_kiln_info", "t1");
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
     tool(&mut app, "read_file", "t2");
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
     tool(&mut app, "read_note", "t3");
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
     // Thought #2: 3 words
     think(&mut app, "Let me check.");
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
     // More tools with renders
     tool(&mut app, "glob", "t4");
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
     tool(&mut app, "read_note", "t5");
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
     // Final thought + text + complete: 5 words
     think(&mut app, "Now I can answer fully.");
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
     app.on_message(ChatAppMsg::TextDelta("Crucible is great.".into()));
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
     app.on_message(ChatAppMsg::StreamComplete);
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
-    let output = screen(&runtime);
+    let output = screen(&vt);
 
     // Verify spacing structure by counting blank lines between consecutive
     // content lines. Content lines are non-blank stripped lines.
@@ -556,25 +556,25 @@ fn thinking_tools_collapsed_tick_per_event() {
 #[test]
 fn thinking_then_tools_has_one_blank_line() {
     let mut app = OilChatApp::init();
-    let mut runtime = TestRuntime::new(80, 30);
+    let mut vt = Vt100TestRuntime::new(80, 60);
 
     app.on_message(ChatAppMsg::UserMessage("Hello".into()));
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
     // Thinking arrives
     think(&mut app, "Let me look into this.");
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
     // Tool call arrives (closes the thinking AssistantResponse)
     tool(&mut app, "read_file", "c1");
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
     // Complete
     app.on_message(ChatAppMsg::TextDelta("Here is what I found.".into()));
     app.on_message(ChatAppMsg::StreamComplete);
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
-    let output = screen(&runtime);
+    let output = screen(&vt);
 
     // Thought → tool: 1 blank line
     let thought_to_tool = blank_lines_between(&output, "Thought", "Read File");
@@ -599,21 +599,21 @@ fn thinking_then_tools_has_one_blank_line() {
 #[test]
 fn tools_then_thinking_has_one_blank_line() {
     let mut app = OilChatApp::init();
-    let mut runtime = TestRuntime::new(80, 30);
+    let mut vt = Vt100TestRuntime::new(80, 60);
 
     app.on_message(ChatAppMsg::UserMessage("Check this".into()));
 
     // Tool first (before any thinking)
     tool(&mut app, "glob", "c1");
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
     // Thinking after tool
     think(&mut app, "Interesting results from the glob.");
     app.on_message(ChatAppMsg::TextDelta("Found the files.".into()));
     app.on_message(ChatAppMsg::StreamComplete);
-    live_render(&mut app, &mut runtime);
+    live_render(&mut app, &mut vt);
 
-    let output = screen(&runtime);
+    let output = screen(&vt);
 
     // Tool → thought: 1 blank line
     let tool_to_thought = blank_lines_between(&output, "Glob", "Thought");
