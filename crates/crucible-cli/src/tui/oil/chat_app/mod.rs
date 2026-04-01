@@ -1,4 +1,5 @@
 use crate::tui::oil::app::{Action, App, ViewContext};
+use crate::tui::oil::component::Component;
 #[allow(unused_imports)] // WIP: Drawer, DrawerKind not yet used
 use crate::tui::oil::components::{
     Drawer, DrawerKind, InteractionModal, InteractionModalMsg, InteractionModalOutput,
@@ -151,15 +152,45 @@ impl App for OilChatApp {
     fn view(&self, ctx: &ViewContext<'_>) -> Node {
         self.terminal_size.set(ctx.terminal_size);
 
-        // TODO(rewrite): Phase 2+ will build the real component tree here.
-        // For now, minimal stub that shows chrome only.
-        let _term_width = ctx.terminal_size.0 as usize;
+        if self.shell_modal.is_some() {
+            // Shell modal takes over the entire screen
+            let (w, h) = ctx.terminal_size;
+            return self
+                .shell_modal
+                .as_ref()
+                .unwrap()
+                .view(w as usize, h as usize);
+        }
+
+        let spinner_frame = self.spinner_frame();
+
+        // Bottom chrome: either interaction modal OR (turn indicator + input + status)
+        let bottom = if let Some(modal) = &self.interaction_modal {
+            modal.view(
+                ctx.terminal_size.0 as usize,
+                self.permission.permission_queue.len(),
+            )
+        } else if self.notification_area.is_visible() {
+            // Messages drawer replaces chrome when visible
+            self.render_messages_drawer(ctx)
+        } else {
+            // Normal chrome: turn indicator + input + status
+            let turn = self.turn_indicator_view(spinner_frame);
+            let input = self.input_view(ctx);
+            let status = self.status_view();
+            col([turn, input, status])
+        };
 
         col([
-            // Content area: TODO(rewrite) — container components go here
+            // Content area: TODO(rewrite) Phase 3 — container components
             spacer(),
-            // Chrome: pinned at bottom
-            text(" [TUI rewrite in progress]"),
+            // Chrome: pinned at bottom, never scrolls
+            bottom.with_margin(Padding {
+                top: 1,
+                ..Padding::all(0)
+            }),
+            // Popup overlay (command completion, model selection)
+            self.popup_overlay_view(ctx),
         ])
         .gap(Gap::row(0))
     }
@@ -281,6 +312,101 @@ impl OilChatApp {
     /// Independent of tick events — animates even during rapid streaming.
     pub fn spinner_frame(&self) -> usize {
         (self.spinner_epoch.elapsed().as_millis() / 100) as usize
+    }
+
+    // ─── View Helpers (chrome composition) ─────────────────────────────
+
+    /// Turn indicator: spinner + thinking status in chrome.
+    fn turn_indicator_view(&self, _spinner_frame: usize) -> Node {
+        // TODO(rewrite): Phase 5 — derive active/thinking_words from container state
+        // For now, always inactive
+        Node::Empty
+    }
+
+    /// Input box composition.
+    fn input_view(&self, ctx: &ViewContext<'_>) -> Node {
+        use crate::tui::oil::components::{
+            InputComponent, InputMode as ComponentInputMode,
+        };
+
+        let input_mode = ComponentInputMode::from_content(self.input.content());
+        let is_focused = self.interaction_modal.is_none();
+        let term_width = ctx.terminal_size.0 as usize;
+
+        InputComponent::new(self.input.content(), self.input.cursor(), term_width)
+            .mode(input_mode)
+            .focused(is_focused)
+            .show_popup(self.popup.show)
+            .view(ctx)
+    }
+
+    /// Status bar composition.
+    fn status_view(&self) -> Node {
+        let mut comp = StatusComponent::new()
+            .mode(self.mode)
+            .model(&self.model)
+            .context(self.context_used, self.context_total)
+            .status(&self.status);
+
+        if let Some(ref cfg) = self.statusline_config {
+            comp = comp.config(cfg);
+        }
+
+        if let Some((text, kind)) = self.notification_area.active_toast() {
+            comp = comp.toast(text, kind);
+        }
+        let counts = self.notification_area.warning_counts();
+        if !counts.is_empty() {
+            comp = comp.counts(counts);
+        }
+
+        let focus = crucible_oil::focus::FocusContext::default();
+        let ctx = ViewContext::new(&focus);
+        comp.view(&ctx)
+    }
+
+    /// Messages drawer (notification history).
+    fn render_messages_drawer(&self, ctx: &ViewContext<'_>) -> Node {
+        use crate::tui::oil::components::status_bar::NotificationToastKind;
+        use crate::tui::oil::components::{NotificationComponent, NotificationEntry};
+
+        let term_width = ctx.terminal_size.0 as usize;
+        let entries: Vec<NotificationEntry> = self
+            .notification_area
+            .history()
+            .iter()
+            .map(|(notif, instant)| {
+                let kind = match &notif.kind {
+                    crucible_core::types::NotificationKind::Toast => NotificationToastKind::Info,
+                    crucible_core::types::NotificationKind::Progress { .. } => {
+                        NotificationToastKind::Info
+                    }
+                    crucible_core::types::NotificationKind::Warning => {
+                        NotificationToastKind::Warning
+                    }
+                };
+                let elapsed = instant.elapsed();
+                let created = chrono::Local::now()
+                    - chrono::Duration::from_std(elapsed).unwrap_or_default();
+                let timestamp = created.format("%H:%M:%S").to_string();
+                let message = notif.message.trim_end();
+                NotificationEntry::new(message, kind, timestamp)
+            })
+            .collect();
+
+        NotificationComponent::new(entries)
+            .visible(true)
+            .width(term_width)
+            .view(ctx)
+    }
+
+    /// Popup overlay for command completion.
+    fn popup_overlay_view(&self, _ctx: &ViewContext<'_>) -> Node {
+        if !self.popup.show {
+            return Node::Empty;
+        }
+        // TODO(rewrite): wire popup items from autocomplete state
+        Node::Empty
     }
 
     /// Periodic maintenance called each render frame.
