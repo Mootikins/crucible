@@ -1,6 +1,6 @@
-use crate::tui::oil::node::{col, row, spacer, styled, text, Node};
+use crucible_oil::node::{col, row, spacer, styled, text, Node};
 
-use crate::tui::oil::style::{Color, Style};
+use crucible_oil::style::{Color, Style};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::io::BufRead;
 use std::path::{Path, PathBuf};

@@ -1,5 +1,5 @@
-use crate::tui::oil::node::{col, row, styled, Node};
-use crate::tui::oil::style::Style;
+use crucible_oil::node::{col, row, styled, Node};
+use crucible_oil::style::Style;
 use crate::tui::oil::theme;
 use crate::tui::oil::utils::truncate_to_chars;
 use similar::{ChangeTag, TextDiff};
@@ -150,7 +150,7 @@ pub fn diff_to_node_with_word_highlight(old: &str, new: &str) -> Node {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::oil::render::render_to_string;
+    use crucible_oil::render::render_to_string;
 
     fn has_red_ansi(s: &str) -> bool {
         s.contains("\x1b[31m") || s.contains("\x1b[38;5;9m") || s.contains("\x1b[38;2;247;118;142m")

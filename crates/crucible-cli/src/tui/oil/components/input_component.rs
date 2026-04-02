@@ -1,7 +1,7 @@
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::InputMode;
-use crate::tui::oil::node::*;
-use crate::tui::oil::style::Style;
+use crucible_oil::node::*;
+use crucible_oil::style::Style;
 use crate::tui::oil::utils::wrap_chars;
 use crate::tui::oil::ViewContext;
 
@@ -158,7 +158,7 @@ impl Component for InputComponent<'_> {
 mod tests {
     use super::*;
     use crate::tui::oil::component::ComponentHarness;
-    use crate::tui::oil::render::render_to_plain_text;
+    use crucible_oil::render::render_to_plain_text;
 
     #[test]
     fn empty_input_normal_mode() {

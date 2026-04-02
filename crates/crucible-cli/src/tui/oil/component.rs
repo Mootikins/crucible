@@ -1,7 +1,7 @@
 use crate::tui::oil::app::ViewContext;
-use crate::tui::oil::focus::FocusContext;
-use crate::tui::oil::node::Node;
-use crate::tui::oil::planning::{FramePlanner, FrameSnapshot, FrameTrace};
+use crucible_oil::focus::FocusContext;
+use crucible_oil::node::Node;
+use crucible_oil::planning::{FramePlanner, FrameSnapshot, FrameTrace};
 
 pub trait Component {
     fn view(&self, ctx: &ViewContext<'_>) -> Node;
@@ -74,7 +74,7 @@ impl ComponentHarness {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::oil::node::{col, text};
+    use crucible_oil::node::{col, text};
 
     struct SimpleComponent {
         message: String,

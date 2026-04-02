@@ -7,7 +7,7 @@ use crucible_core::fuzzy::FuzzyMatcher;
 
 use crate::tui::oil::app::Action;
 use crate::tui::oil::event::InputAction;
-use crate::tui::oil::node::PopupItemNode;
+use crucible_oil::node::PopupItemNode;
 
 use super::messages::ChatAppMsg;
 use super::model_state::ModelListState;

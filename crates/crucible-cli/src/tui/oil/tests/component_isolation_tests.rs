@@ -3,17 +3,17 @@
 //! These tests verify that individual components render correctly in isolation,
 //! checking both structural output (plain text) and styled output (ANSI codes).
 
-use crate::tui::oil::ansi::{strip_ansi, visible_width};
+use crucible_oil::ansi::{strip_ansi, visible_width};
 use crate::tui::oil::app::ViewContext;
 use crate::tui::oil::chat_app::ChatMode;
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::{
     popup_item, popup_item_with_desc, InputArea, PopupOverlay, StatusBar, INPUT_MAX_CONTENT_LINES,
 };
-use crate::tui::oil::focus::FocusContext;
-use crate::tui::oil::node::{col, row, spacer, styled, text, PopupItemNode};
-use crate::tui::oil::render::{render_to_plain_text, render_to_string, render_with_cursor};
-use crate::tui::oil::style::{Color, Style};
+use crucible_oil::focus::FocusContext;
+use crucible_oil::node::{col, row, spacer, styled, text, PopupItemNode};
+use crucible_oil::render::{render_to_plain_text, render_to_string, render_with_cursor};
+use crucible_oil::style::{Color, Style};
 use insta::assert_snapshot;
 
 fn render_plain(component: &impl Component, width: usize) -> String {
@@ -1014,14 +1014,15 @@ mod tool_call_tests {
     }
 
     #[test]
-    fn running_tool_shows_spinner() {
+    fn running_tool_shows_pending_icon() {
         let tool = test_tool("mcp_read", r#"{"path": "test.rs"}"#);
         let node = render_tool_call_with_frame(&tool, 0);
         let plain = render_to_plain_text(&node, 80);
 
+        // Pending tools show static ● (no animated spinner — spinners are chrome only)
         assert!(
-            plain.contains("⠋"),
-            "Running tool should show braille spinner: {:?}",
+            plain.contains("\u{25CF}"),
+            "Running tool should show pending ● icon: {:?}",
             plain
         );
         assert!(
@@ -1121,17 +1122,19 @@ mod tool_call_tests {
     }
 
     #[test]
-    fn spinner_frame_changes_icon() {
+    fn pending_icon_is_static_across_frames() {
+        // Pending tools show a static ● regardless of spinner frame
+        // (animated spinners are chrome only)
         let tool = test_tool("mcp_read", "{}");
 
         let node0 = render_tool_call_with_frame(&tool, 0);
-        let node1 = render_tool_call_with_frame(&tool, 1);
+        let node1 = render_tool_call_with_frame(&tool, 5);
 
         let plain0 = render_to_plain_text(&node0, 80);
         let plain1 = render_to_plain_text(&node1, 80);
 
-        assert!(plain0.contains("⠋"), "Frame 0 should show ⠋");
-        assert!(plain1.contains("⠙"), "Frame 1 should show ⠙");
+        assert!(plain0.contains("\u{25CF}"), "Frame 0 should show ●");
+        assert_eq!(plain0, plain1, "Pending icon should be static (no animation)");
     }
 
     #[test]

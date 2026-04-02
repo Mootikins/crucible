@@ -6,7 +6,7 @@
 //! are caught and reported as test failures rather than aborting the suite.
 
 use crate::tui::oil::markdown::{markdown_to_node, markdown_to_node_with_width};
-use crate::tui::oil::render::render_to_string;
+use crucible_oil::render::render_to_string;
 use proptest::prelude::*;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 

@@ -1,8 +1,8 @@
 use std::cell::Cell;
 
-use crate::tui::oil::chat_container::ContainerList;
 use crate::tui::oil::components::NotificationArea;
 use crate::tui::oil::config::RuntimeConfig;
+use crate::tui::oil::containers::ContainerList;
 use crate::tui::oil::event::InputBuffer;
 
 use super::{
@@ -26,7 +26,6 @@ impl Default for OilChatApp {
             available_models: Vec::new(),
 
             model_list_state: ModelListState::NotLoaded,
-            model_fetch_message_shown: false,
 
             // UI Chrome
             input: InputBuffer::new(),

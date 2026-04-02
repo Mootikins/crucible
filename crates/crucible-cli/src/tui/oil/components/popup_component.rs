@@ -1,6 +1,6 @@
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::PopupOverlay;
-use crate::tui::oil::node::Node;
+use crucible_oil::node::Node;
 use crate::tui::oil::ViewContext;
 use crucible_oil::node::PopupItemNode;
 
@@ -75,7 +75,7 @@ mod tests {
     use super::*;
     use crate::tui::oil::component::ComponentHarness;
     use crate::tui::oil::components::popup_item;
-    use crate::tui::oil::render::render_to_plain_text;
+    use crucible_oil::render::render_to_plain_text;
 
     fn sample_items() -> Vec<PopupItemNode> {
         vec![popup_item("alpha"), popup_item("beta"), popup_item("gamma")]

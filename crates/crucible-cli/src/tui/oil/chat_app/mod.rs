@@ -1,37 +1,23 @@
 use crate::tui::oil::app::{Action, App, ViewContext};
-use crate::tui::oil::chat_container::ContainerList;
-#[allow(unused_imports)] // WIP: Drawer, DrawerKind not yet used
+use crate::tui::oil::component::Component;
 use crate::tui::oil::components::{
-    Drawer, DrawerKind, InteractionModal, InteractionModalMsg, InteractionModalOutput,
-    InteractionMode, NotificationArea, PopupComponent, ShellHistoryItem, ShellModal, ShellModalMsg,
-    ShellModalOutput, ShellStatus, StatusComponent,
+    InteractionModal, NotificationArea, ShellModal, StatusComponent,
 };
 use crate::tui::oil::config::RuntimeConfig;
 #[cfg(test)]
 use crate::tui::oil::event::InputAction;
 use crate::tui::oil::event::{Event, InputBuffer};
-use crate::tui::oil::node::*;
-use crate::tui::oil::style::{Gap, Padding};
-#[allow(unused_imports)] // WIP: KeyCode not yet used
-use crossterm::event::KeyCode;
-#[allow(unused_imports)] // WIP: AskRequest, AskResponse, PermAction, PermRequest not yet used
-use crucible_core::interaction::{
-    AskRequest, AskResponse, InteractionRequest, InteractionResponse, PermAction, PermRequest,
-    PermResponse, PermissionScope,
-};
+use crucible_oil::node::*;
+use crucible_oil::style::{Gap, Padding};
+use crucible_core::interaction::{InteractionRequest, InteractionResponse, PermResponse};
 use std::cell::Cell;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
-const FOCUS_INPUT: &str = "input";
-#[allow(dead_code)] // WIP: FOCUS_POPUP not yet used
-const FOCUS_POPUP: &str = "popup";
 const POPUP_HEIGHT: usize = 10;
 pub const INPUT_MAX_CONTENT_LINES: usize = 3;
 
-#[allow(dead_code)] // WIP: MAX_DISPLAY_ITEMS not yet used
-const MAX_DISPLAY_ITEMS: usize = 512;
 const MAX_SHELL_HISTORY: usize = 100;
 
 // ─── Submodules ──────────────────────────────────────────────────────────────
@@ -44,15 +30,12 @@ mod message_handlers;
 pub mod messages;
 pub mod model_state;
 pub mod popup_state;
-mod rendering;
 mod shell;
 pub mod state;
 
 pub use messages::ChatAppMsg;
 pub use model_state::{McpServerDisplay, ModelListState, PluginStatusEntry};
 use popup_state::{PermissionState, PopupState, PrecognitionState, ShellHistoryState};
-#[cfg(test)]
-use state::AutocompleteKind;
 use state::MessageQueueState;
 pub use state::{ChatMode, InputMode, Role};
 
@@ -62,8 +45,8 @@ pub struct OilChatApp {
     // ─── Viewport Projection (daemon-derived state) ───────────────────
     // These fields mirror information received from the daemon and
     // represent the authoritative view of the current session.
-    /// Semantic containers for chat content (container architecture)
-    container_list: ContainerList,
+    /// Container list: ordered chat content with graduation support
+    container_list: crate::tui::oil::containers::ContainerList,
     /// Current chat mode (Normal / Plan / Auto)
     mode: ChatMode,
     /// Display name of the active LLM model
@@ -83,8 +66,6 @@ pub struct OilChatApp {
     available_models: Vec<String>,
     /// Fetch-state of the model list
     model_list_state: ModelListState,
-    /// Flag to prevent duplicate fetch/loading messages when :model is pressed repeatedly
-    model_fetch_message_shown: bool,
 
     // ─── UI Chrome (purely local state) ───────────────────────────────
     // Everything here is display-only and never round-trips to the
@@ -153,29 +134,47 @@ impl App for OilChatApp {
 
     fn view(&self, ctx: &ViewContext<'_>) -> Node {
         self.terminal_size.set(ctx.terminal_size);
+
         if self.shell_modal.is_some() {
-            return self.render_shell_modal();
+            // Shell modal takes over the entire screen
+            let (w, h) = ctx.terminal_size;
+            return self
+                .shell_modal
+                .as_ref()
+                .unwrap()
+                .view(w as usize, h as usize);
         }
 
-        tracing::debug!(target: "crucible_cli::tui::oil::model_flow",
-            has_modal = self.interaction_modal.is_some(),
-            notification_visible = self.notification_area.is_visible(),
-            "view: layout branch selected");
+        let spinner_frame = self.spinner_frame();
+
+        // Bottom chrome: either interaction modal OR (turn indicator + input + status)
         let bottom = if let Some(modal) = &self.interaction_modal {
-            let term_width = ctx.terminal_size.0 as usize;
-            modal.view(term_width, self.permission.permission_queue.len())
+            modal.view(
+                ctx.terminal_size.0 as usize,
+                self.permission.permission_queue.len(),
+            )
         } else if self.notification_area.is_visible() {
+            // Messages drawer replaces chrome when visible
             self.render_messages_drawer(ctx)
         } else {
-            col([self.render_input(ctx), self.render_status()])
+            // Normal chrome: turn indicator + input + status
+            let turn = self.turn_indicator_view(spinner_frame);
+            let input = self.input_view(ctx);
+            let status = self.status_view();
+            col([turn, input, status])
         };
 
         col([
-            self.render_containers(),
-            self.render_turn_spinner(),
+            // Content area: container components rendered with spacing
+            self.render_content(),
             spacer(),
-            bottom.with_margin(Padding { top: 1, ..Padding::all(0) }),
-            self.render_popup_overlay(ctx),
+            // Chrome: pinned at bottom, never scrolls
+            bottom.with_margin(Padding {
+                top: 1,
+                ..Padding::all(0)
+            }),
+            // Popup overlay (command completion, model selection)
+            self.popup_overlay_view(ctx),
         ])
         .gap(Gap::row(0))
     }
@@ -299,6 +298,192 @@ impl OilChatApp {
         (self.spinner_epoch.elapsed().as_millis() / 100) as usize
     }
 
+    // ─── View Helpers (chrome composition) ─────────────────────────────
+
+    /// Turn indicator: spinner + thinking status in chrome.
+    fn turn_indicator_view(&self, spinner_frame: usize) -> Node {
+        use crate::tui::oil::components::TurnIndicator;
+        use crate::tui::oil::containers::ContainerContent;
+
+        let mut indicator = TurnIndicator::new();
+        indicator.active = self.container_list.is_streaming();
+
+        // Derive thinking word count from the most recent assistant response,
+        // but ONLY when text hasn't started yet. Once text starts, the thinking
+        // block is finalized in content (shown as "◇ Thought") and the chrome
+        // should stop showing "Thinking…" to avoid duplication.
+        if let Some(container) = self
+            .container_list
+            .containers()
+            .iter()
+            .rev()
+            .find(|c| matches!(&c.content, ContainerContent::AssistantResponse { thinking, .. } if !thinking.is_empty()))
+        {
+            if let ContainerContent::AssistantResponse { thinking, text, .. } = &container.content {
+                if text.is_empty() {
+                    let total_words: usize = thinking.iter().map(|t| t.word_count()).sum();
+                    if total_words > 0 {
+                        indicator.thinking_words = Some(total_words);
+                    }
+                }
+            }
+        }
+
+        indicator.view(spinner_frame)
+    }
+
+    /// Input box composition.
+    fn input_view(&self, ctx: &ViewContext<'_>) -> Node {
+        use crate::tui::oil::components::{
+            InputComponent, InputMode as ComponentInputMode,
+        };
+
+        let input_mode = ComponentInputMode::from_content(self.input.content());
+        let is_focused = self.interaction_modal.is_none();
+        let term_width = ctx.terminal_size.0 as usize;
+
+        InputComponent::new(self.input.content(), self.input.cursor(), term_width)
+            .mode(input_mode)
+            .focused(is_focused)
+            .show_popup(self.popup.show)
+            .view(ctx)
+    }
+
+    /// Status bar composition.
+    fn status_view(&self) -> Node {
+        let mut comp = StatusComponent::new()
+            .mode(self.mode)
+            .model(&self.model)
+            .context(self.context_used, self.context_total)
+            .status(&self.status);
+
+        if let Some(ref cfg) = self.statusline_config {
+            comp = comp.config(cfg);
+        }
+
+        if let Some((text, kind)) = self.notification_area.active_toast() {
+            comp = comp.toast(text, kind);
+        }
+        let counts = self.notification_area.warning_counts();
+        if !counts.is_empty() {
+            comp = comp.counts(counts);
+        }
+
+        let focus = crucible_oil::focus::FocusContext::default();
+        let ctx = ViewContext::new(&focus);
+        comp.view(&ctx)
+    }
+
+    /// Messages drawer (notification history).
+    fn render_messages_drawer(&self, ctx: &ViewContext<'_>) -> Node {
+        use crate::tui::oil::components::status_bar::NotificationToastKind;
+        use crate::tui::oil::components::{NotificationComponent, NotificationEntry};
+
+        let term_width = ctx.terminal_size.0 as usize;
+        let entries: Vec<NotificationEntry> = self
+            .notification_area
+            .history()
+            .iter()
+            .map(|(notif, instant)| {
+                let kind = match &notif.kind {
+                    crucible_core::types::NotificationKind::Toast => NotificationToastKind::Info,
+                    crucible_core::types::NotificationKind::Progress { .. } => {
+                        NotificationToastKind::Info
+                    }
+                    crucible_core::types::NotificationKind::Warning => {
+                        NotificationToastKind::Warning
+                    }
+                };
+                let elapsed = instant.elapsed();
+                let created = chrono::Local::now()
+                    - chrono::Duration::from_std(elapsed).unwrap_or_default();
+                let timestamp = created.format("%H:%M:%S").to_string();
+                let message = notif.message.trim_end();
+                NotificationEntry::new(message, kind, timestamp)
+            })
+            .collect();
+
+        NotificationComponent::new(entries)
+            .visible(true)
+            .width(term_width)
+            .view(ctx)
+    }
+
+    /// Render all in-viewport containers with spacing.
+    fn render_content(&self) -> Node {
+        use crate::tui::oil::containers::{needs_spacing, ContainerViewContext};
+
+        let ctx = ContainerViewContext {
+            width: self.terminal_size.get().0 as usize,
+            spinner_frame: self.spinner_frame(),
+            show_thinking: self.show_thinking,
+        };
+
+        let containers = self.container_list.containers();
+        if containers.is_empty() {
+            return Node::Empty;
+        }
+
+        let mut prev_kind: Option<crate::tui::oil::containers::ContainerKind> =
+            self.container_list.last_graduated_kind();
+        let mut groups: Vec<Node> = Vec::new();
+        let mut tight_run: Vec<Node> = Vec::new();
+        let mut run_kind: Option<crate::tui::oil::containers::ContainerKind> = None;
+
+        for container in containers {
+            let kind = container.kind;
+            let node = container.view(&ctx);
+
+            let should_break = run_kind
+                .or(if groups.is_empty() { prev_kind } else { None })
+                .map(|prev| needs_spacing(prev, kind))
+                .unwrap_or(false);
+
+            if should_break {
+                if tight_run.len() == 1 {
+                    groups.push(tight_run.pop().unwrap());
+                } else if !tight_run.is_empty() {
+                    groups.push(col(tight_run.drain(..).collect::<Vec<_>>()).gap(Gap::row(0)));
+                }
+            }
+
+            tight_run.push(node);
+            run_kind = Some(kind);
+            prev_kind = Some(kind);
+        }
+
+        if tight_run.len() == 1 {
+            groups.push(tight_run.pop().unwrap());
+        } else if !tight_run.is_empty() {
+            groups.push(col(tight_run).gap(Gap::row(0)));
+        }
+
+        if groups.is_empty() {
+            return Node::Empty;
+        }
+
+        col(groups).gap(Gap::row(1))
+    }
+
+    /// Popup overlay for command completion.
+    fn popup_overlay_view(&self, _ctx: &ViewContext<'_>) -> Node {
+        if !self.popup.show {
+            return Node::Empty;
+        }
+
+        let items = self.get_popup_items();
+        if items.is_empty() {
+            return Node::Empty;
+        }
+
+        use crate::tui::oil::components::PopupOverlay;
+
+        PopupOverlay::new(items)
+            .selected(self.popup.selected)
+            .max_visible(POPUP_HEIGHT)
+            .view(&crucible_oil::focus::FocusContext::default())
+    }
+
     /// Periodic maintenance called each render frame.
     /// Expires stale toasts and ticks shell modal.
     pub fn expire_toasts(&mut self) {
@@ -333,10 +518,12 @@ impl OilChatApp {
         self.permission.perm_autoconfirm_session
     }
 
-    /// Get access to the container list for testing/inspection.
-    #[cfg(test)]
-    pub(crate) fn container_list(&self) -> &ContainerList {
+    pub(crate) fn container_list(&self) -> &crate::tui::oil::containers::ContainerList {
         &self.container_list
+    }
+
+    pub(crate) fn container_list_mut(&mut self) -> &mut crate::tui::oil::containers::ContainerList {
+        &mut self.container_list
     }
 
     pub(crate) fn add_notification(&mut self, notification: crucible_core::types::Notification) {
@@ -370,12 +557,14 @@ impl OilChatApp {
     }
 
     /// Replay stored session events through the live event path.
-    /// This ensures resume reconstructs the same state as live streaming —
-    /// user messages, thinking, tools, and delegation all come through for free.
+    ///
+    /// Clears existing containers first, replays all events, then marks
+    /// the response complete so graduated content flows to scrollback.
     pub(crate) fn load_history_events(&mut self, events: Vec<serde_json::Value>) {
         use crate::tui::oil::chat_runner::session_event_to_chat_msgs;
 
         self.container_list.clear();
+
         for event in &events {
             let event_type = event.get("event").and_then(|e| e.as_str()).unwrap_or("");
             let data = event.get("data").cloned().unwrap_or_default();
@@ -383,9 +572,8 @@ impl OilChatApp {
                 self.on_message(msg);
             }
         }
-        // Mark the loaded history as complete (not actively streaming)
+
         self.container_list.complete_response();
-        self.message_queue.message_counter = self.container_list.len();
     }
 
     fn push_shell_history(&mut self, cmd: String) {
@@ -406,6 +594,31 @@ impl OilChatApp {
     #[cfg(test)]
     pub(crate) fn is_popup_visible(&self) -> bool {
         self.popup.show
+    }
+
+    #[cfg(test)]
+    pub(crate) fn messages_drawer_visible(&self) -> bool {
+        self.notification_area.is_visible()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn mode(&self) -> ChatMode {
+        self.mode
+    }
+
+    #[cfg(test)]
+    pub(crate) fn status_text(&self) -> &str {
+        &self.status
+    }
+
+    #[cfg(test)]
+    pub(crate) fn context_usage(&self) -> (usize, usize) {
+        (self.context_used, self.context_total)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn last_precognition_count(&self) -> Option<usize> {
+        self.precognition.last_notes_count
     }
 
     #[cfg(test)]
@@ -438,10 +651,8 @@ impl OilChatApp {
         }
 
         if let InteractionRequest::Permission(perm) = &request {
-            // Allow the trailing AssistantResponse (thinking) to graduate.
-            // The daemon sends interaction_requested before tool_call, so
-            // without this the thinking stays as a spinner in the viewport.
-            self.container_list.set_permission_pending(true);
+            // NOTE: permission_pending was removed — the component model handles
+            // graduation via explicit state transitions.
 
             if self.interaction_modal.is_some() {
                 self.permission
@@ -511,29 +722,21 @@ impl OilChatApp {
     }
 
     fn add_user_message(&mut self, content: String) {
-        self.message_queue.message_counter += 1;
         self.container_list.add_user_message(content);
+        self.message_queue.message_counter += 1;
     }
 
-    /// Add user message and mark the turn as active so the turn-level
-    /// spinner renders while waiting for the first token.
-    /// Use this (not `add_user_message`) when sending to the daemon.
     fn submit_user_message(&mut self, content: String) {
         self.add_user_message(content);
         self.container_list.mark_turn_active();
     }
 
     pub(crate) fn add_system_message(&mut self, content: String) {
-        self.message_queue.message_counter += 1;
         self.container_list.add_system_message(content);
+        self.message_queue.message_counter += 1;
     }
 
     fn finalize_streaming(&mut self) {
-        if self.container_list.is_streaming() {
-            self.message_queue.message_counter += 1;
-            self.container_list.complete_response();
-        }
-
         self.status = "Ready".to_string();
     }
 
