@@ -18,5 +18,6 @@ mod render_tests;
 // Phase 7: Component model tests
 mod container_snapshot_tests;
 mod e2e_debug_test;
+mod fixture_replay_tests;
 mod graduation_tests;
 mod spacing_tests;

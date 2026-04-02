@@ -1014,14 +1014,15 @@ mod tool_call_tests {
     }
 
     #[test]
-    fn running_tool_shows_spinner() {
+    fn running_tool_shows_pending_icon() {
         let tool = test_tool("mcp_read", r#"{"path": "test.rs"}"#);
         let node = render_tool_call_with_frame(&tool, 0);
         let plain = render_to_plain_text(&node, 80);
 
+        // Pending tools show static ● (no animated spinner — spinners are chrome only)
         assert!(
-            plain.contains("⠋"),
-            "Running tool should show braille spinner: {:?}",
+            plain.contains("\u{25CF}"),
+            "Running tool should show pending ● icon: {:?}",
             plain
         );
         assert!(
@@ -1121,17 +1122,19 @@ mod tool_call_tests {
     }
 
     #[test]
-    fn spinner_frame_changes_icon() {
+    fn pending_icon_is_static_across_frames() {
+        // Pending tools show a static ● regardless of spinner frame
+        // (animated spinners are chrome only)
         let tool = test_tool("mcp_read", "{}");
 
         let node0 = render_tool_call_with_frame(&tool, 0);
-        let node1 = render_tool_call_with_frame(&tool, 1);
+        let node1 = render_tool_call_with_frame(&tool, 5);
 
         let plain0 = render_to_plain_text(&node0, 80);
         let plain1 = render_to_plain_text(&node1, 80);
 
-        assert!(plain0.contains("⠋"), "Frame 0 should show ⠋");
-        assert!(plain1.contains("⠙"), "Frame 1 should show ⠙");
+        assert!(plain0.contains("\u{25CF}"), "Frame 0 should show ●");
+        assert_eq!(plain0, plain1, "Pending icon should be static (no animation)");
     }
 
     #[test]
