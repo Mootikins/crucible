@@ -114,34 +114,39 @@ impl Container {
 /// ```
 fn render_user_message(content: &str, width: usize) -> Node {
     let t = crate::tui::oil::theme::active();
-    let fg = t.resolve_color(t.colors.user_message);
+    let bg = t.resolve_color(t.colors.background);
 
-    // Wrap content to fit inside the padding (2 chars for " > " prefix)
-    let inner_width = width.saturating_sub(3);
-    let lines = wrap_words(content, inner_width);
+    let prefix = " > ";
+    let continuation_prefix = "   ";
+    let content_width = width.saturating_sub(prefix.len() + 1);
+    let lines = wrap_words(content, content_width);
 
-    let bar_width = width;
-    let top_bar = styled(
-        "\u{2584}".repeat(bar_width),
-        Style::new().fg(fg),
+    let top_edge = styled(
+        t.decorations.half_block_bottom.to_string().repeat(width),
+        Style::new().fg(bg),
     );
-    let bottom_bar = styled(
-        "\u{2580}".repeat(bar_width),
-        Style::new().fg(fg),
+    let bottom_edge = styled(
+        t.decorations.half_block_top.to_string().repeat(width),
+        Style::new().fg(bg),
     );
 
-    let mut items: Vec<Node> = Vec::with_capacity(lines.len() + 2);
-    items.push(top_bar);
+    let mut rows: Vec<Node> = Vec::with_capacity(lines.len() + 4);
+    rows.push(text(""));
+    rows.push(top_edge);
+
     for (i, line) in lines.iter().enumerate() {
-        let prefix = if i == 0 { " > " } else { "   " };
-        items.push(styled(
-            format!("{}{}", prefix, line),
-            Style::new().fg(fg).bold(),
+        let line_len = line.chars().count();
+        let line_padding = " ".repeat(content_width.saturating_sub(line_len) + 1);
+        let line_prefix = if i == 0 { prefix } else { continuation_prefix };
+        rows.push(styled(
+            format!("{}{}{}", line_prefix, line, line_padding),
+            Style::new().bg(bg),
         ));
     }
-    items.push(bottom_bar);
 
-    col(items).gap(Gap::row(0))
+    rows.push(bottom_edge);
+    rows.push(text(""));
+    col(rows)
 }
 
 /// Assistant response with optional thinking blocks and markdown content.
