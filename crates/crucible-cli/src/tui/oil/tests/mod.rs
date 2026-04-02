@@ -15,4 +15,7 @@ mod popup_tests;
 mod property_tests;
 mod render_tests;
 
-// TODO(rewrite): Phase 7 — new tests for component model
+// Phase 7: Component model tests
+mod container_snapshot_tests;
+mod graduation_tests;
+mod spacing_tests;

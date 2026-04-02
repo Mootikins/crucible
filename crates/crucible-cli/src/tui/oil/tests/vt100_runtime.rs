@@ -181,10 +181,7 @@ impl Vt100TestRuntime {
     }
 }
 
-// TODO(rewrite): Phase 7 — rebuild these tests for new component model.
-// Temporarily disabled because message handlers are stubbed.
 #[cfg(test)]
-#[cfg(feature = "_disabled_pending_rewrite")]
 mod tests {
     use super::*;
 
@@ -615,6 +612,7 @@ mod tests {
 
     /// Variant 1: Thinking should be graduatable after permission opens.
     #[test]
+    #[ignore = "OpenInteraction handler not yet wired in container model"]
     fn thinking_graduates_when_permission_opens() {
         use crucible_core::interaction::{InteractionRequest, PermRequest};
 
@@ -713,6 +711,7 @@ mod tests {
 
     /// Variant 4: Missing blank line between user message and first thought.
     #[test]
+    #[ignore = "OpenInteraction handler not yet wired in container model"]
     fn user_then_thought_has_blank_line_after_permission_graduation() {
         use crucible_core::interaction::{InteractionRequest, PermRequest};
 
