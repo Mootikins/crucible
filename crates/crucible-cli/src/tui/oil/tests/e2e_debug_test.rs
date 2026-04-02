@@ -322,3 +322,95 @@ fn debug_container_state_before_continuation() {
         });
     }
 }
+
+/// Verify the "stuck" scenario: after StreamComplete, the TUI should be responsive
+/// (is_streaming returns false, new messages can be sent).
+#[test]
+fn after_stream_complete_tui_is_responsive() {
+    let mut app = OilChatApp::init();
+    let mut vt = Vt100TestRuntime::new(80, 24);
+
+    // First turn
+    app.on_message(ChatAppMsg::UserMessage("first".into()));
+    app.on_message(ChatAppMsg::TextDelta("response one".into()));
+    app.on_message(ChatAppMsg::StreamComplete);
+    vt.render_frame(&mut app);
+    
+    assert!(!app.is_streaming(), "Should not be streaming after StreamComplete");
+    
+    // Second turn should work
+    app.on_message(ChatAppMsg::UserMessage("second".into()));
+    app.on_message(ChatAppMsg::TextDelta("response two".into()));
+    assert!(app.is_streaming(), "Should be streaming during second turn");
+    
+    app.on_message(ChatAppMsg::StreamComplete);
+    vt.render_frame(&mut app);
+    
+    assert!(!app.is_streaming(), "Should not be streaming after second StreamComplete");
+    
+    let output = strip_ansi(&vt.full_history());
+    assert!(output.contains("response two"), "Second response should appear");
+}
+
+/// Verify no double spinners: only ONE spinner should be visible at a time.
+#[test]
+fn only_one_spinner_visible_during_thinking() {
+    use crucible_oil::node::SPINNER_FRAMES;
+    
+    let mut app = OilChatApp::init();
+    let mut vt = Vt100TestRuntime::new(80, 24);
+
+    app.on_message(ChatAppMsg::UserMessage("think hard".into()));
+    vt.render_frame(&mut app);
+    
+    app.on_message(ChatAppMsg::ThinkingDelta("deep thoughts about the universe".into()));
+    vt.render_frame(&mut app);
+    
+    let screen = strip_ansi(&vt.screen_contents());
+    
+    // Count spinner characters across all frames
+    let spinner_count: usize = SPINNER_FRAMES.iter()
+        .map(|ch| screen.matches(*ch).count())
+        .sum();
+    
+    assert!(
+        spinner_count <= 1,
+        "Should have at most 1 spinner visible, found {}. Screen:\n{}",
+        spinner_count, screen
+    );
+}
+
+/// Verify user message and input box use consistent styling.
+#[test]
+fn user_message_matches_input_style() {
+    let mut app = OilChatApp::init();
+    let mut vt = Vt100TestRuntime::new(80, 24);
+
+    app.on_message(ChatAppMsg::UserMessage("hello world".into()));
+    app.on_message(ChatAppMsg::TextDelta("response".into()));
+    app.on_message(ChatAppMsg::StreamComplete);
+    vt.render_frame(&mut app);
+    
+    let screen = strip_ansi(&vt.screen_contents());
+    let lines: Vec<&str> = screen.lines().collect();
+    
+    // Both user message and input box should use ▄▄▄/▀▀▀ bars
+    let top_bars: Vec<_> = lines.iter().enumerate()
+        .filter(|(_, l)| l.trim_start().starts_with('▄'))
+        .collect();
+    let bottom_bars: Vec<_> = lines.iter().enumerate()
+        .filter(|(_, l)| l.trim_start().starts_with('▀'))
+        .collect();
+    
+    // Should have 2 top bars (user msg + input) and 2 bottom bars
+    assert!(
+        top_bars.len() >= 2,
+        "Expected at least 2 top bars (user msg + input), found {}. Screen:\n{}",
+        top_bars.len(), screen
+    );
+    assert!(
+        bottom_bars.len() >= 2,
+        "Expected at least 2 bottom bars (user msg + input), found {}. Screen:\n{}",
+        bottom_bars.len(), screen
+    );
+}
