@@ -119,3 +119,206 @@ fn e2e_full_conversation_render() {
     eprintln!("\n============================================================\n=== FINAL VIEWPORT ===\n============================================================");
     eprintln!("{}", screen);
 }
+
+#[test]
+fn debug_continuation_flag() {
+    use crate::tui::oil::containers::ContainerContent;
+    
+    let mut app = OilChatApp::init();
+    
+    app.on_message(ChatAppMsg::ThinkingDelta("thinking...".into()));
+    app.on_message(ChatAppMsg::TextDelta("first text".into()));
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "Bash".into(), args: "{}".into(),
+        call_id: Some("c1".into()), description: None, source: None, lua_primary_arg: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "Bash".into(), call_id: Some("c1".into()) });
+    app.on_message(ChatAppMsg::TextDelta("continuation text".into()));
+    
+    let containers = app.container_list().containers();
+    for (i, c) in containers.iter().enumerate() {
+        match &c.content {
+            ContainerContent::AssistantResponse { is_continuation, text, thinking, .. } => {
+                eprintln!("Container {}: AssistantResponse is_continuation={} text={:?} thinking={}", 
+                    i, is_continuation, text, thinking.len());
+            }
+            _ => {
+                eprintln!("Container {}: {:?}", i, c.kind);
+            }
+        }
+    }
+    
+    // The last container should be a continuation
+    let last = containers.last().unwrap();
+    if let ContainerContent::AssistantResponse { is_continuation, .. } = &last.content {
+        assert!(*is_continuation, "Last response after tools should be continuation");
+    } else {
+        panic!("Last container should be AssistantResponse");
+    }
+}
+
+#[test]
+fn debug_continuation_rendering() {
+    use crate::tui::oil::containers::{ContainerViewContext, ContainerContent};
+    use crucible_oil::render::render_to_plain_text;
+    
+    let mut app = OilChatApp::init();
+    
+    app.on_message(ChatAppMsg::ThinkingDelta("thinking...".into()));
+    app.on_message(ChatAppMsg::TextDelta("first text".into()));
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "Bash".into(), args: "{}".into(),
+        call_id: Some("c1".into()), description: None, source: None, lua_primary_arg: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "Bash".into(), call_id: Some("c1".into()) });
+    app.on_message(ChatAppMsg::TextDelta("continuation text after tools".into()));
+    
+    let ctx = ContainerViewContext {
+        width: 80,
+        spinner_frame: 0,
+        show_thinking: false,
+    };
+    
+    let containers = app.container_list().containers();
+    for (i, c) in containers.iter().enumerate() {
+        let node = c.view(&ctx);
+        let plain = render_to_plain_text(&node, 80);
+        eprintln!("=== Container {} ({:?}) ===", i, c.kind);
+        eprintln!("{}", plain);
+        
+        // Check for bullet in continuation
+        if let ContainerContent::AssistantResponse { is_continuation, .. } = &c.content {
+            if *is_continuation && plain.contains("●") {
+                panic!("BUG: Continuation text should NOT have ● bullet!\nOutput:\n{}", plain);
+            }
+        }
+    }
+}
+
+#[test]
+fn debug_full_view_rendering() {
+    use super::helpers::vt_render;
+    
+    let mut app = OilChatApp::init();
+    
+    app.on_message(ChatAppMsg::ThinkingDelta("thinking...".into()));
+    app.on_message(ChatAppMsg::TextDelta("first text".into()));
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "Bash".into(), args: "{}".into(),
+        call_id: Some("c1".into()), description: None, source: None, lua_primary_arg: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "Bash".into(), call_id: Some("c1".into()) });
+    app.on_message(ChatAppMsg::TextDelta("continuation text after tools".into()));
+    app.on_message(ChatAppMsg::StreamComplete);
+    
+    let output = vt_render(&mut app);
+    eprintln!("Full rendered output:");
+    for (i, line) in output.lines().enumerate() {
+        eprintln!("{:3}: {}", i, line);
+    }
+    
+    assert!(!output.contains("●"), 
+        "No ● bullet should appear anywhere in the output.\nOutput:\n{}", output);
+}
+
+#[test]
+fn debug_scrollback_vs_viewport_step7() {
+    let mut app = OilChatApp::init();
+    let mut vt = Vt100TestRuntime::new(124, 40);
+
+    app.on_message(ChatAppMsg::UserMessage("tell me about this repo".into()));
+    vt.render_frame(&mut app);
+    app.on_message(ChatAppMsg::ThinkingDelta("I need to explore the repository.".into()));
+    vt.render_frame(&mut app);
+    app.on_message(ChatAppMsg::TextDelta("I'll explore this repository.".into()));
+    vt.render_frame(&mut app);
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "Bash".into(), args: r#"{"command": "ls"}"#.into(),
+        call_id: Some("c1".into()), description: None, source: None, lua_primary_arg: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "Bash".into(), call_id: Some("c1".into()) });
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "Glob".into(), args: r#"{"pattern": "README*"}"#.into(),
+        call_id: Some("c2".into()), description: None, source: None, lua_primary_arg: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "Glob".into(), call_id: Some("c2".into()) });
+    vt.render_frame(&mut app);
+
+    // Now add continuation text
+    app.on_message(ChatAppMsg::TextDelta("Based on my analysis.".into()));
+    vt.render_frame(&mut app);
+
+    let scrollback = strip_ansi(&vt.scrollback_contents());
+    let viewport = strip_ansi(&vt.screen_contents());
+
+    eprintln!("=== SCROLLBACK ===");
+    eprintln!("{}", scrollback);
+    eprintln!("=== VIEWPORT ===");
+    for (i, line) in viewport.lines().enumerate() {
+        eprintln!("{:3}: {}", i, line);
+    }
+
+    if scrollback.contains("●") {
+        eprintln!("BUG: ● found in SCROLLBACK");
+    }
+    if viewport.contains("●") {
+        eprintln!("BUG: ● found in VIEWPORT");
+    }
+}
+
+#[test]
+fn debug_container_state_before_continuation() {
+    use crate::tui::oil::containers::ContainerContent;
+    
+    let mut app = OilChatApp::init();
+    
+    app.on_message(ChatAppMsg::ThinkingDelta("thinking...".into()));
+    app.on_message(ChatAppMsg::TextDelta("first text".into()));
+    
+    eprintln!("After first text:");
+    for (i, c) in app.container_list().containers().iter().enumerate() {
+        eprintln!("  {}: {:?}", i, c.kind);
+    }
+    
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "Bash".into(), args: "{}".into(),
+        call_id: Some("c1".into()), description: None, source: None, lua_primary_arg: None,
+    });
+    
+    eprintln!("After tool call:");
+    for (i, c) in app.container_list().containers().iter().enumerate() {
+        eprintln!("  {}: {:?} {:?}", i, c.kind, match &c.content {
+            ContainerContent::AssistantResponse { is_continuation, text, .. } => 
+                format!("cont={} text={:?}", is_continuation, &text[..text.len().min(20)]),
+            _ => String::new(),
+        });
+    }
+    
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "Bash".into(), call_id: Some("c1".into()) });
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "Glob".into(), args: "{}".into(),
+        call_id: Some("c2".into()), description: None, source: None, lua_primary_arg: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "Glob".into(), call_id: Some("c2".into()) });
+    
+    eprintln!("After all tools complete:");
+    for (i, c) in app.container_list().containers().iter().enumerate() {
+        eprintln!("  {}: {:?} {:?}", i, c.kind, match &c.content {
+            ContainerContent::AssistantResponse { is_continuation, text, .. } => 
+                format!("cont={} text={:?}", is_continuation, &text[..text.len().min(20)]),
+            _ => String::new(),
+        });
+    }
+    
+    // NOW send continuation text
+    app.on_message(ChatAppMsg::TextDelta("Based on my analysis.".into()));
+    
+    eprintln!("After continuation text:");
+    for (i, c) in app.container_list().containers().iter().enumerate() {
+        eprintln!("  {}: {:?} {:?}", i, c.kind, match &c.content {
+            ContainerContent::AssistantResponse { is_continuation, text, .. } => 
+                format!("cont={} text={:?}", is_continuation, &text[..text.len().min(30)]),
+            _ => String::new(),
+        });
+    }
+}
