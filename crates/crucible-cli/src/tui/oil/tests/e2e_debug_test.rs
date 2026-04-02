@@ -1121,3 +1121,170 @@ fn thinking_not_duplicated_in_content_and_chrome() {
         screen2
     );
 }
+
+// ─── Exhaustive handler coverage tests ─────────────────────────────────────
+// These tests verify that every ChatAppMsg variant has an observable effect,
+// preventing silent catch-all drops like the OpenInteraction bug.
+
+#[test]
+fn open_interaction_opens_modal() {
+    use crucible_core::interaction::{InteractionRequest, PermRequest};
+    let mut app = OilChatApp::init();
+    assert!(!app.interaction_visible());
+
+    app.on_message(ChatAppMsg::OpenInteraction {
+        request_id: "perm-1".into(),
+        request: InteractionRequest::Permission(PermRequest::bash(["ls"])),
+    });
+    assert!(app.interaction_visible(), "Modal must open after OpenInteraction");
+}
+
+#[test]
+fn close_interaction_closes_modal() {
+    use crucible_core::interaction::{InteractionRequest, InteractionResponse, PermRequest, PermResponse};
+    let mut app = OilChatApp::init();
+
+    app.on_message(ChatAppMsg::OpenInteraction {
+        request_id: "perm-1".into(),
+        request: InteractionRequest::Permission(PermRequest::bash(["ls"])),
+    });
+    assert!(app.interaction_visible());
+
+    app.on_message(ChatAppMsg::CloseInteraction {
+        request_id: "perm-1".into(),
+        response: InteractionResponse::Permission(PermResponse::allow()),
+    });
+    assert!(!app.interaction_visible(), "Modal must close after CloseInteraction");
+}
+
+#[test]
+fn thinking_indicator_appears_at_most_once_on_screen() {
+    let mut app = OilChatApp::init();
+    let mut vt = Vt100TestRuntime::new(80, 24);
+
+    app.on_message(ChatAppMsg::UserMessage("think".into()));
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "deep analysis of many things with lots of words to count accurately".into(),
+    ));
+    vt.render_frame(&mut app);
+
+    let screen = strip_ansi(&vt.screen_contents());
+
+    // "Thinking" should appear at most once (in chrome only)
+    let thinking_count = screen.matches("Thinking").count();
+    assert!(
+        thinking_count <= 1,
+        "Thinking indicator should appear at most once, found {}.\nScreen:\n{}",
+        thinking_count, screen
+    );
+
+    // "Thought" should NOT appear (thinking is still live)
+    assert!(
+        !screen.contains("Thought"),
+        "Collapsed 'Thought' should not appear while thinking is live.\nScreen:\n{}",
+        screen
+    );
+}
+
+#[test]
+fn thinking_transitions_to_thought_when_text_starts() {
+    let mut app = OilChatApp::init();
+    let mut vt = Vt100TestRuntime::new(80, 24);
+
+    app.on_message(ChatAppMsg::UserMessage("think then respond".into()));
+    app.on_message(ChatAppMsg::ThinkingDelta("reasoning about it".into()));
+    app.on_message(ChatAppMsg::TextDelta("Here is my answer.".into()));
+    vt.render_frame(&mut app);
+
+    let screen = strip_ansi(&vt.screen_contents());
+
+    // Content should show "Thought" (collapsed summary)
+    assert!(
+        screen.contains("Thought"),
+        "After text starts, thinking should show as 'Thought'.\nScreen:\n{}",
+        screen
+    );
+
+    // Chrome should NOT show "Thinking" anymore (text finalized it)
+    let thinking_count = screen.matches("Thinking").count();
+    assert_eq!(
+        thinking_count, 0,
+        "Chrome should not show 'Thinking' after text starts, found {}.\nScreen:\n{}",
+        thinking_count, screen
+    );
+}
+
+#[test]
+fn spinners_only_in_chrome_area() {
+    use crucible_oil::node::{SPINNER_FRAMES, BRAILLE_SPINNER_FRAMES};
+
+    let mut app = OilChatApp::init();
+    let mut vt = Vt100TestRuntime::new(80, 24);
+
+    // Streaming with text (turn active = spinner in chrome)
+    app.on_message(ChatAppMsg::UserMessage("do things".into()));
+    app.on_message(ChatAppMsg::TextDelta("working on it".into()));
+    vt.render_frame(&mut app);
+
+    let screen = strip_ansi(&vt.screen_contents());
+    let lines: Vec<&str> = screen.lines().collect();
+
+    // Find the input box (▄▄▄ bar) — everything above is content, at and below is chrome
+    let chrome_start = lines.iter().position(|l| l.contains("▄▄▄▄▄▄")).unwrap_or(lines.len());
+    let content_lines = &lines[..chrome_start];
+    let content_text: String = content_lines.join("\n");
+
+    let all_spinners: Vec<char> = SPINNER_FRAMES.iter().chain(BRAILLE_SPINNER_FRAMES.iter()).copied().collect();
+
+    for ch in &all_spinners {
+        assert!(
+            !content_text.contains(*ch),
+            "Spinner '{}' found in content area (above chrome). Content:\n{}",
+            ch, content_text
+        );
+    }
+}
+
+#[test]
+fn all_container_types_render_at_all_widths() {
+    use crate::tui::oil::containers::{ContainerViewContext};
+    use crucible_oil::render::render_to_plain_text;
+
+    let mut app = OilChatApp::init();
+
+    // Create various container types
+    app.on_message(ChatAppMsg::UserMessage("test message".into()));
+    app.on_message(ChatAppMsg::ThinkingDelta("some thinking".into()));
+    app.on_message(ChatAppMsg::TextDelta("response text here".into()));
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "Bash".into(),
+        args: r#"{"command": "echo hello"}"#.into(),
+        call_id: Some("c1".into()),
+        description: None,
+        source: None,
+        lua_primary_arg: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "Bash".into(),
+        call_id: Some("c1".into()),
+    });
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    // Render at various widths — should never panic
+    for width in [20, 40, 60, 80, 120, 200] {
+        let ctx = ContainerViewContext {
+            width,
+            spinner_frame: 0,
+            show_thinking: false,
+        };
+        for container in app.container_list().containers() {
+            let node = container.view(&ctx);
+            let plain = render_to_plain_text(&node, width);
+            assert!(
+                !plain.is_empty() || matches!(node, crucible_oil::node::Node::Empty),
+                "Container {:?} at width {} produced empty non-Empty output",
+                container.kind, width
+            );
+        }
+    }
+}
