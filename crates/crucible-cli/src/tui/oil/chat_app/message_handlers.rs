@@ -223,7 +223,16 @@ impl OilChatApp {
                 self.add_notification(crucible_core::types::Notification::toast(format!(
                     "Undid {turns} turn(s), removed {messages_removed} message(s)"
                 )));
-                // Reload will come via LoadHistoryEvents
+            }
+            ChatAppMsg::OpenInteraction {
+                request_id,
+                request,
+            } => {
+                return self.open_interaction(request_id, request);
+            }
+            ChatAppMsg::CloseInteraction { .. } => {
+                self.close_interaction();
+                // The actual response is sent by process_action in chat_runner
             }
             _ => {
                 tracing::trace!("[stub] ui msg: {:?}", msg.category());
