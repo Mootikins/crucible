@@ -157,7 +157,10 @@ fn render_assistant_response(
         show_thinking: ctx.show_thinking,
     };
 
-    let margins = if is_continuation {
+    let has_thinking = !thinking.is_empty();
+    // Use continuation margins (no bullet) when following tools OR when
+    // thinking is present (the thinking summary is the visual header).
+    let margins = if is_continuation || has_thinking {
         Margins::assistant_continuation()
     } else {
         Margins::assistant()
@@ -176,10 +179,7 @@ fn render_assistant_response(
 
     // Then markdown content
     if !content.is_empty() {
-        let style = RenderStyle::viewport_with_margins(
-            ctx.width.saturating_sub(margins.left + margins.right),
-            margins,
-        );
+        let style = RenderStyle::natural_with_margins(ctx.width, margins);
         let md_node = markdown_to_node_styled(content, style);
         items.push(md_node);
     }
@@ -318,7 +318,14 @@ impl ContainerList {
             let is_continuation = self
                 .containers
                 .last()
-                .map(|c| c.kind == ContainerKind::ToolGroup)
+                .map(|c| {
+                    matches!(
+                        c.kind,
+                        ContainerKind::ToolGroup
+                            | ContainerKind::SubagentTask
+                            | ContainerKind::ShellExecution
+                    )
+                })
                 .unwrap_or(false);
             self.containers.push(Container {
                 id,
