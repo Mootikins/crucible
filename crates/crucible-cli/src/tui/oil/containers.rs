@@ -315,12 +315,18 @@ impl ContainerList {
         ) {
             let id = self.next_id("asst");
             // Check if this follows a tool group (continuation)
-            let is_continuation = self
+            // Check current containers first, then fall back to last graduated kind.
+            // After graduation, containers may be empty but the continuation
+            // context is preserved in last_graduated_kind.
+            let prev_kind = self
                 .containers
                 .last()
-                .map(|c| {
+                .map(|c| c.kind)
+                .or(self.last_graduated_kind);
+            let is_continuation = prev_kind
+                .map(|k| {
                     matches!(
-                        c.kind,
+                        k,
                         ContainerKind::ToolGroup
                             | ContainerKind::SubagentTask
                             | ContainerKind::ShellExecution
