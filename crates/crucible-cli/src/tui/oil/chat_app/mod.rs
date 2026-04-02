@@ -308,7 +308,10 @@ impl OilChatApp {
         let mut indicator = TurnIndicator::new();
         indicator.active = self.container_list.is_streaming();
 
-        // Derive thinking word count from the most recent assistant response
+        // Derive thinking word count from the most recent assistant response,
+        // but ONLY when text hasn't started yet. Once text starts, the thinking
+        // block is finalized in content (shown as "◇ Thought") and the chrome
+        // should stop showing "Thinking…" to avoid duplication.
         if let Some(container) = self
             .container_list
             .containers()
@@ -316,10 +319,12 @@ impl OilChatApp {
             .rev()
             .find(|c| matches!(&c.content, ContainerContent::AssistantResponse { thinking, .. } if !thinking.is_empty()))
         {
-            if let ContainerContent::AssistantResponse { thinking, .. } = &container.content {
-                let total_words: usize = thinking.iter().map(|t| t.word_count()).sum();
-                if total_words > 0 {
-                    indicator.thinking_words = Some(total_words);
+            if let ContainerContent::AssistantResponse { thinking, text, .. } = &container.content {
+                if text.is_empty() {
+                    let total_words: usize = thinking.iter().map(|t| t.word_count()).sum();
+                    if total_words > 0 {
+                        indicator.thinking_words = Some(total_words);
+                    }
                 }
             }
         }
@@ -589,6 +594,31 @@ impl OilChatApp {
     #[cfg(test)]
     pub(crate) fn is_popup_visible(&self) -> bool {
         self.popup.show
+    }
+
+    #[cfg(test)]
+    pub(crate) fn messages_drawer_visible(&self) -> bool {
+        self.notification_area.is_visible()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn mode(&self) -> ChatMode {
+        self.mode
+    }
+
+    #[cfg(test)]
+    pub(crate) fn status_text(&self) -> &str {
+        &self.status
+    }
+
+    #[cfg(test)]
+    pub(crate) fn context_usage(&self) -> (usize, usize) {
+        (self.context_used, self.context_total)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn last_precognition_count(&self) -> Option<usize> {
+        self.precognition.last_notes_count
     }
 
     #[cfg(test)]

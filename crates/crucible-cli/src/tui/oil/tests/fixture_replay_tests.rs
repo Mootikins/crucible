@@ -70,7 +70,7 @@ struct ReplayResult {
     violations: Vec<String>,
     total_frames: usize,
     final_output: String,
-    final_styled: String,
+    #[allow(dead_code)] final_styled: String,
 }
 
 fn replay_fixture(path: &Path, width: u16, height: u16) -> ReplayResult {
