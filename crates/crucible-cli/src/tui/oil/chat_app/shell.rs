@@ -12,8 +12,6 @@ use crate::tui::oil::components::{
     InteractionModal, InteractionModalMsg, InteractionModalOutput, ShellHistoryItem, ShellModal,
     ShellModalMsg, ShellModalOutput, ShellStatus,
 };
-use crate::tui::oil::viewport_cache::CachedShellExecution;
-
 use super::messages::ChatAppMsg;
 use super::OilChatApp;
 
@@ -207,7 +205,7 @@ impl OilChatApp {
     }
 
     /// Update shell modal state after closing: increment counter, add execution.
-    /// TODO(rewrite): Phase 5 — wire to new container state
+    /// TODO: wire shell execution results into container state
     fn update_shell_modal(&mut self, history_item: &ShellHistoryItem) {
         self.message_queue.message_counter += 1;
         let _ = &history_item; // suppress unused warning

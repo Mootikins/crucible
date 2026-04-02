@@ -240,8 +240,8 @@ fn popup_positioned_above_input_bar() {
     );
 }
 
-// TODO(rewrite): Phase 7 — depends on real view()/graduation
-#[cfg(feature = "_disabled_pending_rewrite")]
+// TODO: depends on real view()/graduation wiring
+#[cfg(any())] // disabled: awaiting test reconstruction
 mod overlay_graduation_tests {
     use super::*;
     use crucible_oil::ansi::strip_ansi;
@@ -424,8 +424,8 @@ mod overlay_graduation_tests {
     }
 }
 
-// TODO(rewrite): Phase 7 — depends on real view() output
-#[cfg(feature = "_disabled_pending_rewrite")]
+// TODO: depends on real view() output
+#[cfg(any())] // disabled: awaiting test reconstruction
 mod composer_stability_tests {
     use super::*;
     use crucible_oil::ansi::strip_ansi;

@@ -2097,9 +2097,9 @@ pub(crate) async fn replay_event_consumer(
     }
 }
 
-// TODO(rewrite): Phase 7 — rebuild chat_runner tests
+// TODO: rebuild chat_runner tests (disabled during component rewrite)
 #[cfg(test)]
-#[cfg(feature = "_disabled_pending_rewrite")]
+#[cfg(any())] // disabled: awaiting test reconstruction
 mod tests {
     use super::*;
     use crate::tui::oil::chat_app::ModelListState;
