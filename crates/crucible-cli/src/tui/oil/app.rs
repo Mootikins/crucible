@@ -1,6 +1,6 @@
 use crate::tui::oil::event::Event;
-use crate::tui::oil::focus::FocusContext;
-use crate::tui::oil::node::Node;
+use crucible_oil::focus::FocusContext;
+use crucible_oil::node::Node;
 use crate::tui::oil::theme::{self, ThemeConfig};
 use std::time::Duration;
 

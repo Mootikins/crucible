@@ -2,8 +2,8 @@
 //!
 //! Follows Elm-style architecture: Msg → update → Output.
 
-use crate::tui::oil::node::{col, row, styled, text, Node};
-use crate::tui::oil::style::Style;
+use crucible_oil::node::{col, row, styled, text, Node};
+use crucible_oil::style::Style;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crucible_core::interaction::{

@@ -21,7 +21,7 @@
 //!
 //! Total height = input_height + status_height + popup_height
 
-use super::viewport::pad_lines_to;
+use crucible_oil::viewport::pad_lines_to;
 
 /// Configuration for the composer region's height budget.
 #[derive(Debug, Clone)]

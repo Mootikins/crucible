@@ -3,8 +3,8 @@ use crucible_lua::statusline::StatuslineConfig;
 use crate::tui::oil::chat_app::ChatMode;
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::status_bar::{NotificationToastKind, StatusBar};
-use crate::tui::oil::node::{col, styled, Node};
-use crate::tui::oil::style::Style;
+use crucible_oil::node::{col, styled, Node};
+use crucible_oil::style::Style;
 use crate::tui::oil::theme;
 use crate::tui::oil::ViewContext;
 
@@ -109,7 +109,7 @@ impl Component for StatusComponent<'_> {
 mod tests {
     use super::*;
     use crate::tui::oil::component::ComponentHarness;
-    use crate::tui::oil::render::render_to_plain_text;
+    use crucible_oil::render::render_to_plain_text;
 
     fn default_statusline_config() -> StatuslineConfig {
         StatuslineConfig::builtin_default()

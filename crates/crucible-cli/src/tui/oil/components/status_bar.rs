@@ -1,6 +1,6 @@
 use crate::tui::oil::chat_app::ChatMode;
-use crate::tui::oil::node::{row, spacer, styled, Node};
-use crate::tui::oil::style::{AdaptiveColor, Color, Style};
+use crucible_oil::node::{row, spacer, styled, Node};
+use crucible_oil::style::{AdaptiveColor, Color, Style};
 
 use crate::tui::oil::utils::truncate_to_chars;
 
@@ -211,7 +211,7 @@ impl StatusBar {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::oil::render::render_to_plain_text;
+    use crucible_oil::render::render_to_plain_text;
 
     #[test]
     fn emergency_view_shows_mode() {

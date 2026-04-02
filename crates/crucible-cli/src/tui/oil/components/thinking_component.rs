@@ -6,9 +6,9 @@
 use std::borrow::Cow;
 
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
-use crate::tui::oil::node::{col, row, styled, Node};
+use crucible_oil::node::{col, row, styled, Node};
 use crate::tui::oil::render_state::RenderState;
-use crate::tui::oil::style::Style;
+use crucible_oil::style::Style;
 
 /// A thinking block that owns its state and rendering.
 ///
@@ -172,7 +172,7 @@ impl ThinkingComponent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::oil::render::render_to_plain_text;
+    use crucible_oil::render::render_to_plain_text;
 
     fn default_state() -> RenderState {
         RenderState {
