@@ -1,9 +1,9 @@
 //! Tool call rendering component.
 //!
-//! Renders tool call states: running (with spinner), complete (with result summary),
-//! and error (with error message).
+//! Renders tool call states: pending (with static ● icon), complete (with ✓),
+//! and error (with ✗). No animated spinners — animation lives in chrome only.
 
-use crucible_oil::node::{col, row, styled, Node, SpinnerNode, SpinnerStyle};
+use crucible_oil::node::{col, row, styled, Node};
 use crucible_oil::style::Style;
 use crate::tui::oil::utils::{terminal_width, truncate_to_chars};
 use crate::tui::oil::viewport_cache::CachedToolCall;
@@ -210,10 +210,12 @@ fn render_tool_running(
     let show_elapsed = elapsed >= Duration::from_secs(2);
 
     let t = crate::tui::oil::theme::active();
-    let spinner = Node::Spinner(
-        SpinnerNode::new(spinner_frame)
-            .style(Style::new().fg(t.resolve_color(t.colors.text_dim)))
-            .style_variant(SpinnerStyle::Braille),
+    // No animated spinner in container content — spinners are chrome only.
+    // Pending tools show a static ● indicator instead.
+    let _ = spinner_frame; // unused — animation is in turn indicator
+    let pending_icon = styled(
+        "\u{25CF}",
+        Style::new().fg(t.resolve_color(t.colors.text_dim)),
     );
     let source_badge = render_source_badge(tool);
     let arg_node = if primary_arg.is_empty() {
@@ -226,7 +228,7 @@ fn render_tool_running(
     };
     let header = row([
         styled(" ", Style::new()),
-        spinner,
+        pending_icon,
         styled(" ", Style::new()),
         styled(
             display_name,
