@@ -13,6 +13,7 @@ use super::helpers::vt_render;
 
 /// Count blank lines between the last line matching `before` and the first
 /// line matching `after` (searching after the `before` line).
+#[allow(dead_code)] // available for future spacing tests
 fn blank_lines_between(screen: &str, before: &str, after: &str) -> Option<usize> {
     let lines: Vec<&str> = screen.lines().collect();
     let before_end = lines.iter().rposition(|l| l.contains(before))?;

@@ -1,10 +1,7 @@
 use crate::tui::oil::app::{Action, App, ViewContext};
 use crate::tui::oil::component::Component;
-#[allow(unused_imports)] // WIP: Drawer, DrawerKind not yet used
 use crate::tui::oil::components::{
-    Drawer, DrawerKind, InteractionModal, InteractionModalMsg, InteractionModalOutput,
-    InteractionMode, NotificationArea, PopupComponent, ShellHistoryItem, ShellModal, ShellModalMsg,
-    ShellModalOutput, ShellStatus, StatusComponent,
+    InteractionModal, NotificationArea, ShellModal, StatusComponent,
 };
 use crate::tui::oil::config::RuntimeConfig;
 #[cfg(test)]
@@ -12,26 +9,15 @@ use crate::tui::oil::event::InputAction;
 use crate::tui::oil::event::{Event, InputBuffer};
 use crucible_oil::node::*;
 use crucible_oil::style::{Gap, Padding};
-#[allow(unused_imports)] // WIP: KeyCode not yet used
-use crossterm::event::KeyCode;
-#[allow(unused_imports)] // WIP: AskRequest, AskResponse, PermAction, PermRequest not yet used
-use crucible_core::interaction::{
-    AskRequest, AskResponse, InteractionRequest, InteractionResponse, PermAction, PermRequest,
-    PermResponse, PermissionScope,
-};
+use crucible_core::interaction::{InteractionRequest, InteractionResponse, PermResponse};
 use std::cell::Cell;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
-const FOCUS_INPUT: &str = "input";
-#[allow(dead_code)] // WIP: FOCUS_POPUP not yet used
-const FOCUS_POPUP: &str = "popup";
 const POPUP_HEIGHT: usize = 10;
 pub const INPUT_MAX_CONTENT_LINES: usize = 3;
 
-#[allow(dead_code)] // WIP: MAX_DISPLAY_ITEMS not yet used
-const MAX_DISPLAY_ITEMS: usize = 512;
 const MAX_SHELL_HISTORY: usize = 100;
 
 // ─── Submodules ──────────────────────────────────────────────────────────────
@@ -50,8 +36,6 @@ pub mod state;
 pub use messages::ChatAppMsg;
 pub use model_state::{McpServerDisplay, ModelListState, PluginStatusEntry};
 use popup_state::{PermissionState, PopupState, PrecognitionState, ShellHistoryState};
-#[cfg(test)]
-use state::AutocompleteKind;
 use state::MessageQueueState;
 pub use state::{ChatMode, InputMode, Role};
 
@@ -82,8 +66,6 @@ pub struct OilChatApp {
     available_models: Vec<String>,
     /// Fetch-state of the model list
     model_list_state: ModelListState,
-    /// Flag to prevent duplicate fetch/loading messages when :model is pressed repeatedly
-    model_fetch_message_shown: bool,
 
     // ─── UI Chrome (purely local state) ───────────────────────────────
     // Everything here is display-only and never round-trips to the
@@ -639,8 +621,8 @@ impl OilChatApp {
         }
 
         if let InteractionRequest::Permission(perm) = &request {
-            // TODO(rewrite): permission_pending is no longer needed — the new
-            // component model handles graduation via explicit state transitions.
+            // NOTE: permission_pending was removed — the component model handles
+            // graduation via explicit state transitions.
 
             if self.interaction_modal.is_some() {
                 self.permission

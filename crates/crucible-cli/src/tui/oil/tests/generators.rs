@@ -1,3 +1,8 @@
+// Test generators for property-based tests. Many are unused until disabled
+// test modules (composer_stability_properties, overlay_graduation_tests) are
+// reconstructed. Suppressing warnings to keep the library intact.
+#![allow(dead_code)]
+
 use proptest::prelude::*;
 
 pub fn arb_text_content() -> impl Strategy<Value = String> {

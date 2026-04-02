@@ -1,7 +1,7 @@
 //! Unit tests for OilChatApp.
 //!
-//! TODO(rewrite): Most tests deleted during Phase 0. Rebuild in Phase 7.
-//! Only framework-level tests (mode cycling, parsing) survive.
+//! Framework-level tests (mode cycling, parsing). Additional tests live in
+//! `tui/oil/tests/` as snapshot and interaction tests.
 
 use super::*;
 

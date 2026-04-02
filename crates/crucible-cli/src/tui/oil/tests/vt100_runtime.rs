@@ -109,6 +109,7 @@ impl Vt100TestRuntime {
 
     /// Get the screen contents with ANSI escape codes preserved.
     /// Use this for "raw" snapshot tests that verify styling (colors, bold, etc.).
+    #[allow(dead_code)] // available for styled snapshot tests
     pub fn screen_contents_styled(&self) -> String {
         String::from_utf8_lossy(&self.vt.screen().contents_formatted()).into_owned()
     }
