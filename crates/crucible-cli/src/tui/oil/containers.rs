@@ -173,13 +173,20 @@ fn render_assistant_response(
 
     let mut items: Vec<Node> = Vec::new();
 
-    // Thinking blocks first
-    let is_complete = true; // container-level completeness is handled by state
+    // Thinking blocks: only render when finalized (text started, graduated,
+    // or response complete). While actively thinking with no text yet,
+    // the turn indicator in chrome shows "◐ Thinking… (N words)" —
+    // container content stays empty to avoid duplication.
+    let thinking_finalized = !content.is_empty() || is_continuation;
     for tc in thinking {
-        let node = tc.render(&render_state, is_complete);
-        if !matches!(node, Node::Empty) {
-            items.push(node);
+        if tc.is_graduated() || thinking_finalized {
+            let is_complete = thinking_finalized || tc.is_graduated();
+            let node = tc.render(&render_state, is_complete);
+            if !matches!(node, Node::Empty) {
+                items.push(node);
+            }
         }
+        // else: thinking is live, turn indicator covers the display
     }
 
     // Then markdown content

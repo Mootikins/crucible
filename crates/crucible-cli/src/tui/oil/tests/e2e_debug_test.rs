@@ -1068,3 +1068,56 @@ fn e2e_stress_many_containers() {
     // Should not be streaming
     assert!(!app.is_streaming(), "Should not be streaming after all turns complete");
 }
+
+/// Thinking during streaming should NOT show "◇ Thought" in content —
+/// only the turn indicator in chrome shows "Thinking… (N words)".
+/// The collapsed summary "◇ Thought" appears only after text starts.
+#[test]
+fn thinking_not_duplicated_in_content_and_chrome() {
+    let mut app = OilChatApp::init();
+    let mut vt = Vt100TestRuntime::new(80, 24);
+
+    app.on_message(ChatAppMsg::UserMessage("think hard".into()));
+    vt.render_frame(&mut app);
+
+    // Thinking starts — only chrome should show thinking indicator
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "deep analysis of the problem with many words to count".into(),
+    ));
+    vt.render_frame(&mut app);
+
+    let screen = strip_ansi(&vt.screen_contents());
+
+    // Chrome should show "Thinking…" with word count
+    assert!(
+        screen.contains("Thinking"),
+        "Chrome should show Thinking indicator. Screen:\n{}",
+        screen
+    );
+
+    // Content should NOT show "◇ Thought" yet (thinking is still live)
+    assert!(
+        !screen.contains("\u{25C7} Thought"),
+        "Content should NOT show collapsed '◇ Thought' while thinking is live. Screen:\n{}",
+        screen
+    );
+
+    // Count "Thinking" occurrences — should be exactly 1 (in chrome only)
+    let thinking_count = screen.matches("Thinking").count();
+    assert_eq!(
+        thinking_count, 1,
+        "Should have exactly 1 'Thinking' indicator (in chrome), found {}. Screen:\n{}",
+        thinking_count, screen
+    );
+
+    // Now text starts — thinking should become "◇ Thought" in content
+    app.on_message(ChatAppMsg::TextDelta("Here is my answer.".into()));
+    vt.render_frame(&mut app);
+
+    let screen2 = strip_ansi(&vt.screen_contents());
+    assert!(
+        screen2.contains("\u{25C7} Thought") || screen2.contains("Thought"),
+        "After text starts, thinking should show collapsed summary. Screen:\n{}",
+        screen2
+    );
+}
