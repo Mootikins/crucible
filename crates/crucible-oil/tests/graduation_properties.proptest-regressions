@@ -4,4 +4,3 @@
 #
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
-cc e079dcbb6e67670ac0c02f8f4dc225d7f204b5e30e0323554445841103380a82 # shrinks to grads = [Graduation { node: Empty, width: 20, leading_blank: true }, Graduation { node: Empty, width: 20, leading_blank: false }], viewport = Empty, dims = (5, 40)
