@@ -20,4 +20,8 @@ mod container_snapshot_tests;
 mod e2e_debug_test;
 mod fixture_replay_tests;
 mod graduation_tests;
+mod message_routing_tests;
+mod rendering_regression_tests;
+mod inter_frame_invariant_tests;
 mod spacing_tests;
+mod visual_inspection;
