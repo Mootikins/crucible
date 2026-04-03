@@ -5,19 +5,19 @@
 
 use crucible_oil::node::{col, row, styled, Node};
 use crucible_oil::style::Style;
-use crate::tui::oil::utils::{terminal_width, truncate_to_chars};
+use crate::tui::oil::utils::truncate_to_chars;
 use crate::tui::oil::viewport_cache::CachedToolCall;
 use crucible_oil::ansi::visible_width;
 use crucible_oil::truncate_to_width;
 use std::time::Duration;
 
 /// Render a tool call with default spinner frame (0).
-pub fn render_tool_call(tool: &CachedToolCall) -> Node {
-    render_tool_call_with_frame(tool, 0)
+pub fn render_tool_call(tool: &CachedToolCall, width: usize) -> Node {
+    render_tool_call_with_frame(tool, 0, width)
 }
 
 /// Render a tool call with specified spinner frame for animation.
-pub fn render_tool_call_with_frame(tool: &CachedToolCall, spinner_frame: usize) -> Node {
+pub fn render_tool_call_with_frame(tool: &CachedToolCall, spinner_frame: usize, width: usize) -> Node {
     if tool.superseded {
         return Node::Empty;
     }
@@ -32,11 +32,11 @@ pub fn render_tool_call_with_frame(tool: &CachedToolCall, spinner_frame: usize) 
     let result_str = tool.result();
 
     let inner = if let Some(ref error) = tool.error {
-        render_tool_error(tool, &display_name, primary_arg, error)
+        render_tool_error(tool, &display_name, primary_arg, error, width)
     } else if tool.complete {
-        render_tool_complete(tool, &display_name, primary_arg, &result_str)
+        render_tool_complete(tool, &display_name, primary_arg, &result_str, width)
     } else {
-        render_tool_running(tool, &display_name, primary_arg, &result_str, spinner_frame)
+        render_tool_running(tool, &display_name, primary_arg, &result_str, spinner_frame, width)
     };
 
     let description_node = render_tool_description(tool);
@@ -76,6 +76,7 @@ fn render_tool_error(
     display_name: &str,
     primary_arg: &str,
     error: &str,
+    width: usize,
 ) -> Node {
     let t = crate::tui::oil::theme::active();
     let icon = format!(" {} ", t.decorations.tool_error_icon);
@@ -87,8 +88,7 @@ fn render_tool_error(
     };
     let prefix_width =
         visible_width(&icon) + visible_width(display_name) + visible_width(&arg_part);
-    let term_width = terminal_width();
-    let remaining = term_width.saturating_sub(prefix_width + 2).max(10);
+    let remaining = width.saturating_sub(prefix_width + 2).max(10);
     let error_first_line = error.lines().next().unwrap_or(error);
     let error_visible = visible_width(error_first_line);
     if error_visible <= remaining {
@@ -134,6 +134,7 @@ fn render_tool_complete(
     display_name: &str,
     primary_arg: &str,
     result_str: &str,
+    width: usize,
 ) -> Node {
     let result_summary = if !result_str.is_empty() {
         summarize_tool_result(&tool.name, result_str)
@@ -189,7 +190,7 @@ fn render_tool_complete(
     let result_node = if has_arrow_suffix || result_str.is_empty() {
         Node::Empty
     } else {
-        format_tool_result(&tool.name, result_str)
+        format_tool_result(&tool.name, result_str, width)
     };
 
     if matches!(result_node, Node::Empty) {
@@ -205,6 +206,7 @@ fn render_tool_running(
     primary_arg: &str,
     result_str: &str,
     spinner_frame: usize,
+    width: usize,
 ) -> Node {
     let elapsed = tool.elapsed();
     let show_elapsed = elapsed >= Duration::from_secs(2);
@@ -249,7 +251,7 @@ fn render_tool_running(
     let result_node = if result_str.is_empty() {
         Node::Empty
     } else {
-        format_streaming_output(result_str)
+        format_streaming_output(result_str, width)
     };
 
     if matches!(result_node, Node::Empty) {
@@ -390,7 +392,7 @@ pub fn format_primary_arg(args: &str) -> String {
 }
 
 /// Format tool result for display.
-pub fn format_tool_result(name: &str, result: &str) -> Node {
+pub fn format_tool_result(name: &str, result: &str, width: usize) -> Node {
     if let Some(summary) = summarize_tool_result(name, result) {
         let t = crate::tui::oil::theme::active();
         return styled(
@@ -399,7 +401,7 @@ pub fn format_tool_result(name: &str, result: &str) -> Node {
         );
     }
     let inner = unwrap_json_result(result);
-    format_output_tail(&inner, "   ")
+    format_output_tail(&inner, "   ", width)
 }
 
 /// Summarize tool result into a short string.
@@ -440,16 +442,14 @@ pub fn summarize_tool_result(name: &str, result: &str) -> Option<String> {
 }
 
 /// Format streaming output from a running tool.
-pub fn format_streaming_output(output: &str) -> Node {
+pub fn format_streaming_output(output: &str, width: usize) -> Node {
     let unwrapped = unwrap_json_result(output);
-    format_output_tail(&unwrapped, "     ")
+    format_output_tail(&unwrapped, "     ", width)
 }
 
 /// Format the tail of output with a prefix and optional "more lines" indicator.
-pub fn format_output_tail(output: &str, prefix: &str) -> Node {
+pub fn format_output_tail(output: &str, prefix: &str, width: usize) -> Node {
     const MAX_TAIL: usize = 3;
-
-    let width = terminal_width();
     let all_lines: Vec<&str> = output.lines().collect();
     let t = crate::tui::oil::theme::active();
     let bar_prefix = format!("{}{} ", prefix, t.decorations.separator_char);
@@ -608,7 +608,7 @@ mod tests {
 
     #[test]
     fn format_output_tail_short_output() {
-        let node = format_output_tail("line1\nline2", "  ");
+        let node = format_output_tail("line1\nline2", "  ", 80);
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("line1"));
         assert!(plain.contains("line2"));
@@ -617,7 +617,7 @@ mod tests {
 
     #[test]
     fn format_output_tail_truncates_long_output() {
-        let node = format_output_tail("line1\nline2\nline3\nline4\nline5", "  ");
+        let node = format_output_tail("line1\nline2\nline3\nline4\nline5", "  ", 80);
         let plain = render_to_plain_text(&node, 80);
         assert!(
             plain.contains("(2 more lines)"),
@@ -629,7 +629,7 @@ mod tests {
 
     #[test]
     fn format_output_tail_count_line_has_bar_prefix() {
-        let node = format_output_tail("a\nb\nc\nd\ne\nf", "  ");
+        let node = format_output_tail("a\nb\nc\nd\ne\nf", "  ", 80);
         let plain = render_to_plain_text(&node, 80);
         let first_line = plain.lines().next().unwrap();
         assert!(
@@ -655,7 +655,7 @@ mod tests {
             .map(|i| format!("line{}", i))
             .collect::<Vec<_>>()
             .join("\n");
-        let node = format_output_tail(&long_output, "   ");
+        let node = format_output_tail(&long_output, "   ", 80);
         let plain = render_to_plain_text(&node, 80);
         assert!(
             plain.contains("(7 more lines)"),
@@ -672,7 +672,7 @@ mod tests {
     #[test]
     fn tool_result_short_no_cap() {
         let short_output = "line1\nline2\nline3";
-        let node = format_output_tail(short_output, "   ");
+        let node = format_output_tail(short_output, "   ", 80);
         let plain = render_to_plain_text(&node, 80);
         assert!(
             !plain.contains("more lines"),
@@ -700,7 +700,7 @@ mod tests {
     #[test]
     fn render_tool_call_complete() {
         let tool = test_tool_with_output("mcp_read", r#"{"path": "test.rs"}"#, "content", true);
-        let node = render_tool_call(&tool);
+        let node = render_tool_call(&tool, 80);
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("✓"), "Should show checkmark: {:?}", plain);
         assert!(
@@ -713,7 +713,7 @@ mod tests {
     #[test]
     fn render_tool_call_in_progress() {
         let tool = test_tool("mcp_bash", r#"{"command": "ls"}"#, false);
-        let node = render_tool_call(&tool);
+        let node = render_tool_call(&tool, 80);
         let plain = render_to_plain_text(&node, 80);
         assert!(
             plain.contains("Bash"),
@@ -726,7 +726,7 @@ mod tests {
     fn render_tool_call_with_error() {
         let mut tool = test_tool("mcp_bash", r#"{"command": "false"}"#, false);
         tool.set_error("Command failed with exit code 1".to_string());
-        let node = render_tool_call(&tool);
+        let node = render_tool_call(&tool, 80);
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("✗"), "Should show error icon: {:?}", plain);
         assert!(
@@ -739,7 +739,7 @@ mod tests {
     #[test]
     fn render_tool_call_collapses_short_result() {
         let tool = test_tool_with_output("unknown_tool", "{}", "OK", true);
-        let node = render_tool_call(&tool);
+        let node = render_tool_call(&tool, 80);
         let plain = render_to_plain_text(&node, 80);
         assert!(
             plain.contains("→ OK"),
@@ -783,7 +783,7 @@ mod tests {
     fn tool_result_with_json_encoded_newlines() {
         let json_result = r#""line1\nline2\nline3""#;
         let tool = test_tool_with_output("mcp_bash", r#"{"command": "ls"}"#, json_result, true);
-        let node = render_tool_call(&tool);
+        let node = render_tool_call(&tool, 80);
         let plain = render_to_plain_text(&node, 80);
         assert!(
             plain.contains("│ line1") || plain.contains("→"),
@@ -805,7 +805,7 @@ mod tests {
             "line1\nline2\nline3",
             true,
         );
-        let node = render_tool_call(&tool);
+        let node = render_tool_call(&tool, 80);
         let plain = render_to_plain_text(&node, 80);
         let lines: Vec<&str> = plain.lines().collect();
 
@@ -821,7 +821,7 @@ mod tests {
 
     #[test]
     fn format_output_tail_no_leading_blank() {
-        let node = format_output_tail("line1\nline2\nline3", "   ");
+        let node = format_output_tail("line1\nline2\nline3", "   ", 80);
         let plain = render_to_plain_text(&node, 80);
         let lines: Vec<&str> = plain.lines().collect();
         assert!(
@@ -833,7 +833,7 @@ mod tests {
 
     #[test]
     fn format_tool_result_no_leading_blank() {
-        let node = format_tool_result("mcp_bash", "line1\nline2\nline3");
+        let node = format_tool_result("mcp_bash", "line1\nline2\nline3", 80);
         let plain = render_to_plain_text(&node, 80);
         let lines: Vec<&str> = plain.lines().collect();
         assert!(
@@ -850,7 +850,7 @@ mod tests {
         tool.set_error(long_error.clone());
 
         // Render at width=120 (wide terminal)
-        let node = render_tool_call(&tool);
+        let node = render_tool_call(&tool, 80);
         let plain = render_to_plain_text(&node, 120);
 
         // The full error should be visible at width=120
@@ -872,7 +872,7 @@ mod tests {
         tool.set_error(long_error.clone());
 
         // Render at width=80
-        let node = render_tool_call(&tool);
+        let node = render_tool_call(&tool, 80);
         let plain = render_to_plain_text(&node, 80);
 
         // The error should NOT be truncated to hardcoded 50 chars
@@ -896,7 +896,7 @@ mod tests {
         tool.set_error(cjk_error.to_string());
 
         // Render at width=80 — should not panic
-        let node = render_tool_call(&tool);
+        let node = render_tool_call(&tool, 80);
         let plain = render_to_plain_text(&node, 80);
 
         // Verify every line fits within width
@@ -929,7 +929,7 @@ mod tests {
         let error = "Connection refused: port 8080 is already in use by another process running on this machine";
         tool.set_error(error.to_string());
 
-        let node = render_tool_call(&tool);
+        let node = render_tool_call(&tool, 80);
         let plain = render_to_plain_text(&node, 120);
 
         assert!(
@@ -1004,7 +1004,7 @@ mod tests {
     #[test]
     fn compact_read_file_shows_path() {
         let tool = test_tool_with_output("mcp_read", r#"{"path": "src/lib.rs"}"#, "content", true);
-        let node = render_tool_call(&tool);
+        let node = render_tool_call(&tool, 80);
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("✓"), "Should show checkmark: {:?}", plain);
         assert!(plain.contains("Read"), "Should show tool name: {:?}", plain);
@@ -1029,7 +1029,7 @@ mod tests {
     fn compact_bash_shows_command() {
         let tool =
             test_tool_with_output("mcp_bash", r#"{"command": "ls -la"}"#, "file1\nfile2", true);
-        let node = render_tool_call(&tool);
+        let node = render_tool_call(&tool, 80);
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("Bash"), "Should show tool name: {:?}", plain);
         assert!(
@@ -1047,7 +1047,7 @@ mod tests {
     #[test]
     fn compact_no_args_no_parens() {
         let tool = test_tool_with_output("get_kiln_info", "{}", "kiln data", true);
-        let node = render_tool_call(&tool);
+        let node = render_tool_call(&tool, 80);
         let plain = render_to_plain_text(&node, 80);
         assert!(
             plain.contains("Get Kiln Info"),
