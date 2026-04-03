@@ -410,8 +410,9 @@ impl OilChatApp {
     }
 
     /// Render all in-viewport containers with spacing.
+    /// Uses the shared `layout_containers()` — same spacing logic as graduation.
     fn render_content(&self) -> Node {
-        use crate::tui::oil::containers::{needs_spacing, ContainerViewContext};
+        use crate::tui::oil::containers::{layout_containers, ContainerViewContext};
 
         let ctx = ContainerViewContext {
             width: self.terminal_size.get().0 as usize,
@@ -419,50 +420,14 @@ impl OilChatApp {
             show_thinking: self.show_thinking,
         };
 
-        let containers = self.container_list.containers();
-        if containers.is_empty() {
-            return Node::Empty;
-        }
+        let pairs: Vec<_> = self
+            .container_list
+            .containers()
+            .iter()
+            .map(|c| (c.kind, c.view(&ctx)))
+            .collect();
 
-        let mut prev_kind: Option<crate::tui::oil::containers::ContainerKind> =
-            self.container_list.last_graduated_kind();
-        let mut groups: Vec<Node> = Vec::new();
-        let mut tight_run: Vec<Node> = Vec::new();
-        let mut run_kind: Option<crate::tui::oil::containers::ContainerKind> = None;
-
-        for container in containers {
-            let kind = container.kind;
-            let node = container.view(&ctx);
-
-            let should_break = run_kind
-                .or(if groups.is_empty() { prev_kind } else { None })
-                .map(|prev| needs_spacing(prev, kind))
-                .unwrap_or(false);
-
-            if should_break {
-                if tight_run.len() == 1 {
-                    groups.push(tight_run.pop().unwrap());
-                } else if !tight_run.is_empty() {
-                    groups.push(col(tight_run.drain(..).collect::<Vec<_>>()).gap(Gap::row(0)));
-                }
-            }
-
-            tight_run.push(node);
-            run_kind = Some(kind);
-            prev_kind = Some(kind);
-        }
-
-        if tight_run.len() == 1 {
-            groups.push(tight_run.pop().unwrap());
-        } else if !tight_run.is_empty() {
-            groups.push(col(tight_run).gap(Gap::row(0)));
-        }
-
-        if groups.is_empty() {
-            return Node::Empty;
-        }
-
-        col(groups).gap(Gap::row(1))
+        layout_containers(&pairs, self.container_list.last_graduated_kind())
     }
 
     /// Popup overlay for command completion.
