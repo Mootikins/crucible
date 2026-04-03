@@ -7,9 +7,9 @@
 //! Spacing rule: adjacent ToolGroups get zero gap; everything else
 //! gets one blank line between containers.
 
-use crucible_oil::node::{col, styled, text, Node};
+use crucible_oil::node::{col, styled, Node};
 use crucible_oil::planning::Graduation;
-use crucible_oil::style::{Gap, Style};
+use crucible_oil::style::{Gap, Padding, Style};
 use unicode_width::UnicodeWidthStr;
 
 use crate::tui::oil::components::thinking_component::ThinkingComponent;
@@ -172,11 +172,10 @@ fn render_assistant_response(
 
     let mut items: Vec<Node> = Vec::new();
 
-    // Thinking blocks: only render when finalized (text started, graduated,
-    // or response complete). While actively thinking with no text yet,
-    // the turn indicator in chrome shows "◐ Thinking… (N words)" —
-    // container content stays empty to avoid duplication.
-    let thinking_finalized = !content.is_empty() || is_continuation;
+    // Thinking blocks: only render when finalized (text started or graduated).
+    // While actively thinking with no text yet, the turn indicator in chrome
+    // shows "◐ Thinking… (N words)" — content stays empty to avoid duplication.
+    let thinking_finalized = !content.is_empty();
     for tc in thinking {
         if tc.is_graduated() || thinking_finalized {
             let is_complete = thinking_finalized || tc.is_graduated();
@@ -249,6 +248,68 @@ pub fn needs_spacing(prev: ContainerKind, next: ContainerKind) -> bool {
         (prev, next),
         (ContainerKind::ToolGroup, ContainerKind::ToolGroup)
     )
+}
+
+/// Lay out container nodes with Gap-based spacing.
+///
+/// Adjacent ToolGroups form tight groups (gap 0). All other boundaries
+/// get gap 1. If `prev_kind` (from previously graduated content) needs
+/// spacing from the first container, top padding is applied.
+pub fn layout_containers(
+    containers: &[(ContainerKind, Node)],
+    prev_kind: Option<ContainerKind>,
+) -> Node {
+    if containers.is_empty() {
+        return Node::Empty;
+    }
+
+    // Fold into groups: adjacent ToolGroups stay together, others break
+    let mut groups: Vec<Vec<Node>> = Vec::new();
+    let mut current_group: Vec<Node> = Vec::new();
+    let mut current_kind: Option<ContainerKind> = None;
+
+    for (kind, node) in containers {
+        if let Some(ck) = current_kind {
+            if needs_spacing(ck, *kind) && !current_group.is_empty() {
+                groups.push(std::mem::take(&mut current_group));
+            }
+        }
+        current_group.push(node.clone());
+        current_kind = Some(*kind);
+    }
+    if !current_group.is_empty() {
+        groups.push(current_group);
+    }
+
+    let group_nodes: Vec<Node> = groups
+        .into_iter()
+        .map(|g| {
+            if g.len() == 1 {
+                g.into_iter().next().unwrap()
+            } else {
+                col(g).gap(Gap::row(0))
+            }
+        })
+        .collect();
+
+    let mut result = match group_nodes.len() {
+        0 => return Node::Empty,
+        1 => group_nodes.into_iter().next().unwrap(),
+        _ => col(group_nodes).gap(Gap::row(1)),
+    };
+
+    // Cross-batch: top padding when spacing needed from previously graduated content
+    if let Some(pk) = prev_kind {
+        let first_kind = containers[0].0;
+        if needs_spacing(pk, first_kind) {
+            result = result.with_margin(Padding {
+                top: 1,
+                ..Padding::all(0)
+            });
+        }
+    }
+
+    result
 }
 
 // ─── ContainerList ──────────────────────────────────────────────────────────
@@ -370,7 +431,7 @@ impl ContainerList {
     }
 
     /// Append thinking content to the current AssistantResponse's last ThinkingComponent.
-    /// Creates a new ThinkingComponent if none exists or if the last one is graduated.
+    /// Append thinking content. One ThinkingComponent per AssistantResponse.
     pub fn append_thinking(&mut self, delta: &str) {
         self.start_assistant_response();
         if let Some(Container {
@@ -378,7 +439,7 @@ impl ContainerList {
             ..
         }) = self.containers.last_mut()
         {
-            if thinking.is_empty() || thinking.last().unwrap().is_graduated() {
+            if thinking.is_empty() {
                 thinking.push(ThinkingComponent::new(String::new()));
             }
             thinking.last_mut().unwrap().append(delta);
@@ -535,7 +596,7 @@ impl ContainerList {
     /// node tree for scrollback output.
     ///
     /// Graduated thinking blocks are collapsed (via `ThinkingComponent::graduate()`).
-    /// Spacing between containers follows the `needs_spacing()` rule.
+    /// Spacing uses the shared `layout_containers()` function (Gap-based).
     pub fn drain_completed(
         &mut self,
         width: u16,
@@ -548,9 +609,7 @@ impl ContainerList {
             show_thinking,
         };
 
-        let mut items: Vec<Node> = Vec::new();
-        let mut last_kind: Option<ContainerKind> = None;
-        let mut leading_blank = false;
+        let mut pairs: Vec<(ContainerKind, Node)> = Vec::new();
 
         while !self.containers.is_empty() && self.is_graduatable(0) {
             let mut container = self.containers.remove(0);
@@ -563,40 +622,19 @@ impl ContainerList {
                 }
             }
 
-            let node = container.view(&ctx);
-
-            // Determine spacing relative to previous graduated content
-            let prev = last_kind.or(self.last_graduated_kind);
-            if let Some(pk) = prev {
-                if needs_spacing(pk, kind) {
-                    if last_kind.is_none() {
-                        // First item in this batch, spacing is against
-                        // previously-graduated content — use leading_blank
-                        leading_blank = true;
-                    } else {
-                        items.push(text(" "));
-                    }
-                }
-            }
-
-            items.push(node);
-            last_kind = Some(kind);
+            pairs.push((kind, container.view(&ctx)));
         }
 
-        let last_kind = last_kind?;
-        self.last_graduated_kind = Some(last_kind);
+        if pairs.is_empty() {
+            return None;
+        }
 
-        let node = if items.len() == 1 {
-            items.pop().unwrap()
-        } else {
-            col(items).gap(Gap::row(0))
-        };
+        let prev_kind = self.last_graduated_kind;
+        self.last_graduated_kind = Some(pairs.last().unwrap().0);
 
-        Some(Graduation {
-            node,
-            width,
-            leading_blank,
-        })
+        let node = layout_containers(&pairs, prev_kind);
+
+        Some(Graduation { node, width })
     }
 }
 
@@ -754,17 +792,24 @@ mod tests {
     }
 
     #[test]
-    fn leading_blank_set_for_cross_batch_spacing() {
+    fn cross_batch_spacing_uses_top_padding() {
         let mut list = ContainerList::new();
         list.add_user_message("first".into());
-        // Graduate the user message
         let grad1 = list.drain_completed(80, 0, false).unwrap();
-        assert!(!grad1.leading_blank); // nothing before it
+        // First graduation: no top padding (nothing before it)
+        let rendered1 = grad1.render();
+        assert!(!rendered1.starts_with("\r\n"), "first grad should have no leading blank");
 
-        // Now add a system message — different kind, should get leading_blank
+        // Second graduation: different kind, should have top padding
         list.add_system_message("second".into());
         let grad2 = list.drain_completed(80, 0, false).unwrap();
-        assert!(grad2.leading_blank);
+        let rendered2 = grad2.render();
+        // The node tree should include top margin, producing a leading blank line
+        assert!(
+            rendered2.starts_with("\r\n") || rendered2.starts_with("\n"),
+            "cross-batch spacing should produce leading blank: {:?}",
+            &rendered2[..rendered2.len().min(40)]
+        );
     }
 
     #[test]
