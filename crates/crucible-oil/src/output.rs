@@ -1,4 +1,4 @@
-use crate::ansi::{strip_ansi, visual_rows};
+use crate::ansi::visual_rows;
 #[allow(unused_imports)] // WIP: OverlayAnchor not yet used
 use crate::overlay::{composite_overlays, Overlay, OverlayAnchor};
 use crate::planning::RenderedOverlay;
@@ -18,7 +18,7 @@ pub struct OutputBuffer<W: Write = Stdout> {
 }
 
 fn lines_visually_equal(a: &str, b: &str) -> bool {
-    strip_ansi(a) == strip_ansi(b)
+    a == b
 }
 
 impl Default for OutputBuffer<Stdout> {
@@ -178,13 +178,26 @@ impl<W: Write> OutputBuffer<W> {
                 }
             }
 
-            // Rewrite from first_diff to end
+            // Rewrite from first_diff to end.
+            // Lines that wrap to multiple visual rows need all their rows
+            // cleared — Clear(CurrentLine) only clears the cursor's row.
             for (i, line) in viewport_lines.iter().enumerate().skip(first_diff) {
+                let vrows = visual_rows(line, self.terminal_width);
                 execute!(self.stdout, cursor::MoveToColumn(0))?;
-                execute!(
-                    self.stdout,
-                    terminal::Clear(terminal::ClearType::CurrentLine)
-                )?;
+                for row in 0..vrows {
+                    execute!(
+                        self.stdout,
+                        terminal::Clear(terminal::ClearType::CurrentLine)
+                    )?;
+                    if row < vrows - 1 {
+                        execute!(self.stdout, cursor::MoveDown(1))?;
+                    }
+                }
+                // Move back to the first row of this line to write content
+                if vrows > 1 {
+                    execute!(self.stdout, cursor::MoveUp((vrows - 1) as u16))?;
+                    execute!(self.stdout, cursor::MoveToColumn(0))?;
+                }
                 write!(self.stdout, "{}", line)?;
                 if i < new_len - 1 {
                     write!(self.stdout, "\r\n")?;

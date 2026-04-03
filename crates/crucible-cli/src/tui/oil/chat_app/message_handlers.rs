@@ -55,7 +55,10 @@ impl OilChatApp {
                 lua_primary_arg,
             } => {
                 let tool = CachedToolCall {
-                    id: format!("tool-{}", name),
+                    id: call_id.as_deref().map_or_else(
+                        || format!("tool-{}", name),
+                        |cid| format!("tool-{}-{}", name, cid),
+                    ),
                     name: Arc::from(name.as_str()),
                     args: Arc::from(args.as_str()),
                     call_id,
@@ -94,13 +97,6 @@ impl OilChatApp {
                 self.finalize_streaming();
                 self.drop_stream_deltas = false;
             }
-            ChatAppMsg::ContextUsage { used, total } => {
-                self.context_used = used;
-                self.context_total = total;
-            }
-            ChatAppMsg::Error(err) => {
-                self.add_notification(crucible_core::types::Notification::warning(err));
-            }
             _ => {
                 tracing::trace!("[stub] stream msg: {:?}", msg.category());
             }
@@ -114,12 +110,35 @@ impl OilChatApp {
             ChatAppMsg::SwitchModel(model) => {
                 self.model = model;
             }
-            ChatAppMsg::ModelsLoaded(models) => {
-                self.available_models = models;
+            ChatAppMsg::FetchModels => {
+                tracing::debug!(
+                    target: "crucible_cli::tui::oil::model_flow",
+                    msg = "FetchModels",
+                    state = "Loading",
+                    "model state transition"
+                );
+                self.model_list_state = ModelListState::Loading;
+            }
+            ChatAppMsg::ModelsLoaded(ref models) => {
+                tracing::debug!(
+                    target: "crucible_cli::tui::oil::model_flow",
+                    msg = "ModelsLoaded",
+                    state = "Loaded",
+                    count = models.len(),
+                    "model state transition"
+                );
+                self.available_models = models.clone();
                 self.model_list_state = ModelListState::Loaded;
             }
-            ChatAppMsg::ModelsFetchFailed(err) => {
-                self.model_list_state = ModelListState::Failed(err);
+            ChatAppMsg::ModelsFetchFailed(ref err) => {
+                tracing::debug!(
+                    target: "crucible_cli::tui::oil::model_flow",
+                    msg = "ModelsFetchFailed",
+                    state = "Failed",
+                    error = %err,
+                    "model state transition"
+                );
+                self.model_list_state = ModelListState::Failed(err.clone());
             }
             ChatAppMsg::McpStatusLoaded(servers) => {
                 self.mcp_servers = servers;
@@ -127,8 +146,20 @@ impl OilChatApp {
             ChatAppMsg::PluginStatusLoaded(entries) => {
                 self.plugin_status = entries;
             }
+            // Command-only: side effects handled by chat_runner::process_action
+            ChatAppMsg::SetThinkingBudget(_)
+            | ChatAppMsg::SetTemperature(_)
+            | ChatAppMsg::SetMaxTokens(_)
+            | ChatAppMsg::SetMaxIterations(_)
+            | ChatAppMsg::SetExecutionTimeout(_)
+            | ChatAppMsg::SetContextBudget(_)
+            | ChatAppMsg::SetContextStrategy(_)
+            | ChatAppMsg::SetContextWindow(_)
+            | ChatAppMsg::SetOutputValidation(_)
+            | ChatAppMsg::SetValidationRetries(_)
+            | ChatAppMsg::SetPrecognitionResults(_) => {}
             _ => {
-                tracing::trace!("[stub] config msg: {:?}", msg.category());
+                tracing::warn!("unhandled config msg: {:?}", msg.category());
             }
         }
         Action::Continue
@@ -139,7 +170,7 @@ impl OilChatApp {
         match msg {
             ChatAppMsg::SubagentSpawned { id, prompt } => {
                 let agent = CachedSubagent::new(id, prompt, "subagent");
-                self.container_list.add_agent_task(agent, "subagent");
+                self.container_list.add_agent_task(agent);
             }
             ChatAppMsg::SubagentCompleted { id, summary } => {
                 self.container_list
@@ -160,7 +191,7 @@ impl OilChatApp {
                 }
                 let mut agent = CachedSubagent::new(&id, prompt, "delegation");
                 agent.target_agent = target_agent;
-                self.container_list.add_agent_task(agent, "delegation");
+                self.container_list.add_agent_task(agent);
             }
             ChatAppMsg::DelegationCompleted { id, summary } => {
                 self.container_list
@@ -180,6 +211,9 @@ impl OilChatApp {
     /// Handle UI messages (ClearHistory, ToggleMessages, Status, etc.)
     pub(super) fn handle_ui_msg(&mut self, msg: ChatAppMsg) -> Action<ChatAppMsg> {
         match msg {
+            ChatAppMsg::Error(err) => {
+                self.add_notification(crucible_core::types::Notification::warning(err));
+            }
             ChatAppMsg::ClearHistory => {
                 self.reset_session();
             }
@@ -234,8 +268,14 @@ impl OilChatApp {
                 self.close_interaction();
                 // The actual response is sent by process_action in chat_runner
             }
+            // Command-only: side effects handled by chat_runner::process_action
+            ChatAppMsg::QueueMessage(_)
+            | ChatAppMsg::ReloadPlugin(_)
+            | ChatAppMsg::ExecuteSlashCommand(_)
+            | ChatAppMsg::ExportSession(_)
+            | ChatAppMsg::Undo(_) => {}
             _ => {
-                tracing::trace!("[stub] ui msg: {:?}", msg.category());
+                tracing::warn!("unhandled ui msg: {:?}", msg.category());
             }
         }
         Action::Continue
