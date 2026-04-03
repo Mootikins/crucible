@@ -12,17 +12,13 @@ use crate::ansi::visual_rows;
 ///
 /// A thin wrapper around a Node tree and the width it should be rendered at.
 /// The terminal layer renders this to a string and writes it to scrollback.
+/// Spacing is encoded in the node tree via Gap and Padding (no out-of-band flags).
 #[derive(Debug, Clone)]
 pub struct Graduation {
     /// The rendered node tree for graduated content.
     pub node: Node,
     /// Terminal width for rendering.
     pub width: u16,
-    /// Whether a blank line should precede this graduation in scrollback.
-    /// Set for cross-frame transitions between different container types
-    /// (e.g., ToolGroup → AssistantResponse). Within-batch spacing uses
-    /// spacer nodes in the node tree instead.
-    pub leading_blank: bool,
 }
 
 impl Graduation {
@@ -336,7 +332,7 @@ mod tests {
     #[test]
     fn graduation_renders_node_to_string() {
         let node = col([text("Hello"), text("World")]);
-        let grad = Graduation { node, width: 80, leading_blank: false };
+        let grad = Graduation { node, width: 80 };
         let rendered = grad.render();
         assert!(rendered.contains("Hello"));
         assert!(rendered.contains("World"));
@@ -350,8 +346,7 @@ mod tests {
         let graduation = Graduation {
             node: grad_node,
             width: 80,
-            leading_blank: false,
-        };
+                    };
         let snapshot = planner.plan_with_graduation(&tree, Some(graduation));
 
         assert!(snapshot.graduation.is_some());
@@ -377,8 +372,7 @@ mod tests {
         let graduation = Graduation {
             node: col([text("Graduated")]),
             width: 80,
-            leading_blank: false,
-        };
+                    };
         let snapshot = planner.plan_with_graduation(&tree, Some(graduation));
 
         let screen = snapshot.screen();

@@ -43,13 +43,7 @@ mod tests {
 
     /// Generate a Graduation struct with random content and dimensions.
     fn arb_graduation() -> impl Strategy<Value = Graduation> {
-        (arb_graduation_node(), 20u16..200, any::<bool>()).prop_map(
-            |(node, width, leading_blank)| Graduation {
-                node,
-                width,
-                leading_blank,
-            },
-        )
+        (arb_graduation_node(), 20u16..200).prop_map(|(node, width)| Graduation { node, width })
     }
 
     /// Generate a viewport node that MAY contain spinners (the normal case).
