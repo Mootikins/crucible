@@ -605,13 +605,14 @@ fn build_highlighted_code_lines(
     use crucible_oil::ansi::wrap_styled_text;
 
     let mut result = Vec::new();
+    let wrap_width = width.saturating_sub(indent.len());
 
     if lang.is_empty() || !SyntaxHighlighter::supports_language(lang) {
         let t = theme::active();
         let fallback = Style::new().fg(t.resolve_color(t.colors.code_fallback));
         for line in content.lines() {
             let spans = vec![(line.to_string(), fallback.to_ansi_codes())];
-            for wrapped in wrap_styled_text(&spans, width) {
+            for wrapped in wrap_styled_text(&spans, wrap_width) {
                 result.push(format!("{indent}{wrapped}"));
             }
         }
@@ -633,7 +634,7 @@ fn build_highlighted_code_lines(
             .map(|span| (span.text.clone(), span.style.to_ansi_codes()))
             .collect();
 
-        for wrapped in wrap_styled_text(&spans, width) {
+        for wrapped in wrap_styled_text(&spans, wrap_width) {
             result.push(format!("{indent}{wrapped}"));
         }
     }
@@ -660,7 +661,7 @@ fn render_list_item(node: &markdown_it::Node, ctx: &mut RenderContext) {
     };
 
     let item_text = extract_list_item_text(node);
-    let content_width = ctx.width.saturating_sub(bullet_width);
+    let content_width = ctx.width.saturating_sub(margins.left + list_indent.len() + bullet_width);
     let wrapped = wrap_text(&item_text, content_width);
 
     for (i, line) in wrapped.iter().enumerate() {

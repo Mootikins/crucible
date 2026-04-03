@@ -3,17 +3,17 @@
 //! Renders subagent executions with status (running/completed/failed),
 //! prompt preview, and result summary or error message.
 
-use crucible_oil::node::{col, row, styled, text, Node, BRAILLE_SPINNER_FRAMES};
+use crucible_oil::node::{row, styled, Node, BRAILLE_SPINNER_FRAMES};
 use crucible_oil::style::Style;
 use crate::tui::oil::theme;
-use crate::tui::oil::utils::{terminal_width, truncate_first_line};
+use crate::tui::oil::utils::truncate_first_line;
 use crate::tui::oil::viewport_cache::{CachedSubagent, SubagentStatus};
 use std::time::Duration;
 
 use super::tool_render::format_elapsed;
 
 /// Render a subagent with status indicator and prompt preview.
-pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize) -> Node {
+pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize, width: usize) -> Node {
     let t = theme::active();
     let (icon, icon_style) = match subagent.status {
         SubagentStatus::Running => {
@@ -35,7 +35,7 @@ pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize) -> Node 
 
     let prompt_preview = truncate_first_line(
         &subagent.prompt,
-        terminal_width().saturating_sub(30).max(20),
+        width.saturating_sub(30).max(20),
         true,
     );
 
@@ -56,7 +56,7 @@ pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize) -> Node 
             .map(|s| {
                 format!(
                     " \u{2192} {}",
-                    truncate_first_line(s, terminal_width().saturating_sub(20).max(20), true)
+                    truncate_first_line(s, width.saturating_sub(20).max(20), true)
                 )
             })
             .unwrap_or_default(),
@@ -66,7 +66,7 @@ pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize) -> Node 
             .map(|e| {
                 format!(
                     " \u{2192} {}",
-                    truncate_first_line(e, terminal_width().saturating_sub(20).max(20), true)
+                    truncate_first_line(e, width.saturating_sub(20).max(20), true)
                 )
             })
             .unwrap_or_default(),
@@ -91,7 +91,7 @@ pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize) -> Node 
         styled(status_text, status_style),
     ]);
 
-    col([text(""), header])
+    header
 }
 
 fn format_elapsed_display(elapsed: Duration) -> String {
@@ -108,7 +108,7 @@ mod tests {
     fn render_subagent_running() {
         let mut subagent = CachedSubagent::new("sub-1", "Analyze the code", "subagent");
         subagent.status = SubagentStatus::Running;
-        let node = render_subagent(&subagent, 0);
+        let node = render_subagent(&subagent, 0, 80);
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("subagent"));
         assert!(plain.contains("Analyze the code"));
@@ -119,7 +119,7 @@ mod tests {
         let mut subagent = CachedSubagent::new("sub-1", "Analyze the code", "subagent");
         subagent.status = SubagentStatus::Completed;
         subagent.summary = Some(Arc::from("Analysis complete"));
-        let node = render_subagent(&subagent, 0);
+        let node = render_subagent(&subagent, 0, 80);
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("✓"));
         assert!(plain.contains("Analysis complete"));
@@ -130,7 +130,7 @@ mod tests {
         let mut subagent = CachedSubagent::new("sub-1", "Analyze the code", "subagent");
         subagent.status = SubagentStatus::Failed;
         subagent.error = Some(Arc::from("Connection timeout"));
-        let node = render_subagent(&subagent, 0);
+        let node = render_subagent(&subagent, 0, 80);
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("✗"));
         assert!(plain.contains("Connection timeout"));
@@ -140,7 +140,7 @@ mod tests {
     fn render_subagent_truncates_long_prompt() {
         let long_prompt = "a".repeat(100);
         let subagent = CachedSubagent::new("sub-1", &long_prompt, "subagent");
-        let node = render_subagent(&subagent, 0);
+        let node = render_subagent(&subagent, 0, 80);
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("…"));
     }
