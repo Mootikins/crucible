@@ -45,7 +45,8 @@ pub fn render_layout_tree_compact(tree: &LayoutTree) -> (String, CursorInfo) {
 
 fn render_layout_tree_inner(tree: &LayoutTree, compact: bool) -> (String, CursorInfo) {
     let width = tree.root.rect.width as usize;
-    let height = tree.root.rect.height as usize;
+    // Include root margin in grid height (rect.y accounts for top margin)
+    let height = (tree.root.rect.y + tree.root.rect.height) as usize;
 
     if width == 0 || height == 0 {
         return (String::new(), CursorInfo::default());
