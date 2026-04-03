@@ -10,6 +10,7 @@
 use crucible_oil::node::{col, styled, text, Node};
 use crucible_oil::planning::Graduation;
 use crucible_oil::style::{Gap, Style};
+use unicode_width::UnicodeWidthStr;
 
 use crate::tui::oil::components::thinking_component::ThinkingComponent;
 use crate::tui::oil::components::{render_shell_execution, render_subagent, render_tool_call_with_frame};
@@ -95,8 +96,8 @@ impl Container {
                 thinking,
                 is_continuation,
             } => render_assistant_response(text, thinking, *is_continuation, ctx),
-            ContainerContent::ToolGroup { tools } => render_tool_group(tools, ctx.spinner_frame),
-            ContainerContent::SubagentTask { agent } => render_subagent_task(agent, ctx.spinner_frame),
+            ContainerContent::ToolGroup { tools } => render_tool_group(tools, ctx.spinner_frame, ctx.width),
+            ContainerContent::SubagentTask { agent } => render_subagent_task(agent, ctx.spinner_frame, ctx.width),
             ContainerContent::ShellExecution { shell } => render_shell(shell),
             ContainerContent::SystemMessage { text } => render_system_message(text),
         }
@@ -130,12 +131,11 @@ fn render_user_message(content: &str, width: usize) -> Node {
         Style::new().fg(bg),
     );
 
-    let mut rows: Vec<Node> = Vec::with_capacity(lines.len() + 4);
-    rows.push(text(""));
+    let mut rows: Vec<Node> = Vec::with_capacity(lines.len() + 2);
     rows.push(top_edge);
 
     for (i, line) in lines.iter().enumerate() {
-        let line_len = line.chars().count();
+        let line_len = line.width();
         let line_padding = " ".repeat(content_width.saturating_sub(line_len) + 1);
         let line_prefix = if i == 0 { prefix } else { continuation_prefix };
         rows.push(styled(
@@ -145,7 +145,6 @@ fn render_user_message(content: &str, width: usize) -> Node {
     }
 
     rows.push(bottom_edge);
-    rows.push(text(""));
     col(rows)
 }
 
@@ -204,10 +203,10 @@ fn render_assistant_response(
 }
 
 /// Tool group: renders each tool via the existing tool renderer.
-fn render_tool_group(tools: &[CachedToolCall], spinner_frame: usize) -> Node {
+fn render_tool_group(tools: &[CachedToolCall], spinner_frame: usize, width: usize) -> Node {
     let items: Vec<Node> = tools
         .iter()
-        .map(|tool| render_tool_call_with_frame(tool, spinner_frame))
+        .map(|tool| render_tool_call_with_frame(tool, spinner_frame, width))
         .filter(|n| !matches!(n, Node::Empty))
         .collect();
 
@@ -219,8 +218,8 @@ fn render_tool_group(tools: &[CachedToolCall], spinner_frame: usize) -> Node {
 }
 
 /// Subagent task: delegates to existing subagent renderer.
-fn render_subagent_task(agent: &CachedSubagent, spinner_frame: usize) -> Node {
-    render_subagent(agent, spinner_frame)
+fn render_subagent_task(agent: &CachedSubagent, spinner_frame: usize, width: usize) -> Node {
+    render_subagent(agent, spinner_frame, width)
 }
 
 /// Shell execution: delegates to existing shell renderer.
@@ -380,7 +379,7 @@ impl ContainerList {
         }) = self.containers.last_mut()
         {
             if thinking.is_empty() || thinking.last().unwrap().is_graduated() {
-                thinking.push(ThinkingComponent::new(String::new(), 0));
+                thinking.push(ThinkingComponent::new(String::new()));
             }
             thinking.last_mut().unwrap().append(delta);
         }
@@ -441,9 +440,10 @@ impl ContainerList {
                 }
             }
         }
+        tracing::debug!(name = %name, call_id = ?call_id, "tool update for unknown tool (already graduated or never received)");
     }
 
-    pub fn add_agent_task(&mut self, agent: CachedSubagent, _id_prefix: &str) {
+    pub fn add_agent_task(&mut self, agent: CachedSubagent) {
         let id = self.next_id("agent");
         self.containers.push(Container {
             id,
@@ -465,6 +465,7 @@ impl ContainerList {
                 }
             }
         }
+        tracing::debug!(agent_id = %agent_id, "agent task update for unknown agent (already graduated or never received)");
     }
 
     pub fn add_shell_execution(&mut self, shell: CachedShellExecution) {
@@ -498,13 +499,12 @@ impl ContainerList {
         }
     }
 
-    /// Cancel streaming: same as complete but without implying success.
+    /// Cancel streaming: marks all streaming containers as complete.
     pub fn cancel_streaming(&mut self) {
         self.turn_active = false;
-        // Mark any streaming container as complete so it can graduate
-        if let Some(last) = self.containers.last_mut() {
-            if last.state == ContainerState::Streaming {
-                last.state = ContainerState::Complete;
+        for container in &mut self.containers {
+            if container.state == ContainerState::Streaming {
+                container.state = ContainerState::Complete;
             }
         }
     }

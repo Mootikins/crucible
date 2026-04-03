@@ -18,10 +18,13 @@ use super::vt100_runtime::Vt100TestRuntime;
 // ─── JSONL Parsing ─────────────────────────────────────────────────────────
 
 fn parse_fixture(path: &Path) -> Vec<crate::tui::oil::chat_app::ChatAppMsg> {
+    use crate::tui::oil::chat_app::ChatAppMsg;
+
     let content = std::fs::read_to_string(path)
         .unwrap_or_else(|e| panic!("Failed to read fixture {}: {e}", path.display()));
 
     let mut messages = Vec::new();
+    let mut saw_text_delta = false;
 
     for line in content.lines() {
         if line.trim().is_empty() {
@@ -43,13 +46,33 @@ fn parse_fixture(path: &Path) -> Vec<crate::tui::oil::chat_app::ChatAppMsg> {
             None => continue,
         };
 
+        if event_type == "text_delta" {
+            saw_text_delta = true;
+        } else if event_type == "user_message" {
+            saw_text_delta = false;
+        }
+
+        // Skip late thinking summaries that arrive after text_delta
+        if event_type == "thinking" && saw_text_delta {
+            continue;
+        }
+
         let data = value
             .get("data")
             .cloned()
             .unwrap_or(serde_json::Value::Null);
 
-        let msgs = session_event_to_chat_msgs(event_type, &data);
-        messages.extend(msgs);
+        for msg in session_event_to_chat_msgs(event_type, &data) {
+            // Skip full_response text from message_complete when granular
+            // text_deltas were already processed for this turn.
+            if saw_text_delta
+                && event_type == "message_complete"
+                && matches!(&msg, ChatAppMsg::TextDelta(_))
+            {
+                continue;
+            }
+            messages.push(msg);
+        }
     }
 
     messages

@@ -46,7 +46,7 @@ pub struct OilChatApp {
     // These fields mirror information received from the daemon and
     // represent the authoritative view of the current session.
     /// Container list: ordered chat content with graduation support
-    container_list: crate::tui::oil::containers::ContainerList,
+    pub(crate) container_list: crate::tui::oil::containers::ContainerList,
     /// Current chat mode (Normal / Plan / Auto)
     mode: ChatMode,
     /// Display name of the active LLM model
@@ -565,10 +565,40 @@ impl OilChatApp {
 
         self.container_list.clear();
 
+        // Track whether granular deltas were seen in the current turn.
+        // Recordings contain both granular deltas AND final summaries:
+        // - text_delta events + message_complete.full_response → text duplication
+        // - thinking deltas + late thinking summary → thinking block duplication
+        // Skip the summaries when granular deltas are present.
+        let mut saw_text_delta = false;
+
         for event in &events {
             let event_type = event.get("event").and_then(|e| e.as_str()).unwrap_or("");
             let data = event.get("data").cloned().unwrap_or_default();
+
+            if event_type == "text_delta" {
+                saw_text_delta = true;
+            } else if event_type == "user_message" {
+                saw_text_delta = false;
+            }
+
+            // Skip late thinking events that arrive after text_delta.
+            // These are final thinking summaries from the API, not new
+            // thinking blocks. They duplicate content already received
+            // as incremental thinking deltas.
+            if event_type == "thinking" && saw_text_delta {
+                continue;
+            }
+
             for msg in session_event_to_chat_msgs(event_type, &data) {
+                // Skip full_response text from message_complete when we
+                // already have granular text_deltas for this turn.
+                if saw_text_delta
+                    && event_type == "message_complete"
+                    && matches!(&msg, ChatAppMsg::TextDelta(_))
+                {
+                    continue;
+                }
                 self.on_message(msg);
             }
         }
@@ -629,6 +659,16 @@ impl OilChatApp {
     #[cfg(test)]
     pub(crate) fn current_model(&self) -> &str {
         &self.model
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_notifications(&self) -> bool {
+        !self.notification_area.is_empty()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_interaction_modal(&self) -> bool {
+        self.interaction_modal.is_some()
     }
 
     pub(crate) fn has_shell_modal(&self) -> bool {

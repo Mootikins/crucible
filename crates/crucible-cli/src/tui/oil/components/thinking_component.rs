@@ -18,15 +18,13 @@ use crucible_oil::style::Style;
 #[derive(Debug, Clone)]
 pub struct ThinkingComponent {
     pub(crate) content: String,
-    pub(crate) token_count: usize,
     graduated: bool,
 }
 
 impl ThinkingComponent {
-    pub fn new(content: String, token_count: usize) -> Self {
+    pub fn new(content: String) -> Self {
         Self {
             content,
-            token_count,
             graduated: false,
         }
     }
@@ -34,13 +32,11 @@ impl ThinkingComponent {
     /// Append streaming thinking content.
     pub fn append(&mut self, delta: &str) {
         self.content.push_str(delta);
-        self.token_count += 1;
     }
 
     /// Replace content wholesale (used by set_thinking).
-    pub fn replace(&mut self, content: String, token_count: usize) {
+    pub fn replace(&mut self, content: String) {
         self.content = content;
-        self.token_count = token_count;
     }
 
     /// Transition to graduated state. Render will always produce
@@ -184,31 +180,29 @@ mod tests {
 
     #[test]
     fn new_component_is_not_graduated() {
-        let tc = ThinkingComponent::new("hello".into(), 1);
+        let tc = ThinkingComponent::new("hello".into());
         assert!(!tc.is_graduated());
         assert_eq!(tc.word_count(), 1);
     }
 
     #[test]
     fn append_accumulates_content() {
-        let mut tc = ThinkingComponent::new("hello".into(), 1);
+        let mut tc = ThinkingComponent::new("hello".into());
         tc.append(" world");
         assert_eq!(tc.content, "hello world");
-        assert_eq!(tc.token_count, 2);
         assert_eq!(tc.word_count(), 2);
     }
 
     #[test]
     fn replace_overwrites_content() {
-        let mut tc = ThinkingComponent::new("old".into(), 1);
-        tc.replace("new content here".into(), 50);
+        let mut tc = ThinkingComponent::new("old".into());
+        tc.replace("new content here".into());
         assert_eq!(tc.content, "new content here");
-        assert_eq!(tc.token_count, 50);
     }
 
     #[test]
     fn graduate_transitions_state() {
-        let mut tc = ThinkingComponent::new("thinking about things".into(), 10);
+        let mut tc = ThinkingComponent::new("thinking about things".into());
         assert!(!tc.is_graduated());
         tc.graduate();
         assert!(tc.is_graduated());
@@ -216,7 +210,7 @@ mod tests {
 
     #[test]
     fn graduated_renders_collapsed() {
-        let mut tc = ThinkingComponent::new("thinking about many things here".into(), 10);
+        let mut tc = ThinkingComponent::new("thinking about many things here".into());
         tc.graduate();
 
         let state = default_state();
@@ -229,7 +223,7 @@ mod tests {
 
     #[test]
     fn live_collapsed_no_words_shows_spinner_without_count() {
-        let tc = ThinkingComponent::new(String::new(), 0);
+        let tc = ThinkingComponent::new(String::new());
         let state = default_state();
         let node = tc.render(&state, false);
         let plain = render_to_plain_text(&node, 80);
@@ -242,7 +236,7 @@ mod tests {
 
     #[test]
     fn live_collapsed_with_words_shows_count() {
-        let tc = ThinkingComponent::new("one two three".into(), 3);
+        let tc = ThinkingComponent::new("one two three".into());
         let state = default_state();
         let node = tc.render(&state, false);
         let plain = render_to_plain_text(&node, 80);
@@ -252,7 +246,7 @@ mod tests {
 
     #[test]
     fn live_expanded_shows_full_content() {
-        let tc = ThinkingComponent::new("detailed reasoning here".into(), 3);
+        let tc = ThinkingComponent::new("detailed reasoning here".into());
         let mut state = default_state();
         state.show_thinking = true;
         let node = tc.render(&state, false);
@@ -262,7 +256,7 @@ mod tests {
 
     #[test]
     fn complete_collapsed_shows_thought() {
-        let tc = ThinkingComponent::new("some analysis".into(), 5);
+        let tc = ThinkingComponent::new("some analysis".into());
         let state = default_state();
         let node = tc.render(&state, true);
         let plain = render_to_plain_text(&node, 80);
@@ -274,7 +268,7 @@ mod tests {
 
     #[test]
     fn expanded_boundary_1200_chars() {
-        let tc = ThinkingComponent::new("a".repeat(1200), 100);
+        let tc = ThinkingComponent::new("a".repeat(1200));
         let mut state = default_state();
         state.show_thinking = true;
         let node = tc.render(&state, true);
@@ -285,7 +279,7 @@ mod tests {
 
     #[test]
     fn expanded_over_1200_chars_truncates() {
-        let tc = ThinkingComponent::new("a".repeat(1201), 100);
+        let tc = ThinkingComponent::new("a".repeat(1201));
         let mut state = default_state();
         state.show_thinking = true;
         let node = tc.render(&state, true);
@@ -298,7 +292,7 @@ mod tests {
     fn expanded_cjk_does_not_panic() {
         let content = "\u{4F60}\u{597D}\u{4E16}\u{754C}".repeat(125);
         assert!(content.len() > 1200);
-        let tc = ThinkingComponent::new(content, 100);
+        let tc = ThinkingComponent::new(content);
         let mut state = default_state();
         state.show_thinking = true;
         let node = tc.render(&state, true);
@@ -311,7 +305,7 @@ mod tests {
     fn expanded_emoji_boundary() {
         let content = "\u{1F525}\u{1F30A}\u{26A1}".repeat(200);
         assert!(content.len() > 1200);
-        let tc = ThinkingComponent::new(content, 100);
+        let tc = ThinkingComponent::new(content);
         let mut state = default_state();
         state.show_thinking = true;
         let node = tc.render(&state, true);
@@ -324,7 +318,7 @@ mod tests {
     fn expanded_mixed_utf8() {
         let content = "Hello \u{4F60}\u{597D} \u{1F525} ".repeat(200);
         assert!(content.len() > 1200);
-        let tc = ThinkingComponent::new(content, 100);
+        let tc = ThinkingComponent::new(content);
         let mut state = default_state();
         state.show_thinking = true;
         let node = tc.render(&state, true);
