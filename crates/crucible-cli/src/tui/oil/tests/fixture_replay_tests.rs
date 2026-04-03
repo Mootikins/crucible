@@ -319,3 +319,45 @@ fn replay_acp_demo_80x24() {
         result.violations.join("\n")
     );
 }
+
+// ─── Reproduce fixture (spacing + thinking bugs) ──────────────────────────
+
+#[test]
+fn replay_reproduce_124x59() {
+    let path = fixture_path("reproduce.jsonl");
+    if !path.exists() {
+        eprintln!("Skipping: {} not found", path.display());
+        return;
+    }
+
+    let result = replay_fixture(&path, 124, 59);
+
+    assert!(
+        result.violations.is_empty(),
+        "Invariant violations in reproduce.jsonl at 124x59 ({} frames):\n{}",
+        result.total_frames,
+        result.violations.join("\n")
+    );
+
+    assert!(
+        result.final_output.len() > 200,
+        "Reproduce fixture should produce substantial output"
+    );
+}
+
+#[test]
+fn replay_reproduce_80x24() {
+    let path = fixture_path("reproduce.jsonl");
+    if !path.exists() {
+        return;
+    }
+
+    let result = replay_fixture(&path, 80, 24);
+
+    assert!(
+        result.violations.is_empty(),
+        "Invariant violations in reproduce.jsonl at 80x24 ({} frames):\n{}",
+        result.total_frames,
+        result.violations.join("\n")
+    );
+}

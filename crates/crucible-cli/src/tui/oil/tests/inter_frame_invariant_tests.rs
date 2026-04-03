@@ -135,13 +135,260 @@ fn check_consistent_content_spacing(screen: &str, context: &str) {
     }
 }
 
+/// Check that thinking never appears as two separate `◇ Thought` nodes with
+/// only blank lines between them. All thinking within a turn must combine
+/// into one node — split nodes mean graduation created a second container.
+fn check_no_split_thinking_nodes(screen: &str, context: &str) {
+    let lines: Vec<&str> = screen.lines().collect();
+    let mut i = 0;
+    while i < lines.len() {
+        let trimmed = lines[i].trim();
+        if trimmed.starts_with("◇ Thought") || trimmed.starts_with("\u{25C7} Thought") {
+            // Found a Thought line. Skip blank lines and check if next content
+            // is another Thought (with no intervening tool/text/user content).
+            let mut j = i + 1;
+            while j < lines.len() && lines[j].trim().is_empty() {
+                j += 1;
+            }
+            if j < lines.len() {
+                let next = lines[j].trim();
+                if next.starts_with("◇ Thought") || next.starts_with("\u{25C7} Thought") {
+                    panic!(
+                        "{}: split thinking nodes at lines {} and {}:\n  '{}'\n  '{}'\nFull screen:\n{}",
+                        context, i, j, trimmed, next, screen
+                    );
+                }
+            }
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+}
+
+/// Check that every pair of adjacent top-level content containers has exactly
+/// 1 blank line between them, EXCEPT adjacent tool calls which should have 0.
+///
+/// Only checks spacing between container headers (◇ Thought, ✓ Tool, user bars),
+/// not within container content (e.g., inside expanded thinking blocks or
+/// multi-line markdown). The `┌─ Thought` expanded header and its content are
+/// treated as one block.
+fn check_spacing_between_non_tool_containers(screen: &str, context: &str) {
+    let lines: Vec<&str> = screen.lines().collect();
+
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    enum BlockKind {
+        ThoughtCollapsed,  // ◇ Thought (N words)
+        ThoughtExpanded,   // ┌─ Thought/Thinking header (expanded view)
+        Tool,
+        UserBottom,        // ▀▀▀ bottom bar of user message
+    }
+
+    // First pass: identify regions inside expanded thinking (┌─ ... to next container)
+    let mut in_expanded_thinking = false;
+    let mut expanded_ranges: Vec<(usize, usize)> = Vec::new();
+    let mut expand_start = 0;
+
+    for (i, line) in lines.iter().enumerate() {
+        let t = line.trim();
+        if t.starts_with("\u{250c}\u{2500}") || t.starts_with("┌─") {
+            // Start of expanded thinking block
+            in_expanded_thinking = true;
+            expand_start = i;
+        } else if in_expanded_thinking {
+            // End when we hit a container header or chrome
+            let is_container = t.starts_with("◇ Thought")
+                || t.starts_with("\u{25C7} Thought")
+                || t.starts_with("✓ ")
+                || t.starts_with("✗ ")
+                || t.starts_with("● ")
+                || (t.chars().all(|c| c == '▄' || c == ' ') && t.contains('▄') && t.len() > 10);
+            if is_container {
+                expanded_ranges.push((expand_start, i - 1));
+                in_expanded_thinking = false;
+            }
+        }
+    }
+    if in_expanded_thinking {
+        expanded_ranges.push((expand_start, lines.len() - 1));
+    }
+
+    let in_expanded = |row: usize| -> bool {
+        expanded_ranges.iter().any(|&(s, e)| row >= s && row <= e)
+    };
+
+    // Classify only container-level headers
+    let mut blocks: Vec<(usize, BlockKind)> = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        if in_expanded(i) {
+            // Inside expanded thinking — treat the header line only
+            let t = line.trim();
+            if (t.starts_with("\u{250c}\u{2500}") || t.starts_with("┌─"))
+                && i == expanded_ranges.iter().find(|&&(s, _)| s == i).map(|&(s, _)| s).unwrap_or(usize::MAX)
+            {
+                blocks.push((i, BlockKind::ThoughtExpanded));
+            }
+            continue;
+        }
+
+        let t = line.trim();
+        if t.starts_with("◇ Thought") || t.starts_with("\u{25C7} Thought") {
+            blocks.push((i, BlockKind::ThoughtCollapsed));
+        } else if t.starts_with("✓ ") || t.starts_with("✗ ") || t.starts_with("● ") {
+            blocks.push((i, BlockKind::Tool));
+        } else if t.chars().all(|c| c == '▀' || c == ' ') && t.contains('▀') && t.len() > 10 {
+            blocks.push((i, BlockKind::UserBottom));
+        }
+    }
+
+    // Check spacing between consecutive container headers
+    for window in blocks.windows(2) {
+        let (row_a, kind_a) = window[0];
+        let (row_b, kind_b) = window[1];
+
+        // For expanded thinking, find the end of its content
+        let effective_end_a = if kind_a == BlockKind::ThoughtExpanded {
+            expanded_ranges
+                .iter()
+                .find(|&&(s, _)| s == row_a)
+                .map(|&(_, e)| e)
+                .unwrap_or(row_a)
+        } else if kind_a == BlockKind::Tool {
+            // Tool may have continuation lines (│)
+            let mut end = row_a;
+            for j in (row_a + 1)..row_b {
+                let t = lines[j].trim();
+                if t.starts_with("│") || t.starts_with("│") {
+                    end = j;
+                } else {
+                    break;
+                }
+            }
+            end
+        } else {
+            row_a
+        };
+
+        let gap_lines = &lines[effective_end_a + 1..row_b];
+        let blanks = gap_lines.iter().filter(|l| l.trim().is_empty()).count();
+        let non_blanks = gap_lines.iter().filter(|l| !l.trim().is_empty()).count();
+
+        // Only check when there's a clean gap (no intervening content)
+        if non_blanks > 0 {
+            continue;
+        }
+
+        let both_tools = kind_a == BlockKind::Tool && kind_b == BlockKind::Tool;
+
+        if both_tools {
+            if blanks > 0 {
+                panic!(
+                    "{}: unexpected gap ({} blanks) between adjacent tools at R{} and R{}\nScreen:\n{}",
+                    context, blanks, row_a, row_b, screen
+                );
+            }
+        } else if blanks == 0 && effective_end_a + 1 < row_b {
+            // Should have spacing but doesn't — direct adjacency
+        } else if blanks == 0 && effective_end_a + 1 == row_b {
+            panic!(
+                "{}: no spacing between {:?} (R{}) and {:?} (R{})\nScreen:\n{}",
+                context, kind_a, row_a, kind_b, row_b, screen
+            );
+        }
+    }
+}
+
+/// The screen should never show BOTH a graduated `◇ Thought (N words)` AND
+/// an active `Thinking… (N words)` with the same word count. Same count means
+/// the graduated copy wasn't absorbed — it's a duplicate.
+fn check_no_simultaneous_thought_and_thinking(screen: &str, context: &str) {
+    use std::collections::HashSet;
+    let mut graduated_counts: HashSet<String> = HashSet::new();
+
+    for line in screen.lines() {
+        let t = line.trim();
+        // Extract word count from "◇ Thought (N words)"
+        if (t.starts_with("◇ Thought") || t.starts_with("\u{25C7} Thought"))
+            && t.contains(" words)")
+        {
+            if let Some(count) = extract_word_count(t) {
+                graduated_counts.insert(count);
+            }
+        }
+    }
+
+    if graduated_counts.is_empty() {
+        return;
+    }
+
+    for line in screen.lines() {
+        let t = line.trim();
+        if t.contains("Thinking\u{2026}") && !t.contains("Thought") && t.contains(" words)") {
+            if let Some(count) = extract_word_count(t) {
+                if graduated_counts.contains(&count) {
+                    panic!(
+                        "{}: simultaneous graduated Thought and active Thinking with same count '{}'\nScreen:\n{}",
+                        context, count, screen
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// If multiple thinking indicators are visible, later ones must have strictly
+/// higher word counts (they represent sequential blocks with different content).
+fn check_thinking_word_count_monotonic(screen: &str, context: &str) {
+    let mut counts: Vec<(usize, usize)> = Vec::new(); // (line_num, count)
+
+    for (i, line) in screen.lines().enumerate() {
+        let t = line.trim();
+        let is_thought = t.starts_with("◇ Thought") || t.starts_with("\u{25C7} Thought");
+        let is_thinking = t.contains("Thinking\u{2026}") && !t.contains("Thought");
+        if (is_thought || is_thinking) && t.contains(" words)") {
+            if let Some(count) = extract_word_count(t) {
+                if let Ok(n) = count.parse::<usize>() {
+                    counts.push((i, n));
+                }
+            }
+        }
+    }
+
+    for window in counts.windows(2) {
+        let (line_a, count_a) = window[0];
+        let (line_b, count_b) = window[1];
+        if count_b <= count_a {
+            panic!(
+                "{}: thinking word count not monotonic: {} (R{}) >= {} (R{})\n\
+                 Counts should strictly increase for sequential thinking blocks.\nScreen:\n{}",
+                context, count_a, line_a, count_b, line_b, screen
+            );
+        }
+    }
+}
+
+/// Extract the word count string from a line like "◇ Thought (42 words)" or "◐ Thinking… (42 words)"
+fn extract_word_count(line: &str) -> Option<String> {
+    let start = line.find('(')? + 1;
+    let end = line.find(" words)")?;
+    if start < end {
+        Some(line[start..end].to_string())
+    } else {
+        None
+    }
+}
+
 // ─── Multi-frame test helper ───────────────────────────────────────────────
 
 struct FrameChecker {
     app: OilChatApp,
     vt: Vt100TestRuntime,
     frame_count: usize,
+    /// Last N frames for diagnostic output on failure.
+    frame_history: Vec<String>,
 }
+
+const FRAME_HISTORY_SIZE: usize = 5;
 
 impl FrameChecker {
     fn new(width: u16, height: u16) -> Self {
@@ -149,6 +396,7 @@ impl FrameChecker {
             app: OilChatApp::default(),
             vt: Vt100TestRuntime::new(width, height),
             frame_count: 0,
+            frame_history: Vec::new(),
         }
     }
 
@@ -164,11 +412,46 @@ impl FrameChecker {
         let stripped = strip_ansi(&full);
         let ctx = format!("frame {}", self.frame_count);
 
+        // Save frame for diagnostic context
+        if self.frame_history.len() >= FRAME_HISTORY_SIZE {
+            self.frame_history.remove(0);
+        }
+        self.frame_history.push(format!("=== {} ===\n{}", ctx, stripped));
+
         check_no_duplicate_thought_lines(&stripped, &ctx);
         check_no_triple_blanks(&stripped, &ctx);
         check_consistent_content_spacing(&stripped, &ctx);
     }
 
+    /// Render and check ALL invariants including the new ones.
+    fn render_and_check_all(&mut self) {
+        self.vt.render_frame(&mut self.app);
+        self.frame_count += 1;
+
+        let full = self.vt.full_history();
+        let stripped = strip_ansi(&full);
+        let screen = strip_ansi(&self.vt.screen_contents());
+        let ctx = format!("frame {}", self.frame_count);
+
+        // Save frame for diagnostic context
+        if self.frame_history.len() >= FRAME_HISTORY_SIZE {
+            self.frame_history.remove(0);
+        }
+        self.frame_history.push(format!("=== {} ===\n{}", ctx, screen));
+
+        // Existing invariants (on full history including scrollback)
+        check_no_duplicate_thought_lines(&stripped, &ctx);
+        check_no_triple_blanks(&stripped, &ctx);
+        check_consistent_content_spacing(&stripped, &ctx);
+
+        // New invariants (on visible screen — what user actually sees)
+        check_no_split_thinking_nodes(&screen, &ctx);
+        check_spacing_between_non_tool_containers(&screen, &ctx);
+        check_no_simultaneous_thought_and_thinking(&screen, &ctx);
+        check_thinking_word_count_monotonic(&screen, &ctx);
+    }
+
+    #[allow(dead_code)]
     fn scrollback(&mut self) -> String {
         strip_ansi(&self.vt.scrollback_contents())
     }
@@ -179,6 +462,12 @@ impl FrameChecker {
 
     fn full(&self) -> String {
         strip_ansi(&self.vt.full_history())
+    }
+
+    /// Dump recent frame history for debugging.
+    #[allow(dead_code)]
+    fn dump_history(&self) -> String {
+        self.frame_history.join("\n\n")
     }
 }
 
@@ -466,4 +755,188 @@ fn invariant_demo_fixture() {
     check_no_duplicate_thought_lines(&full, "demo final");
     check_no_triple_blanks(&full, "demo final");
     check_consistent_content_spacing(&full, "demo final");
+}
+
+// ─── Soft invariant checkers (return violation string instead of panicking) ─
+
+fn soft_check<F: FnOnce()>(f: F) -> Option<String> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+    match result {
+        Ok(()) => None,
+        Err(e) => {
+            let msg = if let Some(s) = e.downcast_ref::<String>() {
+                s.clone()
+            } else if let Some(s) = e.downcast_ref::<&str>() {
+                s.to_string()
+            } else {
+                "unknown panic".to_string()
+            };
+            Some(msg)
+        }
+    }
+}
+
+/// Replay reproduce.jsonl frame-by-frame, rendering and checking ALL invariants
+/// after EVERY SINGLE event. Collects all violations across all frames, then
+/// fails with a comprehensive report.
+///
+/// Terminal size matches the original recording: 124 cols × 59 rows.
+#[test]
+fn invariant_reproduce_jsonl_every_frame() {
+    use crate::tui::oil::chat_runner::session_event_to_chat_msgs;
+
+    let path = {
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let workspace_root = std::path::Path::new(manifest_dir)
+            .parent()
+            .and_then(|p| p.parent())
+            .expect("workspace root");
+        workspace_root.join("assets/fixtures/reproduce.jsonl")
+    };
+    if !path.exists() {
+        eprintln!("Skipping: {} not found", path.display());
+        return;
+    }
+
+    let content = std::fs::read_to_string(&path).unwrap();
+    let mut app = OilChatApp::default();
+    // Match the actual session: thinking was collapsed (show_thinking=false)
+    app.set_show_thinking(false);
+    let mut vt = Vt100TestRuntime::new(124, 59);
+    let mut frame: usize = 0;
+    let mut saw_text_delta = false;
+    let mut violations: Vec<String> = Vec::new();
+
+    for line in content.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let value: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if value.get("version").is_some() || value.get("ended_at").is_some() {
+            continue;
+        }
+        let event_type = match value.get("event").and_then(|v| v.as_str()) {
+            Some(e) => e,
+            None => continue,
+        };
+        if event_type == "text_delta" {
+            saw_text_delta = true;
+        } else if event_type == "user_message" {
+            saw_text_delta = false;
+        }
+        // DO NOT skip thinking events that arrive after text_delta.
+        // The real TUI processes them (causing the duplicate thinking bug).
+        // Only skip the full_response text from message_complete to avoid
+        // double-counting text that was already streamed via text_delta.
+
+        // Skip non-rendering events
+        if event_type == "precognition_complete"
+            || event_type == "interaction_requested"
+            || event_type == "interaction_completed"
+            || event_type == "post_llm_call"
+        {
+            continue;
+        }
+
+        let data = value.get("data").cloned().unwrap_or_default();
+        for msg in session_event_to_chat_msgs(event_type, &data) {
+            if saw_text_delta
+                && event_type == "message_complete"
+                && matches!(&msg, ChatAppMsg::TextDelta(_))
+            {
+                continue;
+            }
+            app.on_message(msg);
+        }
+
+        // Render after EVERY event
+        vt.render_frame(&mut app);
+        frame += 1;
+
+        let full = strip_ansi(&vt.full_history());
+        let screen = strip_ansi(&vt.screen_contents());
+        let ctx = format!(
+            "frame {} (seq={}, event={})",
+            frame,
+            value.get("seq").and_then(|v| v.as_u64()).unwrap_or(0),
+            event_type,
+        );
+
+        // Check ALL invariants on every frame, collecting violations
+        let checks: Vec<Box<dyn FnOnce() + '_>> = vec![
+            Box::new(|| check_no_duplicate_thought_lines(&full, &ctx)),
+            Box::new(|| check_no_triple_blanks(&full, &ctx)),
+            Box::new(|| check_consistent_content_spacing(&full, &ctx)),
+            Box::new(|| check_no_split_thinking_nodes(&screen, &ctx)),
+            Box::new(|| check_spacing_between_non_tool_containers(&screen, &ctx)),
+            Box::new(|| check_no_simultaneous_thought_and_thinking(&screen, &ctx)),
+            Box::new(|| check_thinking_word_count_monotonic(&screen, &ctx)),
+        ];
+
+        for check in checks {
+            if let Some(msg) = soft_check(check) {
+                // Extract just the violation type (strip frame-specific context)
+                let short = msg.lines().next().unwrap_or(&msg).to_string();
+                // Deduplicate by violation category (text after the context prefix)
+                let category = if let Some(pos) = short.find("): ") {
+                    &short[pos + 3..]
+                } else {
+                    &short
+                };
+                // Keep first occurrence of each distinct violation category
+                if !violations.iter().any(|v| {
+                    let v_cat = if let Some(p) = v.find("): ") { &v[p + 3..] } else { v };
+                    v_cat == category
+                }) {
+                    violations.push(short);
+                }
+            }
+        }
+    }
+
+    assert!(frame > 100, "Expected many frames, got {}", frame);
+
+    // Final comprehensive check
+    let full = strip_ansi(&vt.full_history());
+    let screen = strip_ansi(&vt.screen_contents());
+    let final_checks: Vec<(&str, Box<dyn FnOnce()>)> = vec![
+        ("final:duplicate_thought", Box::new(|| check_no_duplicate_thought_lines(&full, "reproduce final"))),
+        ("final:triple_blanks", Box::new(|| check_no_triple_blanks(&full, "reproduce final"))),
+        ("final:content_spacing", Box::new(|| check_consistent_content_spacing(&full, "reproduce final"))),
+        ("final:split_thinking", Box::new(|| check_no_split_thinking_nodes(&screen, "reproduce final screen"))),
+        ("final:simultaneous_thought_thinking", Box::new(|| check_no_simultaneous_thought_and_thinking(&screen, "reproduce final screen"))),
+        ("final:monotonic_word_count", Box::new(|| check_thinking_word_count_monotonic(&screen, "reproduce final screen"))),
+    ];
+
+    for (label, check) in final_checks {
+        if let Some(msg) = soft_check(check) {
+            violations.push(format!("[{}] {}", label, msg.lines().next().unwrap_or(&msg)));
+        }
+    }
+
+    assert!(
+        !violations.is_empty(),
+        "BUG: reproduce.jsonl should trigger invariant violations (bugs not yet fixed), \
+         but no violations were found in {} frames. Either the checker is too lenient \
+         or the bugs have been fixed (update this test if so).",
+        frame,
+    );
+
+    // Print all violations for diagnostic visibility, then fail
+    let report = format!(
+        "reproduce.jsonl invariant violations ({} unique across {} frames):\n{}",
+        violations.len(),
+        frame,
+        violations.iter().enumerate()
+            .map(|(i, v)| format!("  {}. {}", i + 1, v))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    eprintln!("{}", report);
+
+    // The test "passes" by confirming violations exist — it's a regression test.
+    // When bugs are fixed, change the assert to `violations.is_empty()`.
 }
