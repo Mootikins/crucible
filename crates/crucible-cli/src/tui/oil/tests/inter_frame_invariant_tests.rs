@@ -1022,15 +1022,7 @@ fn invariant_reproduce_jsonl_every_frame() {
     }
 
     assert!(
-        !violations.is_empty(),
-        "BUG: reproduce.jsonl should trigger invariant violations (bugs not yet fixed), \
-         but no violations were found in {} frames. Either the checker is too lenient \
-         or the bugs have been fixed (update this test if so).",
-        frame,
-    );
-
-    // Print all violations for diagnostic visibility, then fail
-    let report = format!(
+        violations.is_empty(),
         "reproduce.jsonl invariant violations ({} unique across {} frames):\n{}",
         violations.len(),
         frame,
@@ -1039,8 +1031,4 @@ fn invariant_reproduce_jsonl_every_frame() {
             .collect::<Vec<_>>()
             .join("\n")
     );
-    eprintln!("{}", report);
-
-    // The test "passes" by confirming violations exist — it's a regression test.
-    // When bugs are fixed, change the assert to `violations.is_empty()`.
 }
