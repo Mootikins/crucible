@@ -278,6 +278,11 @@ fn check_spacing_between_non_tool_containers(screen: &str, context: &str) {
             continue;
         }
 
+        // Skip if first block is at R0 — spacing may be in off-screen scrollback
+        if row_a == 0 {
+            continue;
+        }
+
         let both_tools = kind_a == BlockKind::Tool && kind_b == BlockKind::Tool;
 
         if both_tools {
@@ -430,62 +435,10 @@ fn check_turn_indicator_spacing_symmetry(screen: &str, context: &str) {
     }
 }
 
-/// During active thinking streaming, there should be at most ONE thinking
-/// display visible on screen — either the turn indicator in chrome OR a
-/// content-area thinking block, never both simultaneously.
-///
-/// "Active thinking" = a line with spinner + "Thinking…" (turn indicator).
-/// If that's present, no `◇ Thought` lines should also be visible, because
-/// that means graduated content and active indicator are shown at the same time.
-fn check_no_thinking_in_content_and_chrome(screen: &str, context: &str) {
-    let lines: Vec<&str> = screen.lines().collect();
-
-    let has_active_thinking = lines.iter().any(|l| {
-        let t = l.trim();
-        t.contains("Thinking\u{2026}") && !t.contains("Thought")
-    });
-
-    if !has_active_thinking {
-        return;
-    }
-
-    // Active thinking is present in chrome. Check for graduated Thought in content.
-    let thought_lines: Vec<(usize, &str)> = lines
-        .iter()
-        .enumerate()
-        .filter(|(_, l)| {
-            let t = l.trim();
-            t.starts_with("◇ Thought") || t.starts_with("\u{25C7} Thought")
-        })
-        .map(|(i, l)| (i, *l))
-        .collect();
-
-    if !thought_lines.is_empty() {
-        let thought_summary: String = thought_lines
-            .iter()
-            .map(|(i, l)| format!("  R{}: {}", i, l.trim()))
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        let thinking_line = lines
-            .iter()
-            .enumerate()
-            .find(|(_, l)| {
-                let t = l.trim();
-                t.contains("Thinking\u{2026}") && !t.contains("Thought")
-            })
-            .map(|(i, l)| format!("  R{}: {}", i, l.trim()))
-            .unwrap_or_default();
-
-        panic!(
-            "{}: thinking visible in BOTH chrome and content simultaneously.\n\
-             Active indicator:\n{}\n\
-             Graduated blocks:\n{}\n\
-             Only one should be visible at a time.\nScreen:\n{}",
-            context, thinking_line, thought_summary, screen
-        );
-    }
-}
+// check_no_thinking_in_content_and_chrome was removed — it flagged cross-turn
+// thinking (graduated Thought from turn 1 + active Thinking for turn 2), which
+// is correct behavior. check_no_simultaneous_thought_and_thinking covers the
+// actual bug (same word count = same turn duplicated in both places).
 
 // ─── Multi-frame test helper ───────────────────────────────────────────────
 
@@ -984,7 +937,6 @@ fn invariant_reproduce_jsonl_every_frame() {
             Box::new(|| check_no_simultaneous_thought_and_thinking(&screen, &ctx)),
             Box::new(|| check_thinking_word_count_monotonic(&screen, &ctx)),
             Box::new(|| check_turn_indicator_spacing_symmetry(&screen, &ctx)),
-            Box::new(|| check_no_thinking_in_content_and_chrome(&screen, &ctx)),
         ];
 
         for check in checks {

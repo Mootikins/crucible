@@ -157,17 +157,19 @@ impl App for OilChatApp {
             // Messages drawer replaces chrome when visible
             self.render_messages_drawer(ctx)
         } else {
-            // Normal chrome: turn indicator + input + status
-            let turn = self.turn_indicator_view(spinner_frame);
+            // Normal chrome: input + status (turn indicator is separate)
             let input = self.input_view(ctx);
             let status = self.status_view();
-            col([turn, input, status])
+            col([input, status])
         };
 
         col([
             // Content area: container components rendered with spacing
             self.render_content(),
             spacer(),
+            // Turn indicator: between content and input chrome.
+            // Sits above the padding boundary so spacing is symmetric.
+            self.turn_indicator_view(spinner_frame),
             // Chrome: pinned at bottom, never scrolls
             bottom.with_margin(Padding {
                 top: 1,
