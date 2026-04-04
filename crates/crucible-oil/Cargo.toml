@@ -14,15 +14,15 @@ test-utils = ["dep:proptest"]
 [dependencies]
 crossterm = { workspace = true }
 unicode-width = "0.2"
-taffy = "0.9"
+taffy = "0.10"
 textwrap = "0.16.2"
-similar = "2.7"
+similar = "3.0"
 html_parser = "0.7"
-proptest = { version = "1.4", optional = true }
+proptest = { version = "1.11", optional = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-insta = { version = "1.46", features = ["filters"] }
+insta = { version = "1.47", features = ["filters"] }
 test-case = "3.3"
-proptest = "1.4"
+proptest = "1.11"
