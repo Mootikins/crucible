@@ -84,7 +84,7 @@ tracing = { workspace = true }
 # FastEmbed for local embeddings and reranking (optional, feature-gated)
 # Use default-features=false to avoid native-tls (OpenSSL) dependency;
 # we manually enable rustls-based TLS via hf-hub-rustls-tls + ort features below
-fastembed = { version = "5.12", optional = true, default-features = false, features = ["hf-hub-rustls-tls", "image-models"] }
+fastembed = { version = "5.13", optional = true, default-features = false, features = ["hf-hub-rustls-tls", "image-models"] }
 
 # ORT runtime binary downloads use rustls instead of native-tls (avoids OpenSSL)
 ort = { version = "=2.0.0-rc.11", default-features = false, features = ["std", "ndarray", "download-binaries", "tls-rustls", "copy-dylibs"], optional = true }
@@ -108,4 +108,4 @@ criterion = { workspace = true, features = ["html_reports"] }
 serial_test = "3.3"
 wiremock = { workspace = true }
 futures-util = { workspace = true }
-proptest = "1.8"
+proptest = "1.11"
