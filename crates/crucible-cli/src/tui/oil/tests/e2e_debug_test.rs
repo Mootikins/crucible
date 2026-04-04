@@ -182,7 +182,7 @@ fn debug_continuation_rendering() {
     
     let containers = app.container_list().containers();
     for (i, c) in containers.iter().enumerate() {
-        let node = c.view(&ctx);
+        let node = c.render(&ctx);
         let plain = render_to_plain_text(&node, 80);
         eprintln!("=== Container {} ({:?}) ===", i, c.kind);
         eprintln!("{}", plain);
@@ -1278,7 +1278,7 @@ fn all_container_types_render_at_all_widths() {
             show_thinking: false,
         };
         for container in app.container_list().containers() {
-            let node = container.view(&ctx);
+            let node = container.render(&ctx);
             let plain = render_to_plain_text(&node, width);
             assert!(
                 !plain.is_empty() || matches!(node, crucible_oil::node::Node::Empty),
