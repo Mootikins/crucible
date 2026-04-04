@@ -97,7 +97,13 @@ impl Container {
                 text,
                 thinking,
                 is_continuation,
-            } => render_assistant_response(text, thinking, *is_continuation, ctx),
+            } => render_assistant_response(
+                text,
+                thinking,
+                *is_continuation,
+                self.state == ContainerState::Complete,
+                ctx,
+            ),
             ContainerContent::ToolGroup { tools } => render_tool_group(tools, ctx.spinner_frame, ctx.width),
             ContainerContent::SubagentTask { agent } => render_subagent_task(agent, ctx.spinner_frame, ctx.width),
             ContainerContent::ShellExecution { shell } => render_shell(shell),
@@ -113,6 +119,7 @@ impl Component for Container {
             spinner_frame: ctx.spinner_frame,
             show_thinking: ctx.show_thinking,
         };
+        // Delegate to render(), which has access to container state
         self.render(&cvc)
     }
 }
@@ -166,6 +173,7 @@ fn render_assistant_response(
     content: &str,
     thinking: &[ThinkingComponent],
     is_continuation: bool,
+    is_complete: bool,
     ctx: &ContainerViewContext,
 ) -> Node {
     let render_state = RenderState {
@@ -175,8 +183,6 @@ fn render_assistant_response(
     };
 
     let has_thinking = !thinking.is_empty();
-    // Use continuation margins (no bullet) when following tools OR when
-    // thinking is present (the thinking summary is the visual header).
     let margins = if is_continuation || has_thinking {
         Margins::assistant_continuation()
     } else {
@@ -185,19 +191,17 @@ fn render_assistant_response(
 
     let mut items: Vec<Node> = Vec::new();
 
-    // Thinking blocks: only render when finalized (text started or graduated).
-    // While actively thinking with no text yet, the turn indicator in chrome
-    // shows "◐ Thinking… (N words)" — content stays empty to avoid duplication.
-    let thinking_finalized = !content.is_empty();
+    // Thinking renders when: text has started, container is complete, or graduated.
+    // While actively streaming with no text yet, the turn indicator shows
+    // "◐ Thinking… (N words)" — content stays empty to avoid duplication.
+    let thinking_finalized = !content.is_empty() || is_complete;
     for tc in thinking {
         if tc.is_graduated() || thinking_finalized {
-            // is_complete is always true here: either graduated or text has started
             let node = tc.render(&render_state, true);
             if !matches!(node, Node::Empty) {
                 items.push(node);
             }
         }
-        // else: thinking is live, turn indicator covers the display
     }
 
     // Then markdown content
@@ -347,17 +351,15 @@ impl ContainerList {
         &self.containers
     }
 
-    /// Sentinel node for cross-batch spacing between graduated and viewport content.
-    /// Returns `Some(text(""))` when graduated content exists and isn't tight with
-    /// the first viewport container, so `gap(1)` produces a leading blank line.
-    pub fn cross_batch_sentinel(&self) -> Option<Node> {
-        let prev = self.last_graduated_kind?;
-        let first = self.containers.first()?;
-        let tight = matches!(
+    /// Whether the viewport needs a leading blank line for cross-batch spacing
+    /// (graduated content above isn't tight with the first viewport container).
+    pub fn needs_cross_batch_gap(&self) -> bool {
+        let Some(prev) = self.last_graduated_kind else { return false };
+        let Some(first) = self.containers.first() else { return false };
+        !matches!(
             (prev, first.kind),
             (ContainerKind::ToolGroup, ContainerKind::ToolGroup)
-        );
-        if tight { None } else { Some(text("")) }
+        )
     }
 
     pub fn is_streaming(&self) -> bool {
