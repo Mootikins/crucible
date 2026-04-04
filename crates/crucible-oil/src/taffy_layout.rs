@@ -124,7 +124,7 @@ impl LayoutEngine {
                 self.new_leaf_size(available_width, popup.max_visible as f32)
             }
 
-            Node::Fragment(children) => {
+            Node::Fragment(children) | Node::Slot { children, .. } => {
                 let child_ids: Vec<NodeId> = children
                     .iter()
                     .map(|c| self.build_node(c, available_width))
@@ -443,7 +443,7 @@ impl LayoutEngine {
                 },
             ),
 
-            Node::Fragment(children) => {
+            Node::Fragment(children) | Node::Slot { children, .. } => {
                 let taffy_children = self
                     .tree
                     .children(taffy_id)

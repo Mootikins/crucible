@@ -17,6 +17,14 @@ pub enum Node {
     Spinner(SpinnerNode),
     Popup(PopupNode),
     Fragment(Vec<Node>),
+    /// Named slot — a transparent container like Fragment, but with a name for
+    /// tree inspection and Lua API access. Layout components use slots as
+    /// positional arguments: each slot holds child nodes that get rendered
+    /// recursively and inserted into the layout.
+    Slot {
+        name: String,
+        children: Vec<Node>,
+    },
     Overlay(OverlayNode),
     /// Raw escape sequence passthrough (for protocol-specific content like images)
     Raw(RawNode),
@@ -198,6 +206,14 @@ pub fn spinner(label: Option<String>, frame: usize) -> Node {
 
 pub fn fragment(children: impl IntoIterator<Item = Node>) -> Node {
     Node::Fragment(children.into_iter().collect())
+}
+
+/// Named slot — transparent container with a name for inspection and Lua access.
+pub fn slot(name: impl Into<String>, children: impl IntoIterator<Item = Node>) -> Node {
+    Node::Slot {
+        name: name.into(),
+        children: children.into_iter().collect(),
+    }
 }
 
 pub fn popup(items: Vec<PopupItemNode>, selected: usize, max_visible: usize) -> Node {

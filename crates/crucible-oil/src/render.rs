@@ -48,7 +48,7 @@ fn render_node_plain_text(node: &Node, width: usize, output: &mut String) {
                 raw.display_width, raw.display_height
             ));
         }
-        Node::Fragment(children) => {
+        Node::Fragment(children) | Node::Slot { children, .. } => {
             for child in children {
                 render_node_plain_text(child, width, output);
             }
