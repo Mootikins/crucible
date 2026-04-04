@@ -3,7 +3,7 @@
 
 use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
-use crate::tui::oil::containers::ContainerContent;
+use crate::tui::oil::containers::{ChatNode, render_chat_node};
 use super::vt100_runtime::Vt100TestRuntime;
 use crucible_oil::ansi::strip_ansi;
 
@@ -123,10 +123,8 @@ fn e2e_full_conversation_render() {
 
 #[test]
 fn debug_continuation_flag() {
-    use crate::tui::oil::containers::ContainerContent;
-    
     let mut app = OilChatApp::init();
-    
+
     app.on_message(ChatAppMsg::ThinkingDelta("thinking...".into()));
     app.on_message(ChatAppMsg::TextDelta("first text".into()));
     app.on_message(ChatAppMsg::ToolCall {
@@ -135,33 +133,28 @@ fn debug_continuation_flag() {
     });
     app.on_message(ChatAppMsg::ToolResultComplete { name: "Bash".into(), call_id: Some("c1".into()) });
     app.on_message(ChatAppMsg::TextDelta("continuation text".into()));
-    
-    let containers = app.container_list().containers();
-    for (i, c) in containers.iter().enumerate() {
-        match &c.content {
-            ContainerContent::AssistantResponse { is_continuation, text, thinking, .. } => {
-                eprintln!("Container {}: AssistantResponse is_continuation={} text={:?} thinking={}", 
-                    i, is_continuation, text, thinking.len());
+
+    let nodes = app.container_list().nodes();
+    for (i, node) in nodes.iter().enumerate() {
+        match node {
+            ChatNode::AssistantResponse { text, thinking, .. } => {
+                eprintln!("Node {}: AssistantResponse text={:?} thinking={}", i, text, thinking.len());
             }
             _ => {
-                eprintln!("Container {}: {:?}", i, c.kind);
+                eprintln!("Node {}: {:?}", i, std::mem::discriminant(node));
             }
         }
     }
-    
-    // The last container should be a continuation
-    let last = containers.last().unwrap();
-    if let ContainerContent::AssistantResponse { is_continuation, .. } = &last.content {
-        assert!(*is_continuation, "Last response after tools should be continuation");
-    } else {
-        panic!("Last container should be AssistantResponse");
-    }
+
+    // The last node should be an AssistantResponse (continuation derived at render time)
+    assert!(
+        matches!(nodes.last(), Some(ChatNode::AssistantResponse { .. })),
+        "Last node should be AssistantResponse"
+    );
 }
 
 #[test]
 fn debug_continuation_rendering() {
-    use crate::tui::oil::containers::ContainerContent;
-    use crate::tui::oil::component::Component;
     use crucible_oil::focus::FocusContext;
     use crucible_oil::render::render_to_plain_text;
 
@@ -179,16 +172,21 @@ fn debug_continuation_rendering() {
     let focus = FocusContext::default();
     let ctx = crate::tui::oil::ViewContext::new(&focus);
 
-    let containers = app.container_list().containers();
-    for (i, c) in containers.iter().enumerate() {
-        let node = Component::view(c, &ctx);
-        let plain = render_to_plain_text(&node, 80);
-        eprintln!("=== Container {} ({:?}) ===", i, c.kind);
+    let nodes = app.container_list().nodes();
+    for (i, node) in nodes.iter().enumerate() {
+        let prev = if i > 0 { Some(&nodes[i - 1]) } else { None };
+        let rendered = render_chat_node(node, prev, &ctx);
+        let plain = render_to_plain_text(&rendered, 80);
+        eprintln!("=== Node {} ===", i);
         eprintln!("{}", plain);
 
         // Check for bullet in continuation
-        if let ContainerContent::AssistantResponse { is_continuation, .. } = &c.content {
-            if *is_continuation && plain.contains("●") {
+        if let ChatNode::AssistantResponse { .. } = node {
+            let is_continuation = matches!(
+                prev,
+                Some(ChatNode::ToolGroup { .. } | ChatNode::SubagentTask { .. } | ChatNode::ShellExecution { .. })
+            );
+            if is_continuation && plain.contains("●") {
                 panic!("BUG: Continuation text should NOT have ● bullet!\nOutput:\n{}", plain);
             }
         }
@@ -198,9 +196,9 @@ fn debug_continuation_rendering() {
 #[test]
 fn debug_full_view_rendering() {
     use super::helpers::vt_render;
-    
+
     let mut app = OilChatApp::init();
-    
+
     app.on_message(ChatAppMsg::ThinkingDelta("thinking...".into()));
     app.on_message(ChatAppMsg::TextDelta("first text".into()));
     app.on_message(ChatAppMsg::ToolCall {
@@ -210,14 +208,14 @@ fn debug_full_view_rendering() {
     app.on_message(ChatAppMsg::ToolResultComplete { name: "Bash".into(), call_id: Some("c1".into()) });
     app.on_message(ChatAppMsg::TextDelta("continuation text after tools".into()));
     app.on_message(ChatAppMsg::StreamComplete);
-    
+
     let output = vt_render(&mut app);
     eprintln!("Full rendered output:");
     for (i, line) in output.lines().enumerate() {
         eprintln!("{:3}: {}", i, line);
     }
-    
-    assert!(!output.contains("●"), 
+
+    assert!(!output.contains("●"),
         "No ● bullet should appear anywhere in the output.\nOutput:\n{}", output);
 }
 
@@ -268,58 +266,56 @@ fn debug_scrollback_vs_viewport_step7() {
 
 #[test]
 fn debug_container_state_before_continuation() {
-    use crate::tui::oil::containers::ContainerContent;
-    
     let mut app = OilChatApp::init();
-    
+
     app.on_message(ChatAppMsg::ThinkingDelta("thinking...".into()));
     app.on_message(ChatAppMsg::TextDelta("first text".into()));
-    
+
     eprintln!("After first text:");
-    for (i, c) in app.container_list().containers().iter().enumerate() {
-        eprintln!("  {}: {:?}", i, c.kind);
+    for (i, node) in app.container_list().nodes().iter().enumerate() {
+        eprintln!("  {}: {:?}", i, std::mem::discriminant(node));
     }
-    
+
     app.on_message(ChatAppMsg::ToolCall {
         name: "Bash".into(), args: "{}".into(),
         call_id: Some("c1".into()), description: None, source: None, lua_primary_arg: None,
     });
-    
+
     eprintln!("After tool call:");
-    for (i, c) in app.container_list().containers().iter().enumerate() {
-        eprintln!("  {}: {:?} {:?}", i, c.kind, match &c.content {
-            ContainerContent::AssistantResponse { is_continuation, text, .. } => 
-                format!("cont={} text={:?}", is_continuation, &text[..text.len().min(20)]),
-            _ => String::new(),
-        });
+    for (i, node) in app.container_list().nodes().iter().enumerate() {
+        match node {
+            ChatNode::AssistantResponse { text, complete, .. } =>
+                eprintln!("  {}: AR complete={} text={:?}", i, complete, &text[..text.len().min(20)]),
+            _ => eprintln!("  {}: {:?}", i, std::mem::discriminant(node)),
+        }
     }
-    
+
     app.on_message(ChatAppMsg::ToolResultComplete { name: "Bash".into(), call_id: Some("c1".into()) });
     app.on_message(ChatAppMsg::ToolCall {
         name: "Glob".into(), args: "{}".into(),
         call_id: Some("c2".into()), description: None, source: None, lua_primary_arg: None,
     });
     app.on_message(ChatAppMsg::ToolResultComplete { name: "Glob".into(), call_id: Some("c2".into()) });
-    
+
     eprintln!("After all tools complete:");
-    for (i, c) in app.container_list().containers().iter().enumerate() {
-        eprintln!("  {}: {:?} {:?}", i, c.kind, match &c.content {
-            ContainerContent::AssistantResponse { is_continuation, text, .. } => 
-                format!("cont={} text={:?}", is_continuation, &text[..text.len().min(20)]),
-            _ => String::new(),
-        });
+    for (i, node) in app.container_list().nodes().iter().enumerate() {
+        match node {
+            ChatNode::AssistantResponse { text, complete, .. } =>
+                eprintln!("  {}: AR complete={} text={:?}", i, complete, &text[..text.len().min(20)]),
+            _ => eprintln!("  {}: {:?}", i, std::mem::discriminant(node)),
+        }
     }
-    
+
     // NOW send continuation text
     app.on_message(ChatAppMsg::TextDelta("Based on my analysis.".into()));
-    
+
     eprintln!("After continuation text:");
-    for (i, c) in app.container_list().containers().iter().enumerate() {
-        eprintln!("  {}: {:?} {:?}", i, c.kind, match &c.content {
-            ContainerContent::AssistantResponse { is_continuation, text, .. } => 
-                format!("cont={} text={:?}", is_continuation, &text[..text.len().min(30)]),
-            _ => String::new(),
-        });
+    for (i, node) in app.container_list().nodes().iter().enumerate() {
+        match node {
+            ChatNode::AssistantResponse { text, complete, .. } =>
+                eprintln!("  {}: AR complete={} text={:?}", i, complete, &text[..text.len().min(30)]),
+            _ => eprintln!("  {}: {:?}", i, std::mem::discriminant(node)),
+        }
     }
 }
 
@@ -335,19 +331,19 @@ fn after_stream_complete_tui_is_responsive() {
     app.on_message(ChatAppMsg::TextDelta("response one".into()));
     app.on_message(ChatAppMsg::StreamComplete);
     vt.render_frame(&mut app);
-    
+
     assert!(!app.is_streaming(), "Should not be streaming after StreamComplete");
-    
+
     // Second turn should work
     app.on_message(ChatAppMsg::UserMessage("second".into()));
     app.on_message(ChatAppMsg::TextDelta("response two".into()));
     assert!(app.is_streaming(), "Should be streaming during second turn");
-    
+
     app.on_message(ChatAppMsg::StreamComplete);
     vt.render_frame(&mut app);
-    
+
     assert!(!app.is_streaming(), "Should not be streaming after second StreamComplete");
-    
+
     let output = strip_ansi(&vt.full_history());
     assert!(output.contains("response two"), "Second response should appear");
 }
@@ -356,23 +352,23 @@ fn after_stream_complete_tui_is_responsive() {
 #[test]
 fn only_one_spinner_visible_during_thinking() {
     use crucible_oil::node::SPINNER_FRAMES;
-    
+
     let mut app = OilChatApp::init();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("think hard".into()));
     vt.render_frame(&mut app);
-    
+
     app.on_message(ChatAppMsg::ThinkingDelta("deep thoughts about the universe".into()));
     vt.render_frame(&mut app);
-    
+
     let screen = strip_ansi(&vt.screen_contents());
-    
+
     // Count spinner characters across all frames
     let spinner_count: usize = SPINNER_FRAMES.iter()
         .map(|ch| screen.matches(*ch).count())
         .sum();
-    
+
     assert!(
         spinner_count <= 1,
         "Should have at most 1 spinner visible, found {}. Screen:\n{}",
@@ -390,10 +386,10 @@ fn user_message_matches_input_style() {
     app.on_message(ChatAppMsg::TextDelta("response".into()));
     app.on_message(ChatAppMsg::StreamComplete);
     vt.render_frame(&mut app);
-    
+
     let screen = strip_ansi(&vt.screen_contents());
     let lines: Vec<&str> = screen.lines().collect();
-    
+
     // Both user message and input box should use ▄▄▄/▀▀▀ bars
     let top_bars: Vec<_> = lines.iter().enumerate()
         .filter(|(_, l)| l.trim_start().starts_with('▄'))
@@ -401,7 +397,7 @@ fn user_message_matches_input_style() {
     let bottom_bars: Vec<_> = lines.iter().enumerate()
         .filter(|(_, l)| l.trim_start().starts_with('▀'))
         .collect();
-    
+
     // Should have 2 top bars (user msg + input) and 2 bottom bars
     assert!(
         top_bars.len() >= 2,
@@ -654,21 +650,11 @@ fn e2e_multiple_thinking_blocks() {
     // since the previous one gets graduated when text starts)
     app.on_message(ChatAppMsg::ThinkingDelta("second line of thought".into()));
 
-    let containers = app.container_list().containers();
+    let nodes = app.container_list().nodes();
     // Find the assistant response(s) and check thinking content
-    let mut total_thinking_text = String::new();
-    for c in containers {
-        if let ContainerContent::AssistantResponse { thinking, .. } = &c.content {
-            for tc in thinking {
-                total_thinking_text.push_str(&format!("{:?} ", tc));
-            }
-        }
-    }
-
-    // The thinking content should contain both thoughts somewhere in the containers
-    let all_text: String = containers.iter().map(|c| {
-        match &c.content {
-            ContainerContent::AssistantResponse { thinking, text, .. } => {
+    let all_text: String = nodes.iter().map(|node| {
+        match node {
+            ChatNode::AssistantResponse { thinking, text, .. } => {
                 let think_text: String = thinking.iter()
                     .map(|t| format!("{:?}", t))
                     .collect::<Vec<_>>()
@@ -686,7 +672,7 @@ fn e2e_multiple_thinking_blocks() {
     );
 }
 
-/// Test 6: Empty text deltas don't create spurious containers.
+/// Test 6: Empty text deltas don't create spurious nodes.
 #[test]
 fn e2e_empty_text_deltas_ignored() {
     let mut app = OilChatApp::init();
@@ -697,24 +683,22 @@ fn e2e_empty_text_deltas_ignored() {
     app.on_message(ChatAppMsg::TextDelta("actual text".into()));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let containers = app.container_list().containers();
+    let nodes = app.container_list().nodes();
 
-    // Count AssistantResponse containers
-    let assistant_count = containers.iter()
-        .filter(|c| matches!(c.content, ContainerContent::AssistantResponse { .. }))
+    // Count AssistantResponse nodes
+    let assistant_count = nodes.iter()
+        .filter(|n| matches!(n, ChatNode::AssistantResponse { .. }))
         .count();
 
     assert_eq!(
         assistant_count, 1,
-        "Should have exactly 1 AssistantResponse (empty deltas should not create extras).\nContainers: {:?}",
-        containers.iter().map(|c| c.kind).collect::<Vec<_>>()
+        "Should have exactly 1 AssistantResponse (empty deltas should not create extras).\nNodes: {}",
+        nodes.len()
     );
 
     // The text should be "actual text"
-    if let Some(c) = containers.iter().find(|c| matches!(c.content, ContainerContent::AssistantResponse { .. })) {
-        if let ContainerContent::AssistantResponse { text, .. } = &c.content {
-            assert_eq!(text, "actual text", "Text should be only the non-empty delta");
-        }
+    if let Some(ChatNode::AssistantResponse { text, .. }) = nodes.iter().find(|n| matches!(n, ChatNode::AssistantResponse { .. })) {
+        assert_eq!(text, "actual text", "Text should be only the non-empty delta");
     }
 }
 
@@ -745,20 +729,20 @@ fn e2e_rapid_tool_calls_group() {
         });
     }
 
-    // Check containers BEFORE graduation (before StreamComplete + render)
+    // Check nodes BEFORE graduation (before StreamComplete + render)
     {
-        let containers = app.container_list().containers();
-        let tool_groups: Vec<_> = containers.iter()
-            .filter(|c| matches!(c.content, ContainerContent::ToolGroup { .. }))
+        let nodes = app.container_list().nodes();
+        let tool_groups: Vec<_> = nodes.iter()
+            .filter(|n| matches!(n, ChatNode::ToolGroup { .. }))
             .collect();
 
         assert_eq!(
             tool_groups.len(), 1,
-            "All 3 rapid tool calls should be in 1 ToolGroup.\nContainers: {:?}",
-            containers.iter().map(|c| c.kind).collect::<Vec<_>>()
+            "All 3 rapid tool calls should be in 1 ToolGroup.\nNodes: {}",
+            nodes.len()
         );
 
-        if let ContainerContent::ToolGroup { tools } = &tool_groups[0].content {
+        if let ChatNode::ToolGroup { tools } = tool_groups[0] {
             assert_eq!(
                 tools.len(), 3,
                 "ToolGroup should contain exactly 3 tools, found {}",
@@ -1034,7 +1018,7 @@ fn e2e_user_message_wrapping() {
         .count();
 }
 
-/// Test 13: Stress test with many containers.
+/// Test 13: Stress test with many nodes.
 #[test]
 fn e2e_stress_many_containers() {
     let mut app = OilChatApp::init();
@@ -1246,13 +1230,12 @@ fn spinners_only_in_chrome_area() {
 
 #[test]
 fn all_container_types_render_at_all_widths() {
-    use crate::tui::oil::component::Component;
     use crucible_oil::focus::FocusContext;
     use crucible_oil::render::render_to_plain_text;
 
     let mut app = OilChatApp::init();
 
-    // Create various container types
+    // Create various node types
     app.on_message(ChatAppMsg::UserMessage("test message".into()));
     app.on_message(ChatAppMsg::ThinkingDelta("some thinking".into()));
     app.on_message(ChatAppMsg::TextDelta("response text here".into()));
@@ -1279,13 +1262,15 @@ fn all_container_types_render_at_all_widths() {
             crate::tui::oil::theme::active(),
             (width, 24),
         );
-        for container in app.container_list().containers() {
-            let node = Component::view(container, &ctx);
-            let plain = render_to_plain_text(&node, width as usize);
+        let nodes = app.container_list().nodes();
+        for (i, node) in nodes.iter().enumerate() {
+            let prev = if i > 0 { Some(&nodes[i - 1]) } else { None };
+            let rendered = render_chat_node(node, prev, &ctx);
+            let plain = render_to_plain_text(&rendered, width as usize);
             assert!(
-                !plain.is_empty() || matches!(node, crucible_oil::node::Node::Empty),
-                "Container {:?} at width {} produced empty non-Empty output",
-                container.kind, width
+                !plain.is_empty() || matches!(rendered, crucible_oil::node::Node::Empty),
+                "Node at index {} width {} produced empty non-Empty output",
+                i, width
             );
         }
     }
