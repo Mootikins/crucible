@@ -239,22 +239,11 @@ fn render_system_message(content: &str) -> Node {
 
 // ─── Spacing ────────────────────────────────────────────────────────────────
 
-/// Whether a blank line is needed between two adjacent container kinds.
-///
-/// Adjacent tool groups are tight (zero gap). Everything else gets a
-/// one-line spacer.
-pub fn needs_spacing(prev: ContainerKind, next: ContainerKind) -> bool {
-    !matches!(
-        (prev, next),
-        (ContainerKind::ToolGroup, ContainerKind::ToolGroup)
-    )
-}
-
 /// Lay out container nodes with Gap-based spacing.
 ///
-/// Adjacent ToolGroups form tight groups (gap 0). All other boundaries
-/// get gap 1. If `prev_kind` (from previously graduated content) needs
-/// spacing from the first container, top padding is applied.
+/// Fold containers into tight groups (adjacent ToolGroups), then
+/// join groups with gap(1). `prev_kind` seeds the fold so cross-batch
+/// spacing works identically to within-batch spacing.
 pub fn layout_containers(
     containers: &[(ContainerKind, Node)],
     prev_kind: Option<ContainerKind>,
@@ -263,53 +252,40 @@ pub fn layout_containers(
         return Node::Empty;
     }
 
-    // Fold into groups: adjacent ToolGroups stay together, others break
-    let mut groups: Vec<Vec<Node>> = Vec::new();
-    let mut current_group: Vec<Node> = Vec::new();
-    let mut current_kind: Option<ContainerKind> = None;
+    let is_tight = |a, b| matches!((a, b), (ContainerKind::ToolGroup, ContainerKind::ToolGroup));
 
-    for (kind, node) in containers {
-        if let Some(ck) = current_kind {
-            if needs_spacing(ck, *kind) && !current_group.is_empty() {
-                groups.push(std::mem::take(&mut current_group));
+    // Seed: if prev_kind exists and isn't tight with the first container,
+    // start with an empty sentinel group so gap(1) produces a leading blank.
+    let seed_groups: Vec<Vec<Node>> = match prev_kind {
+        Some(pk) if !is_tight(pk, containers[0].0) => vec![vec![text("")]],
+        _ => Vec::new(),
+    };
+
+    let (groups, _) = containers.iter().fold(
+        (seed_groups, prev_kind),
+        |(mut groups, prev), (kind, node)| {
+            let tight = prev.is_some_and(|pk| is_tight(pk, *kind));
+            if !tight || groups.is_empty() {
+                groups.push(Vec::new());
             }
-        }
-        current_group.push(node.clone());
-        current_kind = Some(*kind);
-    }
-    if !current_group.is_empty() {
-        groups.push(current_group);
-    }
+            groups.last_mut().unwrap().push(node.clone());
+            (groups, Some(*kind))
+        },
+    );
 
-    let group_nodes: Vec<Node> = groups
+    let nodes: Vec<Node> = groups
         .into_iter()
-        .map(|g| {
-            if g.len() == 1 {
-                g.into_iter().next().unwrap()
-            } else {
-                col(g).gap(Gap::row(0))
-            }
+        .map(|g| match g.len() {
+            1 => g.into_iter().next().unwrap(),
+            _ => col(g).gap(Gap::row(0)),
         })
         .collect();
 
-    let mut result = match group_nodes.len() {
-        0 => return Node::Empty,
-        1 => group_nodes.into_iter().next().unwrap(),
-        _ => col(group_nodes).gap(Gap::row(1)),
-    };
-
-    // Cross-batch: insert leading gap when spacing needed from previously graduated content.
-    // Wrap in col with a zero-width text node so Taffy allocates a row for the gap.
-    // (Node::Empty has 0 height and Taffy skips gap around it; root margin doesn't
-    // render in standalone/compact mode.)
-    if let Some(pk) = prev_kind {
-        let first_kind = containers[0].0;
-        if needs_spacing(pk, first_kind) {
-            result = col([text(""), result]).gap(Gap::row(1));
-        }
+    match nodes.len() {
+        0 => Node::Empty,
+        1 => nodes.into_iter().next().unwrap(),
+        _ => col(nodes).gap(Gap::row(1)),
     }
-
-    result
 }
 
 // ─── ContainerList ──────────────────────────────────────────────────────────
