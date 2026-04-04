@@ -160,11 +160,13 @@ fn debug_continuation_flag() {
 
 #[test]
 fn debug_continuation_rendering() {
-    use crate::tui::oil::containers::{ContainerViewContext, ContainerContent};
+    use crate::tui::oil::containers::ContainerContent;
+    use crate::tui::oil::component::Component;
+    use crucible_oil::focus::FocusContext;
     use crucible_oil::render::render_to_plain_text;
-    
+
     let mut app = OilChatApp::init();
-    
+
     app.on_message(ChatAppMsg::ThinkingDelta("thinking...".into()));
     app.on_message(ChatAppMsg::TextDelta("first text".into()));
     app.on_message(ChatAppMsg::ToolCall {
@@ -173,20 +175,17 @@ fn debug_continuation_rendering() {
     });
     app.on_message(ChatAppMsg::ToolResultComplete { name: "Bash".into(), call_id: Some("c1".into()) });
     app.on_message(ChatAppMsg::TextDelta("continuation text after tools".into()));
-    
-    let ctx = ContainerViewContext {
-        width: 80,
-        spinner_frame: 0,
-        show_thinking: false,
-    };
-    
+
+    let focus = FocusContext::default();
+    let ctx = crate::tui::oil::ViewContext::new(&focus);
+
     let containers = app.container_list().containers();
     for (i, c) in containers.iter().enumerate() {
-        let node = c.render(&ctx);
+        let node = Component::view(c, &ctx);
         let plain = render_to_plain_text(&node, 80);
         eprintln!("=== Container {} ({:?}) ===", i, c.kind);
         eprintln!("{}", plain);
-        
+
         // Check for bullet in continuation
         if let ContainerContent::AssistantResponse { is_continuation, .. } = &c.content {
             if *is_continuation && plain.contains("●") {
@@ -1247,7 +1246,8 @@ fn spinners_only_in_chrome_area() {
 
 #[test]
 fn all_container_types_render_at_all_widths() {
-    use crate::tui::oil::containers::{ContainerViewContext};
+    use crate::tui::oil::component::Component;
+    use crucible_oil::focus::FocusContext;
     use crucible_oil::render::render_to_plain_text;
 
     let mut app = OilChatApp::init();
@@ -1270,16 +1270,18 @@ fn all_container_types_render_at_all_widths() {
     });
     app.on_message(ChatAppMsg::StreamComplete);
 
+    let focus = FocusContext::default();
+
     // Render at various widths — should never panic
-    for width in [20, 40, 60, 80, 120, 200] {
-        let ctx = ContainerViewContext {
-            width,
-            spinner_frame: 0,
-            show_thinking: false,
-        };
+    for width in [20u16, 40, 60, 80, 120, 200] {
+        let ctx = crate::tui::oil::ViewContext::with_terminal_size(
+            &focus,
+            crate::tui::oil::theme::active(),
+            (width, 24),
+        );
         for container in app.container_list().containers() {
-            let node = container.render(&ctx);
-            let plain = render_to_plain_text(&node, width);
+            let node = Component::view(container, &ctx);
+            let plain = render_to_plain_text(&node, width as usize);
             assert!(
                 !plain.is_empty() || matches!(node, crucible_oil::node::Node::Empty),
                 "Container {:?} at width {} produced empty non-Empty output",

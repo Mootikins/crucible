@@ -1,7 +1,7 @@
 use crate::tui::oil::app::{Action, App, ViewContext};
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::{
-    InteractionModal, NotificationArea, ShellModal, StatusComponent,
+    CommandPanel, InteractionModal, NotificationArea, ShellModal, StatusComponent,
 };
 use crate::tui::oil::config::RuntimeConfig;
 #[cfg(test)]
@@ -162,10 +162,7 @@ impl App for OilChatApp {
                     modal.view(ctx.terminal_size.0 as usize, self.permission.permission_queue.len()),
                 ],
                 (_, true) => vec![self.render_messages_drawer(ctx)],
-                _ => vec![
-                    self.turn_indicator_view(ctx),
-                    col([self.input_view(ctx), self.status_view()]),
-                ],
+                _ => vec![self.build_command_panel(ctx).view(ctx)],
             }).gap(Gap::row(1))]),
             // Overlay
             self.popup_overlay_view(ctx),
@@ -294,16 +291,15 @@ impl OilChatApp {
 
     // ─── View Helpers (chrome composition) ─────────────────────────────
 
-    /// Turn indicator: spinner + thinking status in chrome.
-    /// Only shows "Thinking… (N words)" for actively streaming ARs with no text —
-    /// once complete, the thinking block renders in content instead.
-    fn turn_indicator_view(&self, ctx: &ViewContext<'_>) -> Node {
+    /// Build the footer command panel (turn indicator + input + status).
+    fn build_command_panel<'a>(&'a self, ctx: &ViewContext<'_>) -> CommandPanel<'a> {
         use crate::tui::oil::components::TurnIndicator;
+        use crate::tui::oil::components::{InputComponent, InputMode as ComponentInputMode};
         use crate::tui::oil::containers::{ContainerContent, ContainerState};
 
+        // Turn indicator
         let mut indicator = TurnIndicator::new();
         indicator.active = self.container_list.is_streaming();
-
         if let Some(c) = self
             .container_list
             .containers()
@@ -321,49 +317,37 @@ impl OilChatApp {
             }
         }
 
-        indicator.view(ctx)
-    }
-
-    /// Input box composition.
-    fn input_view(&self, ctx: &ViewContext<'_>) -> Node {
-        use crate::tui::oil::components::{
-            InputComponent, InputMode as ComponentInputMode,
-        };
-
+        // Input
         let input_mode = ComponentInputMode::from_content(self.input.content());
         let is_focused = self.interaction_modal.is_none();
         let term_width = ctx.terminal_size.0 as usize;
-
-        InputComponent::new(self.input.content(), self.input.cursor(), term_width)
+        let input = InputComponent::new(self.input.content(), self.input.cursor(), term_width)
             .mode(input_mode)
             .focused(is_focused)
-            .show_popup(self.popup.show)
-            .view(ctx)
-    }
+            .show_popup(self.popup.show);
 
-    /// Status bar composition.
-    fn status_view(&self) -> Node {
-        let mut comp = StatusComponent::new()
+        // Status
+        let mut status = StatusComponent::new()
             .mode(self.mode)
             .model(&self.model)
             .context(self.context_used, self.context_total)
             .status(&self.status);
-
         if let Some(ref cfg) = self.statusline_config {
-            comp = comp.config(cfg);
+            status = status.config(cfg);
         }
-
         if let Some((text, kind)) = self.notification_area.active_toast() {
-            comp = comp.toast(text, kind);
+            status = status.toast(text, kind);
         }
         let counts = self.notification_area.warning_counts();
         if !counts.is_empty() {
-            comp = comp.counts(counts);
+            status = status.counts(counts);
         }
 
-        let focus = crucible_oil::focus::FocusContext::default();
-        let ctx = ViewContext::new(&focus);
-        comp.view(&ctx)
+        CommandPanel {
+            turn_indicator: indicator,
+            input,
+            status,
+        }
     }
 
     /// Messages drawer (notification history).
@@ -487,9 +471,13 @@ impl OilChatApp {
     }
 
     /// Drain completed containers and return graduation content for stdout.
-    pub(crate) fn drain_graduated(&mut self, width: u16) -> Option<crucible_oil::Graduation> {
-        self.container_list
-            .drain_completed(width, self.spinner_frame(), self.show_thinking)
+    pub(crate) fn drain_graduated(&mut self, ctx: &ViewContext<'_>) -> Option<crucible_oil::Graduation> {
+        let ctx = &ViewContext {
+            spinner_frame: self.spinner_frame(),
+            show_thinking: self.show_thinking,
+            ..*ctx
+        };
+        self.container_list.drain_completed(ctx)
     }
 
     /// Replay stored session events through the live event path.
