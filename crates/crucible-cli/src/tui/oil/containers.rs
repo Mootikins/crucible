@@ -7,9 +7,9 @@
 //! Spacing rule: adjacent ToolGroups get zero gap; everything else
 //! gets one blank line between containers.
 
-use crucible_oil::node::{col, styled, Node};
+use crucible_oil::node::{col, styled, text, Node};
 use crucible_oil::planning::Graduation;
-use crucible_oil::style::{Gap, Padding, Style};
+use crucible_oil::style::{Gap, Style};
 use unicode_width::UnicodeWidthStr;
 
 use crate::tui::oil::components::thinking_component::ThinkingComponent;
@@ -298,14 +298,14 @@ pub fn layout_containers(
         _ => col(group_nodes).gap(Gap::row(1)),
     };
 
-    // Cross-batch: top padding when spacing needed from previously graduated content
+    // Cross-batch: insert leading gap when spacing needed from previously graduated content.
+    // Wrap in col with a zero-width text node so Taffy allocates a row for the gap.
+    // (Node::Empty has 0 height and Taffy skips gap around it; root margin doesn't
+    // render in standalone/compact mode.)
     if let Some(pk) = prev_kind {
         let first_kind = containers[0].0;
         if needs_spacing(pk, first_kind) {
-            result = result.with_margin(Padding {
-                top: 1,
-                ..Padding::all(0)
-            });
+            result = col([text(""), result]).gap(Gap::row(1));
         }
     }
 
