@@ -43,12 +43,12 @@ pub fn render_frame(app: &mut OilChatApp, renderer: &mut impl FrameRenderer, foc
     // Expire toast notifications (previously done on Event::Tick)
     app.expire_toasts();
 
-    // Drain completed containers → stdout (terminal scrollback)
-    let (width, _) = renderer.size();
-    let graduation = app.drain_graduated(width);
-
+    // Build ViewContext first — needed for both graduation and viewport rendering
     let terminal_size = renderer.size();
     let ctx = ViewContext::with_terminal_size(focus, theme::active(), terminal_size);
+
+    // Drain completed containers → stdout (terminal scrollback)
+    let graduation = app.drain_graduated(&ctx);
     let tree = app.view(&ctx);
     renderer.render_frame(&tree, graduation.as_ref());
 }

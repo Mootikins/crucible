@@ -4,12 +4,11 @@
 //! Containers produce Node trees via `view()`. Graduated containers are
 //! removed from the list and written to scrollback.
 //!
-//! Spacing rule: adjacent ToolGroups get zero gap; everything else
-//! gets one blank line between containers.
+//! Spacing: uniform `gap(1)` between all containers.
 
-use crucible_oil::node::{col, styled, text, Node};
+use crucible_oil::node::{col, styled, Node};
 use crucible_oil::planning::Graduation;
-use crucible_oil::style::{Gap, Style};
+use crucible_oil::style::{Gap, Padding, Style};
 use unicode_width::UnicodeWidthStr;
 
 use crate::tui::oil::app::ViewContext;
@@ -39,14 +38,6 @@ pub enum ContainerKind {
     SubagentTask,
     ShellExecution,
     SystemMessage,
-}
-
-/// Context passed to `Container::view()`.
-#[derive(Debug, Clone, Copy)]
-pub struct ContainerViewContext {
-    pub width: usize,
-    pub spinner_frame: usize,
-    pub show_thinking: bool,
 }
 
 /// A chat container — the graduation unit.
@@ -85,42 +76,18 @@ pub enum ContainerContent {
 
 // ─── Container view ─────────────────────────────────────────────────────────
 
-impl Container {
-    /// Render this container's content as a Node tree.
-    ///
-    /// Used by graduation path which still needs ContainerViewContext.
-    /// Viewport rendering goes through the Component trait impl.
-    pub fn render(&self, ctx: &ContainerViewContext) -> Node {
+impl Component for Container {
+    fn view(&self, ctx: &ViewContext<'_>) -> Node {
         match &self.content {
-            ContainerContent::UserMessage { text } => render_user_message(text, ctx.width),
-            ContainerContent::AssistantResponse {
-                text,
-                thinking,
-                is_continuation,
-            } => render_assistant_response(
-                text,
-                thinking,
-                *is_continuation,
-                self.state == ContainerState::Complete,
-                ctx,
-            ),
-            ContainerContent::ToolGroup { tools } => render_tool_group(tools, ctx.spinner_frame, ctx.width),
-            ContainerContent::SubagentTask { agent } => render_subagent_task(agent, ctx.spinner_frame, ctx.width),
+            ContainerContent::UserMessage { text } => render_user_message(text, ctx.width()),
+            ContainerContent::AssistantResponse { text, thinking, is_continuation } => {
+                render_assistant_response(text, thinking, *is_continuation, self.state == ContainerState::Complete, ctx)
+            }
+            ContainerContent::ToolGroup { tools } => render_tool_group(tools, ctx.spinner_frame, ctx.width()),
+            ContainerContent::SubagentTask { agent } => render_subagent_task(agent, ctx.spinner_frame, ctx.width()),
             ContainerContent::ShellExecution { shell } => render_shell(shell),
             ContainerContent::SystemMessage { text } => render_system_message(text),
         }
-    }
-}
-
-impl Component for Container {
-    fn view(&self, ctx: &ViewContext<'_>) -> Node {
-        let cvc = ContainerViewContext {
-            width: ctx.width(),
-            spinner_frame: ctx.spinner_frame,
-            show_thinking: ctx.show_thinking,
-        };
-        // Delegate to render(), which has access to container state
-        self.render(&cvc)
     }
 }
 
@@ -174,10 +141,10 @@ fn render_assistant_response(
     thinking: &[ThinkingComponent],
     is_continuation: bool,
     is_complete: bool,
-    ctx: &ContainerViewContext,
+    ctx: &ViewContext<'_>,
 ) -> Node {
     let render_state = RenderState {
-        terminal_width: ctx.width as u16,
+        terminal_width: ctx.terminal_size.0,
         spinner_frame: ctx.spinner_frame,
         show_thinking: ctx.show_thinking,
     };
@@ -206,7 +173,7 @@ fn render_assistant_response(
 
     // Then markdown content
     if !content.is_empty() {
-        let style = RenderStyle::natural_with_margins(ctx.width, margins);
+        let style = RenderStyle::natural_with_margins(ctx.width(), margins);
         let md_node = markdown_to_node_styled(content, style);
         items.push(md_node);
     }
@@ -254,57 +221,6 @@ fn render_system_message(content: &str) -> Node {
     )
 }
 
-// ─── Spacing ────────────────────────────────────────────────────────────────
-
-/// Lay out container nodes with Gap-based spacing.
-///
-/// Fold containers into tight groups (adjacent ToolGroups), then
-/// join groups with gap(1). `prev_kind` seeds the fold so cross-batch
-/// spacing works identically to within-batch spacing.
-pub fn layout_containers(
-    containers: &[(ContainerKind, Node)],
-    prev_kind: Option<ContainerKind>,
-) -> Node {
-    if containers.is_empty() {
-        return Node::Empty;
-    }
-
-    let is_tight = |a, b| matches!((a, b), (ContainerKind::ToolGroup, ContainerKind::ToolGroup));
-
-    // Seed: if prev_kind exists and isn't tight with the first container,
-    // start with an empty sentinel group so gap(1) produces a leading blank.
-    let seed_groups: Vec<Vec<Node>> = match prev_kind {
-        Some(pk) if !is_tight(pk, containers[0].0) => vec![vec![text("")]],
-        _ => Vec::new(),
-    };
-
-    let (groups, _) = containers.iter().fold(
-        (seed_groups, prev_kind),
-        |(mut groups, prev), (kind, node)| {
-            let tight = prev.is_some_and(|pk| is_tight(pk, *kind));
-            if !tight || groups.is_empty() {
-                groups.push(Vec::new());
-            }
-            groups.last_mut().unwrap().push(node.clone());
-            (groups, Some(*kind))
-        },
-    );
-
-    let nodes: Vec<Node> = groups
-        .into_iter()
-        .map(|g| match g.len() {
-            1 => g.into_iter().next().unwrap(),
-            _ => col(g).gap(Gap::row(0)),
-        })
-        .collect();
-
-    match nodes.len() {
-        0 => Node::Empty,
-        1 => nodes.into_iter().next().unwrap(),
-        _ => col(nodes).gap(Gap::row(1)),
-    }
-}
-
 // ─── ContainerList ──────────────────────────────────────────────────────────
 
 /// Ordered list of containers with graduation support.
@@ -315,7 +231,7 @@ pub struct ContainerList {
     containers: Vec<Container>,
     id_counter: u64,
     turn_active: bool,
-    last_graduated_kind: Option<ContainerKind>,
+    has_graduated: bool,
 }
 
 impl ContainerList {
@@ -324,7 +240,7 @@ impl ContainerList {
             containers: Vec::new(),
             id_counter: 0,
             turn_active: false,
-            last_graduated_kind: None,
+            has_graduated: false,
         }
     }
 
@@ -343,7 +259,7 @@ impl ContainerList {
 
     pub fn clear(&mut self) {
         self.containers.clear();
-        self.last_graduated_kind = None;
+        self.has_graduated = false;
         self.turn_active = false;
     }
 
@@ -354,20 +270,15 @@ impl ContainerList {
     /// Whether the viewport needs a leading blank line for cross-batch spacing
     /// (graduated content above isn't tight with the first viewport container).
     pub fn needs_cross_batch_gap(&self) -> bool {
-        let Some(prev) = self.last_graduated_kind else { return false };
-        let Some(first) = self.containers.first() else { return false };
-        !matches!(
-            (prev, first.kind),
-            (ContainerKind::ToolGroup, ContainerKind::ToolGroup)
-        )
+        self.has_graduated && !self.containers.is_empty()
     }
 
     pub fn is_streaming(&self) -> bool {
         self.turn_active
     }
 
-    pub fn last_graduated_kind(&self) -> Option<ContainerKind> {
-        self.last_graduated_kind
+    pub fn has_graduated(&self) -> bool {
+        self.has_graduated
     }
 
     // ─── Mutations ──────────────────────────────────────────────────────
@@ -391,22 +302,11 @@ impl ContainerList {
             let trailing_kind = self.containers.last().map(|c| c.kind);
             tracing::debug!(?trailing_kind, "creating new AssistantResponse");
             let id = self.next_id("asst");
-            // Check current containers first, then fall back to last graduated kind.
-            // After graduation, containers may be empty but the continuation
-            // context is preserved in last_graduated_kind.
-            let prev_kind = self
-                .containers
-                .last()
-                .map(|c| c.kind)
-                .or(self.last_graduated_kind);
-            let is_continuation = prev_kind.is_some_and(|k| {
-                matches!(
-                    k,
-                    ContainerKind::ToolGroup
-                        | ContainerKind::SubagentTask
-                        | ContainerKind::ShellExecution
-                )
-            });
+            let is_continuation = match self.containers.last().map(|c| c.kind) {
+                Some(ContainerKind::ToolGroup | ContainerKind::SubagentTask | ContainerKind::ShellExecution) => true,
+                Some(_) => false,
+                None => self.has_graduated,
+            };
             self.containers.push(Container {
                 id,
                 kind: ContainerKind::AssistantResponse,
@@ -505,10 +405,6 @@ impl ContainerList {
                 };
                 if let Some(tool) = found {
                     f(tool);
-                    // Update ToolGroup state based on tool completeness
-                    if tools.iter().all(|t| t.complete) {
-                        container.state = ContainerState::Complete;
-                    }
                     return;
                 }
             }
@@ -591,42 +487,21 @@ impl ContainerList {
     /// Whether the container at `index` is ready for graduation.
     fn is_graduatable(&self, index: usize) -> bool {
         let container = &self.containers[index];
-        match (&container.content, container.state) {
-            (_, ContainerState::Complete) => true,
-            (ContainerContent::AssistantResponse { .. }, ContainerState::Streaming) => {
-                // Graduate if turn ended or something follows this response
-                !self.turn_active || index + 1 < self.containers.len()
-            }
-            (ContainerContent::ToolGroup { tools }, ContainerState::Streaming) => {
-                tools.iter().all(|t| t.complete)
-            }
-            _ => false,
-        }
+        container.state == ContainerState::Complete
+            || !self.turn_active
+            || index + 1 < self.containers.len()
     }
 
     /// Drain completed containers from the front and return a graduation
     /// node tree for scrollback output.
     ///
     /// Graduated thinking blocks are collapsed (via `ThinkingComponent::graduate()`).
-    /// Spacing uses the shared `layout_containers()` function (Gap-based).
-    pub fn drain_completed(
-        &mut self,
-        width: u16,
-        spinner_frame: usize,
-        show_thinking: bool,
-    ) -> Option<Graduation> {
-        let ctx = ContainerViewContext {
-            width: width as usize,
-            spinner_frame,
-            show_thinking,
-        };
-
-        let mut pairs: Vec<(ContainerKind, Node)> = Vec::new();
+    pub fn drain_completed(&mut self, ctx: &ViewContext<'_>) -> Option<Graduation> {
+        let mut nodes: Vec<Node> = Vec::new();
 
         while !self.containers.is_empty() && self.is_graduatable(0) {
             let mut container = self.containers.remove(0);
-            let kind = container.kind;
-            tracing::debug!(?kind, state = ?container.state, id = %container.id, "graduating container");
+            tracing::debug!(kind = ?container.kind, state = ?container.state, id = %container.id, "graduating container");
 
             // Graduate thinking components so they render collapsed
             if let ContainerContent::AssistantResponse { thinking, .. } = &mut container.content {
@@ -635,17 +510,20 @@ impl ContainerList {
                 }
             }
 
-            pairs.push((kind, container.render(&ctx)));
+            nodes.push(Component::view(&container, ctx));
         }
 
-        if pairs.is_empty() {
+        if nodes.is_empty() {
             return None;
         }
 
-        let prev_kind = self.last_graduated_kind;
-        self.last_graduated_kind = Some(pairs.last().unwrap().0);
+        let top_margin = if self.has_graduated { 1 } else { 0 };
+        self.has_graduated = true;
 
-        let node = layout_containers(&pairs, prev_kind);
+        let width = ctx.terminal_size.0;
+        let inner = col(nodes).gap(Gap::row(1))
+            .with_margin(Padding { top: top_margin, ..Padding::all(0) });
+        let node = col([inner]);
 
         Some(Graduation { node, width })
     }
@@ -662,12 +540,26 @@ impl Default for ContainerList {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_oil::focus::FocusContext;
     use crucible_oil::render::render_to_plain_text;
+
+    fn drain(list: &mut ContainerList) -> Option<Graduation> {
+        let focus = FocusContext::default();
+        let ctx = ViewContext::new(&focus);
+        list.drain_completed(&ctx)
+    }
+
+    fn drain_with_thinking(list: &mut ContainerList) -> Option<Graduation> {
+        let focus = FocusContext::default();
+        let mut ctx = ViewContext::new(&focus);
+        ctx.show_thinking = true;
+        list.drain_completed(&ctx)
+    }
 
     #[test]
     fn empty_list_drains_nothing() {
         let mut list = ContainerList::new();
-        assert!(list.drain_completed(80, 0, false).is_none());
+        assert!(drain(&mut list).is_none());
     }
 
     #[test]
@@ -676,7 +568,7 @@ mod tests {
         list.add_user_message("hello".into());
         assert_eq!(list.len(), 1);
 
-        let grad = list.drain_completed(80, 0, false);
+        let grad = drain(&mut list);
         assert!(grad.is_some());
         assert!(list.is_empty());
 
@@ -689,7 +581,7 @@ mod tests {
         let mut list = ContainerList::new();
         list.add_system_message("Session started".into());
 
-        let grad = list.drain_completed(80, 0, false);
+        let grad = drain(&mut list);
         assert!(grad.is_some());
 
         let plain = render_to_plain_text(&grad.unwrap().node, 80);
@@ -704,7 +596,7 @@ mod tests {
         list.append_text("hello world");
 
         // Still streaming, nothing follows — should not graduate
-        assert!(list.drain_completed(80, 0, false).is_none());
+        assert!(drain(&mut list).is_none());
         assert_eq!(list.len(), 1);
     }
 
@@ -716,7 +608,7 @@ mod tests {
         list.append_text("done");
         list.complete_response();
 
-        let grad = list.drain_completed(80, 0, false);
+        let grad = drain(&mut list);
         assert!(grad.is_some());
         assert!(list.is_empty());
     }
@@ -731,30 +623,42 @@ mod tests {
         // Tool call follows — assistant should graduate
         list.add_tool_call(CachedToolCall::new("t1", "read_file", "{}"));
 
-        let grad = list.drain_completed(80, 0, false);
+        let grad = drain(&mut list);
         assert!(grad.is_some());
         // Tool group remains (streaming)
         assert_eq!(list.len(), 1);
     }
 
     #[test]
-    fn tool_group_graduates_when_all_complete() {
+    fn tool_group_graduates_when_turn_ends() {
         let mut list = ContainerList::new();
-        let mut tool = CachedToolCall::new("t1", "read_file", "{}");
-        tool.mark_complete();
-        list.add_tool_call(tool);
+        list.mark_turn_active();
+        list.add_tool_call(CachedToolCall::new("t1", "read_file", "{}"));
 
-        let grad = list.drain_completed(80, 0, false);
+        // Turn active, tool not followed — should not graduate
+        assert!(drain(&mut list).is_none());
+
+        // End the turn
+        list.complete_response();
+
+        let grad = drain(&mut list);
         assert!(grad.is_some());
         assert!(list.is_empty());
     }
 
     #[test]
-    fn tool_group_does_not_graduate_while_pending() {
+    fn tool_group_stays_in_viewport_mid_turn() {
         let mut list = ContainerList::new();
+        list.mark_turn_active();
         list.add_tool_call(CachedToolCall::new("t1", "read_file", "{}"));
 
-        assert!(list.drain_completed(80, 0, false).is_none());
+        // Mark tool complete via update
+        list.update_tool("read_file", None, |t| {
+            t.mark_complete();
+        });
+
+        // Still mid-turn, tool group should NOT graduate
+        assert!(drain(&mut list).is_none());
     }
 
     #[test]
@@ -763,7 +667,7 @@ mod tests {
         list.add_user_message("hi".into());
         list.add_system_message("info".into());
 
-        let grad = list.drain_completed(80, 0, false).unwrap();
+        let grad = drain(&mut list).unwrap();
         let plain = render_to_plain_text(&grad.node, 80);
         // Both should be present with spacing
         assert!(plain.contains("hi"));
@@ -771,7 +675,7 @@ mod tests {
     }
 
     #[test]
-    fn adjacent_tool_groups_are_tight() {
+    fn all_containers_graduate_with_gap() {
         let mut list = ContainerList::new();
 
         let mut tool1 = CachedToolCall::new("t1", "read_file", "{}");
@@ -785,37 +689,44 @@ mod tests {
         tool2.mark_complete();
         list.add_tool_call(tool2);
 
-        let grad = list.drain_completed(80, 0, false).unwrap();
+        let grad = drain(&mut list).unwrap();
         // All three should graduate
         assert!(list.is_empty());
         assert!(grad.node != Node::Empty);
     }
 
     #[test]
-    fn update_tool_marks_group_complete() {
+    fn update_tool_does_not_auto_complete_group() {
         let mut list = ContainerList::new();
+        list.mark_turn_active();
         list.add_tool_call(CachedToolCall::new("t1", "read_file", "{}"));
 
         list.update_tool("read_file", None, |t| {
             t.mark_complete();
         });
 
-        // Now the ToolGroup should be complete
-        assert!(list.drain_completed(80, 0, false).is_some());
+        // Tool complete but turn active — should NOT graduate
+        assert!(drain(&mut list).is_none());
+
+        // End the turn
+        list.complete_response();
+
+        // Now it should graduate
+        assert!(drain(&mut list).is_some());
     }
 
     #[test]
-    fn cross_batch_spacing_uses_top_padding() {
+    fn cross_batch_spacing_uses_has_graduated() {
         let mut list = ContainerList::new();
         list.add_user_message("first".into());
-        let grad1 = list.drain_completed(80, 0, false).unwrap();
+        let grad1 = drain(&mut list).unwrap();
         // First graduation: no top padding (nothing before it)
         let rendered1 = grad1.render();
         assert!(!rendered1.starts_with("\r\n"), "first grad should have no leading blank");
 
-        // Second graduation: different kind, should have top padding
+        // Second graduation: should have top padding
         list.add_system_message("second".into());
-        let grad2 = list.drain_completed(80, 0, false).unwrap();
+        let grad2 = drain(&mut list).unwrap();
         let rendered2 = grad2.render();
         // The node tree should include top margin, producing a leading blank line
         assert!(
@@ -833,7 +744,7 @@ mod tests {
         list.append_text("partial");
         list.cancel_streaming();
 
-        let grad = list.drain_completed(80, 0, false);
+        let grad = drain(&mut list);
         assert!(grad.is_some());
     }
 
@@ -846,7 +757,7 @@ mod tests {
         list.append_text("conclusion");
         list.complete_response();
 
-        let grad = list.drain_completed(80, 0, true).unwrap();
+        let grad = drain_with_thinking(&mut list).unwrap();
         let plain = render_to_plain_text(&grad.node, 80);
         // After graduation, thinking should be collapsed
         assert!(plain.contains("Thought"));
@@ -881,12 +792,12 @@ mod tests {
         let mut list = ContainerList::new();
         list.mark_turn_active();
         list.add_user_message("hi".into());
-        list.drain_completed(80, 0, false);
+        drain(&mut list);
 
         list.clear();
         assert!(list.is_empty());
         assert!(!list.is_streaming());
-        assert!(list.last_graduated_kind().is_none());
+        assert!(!list.has_graduated());
     }
 
     #[test]
