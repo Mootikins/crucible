@@ -336,33 +336,40 @@ fn check_no_simultaneous_thought_and_thinking(screen: &str, context: &str) {
     }
 }
 
-/// If multiple thinking indicators are visible, later ones must have strictly
-/// higher word counts (they represent sequential blocks with different content).
+/// Adjacent thinking indicators (no intervening content) must have strictly
+/// increasing word counts. Two thoughts separated by tools/text are from
+/// different turns and may have any word counts.
 fn check_thinking_word_count_monotonic(screen: &str, context: &str) {
-    let mut counts: Vec<(usize, usize)> = Vec::new(); // (line_num, count)
+    let lines: Vec<&str> = screen.lines().collect();
+    let mut last_thought: Option<(usize, usize)> = None; // (line_num, count)
 
-    for (i, line) in screen.lines().enumerate() {
+    for (i, line) in lines.iter().enumerate() {
         let t = line.trim();
         let is_thought = t.starts_with("◇ Thought") || t.starts_with("\u{25C7} Thought");
         let is_thinking = t.contains("Thinking\u{2026}") && !t.contains("Thought");
+
         if (is_thought || is_thinking) && t.contains(" words)") {
-            if let Some(count) = extract_word_count(t) {
-                if let Ok(n) = count.parse::<usize>() {
-                    counts.push((i, n));
+            if let Some(count_str) = extract_word_count(t) {
+                if let Ok(n) = count_str.parse::<usize>() {
+                    if let Some((prev_line, prev_count)) = last_thought {
+                        // Check if there's only blank lines between prev and current
+                        let between = &lines[prev_line + 1..i];
+                        let only_blanks = between.iter().all(|l| l.trim().is_empty());
+                        if only_blanks && n <= prev_count {
+                            panic!(
+                                "{}: adjacent thinking word count not monotonic: {} (R{}) >= {} (R{})\n\
+                                 Adjacent thoughts with no intervening content must increase.\nScreen:\n{}",
+                                context, prev_count, prev_line, n, i, screen
+                            );
+                        }
+                    }
+                    last_thought = Some((i, n));
                 }
             }
-        }
-    }
-
-    for window in counts.windows(2) {
-        let (line_a, count_a) = window[0];
-        let (line_b, count_b) = window[1];
-        if count_b <= count_a {
-            panic!(
-                "{}: thinking word count not monotonic: {} (R{}) >= {} (R{})\n\
-                 Counts should strictly increase for sequential thinking blocks.\nScreen:\n{}",
-                context, count_a, line_a, count_b, line_b, screen
-            );
+        } else if !t.is_empty() {
+            // Non-thinking, non-blank content resets tracking
+            // (thoughts separated by tools/text are from different turns)
+            last_thought = None;
         }
     }
 }
