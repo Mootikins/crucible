@@ -383,14 +383,14 @@ impl ContainerList {
     }
 
     /// Ensure there's an AssistantResponse at the end. Creates one if needed.
-    /// Returns a mutable reference to its text content.
     pub fn start_assistant_response(&mut self) {
         if !matches!(
             self.containers.last().map(|c| &c.content),
             Some(ContainerContent::AssistantResponse { .. })
         ) {
+            let trailing_kind = self.containers.last().map(|c| c.kind);
+            tracing::debug!(?trailing_kind, "creating new AssistantResponse");
             let id = self.next_id("asst");
-            // Check if this follows a tool group (continuation)
             // Check current containers first, then fall back to last graduated kind.
             // After graduation, containers may be empty but the continuation
             // context is preserved in last_graduated_kind.
@@ -450,11 +450,20 @@ impl ContainerList {
     /// Add a tool call. Groups into an existing trailing ToolGroup if present,
     /// otherwise creates a new one.
     pub fn add_tool_call(&mut self, tool: CachedToolCall) {
+        let trailing_kind = self.containers.last().map(|c| (c.kind, c.state));
+        tracing::debug!(
+            tool_name = %tool.name,
+            trailing = ?trailing_kind,
+            container_count = self.containers.len(),
+            "add_tool_call"
+        );
+
         // First, mark any trailing AssistantResponse as Complete
         if let Some(last) = self.containers.last_mut() {
             if matches!(last.content, ContainerContent::AssistantResponse { .. })
                 && last.state == ContainerState::Streaming
             {
+                tracing::debug!("marking trailing AR complete before tool");
                 last.state = ContainerState::Complete;
             }
         }
@@ -466,9 +475,11 @@ impl ContainerList {
             ..
         }) = self.containers.last_mut()
         {
+            tracing::debug!("appending to existing ToolGroup");
             tools.push(tool);
             *state = ContainerState::Streaming;
         } else {
+            tracing::debug!("creating new ToolGroup");
             let id = self.next_id("tools");
             self.containers.push(Container {
                 id,
@@ -615,6 +626,7 @@ impl ContainerList {
         while !self.containers.is_empty() && self.is_graduatable(0) {
             let mut container = self.containers.remove(0);
             let kind = container.kind;
+            tracing::debug!(?kind, state = ?container.state, id = %container.id, "graduating container");
 
             // Graduate thinking components so they render collapsed
             if let ContainerContent::AssistantResponse { thinking, .. } = &mut container.content {
