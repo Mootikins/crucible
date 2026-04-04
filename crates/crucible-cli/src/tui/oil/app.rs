@@ -8,6 +8,8 @@ pub struct ViewContext<'a> {
     pub focus: &'a FocusContext,
     pub theme: &'a ThemeConfig,
     pub terminal_size: (u16, u16),
+    pub spinner_frame: usize,
+    pub show_thinking: bool,
 }
 
 impl<'a> ViewContext<'a> {
@@ -16,6 +18,8 @@ impl<'a> ViewContext<'a> {
             focus,
             theme: theme::active(),
             terminal_size: (80, 24),
+            spinner_frame: 0,
+            show_thinking: false,
         }
     }
 
@@ -24,6 +28,8 @@ impl<'a> ViewContext<'a> {
             focus,
             theme,
             terminal_size: (80, 24),
+            spinner_frame: 0,
+            show_thinking: false,
         }
     }
 
@@ -36,7 +42,14 @@ impl<'a> ViewContext<'a> {
             focus,
             theme,
             terminal_size,
+            spinner_frame: 0,
+            show_thinking: false,
         }
+    }
+
+    /// Terminal width as usize.
+    pub fn width(&self) -> usize {
+        self.terminal_size.0 as usize
     }
 
     pub fn theme(&self) -> &ThemeConfig {

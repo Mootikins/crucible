@@ -8,7 +8,7 @@ use crate::tui::oil::config::RuntimeConfig;
 use crate::tui::oil::event::InputAction;
 use crate::tui::oil::event::{Event, InputBuffer};
 use crucible_oil::node::*;
-use crucible_oil::style::{Gap, Padding};
+use crucible_oil::style::Gap;
 use crucible_core::interaction::{InteractionRequest, InteractionResponse, PermResponse};
 use std::cell::Cell;
 use std::collections::HashSet;
@@ -135,49 +135,40 @@ impl App for OilChatApp {
     fn view(&self, ctx: &ViewContext<'_>) -> Node {
         self.terminal_size.set(ctx.terminal_size);
 
-        if self.shell_modal.is_some() {
-            // Shell modal takes over the entire screen
+        if let Some(ref modal) = self.shell_modal {
             let (w, h) = ctx.terminal_size;
-            return self
-                .shell_modal
-                .as_ref()
-                .unwrap()
-                .view(w as usize, h as usize);
+            return modal.view(w as usize, h as usize);
         }
 
-        let spinner_frame = self.spinner_frame();
-
-        // Bottom chrome: either interaction modal OR (turn indicator + input + status)
-        let bottom = if let Some(modal) = &self.interaction_modal {
-            modal.view(
-                ctx.terminal_size.0 as usize,
-                self.permission.permission_queue.len(),
-            )
-        } else if self.notification_area.is_visible() {
-            // Messages drawer replaces chrome when visible
-            self.render_messages_drawer(ctx)
-        } else {
-            // Normal chrome: input + status (turn indicator is separate)
-            let input = self.input_view(ctx);
-            let status = self.status_view();
-            col([input, status])
+        let ctx = &ViewContext {
+            spinner_frame: self.spinner_frame(),
+            show_thinking: self.show_thinking,
+            ..*ctx
         };
 
         col([
-            self.render_content(),
-            spacer(),
-            // Turn indicator: no extra padding — sits tight against content above.
-            // User messages provide their own bottom spacing via layout_containers.
-            self.turn_indicator_view(spinner_frame),
-            // Input chrome: top padding provides gap above input box.
-            // This is the consistent separation between content/indicator and input.
-            bottom.with_margin(Padding {
-                top: 1,
-                ..Padding::all(0)
-            }),
+            // Scrollable content area
+            flex(1, slot("content", [col(
+                self.container_list.cross_batch_sentinel()
+                    .into_iter()
+                    .chain(self.container_list.containers().iter()
+                        .map(|c| Component::view(c, ctx))),
+            ).gap(Gap::row(1))])),
+            // Pinned footer
+            slot("footer", [col(match (&self.interaction_modal, self.notification_area.is_visible()) {
+                (Some(modal), _) => vec![
+                    modal.view(ctx.terminal_size.0 as usize, self.permission.permission_queue.len()),
+                ],
+                (_, true) => vec![self.render_messages_drawer(ctx)],
+                _ => vec![
+                    self.turn_indicator_view(ctx),
+                    col([self.input_view(ctx), self.status_view()]),
+                ],
+            }).gap(Gap::row(1))]),
+            // Overlay
             self.popup_overlay_view(ctx),
         ])
-        .gap(Gap::row(0))
+        .gap(Gap::row(1))
     }
 
     fn update(&mut self, event: Event) -> Action<ChatAppMsg> {
@@ -302,35 +293,36 @@ impl OilChatApp {
     // ─── View Helpers (chrome composition) ─────────────────────────────
 
     /// Turn indicator: spinner + thinking status in chrome.
-    fn turn_indicator_view(&self, spinner_frame: usize) -> Node {
+    fn turn_indicator_view(&self, ctx: &ViewContext<'_>) -> Node {
         use crate::tui::oil::components::TurnIndicator;
         use crate::tui::oil::containers::ContainerContent;
 
         let mut indicator = TurnIndicator::new();
         indicator.active = self.container_list.is_streaming();
 
-        // Derive thinking word count from the most recent assistant response,
-        // but ONLY when text hasn't started yet. Once text starts, the thinking
-        // block is finalized in content (shown as "◇ Thought") and the chrome
-        // should stop showing "Thinking…" to avoid duplication.
-        if let Some(container) = self
+        // Find the last assistant response with active thinking (no text yet)
+        // and show the word count in the turn indicator.
+        if let Some(ContainerContent::AssistantResponse { thinking, text, .. }) = self
             .container_list
             .containers()
             .iter()
             .rev()
-            .find(|c| matches!(&c.content, ContainerContent::AssistantResponse { thinking, .. } if !thinking.is_empty()))
+            .filter_map(|c| match &c.content {
+                content @ ContainerContent::AssistantResponse { thinking, .. }
+                    if !thinking.is_empty() => Some(content),
+                _ => None,
+            })
+            .next()
         {
-            if let ContainerContent::AssistantResponse { thinking, text, .. } = &container.content {
-                if text.is_empty() {
-                    let total_words: usize = thinking.iter().map(|t| t.word_count()).sum();
-                    if total_words > 0 {
-                        indicator.thinking_words = Some(total_words);
-                    }
+            if text.is_empty() {
+                let total_words: usize = thinking.iter().map(|t| t.word_count()).sum();
+                if total_words > 0 {
+                    indicator.thinking_words = Some(total_words);
                 }
             }
         }
 
-        indicator.view(spinner_frame)
+        indicator.view(ctx)
     }
 
     /// Input box composition.
@@ -408,27 +400,6 @@ impl OilChatApp {
             .visible(true)
             .width(term_width)
             .view(ctx)
-    }
-
-    /// Render all in-viewport containers with spacing.
-    /// Uses the shared `layout_containers()` — same spacing logic as graduation.
-    fn render_content(&self) -> Node {
-        use crate::tui::oil::containers::{layout_containers, ContainerViewContext};
-
-        let ctx = ContainerViewContext {
-            width: self.terminal_size.get().0 as usize,
-            spinner_frame: self.spinner_frame(),
-            show_thinking: self.show_thinking,
-        };
-
-        let pairs: Vec<_> = self
-            .container_list
-            .containers()
-            .iter()
-            .map(|c| (c.kind, c.view(&ctx)))
-            .collect();
-
-        layout_containers(&pairs, self.container_list.last_graduated_kind())
     }
 
     /// Popup overlay for command completion.

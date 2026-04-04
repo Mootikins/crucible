@@ -12,6 +12,8 @@ use crucible_oil::planning::Graduation;
 use crucible_oil::style::{Gap, Style};
 use unicode_width::UnicodeWidthStr;
 
+use crate::tui::oil::app::ViewContext;
+use crate::tui::oil::component::Component;
 use crate::tui::oil::components::thinking_component::ThinkingComponent;
 use crate::tui::oil::components::{render_shell_execution, render_subagent, render_tool_call_with_frame};
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
@@ -86,9 +88,9 @@ pub enum ContainerContent {
 impl Container {
     /// Render this container's content as a Node tree.
     ///
-    /// The same method is used for both viewport and graduation rendering.
-    /// Graduated thinking blocks are collapsed beforehand via `ThinkingComponent::graduate()`.
-    pub fn view(&self, ctx: &ContainerViewContext) -> Node {
+    /// Used by graduation path which still needs ContainerViewContext.
+    /// Viewport rendering goes through the Component trait impl.
+    pub fn render(&self, ctx: &ContainerViewContext) -> Node {
         match &self.content {
             ContainerContent::UserMessage { text } => render_user_message(text, ctx.width),
             ContainerContent::AssistantResponse {
@@ -101,6 +103,17 @@ impl Container {
             ContainerContent::ShellExecution { shell } => render_shell(shell),
             ContainerContent::SystemMessage { text } => render_system_message(text),
         }
+    }
+}
+
+impl Component for Container {
+    fn view(&self, ctx: &ViewContext<'_>) -> Node {
+        let cvc = ContainerViewContext {
+            width: ctx.width(),
+            spinner_frame: ctx.spinner_frame,
+            show_thinking: ctx.show_thinking,
+        };
+        self.render(&cvc)
     }
 }
 
@@ -178,8 +191,8 @@ fn render_assistant_response(
     let thinking_finalized = !content.is_empty();
     for tc in thinking {
         if tc.is_graduated() || thinking_finalized {
-            let is_complete = thinking_finalized || tc.is_graduated();
-            let node = tc.render(&render_state, is_complete);
+            // is_complete is always true here: either graduated or text has started
+            let node = tc.render(&render_state, true);
             if !matches!(node, Node::Empty) {
                 items.push(node);
             }
@@ -334,6 +347,19 @@ impl ContainerList {
         &self.containers
     }
 
+    /// Sentinel node for cross-batch spacing between graduated and viewport content.
+    /// Returns `Some(text(""))` when graduated content exists and isn't tight with
+    /// the first viewport container, so `gap(1)` produces a leading blank line.
+    pub fn cross_batch_sentinel(&self) -> Option<Node> {
+        let prev = self.last_graduated_kind?;
+        let first = self.containers.first()?;
+        let tight = matches!(
+            (prev, first.kind),
+            (ContainerKind::ToolGroup, ContainerKind::ToolGroup)
+        );
+        if tight { None } else { Some(text("")) }
+    }
+
     pub fn is_streaming(&self) -> bool {
         self.turn_active
     }
@@ -371,16 +397,14 @@ impl ContainerList {
                 .last()
                 .map(|c| c.kind)
                 .or(self.last_graduated_kind);
-            let is_continuation = prev_kind
-                .map(|k| {
-                    matches!(
-                        k,
-                        ContainerKind::ToolGroup
-                            | ContainerKind::SubagentTask
-                            | ContainerKind::ShellExecution
-                    )
-                })
-                .unwrap_or(false);
+            let is_continuation = prev_kind.is_some_and(|k| {
+                matches!(
+                    k,
+                    ContainerKind::ToolGroup
+                        | ContainerKind::SubagentTask
+                        | ContainerKind::ShellExecution
+                )
+            });
             self.containers.push(Container {
                 id,
                 kind: ContainerKind::AssistantResponse,
@@ -406,7 +430,6 @@ impl ContainerList {
         }
     }
 
-    /// Append thinking content to the current AssistantResponse's last ThinkingComponent.
     /// Append thinking content. One ThinkingComponent per AssistantResponse.
     pub fn append_thinking(&mut self, delta: &str) {
         self.start_assistant_response();
@@ -598,7 +621,7 @@ impl ContainerList {
                 }
             }
 
-            pairs.push((kind, container.view(&ctx)));
+            pairs.push((kind, container.render(&ctx)));
         }
 
         if pairs.is_empty() {

@@ -54,43 +54,6 @@ fn check_no_triple_blanks(screen: &str, context: &str) {
     }
 }
 
-/// Check that the "Thinking…" indicator is never on the line immediately
-/// above the input box top border (▄). There should be spacing or the
-/// indicator should be in the chrome section below the spacer.
-fn check_thinking_not_adjacent_to_input_top(screen: &str, context: &str) {
-    let lines: Vec<&str> = screen.lines().collect();
-    for (i, window) in lines.windows(2).enumerate() {
-        let first = window[0].trim();
-        let second = window[1].trim();
-
-        // "Thinking…" or spinner + thinking on one line, ▄▄▄ on the next
-        let is_thinking = first.contains("Thinking\u{2026}") && !first.contains("Thought");
-        let is_input_top = second.chars().all(|c| c == '▄' || c == ' ') && second.contains('▄') && second.len() > 10;
-
-        // This is OK in chrome (turn indicator above input). Check it's
-        // actually chrome by looking for the status bar nearby.
-        if is_thinking && is_input_top {
-            // The turn indicator + input is a valid chrome pattern.
-            // Only flag if there's content (tool calls, etc.) between
-            // user message and the thinking line — that means it's a
-            // content thinking block rendered adjacent to input.
-            let above_lines = &lines[..i];
-            let has_content_above = above_lines.iter().any(|l| {
-                let t = l.trim();
-                t.starts_with("✓") || t.starts_with("✗") || t.starts_with("●")
-                    || t.starts_with("◇ Thought")
-            });
-            // Chrome position: thinking indicator directly above input is fine
-            // Content position: would mean content leaked into chrome
-            if has_content_above {
-                // This is the content area — thinking adjacent to input is suspicious
-                // but could be valid if the content fills the viewport.
-                // We can't easily distinguish, so skip this check for now.
-            }
-        }
-    }
-}
-
 /// Check that between consecutive content sections (user msg, tool, text),
 /// spacing is exactly 1 blank line (not 0, not 2+).
 fn check_consistent_content_spacing(screen: &str, context: &str) {
@@ -444,41 +407,9 @@ impl FrameChecker {
         check_consistent_content_spacing(&stripped, &ctx);
     }
 
-    /// Render and check ALL invariants including the new ones.
-    fn render_and_check_all(&mut self) {
-        self.vt.render_frame(&mut self.app);
-        self.frame_count += 1;
-
-        let full = self.vt.full_history();
-        let stripped = strip_ansi(&full);
-        let screen = strip_ansi(&self.vt.screen_contents());
-        let ctx = format!("frame {}", self.frame_count);
-
-        // Save frame for diagnostic context
-        if self.frame_history.len() >= FRAME_HISTORY_SIZE {
-            self.frame_history.remove(0);
-        }
-        self.frame_history.push(format!("=== {} ===\n{}", ctx, screen));
-
-        // Existing invariants (on full history including scrollback)
-        check_no_duplicate_thought_lines(&stripped, &ctx);
-        check_no_triple_blanks(&stripped, &ctx);
-        check_consistent_content_spacing(&stripped, &ctx);
-
-        // New invariants (on visible screen — what user actually sees)
-        check_no_split_thinking_nodes(&screen, &ctx);
-        check_spacing_between_non_tool_containers(&screen, &ctx);
-        check_no_simultaneous_thought_and_thinking(&screen, &ctx);
-        check_thinking_word_count_monotonic(&screen, &ctx);
-    }
-
     #[allow(dead_code)]
     fn scrollback(&mut self) -> String {
         strip_ansi(&self.vt.scrollback_contents())
-    }
-
-    fn screen(&self) -> String {
-        strip_ansi(&self.vt.screen_contents())
     }
 
     fn full(&self) -> String {
