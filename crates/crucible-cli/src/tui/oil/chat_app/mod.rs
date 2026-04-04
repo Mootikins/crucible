@@ -164,18 +164,17 @@ impl App for OilChatApp {
         };
 
         col([
-            // Content area: container components rendered with spacing
             self.render_content(),
             spacer(),
-            // Turn indicator: between content and input chrome.
-            // Sits above the padding boundary so spacing is symmetric.
+            // Turn indicator: no extra padding — sits tight against content above.
+            // User messages provide their own bottom spacing via layout_containers.
             self.turn_indicator_view(spinner_frame),
-            // Chrome: pinned at bottom, never scrolls
+            // Input chrome: top padding provides gap above input box.
+            // This is the consistent separation between content/indicator and input.
             bottom.with_margin(Padding {
                 top: 1,
                 ..Padding::all(0)
             }),
-            // Popup overlay (command completion, model selection)
             self.popup_overlay_view(ctx),
         ])
         .gap(Gap::row(0))

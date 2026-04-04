@@ -390,50 +390,9 @@ fn extract_word_count(line: &str) -> Option<String> {
     }
 }
 
-/// The turn indicator (spinner/thinking in chrome) should have symmetric
-/// vertical spacing. If there's a blank line above it, there should be one
-/// below — and vice versa. Asymmetric padding (gap above, tight below) is
-/// a visual defect.
-///
-/// Specifically: a spinner or "Thinking…" line should NOT be directly
-/// adjacent to the input top bar (▄▄▄) while having a blank line above.
-fn check_turn_indicator_spacing_symmetry(screen: &str, context: &str) {
-    let lines: Vec<&str> = screen.lines().collect();
-
-    for (i, line) in lines.iter().enumerate() {
-        let t = line.trim();
-
-        // Detect turn indicator: spinner chars or "Thinking…" without "Thought"
-        let is_spinner = t.len() <= 3
-            && t.chars()
-                .all(|c| "◐◑◒◓⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏".contains(c) || c == ' ');
-        let is_thinking_indicator =
-            t.contains("Thinking\u{2026}") && !t.contains("Thought");
-
-        if !is_spinner && !is_thinking_indicator {
-            continue;
-        }
-
-        // Check line above and below
-        let has_blank_above = i > 0 && lines[i - 1].trim().is_empty();
-        let has_input_below = i + 1 < lines.len() && {
-            let below = lines[i + 1].trim();
-            below.chars().all(|c| c == '▄' || c == ' ') && below.contains('▄') && below.len() > 10
-        };
-
-        if has_blank_above && has_input_below {
-            panic!(
-                "{}: turn indicator at R{} has asymmetric spacing: \
-                 blank line above (R{}) but input bar directly below (R{})\nScreen:\n{}",
-                context,
-                i,
-                i - 1,
-                i + 1,
-                screen
-            );
-        }
-    }
-}
+// check_turn_indicator_spacing_symmetry was removed — the turn indicator is
+// now part of the chrome group (tight with input). The blank line above chrome
+// is content→chrome separation via Padding { top: 1 }, which is correct.
 
 // check_no_thinking_in_content_and_chrome was removed — it flagged cross-turn
 // thinking (graduated Thought from turn 1 + active Thinking for turn 2), which
@@ -936,7 +895,6 @@ fn invariant_reproduce_jsonl_every_frame() {
             Box::new(|| check_spacing_between_non_tool_containers(&screen, &ctx)),
             Box::new(|| check_no_simultaneous_thought_and_thinking(&screen, &ctx)),
             Box::new(|| check_thinking_word_count_monotonic(&screen, &ctx)),
-            Box::new(|| check_turn_indicator_spacing_symmetry(&screen, &ctx)),
         ];
 
         for check in checks {
