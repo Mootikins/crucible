@@ -8,7 +8,7 @@ use crate::tui::oil::config::RuntimeConfig;
 use crate::tui::oil::event::InputAction;
 use crate::tui::oil::event::{Event, InputBuffer};
 use crucible_oil::node::*;
-use crucible_oil::style::Gap;
+use crucible_oil::style::{Gap, Padding};
 use crucible_core::interaction::{InteractionRequest, InteractionResponse, PermResponse};
 use std::cell::Cell;
 use std::collections::HashSet;
@@ -147,13 +147,15 @@ impl App for OilChatApp {
         };
 
         col([
-            // Scrollable content area
+            // Scrollable content area (margin-top for cross-batch spacing)
             flex(1, slot("content", [col(
-                self.container_list.cross_batch_sentinel()
-                    .into_iter()
-                    .chain(self.container_list.containers().iter()
-                        .map(|c| Component::view(c, ctx))),
-            ).gap(Gap::row(1))])),
+                self.container_list.containers().iter()
+                    .map(|c| Component::view(c, ctx)),
+            ).gap(Gap::row(1))
+             .with_margin(Padding {
+                 top: if self.container_list.needs_cross_batch_gap() { 1 } else { 0 },
+                 ..Padding::all(0)
+             })])),
             // Pinned footer
             slot("footer", [col(match (&self.interaction_modal, self.notification_area.is_visible()) {
                 (Some(modal), _) => vec![
@@ -293,31 +295,28 @@ impl OilChatApp {
     // ─── View Helpers (chrome composition) ─────────────────────────────
 
     /// Turn indicator: spinner + thinking status in chrome.
+    /// Only shows "Thinking… (N words)" for actively streaming ARs with no text —
+    /// once complete, the thinking block renders in content instead.
     fn turn_indicator_view(&self, ctx: &ViewContext<'_>) -> Node {
         use crate::tui::oil::components::TurnIndicator;
-        use crate::tui::oil::containers::ContainerContent;
+        use crate::tui::oil::containers::{ContainerContent, ContainerState};
 
         let mut indicator = TurnIndicator::new();
         indicator.active = self.container_list.is_streaming();
 
-        // Find the last assistant response with active thinking (no text yet)
-        // and show the word count in the turn indicator.
-        if let Some(ContainerContent::AssistantResponse { thinking, text, .. }) = self
+        if let Some(c) = self
             .container_list
             .containers()
             .iter()
             .rev()
-            .filter_map(|c| match &c.content {
-                content @ ContainerContent::AssistantResponse { thinking, .. }
-                    if !thinking.is_empty() => Some(content),
-                _ => None,
-            })
-            .next()
+            .find(|c| matches!(&c.content, ContainerContent::AssistantResponse { thinking, .. } if !thinking.is_empty()))
         {
-            if text.is_empty() {
-                let total_words: usize = thinking.iter().map(|t| t.word_count()).sum();
-                if total_words > 0 {
-                    indicator.thinking_words = Some(total_words);
+            if let ContainerContent::AssistantResponse { thinking, text, .. } = &c.content {
+                if text.is_empty() && c.state == ContainerState::Streaming {
+                    let total_words: usize = thinking.iter().map(|t| t.word_count()).sum();
+                    if total_words > 0 {
+                        indicator.thinking_words = Some(total_words);
+                    }
                 }
             }
         }
