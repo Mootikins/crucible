@@ -1,5 +1,6 @@
 use crate::tui::oil::app::{Action, App, ViewContext};
 use crate::tui::oil::component::Component;
+use crate::tui::oil::containers::{render_chat_node, ChatNode};
 use crate::tui::oil::components::{
     CommandPanel, InteractionModal, NotificationArea, ShellModal, StatusComponent,
 };
@@ -148,10 +149,13 @@ impl App for OilChatApp {
 
         col([
             // Scrollable content area (margin-top for cross-batch spacing)
-            flex(1, slot("content", [col(
-                self.container_list.containers().iter()
-                    .map(|c| Component::view(c, ctx)),
-            ).gap(Gap::row(1))
+            flex(1, slot("content", [col({
+                let nodes = self.container_list.nodes();
+                nodes.iter().enumerate().map(|(i, node)| {
+                    let prev = if i > 0 { Some(&nodes[i - 1]) } else { None };
+                    render_chat_node(node, prev, ctx)
+                })
+            }).gap(Gap::row(1))
              .with_margin(Padding {
                  top: if self.container_list.needs_cross_batch_gap() { 1 } else { 0 },
                  ..Padding::all(0)
@@ -295,20 +299,19 @@ impl OilChatApp {
     fn build_command_panel<'a>(&'a self, ctx: &ViewContext<'_>) -> CommandPanel<'a> {
         use crate::tui::oil::components::TurnIndicator;
         use crate::tui::oil::components::{InputComponent, InputMode as ComponentInputMode};
-        use crate::tui::oil::containers::{ContainerContent, ContainerState};
 
         // Turn indicator
         let mut indicator = TurnIndicator::new();
         indicator.active = self.container_list.is_streaming();
-        if let Some(c) = self
+        if let Some(node) = self
             .container_list
-            .containers()
+            .nodes()
             .iter()
             .rev()
-            .find(|c| matches!(&c.content, ContainerContent::AssistantResponse { thinking, .. } if !thinking.is_empty()))
+            .find(|n| matches!(n, ChatNode::AssistantResponse { thinking, .. } if !thinking.is_empty()))
         {
-            if let ContainerContent::AssistantResponse { thinking, text, .. } = &c.content {
-                if text.is_empty() && c.state == ContainerState::Streaming {
+            if let ChatNode::AssistantResponse { thinking, text, complete: false, .. } = node {
+                if text.is_empty() {
                     let total_words: usize = thinking.iter().map(|t| t.word_count()).sum();
                     if total_words > 0 {
                         indicator.thinking_words = Some(total_words);

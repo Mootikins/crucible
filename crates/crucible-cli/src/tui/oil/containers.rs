@@ -1,10 +1,10 @@
-//! Container model for chat content.
+//! Chat node model for viewport content.
 //!
-//! Each container is a graduation unit with explicit lifecycle state.
-//! Containers produce Node trees via `view()`. Graduated containers are
+//! Each `ChatNode` is a graduation unit with explicit lifecycle state.
+//! `render_chat_node()` produces Node trees. Graduated nodes are
 //! removed from the list and written to scrollback.
 //!
-//! Spacing: uniform `gap(1)` between all containers.
+//! Spacing: uniform `gap(1)` between all nodes.
 
 use crucible_oil::node::{col, styled, Node};
 use crucible_oil::planning::Graduation;
@@ -12,7 +12,6 @@ use crucible_oil::style::{Gap, Padding, Style};
 use unicode_width::UnicodeWidthStr;
 
 use crate::tui::oil::app::ViewContext;
-use crate::tui::oil::component::Component;
 use crate::tui::oil::components::thinking_component::ThinkingComponent;
 use crate::tui::oil::components::{render_shell_execution, render_subagent, render_tool_call_with_frame};
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
@@ -22,72 +21,45 @@ use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, Cach
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-/// Explicit container lifecycle state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ContainerState {
-    Streaming,
-    Complete,
-}
-
-/// What kind of container (for spacing decisions).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ContainerKind {
-    UserMessage,
-    AssistantResponse,
-    ToolGroup,
-    SubagentTask,
-    ShellExecution,
-    SystemMessage,
-}
-
-/// A chat container — the graduation unit.
+/// A chat node — the graduation unit and rendering primitive.
 #[derive(Debug, Clone)]
-pub struct Container {
-    pub id: String,
-    pub kind: ContainerKind,
-    pub state: ContainerState,
-    pub content: ContainerContent,
+pub enum ChatNode {
+    UserMessage { text: String },
+    AssistantResponse { text: String, thinking: Vec<ThinkingComponent>, complete: bool },
+    ToolGroup { tools: Vec<CachedToolCall> },
+    SubagentTask { agent: CachedSubagent },
+    ShellExecution { shell: CachedShellExecution },
+    SystemMessage { text: String },
 }
 
-/// Kind-specific content for each container type.
-#[derive(Debug, Clone)]
-pub enum ContainerContent {
-    UserMessage {
-        text: String,
-    },
-    AssistantResponse {
-        text: String,
-        thinking: Vec<ThinkingComponent>,
-        is_continuation: bool,
-    },
-    ToolGroup {
-        tools: Vec<CachedToolCall>,
-    },
-    SubagentTask {
-        agent: CachedSubagent,
-    },
-    ShellExecution {
-        shell: CachedShellExecution,
-    },
-    SystemMessage {
-        text: String,
-    },
-}
-
-// ─── Container view ─────────────────────────────────────────────────────────
-
-impl Component for Container {
-    fn view(&self, ctx: &ViewContext<'_>) -> Node {
-        match &self.content {
-            ContainerContent::UserMessage { text } => render_user_message(text, ctx.width()),
-            ContainerContent::AssistantResponse { text, thinking, is_continuation } => {
-                render_assistant_response(text, thinking, *is_continuation, self.state == ContainerState::Complete, ctx)
-            }
-            ContainerContent::ToolGroup { tools } => render_tool_group(tools, ctx.spinner_frame, ctx.width()),
-            ContainerContent::SubagentTask { agent } => render_subagent_task(agent, ctx.spinner_frame, ctx.width()),
-            ContainerContent::ShellExecution { shell } => render_shell(shell),
-            ContainerContent::SystemMessage { text } => render_system_message(text),
+impl ChatNode {
+    pub fn is_complete(&self) -> bool {
+        match self {
+            Self::UserMessage { .. } | Self::SystemMessage { .. } | Self::ShellExecution { .. } => true,
+            Self::AssistantResponse { complete, .. } => *complete,
+            Self::ToolGroup { tools } => tools.iter().all(|t| t.complete),
+            Self::SubagentTask { agent } => agent.is_terminal(),
         }
+    }
+}
+
+// ─── Top-level renderer ─────────────────────────────────────────────────────
+
+/// Render a chat node. `is_continuation` derived from preceding node.
+pub fn render_chat_node(node: &ChatNode, prev: Option<&ChatNode>, ctx: &ViewContext<'_>) -> Node {
+    match node {
+        ChatNode::UserMessage { text } => render_user_message(text, ctx.width()),
+        ChatNode::AssistantResponse { text, thinking, complete } => {
+            let is_continuation = matches!(
+                prev,
+                Some(ChatNode::ToolGroup { .. } | ChatNode::SubagentTask { .. } | ChatNode::ShellExecution { .. })
+            );
+            render_assistant_response(text, thinking, is_continuation, *complete, ctx)
+        }
+        ChatNode::ToolGroup { tools } => render_tool_group(tools, ctx.spinner_frame, ctx.width()),
+        ChatNode::SubagentTask { agent } => render_subagent_task(agent, ctx.spinner_frame, ctx.width()),
+        ChatNode::ShellExecution { shell } => render_shell(shell),
+        ChatNode::SystemMessage { text } => render_system_message(text),
     }
 }
 
@@ -223,13 +195,12 @@ fn render_system_message(content: &str) -> Node {
 
 // ─── ContainerList ──────────────────────────────────────────────────────────
 
-/// Ordered list of containers with graduation support.
+/// Ordered list of chat nodes with graduation support.
 ///
-/// `drain_completed()` removes completed containers from the front and
+/// `drain_completed()` removes completed nodes from the front and
 /// returns a `Graduation` node tree for scrollback output.
 pub struct ContainerList {
-    containers: Vec<Container>,
-    id_counter: u64,
+    nodes: Vec<ChatNode>,
     turn_active: bool,
     has_graduated: bool,
 }
@@ -237,40 +208,34 @@ pub struct ContainerList {
 impl ContainerList {
     pub fn new() -> Self {
         Self {
-            containers: Vec::new(),
-            id_counter: 0,
+            nodes: Vec::new(),
             turn_active: false,
             has_graduated: false,
         }
     }
 
-    fn next_id(&mut self, prefix: &str) -> String {
-        self.id_counter += 1;
-        format!("{}-{}", prefix, self.id_counter)
-    }
-
     pub fn len(&self) -> usize {
-        self.containers.len()
+        self.nodes.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.containers.is_empty()
+        self.nodes.is_empty()
     }
 
     pub fn clear(&mut self) {
-        self.containers.clear();
+        self.nodes.clear();
         self.has_graduated = false;
         self.turn_active = false;
     }
 
-    pub fn containers(&self) -> &[Container] {
-        &self.containers
+    pub fn nodes(&self) -> &[ChatNode] {
+        &self.nodes
     }
 
     /// Whether the viewport needs a leading blank line for cross-batch spacing
-    /// (graduated content above isn't tight with the first viewport container).
+    /// (graduated content above isn't tight with the first viewport node).
     pub fn needs_cross_batch_gap(&self) -> bool {
-        self.has_graduated && !self.containers.is_empty()
+        self.has_graduated && !self.nodes.is_empty()
     }
 
     pub fn is_streaming(&self) -> bool {
@@ -284,38 +249,18 @@ impl ContainerList {
     // ─── Mutations ──────────────────────────────────────────────────────
 
     pub fn add_user_message(&mut self, content: String) {
-        let id = self.next_id("user");
-        self.containers.push(Container {
-            id,
-            kind: ContainerKind::UserMessage,
-            state: ContainerState::Complete,
-            content: ContainerContent::UserMessage { text: content },
-        });
+        self.nodes.push(ChatNode::UserMessage { text: content });
     }
 
     /// Ensure there's an AssistantResponse at the end. Creates one if needed.
     pub fn start_assistant_response(&mut self) {
-        if !matches!(
-            self.containers.last().map(|c| &c.content),
-            Some(ContainerContent::AssistantResponse { .. })
-        ) {
-            let trailing_kind = self.containers.last().map(|c| c.kind);
+        if !matches!(self.nodes.last(), Some(ChatNode::AssistantResponse { .. })) {
+            let trailing_kind = self.nodes.last().map(|n| std::mem::discriminant(n));
             tracing::debug!(?trailing_kind, "creating new AssistantResponse");
-            let id = self.next_id("asst");
-            let is_continuation = match self.containers.last().map(|c| c.kind) {
-                Some(ContainerKind::ToolGroup | ContainerKind::SubagentTask | ContainerKind::ShellExecution) => true,
-                Some(_) => false,
-                None => self.has_graduated,
-            };
-            self.containers.push(Container {
-                id,
-                kind: ContainerKind::AssistantResponse,
-                state: ContainerState::Streaming,
-                content: ContainerContent::AssistantResponse {
-                    text: String::new(),
-                    thinking: Vec::new(),
-                    is_continuation,
-                },
+            self.nodes.push(ChatNode::AssistantResponse {
+                text: String::new(),
+                thinking: Vec::new(),
+                complete: false,
             });
         }
     }
@@ -323,11 +268,7 @@ impl ContainerList {
     /// Append text to the current AssistantResponse. Creates one if needed.
     pub fn append_text(&mut self, delta: &str) {
         self.start_assistant_response();
-        if let Some(Container {
-            content: ContainerContent::AssistantResponse { text, .. },
-            ..
-        }) = self.containers.last_mut()
-        {
+        if let Some(ChatNode::AssistantResponse { text, .. }) = self.nodes.last_mut() {
             text.push_str(delta);
         }
     }
@@ -335,11 +276,7 @@ impl ContainerList {
     /// Append thinking content. One ThinkingComponent per AssistantResponse.
     pub fn append_thinking(&mut self, delta: &str) {
         self.start_assistant_response();
-        if let Some(Container {
-            content: ContainerContent::AssistantResponse { thinking, .. },
-            ..
-        }) = self.containers.last_mut()
-        {
+        if let Some(ChatNode::AssistantResponse { thinking, .. }) = self.nodes.last_mut() {
             if thinking.is_empty() {
                 thinking.push(ThinkingComponent::new(String::new()));
             }
@@ -350,51 +287,35 @@ impl ContainerList {
     /// Add a tool call. Groups into an existing trailing ToolGroup if present,
     /// otherwise creates a new one.
     pub fn add_tool_call(&mut self, tool: CachedToolCall) {
-        let trailing_kind = self.containers.last().map(|c| (c.kind, c.state));
         tracing::debug!(
             tool_name = %tool.name,
-            trailing = ?trailing_kind,
-            container_count = self.containers.len(),
+            node_count = self.nodes.len(),
             "add_tool_call"
         );
 
-        // First, mark any trailing AssistantResponse as Complete
-        if let Some(last) = self.containers.last_mut() {
-            if matches!(last.content, ContainerContent::AssistantResponse { .. })
-                && last.state == ContainerState::Streaming
-            {
+        // First, mark any trailing AssistantResponse as complete
+        if let Some(ChatNode::AssistantResponse { complete, .. }) = self.nodes.last_mut() {
+            if !*complete {
                 tracing::debug!("marking trailing AR complete before tool");
-                last.state = ContainerState::Complete;
+                *complete = true;
             }
         }
 
         // Group into existing ToolGroup or create new one
-        if let Some(Container {
-            content: ContainerContent::ToolGroup { tools },
-            state,
-            ..
-        }) = self.containers.last_mut()
-        {
+        if let Some(ChatNode::ToolGroup { tools }) = self.nodes.last_mut() {
             tracing::debug!("appending to existing ToolGroup");
             tools.push(tool);
-            *state = ContainerState::Streaming;
         } else {
             tracing::debug!("creating new ToolGroup");
-            let id = self.next_id("tools");
-            self.containers.push(Container {
-                id,
-                kind: ContainerKind::ToolGroup,
-                state: ContainerState::Streaming,
-                content: ContainerContent::ToolGroup { tools: vec![tool] },
-            });
+            self.nodes.push(ChatNode::ToolGroup { tools: vec![tool] });
         }
     }
 
     /// Update a tool within the most recent ToolGroup by name and optional call_id.
     pub fn update_tool(&mut self, name: &str, call_id: Option<&str>, f: impl FnOnce(&mut CachedToolCall)) {
         // Search backwards for a ToolGroup containing this tool
-        for container in self.containers.iter_mut().rev() {
-            if let ContainerContent::ToolGroup { tools } = &mut container.content {
+        for node in self.nodes.iter_mut().rev() {
+            if let ChatNode::ToolGroup { tools } = node {
                 // Match by call_id first, then by name
                 let found = if let Some(cid) = call_id {
                     tools.iter_mut().rev().find(|t| {
@@ -413,23 +334,14 @@ impl ContainerList {
     }
 
     pub fn add_agent_task(&mut self, agent: CachedSubagent) {
-        let id = self.next_id("agent");
-        self.containers.push(Container {
-            id,
-            kind: ContainerKind::SubagentTask,
-            state: ContainerState::Streaming,
-            content: ContainerContent::SubagentTask { agent },
-        });
+        self.nodes.push(ChatNode::SubagentTask { agent });
     }
 
     pub fn update_agent_task(&mut self, agent_id: &str, f: impl FnOnce(&mut CachedSubagent)) {
-        for container in self.containers.iter_mut().rev() {
-            if let ContainerContent::SubagentTask { agent } = &mut container.content {
+        for node in self.nodes.iter_mut().rev() {
+            if let ChatNode::SubagentTask { agent } = node {
                 if agent.id.as_ref() == agent_id {
                     f(agent);
-                    if agent.is_terminal() {
-                        container.state = ContainerState::Complete;
-                    }
                     return;
                 }
             }
@@ -438,42 +350,28 @@ impl ContainerList {
     }
 
     pub fn add_shell_execution(&mut self, shell: CachedShellExecution) {
-        let id = self.next_id("shell");
-        self.containers.push(Container {
-            id,
-            kind: ContainerKind::ShellExecution,
-            state: ContainerState::Complete,
-            content: ContainerContent::ShellExecution { shell },
-        });
+        self.nodes.push(ChatNode::ShellExecution { shell });
     }
 
     pub fn add_system_message(&mut self, content: String) {
-        let id = self.next_id("sys");
-        self.containers.push(Container {
-            id,
-            kind: ContainerKind::SystemMessage,
-            state: ContainerState::Complete,
-            content: ContainerContent::SystemMessage { text: content },
-        });
+        self.nodes.push(ChatNode::SystemMessage { text: content });
     }
 
     /// Mark the turn as complete: sets turn_active = false and marks
     /// the trailing AssistantResponse as Complete.
     pub fn complete_response(&mut self) {
         self.turn_active = false;
-        if let Some(last) = self.containers.last_mut() {
-            if matches!(last.content, ContainerContent::AssistantResponse { .. }) {
-                last.state = ContainerState::Complete;
-            }
+        if let Some(ChatNode::AssistantResponse { complete, .. }) = self.nodes.last_mut() {
+            *complete = true;
         }
     }
 
-    /// Cancel streaming: marks all streaming containers as complete.
+    /// Cancel streaming: marks all streaming nodes as complete.
     pub fn cancel_streaming(&mut self) {
         self.turn_active = false;
-        for container in &mut self.containers {
-            if container.state == ContainerState::Streaming {
-                container.state = ContainerState::Complete;
+        for node in &mut self.nodes {
+            if let ChatNode::AssistantResponse { complete, .. } = node {
+                *complete = true;
             }
         }
     }
@@ -484,36 +382,51 @@ impl ContainerList {
 
     // ─── Graduation ─────────────────────────────────────────────────────
 
-    /// Whether the container at `index` is ready for graduation.
+    /// Whether the node at `index` is ready for graduation.
+    ///
+    /// A node graduates when:
+    /// - The turn is over (`!turn_active`), OR
+    /// - A successor node exists (the node is no longer the tail), OR
+    /// - The node is explicitly complete AND is a type that self-completes
+    ///   (AssistantResponse, SubagentTask). ToolGroups don't self-complete
+    ///   for graduation — they stay in viewport until superseded or turn ends.
     fn is_graduatable(&self, index: usize) -> bool {
-        let container = &self.containers[index];
-        container.state == ContainerState::Complete
-            || !self.turn_active
-            || index + 1 < self.containers.len()
+        if !self.turn_active || index + 1 < self.nodes.len() {
+            return true;
+        }
+        // Last node, turn active: only graduate types that explicitly complete
+        match &self.nodes[index] {
+            ChatNode::UserMessage { .. } | ChatNode::SystemMessage { .. } | ChatNode::ShellExecution { .. } => true,
+            ChatNode::AssistantResponse { complete, .. } => *complete,
+            ChatNode::SubagentTask { agent } => agent.is_terminal(),
+            ChatNode::ToolGroup { .. } => false,
+        }
     }
 
-    /// Drain completed containers from the front and return a graduation
+    /// Drain completed nodes from the front and return a graduation
     /// node tree for scrollback output.
     ///
     /// Graduated thinking blocks are collapsed (via `ThinkingComponent::graduate()`).
     pub fn drain_completed(&mut self, ctx: &ViewContext<'_>) -> Option<Graduation> {
-        let mut nodes: Vec<Node> = Vec::new();
+        let mut rendered: Vec<Node> = Vec::new();
+        let mut prev: Option<ChatNode> = None;
 
-        while !self.containers.is_empty() && self.is_graduatable(0) {
-            let mut container = self.containers.remove(0);
-            tracing::debug!(kind = ?container.kind, state = ?container.state, id = %container.id, "graduating container");
+        while !self.nodes.is_empty() && self.is_graduatable(0) {
+            let mut node = self.nodes.remove(0);
+            tracing::debug!("graduating node");
 
             // Graduate thinking components so they render collapsed
-            if let ContainerContent::AssistantResponse { thinking, .. } = &mut container.content {
+            if let ChatNode::AssistantResponse { thinking, .. } = &mut node {
                 for tc in thinking.iter_mut() {
                     tc.graduate();
                 }
             }
 
-            nodes.push(Component::view(&container, ctx));
+            rendered.push(render_chat_node(&node, prev.as_ref(), ctx));
+            prev = Some(node);
         }
 
-        if nodes.is_empty() {
+        if rendered.is_empty() {
             return None;
         }
 
@@ -521,7 +434,7 @@ impl ContainerList {
         self.has_graduated = true;
 
         let width = ctx.terminal_size.0;
-        let inner = col(nodes).gap(Gap::row(1))
+        let inner = col(rendered).gap(Gap::row(1))
             .with_margin(Padding { top: top_margin, ..Padding::all(0) });
         let node = col([inner]);
 
@@ -772,9 +685,13 @@ mod tests {
         list.start_assistant_response();
         list.append_text("let me use a tool");
 
-        // Adding tool should mark the assistant Complete
+        // Adding tool should mark the assistant complete
         list.add_tool_call(CachedToolCall::new("t1", "bash", "{}"));
-        assert_eq!(list.containers[0].state, ContainerState::Complete);
+        if let Some(ChatNode::AssistantResponse { complete, .. }) = list.nodes().first() {
+            assert!(*complete);
+        } else {
+            panic!("expected AssistantResponse as first node");
+        }
     }
 
     #[test]
@@ -808,7 +725,7 @@ mod tests {
 
         // Should be one ToolGroup with two tools
         assert_eq!(list.len(), 1);
-        if let ContainerContent::ToolGroup { tools } = &list.containers[0].content {
+        if let ChatNode::ToolGroup { tools } = &list.nodes()[0] {
             assert_eq!(tools.len(), 2);
         } else {
             panic!("expected ToolGroup");
@@ -816,7 +733,7 @@ mod tests {
     }
 
     #[test]
-    fn continuation_flag_set_after_tool_group() {
+    fn continuation_derived_from_preceding_tool_group() {
         let mut list = ContainerList::new();
         let mut tool = CachedToolCall::new("t1", "read", "{}");
         tool.mark_complete();
@@ -824,13 +741,17 @@ mod tests {
 
         // Start a new assistant response after the tool group
         list.start_assistant_response();
-        if let ContainerContent::AssistantResponse {
-            is_continuation, ..
-        } = &list.containers.last().unwrap().content
-        {
-            assert!(*is_continuation);
-        } else {
-            panic!("expected AssistantResponse");
-        }
+        list.append_text("continuation text");
+        list.complete_response();
+
+        // Verify continuation is derived at render time
+        let focus = FocusContext::default();
+        let ctx = ViewContext::new(&focus);
+        let nodes = list.nodes();
+        let prev = Some(&nodes[0]);
+        let node = render_chat_node(&nodes[1], prev, &ctx);
+        let plain = render_to_plain_text(&node, 80);
+        // Continuation text should not have the assistant bullet
+        assert!(!plain.contains("●"), "Continuation should not have bullet: {}", plain);
     }
 }

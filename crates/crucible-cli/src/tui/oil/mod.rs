@@ -47,9 +47,7 @@ pub use lua_view::{LuaView, ViewAction};
 pub use render_state::RenderState;
 pub use runner::{run_sync, OilRunner};
 pub use test_harness::AppHarness;
-pub use containers::{
-    Container, ContainerContent, ContainerKind, ContainerList, ContainerState,
-};
+pub use containers::{ChatNode, ContainerList, render_chat_node};
 pub use viewport_cache::CachedMessage;
 
 // Re-export commonly used crucible-oil types

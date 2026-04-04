@@ -151,10 +151,10 @@ fn subagent_completed_marks_container_complete() {
         summary: "done".into(),
     });
 
-    let container = &app.container_list.containers()[0];
-    assert_eq!(
-        container.state,
-        crate::tui::oil::containers::ContainerState::Complete
+    let node = &app.container_list.nodes()[0];
+    assert!(
+        matches!(node, crate::tui::oil::containers::ChatNode::SubagentTask { agent } if agent.is_terminal()),
+        "Subagent task should be complete"
     );
 }
 
@@ -192,13 +192,11 @@ fn tool_result_error_sets_error_on_tool() {
         call_id: Some("c1".into()),
     });
 
-    let containers = app.container_list.containers();
-    if let crate::tui::oil::containers::ContainerContent::ToolGroup { tools } =
-        &containers[0].content
-    {
+    let nodes = app.container_list.nodes();
+    if let crate::tui::oil::containers::ChatNode::ToolGroup { tools } = &nodes[0] {
         assert!(tools[0].error.is_some());
     } else {
-        panic!("expected ToolGroup container");
+        panic!("expected ToolGroup node");
     }
 }
 
