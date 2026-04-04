@@ -339,6 +339,48 @@ mod tests {
     }
 
     #[test]
+    fn graduation_gap_produces_blank_line() {
+        use crate::ansi::strip_ansi;
+        use crate::style::Gap;
+        // Two groups with Gap::row(1) between them
+        let node = col([text("Group A"), text("Group B")]).gap(Gap::row(1));
+        let grad = Graduation { node, width: 80 };
+        let rendered = strip_ansi(&grad.render());
+        let lines: Vec<&str> = rendered.lines().collect();
+        eprintln!("Lines: {:?}", lines);
+        assert!(lines.len() >= 3, "Expected at least 3 lines (A, blank, B), got: {:?}", lines);
+        assert!(lines[0].contains("Group A"));
+        assert!(lines[1].trim().is_empty(), "Gap line should be blank, got: {:?}", lines[1]);
+        assert!(lines[2].contains("Group B"));
+    }
+
+    #[test]
+    fn graduation_leading_blank_via_empty_node_gap() {
+        use crate::ansi::strip_ansi;
+        use crate::style::Gap;
+        // Empty node + gap(1) + content should produce a leading blank
+        let node = col([Node::Empty, text("Content")]).gap(Gap::row(1));
+        let grad = Graduation { node, width: 80 };
+        let rendered = strip_ansi(&grad.render());
+        let lines: Vec<&str> = rendered.lines().collect();
+        eprintln!("Empty+Gap lines: {:?}", lines);
+
+        // Also try with a 1-char text node instead of Empty
+        let node2 = col([text(""), text("Content")]).gap(Gap::row(1));
+        let grad2 = Graduation { node: node2, width: 80 };
+        let rendered2 = strip_ansi(&grad2.render());
+        let lines2: Vec<&str> = rendered2.lines().collect();
+        eprintln!("EmptyText+Gap lines: {:?}", lines2);
+
+        // And with text(" ") spacer
+        let node3 = col([text(" "), text("Content")]);
+        let grad3 = Graduation { node: node3, width: 80 };
+        let rendered3 = strip_ansi(&grad3.render());
+        let lines3: Vec<&str> = rendered3.lines().collect();
+        eprintln!("SpacerText lines: {:?}", lines3);
+    }
+
+    #[test]
     fn plan_with_graduation_includes_graduation() {
         let mut planner = FramePlanner::new(80, 24);
         let tree = col([text("Live content")]);
