@@ -22,11 +22,10 @@ pub struct Graduation {
 }
 
 impl Graduation {
-    /// Render the graduated node tree to an ANSI string (standalone, compact).
+    /// Render graduated content to an ANSI string (compact, trailing blanks trimmed).
     ///
-    /// Prefer using `FramePlanner::plan_with_graduation()` which renders through
-    /// the shared layout engine. This standalone method exists for contexts
-    /// without a planner (e.g., Lua API).
+    /// This is the single render function for graduation content. Both the
+    /// production TUI (via `plan_with_graduation`) and tests use this.
     pub fn render(&self) -> String {
         crate::render::render_to_string(&self.node, self.width as usize)
     }
@@ -99,16 +98,8 @@ impl FrameSnapshot {
     }
 
     /// Stdout content (graduated scrollback text).
-    /// When graduation is rendered through the planner, stdout_delta contains
-    /// the result. Falls back to Graduation::render() for standalone use.
-    fn stdout_content(&self) -> String {
-        if !self.stdout_delta.is_empty() {
-            self.stdout_delta.clone()
-        } else if let Some(grad) = &self.graduation {
-            grad.render()
-        } else {
-            String::new()
-        }
+    fn stdout_content(&self) -> &str {
+        &self.stdout_delta
     }
 
     pub fn screen(&self) -> String {
@@ -167,18 +158,9 @@ impl FramePlanner {
     ) -> FrameSnapshot {
         self.frame_no += 1;
 
-        // Render graduation through the same layout engine as viewport.
-        // This replaces the standalone render_to_string() path — graduation
-        // and viewport now share a single LayoutEngine for consistent layout.
+        // Single render path: Graduation::render() handles layout + compact + trim.
         let stdout_delta = if let Some(ref grad) = graduation {
-            let grad_layout = build_layout_tree_with_engine(
-                &mut self.layout_engine,
-                &grad.node,
-                grad.width,
-                500, // tall enough for any graduated content
-            );
-            let (content, _) = render_layout_tree_compact(&grad_layout);
-            trim_trailing_blank_lines(&content)
+            grad.render()
         } else {
             stdout_delta
         };

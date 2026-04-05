@@ -303,7 +303,12 @@ impl OilChatApp {
         // Turn indicator
         let mut indicator = TurnIndicator::new();
         indicator.active = self.container_list.is_streaming();
-        if let Some(node) = self
+        // Pending thinking (not yet in a node) takes priority for word count
+        if let Some(words) = self.container_list.pending_thinking_words() {
+            if words > 0 {
+                indicator.thinking_words = Some(words);
+            }
+        } else if let Some(node) = self
             .container_list
             .nodes()
             .iter()
