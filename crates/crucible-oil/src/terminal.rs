@@ -178,6 +178,7 @@ impl<W: Write> Terminal<W> {
         self.last_snapshot.as_ref()
     }
 
+
     fn apply(&mut self, snapshot: &FrameSnapshot) -> io::Result<()> {
         use crate::output::{BEGIN_SYNCHRONIZED_UPDATE, END_SYNCHRONIZED_UPDATE};
 

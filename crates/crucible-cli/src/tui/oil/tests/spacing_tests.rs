@@ -253,3 +253,224 @@ fn no_triple_blanks_in_multi_turn_conversation() {
 
     assert_no_triple_blanks(&stripped, "multi_turn");
 }
+
+/// Permission modal between text and tools must not cause double blank lines.
+/// This reproduces the real bug: user_message → thinking → text → permission
+/// modal → tool. The modal changes viewport layout, and when graduation
+/// happens afterward, extra blank lines appear.
+#[test]
+fn permission_modal_does_not_cause_double_blanks() {
+    let mut app = OilChatApp::init();
+    let mut vt = super::vt100_runtime::Vt100TestRuntime::new(124, 59);
+
+    app.on_message(ChatAppMsg::UserMessage("tell me about this repo".into()));
+    vt.render_frame(&mut app);
+
+    // Thinking + text
+    app.on_message(ChatAppMsg::ThinkingDelta("I need to explore the repo structure".into()));
+    vt.render_frame(&mut app);
+    app.on_message(ChatAppMsg::TextDelta("I'll explore the repository.".into()));
+    vt.render_frame(&mut app);
+
+    // Permission modal opens (like interaction_requested)
+    app.on_message(ChatAppMsg::OpenInteraction {
+        request_id: "perm-1".into(),
+        request: crucible_core::interaction::InteractionRequest::Permission(
+            crucible_core::PermRequest::bash(["ls", "-la"]),
+        ),
+    });
+    vt.render_frame(&mut app);
+    vt.render_frame(&mut app); // extra frame while modal is shown
+
+    // Permission granted (modal closes)
+    app.on_message(ChatAppMsg::CloseInteraction {
+        request_id: "perm-1".into(),
+        response: crucible_core::interaction::InteractionResponse::Permission(
+            crucible_core::PermResponse::allow(),
+        ),
+    });
+    vt.render_frame(&mut app);
+
+    // Tool arrives
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "bash".into(),
+        args: r#"{"command": "ls -la"}"#.into(),
+        call_id: Some("c1".into()),
+        description: None,
+        source: None,
+        lua_primary_arg: None,
+    });
+    vt.render_frame(&mut app);
+
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "bash".into(),
+        call_id: Some("c1".into()),
+    });
+    app.on_message(ChatAppMsg::StreamComplete);
+    vt.render_frame(&mut app);
+
+    let full = vt.full_history();
+    let stripped = crucible_oil::ansi::strip_ansi(&full);
+    let lines: Vec<&str> = stripped.lines().collect();
+
+    // Check for double blanks
+    for i in 0..lines.len().saturating_sub(1) {
+        if lines[i].trim().is_empty() && lines[i + 1].trim().is_empty() {
+            let before = if i > 0 { lines[i - 1].trim() } else { "(start)" };
+            let after = if i + 2 < lines.len() { lines[i + 2].trim() } else { "(end)" };
+            panic!(
+                "Double blank at line {} (between {:?} and {:?})",
+                i, before, after
+            );
+        }
+    }
+}
+
+/// Tools split across graduation batches must have zero blank lines between them.
+/// This reproduces the bug: render_frame between two tool events causes the first
+/// tool's group to graduate, and the next tool starts a new group. The cross-batch
+/// margin produces a blank line between adjacent tools.
+#[test]
+fn tools_across_graduation_batches_no_gap() {
+    let mut app = OilChatApp::init();
+    let mut vt = super::vt100_runtime::Vt100TestRuntime::new(80, 24);
+
+    // User message
+    app.on_message(ChatAppMsg::UserMessage("Do stuff".into()));
+    vt.render_frame(&mut app); // UserMessage graduates
+
+    // First tool
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "bash".into(),
+        args: r#"{"command": "echo hi"}"#.into(),
+        call_id: Some("c1".into()),
+        description: None,
+        source: None,
+        lua_primary_arg: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "bash".into(),
+        call_id: Some("c1".into()),
+    });
+    vt.render_frame(&mut app); // Frame between tools
+
+    // Text before tools (like the fixture: thinking + text, then tools)
+    // The AR with text graduates, then tools follow
+    // Now simulate what the fixture does: text_delta arrives first,
+    // then tool_call. The text creates an AR that gets marked complete
+    // by the tool_call.
+
+    // Actually let's match the fixture exactly:
+    // thinking → text → tool1 → tool1_result → tool2 → tool2_result
+    // with render_frame after EACH event
+    let mut app2 = OilChatApp::init();
+    let mut vt2 = super::vt100_runtime::Vt100TestRuntime::new(80, 24);
+
+    app2.on_message(ChatAppMsg::UserMessage("Do stuff".into()));
+    vt2.render_frame(&mut app2);
+
+    app2.on_message(ChatAppMsg::ThinkingDelta("planning".into()));
+    vt2.render_frame(&mut app2);
+
+    app2.on_message(ChatAppMsg::TextDelta("I'll check.".into()));
+    vt2.render_frame(&mut app2);
+
+    app2.on_message(ChatAppMsg::ToolCall {
+        name: "bash".into(),
+        args: r#"{"command": "echo hi"}"#.into(),
+        call_id: Some("c1".into()),
+        description: None,
+        source: None,
+        lua_primary_arg: None,
+    });
+    vt2.render_frame(&mut app2);
+
+    app2.on_message(ChatAppMsg::ToolResultComplete {
+        name: "bash".into(),
+        call_id: Some("c1".into()),
+    });
+    vt2.render_frame(&mut app2);
+
+    // Extra frames (interaction events)
+    vt2.render_frame(&mut app2);
+    vt2.render_frame(&mut app2);
+
+    app2.on_message(ChatAppMsg::ToolCall {
+        name: "glob".into(),
+        args: r#"{"pattern": "*.rs"}"#.into(),
+        call_id: Some("c2".into()),
+        description: None,
+        source: None,
+        lua_primary_arg: None,
+    });
+    vt2.render_frame(&mut app2);
+
+    app2.on_message(ChatAppMsg::ToolResultComplete {
+        name: "glob".into(),
+        call_id: Some("c2".into()),
+    });
+    vt2.render_frame(&mut app2);
+
+    app2.on_message(ChatAppMsg::StreamComplete);
+    vt2.render_frame(&mut app2);
+
+    let full2 = vt2.full_history();
+    let stripped2 = crucible_oil::ansi::strip_ansi(&full2);
+    eprintln!("\n=== With text before tools ===");
+    let lines2: Vec<&str> = stripped2.lines().collect();
+    for (i, line) in lines2.iter().enumerate() {
+        eprintln!("{:3} {}{}", i, if line.trim().is_empty() { "B " } else { "  " }, line);
+    }
+    for i in 1..lines2.len().saturating_sub(1) {
+        let prev = lines2[i - 1].trim();
+        let next = lines2[i + 1].trim();
+        if lines2[i].trim().is_empty()
+            && (prev.starts_with('\u{2713}') || prev.starts_with('\u{25cf}'))
+            && (next.starts_with('\u{2713}') || next.starts_with('\u{25cf}'))
+        {
+            panic!(
+                "Blank line between adjacent tools at line {}: {:?} / {:?}",
+                i, prev, next
+            );
+        }
+    }
+
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "glob".into(),
+        args: r#"{"pattern": "*.rs"}"#.into(),
+        call_id: Some("c2".into()),
+        description: None,
+        source: None,
+        lua_primary_arg: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "glob".into(),
+        call_id: Some("c2".into()),
+    });
+    app.on_message(ChatAppMsg::StreamComplete);
+    vt.render_frame(&mut app);
+
+    let full = vt.full_history();
+    let stripped = crucible_oil::ansi::strip_ansi(&full);
+
+    // Find lines with tool indicators
+    let lines: Vec<&str> = stripped.lines().collect();
+    for (i, line) in lines.iter().enumerate() {
+        eprintln!("{:3} {}{}", i, if line.trim().is_empty() { "B " } else { "  " }, line);
+    }
+
+    // Assert: no blank line between adjacent tool lines
+    for i in 1..lines.len().saturating_sub(1) {
+        let prev = lines[i - 1].trim();
+        let next = lines[i + 1].trim();
+        if lines[i].trim().is_empty()
+            && (prev.starts_with('\u{2713}') || prev.starts_with('\u{25cf}'))
+            && (next.starts_with('\u{2713}') || next.starts_with('\u{25cf}'))
+        {
+            panic!(
+                "Blank line between adjacent tools at line {}: {:?} / {:?}",
+                i, prev, next
+            );
+        }
+    }
+}
