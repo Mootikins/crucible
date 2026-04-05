@@ -404,6 +404,7 @@ impl ContainerList {
 
     /// Cancel streaming: marks all streaming nodes as complete.
     pub fn cancel_streaming(&mut self) {
+        self.flush_pending_thinking();
         self.turn_active = false;
         for node in &mut self.nodes {
             if let ChatNode::AssistantResponse { complete, .. } = node {
@@ -423,9 +424,11 @@ impl ContainerList {
     /// A node graduates when:
     /// - The turn is over (`!turn_active`), OR
     /// - A successor node exists (the node is no longer the tail), OR
-    /// - The node is explicitly complete AND is a type that self-completes
-    ///   (AssistantResponse, SubagentTask). ToolGroups don't self-complete
-    ///   for graduation — they stay in viewport until superseded or turn ends.
+    /// - The node is a self-graduating type (UserMessage, SystemMessage, etc.)
+    /// - The node is a complete AssistantResponse
+    ///
+    /// ToolGroups and SubagentTasks never graduate during streaming — they
+    /// stay in viewport until superseded or turn ends.
     fn is_graduatable(&self, index: usize) -> bool {
         if !self.turn_active {
             return true;
