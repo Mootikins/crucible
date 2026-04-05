@@ -57,12 +57,6 @@ impl TestRuntime {
         }
     }
 
-    /// Render with a pre-rendered stdout_delta string (legacy API).
-    pub fn render_with_stdout(&mut self, tree: &Node, stdout_delta: &str) {
-        self.stdout_buffer.push_str(stdout_delta);
-        let _ = self.terminal.render(tree, stdout_delta);
-    }
-
     /// Accumulated graduation content as rendered strings.
     pub fn stdout_content(&self) -> &str {
         &self.stdout_buffer
@@ -74,10 +68,6 @@ impl TestRuntime {
             .snapshot()
             .map(|s| s.viewport_content())
             .unwrap_or("")
-    }
-
-    pub fn trace(&self) -> Option<&crate::planning::FrameTrace> {
-        self.terminal.snapshot().map(|s| s.trace())
     }
 
     pub fn last_snapshot(&self) -> Option<&crate::planning::FrameSnapshot> {
@@ -144,11 +134,16 @@ mod tests {
     #[test]
     fn test_runtime_accumulates_stdout() {
         use crate::node::{col, text};
+        use crate::planning::Graduation;
 
         let mut runtime = TestRuntime::new(80, 24);
 
         let tree = col([text("Live")]);
-        runtime.render_with_stdout(&tree, "Graduated content\r\n");
+        let grad = Graduation {
+            node: col([text("Graduated content")]),
+            width: 80,
+        };
+        runtime.render_with_graduation(&tree, Some(&grad));
 
         assert!(runtime.stdout_content().contains("Graduated content"));
         assert!(runtime.viewport_content().contains("Live"));

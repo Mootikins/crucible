@@ -2,7 +2,7 @@ use crate::tui::oil::app::{Action, App, ViewContext};
 use crate::tui::oil::event::Event;
 use crucible_oil::focus::FocusContext;
 use crucible_oil::node::Node;
-use crucible_oil::planning::{FramePlanner, FrameSnapshot, FrameTrace};
+use crucible_oil::planning::{FramePlanner, FrameSnapshot};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 pub struct AppHarness<A: App> {
@@ -142,8 +142,8 @@ impl<A: App> AppHarness<A> {
             .unwrap_or_default()
     }
 
-    pub fn trace(&self) -> Option<&FrameTrace> {
-        self.last_snapshot.as_ref().map(|s| s.trace())
+    pub fn frame_no(&self) -> Option<u64> {
+        self.last_snapshot.as_ref().map(|s| s.plan.frame_no)
     }
 
     pub fn graduated_count(&self) -> usize {
@@ -199,15 +199,14 @@ mod tests {
     }
 
     #[test]
-    fn trace_available_after_render() {
+    fn frame_no_available_after_render() {
         let mut harness: AppHarness<OilChatApp> = AppHarness::new(80, 24);
 
-        assert!(harness.trace().is_none());
+        assert!(harness.frame_no().is_none());
 
         harness.render();
 
-        let trace = harness.trace().expect("trace should exist after render");
-        assert_eq!(trace.frame_no, 1);
+        assert_eq!(harness.frame_no(), Some(1));
     }
 
     #[test]

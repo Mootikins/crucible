@@ -2,11 +2,11 @@ use crate::layout::{
     build_layout_tree, build_layout_tree_with_engine, render_layout_tree,
     render_layout_tree_compact, LayoutEngine,
 };
+
 use crate::node::{Node, OverlayNode};
 use crate::overlay::{extract_overlays, filter_overlays, OverlayAnchor};
 use crate::render::{trim_trailing_blank_lines, RenderResult};
 
-use crate::ansi::visual_rows;
 
 /// Graduated content ready for terminal output.
 ///
@@ -25,16 +25,10 @@ impl Graduation {
     /// Render graduated content to an ANSI string (compact, trailing blanks trimmed).
     ///
     /// This is the single render function for graduation content. Both the
-    /// production TUI (via `plan_with_graduation`) and tests use this.
+    /// production TUI (via `plan_frame`) and tests use this.
     pub fn render(&self) -> String {
         crate::render::render_to_string(&self.node, self.width as usize)
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct FrameTrace {
-    pub frame_no: u64,
-    pub viewport_visual_rows: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -48,24 +42,17 @@ pub struct FramePlan {
     pub frame_no: u64,
     pub viewport: RenderResult,
     pub overlays: Vec<RenderedOverlay>,
-    pub trace: FrameTrace,
 }
 
 #[derive(Debug, Clone)]
 pub struct FrameSnapshot {
     pub plan: FramePlan,
     /// Content to write to stdout before rendering viewport.
-    /// Set by the app layer (drain-based container graduation), not by the planner.
+    /// Produced by rendering graduation content (Graduation::render()).
     pub stdout_delta: String,
-    /// Graduated content as a node tree. Replaces stdout_delta.
-    pub graduation: Option<Graduation>,
 }
 
 impl FrameSnapshot {
-    pub fn trace(&self) -> &FrameTrace {
-        &self.plan.trace
-    }
-
     pub fn viewport_content(&self) -> &str {
         &self.plan.viewport.content
     }
@@ -135,35 +122,20 @@ impl FramePlanner {
     }
 
     pub fn plan(&mut self, tree: &Node) -> FrameSnapshot {
-        self.plan_with_stdout(tree, String::new())
+        self.plan_frame(tree, None)
     }
 
-    pub fn plan_with_stdout(&mut self, tree: &Node, stdout_delta: String) -> FrameSnapshot {
-        self.plan_inner(tree, stdout_delta, None)
-    }
-
-    pub fn plan_with_graduation(
+    pub fn plan_frame(
         &mut self,
         tree: &Node,
-        graduation: Option<Graduation>,
-    ) -> FrameSnapshot {
-        self.plan_inner(tree, String::new(), graduation)
-    }
-
-    fn plan_inner(
-        &mut self,
-        tree: &Node,
-        stdout_delta: String,
         graduation: Option<Graduation>,
     ) -> FrameSnapshot {
         self.frame_no += 1;
 
-        // Single render path: Graduation::render() handles layout + compact + trim.
-        let stdout_delta = if let Some(ref grad) = graduation {
-            grad.render()
-        } else {
-            stdout_delta
-        };
+        let stdout_delta = graduation
+            .as_ref()
+            .map(|g| g.render())
+            .unwrap_or_default();
 
         let overlay_nodes = extract_overlays(tree);
         let main_tree = filter_overlays(tree.clone());
@@ -183,18 +155,11 @@ impl FramePlanner {
 
         let rendered_overlays = self.render_overlays(&overlay_nodes);
 
-        let trace = FrameTrace {
-            frame_no: self.frame_no,
-            viewport_visual_rows: visual_rows(&viewport.content, self.width as usize),
-        };
-
         FrameSnapshot {
-            graduation,
             plan: FramePlan {
                 frame_no: self.frame_no,
                 viewport,
                 overlays: rendered_overlays,
-                trace,
             },
             stdout_delta,
         }
@@ -275,12 +240,16 @@ mod tests {
     }
 
     #[test]
-    fn plan_with_stdout_includes_delta() {
+    fn plan_frame_with_graduation_includes_delta() {
         let mut planner = FramePlanner::new(80, 24);
         let tree = col([text("Live content")]);
-        let snapshot = planner.plan_with_stdout(&tree, "Graduated\r\n".to_string());
+        let grad = Graduation {
+            node: col([text("Graduated")]),
+            width: 80,
+        };
+        let snapshot = planner.plan_frame(&tree, Some(grad));
 
-        assert_eq!(snapshot.stdout_delta, "Graduated\r\n");
+        assert!(snapshot.stdout_delta.contains("Graduated"));
         assert!(snapshot.viewport_content().contains("Live content"));
     }
 
@@ -337,29 +306,26 @@ mod tests {
     }
 
     #[test]
-    fn plan_with_graduation_includes_graduation() {
+    fn plan_frame_graduation_produces_stdout_delta() {
         let mut planner = FramePlanner::new(80, 24);
         let tree = col([text("Live content")]);
-        let grad_node = col([text("Graduated")]);
         let graduation = Graduation {
-            node: grad_node,
+            node: col([text("Graduated")]),
             width: 80,
         };
-        let snapshot = planner.plan_with_graduation(&tree, Some(graduation));
+        let snapshot = planner.plan_frame(&tree, Some(graduation));
 
-        assert!(snapshot.graduation.is_some());
-        let rendered = snapshot.graduation.as_ref().unwrap().render();
-        assert!(rendered.contains("Graduated"));
+        assert!(snapshot.stdout_delta.contains("Graduated"));
         assert!(snapshot.viewport_content().contains("Live content"));
     }
 
     #[test]
-    fn plan_with_graduation_none_has_no_graduation() {
+    fn plan_frame_no_graduation_empty_delta() {
         let mut planner = FramePlanner::new(80, 24);
         let tree = col([text("Live content")]);
-        let snapshot = planner.plan_with_graduation(&tree, None);
+        let snapshot = planner.plan_frame(&tree, None);
 
-        assert!(snapshot.graduation.is_none());
+        assert!(snapshot.stdout_delta.is_empty());
         assert!(snapshot.viewport_content().contains("Live content"));
     }
 
@@ -371,7 +337,7 @@ mod tests {
             node: col([text("Graduated")]),
             width: 80,
         };
-        let snapshot = planner.plan_with_graduation(&tree, Some(graduation));
+        let snapshot = planner.plan_frame(&tree, Some(graduation));
 
         let screen = snapshot.screen();
         assert!(screen.contains("Graduated"));
