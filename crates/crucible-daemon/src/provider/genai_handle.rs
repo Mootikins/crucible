@@ -561,11 +561,17 @@ impl GenaiAgentHandle {
     }
 
     fn explicit_model_name(&self) -> String {
-        format!(
-            "{}::{}",
-            self.model.adapter_kind.as_lower_str(),
-            &*self.model.model_name
-        )
+        // If model_name already has a namespace (contains ::), use it as-is.
+        // Otherwise prefix with adapter kind for explicit routing.
+        if self.model.model_name.contains("::") {
+            self.model.model_name.to_string()
+        } else {
+            format!(
+                "{}::{}",
+                self.model.adapter_kind.as_lower_str(),
+                &*self.model.model_name
+            )
+        }
     }
 
     pub fn debug_visible_tool_names(&self) -> Vec<String> {

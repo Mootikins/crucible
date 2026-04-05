@@ -25,7 +25,7 @@ use tracing;
 /// - `Burn` → Not supported (embedding-only, no chat)
 /// - `GitHubCopilot` → `AdapterKind::OpenAI` (uses ServiceTargetResolver for endpoint)
 /// - `OpenRouter` → `AdapterKind::OpenAI` (uses ServiceTargetResolver for custom endpoint)
-/// - `ZAI` → `AdapterKind::OpenAI` (uses ServiceTargetResolver for custom endpoint)
+/// - `ZAI` → `AdapterKind::Zai` (coding plan uses `zai-coding::` model prefix)
 /// - `Custom` → `AdapterKind::OpenAI` (generic OpenAI-compatible)
 /// - `Mock` → Not supported (testing only)
 pub fn backend_to_adapter(backend: &BackendType) -> Option<AdapterKind> {
@@ -41,7 +41,7 @@ pub fn backend_to_adapter(backend: &BackendType) -> Option<AdapterKind> {
         // Chat-only backends that use OpenAI-compatible API
         BackendType::GitHubCopilot => Some(AdapterKind::OpenAI),
         BackendType::OpenRouter => Some(AdapterKind::OpenAI),
-        BackendType::ZAI => Some(AdapterKind::OpenAI),
+        BackendType::ZAI => Some(AdapterKind::Zai),
         // Custom HTTP-based provider (OpenAI-compatible)
         BackendType::Custom => Some(AdapterKind::OpenAI),
         // Mock backend — testing only
@@ -70,6 +70,9 @@ fn ensure_trailing_slash(endpoint: &str) -> String {
 pub struct ChatClient {
     client: genai::Client,
     backend: BackendType,
+    /// ZAI coding plan requires `zai-coding::` model name prefix for correct
+    /// endpoint routing in genai's ZAI adapter.
+    zai_coding: bool,
 }
 
 impl ChatClient {
@@ -136,6 +139,9 @@ impl ChatClient {
             }
         }
 
+        let zai_coding = matches!(config.provider_type, BackendType::ZAI)
+            && endpoint.contains("coding");
+
         if !endpoint.is_empty() {
             builder = builder.with_service_target_resolver(
                 ServiceTargetResolver::from_resolver_fn(move |mut st: genai::ServiceTarget| {
@@ -149,6 +155,7 @@ impl ChatClient {
         Self {
             client,
             backend: config.provider_type,
+            zai_coding,
         }
     }
 
@@ -166,7 +173,13 @@ impl ChatClient {
     /// `Some(ModelIden)` if the backend supports chat, `None` otherwise.
     pub fn model_iden(&self, model: &str) -> Option<ModelIden> {
         let adapter = backend_to_adapter(&self.backend)?;
-        Some(ModelIden::new(adapter, model))
+        if self.zai_coding {
+            // Prefix with zai-coding:: so genai's ZAI adapter routes to the
+            // coding endpoint instead of the regular credit-based one.
+            Some(ModelIden::new(adapter, format!("zai-coding::{model}")))
+        } else {
+            Some(ModelIden::new(adapter, model))
+        }
     }
 
     /// Returns a reference to the inner genai `Client`.
@@ -271,11 +284,10 @@ mod tests {
     }
 
     #[test]
-    fn test_backend_to_adapter_zai_openai() {
-        // ZAI uses OpenAI-compatible API
+    fn test_backend_to_adapter_zai() {
         assert_eq!(
             backend_to_adapter(&BackendType::ZAI),
-            Some(AdapterKind::OpenAI)
+            Some(AdapterKind::Zai)
         );
     }
 
@@ -366,7 +378,7 @@ mod tests {
         let model_iden = build_model_iden(&BackendType::ZAI, "GLM-4.7");
         assert!(model_iden.is_some());
         let iden = model_iden.unwrap();
-        assert_eq!(iden.adapter_kind, AdapterKind::OpenAI);
+        assert_eq!(iden.adapter_kind, AdapterKind::Zai);
         assert_eq!(&*iden.model_name, "GLM-4.7");
     }
 

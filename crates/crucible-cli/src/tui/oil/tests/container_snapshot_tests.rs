@@ -142,3 +142,45 @@ fn snapshot_user_and_assistant_exchange() {
     let output = vt_render(&mut app);
     insta::assert_snapshot!(output);
 }
+
+#[test]
+fn snapshot_context_indicator_after_usage() {
+    let mut app = OilChatApp::init();
+
+    app.on_message(ChatAppMsg::UserMessage("Hi".into()));
+    app.on_message(ChatAppMsg::TextDelta("Hello!".into()));
+    app.on_message(ChatAppMsg::ContextUsage {
+        used: 2555,
+        total: 0,
+    });
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    let output = vt_render(&mut app);
+    // Statusline should show token count (no total → "Nk tok" format)
+    assert!(
+        output.contains("2k tok"),
+        "Statusline should show token usage after ContextUsage message: {output:?}"
+    );
+    insta::assert_snapshot!(output);
+}
+
+#[test]
+fn snapshot_context_indicator_with_percentage() {
+    let mut app = OilChatApp::init();
+
+    app.on_message(ChatAppMsg::UserMessage("Hi".into()));
+    app.on_message(ChatAppMsg::TextDelta("Hello!".into()));
+    app.on_message(ChatAppMsg::ContextUsage {
+        used: 4096,
+        total: 131072,
+    });
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    let output = vt_render(&mut app);
+    // Statusline should show percentage (has total → "N% ctx" format)
+    assert!(
+        output.contains("3% ctx"),
+        "Statusline should show context percentage when total is known: {output:?}"
+    );
+    insta::assert_snapshot!(output);
+}

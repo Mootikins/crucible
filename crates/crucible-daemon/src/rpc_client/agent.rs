@@ -1418,6 +1418,32 @@ mod tests {
     }
 
     #[test]
+    fn test_message_complete_usage_with_cache_tokens() {
+        // Anthropic-style response with cache_read_tokens and cache_creation_tokens
+        let event = SessionEvent {
+            session_id: "test".to_string(),
+            event_type: "message_complete".to_string(),
+            data: json!({
+                "message_id": "msg-4",
+                "full_response": "cached response",
+                "prompt_tokens": 1000,
+                "completion_tokens": 200,
+                "total_tokens": 1200,
+                "cache_read_tokens": 800,
+                "cache_creation_tokens": 150
+            }),
+        };
+
+        let chunk = session_event_to_chat_chunk(&event).unwrap();
+        let usage = chunk.usage.expect("Should extract usage with cache fields");
+        assert_eq!(usage.prompt_tokens, 1000);
+        assert_eq!(usage.completion_tokens, 200);
+        assert_eq!(usage.total_tokens, 1200);
+        assert_eq!(usage.cache_read_tokens, Some(800));
+        assert_eq!(usage.cache_creation_tokens, Some(150));
+    }
+
+    #[test]
     fn test_precognition_complete_with_notes() {
         let event = SessionEvent {
             session_id: "test".to_string(),
