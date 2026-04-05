@@ -20,6 +20,8 @@ use futures::stream::BoxStream;
 use futures::StreamExt;
 use std::io;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -103,7 +105,7 @@ pub struct OilChatRunner {
     tick_rate: Duration,
     mode: ChatMode,
     model: String,
-    context_limit: usize,
+    context_limit: Arc<AtomicUsize>,
     focus: FocusContext,
     workspace_files: Vec<String>,
     kiln_notes: Vec<String>,
@@ -158,7 +160,7 @@ impl OilChatRunner {
             tick_rate: Duration::from_millis(50),
             mode: ChatMode::Normal,
             model: String::new(),
-            context_limit: 0,
+            context_limit: Arc::new(AtomicUsize::new(0)),
             focus: FocusContext::new(),
             workspace_files: Vec::new(),
             kiln_notes: Vec::new(),
@@ -193,8 +195,13 @@ impl OilChatRunner {
     }
 
     pub fn with_context_limit(mut self, limit: usize) -> Self {
-        self.context_limit = limit;
+        self.context_limit = Arc::new(AtomicUsize::new(limit));
         self
+    }
+
+    /// Returns a handle to set context_limit from a background task.
+    pub fn context_limit_handle(&self) -> Arc<AtomicUsize> {
+        Arc::clone(&self.context_limit)
     }
 
     pub fn with_mode(mut self, mode: ChatMode) -> Self {
@@ -881,7 +888,7 @@ impl OilChatRunner {
                     if msg_tx
                         .send(ChatAppMsg::ContextUsage {
                             used: usage.total_tokens as usize,
-                            total: self.context_limit,
+                            total: self.context_limit.load(Ordering::Relaxed),
                         })
                         .is_err()
                     {

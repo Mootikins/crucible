@@ -233,9 +233,10 @@ fn parse_env_overrides(env_overrides: &[String]) -> std::collections::HashMap<St
 
 async fn run_preflight_checks(config: &mut CliConfig) -> Result<()> {
     let config_kiln_valid = config.kiln_path.join(".crucible").is_dir();
-    let providers = match crate::common::daemon_client().await {
-        Ok(client) => client.list_providers(None).await.unwrap_or_default(),
-        Err(_) => {
+    let daemon = crate::common::daemon_client().await.ok();
+    let providers = match daemon.as_ref() {
+        Some(client) => client.list_providers(None).await.unwrap_or_default(),
+        None => {
             // Daemon not available (e.g., first run before daemon starts)
             // Fall back to local detection
             detect_providers(&config.chat)
@@ -320,8 +321,8 @@ async fn run_preflight_checks(config: &mut CliConfig) -> Result<()> {
         info!("Using kiln from config: {}", config.kiln_path.display());
     }
 
-    // If cwd matches a registered project, open that project's kilns
-    if let Err(e) = open_project_kilns_if_matched(config).await {
+    // If cwd matches a registered project, open that project's kilns (reuse daemon connection)
+    if let Err(e) = open_project_kilns_if_matched(config, daemon.as_ref()).await {
         debug!("Project kiln auto-open skipped: {}", e);
     }
 
@@ -400,7 +401,10 @@ async fn run_preflight_checks(config: &mut CliConfig) -> Result<()> {
 /// If the current working directory matches a registered project, open that
 /// project's kilns via daemon RPC. This ensures multi-kiln projects have all
 /// their knowledge sources available at session start.
-async fn open_project_kilns_if_matched(config: &CliConfig) -> Result<()> {
+async fn open_project_kilns_if_matched(
+    config: &CliConfig,
+    existing_client: Option<&DaemonClient>,
+) -> Result<()> {
     let cwd = std::env::current_dir()?;
 
     // Find a project whose expanded path matches cwd
@@ -419,7 +423,15 @@ async fn open_project_kilns_if_matched(config: &CliConfig) -> Result<()> {
     }
 
     let registry = config.resolved_kilns();
-    let client = crate::common::daemon_client().await?;
+    // Reuse existing daemon connection if available, otherwise connect
+    let owned_client;
+    let client = match existing_client {
+        Some(c) => c,
+        None => {
+            owned_client = crate::common::daemon_client().await?;
+            &owned_client
+        }
+    };
 
     for kiln_name in &project.kilns {
         if let Some(entry) = registry.get(kiln_name) {
@@ -500,21 +512,13 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
         .as_ref()
         .map(|p| p.model.clone())
         .unwrap_or_else(|| config.chat_model());
-    let endpoint = effective_llm
+    // Context length is only used for the usage display — fetch in background after TUI starts
+    let context_endpoint = effective_llm
         .as_ref()
         .map(|p| p.endpoint.clone())
         .or_else(|| config.chat.endpoint.clone())
         .unwrap_or_else(|| crucible_config::DEFAULT_OLLAMA_ENDPOINT.to_string());
-
-    let context_limit = fetch_model_context_length(&endpoint, &model_name)
-        .await
-        .unwrap_or(0);
-    if context_limit > 0 {
-        info!(
-            "Model {} context length: {} tokens",
-            model_name, context_limit
-        );
-    }
+    let context_model = model_name.clone();
 
     let display_model = agent_name
         .as_deref()
@@ -527,7 +531,7 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
     let mut runner = OilChatRunner::new()?
         .with_mode(mode)
         .with_model(&display_model)
-        .with_context_limit(context_limit)
+        .with_context_limit(0)
         .with_show_thinking(config.chat.show_thinking)
         .with_agent_name(agent_name)
         .with_initial_sets(parsed_set_overrides)
@@ -574,6 +578,7 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
     let lua_session_id = resume_session_id
         .clone()
         .unwrap_or_else(|| format!("chat-{}", chrono::Utc::now().format("%Y%m%d-%H%M%S")));
+    // Connect to daemon once and reuse for Lua init + plugin discovery
     let lua_client = match crate::common::daemon_client().await {
         Ok(client) => Some(client),
         Err(e) => {
@@ -581,41 +586,50 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
             None
         }
     };
-    let lua_initialized = if let Some(client) = lua_client.as_ref() {
-        let init_params = LuaInitSessionRequest {
-            session_id: lua_session_id.clone(),
-            kiln_path: kiln_root.to_string_lossy().to_string(),
-            config: serde_json::Value::Null,
+
+    // Run Lua init + plugin discovery (sharing daemon client) concurrently with file indexing
+    let file_index_fut = tokio::task::spawn_blocking({
+        let root = workspace_root.clone();
+        move || index_workspace_files(&root)
+    });
+    let note_index_fut = tokio::task::spawn_blocking({
+        let root = kiln_root.clone();
+        move || index_kiln_notes(&root)
+    });
+
+    // Lua init and plugin discovery share the same client, run sequentially with each other
+    // but concurrently with file indexing
+    let lua_and_plugins_fut = async {
+        let lua_initialized = if let Some(client) = lua_client.as_ref() {
+            let init_params = LuaInitSessionRequest {
+                session_id: lua_session_id.clone(),
+                kiln_path: kiln_root.to_string_lossy().to_string(),
+                config: serde_json::Value::Null,
+            };
+            match client.lua_init_session(init_params).await {
+                Ok(response) => {
+                    debug!(
+                        session_id = %response.session_id,
+                        commands = response.commands.len(),
+                        views = response.views.len(),
+                        "Initialized Lua session via daemon RPC"
+                    );
+                    true
+                }
+                Err(e) => {
+                    warn!("Failed to initialize Lua session via daemon RPC: {}", e);
+                    false
+                }
+            }
+        } else {
+            false
         };
-        match client.lua_init_session(init_params).await {
-            Ok(response) => {
-                debug!(
-                    session_id = %response.session_id,
-                    commands = response.commands.len(),
-                    views = response.views.len(),
-                    "Initialized Lua session via daemon RPC"
-                );
-                true
-            }
-            Err(e) => {
-                warn!("Failed to initialize Lua session via daemon RPC: {}", e);
-                false
-            }
-        }
-    } else {
-        false
+        let plugin_entries = discover_plugin_status(lua_client.as_ref(), &kiln_root).await;
+        (lua_initialized, plugin_entries)
     };
 
-    let (files, notes) = tokio::join!(
-        tokio::task::spawn_blocking({
-            let root = workspace_root.clone();
-            move || index_workspace_files(&root)
-        }),
-        tokio::task::spawn_blocking({
-            let root = kiln_root.clone();
-            move || index_kiln_notes(&root)
-        }),
-    );
+    let (files, notes, (lua_initialized, plugin_entries)) =
+        tokio::join!(file_index_fut, note_index_fut, lua_and_plugins_fut);
 
     if let Ok(files) = files {
         runner = runner.with_workspace_files(files);
@@ -648,7 +662,6 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
 
     runner = runner.with_slash_commands(known_slash_commands());
 
-    let plugin_entries = discover_plugin_status(lua_client.as_ref(), &kiln_root).await;
     if !plugin_entries.is_empty() {
         runner = runner.with_plugin_status(plugin_entries);
     }
@@ -710,6 +723,21 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
                 }
             }
         }
+    };
+
+    // Fetch model context length in background — only needed for context usage display
+    let _context_fetch = {
+        let limit_handle = runner.context_limit_handle();
+        tokio::spawn(async move {
+            if let Some(limit) =
+                fetch_model_context_length(&context_endpoint, &context_model).await
+            {
+                if limit > 0 {
+                    info!("Model {} context length: {} tokens", context_model, limit);
+                    limit_handle.store(limit, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
+        })
     };
 
     let run_result = runner.run_with_factory(&bridge, factory).await;
