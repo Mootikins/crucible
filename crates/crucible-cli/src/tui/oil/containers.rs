@@ -203,6 +203,9 @@ pub struct ContainerList {
     nodes: Vec<ChatNode>,
     turn_active: bool,
     has_graduated: bool,
+    /// Thinking content that hasn't been attached to an AR yet.
+    /// Flushed into an AR when text, a tool call, or completion arrives.
+    pending_thinking: Option<ThinkingComponent>,
 }
 
 impl ContainerList {
@@ -211,6 +214,7 @@ impl ContainerList {
             nodes: Vec::new(),
             turn_active: false,
             has_graduated: false,
+            pending_thinking: None,
         }
     }
 
@@ -226,6 +230,7 @@ impl ContainerList {
         self.nodes.clear();
         self.has_graduated = false;
         self.turn_active = false;
+        self.pending_thinking = None;
     }
 
     pub fn nodes(&self) -> &[ChatNode] {
@@ -242,6 +247,11 @@ impl ContainerList {
         self.turn_active
     }
 
+    /// Word count of pending (unbuffered) thinking, if any.
+    pub fn pending_thinking_words(&self) -> Option<usize> {
+        self.pending_thinking.as_ref().map(|tc| tc.word_count())
+    }
+
     pub fn has_graduated(&self) -> bool {
         self.has_graduated
     }
@@ -252,11 +262,27 @@ impl ContainerList {
         self.nodes.push(ChatNode::UserMessage { text: content });
     }
 
+    /// Flush pending thinking into the trailing AR (creating one if needed).
+    fn flush_pending_thinking(&mut self) {
+        if let Some(tc) = self.pending_thinking.take() {
+            if !matches!(self.nodes.last(), Some(ChatNode::AssistantResponse { .. })) {
+                self.nodes.push(ChatNode::AssistantResponse {
+                    text: String::new(),
+                    thinking: Vec::new(),
+                    complete: false,
+                });
+            }
+            if let Some(ChatNode::AssistantResponse { thinking, .. }) = self.nodes.last_mut() {
+                thinking.push(tc);
+            }
+        }
+    }
+
     /// Ensure there's an AssistantResponse at the end. Creates one if needed.
+    /// Flushes any pending thinking first.
     pub fn start_assistant_response(&mut self) {
+        self.flush_pending_thinking();
         if !matches!(self.nodes.last(), Some(ChatNode::AssistantResponse { .. })) {
-            let trailing_kind = self.nodes.last().map(|n| std::mem::discriminant(n));
-            tracing::debug!(?trailing_kind, "creating new AssistantResponse");
             self.nodes.push(ChatNode::AssistantResponse {
                 text: String::new(),
                 thinking: Vec::new(),
@@ -273,20 +299,29 @@ impl ContainerList {
         }
     }
 
-    /// Append thinking content. One ThinkingComponent per AssistantResponse.
+    /// Append thinking content.
+    ///
+    /// If a trailing AR exists, appends directly to it (thinking belongs
+    /// to the current response). Otherwise buffers in `pending_thinking`
+    /// so we don't create phantom AR nodes that graduate as empty batches.
     pub fn append_thinking(&mut self, delta: &str) {
-        self.start_assistant_response();
         if let Some(ChatNode::AssistantResponse { thinking, .. }) = self.nodes.last_mut() {
             if thinking.is_empty() {
                 thinking.push(ThinkingComponent::new(String::new()));
             }
             thinking.last_mut().unwrap().append(delta);
+        } else {
+            self.pending_thinking
+                .get_or_insert_with(|| ThinkingComponent::new(String::new()))
+                .append(delta);
         }
     }
 
     /// Add a tool call. Groups into an existing trailing ToolGroup if present,
     /// otherwise creates a new one.
     pub fn add_tool_call(&mut self, tool: CachedToolCall) {
+        self.flush_pending_thinking();
+
         tracing::debug!(
             tool_name = %tool.name,
             node_count = self.nodes.len(),
@@ -360,6 +395,7 @@ impl ContainerList {
     /// Mark the turn as complete: sets turn_active = false and marks
     /// the trailing AssistantResponse as Complete.
     pub fn complete_response(&mut self) {
+        self.flush_pending_thinking();
         self.turn_active = false;
         if let Some(ChatNode::AssistantResponse { complete, .. }) = self.nodes.last_mut() {
             *complete = true;
@@ -391,15 +427,22 @@ impl ContainerList {
     ///   (AssistantResponse, SubagentTask). ToolGroups don't self-complete
     ///   for graduation — they stay in viewport until superseded or turn ends.
     fn is_graduatable(&self, index: usize) -> bool {
-        if !self.turn_active || index + 1 < self.nodes.len() {
+        if !self.turn_active {
+            return true;
+        }
+        // During streaming, ToolGroups never graduate — more tools may
+        // arrive and they must stay in one group to avoid cross-batch gaps.
+        if matches!(&self.nodes[index], ChatNode::ToolGroup { .. }) {
+            return false;
+        }
+        if index + 1 < self.nodes.len() {
             return true;
         }
         // Last node, turn active: only graduate types that explicitly complete
         match &self.nodes[index] {
             ChatNode::UserMessage { .. } | ChatNode::SystemMessage { .. } | ChatNode::ShellExecution { .. } => true,
             ChatNode::AssistantResponse { complete, .. } => *complete,
-            ChatNode::SubagentTask { agent } => agent.is_terminal(),
-            ChatNode::ToolGroup { .. } => false,
+            ChatNode::SubagentTask { .. } | ChatNode::ToolGroup { .. } => false,
         }
     }
 

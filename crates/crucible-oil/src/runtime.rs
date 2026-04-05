@@ -42,15 +42,19 @@ impl TestRuntime {
 
     /// Render a tree with optional graduation, tracking stdout for assertions.
     pub fn render_with_graduation(&mut self, tree: &Node, graduation: Option<&Graduation>) {
-        // Track graduation content for stdout_content() assertions
-        if let Some(grad) = graduation {
-            let rendered = grad.render();
-            self.stdout_buffer.push_str(&rendered);
-            self.stdout_buffer.push_str("\r\n");
-        }
-
-        // Delegate to the real Terminal implementation via FrameRenderer
+        // Delegate to the real Terminal implementation via FrameRenderer.
+        // This is the single render path — same as production.
         FrameRenderer::render_frame(&mut self.terminal, tree, graduation);
+
+        // Capture the stdout_delta that the Terminal actually wrote.
+        // This ensures stdout_content() reflects the exact same output
+        // as the real TUI, not a separate standalone render.
+        if let Some(snapshot) = self.terminal.snapshot() {
+            if !snapshot.stdout_delta.is_empty() {
+                self.stdout_buffer.push_str(&snapshot.stdout_delta);
+                self.stdout_buffer.push_str("\r\n");
+            }
+        }
     }
 
     /// Render with a pre-rendered stdout_delta string (legacy API).

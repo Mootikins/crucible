@@ -129,7 +129,12 @@ fn replay_fixture(path: &Path, width: u16, height: u16) -> ReplayResult {
         }
     }
 
-    let final_output = strip_ansi(&vt.full_history());
+    // Use scrollback from the real vt100 (not tall parser) + final screen.
+    // The tall parser can show artifacts from intermediate viewport frames.
+    let scrollback = vt.scrollback_contents();
+    let screen = vt.screen_contents();
+    let combined = format!("{}\n{}", scrollback, screen);
+    let final_output = strip_ansi(&combined);
     let final_styled = vt.screen_contents_styled();
 
     ReplayResult {
@@ -343,6 +348,23 @@ fn replay_reproduce_124x59() {
         result.final_output.len() > 200,
         "Reproduce fixture should produce substantial output"
     );
+
+    // No double blank lines anywhere
+    let lines: Vec<&str> = result.final_output.lines().collect();
+    for i in 0..lines.len().saturating_sub(1) {
+        if lines[i].trim().is_empty() && lines[i + 1].trim().is_empty() {
+            let before = if i > 0 { lines[i - 1].trim() } else { "(start)" };
+            let after = if i + 2 < lines.len() { lines[i + 2].trim() } else { "(end)" };
+            panic!(
+                "Double blank at line {} (between {:?} and {:?})",
+                i, before, after
+            );
+        }
+    }
+
+    // TODO: Adjacent tools in scrollback can show intermediate gaps from
+    // viewport-to-scrollback transitions. This is a rendering infrastructure
+    // issue (viewport margin scrolls into scrollback) not a ContainerList bug.
 }
 
 #[test]

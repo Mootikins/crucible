@@ -269,6 +269,23 @@ mod tests {
     }
 
     #[test]
+    fn empty_node_in_gapped_col_produces_no_extra_spacing() {
+        // If Node::Empty creates a gap, this will have 2 blank lines between A and B
+        let with_empty = col(vec![text("A"), Node::Empty, text("B")]).gap(Gap::row(1));
+        let without_empty = col(vec![text("A"), text("B")]).gap(Gap::row(1));
+        let r1 = render_to_string(&with_empty, 80);
+        let r2 = render_to_string(&without_empty, 80);
+        eprintln!("WITH empty:\n{:?}", r1.lines().collect::<Vec<_>>());
+        eprintln!("WITHOUT empty:\n{:?}", r2.lines().collect::<Vec<_>>());
+        assert_eq!(
+            r1.lines().count(),
+            r2.lines().count(),
+            "Node::Empty should not add extra lines.\nWith: {:?}\nWithout: {:?}",
+            r1, r2
+        );
+    }
+
+    #[test]
     fn test_render_nested_col_row() {
         let node = col(vec![
             text("Header"),
