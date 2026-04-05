@@ -165,9 +165,9 @@ impl<W: Write> Terminal<W> {
     }
 
     pub fn render(&mut self, tree: &Node, stdout_delta: &str) -> io::Result<()> {
-        let snapshot = self
-            .planner
-            .plan_with_stdout(tree, stdout_delta.to_string());
+        // Legacy API: accepts a pre-rendered stdout string. Used by tests.
+        let mut snapshot = self.planner.plan_frame(tree, None);
+        snapshot.stdout_delta = stdout_delta.to_string();
         self.apply(&snapshot)?;
         self.last_snapshot = Some(snapshot);
         Ok(())
@@ -177,7 +177,6 @@ impl<W: Write> Terminal<W> {
     pub fn snapshot(&self) -> Option<&FrameSnapshot> {
         self.last_snapshot.as_ref()
     }
-
 
     fn apply(&mut self, snapshot: &FrameSnapshot) -> io::Result<()> {
         use crate::output::{BEGIN_SYNCHRONIZED_UPDATE, END_SYNCHRONIZED_UPDATE};
@@ -209,8 +208,9 @@ impl<W: Write> Terminal<W> {
             // Cursor is at viewport bottom, so clear() only needs previous_visual_rows.
             self.output.clear()?;
             write!(self.output.writer(), "{}", snapshot.stdout_delta)?;
-            // Graduation content needs a trailing \r\n so the viewport render
-            // starts on a new line and doesn't overwrite the last graduation line.
+            // Line terminator after graduation content — ensures the viewport
+            // render starts on a fresh line. This is NOT spacing; inter-batch
+            // gaps are encoded as margin-top in the graduated node tree.
             write!(self.output.writer(), "\r\n")?;
             self.output.writer().flush()?;
 
@@ -300,16 +300,11 @@ impl<W: Write> Terminal<W> {
 
 impl<W: Write> crate::runtime::FrameRenderer for Terminal<W> {
     fn render_frame(&mut self, tree: &Node, graduation: Option<&crate::planning::Graduation>) {
-        if let Some(grad) = graduation {
-            // Graduation rendered through planner's layout engine (same as viewport).
-            let snapshot = self
-                .planner
-                .plan_with_graduation(tree, Some(grad.clone()));
-            let _ = self.apply(&snapshot);
-            self.last_snapshot = Some(snapshot);
-        } else {
-            let _ = self.render(tree, "");
-        }
+        let snapshot = self
+            .planner
+            .plan_frame(tree, graduation.cloned());
+        let _ = self.apply(&snapshot);
+        self.last_snapshot = Some(snapshot);
     }
 
     fn force_full_redraw(&mut self) {

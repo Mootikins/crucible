@@ -1,7 +1,7 @@
 use crate::tui::oil::app::ViewContext;
 use crucible_oil::focus::FocusContext;
 use crucible_oil::node::Node;
-use crucible_oil::planning::{FramePlanner, FrameSnapshot, FrameTrace};
+use crucible_oil::planning::{FramePlanner, FrameSnapshot};
 
 pub trait Component {
     fn view(&self, ctx: &ViewContext<'_>) -> Node;
@@ -35,10 +35,6 @@ impl ComponentHarness {
         let ctx = ViewContext::new(&self.focus);
         let tree = c.view(&ctx);
         self.last_snapshot.insert(self.planner.plan(&tree))
-    }
-
-    pub fn trace(&self) -> Option<&FrameTrace> {
-        self.last_snapshot.as_ref().map(|s| s.trace())
     }
 
     pub fn viewport(&self) -> &str {

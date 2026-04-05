@@ -55,7 +55,7 @@ pub use crucible_oil::focus::*;
 pub use crucible_oil::layout::*;
 pub use crucible_oil::node::*;
 pub use crucible_oil::overlay::{composite_overlays, Overlay, OverlayAnchor};
-pub use crucible_oil::planning::{FramePlan, FramePlanner, FrameSnapshot, FrameTrace};
+pub use crucible_oil::planning::{FramePlan, FramePlanner, FrameSnapshot};
 pub use crucible_oil::render::*;
 pub use crucible_oil::runtime::TestRuntime;
 pub use crucible_oil::style::*;
