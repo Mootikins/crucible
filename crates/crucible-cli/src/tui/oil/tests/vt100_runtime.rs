@@ -119,6 +119,7 @@ impl Vt100TestRuntime {
         &self.inner
     }
 
+
     /// Read only the scrollback content (content that has scrolled off the top).
     ///
     /// Uses vt100's `set_scrollback()` to shift the viewport, then extracts

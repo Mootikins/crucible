@@ -211,6 +211,11 @@ impl<W: Write> OutputBuffer<W> {
                     self.stdout,
                     terminal::Clear(terminal::ClearType::FromCursorDown)
                 )?;
+                // Move cursor back to viewport bottom (last content line).
+                // The \r\n + ClearFromCursorDown left cursor one row past the
+                // viewport, which causes subsequent clear() calls to miss the
+                // topmost viewport row (off-by-one).
+                execute!(self.stdout, cursor::MoveUp(1))?;
             }
         }
 
