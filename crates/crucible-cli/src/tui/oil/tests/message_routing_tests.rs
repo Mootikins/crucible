@@ -89,10 +89,7 @@ fn mode_changed_updates_mode() {
     let mut app = OilChatApp::init();
     app.on_message(ChatAppMsg::ModeChanged("plan".into()));
 
-    assert_eq!(
-        app.mode(),
-        crate::tui::oil::chat_app::state::ChatMode::Plan
-    );
+    assert_eq!(app.mode(), crate::tui::oil::chat_app::state::ChatMode::Plan);
 }
 
 // ─── Stream lifecycle routing ──────────────────────────────────────────────
@@ -229,7 +226,8 @@ fn open_interaction_opens_modal() {
 /// as Ui but handled in Stream) cause silent drops.
 #[test]
 fn no_message_silently_dropped() {
-    let test_cases: Vec<(&str, ChatAppMsg, Box<dyn Fn(&OilChatApp) -> bool>)> = vec![
+    type TestCase<'a> = (&'a str, ChatAppMsg, Box<dyn Fn(&OilChatApp) -> bool>);
+    let test_cases: Vec<TestCase<'_>> = vec![
         (
             "Error",
             ChatAppMsg::Error("test error".into()),
@@ -243,9 +241,7 @@ fn no_message_silently_dropped() {
         (
             "ModeChanged",
             ChatAppMsg::ModeChanged("plan".into()),
-            Box::new(|app| {
-                app.mode() == crate::tui::oil::chat_app::state::ChatMode::Plan
-            }),
+            Box::new(|app| app.mode() == crate::tui::oil::chat_app::state::ChatMode::Plan),
         ),
         (
             "ContextUsage",

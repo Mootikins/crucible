@@ -81,7 +81,9 @@ fn thinking_not_duplicated_between_chrome_and_content() {
     let mut app = OilChatApp::init();
 
     // Only thinking, no text yet — chrome shows thinking indicator
-    app.on_message(ChatAppMsg::ThinkingDelta("deep analysis of the problem ".into()));
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "deep analysis of the problem ".into(),
+    ));
 
     // Render viewport (not graduated yet)
     let output = super::helpers::vt_render(&mut app);
@@ -101,7 +103,9 @@ fn thinking_not_duplicated_between_chrome_and_content() {
 fn thinking_transitions_to_collapsed_on_text_start() {
     let mut app = OilChatApp::init();
 
-    app.on_message(ChatAppMsg::ThinkingDelta("reasoning about the answer ".into()));
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "reasoning about the answer ".into(),
+    ));
     app.on_message(ChatAppMsg::TextDelta("Here is my answer.".into()));
 
     let output = super::helpers::vt_render(&mut app);
@@ -252,7 +256,9 @@ fn no_triple_blanks_thinking_then_tools_then_text() {
     vt.render_frame(&mut app);
 
     // Thinking → text → tool → continuation
-    app.on_message(ChatAppMsg::ThinkingDelta("I should check the file first.".into()));
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "I should check the file first.".into(),
+    ));
     app.on_message(ChatAppMsg::TextDelta("Let me check.".into()));
 
     app.on_message(ChatAppMsg::ToolCall {
@@ -268,7 +274,9 @@ fn no_triple_blanks_thinking_then_tools_then_text() {
         call_id: Some("c1".into()),
     });
 
-    app.on_message(ChatAppMsg::TextDelta("Based on the config, here is the plan.".into()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Based on the config, here is the plan.".into(),
+    ));
     app.on_message(ChatAppMsg::StreamComplete);
     vt.render_frame(&mut app);
 

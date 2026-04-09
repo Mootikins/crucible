@@ -6,8 +6,8 @@
 use std::borrow::Cow;
 
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
-use crucible_oil::node::{col, row, styled, Node};
 use crate::tui::oil::render_state::RenderState;
+use crucible_oil::node::{col, row, styled, Node};
 use crucible_oil::style::Style;
 
 /// A thinking block that owns its state and rendering.

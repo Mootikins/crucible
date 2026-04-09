@@ -1,7 +1,7 @@
-use crucible_oil::node::{col, row, styled, Node};
-use crucible_oil::style::Style;
 use crate::tui::oil::theme;
 use crate::tui::oil::utils::truncate_to_chars;
+use crucible_oil::node::{col, row, styled, Node};
+use crucible_oil::style::Style;
 use similar::{ChangeTag, TextDiff};
 
 pub fn diff_to_node(old: &str, new: &str, context_lines: usize) -> Node {

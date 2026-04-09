@@ -10,8 +10,8 @@ use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::OilChatApp;
 use crate::tui::oil::chat_runner::session_event_to_chat_msgs;
 use crucible_oil::ansi::strip_ansi;
-use crucible_oil::node::SPINNER_FRAMES;
 use crucible_oil::node::BRAILLE_SPINNER_FRAMES;
+use crucible_oil::node::SPINNER_FRAMES;
 
 use super::vt100_runtime::Vt100TestRuntime;
 
@@ -93,7 +93,8 @@ struct ReplayResult {
     violations: Vec<String>,
     total_frames: usize,
     final_output: String,
-    #[allow(dead_code)] final_styled: String,
+    #[allow(dead_code)]
+    final_styled: String,
 }
 
 fn replay_fixture(path: &Path, width: u16, height: u16) -> ReplayResult {
@@ -353,8 +354,16 @@ fn replay_reproduce_124x59() {
     let lines: Vec<&str> = result.final_output.lines().collect();
     for i in 0..lines.len().saturating_sub(1) {
         if lines[i].trim().is_empty() && lines[i + 1].trim().is_empty() {
-            let before = if i > 0 { lines[i - 1].trim() } else { "(start)" };
-            let after = if i + 2 < lines.len() { lines[i + 2].trim() } else { "(end)" };
+            let before = if i > 0 {
+                lines[i - 1].trim()
+            } else {
+                "(start)"
+            };
+            let after = if i + 2 < lines.len() {
+                lines[i + 2].trim()
+            } else {
+                "(end)"
+            };
             panic!(
                 "Double blank at line {} (between {:?} and {:?})",
                 i, before, after

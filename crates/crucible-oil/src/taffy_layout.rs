@@ -917,7 +917,11 @@ mod tests {
         for i in 1..lines.len().saturating_sub(1) {
             if lines[i].trim().is_empty() {
                 let prev = lines[i - 1];
-                let next = if i + 1 < lines.len() { lines[i + 1] } else { "" };
+                let next = if i + 1 < lines.len() {
+                    lines[i + 1]
+                } else {
+                    ""
+                };
                 if !prev.trim().is_empty() && !next.trim().is_empty() {
                     panic!(
                         "Blank line at index {} between content:\n  prev: {:?}\n  next: {:?}\nFull output:\n{}",

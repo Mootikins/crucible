@@ -1,9 +1,9 @@
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::InputMode;
-use crucible_oil::node::*;
-use crucible_oil::style::Style;
 use crate::tui::oil::utils::wrap_chars;
 use crate::tui::oil::ViewContext;
+use crucible_oil::node::*;
+use crucible_oil::style::Style;
 
 use super::INPUT_MAX_CONTENT_LINES;
 

@@ -7,7 +7,6 @@ use crate::node::{Node, OverlayNode};
 use crate::overlay::{extract_overlays, filter_overlays, OverlayAnchor};
 use crate::render::{trim_trailing_blank_lines, RenderResult};
 
-
 /// Graduated content ready for terminal output.
 ///
 /// A thin wrapper around a Node tree and the width it should be rendered at.
@@ -125,17 +124,10 @@ impl FramePlanner {
         self.plan_frame(tree, None)
     }
 
-    pub fn plan_frame(
-        &mut self,
-        tree: &Node,
-        graduation: Option<Graduation>,
-    ) -> FrameSnapshot {
+    pub fn plan_frame(&mut self, tree: &Node, graduation: Option<Graduation>) -> FrameSnapshot {
         self.frame_no += 1;
 
-        let stdout_delta = graduation
-            .as_ref()
-            .map(|g| g.render())
-            .unwrap_or_default();
+        let stdout_delta = graduation.as_ref().map(|g| g.render()).unwrap_or_default();
 
         let overlay_nodes = extract_overlays(tree);
         let main_tree = filter_overlays(tree.clone());
@@ -299,9 +291,17 @@ mod tests {
         let rendered = strip_ansi(&grad.render());
         let lines: Vec<&str> = rendered.lines().collect();
         eprintln!("Lines: {:?}", lines);
-        assert!(lines.len() >= 3, "Expected at least 3 lines (A, blank, B), got: {:?}", lines);
+        assert!(
+            lines.len() >= 3,
+            "Expected at least 3 lines (A, blank, B), got: {:?}",
+            lines
+        );
         assert!(lines[0].contains("Group A"));
-        assert!(lines[1].trim().is_empty(), "Gap line should be blank, got: {:?}", lines[1]);
+        assert!(
+            lines[1].trim().is_empty(),
+            "Gap line should be blank, got: {:?}",
+            lines[1]
+        );
         assert!(lines[2].contains("Group B"));
     }
 

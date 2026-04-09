@@ -1,3 +1,4 @@
+mod command_panel;
 mod diff_preview;
 mod drawer;
 mod input_area;
@@ -12,11 +13,11 @@ mod shell_render;
 pub(crate) mod status_bar;
 pub(crate) mod status_component;
 mod subagent_render;
-mod command_panel;
-mod turn_indicator;
 pub(crate) mod thinking_component;
 pub(crate) mod tool_render;
+mod turn_indicator;
 
+pub use command_panel::CommandPanel;
 pub use crucible_oil::components::DrawerKind;
 #[allow(unused_imports)] // WIP: render_diff_preview not yet used
 pub(crate) use diff_preview::render_diff_preview;
@@ -26,7 +27,6 @@ pub use input_component::InputComponent;
 pub use interaction_modal::{
     InteractionModal, InteractionModalMsg, InteractionModalOutput, InteractionMode,
 };
-pub use thinking_component::ThinkingComponent;
 pub use notification_area::NotificationArea;
 pub use notification_component::{NotificationComponent, NotificationEntry};
 pub use popup_component::PopupComponent;
@@ -38,9 +38,9 @@ pub use shell_render::render_shell_execution;
 pub use status_bar::{NotificationToastKind, StatusBar};
 pub use status_component::StatusComponent;
 pub use subagent_render::render_subagent;
-pub use command_panel::CommandPanel;
-pub use turn_indicator::TurnIndicator;
+pub use thinking_component::ThinkingComponent;
 pub use tool_render::{
     format_streaming_output, format_tool_args, format_tool_result, render_tool_call,
     render_tool_call_with_frame, summarize_tool_result,
 };
+pub use turn_indicator::TurnIndicator;

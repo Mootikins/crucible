@@ -1,7 +1,7 @@
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::PopupOverlay;
-use crucible_oil::node::Node;
 use crate::tui::oil::ViewContext;
+use crucible_oil::node::Node;
 use crucible_oil::node::PopupItemNode;
 
 /// View-only component that encapsulates popup overlay rendering.

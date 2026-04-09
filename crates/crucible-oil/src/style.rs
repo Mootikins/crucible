@@ -532,7 +532,7 @@ mod tests {
         assert_eq!(g4.column, 2);
     }
 
-#[test]
+    #[test]
     fn test_adaptive_color_from_single() {
         let ac = AdaptiveColor::from_single(Color::Red);
         assert_eq!(ac.dark, Color::Red);

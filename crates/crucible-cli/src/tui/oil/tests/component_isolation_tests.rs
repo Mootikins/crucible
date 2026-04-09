@@ -3,13 +3,13 @@
 //! These tests verify that individual components render correctly in isolation,
 //! checking both structural output (plain text) and styled output (ANSI codes).
 
-use crucible_oil::ansi::{strip_ansi, visible_width};
 use crate::tui::oil::app::ViewContext;
 use crate::tui::oil::chat_app::ChatMode;
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::{
     popup_item, popup_item_with_desc, InputArea, PopupOverlay, StatusBar, INPUT_MAX_CONTENT_LINES,
 };
+use crucible_oil::ansi::{strip_ansi, visible_width};
 use crucible_oil::focus::FocusContext;
 use crucible_oil::node::{col, row, spacer, styled, text, PopupItemNode};
 use crucible_oil::render::{render_to_plain_text, render_to_string, render_with_cursor};
@@ -1134,7 +1134,10 @@ mod tool_call_tests {
         let plain1 = render_to_plain_text(&node1, 80);
 
         assert!(plain0.contains("\u{25CF}"), "Frame 0 should show ●");
-        assert_eq!(plain0, plain1, "Pending icon should be static (no animation)");
+        assert_eq!(
+            plain0, plain1,
+            "Pending icon should be static (no animation)"
+        );
     }
 
     #[test]

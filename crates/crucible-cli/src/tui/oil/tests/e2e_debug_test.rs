@@ -1,10 +1,10 @@
 //! End-to-end debug test: dumps full vt100 output at each step.
 //! Run with: cargo test --lib -p crucible-cli -- e2e_debug_test --nocapture
 
+use super::vt100_runtime::Vt100TestRuntime;
 use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
-use crate::tui::oil::containers::{ChatNode, render_chat_node};
-use super::vt100_runtime::Vt100TestRuntime;
+use crate::tui::oil::containers::{render_chat_node, ChatNode};
 use crucible_oil::ansi::strip_ansi;
 
 /// Simulates the exact scenario from user testing:
@@ -108,9 +108,18 @@ fn e2e_full_conversation_render() {
 
     // Validate: content present
     let stripped = strip_ansi(&vt.full_history());
-    assert!(stripped.contains("tell me about this repo"), "User message missing");
-    assert!(stripped.contains("Thought"), "Thinking collapsed summary missing");
-    assert!(stripped.contains("explore this repository"), "Assistant text missing");
+    assert!(
+        stripped.contains("tell me about this repo"),
+        "User message missing"
+    );
+    assert!(
+        stripped.contains("Thought"),
+        "Thinking collapsed summary missing"
+    );
+    assert!(
+        stripped.contains("explore this repository"),
+        "Assistant text missing"
+    );
     assert!(stripped.contains("Bash"), "Tool name missing");
     assert!(stripped.contains("Crucible"), "Continuation text missing");
 
@@ -128,17 +137,29 @@ fn debug_continuation_flag() {
     app.on_message(ChatAppMsg::ThinkingDelta("thinking...".into()));
     app.on_message(ChatAppMsg::TextDelta("first text".into()));
     app.on_message(ChatAppMsg::ToolCall {
-        name: "Bash".into(), args: "{}".into(),
-        call_id: Some("c1".into()), description: None, source: None, lua_primary_arg: None,
+        name: "Bash".into(),
+        args: "{}".into(),
+        call_id: Some("c1".into()),
+        description: None,
+        source: None,
+        lua_primary_arg: None,
     });
-    app.on_message(ChatAppMsg::ToolResultComplete { name: "Bash".into(), call_id: Some("c1".into()) });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "Bash".into(),
+        call_id: Some("c1".into()),
+    });
     app.on_message(ChatAppMsg::TextDelta("continuation text".into()));
 
     let nodes = app.container_list().nodes();
     for (i, node) in nodes.iter().enumerate() {
         match node {
             ChatNode::AssistantResponse { text, thinking, .. } => {
-                eprintln!("Node {}: AssistantResponse text={:?} thinking={}", i, text, thinking.len());
+                eprintln!(
+                    "Node {}: AssistantResponse text={:?} thinking={}",
+                    i,
+                    text,
+                    thinking.len()
+                );
             }
             _ => {
                 eprintln!("Node {}: {:?}", i, std::mem::discriminant(node));
@@ -163,11 +184,20 @@ fn debug_continuation_rendering() {
     app.on_message(ChatAppMsg::ThinkingDelta("thinking...".into()));
     app.on_message(ChatAppMsg::TextDelta("first text".into()));
     app.on_message(ChatAppMsg::ToolCall {
-        name: "Bash".into(), args: "{}".into(),
-        call_id: Some("c1".into()), description: None, source: None, lua_primary_arg: None,
+        name: "Bash".into(),
+        args: "{}".into(),
+        call_id: Some("c1".into()),
+        description: None,
+        source: None,
+        lua_primary_arg: None,
     });
-    app.on_message(ChatAppMsg::ToolResultComplete { name: "Bash".into(), call_id: Some("c1".into()) });
-    app.on_message(ChatAppMsg::TextDelta("continuation text after tools".into()));
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "Bash".into(),
+        call_id: Some("c1".into()),
+    });
+    app.on_message(ChatAppMsg::TextDelta(
+        "continuation text after tools".into(),
+    ));
 
     let focus = FocusContext::default();
     let ctx = crate::tui::oil::ViewContext::new(&focus);
@@ -184,10 +214,17 @@ fn debug_continuation_rendering() {
         if let ChatNode::AssistantResponse { .. } = node {
             let is_continuation = matches!(
                 prev,
-                Some(ChatNode::ToolGroup { .. } | ChatNode::SubagentTask { .. } | ChatNode::ShellExecution { .. })
+                Some(
+                    ChatNode::ToolGroup { .. }
+                        | ChatNode::SubagentTask { .. }
+                        | ChatNode::ShellExecution { .. }
+                )
             );
             if is_continuation && plain.contains("●") {
-                panic!("BUG: Continuation text should NOT have ● bullet!\nOutput:\n{}", plain);
+                panic!(
+                    "BUG: Continuation text should NOT have ● bullet!\nOutput:\n{}",
+                    plain
+                );
             }
         }
     }
@@ -202,11 +239,20 @@ fn debug_full_view_rendering() {
     app.on_message(ChatAppMsg::ThinkingDelta("thinking...".into()));
     app.on_message(ChatAppMsg::TextDelta("first text".into()));
     app.on_message(ChatAppMsg::ToolCall {
-        name: "Bash".into(), args: "{}".into(),
-        call_id: Some("c1".into()), description: None, source: None, lua_primary_arg: None,
+        name: "Bash".into(),
+        args: "{}".into(),
+        call_id: Some("c1".into()),
+        description: None,
+        source: None,
+        lua_primary_arg: None,
     });
-    app.on_message(ChatAppMsg::ToolResultComplete { name: "Bash".into(), call_id: Some("c1".into()) });
-    app.on_message(ChatAppMsg::TextDelta("continuation text after tools".into()));
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "Bash".into(),
+        call_id: Some("c1".into()),
+    });
+    app.on_message(ChatAppMsg::TextDelta(
+        "continuation text after tools".into(),
+    ));
     app.on_message(ChatAppMsg::StreamComplete);
 
     let output = vt_render(&mut app);
@@ -215,8 +261,11 @@ fn debug_full_view_rendering() {
         eprintln!("{:3}: {}", i, line);
     }
 
-    assert!(!output.contains("●"),
-        "No ● bullet should appear anywhere in the output.\nOutput:\n{}", output);
+    assert!(
+        !output.contains("●"),
+        "No ● bullet should appear anywhere in the output.\nOutput:\n{}",
+        output
+    );
 }
 
 #[test]
@@ -226,20 +275,38 @@ fn debug_scrollback_vs_viewport_step7() {
 
     app.on_message(ChatAppMsg::UserMessage("tell me about this repo".into()));
     vt.render_frame(&mut app);
-    app.on_message(ChatAppMsg::ThinkingDelta("I need to explore the repository.".into()));
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "I need to explore the repository.".into(),
+    ));
     vt.render_frame(&mut app);
-    app.on_message(ChatAppMsg::TextDelta("I'll explore this repository.".into()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "I'll explore this repository.".into(),
+    ));
     vt.render_frame(&mut app);
     app.on_message(ChatAppMsg::ToolCall {
-        name: "Bash".into(), args: r#"{"command": "ls"}"#.into(),
-        call_id: Some("c1".into()), description: None, source: None, lua_primary_arg: None,
+        name: "Bash".into(),
+        args: r#"{"command": "ls"}"#.into(),
+        call_id: Some("c1".into()),
+        description: None,
+        source: None,
+        lua_primary_arg: None,
     });
-    app.on_message(ChatAppMsg::ToolResultComplete { name: "Bash".into(), call_id: Some("c1".into()) });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "Bash".into(),
+        call_id: Some("c1".into()),
+    });
     app.on_message(ChatAppMsg::ToolCall {
-        name: "Glob".into(), args: r#"{"pattern": "README*"}"#.into(),
-        call_id: Some("c2".into()), description: None, source: None, lua_primary_arg: None,
+        name: "Glob".into(),
+        args: r#"{"pattern": "README*"}"#.into(),
+        call_id: Some("c2".into()),
+        description: None,
+        source: None,
+        lua_primary_arg: None,
     });
-    app.on_message(ChatAppMsg::ToolResultComplete { name: "Glob".into(), call_id: Some("c2".into()) });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "Glob".into(),
+        call_id: Some("c2".into()),
+    });
     vt.render_frame(&mut app);
 
     // Now add continuation text
@@ -277,31 +344,53 @@ fn debug_container_state_before_continuation() {
     }
 
     app.on_message(ChatAppMsg::ToolCall {
-        name: "Bash".into(), args: "{}".into(),
-        call_id: Some("c1".into()), description: None, source: None, lua_primary_arg: None,
+        name: "Bash".into(),
+        args: "{}".into(),
+        call_id: Some("c1".into()),
+        description: None,
+        source: None,
+        lua_primary_arg: None,
     });
 
     eprintln!("After tool call:");
     for (i, node) in app.container_list().nodes().iter().enumerate() {
         match node {
-            ChatNode::AssistantResponse { text, complete, .. } =>
-                eprintln!("  {}: AR complete={} text={:?}", i, complete, &text[..text.len().min(20)]),
+            ChatNode::AssistantResponse { text, complete, .. } => eprintln!(
+                "  {}: AR complete={} text={:?}",
+                i,
+                complete,
+                &text[..text.len().min(20)]
+            ),
             _ => eprintln!("  {}: {:?}", i, std::mem::discriminant(node)),
         }
     }
 
-    app.on_message(ChatAppMsg::ToolResultComplete { name: "Bash".into(), call_id: Some("c1".into()) });
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "Glob".into(), args: "{}".into(),
-        call_id: Some("c2".into()), description: None, source: None, lua_primary_arg: None,
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "Bash".into(),
+        call_id: Some("c1".into()),
     });
-    app.on_message(ChatAppMsg::ToolResultComplete { name: "Glob".into(), call_id: Some("c2".into()) });
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "Glob".into(),
+        args: "{}".into(),
+        call_id: Some("c2".into()),
+        description: None,
+        source: None,
+        lua_primary_arg: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "Glob".into(),
+        call_id: Some("c2".into()),
+    });
 
     eprintln!("After all tools complete:");
     for (i, node) in app.container_list().nodes().iter().enumerate() {
         match node {
-            ChatNode::AssistantResponse { text, complete, .. } =>
-                eprintln!("  {}: AR complete={} text={:?}", i, complete, &text[..text.len().min(20)]),
+            ChatNode::AssistantResponse { text, complete, .. } => eprintln!(
+                "  {}: AR complete={} text={:?}",
+                i,
+                complete,
+                &text[..text.len().min(20)]
+            ),
             _ => eprintln!("  {}: {:?}", i, std::mem::discriminant(node)),
         }
     }
@@ -312,8 +401,12 @@ fn debug_container_state_before_continuation() {
     eprintln!("After continuation text:");
     for (i, node) in app.container_list().nodes().iter().enumerate() {
         match node {
-            ChatNode::AssistantResponse { text, complete, .. } =>
-                eprintln!("  {}: AR complete={} text={:?}", i, complete, &text[..text.len().min(30)]),
+            ChatNode::AssistantResponse { text, complete, .. } => eprintln!(
+                "  {}: AR complete={} text={:?}",
+                i,
+                complete,
+                &text[..text.len().min(30)]
+            ),
             _ => eprintln!("  {}: {:?}", i, std::mem::discriminant(node)),
         }
     }
@@ -332,7 +425,10 @@ fn after_stream_complete_tui_is_responsive() {
     app.on_message(ChatAppMsg::StreamComplete);
     vt.render_frame(&mut app);
 
-    assert!(!app.is_streaming(), "Should not be streaming after StreamComplete");
+    assert!(
+        !app.is_streaming(),
+        "Should not be streaming after StreamComplete"
+    );
 
     // Second turn should work
     app.on_message(ChatAppMsg::UserMessage("second".into()));
@@ -342,10 +438,16 @@ fn after_stream_complete_tui_is_responsive() {
     app.on_message(ChatAppMsg::StreamComplete);
     vt.render_frame(&mut app);
 
-    assert!(!app.is_streaming(), "Should not be streaming after second StreamComplete");
+    assert!(
+        !app.is_streaming(),
+        "Should not be streaming after second StreamComplete"
+    );
 
     let output = strip_ansi(&vt.full_history());
-    assert!(output.contains("response two"), "Second response should appear");
+    assert!(
+        output.contains("response two"),
+        "Second response should appear"
+    );
 }
 
 /// Verify no double spinners: only ONE spinner should be visible at a time.
@@ -359,20 +461,24 @@ fn only_one_spinner_visible_during_thinking() {
     app.on_message(ChatAppMsg::UserMessage("think hard".into()));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::ThinkingDelta("deep thoughts about the universe".into()));
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "deep thoughts about the universe".into(),
+    ));
     vt.render_frame(&mut app);
 
     let screen = strip_ansi(&vt.screen_contents());
 
     // Count spinner characters across all frames
-    let spinner_count: usize = SPINNER_FRAMES.iter()
+    let spinner_count: usize = SPINNER_FRAMES
+        .iter()
         .map(|ch| screen.matches(*ch).count())
         .sum();
 
     assert!(
         spinner_count <= 1,
         "Should have at most 1 spinner visible, found {}. Screen:\n{}",
-        spinner_count, screen
+        spinner_count,
+        screen
     );
 }
 
@@ -391,10 +497,14 @@ fn user_message_matches_input_style() {
     let lines: Vec<&str> = screen.lines().collect();
 
     // Both user message and input box should use ▄▄▄/▀▀▀ bars
-    let top_bars: Vec<_> = lines.iter().enumerate()
+    let top_bars: Vec<_> = lines
+        .iter()
+        .enumerate()
         .filter(|(_, l)| l.trim_start().starts_with('▄'))
         .collect();
-    let bottom_bars: Vec<_> = lines.iter().enumerate()
+    let bottom_bars: Vec<_> = lines
+        .iter()
+        .enumerate()
         .filter(|(_, l)| l.trim_start().starts_with('▀'))
         .collect();
 
@@ -402,12 +512,14 @@ fn user_message_matches_input_style() {
     assert!(
         top_bars.len() >= 2,
         "Expected at least 2 top bars (user msg + input), found {}. Screen:\n{}",
-        top_bars.len(), screen
+        top_bars.len(),
+        screen
     );
     assert!(
         bottom_bars.len() >= 2,
         "Expected at least 2 bottom bars (user msg + input), found {}. Screen:\n{}",
-        bottom_bars.len(), screen
+        bottom_bars.len(),
+        screen
     );
 }
 
@@ -430,7 +542,9 @@ fn e2e_multi_turn_graduation() {
     app.on_message(ChatAppMsg::UserMessage("first question".into()));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::ThinkingDelta("Let me think about this carefully.".into()));
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "Let me think about this carefully.".into(),
+    ));
     vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta("Here is my initial analysis.".into()));
@@ -457,7 +571,9 @@ fn e2e_multi_turn_graduation() {
     });
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::TextDelta("After analyzing the files, here is the conclusion.".into()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "After analyzing the files, here is the conclusion.".into(),
+    ));
     vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::StreamComplete);
@@ -467,7 +583,9 @@ fn e2e_multi_turn_graduation() {
     app.on_message(ChatAppMsg::UserMessage("follow up question".into()));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::TextDelta("Here is the follow up answer.".into()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Here is the follow up answer.".into(),
+    ));
     app.on_message(ChatAppMsg::StreamComplete);
     vt.render_frame(&mut app);
 
@@ -496,7 +614,8 @@ fn e2e_multi_turn_graduation() {
     assert!(
         full.contains("follow up answer"),
         "Turn 2 response should be visible.\nScreen:\n{}\nFull:\n{}",
-        screen, full
+        screen,
+        full
     );
 
     // No spinners in scrollback
@@ -632,7 +751,10 @@ fn e2e_tool_error_rendering() {
     );
     // Error icon (✗ or similar)
     assert!(
-        output.contains("✗") || output.contains("✘") || output.contains("error") || output.contains("Error"),
+        output.contains("✗")
+            || output.contains("✘")
+            || output.contains("error")
+            || output.contains("Error"),
         "Error indicator should appear.\nOutput:\n{}",
         output
     );
@@ -652,18 +774,21 @@ fn e2e_multiple_thinking_blocks() {
 
     let nodes = app.container_list().nodes();
     // Find the assistant response(s) and check thinking content
-    let all_text: String = nodes.iter().map(|node| {
-        match node {
+    let all_text: String = nodes
+        .iter()
+        .map(|node| match node {
             ChatNode::AssistantResponse { thinking, text, .. } => {
-                let think_text: String = thinking.iter()
+                let think_text: String = thinking
+                    .iter()
                     .map(|t| format!("{:?}", t))
                     .collect::<Vec<_>>()
                     .join(" ");
                 format!("{} {}", think_text, text)
             }
             _ => String::new(),
-        }
-    }).collect::<Vec<_>>().join(" ");
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
 
     assert!(
         all_text.contains("first line of thought"),
@@ -686,7 +811,8 @@ fn e2e_empty_text_deltas_ignored() {
     let nodes = app.container_list().nodes();
 
     // Count AssistantResponse nodes
-    let assistant_count = nodes.iter()
+    let assistant_count = nodes
+        .iter()
         .filter(|n| matches!(n, ChatNode::AssistantResponse { .. }))
         .count();
 
@@ -697,8 +823,14 @@ fn e2e_empty_text_deltas_ignored() {
     );
 
     // The text should be "actual text"
-    if let Some(ChatNode::AssistantResponse { text, .. }) = nodes.iter().find(|n| matches!(n, ChatNode::AssistantResponse { .. })) {
-        assert_eq!(text, "actual text", "Text should be only the non-empty delta");
+    if let Some(ChatNode::AssistantResponse { text, .. }) = nodes
+        .iter()
+        .find(|n| matches!(n, ChatNode::AssistantResponse { .. }))
+    {
+        assert_eq!(
+            text, "actual text",
+            "Text should be only the non-empty delta"
+        );
     }
 }
 
@@ -732,19 +864,22 @@ fn e2e_rapid_tool_calls_group() {
     // Check nodes BEFORE graduation (before StreamComplete + render)
     {
         let nodes = app.container_list().nodes();
-        let tool_groups: Vec<_> = nodes.iter()
+        let tool_groups: Vec<_> = nodes
+            .iter()
             .filter(|n| matches!(n, ChatNode::ToolGroup { .. }))
             .collect();
 
         assert_eq!(
-            tool_groups.len(), 1,
+            tool_groups.len(),
+            1,
             "All 3 rapid tool calls should be in 1 ToolGroup.\nNodes: {}",
             nodes.len()
         );
 
         if let ChatNode::ToolGroup { tools } = tool_groups[0] {
             assert_eq!(
-                tools.len(), 3,
+                tools.len(),
+                3,
                 "ToolGroup should contain exactly 3 tools, found {}",
                 tools.len()
             );
@@ -772,7 +907,9 @@ fn e2e_terminal_resize_during_streaming() {
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("tell me a story".into()));
-    app.on_message(ChatAppMsg::TextDelta("Once upon a time in a land far far away there lived a great wizard.".into()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Once upon a time in a land far far away there lived a great wizard.".into(),
+    ));
     vt.render_frame(&mut app);
 
     let narrow_output = strip_ansi(&vt.screen_contents());
@@ -814,7 +951,9 @@ fn e2e_terminal_resize_during_streaming() {
 /// verifies content is still rendered correctly afterward.
 #[test]
 fn e2e_modal_doesnt_corrupt_content() {
-    use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, InteractionResponse};
+    use crucible_core::interaction::{
+        InteractionRequest, InteractionResponse, PermRequest, PermResponse,
+    };
 
     let mut app = OilChatApp::init();
     let mut vt = Vt100TestRuntime::new(80, 24);
@@ -883,10 +1022,7 @@ fn e2e_cancel_during_tool_execution() {
     vt.render_frame(&mut app);
 
     // Should not be streaming anymore
-    assert!(
-        !app.is_streaming(),
-        "Should not be streaming after cancel"
-    );
+    assert!(!app.is_streaming(), "Should not be streaming after cancel");
 
     // Content should be present (graduated)
     let output = strip_ansi(&vt.full_history());
@@ -937,7 +1073,10 @@ fn e2e_subagent_lifecycle() {
     let during = strip_ansi(&vt.screen_contents());
     // While running, should show some indicator (spinner or bullet)
     assert!(
-        during.contains("subagent") || during.contains("Analyze") || during.contains("●") || during.contains("⠋"),
+        during.contains("subagent")
+            || during.contains("Analyze")
+            || during.contains("●")
+            || during.contains("⠋"),
         "Running subagent should have a visible indicator.\nDuring:\n{}",
         during
     );
@@ -998,24 +1137,22 @@ fn e2e_user_message_wrapping() {
         assert!(
             out.contains("very long user message"),
             "Width {} should contain the message text.\nOutput:\n{}",
-            w, out
+            w,
+            out
         );
         assert!(
             out.contains("testing purposes"),
             "Width {} should contain end of message.\nOutput:\n{}",
-            w, out
+            w,
+            out
         );
     }
 
     // Narrow output should generally have more non-empty lines than wide
     // (wrapping creates more lines). Not a strict assertion since chrome
     // lines count too, but content lines at 40 must be >= at 120.
-    let _content_lines_40 = out40.lines()
-        .filter(|l| !l.trim().is_empty())
-        .count();
-    let _content_lines_120 = out120.lines()
-        .filter(|l| !l.trim().is_empty())
-        .count();
+    let _content_lines_40 = out40.lines().filter(|l| !l.trim().is_empty()).count();
+    let _content_lines_120 = out120.lines().filter(|l| !l.trim().is_empty()).count();
 }
 
 /// Test 13: Stress test with many nodes.
@@ -1049,7 +1186,10 @@ fn e2e_stress_many_containers() {
     vt.assert_no_spinners_in_scrollback();
 
     // Should not be streaming
-    assert!(!app.is_streaming(), "Should not be streaming after all turns complete");
+    assert!(
+        !app.is_streaming(),
+        "Should not be streaming after all turns complete"
+    );
 }
 
 /// Thinking during streaming should NOT show "◇ Thought" in content —
@@ -1119,12 +1259,17 @@ fn open_interaction_opens_modal() {
         request_id: "perm-1".into(),
         request: InteractionRequest::Permission(PermRequest::bash(["ls"])),
     });
-    assert!(app.interaction_visible(), "Modal must open after OpenInteraction");
+    assert!(
+        app.interaction_visible(),
+        "Modal must open after OpenInteraction"
+    );
 }
 
 #[test]
 fn close_interaction_closes_modal() {
-    use crucible_core::interaction::{InteractionRequest, InteractionResponse, PermRequest, PermResponse};
+    use crucible_core::interaction::{
+        InteractionRequest, InteractionResponse, PermRequest, PermResponse,
+    };
     let mut app = OilChatApp::init();
 
     app.on_message(ChatAppMsg::OpenInteraction {
@@ -1137,7 +1282,10 @@ fn close_interaction_closes_modal() {
         request_id: "perm-1".into(),
         response: InteractionResponse::Permission(PermResponse::allow()),
     });
-    assert!(!app.interaction_visible(), "Modal must close after CloseInteraction");
+    assert!(
+        !app.interaction_visible(),
+        "Modal must close after CloseInteraction"
+    );
 }
 
 #[test]
@@ -1158,7 +1306,8 @@ fn thinking_indicator_appears_at_most_once_on_screen() {
     assert!(
         thinking_count <= 1,
         "Thinking indicator should appear at most once, found {}.\nScreen:\n{}",
-        thinking_count, screen
+        thinking_count,
+        screen
     );
 
     // "Thought" should NOT appear (thinking is still live)
@@ -1199,7 +1348,7 @@ fn thinking_transitions_to_thought_when_text_starts() {
 
 #[test]
 fn spinners_only_in_chrome_area() {
-    use crucible_oil::node::{SPINNER_FRAMES, BRAILLE_SPINNER_FRAMES};
+    use crucible_oil::node::{BRAILLE_SPINNER_FRAMES, SPINNER_FRAMES};
 
     let mut app = OilChatApp::init();
     let mut vt = Vt100TestRuntime::new(80, 24);
@@ -1213,17 +1362,25 @@ fn spinners_only_in_chrome_area() {
     let lines: Vec<&str> = screen.lines().collect();
 
     // Find the input box (▄▄▄ bar) — everything above is content, at and below is chrome
-    let chrome_start = lines.iter().position(|l| l.contains("▄▄▄▄▄▄")).unwrap_or(lines.len());
+    let chrome_start = lines
+        .iter()
+        .position(|l| l.contains("▄▄▄▄▄▄"))
+        .unwrap_or(lines.len());
     let content_lines = &lines[..chrome_start];
     let content_text: String = content_lines.join("\n");
 
-    let all_spinners: Vec<char> = SPINNER_FRAMES.iter().chain(BRAILLE_SPINNER_FRAMES.iter()).copied().collect();
+    let all_spinners: Vec<char> = SPINNER_FRAMES
+        .iter()
+        .chain(BRAILLE_SPINNER_FRAMES.iter())
+        .copied()
+        .collect();
 
     for ch in &all_spinners {
         assert!(
             !content_text.contains(*ch),
             "Spinner '{}' found in content area (above chrome). Content:\n{}",
-            ch, content_text
+            ch,
+            content_text
         );
     }
 }
@@ -1270,7 +1427,8 @@ fn all_container_types_render_at_all_widths() {
             assert!(
                 !plain.is_empty() || matches!(rendered, crucible_oil::node::Node::Empty),
                 "Node at index {} width {} produced empty non-Empty output",
-                i, width
+                i,
+                width
             );
         }
     }

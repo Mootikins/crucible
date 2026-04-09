@@ -1,10 +1,10 @@
 #![allow(dead_code)] // helpers used by disabled test modules awaiting reconstruction
 
-use crucible_oil::ansi::strip_ansi;
 use crate::tui::oil::app::{App, ViewContext};
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
-use crucible_oil::focus::FocusContext;
 use crate::tui::oil::Node;
+use crucible_oil::ansi::strip_ansi;
+use crucible_oil::focus::FocusContext;
 
 use super::generators::RpcEvent;
 use super::vt100_runtime::Vt100TestRuntime;

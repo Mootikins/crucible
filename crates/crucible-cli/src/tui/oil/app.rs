@@ -1,7 +1,7 @@
 use crate::tui::oil::event::Event;
+use crate::tui::oil::theme::{self, ThemeConfig};
 use crucible_oil::focus::FocusContext;
 use crucible_oil::node::Node;
-use crate::tui::oil::theme::{self, ThemeConfig};
 use std::time::Duration;
 
 pub struct ViewContext<'a> {
