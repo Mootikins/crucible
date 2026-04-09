@@ -79,13 +79,17 @@ async fn test_e2e_lua_degraded_daemon_starts_with_broken_plugin() {
     )
     .expect("Failed to write broken plugin");
 
-    // Isolate from host's real plugins by overriding XDG_CONFIG_HOME
+    // Isolate from host's real plugins by overriding XDG_CONFIG_HOME and
+    // CRUCIBLE_RUNTIME (prevents exe-relative runtime/plugins/ discovery)
     let isolated_config = tempfile::tempdir().expect("Failed to create config dir");
+    let isolated_runtime = tempfile::tempdir().expect("Failed to create runtime dir");
     let config_path = isolated_config.path().to_string_lossy().to_string();
+    let runtime_path = isolated_runtime.path().to_string_lossy().to_string();
     let plugin_path = plugin_dir.path().to_string_lossy().to_string();
     let mut daemon = TestDaemon::start_with_env(vec![
         ("CRUCIBLE_PLUGIN_PATH", &plugin_path),
         ("XDG_CONFIG_HOME", &config_path),
+        ("CRUCIBLE_RUNTIME", &runtime_path),
     ])
     .await
     .expect("Daemon should start despite broken Lua plugin");
@@ -167,11 +171,14 @@ async fn test_e2e_lua_degraded_daemon_starts_with_broken_plugin() {
 async fn test_e2e_lua_degraded_state_detectable_via_rpc() {
     let empty_dir = tempfile::tempdir().expect("Failed to create temp dir");
     let isolated_config = tempfile::tempdir().expect("Failed to create config dir");
+    let isolated_runtime = tempfile::tempdir().expect("Failed to create runtime dir");
     let empty_path = empty_dir.path().to_string_lossy().to_string();
     let config_path = isolated_config.path().to_string_lossy().to_string();
+    let runtime_path = isolated_runtime.path().to_string_lossy().to_string();
     let mut daemon = TestDaemon::start_with_env(vec![
         ("CRUCIBLE_PLUGIN_PATH", &empty_path),
         ("XDG_CONFIG_HOME", &config_path),
+        ("CRUCIBLE_RUNTIME", &runtime_path),
     ])
     .await
     .expect("Daemon should start without any plugins");
@@ -307,11 +314,14 @@ async fn test_e2e_lua_degraded_kiln_operations_work() {
     )
     .expect("Failed to write broken plugin");
     let isolated_config = tempfile::tempdir().expect("Failed to create config dir");
+    let isolated_runtime = tempfile::tempdir().expect("Failed to create runtime dir");
     let config_path = isolated_config.path().to_string_lossy().to_string();
+    let runtime_path = isolated_runtime.path().to_string_lossy().to_string();
     let plugin_path = plugin_dir.path().to_string_lossy().to_string();
     let mut daemon = TestDaemon::start_with_env(vec![
         ("CRUCIBLE_PLUGIN_PATH", &plugin_path),
         ("XDG_CONFIG_HOME", &config_path),
+        ("CRUCIBLE_RUNTIME", &runtime_path),
     ])
     .await
     .expect("Daemon should start with broken plugin");
