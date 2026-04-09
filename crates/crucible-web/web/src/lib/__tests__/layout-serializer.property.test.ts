@@ -4,7 +4,6 @@ import { serializeLayout, deserializeLayout } from '../layout-serializer';
 import type {
   WindowManagerState,
   TabGroup,
-  Tab,
   EdgePanel,
   LayoutNode,
   PaneNode,
@@ -18,9 +17,9 @@ const arbTab = fc.record({
   id: fc.uuid(),
   title: fc.string({ minLength: 1, maxLength: 30 }),
   contentType: arbTabContentType,
-  isModified: fc.option(fc.boolean(), { freq: 1 }),
-  isPinned: fc.option(fc.boolean(), { freq: 1 }),
-  metadata: fc.option(fc.record({}), { freq: 1 }),
+  isModified: fc.option(fc.boolean(), { freq: 1, nil: undefined }),
+  isPinned: fc.option(fc.boolean(), { freq: 1, nil: undefined }),
+  metadata: fc.option(fc.record({}) as fc.Arbitrary<Record<string, unknown>>, { freq: 1, nil: undefined }),
 });
 
 const arbTabGroup = (groupId: string): fc.Arbitrary<TabGroup> =>
@@ -138,11 +137,6 @@ describe('layout-serializer property tests', () => {
           tabGroups: deserialized1.tabGroups,
           edgePanels: deserialized1.edgePanels,
           floatingWindows: deserialized1.floatingWindows,
-          activePaneId: null,
-          focusedRegion: 'center',
-          dragState: null,
-          flyoutState: null,
-          nextZIndex: 1,
         });
 
         // Serializing the deserialized state should give the same result

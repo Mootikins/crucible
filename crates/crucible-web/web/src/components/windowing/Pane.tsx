@@ -4,7 +4,6 @@ import { createDroppable, useDragDropContext } from '@thisbeyond/solid-dnd';
 import { TabBar } from './TabBar';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import { getGlobalRegistry } from '@/lib/panel-registry';
-import { AppWindow } from '@/lib/icons';
 import { EmptyState } from '@/components/EmptyState';
 
 type PaneDropPosition = 'left' | 'right' | 'top' | 'bottom';

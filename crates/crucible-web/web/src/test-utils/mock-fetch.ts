@@ -27,8 +27,8 @@ export interface MockFetchHandler {
  */
 export function createMockFetch(
   handlers: Record<string, MockFetchHandler>
-): ReturnType<typeof vi.fn> {
-  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+) {
+  return vi.fn<typeof fetch>(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     const method = (init?.method || 'GET').toUpperCase();
 

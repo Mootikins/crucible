@@ -94,9 +94,9 @@ export const SessionPanel: Component = () => {
 
         <ProjectSection
           projects={projects()}
-          currentProject={project()}
+          currentProject={project() ?? undefined}
           onSelectProject={selectProject}
-          onRegisterProject={registerProject}
+          onRegisterProject={async (path) => { await registerProject(path); }}
         />
 
         <Show when={project()}>
@@ -112,7 +112,7 @@ export const SessionPanel: Component = () => {
             onClearSearch={search.clearSearch}
             setSearchInputRef={search.setSearchInputRef}
             displayedSessions={search.displayedSessions()}
-            currentSession={session()}
+            currentSession={session() ?? undefined}
             onSelectSession={selectSession}
             onArchiveSession={archiveSession}
             onDeleteSession={deleteSession}

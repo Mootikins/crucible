@@ -395,6 +395,11 @@ fn chat_event_message_complete_event_name() {
         id: "1".to_string(),
         content: "done".to_string(),
         tool_calls: vec![],
+        prompt_tokens: None,
+        completion_tokens: None,
+        total_tokens: None,
+        cache_read_tokens: None,
+        cache_creation_tokens: None,
     };
     assert_eq!(event.event_name(), "message_complete");
 }
@@ -439,6 +444,11 @@ fn chat_event_message_complete_omits_empty_tool_calls() {
         id: "msg-1".to_string(),
         content: "response text".to_string(),
         tool_calls: vec![],
+        prompt_tokens: None,
+        completion_tokens: None,
+        total_tokens: None,
+        cache_read_tokens: None,
+        cache_creation_tokens: None,
     };
     let json: Value = serde_json::to_value(&event).unwrap();
 

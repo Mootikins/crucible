@@ -53,8 +53,8 @@ describe('sendChatMessage', () => {
     expect(mockFetch).toHaveBeenCalledOnce();
     const [url, init] = mockFetch.mock.calls[0];
     expect(url).toBe('/api/chat/send');
-    expect(init.method).toBe('POST');
-    expect(JSON.parse(init.body)).toEqual({ session_id: 'ses-1', content: 'Hello world' });
+    expect(init!.method).toBe('POST');
+    expect(JSON.parse(init!.body as string)).toEqual({ session_id: 'ses-1', content: 'Hello world' });
   });
 
   it('throws on non-ok response', async () => {
@@ -196,7 +196,7 @@ describe('executeCommand', () => {
 
     expect(result).toEqual({ result: 'Done!', type: 'success' });
     const [, init] = mockFetch.mock.calls[0];
-    expect(JSON.parse(init.body)).toEqual({ command: ':help' });
+    expect(JSON.parse(init!.body as string)).toEqual({ command: ':help' });
   });
 
   it('throws on non-ok response', async () => {
@@ -252,8 +252,8 @@ describe('switchModel', () => {
     await switchModel('ses-1', 'openai:gpt-4');
 
     const [, init] = mockFetch.mock.calls[0];
-    expect(init.method).toBe('POST');
-    expect(JSON.parse(init.body)).toEqual({ model_id: 'openai:gpt-4' });
+    expect(init!.method).toBe('POST');
+    expect(JSON.parse(init!.body as string)).toEqual({ model_id: 'openai:gpt-4' });
   });
 });
 
@@ -271,8 +271,8 @@ describe('setThinkingBudget', () => {
     await setThinkingBudget('ses-1', 4096);
 
     const [, init] = mockFetch.mock.calls[0];
-    expect(init.method).toBe('PUT');
-    expect(JSON.parse(init.body)).toEqual({ thinking_budget: 4096 });
+    expect(init!.method).toBe('PUT');
+    expect(JSON.parse(init!.body as string)).toEqual({ thinking_budget: 4096 });
   });
 
   it('sends null budget to disable thinking', async () => {
@@ -284,7 +284,7 @@ describe('setThinkingBudget', () => {
     await setThinkingBudget('ses-1', null);
 
     const [, init] = mockFetch.mock.calls[0];
-    expect(JSON.parse(init.body)).toEqual({ thinking_budget: null });
+    expect(JSON.parse(init!.body as string)).toEqual({ thinking_budget: null });
   });
 });
 
@@ -324,8 +324,8 @@ describe('saveNote', () => {
     await saveNote('My Note', 'default', '# Hello\nWorld');
 
     const [, init] = mockFetch.mock.calls[0];
-    expect(init.method).toBe('PUT');
-    expect(JSON.parse(init.body)).toEqual({ kiln: 'default', content: '# Hello\nWorld' });
+    expect(init!.method).toBe('PUT');
+    expect(JSON.parse(init!.body as string)).toEqual({ kiln: 'default', content: '# Hello\nWorld' });
   });
 });
 
@@ -343,8 +343,8 @@ describe('respondToInteraction', () => {
     await respondToInteraction('ses-1', 'req-42', { allowed: true, scope: 'session' });
 
     const [, init] = mockFetch.mock.calls[0];
-    expect(init.method).toBe('POST');
-    expect(JSON.parse(init.body)).toEqual({
+    expect(init!.method).toBe('POST');
+    expect(JSON.parse(init!.body as string)).toEqual({
       session_id: 'ses-1',
       request_id: 'req-42',
       response: { allowed: true, scope: 'session' },

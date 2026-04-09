@@ -85,20 +85,19 @@ describe('selectSession auto-resume', () => {
     );
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let dispatchSpy: ReturnType<typeof vi.spyOn<any, any>>;
+  let dispatchSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    (api.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-    (api.getSessionHistory as ReturnType<typeof vi.fn>).mockResolvedValue({
+    (api.listSessions as ReturnType<typeof vi.fn<any>>).mockResolvedValue([]);
+    (api.getSessionHistory as ReturnType<typeof vi.fn<any>>).mockResolvedValue({
       session_id: 'test-id',
       history: [],
       total_events: 0,
     });
-    (api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-    (api.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-    (api.resumeSession as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    (api.listModels as ReturnType<typeof vi.fn<any>>).mockResolvedValue([]);
+    (api.listProviders as ReturnType<typeof vi.fn<any>>).mockResolvedValue([]);
+    (api.resumeSession as ReturnType<typeof vi.fn<any>>).mockResolvedValue(undefined);
     dispatchSpy = vi.spyOn(window, 'dispatchEvent');
   });
 
@@ -107,7 +106,7 @@ describe('selectSession auto-resume', () => {
   });
 
   it('calls resumeSession for paused sessions', async () => {
-    (api.getSession as ReturnType<typeof vi.fn>).mockResolvedValue(makeSession('paused'));
+    (api.getSession as ReturnType<typeof vi.fn<any>>).mockResolvedValue(makeSession('paused'));
 
     render(() => (
       <SessionProvider initialKiln="/tmp/test-kiln">
@@ -131,7 +130,7 @@ describe('selectSession auto-resume', () => {
   });
 
   it('does not call resumeSession for active sessions', async () => {
-    (api.getSession as ReturnType<typeof vi.fn>).mockResolvedValue(makeSession('active'));
+    (api.getSession as ReturnType<typeof vi.fn<any>>).mockResolvedValue(makeSession('active'));
 
     render(() => (
       <SessionProvider initialKiln="/tmp/test-kiln">
@@ -151,7 +150,7 @@ describe('selectSession auto-resume', () => {
   });
 
   it('does not call resumeSession for ended sessions', async () => {
-    (api.getSession as ReturnType<typeof vi.fn>).mockResolvedValue(makeSession('ended'));
+    (api.getSession as ReturnType<typeof vi.fn<any>>).mockResolvedValue(makeSession('ended'));
 
     render(() => (
       <SessionProvider initialKiln="/tmp/test-kiln">
@@ -171,8 +170,8 @@ describe('selectSession auto-resume', () => {
   });
 
   it('loads persisted session into daemon when selecting from existing list', async () => {
-    (api.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue([makeSession('active')]);
-    (api.getSession as ReturnType<typeof vi.fn>)
+    (api.listSessions as ReturnType<typeof vi.fn<any>>).mockResolvedValue([makeSession('active')]);
+    (api.getSession as ReturnType<typeof vi.fn<any>>)
       .mockRejectedValueOnce(new Error('Session not found'))
       .mockResolvedValue(makeSession('active'));
 

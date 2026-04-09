@@ -7,12 +7,6 @@ import { PanelHeader } from './PanelHeader';
 
 import { listNotes } from '@/lib/api';
 import type { FileEntry } from '@/lib/types';
-import { Collapsible } from '@ark-ui/solid';
-import { useProjectSafe } from '@/contexts/ProjectContext';
-import { openFileInEditor } from '@/lib/file-actions';
-
-import { listNotes } from '@/lib/api';
-import type { FileEntry } from '@/lib/types';
 import {
   FileText,
   FileCode,
@@ -239,7 +233,6 @@ export const FilesPanel: Component = () => {
     <PanelShell class="overflow-hidden">
       <PanelHeader title="Notes" class="shrink-0" />
 
-      <div class="flex-1 overflow-y-auto py-2">
       <div class="flex-1 overflow-y-auto py-2">
         <Show
           when={currentProject()}

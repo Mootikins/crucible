@@ -105,7 +105,7 @@ describe('ChatContent', () => {
   });
 
   it('renders chat input at bottom of layout', () => {
-    const { container } = render(() => <ChatContent />);
+    render(() => <ChatContent />);
     const form = screen.getByTestId('chat-input');
     expect(form).toBeInTheDocument();
     // ChatInput should be rendered after message list

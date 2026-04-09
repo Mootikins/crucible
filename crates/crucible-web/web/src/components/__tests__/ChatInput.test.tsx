@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, screen } from '@solidjs/testing-library';
+import { render, screen } from '@solidjs/testing-library';
 import { ChatInput } from '../ChatInput';
 
 // Mock the contexts
@@ -150,7 +150,7 @@ describe('ChatInput', () => {
   });
 
   it('has correct form structure with border and padding', () => {
-    const { container } = render(() => <ChatInput />);
+    render(() => <ChatInput />);
     const form = screen.getByTestId('chat-input-form');
     expect(form).toHaveClass('border-t', 'border-neutral-800', 'p-4');
   });

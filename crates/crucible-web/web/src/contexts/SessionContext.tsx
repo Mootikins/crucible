@@ -4,7 +4,6 @@ import {
   ParentComponent,
   createSignal,
   createEffect,
-  Accessor,
 } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import type { Session, CreateSessionParams, ProviderInfo } from '@/lib/types';

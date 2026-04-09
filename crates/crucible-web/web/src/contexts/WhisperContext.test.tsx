@@ -26,22 +26,26 @@ describe('WhisperContext', () => {
 
     it('creates AudioContext with 16kHz sample rate', async () => {
       // Verify the AudioContext constructor would be called with correct sample rate
-      const AudioContextMock = vi.fn(() => ({
-        decodeAudioData: vi.fn().mockResolvedValue({
+      const constructorSpy = vi.fn();
+      class AudioContextMock {
+        decodeAudioData = vi.fn().mockResolvedValue({
           numberOfChannels: 1,
           sampleRate: 16000,
           length: 16000,
           getChannelData: () => new Float32Array(16000),
-        }),
-        close: vi.fn(),
-      }));
+        });
+        close = vi.fn();
+        constructor(options?: AudioContextOptions) {
+          constructorSpy(options);
+        }
+      }
 
       vi.stubGlobal('AudioContext', AudioContextMock);
 
       // The actual decoding happens inside WhisperContext, but we can
       // verify the pattern we expect
       new AudioContext({ sampleRate: 16000 });
-      expect(AudioContextMock).toHaveBeenCalledWith({ sampleRate: 16000 });
+      expect(constructorSpy).toHaveBeenCalledWith({ sampleRate: 16000 });
     });
 
     it('handles mono audio correctly', () => {

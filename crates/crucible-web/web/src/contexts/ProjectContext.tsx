@@ -4,7 +4,6 @@ import {
   ParentComponent,
   createSignal,
   onMount,
-  Accessor,
 } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import type { Project } from '@/lib/types';

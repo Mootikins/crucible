@@ -7,6 +7,7 @@ import type {
   SubagentEvent,
   ContextUsage,
   ChatMode,
+  TokenUsage,
 } from '@/lib/types';
 import { generateMessageId } from '@/lib/api';
 
@@ -131,11 +132,19 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         const thinkingData = messageId
           ? deps.messages().find((message) => message.id === messageId)?.thinking
           : undefined;
+        const usage: TokenUsage | undefined = event.total_tokens ? {
+          promptTokens: event.prompt_tokens ?? 0,
+          completionTokens: event.completion_tokens ?? 0,
+          totalTokens: event.total_tokens,
+          cacheReadTokens: event.cache_read_tokens,
+          cacheCreationTokens: event.cache_creation_tokens,
+        } : undefined;
         if (messageId) {
           deps.updateMessage(messageId, {
             id: event.id,
             content: event.content,
             toolCalls: event.tool_calls,
+            usage,
             ...(thinkingData ? {
               thinking: {
                 content: thinkingData.content,

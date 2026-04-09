@@ -34,6 +34,7 @@ export const mockProviders: ProviderInfo[] = [
     default_model: 'neural-chat',
     models: ['neural-chat', 'mistral', 'llama2'],
     endpoint: 'http://localhost:11434',
+    is_local: true,
   },
   {
     name: 'openai',
@@ -41,6 +42,7 @@ export const mockProviders: ProviderInfo[] = [
     available: true,
     default_model: 'gpt-4',
     models: ['gpt-4', 'gpt-3.5-turbo'],
+    is_local: false,
   },
 ];
 
