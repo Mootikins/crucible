@@ -1618,7 +1618,7 @@ impl CrucibleAcpClient {
     }
 
     async fn write_permission_response(&mut self, payload: serde_json::Value) -> Result<()> {
-        if self.agent_stdin.is_none() {
+        if self.agent_stdin.is_none() && self.boxed_writer.is_none() {
             tracing::warn!("Agent stdin unavailable; cannot send permission response");
             return Ok(());
         }
