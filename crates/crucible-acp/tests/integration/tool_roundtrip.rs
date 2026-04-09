@@ -138,8 +138,7 @@ fn final_response(request_id: u64) -> serde_json::Value {
 /// ToolStart and ToolEnd chunks with the correct tool name, arguments, and result.
 #[tokio::test]
 async fn test_acp_tool_roundtrip_read_file() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(5000));
+    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(5000));
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
@@ -189,10 +188,7 @@ async fn test_acp_tool_roundtrip_read_file() {
         // Agent emits post-tool text
         write_json_line(
             &mut agent_writer,
-            text_chunk(
-                session_id,
-                "The file contains a heading and a paragraph.",
-            ),
+            text_chunk(session_id, "The file contains a heading and a paragraph."),
         )
         .await
         .unwrap();
@@ -296,8 +292,7 @@ async fn test_acp_tool_roundtrip_read_file() {
 /// and arrive in the correct order.
 #[tokio::test]
 async fn test_acp_tool_roundtrip_multiple_tools() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(5000));
+    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(5000));
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
@@ -548,8 +543,7 @@ async fn test_acp_tool_roundtrip_with_mcp_server() {
     // Now test the ACP client side: create a custom transport client and simulate
     // an agent that calls a tool. The tool call here is simulated (the agent side
     // sends tool_call notifications), but the MCP server is real and verified above.
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(5000));
+    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(5000));
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
@@ -666,8 +660,7 @@ async fn test_acp_tool_roundtrip_with_mcp_server() {
 /// appear in the final content string.
 #[tokio::test]
 async fn test_acp_tool_roundtrip_content_after_tool() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(5000));
+    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(5000));
 
     let session_id = "ses-roundtrip-after";
 
