@@ -82,6 +82,33 @@ export OPENAI_API_KEY=your-api-key
 - `text-embedding-3-small` - Fast, cost-effective
 - `text-embedding-3-large` - Highest quality
 
+### Cohere
+
+Use Cohere's embedding API:
+
+```toml
+[embedding]
+provider = "cohere"
+model = "embed-english-v3.0"
+```
+
+**Environment variable:**
+```bash
+export COHERE_API_KEY=your-api-key
+```
+
+### Vertex AI
+
+Use Google Vertex AI embeddings:
+
+```toml
+[embedding]
+provider = "vertexai"
+model = "text-embedding-004"
+```
+
+Requires Google Cloud credentials configured in your environment.
+
 ## Parameters
 
 ### batch_size

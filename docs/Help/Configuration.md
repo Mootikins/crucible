@@ -102,9 +102,7 @@ Controls the chat interface and LLM settings for internal agents.
 | `max_tokens` | int | `2048` | Maximum tokens to generate |
 | `timeout_secs` | int | `120` | API timeout in seconds |
 | `enable_markdown` | bool | `true` | Enable markdown rendering |
-| `size_aware_prompts` | bool | `true` | Enable size-aware prompt optimization for small models |
-
-**Size-aware prompts:** When enabled, models under 4B parameters get explicit tool guidance and read-only tools only, preventing tool loops. Disable if you want to experiment with small models having full tool access.
+| `show_thinking` | bool | `false` | Show extended thinking/reasoning blocks in chat output |
 
 ### [acp] - Agent Client Protocol
 
@@ -155,8 +153,9 @@ Controls how text embeddings are generated for semantic search.
 - `ollama` - Local Ollama (default: `nomic-embed-text`)
 - `openai` - OpenAI API (default: `text-embedding-3-small`)
 - `anthropic` - Anthropic API
+- `cohere` - Cohere API
+- `vertexai` - Google Vertex AI API
 - `burn` - Local GPU via Burn framework
-- `llamacpp` - Local GPU via llama.cpp
 
 ### [context] - Context Configuration
 
@@ -351,14 +350,6 @@ model = "gpt-4o"
 [embedding]
 provider = "fastembed"
 model = "BAAI/bge-small-en-v1.5"
-```
-
-### Small Model Optimization Disabled
-
-```toml
-[chat]
-model = "granite-3b"
-size_aware_prompts = false  # Give small model all tools
 ```
 
 ## Migrating from `kiln_path` to `[kilns]`

@@ -84,12 +84,11 @@ Examples:
 
 ## Available Options
 
-### Model & Provider
+### Model
 
 | Option | Type | Description |
 |--------|------|-------------|
 | `model` | string | Current LLM model (e.g., `claude-3-5-sonnet`, `gpt-4o`) |
-| `provider` | string | LLM provider (`ollama`, `openai`, `anthropic`) |
 
 ### Thinking / Reasoning
 
@@ -123,12 +122,19 @@ Examples:
 | `theme` | string | Syntax highlighting theme |
 | `verbose` | bool | Verbose output mode |
 
-### Generation
+### Precognition
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `temperature` | float | Response randomness (0.0 - 2.0) |
-| `maxtokens` | number | Maximum response tokens |
+| `precognition` | bool | Toggle precognition (auto-RAG context injection) |
+| `precognition.results` | number | Number of precognition results to inject (default: 5) |
+
+### Permissions
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `perm.show_diff` | bool | Show diffs in permission modals by default |
+| `perm.autoconfirm_session` | bool | Auto-approve all permissions for the session |
 
 ## The `:model` Command
 

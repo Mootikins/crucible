@@ -28,7 +28,8 @@ Plugins are discovered from these directories (highest priority first):
 |----------|--------|----------|
 | `CRUCIBLE_PLUGIN_PATH` dirs | EnvPath | Development, CI |
 | `~/.config/crucible/plugins/` | User | Personal plugins |
-| `<kiln>/.crucible/plugins/` | Kiln | Kiln-specific plugins |
+| `<kiln>/.crucible/plugins/` | Kiln | Kiln-specific plugins (personal, gitignored) |
+| `<kiln>/plugins/` | Kiln | Kiln-specific plugins (shared, version-controlled) |
 | `$CRUCIBLE_RUNTIME/plugins/` | Runtime | Bundled with Crucible |
 
 Same-name plugins at higher priority shadow lower ones.
