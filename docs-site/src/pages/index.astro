@@ -1,0 +1,899 @@
+---
+// Landing page — bypasses Starlight layout entirely
+// Ensure base always ends with /
+const rawBase = import.meta.env.BASE_URL;
+const base = rawBase.endsWith('/') ? rawBase : rawBase + '/';
+---
+
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>Crucible — A Knowledge-Grounded Agent Runtime</title>
+	<meta name="description" content="Agents that draw from a knowledge graph make better decisions. Local-first, plaintext-first, no lock-in." />
+	<link rel="icon" type="image/svg+xml" href={`${base}favicon.svg`} />
+
+	<!-- Fonts -->
+	<link rel="preconnect" href="https://fonts.googleapis.com" />
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+	<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+	<style>
+		/* ── Reset ──────────────────────────────────────── */
+		*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+		/* ── Palette ────────────────────────────────────── */
+		:root {
+			--amber: #FF8C42;
+			--amber-light: #FFAA33;
+			--amber-dark: #FF6B1A;
+			--amber-glow: rgba(255, 140, 66, 0.12);
+			--amber-glow-strong: rgba(255, 140, 66, 0.25);
+			--cyan: #22D3EE;
+			--cyan-muted: rgba(34, 211, 238, 0.7);
+			--slate: #64748B;
+			--slate-dark: #334155;
+			--slate-light: #94A3B8;
+			--bg-deep: #0A0A0C;
+			--bg-surface: #111114;
+			--bg-card: #16161A;
+			--bg-card-hover: #1C1C22;
+			--border: rgba(255, 255, 255, 0.06);
+			--border-amber: rgba(255, 140, 66, 0.15);
+			--text-primary: #F1F0EE;
+			--text-secondary: #9CA3AF;
+			--text-muted: #6B7280;
+			--font-display: 'DM Serif Display', Georgia, serif;
+			--font-body: 'IBM Plex Sans', system-ui, sans-serif;
+			--font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+		}
+
+		html {
+			background: var(--bg-deep);
+			color: var(--text-primary);
+			font-family: var(--font-body);
+			scroll-behavior: smooth;
+			-webkit-font-smoothing: antialiased;
+		}
+
+		/* ── Noise overlay ──────────────────────────────── */
+		body::before {
+			content: '';
+			position: fixed;
+			inset: 0;
+			z-index: 9999;
+			pointer-events: none;
+			opacity: 0.03;
+			background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+			background-repeat: repeat;
+			background-size: 256px;
+		}
+
+		/* ── Nav ─────────────────────────────────────────── */
+		nav {
+			position: fixed;
+			top: 0;
+			left: 0;
+			right: 0;
+			z-index: 100;
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 1rem 2rem;
+			background: rgba(10, 10, 12, 0.8);
+			backdrop-filter: blur(12px);
+			border-bottom: 1px solid var(--border);
+		}
+
+		.nav-brand {
+			font-family: var(--font-display);
+			font-size: 1.25rem;
+			color: var(--amber);
+			text-decoration: none;
+			letter-spacing: 0.02em;
+		}
+
+		.nav-links {
+			display: flex;
+			gap: 2rem;
+			align-items: center;
+			list-style: none;
+		}
+
+		.nav-links a {
+			color: var(--text-secondary);
+			text-decoration: none;
+			font-size: 0.875rem;
+			font-weight: 500;
+			letter-spacing: 0.03em;
+			text-transform: uppercase;
+			transition: color 0.2s;
+		}
+
+		.nav-links a:hover { color: var(--text-primary); }
+
+		.nav-cta {
+			background: var(--amber);
+			color: var(--bg-deep) !important;
+			padding: 0.5rem 1.25rem;
+			border-radius: 6px;
+			font-weight: 600 !important;
+			transition: background 0.2s, transform 0.15s !important;
+		}
+
+		.nav-cta:hover {
+			background: var(--amber-dark) !important;
+			color: var(--bg-deep) !important;
+			transform: translateY(-1px);
+		}
+
+		/* ── Hero ────────────────────────────────────────── */
+		.hero {
+			min-height: 100vh;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			text-align: center;
+			padding: 8rem 2rem 4rem;
+			position: relative;
+			overflow: hidden;
+		}
+
+		/* Radial glow behind hero */
+		.hero::before {
+			content: '';
+			position: absolute;
+			top: -20%;
+			left: 50%;
+			transform: translateX(-50%);
+			width: 900px;
+			height: 900px;
+			background: radial-gradient(circle, rgba(255, 140, 66, 0.08) 0%, transparent 70%);
+			pointer-events: none;
+		}
+
+		.hero-label {
+			display: inline-block;
+			font-family: var(--font-mono);
+			font-size: 0.75rem;
+			font-weight: 500;
+			letter-spacing: 0.15em;
+			text-transform: uppercase;
+			color: var(--amber);
+			border: 1px solid var(--border-amber);
+			background: var(--amber-glow);
+			padding: 0.4rem 1rem;
+			border-radius: 100px;
+			margin-bottom: 2rem;
+			animation: fadeUp 0.8s ease both;
+		}
+
+		.hero h1 {
+			font-family: var(--font-display);
+			font-size: clamp(3rem, 7vw, 5.5rem);
+			line-height: 1.05;
+			color: var(--text-primary);
+			margin-bottom: 1.5rem;
+			animation: fadeUp 0.8s ease 0.1s both;
+		}
+
+		.hero h1 span {
+			color: var(--amber);
+		}
+
+		.hero-subtitle {
+			font-size: clamp(1.05rem, 2vw, 1.25rem);
+			line-height: 1.7;
+			color: var(--text-secondary);
+			max-width: 640px;
+			margin-bottom: 2.5rem;
+			animation: fadeUp 0.8s ease 0.2s both;
+		}
+
+		/* ── Install block ───────────────────────────────── */
+		.install-block {
+			position: relative;
+			background: var(--bg-surface);
+			border: 1px solid var(--border);
+			border-radius: 10px;
+			padding: 1rem 1.5rem;
+			margin-bottom: 2.5rem;
+			max-width: 720px;
+			width: 100%;
+			animation: fadeUp 0.8s ease 0.3s both;
+		}
+
+		.install-block::before {
+			content: '';
+			position: absolute;
+			inset: -1px;
+			border-radius: 11px;
+			padding: 1px;
+			background: linear-gradient(135deg, var(--border-amber), transparent 60%);
+			-webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+			mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+			-webkit-mask-composite: xor;
+			mask-composite: exclude;
+			pointer-events: none;
+		}
+
+		.install-label {
+			font-family: var(--font-mono);
+			font-size: 0.7rem;
+			color: var(--text-muted);
+			text-transform: uppercase;
+			letter-spacing: 0.1em;
+			margin-bottom: 0.5rem;
+		}
+
+		.install-code {
+			font-family: var(--font-mono);
+			font-size: 0.85rem;
+			color: var(--amber-light);
+			word-break: break-all;
+			user-select: all;
+		}
+
+		.install-copy {
+			position: absolute;
+			top: 1rem;
+			right: 1rem;
+			background: none;
+			border: 1px solid var(--border);
+			color: var(--text-muted);
+			padding: 0.35rem 0.6rem;
+			border-radius: 5px;
+			cursor: pointer;
+			font-family: var(--font-mono);
+			font-size: 0.7rem;
+			transition: all 0.2s;
+		}
+
+		.install-copy:hover {
+			border-color: var(--amber);
+			color: var(--amber);
+		}
+
+		/* ── CTA buttons ─────────────────────────────────── */
+		.hero-actions {
+			display: flex;
+			gap: 1rem;
+			margin-bottom: 4rem;
+			animation: fadeUp 0.8s ease 0.4s both;
+		}
+
+		.btn {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.5rem;
+			padding: 0.75rem 2rem;
+			border-radius: 8px;
+			font-family: var(--font-body);
+			font-size: 0.95rem;
+			font-weight: 600;
+			text-decoration: none;
+			transition: all 0.2s;
+		}
+
+		.btn-primary {
+			background: var(--amber);
+			color: var(--bg-deep);
+		}
+
+		.btn-primary:hover {
+			background: var(--amber-dark);
+			transform: translateY(-1px);
+			box-shadow: 0 8px 24px rgba(255, 140, 66, 0.2);
+		}
+
+		.btn-outline {
+			background: transparent;
+			color: var(--text-secondary);
+			border: 1px solid var(--border);
+		}
+
+		.btn-outline:hover {
+			border-color: var(--slate);
+			color: var(--text-primary);
+			transform: translateY(-1px);
+		}
+
+		/* ── Demo frame ──────────────────────────────────── */
+		.demo-frame {
+			position: relative;
+			max-width: 800px;
+			width: 100%;
+			border-radius: 12px;
+			overflow: hidden;
+			border: 1px solid var(--border);
+			animation: fadeUp 0.8s ease 0.5s both;
+			box-shadow:
+				0 0 0 1px rgba(255, 255, 255, 0.03),
+				0 20px 60px rgba(0, 0, 0, 0.5),
+				0 0 120px rgba(255, 140, 66, 0.06);
+		}
+
+		.demo-frame img {
+			display: block;
+			width: 100%;
+			height: auto;
+		}
+
+		.demo-titlebar {
+			display: flex;
+			align-items: center;
+			gap: 6px;
+			padding: 10px 14px;
+			background: var(--bg-card);
+			border-bottom: 1px solid var(--border);
+		}
+
+		.demo-dot {
+			width: 10px;
+			height: 10px;
+			border-radius: 50%;
+			background: var(--slate-dark);
+		}
+
+		/* ── Section shared ──────────────────────────────── */
+		section {
+			padding: 6rem 2rem;
+		}
+
+		.section-inner {
+			max-width: 1100px;
+			margin: 0 auto;
+		}
+
+		.section-label {
+			font-family: var(--font-mono);
+			font-size: 0.7rem;
+			font-weight: 500;
+			letter-spacing: 0.15em;
+			text-transform: uppercase;
+			color: var(--amber);
+			margin-bottom: 1rem;
+		}
+
+		.section-title {
+			font-family: var(--font-display);
+			font-size: clamp(2rem, 4vw, 2.75rem);
+			color: var(--text-primary);
+			margin-bottom: 1rem;
+			line-height: 1.15;
+		}
+
+		.section-desc {
+			font-size: 1.05rem;
+			color: var(--text-secondary);
+			max-width: 560px;
+			line-height: 1.7;
+			margin-bottom: 3rem;
+		}
+
+		/* ── Features grid ───────────────────────────────── */
+		.features-grid {
+			display: grid;
+			grid-template-columns: repeat(3, 1fr);
+			gap: 1px;
+			background: var(--border);
+			border: 1px solid var(--border);
+			border-radius: 12px;
+			overflow: hidden;
+		}
+
+		.feature-card {
+			background: var(--bg-card);
+			padding: 2rem;
+			transition: background 0.3s;
+		}
+
+		.feature-card:hover {
+			background: var(--bg-card-hover);
+		}
+
+		.feature-icon {
+			width: 36px;
+			height: 36px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			border-radius: 8px;
+			background: var(--amber-glow);
+			border: 1px solid var(--border-amber);
+			color: var(--amber);
+			margin-bottom: 1.25rem;
+			font-size: 1rem;
+		}
+
+		.feature-card h3 {
+			font-family: var(--font-body);
+			font-size: 1rem;
+			font-weight: 600;
+			margin-bottom: 0.6rem;
+			color: var(--text-primary);
+		}
+
+		.feature-card p {
+			font-size: 0.875rem;
+			line-height: 1.65;
+			color: var(--text-secondary);
+		}
+
+		/* ── Comparison ──────────────────────────────────── */
+		.comparison {
+			background: var(--bg-surface);
+			border-top: 1px solid var(--border);
+			border-bottom: 1px solid var(--border);
+		}
+
+		.comparison table {
+			width: 100%;
+			border-collapse: collapse;
+			font-size: 0.9rem;
+		}
+
+		.comparison thead th {
+			text-align: left;
+			padding: 1rem 1.25rem;
+			font-weight: 600;
+			font-size: 0.8rem;
+			letter-spacing: 0.05em;
+			text-transform: uppercase;
+			color: var(--text-muted);
+			border-bottom: 1px solid var(--border);
+		}
+
+		.comparison thead th:first-child {
+			color: var(--text-secondary);
+		}
+
+		.comparison thead th.highlight {
+			color: var(--amber);
+		}
+
+		.comparison tbody td {
+			padding: 0.85rem 1.25rem;
+			border-bottom: 1px solid var(--border);
+			color: var(--text-secondary);
+		}
+
+		.comparison tbody td:first-child {
+			font-weight: 500;
+			color: var(--text-primary);
+		}
+
+		.check { color: var(--amber); font-weight: 600; }
+		.cross { color: var(--text-muted); }
+		.partial { color: var(--slate-light); font-size: 0.8rem; }
+
+		/* ── Quick start ─────────────────────────────────── */
+		.quickstart-block {
+			background: var(--bg-card);
+			border: 1px solid var(--border);
+			border-radius: 12px;
+			overflow: hidden;
+			max-width: 680px;
+		}
+
+		.quickstart-header {
+			display: flex;
+			align-items: center;
+			gap: 6px;
+			padding: 12px 16px;
+			background: rgba(255, 255, 255, 0.02);
+			border-bottom: 1px solid var(--border);
+		}
+
+		.quickstart-dot {
+			width: 10px;
+			height: 10px;
+			border-radius: 50%;
+			background: var(--slate-dark);
+		}
+
+		.quickstart-body {
+			padding: 1.5rem;
+		}
+
+		.quickstart-line {
+			display: flex;
+			align-items: baseline;
+			gap: 0;
+			margin-bottom: 0.5rem;
+			font-family: var(--font-mono);
+			font-size: 0.85rem;
+			line-height: 1.8;
+		}
+
+		.quickstart-line:last-child { margin-bottom: 0; }
+
+		.qs-prompt {
+			color: var(--amber);
+			user-select: none;
+			margin-right: 0.5rem;
+			flex-shrink: 0;
+		}
+
+		.qs-cmd { color: var(--text-primary); white-space: nowrap; }
+
+		.qs-comment {
+			color: var(--text-muted);
+			margin-left: auto;
+			padding-left: 1.5rem;
+			white-space: nowrap;
+		}
+
+		/* ── Delegation demo ─────────────────────────────── */
+		.delegation-section {
+			background: var(--bg-surface);
+			border-top: 1px solid var(--border);
+			border-bottom: 1px solid var(--border);
+		}
+
+		.delegation-layout {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 3rem;
+			align-items: center;
+		}
+
+		.delegation-text .section-desc {
+			margin-bottom: 1.5rem;
+		}
+
+		.delegation-frame {
+			border-radius: 12px;
+			overflow: hidden;
+			border: 1px solid var(--border);
+			box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+		}
+
+		.delegation-frame img {
+			display: block;
+			width: 100%;
+			height: auto;
+		}
+
+		/* ── Footer ──────────────────────────────────────── */
+		footer {
+			padding: 3rem 2rem;
+			text-align: center;
+			border-top: 1px solid var(--border);
+		}
+
+		.footer-inner {
+			max-width: 1100px;
+			margin: 0 auto;
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+		}
+
+		.footer-left {
+			font-family: var(--font-display);
+			font-size: 1.1rem;
+			color: var(--amber);
+		}
+
+		.footer-links {
+			display: flex;
+			gap: 2rem;
+			list-style: none;
+		}
+
+		.footer-links a {
+			color: var(--text-muted);
+			text-decoration: none;
+			font-size: 0.85rem;
+			transition: color 0.2s;
+		}
+
+		.footer-links a:hover { color: var(--text-secondary); }
+
+		.footer-license {
+			color: var(--text-muted);
+			font-size: 0.8rem;
+			font-family: var(--font-mono);
+		}
+
+		/* ── Animations ──────────────────────────────────── */
+		@keyframes fadeUp {
+			from { opacity: 0; transform: translateY(20px); }
+			to { opacity: 1; transform: translateY(0); }
+		}
+
+		/* ── Responsive ──────────────────────────────────── */
+		@media (max-width: 768px) {
+			.features-grid {
+				grid-template-columns: 1fr;
+			}
+
+			.delegation-layout {
+				grid-template-columns: 1fr;
+			}
+
+			.hero-actions {
+				flex-direction: column;
+				align-items: center;
+			}
+
+			.footer-inner {
+				flex-direction: column;
+				gap: 1.5rem;
+			}
+
+			.nav-links {
+				gap: 1rem;
+			}
+
+			.quickstart-line {
+				flex-wrap: wrap;
+			}
+
+			.qs-comment {
+				margin-left: 1.5rem;
+				padding-left: 0;
+			}
+		}
+
+		@media (max-width: 480px) {
+			nav { padding: 0.75rem 1rem; }
+			.nav-links { gap: 0.75rem; }
+			.nav-links a { font-size: 0.75rem; }
+		}
+	</style>
+</head>
+
+<body>
+	<!-- Nav -->
+	<nav>
+		<a href={base} class="nav-brand">Crucible</a>
+		<ul class="nav-links">
+			<li><a href={`${base}guides/getting-started/`}>Docs</a></li>
+			<li><a href="https://github.com/Mootikins/crucible">GitHub</a></li>
+			<li><a href={`${base}guides/getting-started/`} class="nav-cta">Get Started</a></li>
+		</ul>
+	</nav>
+
+	<!-- Hero -->
+	<section class="hero">
+		<div class="hero-label">Local-first agent runtime</div>
+		<h1>Knowledge makes<br/>agents <span>better</span></h1>
+		<p class="hero-subtitle">
+			Your notes, sessions, and wikilinks form a knowledge graph that agents draw from and contribute to.
+			Local-first. No cloud. No lock-in. All plaintext.
+		</p>
+
+		<div class="install-block">
+			<div class="install-label">Install</div>
+			<code class="install-code">curl -fsSL https://github.com/Mootikins/crucible/releases/latest/download/crucible-cli-installer.sh | sh</code>
+			<button class="install-copy" onclick="navigator.clipboard.writeText('curl -fsSL https://github.com/Mootikins/crucible/releases/latest/download/crucible-cli-installer.sh | sh').then(() => this.textContent = 'Copied').then(() => setTimeout(() => this.textContent = 'Copy', 1500))">Copy</button>
+		</div>
+
+		<div class="hero-actions">
+			<a href={`${base}guides/getting-started/`} class="btn btn-primary">Get Started</a>
+			<a href="https://github.com/Mootikins/crucible" class="btn btn-outline">View on GitHub</a>
+		</div>
+
+		<div class="demo-frame">
+			<div class="demo-titlebar">
+				<div class="demo-dot"></div>
+				<div class="demo-dot"></div>
+				<div class="demo-dot"></div>
+			</div>
+			<img src={`${base}demo.gif`} alt="Crucible TUI chat session with Precognition auto-enrichment" loading="lazy" />
+		</div>
+	</section>
+
+	<!-- Features -->
+	<section>
+		<div class="section-inner">
+			<div class="section-label">Why Crucible</div>
+			<h2 class="section-title">Memory should not be an afterthought</h2>
+			<p class="section-desc">
+				Most AI tools treat conversations as disposable. Crucible makes them the foundation of a growing knowledge graph.
+			</p>
+
+			<div class="features-grid">
+				<div class="feature-card">
+					<div class="feature-icon">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+					</div>
+					<h3>Knowledge-Grounded</h3>
+					<p>Precognition auto-injects relevant context before each LLM turn. The more you use it, the smarter your agents get.</p>
+				</div>
+
+				<div class="feature-card">
+					<div class="feature-icon">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+					</div>
+					<h3>Sessions Are Notes</h3>
+					<p>Every chat saves as markdown. Search them, link them with wikilinks, version them in git. Conversations become knowledge.</p>
+				</div>
+
+				<div class="feature-card">
+					<div class="feature-icon">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+					</div>
+					<h3>Bring Any LLM</h3>
+					<p>Ollama, OpenAI, Anthropic, local models. Swap providers freely with zero lock-in.</p>
+				</div>
+
+				<div class="feature-card">
+					<div class="feature-icon">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+					</div>
+					<h3>Lua and Fennel Plugins</h3>
+					<p>Neovim-like architecture. Script behaviors, add tools, extend the runtime. Configuration as code.</p>
+				</div>
+
+				<div class="feature-card">
+					<div class="feature-icon">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+					</div>
+					<h3>Semantic Search</h3>
+					<p>Block-level embeddings give you paragraph-granularity search across your entire knowledge base.</p>
+				</div>
+
+				<div class="feature-card">
+					<div class="feature-icon">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+					</div>
+					<h3>Agent Delegation</h3>
+					<p>Delegate tasks to Claude Code, Cursor, or Gemini CLI via the Agent Context Protocol.</p>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- Comparison -->
+	<section class="comparison">
+		<div class="section-inner">
+			<div class="section-label">How it compares</div>
+			<h2 class="section-title">Built different</h2>
+			<p class="section-desc">
+				Crucible combines the best of local-first PKM with a full agent runtime.
+			</p>
+
+			<table>
+				<thead>
+					<tr>
+						<th></th>
+						<th class="highlight">Crucible</th>
+						<th>ChatGPT</th>
+						<th>Obsidian + AI</th>
+						<th>OpenClaw</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr>
+						<td>Local-first</td>
+						<td class="check">Yes</td>
+						<td class="cross">No</td>
+						<td class="check">Yes</td>
+						<td class="check">Yes</td>
+					</tr>
+					<tr>
+						<td>Sessions as markdown</td>
+						<td class="check">Yes</td>
+						<td class="cross">No</td>
+						<td class="cross">No</td>
+						<td class="cross">No</td>
+					</tr>
+					<tr>
+						<td>Knowledge graph</td>
+						<td class="check">Yes</td>
+						<td class="cross">No</td>
+						<td class="check">Yes</td>
+						<td class="cross">No</td>
+					</tr>
+					<tr>
+						<td>Bring your own LLM</td>
+						<td class="check">Yes</td>
+						<td class="cross">No</td>
+						<td class="partial">Partial</td>
+						<td class="check">Yes</td>
+					</tr>
+					<tr>
+						<td>Plugin system</td>
+						<td class="check">Lua/Fennel</td>
+						<td class="cross">No</td>
+						<td class="check">JavaScript</td>
+						<td class="check">TypeScript</td>
+					</tr>
+					<tr>
+						<td>MCP server</td>
+						<td class="check">Yes</td>
+						<td class="cross">No</td>
+						<td class="cross">No</td>
+						<td class="cross">No</td>
+					</tr>
+					<tr>
+						<td>Semantic search</td>
+						<td class="check">Block-level</td>
+						<td class="cross">No</td>
+						<td class="partial">Plugin</td>
+						<td class="cross">No</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+	</section>
+
+	<!-- Delegation demo -->
+	<section class="delegation-section">
+		<div class="section-inner">
+			<div class="delegation-layout">
+				<div class="delegation-text">
+					<div class="section-label">Agent Context Protocol</div>
+					<h2 class="section-title">Delegate across agents</h2>
+					<p class="section-desc">
+						Crucible can delegate tasks to external AI agents. Start a session with Claude Code, Cursor, or Gemini CLI
+						and let them work with full access to your knowledge graph.
+					</p>
+					<a href={`${base}help/concepts/agents-and-protocols/`} class="btn btn-outline" style="display: inline-flex;">Learn more</a>
+				</div>
+				<div class="delegation-frame">
+					<div class="demo-titlebar">
+						<div class="demo-dot"></div>
+						<div class="demo-dot"></div>
+						<div class="demo-dot"></div>
+					</div>
+					<img src={`${base}delegation-demo.gif`} alt="Cross-agent delegation: Crucible delegating to Claude Code" loading="lazy" />
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- Quick Start -->
+	<section>
+		<div class="section-inner">
+			<div class="section-label">Quick start</div>
+			<h2 class="section-title">Three commands to get going</h2>
+			<p class="section-desc">
+				First run detects your LLM providers and prompts for a kiln path. A background daemon handles the rest.
+			</p>
+
+			<div class="quickstart-block">
+				<div class="quickstart-header">
+					<div class="quickstart-dot"></div>
+					<div class="quickstart-dot"></div>
+					<div class="quickstart-dot"></div>
+				</div>
+				<div class="quickstart-body">
+					<div class="quickstart-line">
+						<span class="qs-prompt">$</span>
+						<span class="qs-cmd">cru chat</span>
+						<span class="qs-comment"># Start a chat session</span>
+					</div>
+					<div class="quickstart-line">
+						<span class="qs-prompt">$</span>
+						<span class="qs-cmd">cru chat -a claude</span>
+						<span class="qs-comment"># Use Claude with your knowledge base</span>
+					</div>
+					<div class="quickstart-line">
+						<span class="qs-prompt">$</span>
+						<span class="qs-cmd">cru mcp</span>
+						<span class="qs-comment"># Start MCP server for integration</span>
+					</div>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- Footer -->
+	<footer>
+		<div class="footer-inner">
+			<div class="footer-left">Crucible</div>
+			<ul class="footer-links">
+				<li><a href={`${base}guides/getting-started/`}>Docs</a></li>
+				<li><a href="https://github.com/Mootikins/crucible">GitHub</a></li>
+				<li><a href="https://github.com/Mootikins/crucible/releases">Releases</a></li>
+			</ul>
+			<div class="footer-license">MIT / Apache-2.0</div>
+		</div>
+	</footer>
+</body>
+</html>

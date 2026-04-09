@@ -7,6 +7,7 @@ on:
       - 'docs/Help/**'
       - 'docs/Guides/**'
       - 'docs-site/**'
+      - 'assets/**'
       - 'scripts/convert-docs.mjs'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
