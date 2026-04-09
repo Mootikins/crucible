@@ -265,12 +265,9 @@ async fn acp_permission_handler_receives_correct_request_details() {
         let mut _response_line = String::new();
         agent_reader.read_line(&mut _response_line).await.unwrap();
 
-        write_json_line(
-            &mut agent_writer,
-            text_chunk("ses-details", "Done."),
-        )
-        .await
-        .unwrap();
+        write_json_line(&mut agent_writer, text_chunk("ses-details", "Done."))
+            .await
+            .unwrap();
 
         write_json_line(&mut agent_writer, final_response(prompt_request_id))
             .await
@@ -570,11 +567,7 @@ async fn acp_permission_approved_sends_selected_response_to_agent() {
 
         write_json_line(
             &mut agent_writer,
-            tool_call_update_completed(
-                "ses-perm-approve",
-                "tool-bash-1",
-                Some(json!("hello\n")),
-            ),
+            tool_call_update_completed("ses-perm-approve", "tool-bash-1", Some(json!("hello\n"))),
         )
         .await
         .unwrap();
@@ -824,8 +817,14 @@ async fn acp_multiple_permission_requests_in_single_turn() {
 
     let requests = recorded.lock().unwrap();
     assert_eq!(requests.len(), 2);
-    assert_eq!(requests[0].tool_call.tool_call_id.0.as_ref(), "tool-bash-m1");
-    assert_eq!(requests[1].tool_call.tool_call_id.0.as_ref(), "tool-write-m1");
+    assert_eq!(
+        requests[0].tool_call.tool_call_id.0.as_ref(),
+        "tool-bash-m1"
+    );
+    assert_eq!(
+        requests[1].tool_call.tool_call_id.0.as_ref(),
+        "tool-write-m1"
+    );
 
     assert_eq!(tool_calls.len(), 2);
     assert!(content.contains("Both operations completed"));

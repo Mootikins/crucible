@@ -466,7 +466,9 @@ async fn test_precognition_emits_note_info_in_event() {
     );
 
     // The event should include notes with titles
-    let note_info = event.data["notes"].as_array().expect("notes should be an array");
+    let note_info = event.data["notes"]
+        .as_array()
+        .expect("notes should be an array");
     let titles: Vec<&str> = note_info
         .iter()
         .filter_map(|n| n["title"].as_str())
