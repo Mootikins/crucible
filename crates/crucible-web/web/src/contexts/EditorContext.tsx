@@ -3,7 +3,6 @@ import {
   useContext,
   ParentComponent,
   createSignal,
-  Accessor,
 } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import type { EditorFile } from '@/lib/types';

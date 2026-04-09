@@ -3,7 +3,7 @@ import { Copy, Check, Pencil, RefreshCw } from 'lucide-solid';
 import { ToolCard } from './ToolCard';
 import { ThinkingBlock } from './ThinkingBlock';
 import { useChatSafe } from '@/contexts/ChatContext';
-import type { Message as MessageType, ToolCallDisplay } from '@/lib/types';
+import type { Message as MessageType, ToolCallDisplay, TokenUsage } from '@/lib/types';
 import { renderMarkdown, renderMarkdownAsync } from '@/lib/markdown';
 
 const PRECOGNITION_PATTERN = /^Auto-enriched with (\d+) notes:\s*\[(.*)\]$/s;
@@ -86,6 +86,16 @@ function formatRelativeTime(timestamp: number): string {
 
   const date = new Date(timestamp);
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/** Format token usage as a compact string, e.g. "150 tokens (25 cached)" */
+function formatTokenUsage(usage: TokenUsage): string {
+  const parts: string[] = [`${usage.totalTokens.toLocaleString()} tokens`];
+  const cached = (usage.cacheReadTokens ?? 0) + (usage.cacheCreationTokens ?? 0);
+  if (cached > 0) {
+    parts.push(`(${cached.toLocaleString()} cached)`);
+  }
+  return parts.join(' ');
 }
 
 interface MessageProps {
@@ -348,6 +358,13 @@ export const Message: Component<MessageProps> = (props) => {
            <Show when={props.isStreaming}>
              <span class="inline-block w-2 h-4 bg-primary-hover animate-pulse ml-0.5" />
            </Show>
+        </Show>
+
+        {/* Token usage — assistant messages only */}
+        <Show when={isAssistant() && props.message.usage}>
+          <div class="mt-1 text-[11px] text-neutral-500">
+            {formatTokenUsage(props.message.usage!)}
+          </div>
         </Show>
 
         {/* Timestamp */}

@@ -1,3 +1,12 @@
+/** Token usage data for a completed message */
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+}
+
 /** Message in the chat */
 export interface Message {
   id: string;
@@ -10,6 +19,8 @@ export interface Message {
   type?: string;
   /** Thinking block data (extended thinking / reasoning) */
   thinking?: ThinkingBlock;
+  /** Token usage data (populated on message_complete) */
+  usage?: TokenUsage;
 }
 
 /** Summary of a tool call */
@@ -159,12 +170,29 @@ export interface PrecognitionResult {
   notes: { name: string; relevance: number }[];
 }
 
+/** Context management strategy */
+export type ContextStrategy = 'truncate' | 'sliding_window';
+
+/** Output validation mode */
+export type OutputValidation =
+  | { kind: 'none' }
+  | { kind: 'json' }
+  | { kind: 'regex'; pattern: string };
+
 /** Session configuration */
 export interface SessionConfig {
   thinkingBudget?: number;
   temperature?: number;
   maxTokens?: number | null;
   precognition?: boolean;
+  // Execution controls
+  maxIterations?: number;
+  executionTimeoutSecs?: number;
+  contextBudget?: number;
+  contextStrategy?: ContextStrategy;
+  contextWindow?: number;
+  outputValidation?: OutputValidation;
+  validationRetries?: number;
 }
 
 /** Panel identifier */
@@ -299,6 +327,11 @@ export interface MessageCompleteEvent {
   id: string;
   content: string;
   tool_calls: ToolCallSummary[];
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  cache_read_tokens?: number;
+  cache_creation_tokens?: number;
 }
 
 /** An error occurred */

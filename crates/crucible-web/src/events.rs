@@ -44,6 +44,16 @@ pub enum ChatEvent {
         content: String,
         #[serde(skip_serializing_if = "Vec::is_empty", default)]
         tool_calls: Vec<ToolCallSummary>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        prompt_tokens: Option<u64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        completion_tokens: Option<u64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        total_tokens: Option<u64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_read_tokens: Option<u64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_creation_tokens: Option<u64>,
     },
 
     Error {
@@ -221,6 +231,11 @@ impl ChatEvent {
                     .unwrap_or("")
                     .to_string(),
                 tool_calls: Vec::new(),
+                prompt_tokens: data["prompt_tokens"].as_u64(),
+                completion_tokens: data["completion_tokens"].as_u64(),
+                total_tokens: data["total_tokens"].as_u64(),
+                cache_read_tokens: data["cache_read_tokens"].as_u64(),
+                cache_creation_tokens: data["cache_creation_tokens"].as_u64(),
             },
 
             "error" => ChatEvent::Error {

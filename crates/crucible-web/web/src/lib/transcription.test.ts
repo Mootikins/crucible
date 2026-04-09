@@ -6,6 +6,7 @@ describe('createServerTranscriber', () => {
   const mockFetch = vi.fn();
 
   beforeEach(() => {
+    mockFetch.mockClear();
     vi.stubGlobal('fetch', mockFetch);
   });
 

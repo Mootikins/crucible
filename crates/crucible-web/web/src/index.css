@@ -1,6 +1,21 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  --color-primary: #3b82f6;
+  --color-primary-hover: #2563eb;
+  --color-primary-active: #1e40af;
+
+  --color-surface-base: #171717;
+  --color-surface-elevated: #1f1f1f;
+  --color-surface-overlay: #262626;
+
+  --color-muted: #a3a3a3;
+  --color-muted-dark: #737373;
+
+  --color-error: #ef4444;
+  --color-error-dark: #991b1b;
+}
 
 /* FlexLayout CSS Custom Properties — Dark Theme Default */
 :root {

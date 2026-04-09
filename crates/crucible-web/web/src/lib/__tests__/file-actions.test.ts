@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
-import { windowStore, setStore, windowActions } from '@/stores/windowStore';
+import { windowStore, setStore } from '@/stores/windowStore';
 import { findTabByFilePath, openFileInEditor } from '../file-actions';
 import type { Tab, EdgePanelPosition, TabGroup, LayoutNode } from '@/types/windowTypes';
 
