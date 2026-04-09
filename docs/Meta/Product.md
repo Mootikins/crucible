@@ -3,7 +3,7 @@ title: Product
 description: Product feature map — capabilities, status, documentation, and dependencies
 type: product
 status: active
-updated: 2026-03-29
+updated: 2026-04-09
 tags:
   - meta
   - product
@@ -82,24 +82,24 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 > Runtime primitives that every reliable agent needs. These are too fundamental to be plugins — they govern how the agent manages its own context window, enforces execution boundaries, validates its output, and allows users to recover from mistakes. Informed by competitive analysis (2026-03): Aider, CrewAI, LangGraph, and Semantic Kernel all treat these as core concerns.
 
 ### Prompt Caching
-- [ ] **Anthropic Cache Control** `P0` — Set `CacheControl::Ephemeral` on system prompts and prior conversation turns via genai's existing `MessageOptions` API; 90% cost reduction on cached reads; OpenAI caching is automatic (no code needed); `:set cache=off` escape hatch; cache hit stats in statusline · `crucible-daemon`
-- [ ] **Cache Stats** `P1` — `cru.session.cache_stats()` Lua API returns `{ hits, misses, tokens_saved }`; statusline shows hit rate · `crucible-lua`, `crucible-cli`
+- [x] **Anthropic Cache Control** `P0` — `CacheControl::Ephemeral` set on system prompts and second-to-last conversation turn via `apply_prompt_caching()` in genai_handle.rs; 90% cost reduction on cached reads; OpenAI caching is automatic (no code needed); cache token counts flow through `message_complete` events (`cache_read_tokens`, `cache_creation_tokens`) · `crucible-daemon`
+- [-] **Cache Stats** `P1` — Cache token counts available in events and web UI; Lua API (`cru.session.cache_stats()`) and statusline hit rate display not yet wired · `crucible-lua`, `crucible-cli`
 
 ### Context Window Management
-- [ ] **Token Budget Tracking** `P0` — Make `max_context_tokens` settable via RPC (field exists, not wired); estimate context size via char/4 heuristic calibrated against provider `usage.input_tokens`; warn at >80%, auto-compact at >95%; `:set context_budget=128000` (auto-detected from model if unset); statusline shows `used/budget` with color · `crucible-daemon`, `crucible-cli`
-- [ ] **Context Strategies** `P1` — `ContextStrategy` enum: `Truncate` (drop oldest, default), `SlidingWindow` (keep last N turns + system), `Summarize` (LLM-compress older turns — this is what `session.compact` becomes); `:set context_strategy=summarize`; `:set context_window=20` for sliding window · `crucible-core`, `crucible-daemon`
+- [-] **Token Budget Tracking** `P0` — `context_budget` field on `SessionAgent`, settable via RPC; statusline shows `used/total` tokens from provider usage; char/4 heuristic estimation and auto-compact at >95% not yet implemented · `crucible-daemon`, `crucible-cli`
+- [-] **Context Strategies** `P1` — `ContextStrategy` enum implemented: `Truncate` (drop oldest, default) and `SlidingWindow` (keep last N turns + system); enforced in `genai_handle.rs`; `Summarize` (LLM-compress older turns) not yet implemented; `:set context_strategy` not yet wired · `crucible-core`, `crucible-daemon`
 - [ ] **Lua Context Operations** `P1` — Wire existing `context_ops` module to Lua: `cru.context.usage()`, `cru.context.compact()`, `cru.context.messages(range)`, `cru.context.remove(range)`, `cru.context.estimate_tokens(text)`; enables custom context strategies as plugins · `crucible-lua`, `crucible-core`
 
 ### Execution Limits
-- [ ] **Max Iterations** `P1` — Cap tool-call rounds per agent turn; `:set max_iterations=20`; `None` = unlimited (default for interactive, user can Ctrl+C); `20` default for programmatic/Lua-spawned sessions; inject "Iteration limit reached" on exceed · `crucible-daemon`
-- [ ] **Execution Timeout** `P1` — Per-turn timeout; `:set execution_timeout=300` (seconds); cancel and report on exceed; extends existing subagent timeout pattern to primary sessions · `crucible-daemon`
+- [x] **Max Iterations** `P1` — `DEFAULT_MAX_TOOL_DEPTH = 10`; `max_iterations` on `SessionAgent` settable via RPC; injects "Iteration limit reached" prompt on exceed; `None` = unlimited · `crucible-daemon`
+- [x] **Execution Timeout** `P1` — `execution_timeout_secs` on `SessionAgent` settable via RPC; cancel and report on exceed; enforced in `execute_agent_stream()` · `crucible-daemon`
 
 ### Agent Undo
 - [ ] **Turn Undo** `P1` — `/undo` reverts last agent turn: git-based file rollback (`git stash create` before tool execution) + message truncation; `/undo 3` for multiple turns; `/redo` for branching; wires existing `UndoTree<T>` to session actions; non-git workspaces use file journal (path → original content); confirmation prompt before destructive revert · `crucible-daemon`, `crucible-cli`
 - [ ] **Undo Lua API** `P1` — `cru.session.undo(id, n?)`, `cru.session.redo(id, n?)`, `cru.session.can_undo(id)`, `cru.session.undo_history(id)` · `crucible-lua`
 
 ### Output Validation
-- [ ] **Validate-Retry Loop** `P1` — After agent response, run configured validator; on failure, append error feedback and re-prompt (up to N retries); built-in validators: `json`, `json_schema(schema)`, `regex(pattern)`, `lua(fn)`; `:set output_validation=json`; `:set validation_retries=3`; primarily for programmatic/Lua sessions · `crucible-daemon`
+- [-] **Validate-Retry Loop** `P1` — `OutputValidation` enum (`None`, `Json`, `Regex(String)`) and `validation_retries` field exist on `SessionAgent`; types defined but validate-retry loop not yet wired in messaging.rs · `crucible-daemon`
 - [ ] **Lua Validators** `P1` — Custom validation via `cru.session.set("output_validation", { type = "lua", fn = validator_fn })`; validator returns `true` or `false, "reason"`; `cru.sessions.create({ output_validation = "json" })` at session creation · `crucible-lua`
 
 ## AI Chat & Agents
@@ -424,7 +424,6 @@ HTTP Gateway (crucible-web wired to daemon)
 ## Storage & Processing
 
 - [x] **SQLite Backend** `P0` — Default storage; fast, lightweight, recommended for most users · [[Help/Config/storage]] · `crucible-sqlite`
-- [x] **SurrealDB Backend** `P0` — Advanced storage with EAV graph and RocksDB engine; richer queries, higher memory · [[Help/Config/storage]] · _(removed)_
 - [x] **Vector Embeddings** `P0` — FastEmbed (ONNX) local embedding generation · [[Help/Config/embedding]] · `crucible-llm`
 - [x] **Embedding Reranking** `P0` — Search result reranking for relevance · `crucible-sqlite`
 - [x] **File Processing** `P0` — Parse, enrich, and index notes via pipeline · [[Help/CLI/process]] · `crucible-daemon`
@@ -591,6 +590,8 @@ HTTP Gateway (crucible-web wired to daemon)
 | `add-quick-prompt-features` | Nice UX, not core — revisit in Phase 3 |
 | `refactor-clustering-plugins` | Nice feature, not core |
 | Ratatui TUI | Removed — migrated to oil-only TUI (2025-01-17) |
+| SurrealDB Backend | Removed — SQLite is default and only backend; SurrealDB crate deleted |
+| hermit plugin | Removed (2026-03-29) — capabilities belong in chat/messaging integration plugins |
 
 ## Links
 
