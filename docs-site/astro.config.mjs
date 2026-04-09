@@ -23,6 +23,7 @@ export default defineConfig({
 			favicon: '/favicon.svg',
 			customCss: ['./src/styles/custom.css'],
 			sidebar: [
+				{ slug: 'overview', label: 'Overview' },
 				{
 					label: 'Getting Started',
 					items: [
