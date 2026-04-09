@@ -139,8 +139,8 @@ impl ChatClient {
             }
         }
 
-        let zai_coding = matches!(config.provider_type, BackendType::ZAI)
-            && endpoint.contains("coding");
+        let zai_coding =
+            matches!(config.provider_type, BackendType::ZAI) && endpoint.contains("coding");
 
         if !endpoint.is_empty() {
             builder = builder.with_service_target_resolver(

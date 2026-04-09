@@ -13,11 +13,11 @@
 //! - **Natural**: Text uses large width (terminal wraps), but tables use terminal width
 //!   for correct column sizing. Use for graduated/scrollback content that won't be redrawn.
 
+use crate::tui::oil::theme;
 use crucible_oil::ansi::{visible_width, wrap_styled_text};
 use crucible_oil::node::*;
 #[allow(unused_imports)] // WIP: Color not yet used
 use crucible_oil::style::{Color, Style};
-use crate::tui::oil::theme;
 use markdown_it::parser::inline::Text;
 use markdown_it::plugins::cmark::block::blockquote::Blockquote;
 use markdown_it::plugins::cmark::block::code::CodeBlock as MdCodeBlock;
@@ -661,7 +661,9 @@ fn render_list_item(node: &markdown_it::Node, ctx: &mut RenderContext) {
     };
 
     let item_text = extract_list_item_text(node);
-    let content_width = ctx.width.saturating_sub(margins.left + list_indent.len() + bullet_width);
+    let content_width = ctx
+        .width
+        .saturating_sub(margins.left + list_indent.len() + bullet_width);
     let wrapped = wrap_text(&item_text, content_width);
 
     for (i, line) in wrapped.iter().enumerate() {

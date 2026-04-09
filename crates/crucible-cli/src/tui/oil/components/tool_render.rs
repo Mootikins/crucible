@@ -3,11 +3,11 @@
 //! Renders tool call states: pending (with static ● icon), complete (with ✓),
 //! and error (with ✗). No animated spinners — animation lives in chrome only.
 
-use crucible_oil::node::{col, row, styled, Node};
-use crucible_oil::style::Style;
 use crate::tui::oil::utils::truncate_to_chars;
 use crate::tui::oil::viewport_cache::CachedToolCall;
 use crucible_oil::ansi::visible_width;
+use crucible_oil::node::{col, row, styled, Node};
+use crucible_oil::style::Style;
 use crucible_oil::truncate_to_width;
 use std::time::Duration;
 
@@ -17,7 +17,11 @@ pub fn render_tool_call(tool: &CachedToolCall, width: usize) -> Node {
 }
 
 /// Render a tool call with specified spinner frame for animation.
-pub fn render_tool_call_with_frame(tool: &CachedToolCall, spinner_frame: usize, width: usize) -> Node {
+pub fn render_tool_call_with_frame(
+    tool: &CachedToolCall,
+    spinner_frame: usize,
+    width: usize,
+) -> Node {
     if tool.superseded {
         return Node::Empty;
     }
@@ -36,7 +40,14 @@ pub fn render_tool_call_with_frame(tool: &CachedToolCall, spinner_frame: usize, 
     } else if tool.complete {
         render_tool_complete(tool, &display_name, primary_arg, &result_str, width)
     } else {
-        render_tool_running(tool, &display_name, primary_arg, &result_str, spinner_frame, width)
+        render_tool_running(
+            tool,
+            &display_name,
+            primary_arg,
+            &result_str,
+            spinner_frame,
+            width,
+        )
     };
 
     let description_node = render_tool_description(tool);

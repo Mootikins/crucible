@@ -3,11 +3,11 @@
 //! Renders subagent executions with status (running/completed/failed),
 //! prompt preview, and result summary or error message.
 
-use crucible_oil::node::{row, styled, Node, BRAILLE_SPINNER_FRAMES};
-use crucible_oil::style::Style;
 use crate::tui::oil::theme;
 use crate::tui::oil::utils::truncate_first_line;
 use crate::tui::oil::viewport_cache::{CachedSubagent, SubagentStatus};
+use crucible_oil::node::{row, styled, Node, BRAILLE_SPINNER_FRAMES};
+use crucible_oil::style::Style;
 use std::time::Duration;
 
 use super::tool_render::format_elapsed;
@@ -33,11 +33,8 @@ pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize, width: u
         ),
     };
 
-    let prompt_preview = truncate_first_line(
-        &subagent.prompt,
-        width.saturating_sub(30).max(20),
-        true,
-    );
+    let prompt_preview =
+        truncate_first_line(&subagent.prompt, width.saturating_sub(30).max(20), true);
 
     let label_with_target = if let Some(target) = &subagent.target_agent {
         format!("{} to {}", subagent.label, target)

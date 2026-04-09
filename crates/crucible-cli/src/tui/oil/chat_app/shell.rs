@@ -7,13 +7,13 @@ use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
 use crucible_core::interaction::{InteractionRequest, InteractionResponse, PermissionScope};
 
+use super::messages::ChatAppMsg;
+use super::OilChatApp;
 use crate::tui::oil::app::Action;
 use crate::tui::oil::components::{
     InteractionModal, InteractionModalMsg, InteractionModalOutput, ShellHistoryItem, ShellModal,
     ShellModalMsg, ShellModalOutput, ShellStatus,
 };
-use super::messages::ChatAppMsg;
-use super::OilChatApp;
 
 impl OilChatApp {
     pub(super) fn handle_shell_command(&mut self, cmd: &str) -> Action<ChatAppMsg> {

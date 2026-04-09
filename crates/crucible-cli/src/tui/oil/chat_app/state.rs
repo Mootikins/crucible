@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
-use crucible_oil::style::Color;
 use crate::tui::oil::theme;
+use crucible_oil::style::Color;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {

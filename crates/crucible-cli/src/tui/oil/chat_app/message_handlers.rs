@@ -75,7 +75,11 @@ impl OilChatApp {
                 };
                 self.container_list.add_tool_call(tool);
             }
-            ChatAppMsg::ToolResultDelta { name, delta, call_id } => {
+            ChatAppMsg::ToolResultDelta {
+                name,
+                delta,
+                call_id,
+            } => {
                 self.container_list
                     .update_tool(&name, call_id.as_deref(), |t| t.append_output(&delta));
             }
@@ -83,7 +87,11 @@ impl OilChatApp {
                 self.container_list
                     .update_tool(&name, call_id.as_deref(), |t| t.mark_complete());
             }
-            ChatAppMsg::ToolResultError { name, error, call_id } => {
+            ChatAppMsg::ToolResultError {
+                name,
+                error,
+                call_id,
+            } => {
                 self.container_list
                     .update_tool(&name, call_id.as_deref(), |t| t.set_error(error.clone()));
             }
@@ -233,10 +241,7 @@ impl OilChatApp {
             ChatAppMsg::LoadHistoryEvents(events) => {
                 self.load_history_events(events);
             }
-            ChatAppMsg::PrecognitionResult {
-                notes_count,
-                notes,
-            } => {
+            ChatAppMsg::PrecognitionResult { notes_count, notes } => {
                 self.precognition.last_notes_count = Some(notes_count);
                 self.precognition.last_notes = notes;
             }

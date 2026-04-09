@@ -27,18 +27,13 @@ mod tests {
                 text_input(s, cursor)
             }),
         ];
-        leaf.prop_recursive(
-            3,
-            32,
-            6,
-            |inner| {
-                prop_oneof![
-                    3 => prop::collection::vec(inner.clone(), 0..5).prop_map(col),
-                    3 => prop::collection::vec(inner.clone(), 0..5).prop_map(row),
-                    2 => prop::collection::vec(inner.clone(), 0..5).prop_map(fragment),
-                ]
-            },
-        )
+        leaf.prop_recursive(3, 32, 6, |inner| {
+            prop_oneof![
+                3 => prop::collection::vec(inner.clone(), 0..5).prop_map(col),
+                3 => prop::collection::vec(inner.clone(), 0..5).prop_map(row),
+                2 => prop::collection::vec(inner.clone(), 0..5).prop_map(fragment),
+            ]
+        })
     }
 
     /// Generate a Graduation struct with random content and dimensions.

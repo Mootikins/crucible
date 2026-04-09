@@ -281,7 +281,8 @@ mod tests {
             r1.lines().count(),
             r2.lines().count(),
             "Node::Empty should not add extra lines.\nWith: {:?}\nWithout: {:?}",
-            r1, r2
+            r1,
+            r2
         );
     }
 

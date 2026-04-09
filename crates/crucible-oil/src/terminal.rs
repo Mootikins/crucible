@@ -201,7 +201,10 @@ impl<W: Write> Terminal<W> {
             tracing::debug!(
                 graduation_len = snapshot.stdout_delta.len(),
                 viewport_rows = self.output.height(),
-                has_spinner = snapshot.stdout_delta.chars().any(|c| "◐◓◑◒⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏".contains(c)),
+                has_spinner = snapshot
+                    .stdout_delta
+                    .chars()
+                    .any(|c| "◐◓◑◒⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏".contains(c)),
                 "[apply] graduation write"
             );
             // Clear viewport, write graduation content to scrollback.
@@ -218,10 +221,8 @@ impl<W: Write> Terminal<W> {
             self.last_cursor = None;
         }
 
-        self.output.render_with_overlays(
-            &snapshot.plan.viewport.content,
-            &snapshot.plan.overlays,
-        )?;
+        self.output
+            .render_with_overlays(&snapshot.plan.viewport.content, &snapshot.plan.overlays)?;
 
         // End synchronized update — terminal can now process all writes atomically.
         write!(self.output.writer(), "{}", END_SYNCHRONIZED_UPDATE)?;
@@ -300,9 +301,7 @@ impl<W: Write> Terminal<W> {
 
 impl<W: Write> crate::runtime::FrameRenderer for Terminal<W> {
     fn render_frame(&mut self, tree: &Node, graduation: Option<&crate::planning::Graduation>) {
-        let snapshot = self
-            .planner
-            .plan_frame(tree, graduation.cloned());
+        let snapshot = self.planner.plan_frame(tree, graduation.cloned());
         let _ = self.apply(&snapshot);
         self.last_snapshot = Some(snapshot);
     }

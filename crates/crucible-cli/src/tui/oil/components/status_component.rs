@@ -3,10 +3,10 @@ use crucible_lua::statusline::StatuslineConfig;
 use crate::tui::oil::chat_app::ChatMode;
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::status_bar::{NotificationToastKind, StatusBar};
-use crucible_oil::node::{col, styled, Node};
-use crucible_oil::style::Style;
 use crate::tui::oil::theme;
 use crate::tui::oil::ViewContext;
+use crucible_oil::node::{col, styled, Node};
+use crucible_oil::style::Style;
 
 /// View-only component composing error display + [`StatusBar`].
 ///

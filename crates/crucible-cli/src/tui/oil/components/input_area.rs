@@ -1,8 +1,8 @@
 use crate::tui::oil::component::Component;
-use crucible_oil::node::Node;
-use crucible_oil::style::Color;
 use crate::tui::oil::theme;
 use crate::tui::oil::ViewContext;
+use crucible_oil::node::Node;
+use crucible_oil::style::Color;
 use crucible_oil::InputStyle;
 
 // Re-export Oil's InputArea and related items

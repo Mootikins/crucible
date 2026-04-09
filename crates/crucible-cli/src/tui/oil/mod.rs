@@ -16,13 +16,13 @@
 mod agent_selection;
 mod app;
 pub mod chat_app;
-pub mod containers;
 pub mod chat_runner;
 pub mod commands;
 pub mod component;
 pub mod components;
 mod composer;
 pub mod config;
+pub mod containers;
 pub mod diff;
 mod event;
 pub mod lua_bridge;
@@ -42,12 +42,12 @@ pub use chat_runner::OilChatRunner;
 pub use component::{Component, ComponentHarness};
 pub use components::{InputArea, InputMode, StatusBar, INPUT_MAX_CONTENT_LINES};
 pub use composer::{pad_popup_region, ComposerConfig};
+pub use containers::{render_chat_node, ChatNode, ContainerList};
 pub use event::{Event, InputAction, InputBuffer};
 pub use lua_view::{LuaView, ViewAction};
 pub use render_state::RenderState;
 pub use runner::{run_sync, OilRunner};
 pub use test_harness::AppHarness;
-pub use containers::{ChatNode, ContainerList, render_chat_node};
 pub use viewport_cache::CachedMessage;
 
 // Re-export commonly used crucible-oil types
@@ -60,7 +60,9 @@ pub use crucible_oil::render::*;
 pub use crucible_oil::runtime::TestRuntime;
 pub use crucible_oil::style::*;
 pub use crucible_oil::terminal::Terminal;
-pub use crucible_oil::viewport::{clamp_lines_bottom, clamp_lines_top, ensure_min_height, pad_lines_to};
+pub use crucible_oil::viewport::{
+    clamp_lines_bottom, clamp_lines_top, ensure_min_height, pad_lines_to,
+};
 
 #[cfg(test)]
 mod tests;

@@ -68,7 +68,11 @@ fn cast_path() -> Option<std::path::PathBuf> {
         .parent()?
         .parent()?
         .join("reproduce.cast");
-    if path.exists() { Some(path) } else { None }
+    if path.exists() {
+        Some(path)
+    } else {
+        None
+    }
 }
 
 #[test]
@@ -109,9 +113,9 @@ fn replay_cast_no_spinner_in_scrollback() {
             let start = i.saturating_sub(2);
             let end = (*i + 3).min(scrollback_lines.len());
             eprintln!("\n  Context around line {}:", i);
-            for j in start..end {
+            for (j, line) in (start..end).zip(&scrollback_lines[start..end]) {
                 let marker = if j == *i { " <<<" } else { "" };
-                eprintln!("    [{:3}] {}{}", j, scrollback_lines[j], marker);
+                eprintln!("    [{:3}] {}{}", j, line, marker);
             }
         }
     }
@@ -132,9 +136,9 @@ fn replay_cast_no_spinner_in_scrollback() {
             let start = i.saturating_sub(2);
             let end = (*i + 3).min(tall_lines.len());
             eprintln!("\n  Spinner '{}' at line {}:", line, i);
-            for j in start..end {
+            for (j, tline) in (start..end).zip(&tall_lines[start..end]) {
                 let marker = if j == *i { " <<<" } else { "" };
-                eprintln!("    [{:3}] {}{}", j, tall_lines[j], marker);
+                eprintln!("    [{:3}] {}{}", j, tline, marker);
             }
         }
     }

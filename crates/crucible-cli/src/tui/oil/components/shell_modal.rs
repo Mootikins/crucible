@@ -1,7 +1,7 @@
 use crucible_oil::node::{col, row, spacer, styled, text, Node};
 
-use crucible_oil::style::{Color, Style};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crucible_oil::style::{Color, Style};
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};

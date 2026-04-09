@@ -141,10 +141,10 @@ fn check_spacing_between_non_tool_containers(screen: &str, context: &str) {
 
     #[derive(Debug, Clone, Copy, PartialEq)]
     enum BlockKind {
-        ThoughtCollapsed,  // ◇ Thought (N words)
-        ThoughtExpanded,   // ┌─ Thought/Thinking header (expanded view)
+        ThoughtCollapsed, // ◇ Thought (N words)
+        ThoughtExpanded,  // ┌─ Thought/Thinking header (expanded view)
         Tool,
-        UserBottom,        // ▀▀▀ bottom bar of user message
+        UserBottom, // ▀▀▀ bottom bar of user message
     }
 
     // First pass: identify regions inside expanded thinking (┌─ ... to next container)
@@ -176,9 +176,8 @@ fn check_spacing_between_non_tool_containers(screen: &str, context: &str) {
         expanded_ranges.push((expand_start, lines.len() - 1));
     }
 
-    let in_expanded = |row: usize| -> bool {
-        expanded_ranges.iter().any(|&(s, e)| row >= s && row <= e)
-    };
+    let in_expanded =
+        |row: usize| -> bool { expanded_ranges.iter().any(|&(s, e)| row >= s && row <= e) };
 
     // Classify only container-level headers
     let mut blocks: Vec<(usize, BlockKind)> = Vec::new();
@@ -187,7 +186,11 @@ fn check_spacing_between_non_tool_containers(screen: &str, context: &str) {
             // Inside expanded thinking — treat the header line only
             let t = line.trim();
             if (t.starts_with("\u{250c}\u{2500}") || t.starts_with("┌─"))
-                && i == expanded_ranges.iter().find(|&&(s, _)| s == i).map(|&(s, _)| s).unwrap_or(usize::MAX)
+                && i == expanded_ranges
+                    .iter()
+                    .find(|&&(s, _)| s == i)
+                    .map(|&(s, _)| s)
+                    .unwrap_or(usize::MAX)
             {
                 blocks.push((i, BlockKind::ThoughtExpanded));
             }
@@ -219,10 +222,10 @@ fn check_spacing_between_non_tool_containers(screen: &str, context: &str) {
         } else if kind_a == BlockKind::Tool {
             // Tool may have continuation lines (│)
             let mut end = row_a;
-            for j in (row_a + 1)..row_b {
-                let t = lines[j].trim();
+            for (offset, line) in lines[(row_a + 1)..row_b].iter().enumerate() {
+                let t = line.trim();
                 if t.starts_with("│") || t.starts_with("│") {
-                    end = j;
+                    end = row_a + 1 + offset;
                 } else {
                     break;
                 }
@@ -400,7 +403,8 @@ impl FrameChecker {
         if self.frame_history.len() >= FRAME_HISTORY_SIZE {
             self.frame_history.remove(0);
         }
-        self.frame_history.push(format!("=== {} ===\n{}", ctx, stripped));
+        self.frame_history
+            .push(format!("=== {} ===\n{}", ctx, stripped));
 
         check_no_duplicate_thought_lines(&stripped, &ctx);
         check_no_triple_blanks(&stripped, &ctx);
@@ -436,7 +440,9 @@ fn invariant_multi_tool_turn() {
     fc.render_and_check();
 
     // Thinking starts
-    for word in "I need to explore the repository structure first to understand the codebase".split_whitespace() {
+    for word in "I need to explore the repository structure first to understand the codebase"
+        .split_whitespace()
+    {
         fc.send(ChatAppMsg::ThinkingDelta(format!("{} ", word)));
     }
     fc.render_and_check();
@@ -523,12 +529,15 @@ fn invariant_reproduce_cast_pattern() {
 
     // First thinking burst
     fc.send(ChatAppMsg::ThinkingDelta(
-        "The user wants to know about this repository. I should explore the structure first. ".into(),
+        "The user wants to know about this repository. I should explore the structure first. "
+            .into(),
     ));
     fc.render_and_check();
 
     // Text
-    fc.send(ChatAppMsg::TextDelta("I'll explore this repository to understand what it's about.".into()));
+    fc.send(ChatAppMsg::TextDelta(
+        "I'll explore this repository to understand what it's about.".into(),
+    ));
     fc.render_and_check();
 
     // First tool batch
@@ -840,7 +849,11 @@ fn invariant_reproduce_jsonl_every_frame() {
                 };
                 // Keep first occurrence of each distinct violation category
                 if !violations.iter().any(|v| {
-                    let v_cat = if let Some(p) = v.find("): ") { &v[p + 3..] } else { v };
+                    let v_cat = if let Some(p) = v.find("): ") {
+                        &v[p + 3..]
+                    } else {
+                        v
+                    };
                     v_cat == category
                 }) {
                     violations.push(short);
@@ -854,18 +867,43 @@ fn invariant_reproduce_jsonl_every_frame() {
     // Final comprehensive check
     let full = strip_ansi(&vt.full_history());
     let screen = strip_ansi(&vt.screen_contents());
-    let final_checks: Vec<(&str, Box<dyn FnOnce()>)> = vec![
-        ("final:duplicate_thought", Box::new(|| check_no_duplicate_thought_lines(&full, "reproduce final"))),
-        ("final:triple_blanks", Box::new(|| check_no_triple_blanks(&full, "reproduce final"))),
-        ("final:content_spacing", Box::new(|| check_consistent_content_spacing(&full, "reproduce final"))),
-        ("final:split_thinking", Box::new(|| check_no_split_thinking_nodes(&screen, "reproduce final screen"))),
-        ("final:simultaneous_thought_thinking", Box::new(|| check_no_simultaneous_thought_and_thinking(&screen, "reproduce final screen"))),
-        ("final:monotonic_word_count", Box::new(|| check_thinking_word_count_monotonic(&screen, "reproduce final screen"))),
+    type FinalCheck<'a> = (&'a str, Box<dyn FnOnce() + 'a>);
+    let final_checks: Vec<FinalCheck<'_>> = vec![
+        (
+            "final:duplicate_thought",
+            Box::new(|| check_no_duplicate_thought_lines(&full, "reproduce final")),
+        ),
+        (
+            "final:triple_blanks",
+            Box::new(|| check_no_triple_blanks(&full, "reproduce final")),
+        ),
+        (
+            "final:content_spacing",
+            Box::new(|| check_consistent_content_spacing(&full, "reproduce final")),
+        ),
+        (
+            "final:split_thinking",
+            Box::new(|| check_no_split_thinking_nodes(&screen, "reproduce final screen")),
+        ),
+        (
+            "final:simultaneous_thought_thinking",
+            Box::new(|| {
+                check_no_simultaneous_thought_and_thinking(&screen, "reproduce final screen")
+            }),
+        ),
+        (
+            "final:monotonic_word_count",
+            Box::new(|| check_thinking_word_count_monotonic(&screen, "reproduce final screen")),
+        ),
     ];
 
     for (label, check) in final_checks {
         if let Some(msg) = soft_check(check) {
-            violations.push(format!("[{}] {}", label, msg.lines().next().unwrap_or(&msg)));
+            violations.push(format!(
+                "[{}] {}",
+                label,
+                msg.lines().next().unwrap_or(&msg)
+            ));
         }
     }
 
@@ -874,7 +912,9 @@ fn invariant_reproduce_jsonl_every_frame() {
         "reproduce.jsonl invariant violations ({} unique across {} frames):\n{}",
         violations.len(),
         frame,
-        violations.iter().enumerate()
+        violations
+            .iter()
+            .enumerate()
             .map(|(i, v)| format!("  {}. {}", i + 1, v))
             .collect::<Vec<_>>()
             .join("\n")

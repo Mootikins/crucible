@@ -3,10 +3,10 @@
 //! Renders shell command executions with command line, exit code,
 //! output tail, and optional output file path.
 
-use crucible_oil::node::{col, row, styled, Node};
-use crucible_oil::style::Style;
 use crate::tui::oil::theme;
 use crate::tui::oil::viewport_cache::CachedShellExecution;
+use crucible_oil::node::{col, row, styled, Node};
+use crucible_oil::style::Style;
 
 /// Render a shell execution with command, exit code, and output.
 pub fn render_shell_execution(shell: &CachedShellExecution) -> Node {

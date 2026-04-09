@@ -729,8 +729,7 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
     let _context_fetch = {
         let limit_handle = runner.context_limit_handle();
         tokio::spawn(async move {
-            if let Some(limit) =
-                fetch_model_context_length(&context_endpoint, &context_model).await
+            if let Some(limit) = fetch_model_context_length(&context_endpoint, &context_model).await
             {
                 if limit > 0 {
                     info!("Model {} context length: {} tokens", context_model, limit);

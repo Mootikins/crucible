@@ -160,7 +160,7 @@ mod tests {
         let grad = Graduation {
             node: col([text("Graduated via node")]),
             width: 80,
-                    };
+        };
         runtime.render_with_graduation(&tree, Some(&grad));
 
         assert!(runtime.stdout_content().contains("Graduated via node"));
@@ -193,14 +193,14 @@ mod tests {
         let grad_a = Graduation {
             node: col([text("Content A")]),
             width: 80,
-                    };
+        };
         runtime.render_with_graduation(&tree, Some(&grad_a));
 
         // Frame 2: graduate content B
         let grad_b = Graduation {
             node: col([text("Content B")]),
             width: 80,
-                    };
+        };
         runtime.render_with_graduation(&tree, Some(&grad_b));
 
         let stdout = runtime.stdout_content();
@@ -219,7 +219,7 @@ mod tests {
         let grad = Graduation {
             node: col([text("Scrollback")]),
             width: 80,
-                    };
+        };
 
         // Use the FrameRenderer trait method
         FrameRenderer::render_frame(&mut runtime, &tree, Some(&grad));

@@ -3,16 +3,18 @@
 //! These tests verify that container rendering produces correct visual output
 //! using `insta::assert_snapshot!` for regression protection.
 
+use super::helpers::vt_render;
 use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
-use super::helpers::vt_render;
 
 // ─── Individual container types ────────────────────────────────────────────
 
 #[test]
 fn snapshot_user_message() {
     let mut app = OilChatApp::init();
-    app.on_message(ChatAppMsg::UserMessage("What is the meaning of life?".into()));
+    app.on_message(ChatAppMsg::UserMessage(
+        "What is the meaning of life?".into(),
+    ));
 
     let output = vt_render(&mut app);
     insta::assert_snapshot!(output);
@@ -116,7 +118,9 @@ fn snapshot_multi_turn() {
     });
 
     // Continuation text after tool
-    app.on_message(ChatAppMsg::TextDelta("After reading the file, here are my findings.".into()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "After reading the file, here are my findings.".into(),
+    ));
     app.on_message(ChatAppMsg::StreamComplete);
 
     // Render through vt100 to exercise graduation
@@ -134,8 +138,7 @@ fn snapshot_user_and_assistant_exchange() {
 
     app.on_message(ChatAppMsg::UserMessage("What is Rust?".into()));
     app.on_message(ChatAppMsg::TextDelta(
-        "Rust is a systems programming language focused on safety and performance."
-            .into(),
+        "Rust is a systems programming language focused on safety and performance.".into(),
     ));
     app.on_message(ChatAppMsg::StreamComplete);
 

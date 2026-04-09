@@ -5,8 +5,6 @@ use crate::tui::oil::chat_app::{
     ChatAppMsg, ChatMode, McpServerDisplay, OilChatApp, PluginStatusEntry,
 };
 use crate::tui::oil::event::Event;
-use crucible_oil::focus::FocusContext;
-use crucible_oil::terminal::Terminal;
 use crate::tui::oil::theme;
 use anyhow::{Context, Result};
 #[allow(unused_imports)] // WIP: KeyCode, KeyModifiers not yet used
@@ -15,6 +13,8 @@ use crucible_core::events::SessionEvent;
 use crucible_core::interaction::InteractionRequest;
 use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatResult, SubagentEventType};
 use crucible_lua::SessionCommand;
+use crucible_oil::focus::FocusContext;
+use crucible_oil::terminal::Terminal;
 use crucible_oil::FrameRenderer;
 use futures::stream::BoxStream;
 use futures::StreamExt;

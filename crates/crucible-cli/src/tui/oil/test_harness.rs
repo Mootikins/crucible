@@ -1,9 +1,9 @@
 use crate::tui::oil::app::{Action, App, ViewContext};
 use crate::tui::oil::event::Event;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crucible_oil::focus::FocusContext;
 use crucible_oil::node::Node;
 use crucible_oil::planning::{FramePlanner, FrameSnapshot};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 pub struct AppHarness<A: App> {
     app: A,

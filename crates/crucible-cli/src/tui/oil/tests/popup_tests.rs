@@ -244,14 +244,14 @@ fn popup_positioned_above_input_bar() {
 #[cfg(any())] // disabled: awaiting test reconstruction
 mod overlay_graduation_tests {
     use super::*;
-    use crucible_oil::ansi::strip_ansi;
     use crate::tui::oil::app::App;
     use crate::tui::oil::chat_app::OilChatApp;
     use crate::tui::oil::event::Event;
-    use crucible_oil::planning::FramePlanner;
     use crate::tui::oil::tests::helpers::view_with_default_ctx;
     use crate::tui::oil::TestRuntime;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use crucible_oil::ansi::strip_ansi;
+    use crucible_oil::planning::FramePlanner;
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
@@ -428,12 +428,12 @@ mod overlay_graduation_tests {
 #[cfg(any())] // disabled: awaiting test reconstruction
 mod composer_stability_tests {
     use super::*;
-    use crucible_oil::ansi::strip_ansi;
     use crate::tui::oil::app::App;
     use crate::tui::oil::chat_app::OilChatApp;
     use crate::tui::oil::event::Event;
     use crate::tui::oil::tests::helpers::view_with_default_ctx;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use crucible_oil::ansi::strip_ansi;
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::empty())

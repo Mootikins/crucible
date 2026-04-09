@@ -6,9 +6,9 @@
 //! - All content is preserved through graduation
 //! - Turn indicator (spinner) only appears in viewport chrome, never in scrollback
 
+use super::vt100_runtime::Vt100TestRuntime;
 use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
-use super::vt100_runtime::Vt100TestRuntime;
 
 // ─── No spinners in scrollback ─────────────────────────────────────────────
 
@@ -20,7 +20,9 @@ fn no_spinners_in_scrollback() {
     app.on_message(ChatAppMsg::UserMessage("Test".into()));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::ThinkingDelta("reasoning about the problem".into()));
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "reasoning about the problem".into(),
+    ));
     vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::TextDelta("Answer".into()));
@@ -146,7 +148,9 @@ fn graduation_preserves_content() {
     app.on_message(ChatAppMsg::UserMessage("Explain Rust".into()));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::TextDelta("Rust is a systems programming language.".into()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Rust is a systems programming language.".into(),
+    ));
     app.on_message(ChatAppMsg::StreamComplete);
     vt.render_frame(&mut app);
 
@@ -242,7 +246,10 @@ fn empty_stream_complete_does_not_crash() {
 
     // Should not panic, screen should be usable
     let screen = vt.screen_contents();
-    assert!(!screen.is_empty(), "Screen should not be empty after render");
+    assert!(
+        !screen.is_empty(),
+        "Screen should not be empty after render"
+    );
 }
 
 #[test]

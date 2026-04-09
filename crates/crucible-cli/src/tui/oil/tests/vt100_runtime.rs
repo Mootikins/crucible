@@ -393,7 +393,10 @@ mod tests {
             assert!(
                 !all_blank,
                 "{}: triple blank at lines {}-{}.\nScreen:\n{}",
-                context, i, i + 2, screen
+                context,
+                i,
+                i + 2,
+                screen
             );
         }
     }
@@ -677,7 +680,10 @@ mod tests {
         vt.render_frame(&mut app);
 
         // Thinking arrives
-        think(&mut app, "I'll explore the repository to give you an overview of what it contains.");
+        think(
+            &mut app,
+            "I'll explore the repository to give you an overview of what it contains.",
+        );
 
         // Render a few frames with spinner showing (simulates time passing)
         for _ in 0..5 {
@@ -710,7 +716,9 @@ mod tests {
 
         // Third thought + final text
         think(&mut app, "Now I have enough context.");
-        app.on_message(ChatAppMsg::TextDelta("Crucible is a knowledge-grounded agent runtime.".into()));
+        app.on_message(ChatAppMsg::TextDelta(
+            "Crucible is a knowledge-grounded agent runtime.".into(),
+        ));
         app.on_message(ChatAppMsg::StreamComplete);
         vt.render_frame(&mut app);
 
@@ -718,7 +726,9 @@ mod tests {
         let stdout = vt.inner().stdout_content();
         let stdout_plain = crucible_oil::ansi::strip_ansi(stdout);
 
-        let spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '◐', '◓', '◑', '◒'];
+        let spinner_chars = [
+            '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '◐', '◓', '◑', '◒',
+        ];
         let spinner_lines: Vec<(usize, &str)> = stdout_plain
             .lines()
             .enumerate()
@@ -748,10 +758,13 @@ mod tests {
         let mut app = OilChatApp::init();
         let mut vt = Vt100TestRuntime::new(124, 59);
 
-        let spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '◐', '◓', '◑', '◒'];
+        let spinner_chars = [
+            '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '◐', '◓', '◑', '◒',
+        ];
         let is_standalone_spinner = |l: &str| -> bool {
             let trimmed = l.trim();
-            !trimmed.is_empty() && trimmed.len() <= 2
+            !trimmed.is_empty()
+                && trimmed.len() <= 2
                 && trimmed.chars().any(|c| spinner_chars.contains(&c))
         };
 
@@ -804,7 +817,7 @@ mod tests {
         if !spinner_in_stdout.is_empty() {
             // Print the screen history to help debug
             for (phase, screen) in &screen_history {
-                let has_spinner = screen.lines().any(|l| is_standalone_spinner(l));
+                let has_spinner = screen.lines().any(&is_standalone_spinner);
                 if has_spinner {
                     eprintln!("=== {} (has spinner) ===\n{}\n", phase, screen);
                 }
@@ -844,10 +857,13 @@ mod tests {
         // Very small terminal — 10 rows. Viewport + graduation will exceed this.
         let mut vt = Vt100TestRuntime::new(80, 10);
 
-        let spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '◐', '◓', '◑', '◒'];
+        let spinner_chars = [
+            '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '◐', '◓', '◑', '◒',
+        ];
         let is_standalone_spinner = |l: &str| -> bool {
             let trimmed = l.trim();
-            !trimmed.is_empty() && trimmed.len() <= 2
+            !trimmed.is_empty()
+                && trimmed.len() <= 2
                 && trimmed.chars().any(|c| spinner_chars.contains(&c))
         };
 
@@ -941,7 +957,9 @@ mod tests {
 
         // Check the vt100 SCREEN (not stdout buffer) for spinners
         let screen = vt.screen_contents();
-        let spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '◐', '◓', '◑', '◒'];
+        let spinner_chars = [
+            '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '◐', '◓', '◑', '◒',
+        ];
 
         // Look for standalone spinner lines in the screen content
         let spinner_lines: Vec<(usize, &str)> = screen
@@ -949,7 +967,8 @@ mod tests {
             .enumerate()
             .filter(|(_, l)| {
                 let trimmed = l.trim();
-                !trimmed.is_empty() && trimmed.len() <= 2
+                !trimmed.is_empty()
+                    && trimmed.len() <= 2
                     && trimmed.chars().any(|c| spinner_chars.contains(&c))
             })
             .collect();
@@ -1017,7 +1036,9 @@ mod tests {
         let stdout = vt.inner().stdout_content();
         let stdout_plain = crucible_oil::ansi::strip_ansi(stdout);
 
-        let spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '◐', '◓', '◑', '◒'];
+        let spinner_chars = [
+            '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '◐', '◓', '◑', '◒',
+        ];
         let spinner_lines: Vec<(usize, &str)> = stdout_plain
             .lines()
             .enumerate()
@@ -1251,9 +1272,9 @@ mod tests {
                     let start = i.saturating_sub(2);
                     let end = (*i + 3).min(lines.len());
                     eprintln!("  Spinner '{}' at line {}:", line.trim(), i);
-                    for j in start..end {
+                    for (j, line) in (start..end).zip(&lines[start..end]) {
                         let marker = if j == *i { " <<<" } else { "" };
-                        eprintln!("    [{:3}] {}{}", j, lines[j], marker);
+                        eprintln!("    [{:3}] {}{}", j, line, marker);
                     }
                 }
             }
@@ -1318,7 +1339,12 @@ mod tests {
         app.on_message(ChatAppMsg::OpenInteraction {
             request_id: "perm-2".into(),
             request: InteractionRequest::Permission(PermRequest::bash([
-                "find", ".", "-maxdepth", "2", "-name", "README*",
+                "find",
+                ".",
+                "-maxdepth",
+                "2",
+                "-name",
+                "README*",
             ])),
         });
         vt.render_frame(&mut app);

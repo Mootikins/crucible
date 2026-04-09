@@ -1,8 +1,8 @@
 use crate::tui::oil::app::{Action, App, ViewContext};
 use crate::tui::oil::event::Event;
+use crossterm::event::{Event as CtEvent, KeyCode, KeyModifiers};
 use crucible_oil::focus::FocusContext;
 use crucible_oil::terminal::Terminal;
-use crossterm::event::{Event as CtEvent, KeyCode, KeyModifiers};
 use std::io;
 use std::time::Duration;
 use tokio::sync::mpsc;

@@ -67,7 +67,10 @@ fn fixture_path(name: &str) -> std::path::PathBuf {
 fn render_fixture_full(name: &str, width: u16, height: u16) -> (String, String) {
     let path = fixture_path(name);
     if !path.exists() {
-        return (format!("FIXTURE NOT FOUND: {}", path.display()), String::new());
+        return (
+            format!("FIXTURE NOT FOUND: {}", path.display()),
+            String::new(),
+        );
     }
 
     let messages = parse_fixture(&path);
@@ -101,8 +104,7 @@ fn render_fixture_styled(name: &str, width: u16, height: u16) -> String {
     }
     vt.render_frame(&mut app);
 
-    let full = vt.full_history();
-    full
+    vt.full_history()
 }
 
 // ─── Dump tests ────────────────────────────────────────────────────────────
@@ -177,14 +179,17 @@ fn dump_synthetic_multi_turn_with_tools() {
     vt.render_frame(&mut app);
 
     // Turn 2: thinking + tools + continuation
-    app.on_message(ChatAppMsg::UserMessage("Read my config and explain it".into()));
+    app.on_message(ChatAppMsg::UserMessage(
+        "Read my config and explain it".into(),
+    ));
     vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::ThinkingDelta(
-        "I need to read the config file first to understand what settings are configured."
-            .into(),
+        "I need to read the config file first to understand what settings are configured.".into(),
     ));
-    app.on_message(ChatAppMsg::TextDelta("Let me check your configuration.".into()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Let me check your configuration.".into(),
+    ));
 
     app.on_message(ChatAppMsg::ToolCall {
         name: "read_file".into(),
@@ -263,8 +268,7 @@ fn dump_synthetic_error_and_subagent() {
     });
 
     app.on_message(ChatAppMsg::TextDelta(
-        "The deployment ran into a permissions issue, but the subagent fixed it."
-            .into(),
+        "The deployment ran into a permissions issue, but the subagent fixed it.".into(),
     ));
     app.on_message(ChatAppMsg::StreamComplete);
     vt.render_frame(&mut app);

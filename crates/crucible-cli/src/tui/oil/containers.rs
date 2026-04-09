@@ -13,7 +13,9 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::tui::oil::app::ViewContext;
 use crate::tui::oil::components::thinking_component::ThinkingComponent;
-use crate::tui::oil::components::{render_shell_execution, render_subagent, render_tool_call_with_frame};
+use crate::tui::oil::components::{
+    render_shell_execution, render_subagent, render_tool_call_with_frame,
+};
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
 use crate::tui::oil::render_state::RenderState;
 use crate::tui::oil::utils::wrap_words;
@@ -24,18 +26,34 @@ use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, Cach
 /// A chat node — the graduation unit and rendering primitive.
 #[derive(Debug, Clone)]
 pub enum ChatNode {
-    UserMessage { text: String },
-    AssistantResponse { text: String, thinking: Vec<ThinkingComponent>, complete: bool },
-    ToolGroup { tools: Vec<CachedToolCall> },
-    SubagentTask { agent: CachedSubagent },
-    ShellExecution { shell: CachedShellExecution },
-    SystemMessage { text: String },
+    UserMessage {
+        text: String,
+    },
+    AssistantResponse {
+        text: String,
+        thinking: Vec<ThinkingComponent>,
+        complete: bool,
+    },
+    ToolGroup {
+        tools: Vec<CachedToolCall>,
+    },
+    SubagentTask {
+        agent: CachedSubagent,
+    },
+    ShellExecution {
+        shell: CachedShellExecution,
+    },
+    SystemMessage {
+        text: String,
+    },
 }
 
 impl ChatNode {
     pub fn is_complete(&self) -> bool {
         match self {
-            Self::UserMessage { .. } | Self::SystemMessage { .. } | Self::ShellExecution { .. } => true,
+            Self::UserMessage { .. } | Self::SystemMessage { .. } | Self::ShellExecution { .. } => {
+                true
+            }
             Self::AssistantResponse { complete, .. } => *complete,
             Self::ToolGroup { tools } => tools.iter().all(|t| t.complete),
             Self::SubagentTask { agent } => agent.is_terminal(),
@@ -49,15 +67,25 @@ impl ChatNode {
 pub fn render_chat_node(node: &ChatNode, prev: Option<&ChatNode>, ctx: &ViewContext<'_>) -> Node {
     match node {
         ChatNode::UserMessage { text } => render_user_message(text, ctx.width()),
-        ChatNode::AssistantResponse { text, thinking, complete } => {
+        ChatNode::AssistantResponse {
+            text,
+            thinking,
+            complete,
+        } => {
             let is_continuation = matches!(
                 prev,
-                Some(ChatNode::ToolGroup { .. } | ChatNode::SubagentTask { .. } | ChatNode::ShellExecution { .. })
+                Some(
+                    ChatNode::ToolGroup { .. }
+                        | ChatNode::SubagentTask { .. }
+                        | ChatNode::ShellExecution { .. }
+                )
             );
             render_assistant_response(text, thinking, is_continuation, *complete, ctx)
         }
         ChatNode::ToolGroup { tools } => render_tool_group(tools, ctx.spinner_frame, ctx.width()),
-        ChatNode::SubagentTask { agent } => render_subagent_task(agent, ctx.spinner_frame, ctx.width()),
+        ChatNode::SubagentTask { agent } => {
+            render_subagent_task(agent, ctx.spinner_frame, ctx.width())
+        }
         ChatNode::ShellExecution { shell } => render_shell(shell),
         ChatNode::SystemMessage { text } => render_system_message(text),
     }
@@ -347,15 +375,21 @@ impl ContainerList {
     }
 
     /// Update a tool within the most recent ToolGroup by name and optional call_id.
-    pub fn update_tool(&mut self, name: &str, call_id: Option<&str>, f: impl FnOnce(&mut CachedToolCall)) {
+    pub fn update_tool(
+        &mut self,
+        name: &str,
+        call_id: Option<&str>,
+        f: impl FnOnce(&mut CachedToolCall),
+    ) {
         // Search backwards for a ToolGroup containing this tool
         for node in self.nodes.iter_mut().rev() {
             if let ChatNode::ToolGroup { tools } = node {
                 // Match by call_id first, then by name
                 let found = if let Some(cid) = call_id {
-                    tools.iter_mut().rev().find(|t| {
-                        t.call_id.as_deref() == Some(cid)
-                    })
+                    tools
+                        .iter_mut()
+                        .rev()
+                        .find(|t| t.call_id.as_deref() == Some(cid))
                 } else {
                     tools.iter_mut().rev().find(|t| t.name.as_ref() == name)
                 };
@@ -443,7 +477,9 @@ impl ContainerList {
         }
         // Last node, turn active: only graduate types that explicitly complete
         match &self.nodes[index] {
-            ChatNode::UserMessage { .. } | ChatNode::SystemMessage { .. } | ChatNode::ShellExecution { .. } => true,
+            ChatNode::UserMessage { .. }
+            | ChatNode::SystemMessage { .. }
+            | ChatNode::ShellExecution { .. } => true,
             ChatNode::AssistantResponse { complete, .. } => *complete,
             ChatNode::SubagentTask { .. } | ChatNode::ToolGroup { .. } => false,
         }
@@ -480,8 +516,10 @@ impl ContainerList {
         self.has_graduated = true;
 
         let width = ctx.terminal_size.0;
-        let inner = col(rendered).gap(Gap::row(1))
-            .with_margin(Padding { top: top_margin, ..Padding::all(0) });
+        let inner = col(rendered).gap(Gap::row(1)).with_margin(Padding {
+            top: top_margin,
+            ..Padding::all(0)
+        });
         let node = col([inner]);
 
         Some(Graduation { node, width })
@@ -681,7 +719,10 @@ mod tests {
         let grad1 = drain(&mut list).unwrap();
         // First graduation: no top padding (nothing before it)
         let rendered1 = grad1.render();
-        assert!(!rendered1.starts_with("\r\n"), "first grad should have no leading blank");
+        assert!(
+            !rendered1.starts_with("\r\n"),
+            "first grad should have no leading blank"
+        );
 
         // Second graduation: should have top padding
         list.add_system_message("second".into());
@@ -798,6 +839,10 @@ mod tests {
         let node = render_chat_node(&nodes[1], prev, &ctx);
         let plain = render_to_plain_text(&node, 80);
         // Continuation text should not have the assistant bullet
-        assert!(!plain.contains("●"), "Continuation should not have bullet: {}", plain);
+        assert!(
+            !plain.contains("●"),
+            "Continuation should not have bullet: {}",
+            plain
+        );
     }
 }

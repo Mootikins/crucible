@@ -24,8 +24,8 @@
 //! assert_key_has_size(&tree, "my-button", 20, 1);
 //! ```
 
-use crucible_oil::layout::{LayoutBox, LayoutContent, LayoutTree, PopupItem};
 use crucible_oil::layout::Rect;
+use crucible_oil::layout::{LayoutBox, LayoutContent, LayoutTree, PopupItem};
 
 /// Assert that a node with the given key exists in the tree.
 ///

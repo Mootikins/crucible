@@ -1,16 +1,16 @@
 use crate::tui::oil::app::{Action, App, ViewContext};
 use crate::tui::oil::component::Component;
-use crate::tui::oil::containers::{render_chat_node, ChatNode};
 use crate::tui::oil::components::{
     CommandPanel, InteractionModal, NotificationArea, ShellModal, StatusComponent,
 };
 use crate::tui::oil::config::RuntimeConfig;
+use crate::tui::oil::containers::{render_chat_node, ChatNode};
 #[cfg(test)]
 use crate::tui::oil::event::InputAction;
 use crate::tui::oil::event::{Event, InputBuffer};
+use crucible_core::interaction::{InteractionRequest, InteractionResponse, PermResponse};
 use crucible_oil::node::*;
 use crucible_oil::style::{Gap, Padding};
-use crucible_core::interaction::{InteractionRequest, InteractionResponse, PermResponse};
 use std::cell::Cell;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -149,25 +149,43 @@ impl App for OilChatApp {
 
         col([
             // Scrollable content area (margin-top for cross-batch spacing)
-            flex(1, slot("content", [col({
-                let nodes = self.container_list.nodes();
-                nodes.iter().enumerate().map(|(i, node)| {
-                    let prev = if i > 0 { Some(&nodes[i - 1]) } else { None };
-                    render_chat_node(node, prev, ctx)
-                })
-            }).gap(Gap::row(1))
-             .with_margin(Padding {
-                 top: if self.container_list.needs_cross_batch_gap() { 1 } else { 0 },
-                 ..Padding::all(0)
-             })])),
+            flex(
+                1,
+                slot(
+                    "content",
+                    [col({
+                        let nodes = self.container_list.nodes();
+                        nodes.iter().enumerate().map(|(i, node)| {
+                            let prev = if i > 0 { Some(&nodes[i - 1]) } else { None };
+                            render_chat_node(node, prev, ctx)
+                        })
+                    })
+                    .gap(Gap::row(1))
+                    .with_margin(Padding {
+                        top: if self.container_list.needs_cross_batch_gap() {
+                            1
+                        } else {
+                            0
+                        },
+                        ..Padding::all(0)
+                    })],
+                ),
+            ),
             // Pinned footer
-            slot("footer", [col(match (&self.interaction_modal, self.notification_area.is_visible()) {
-                (Some(modal), _) => vec![
-                    modal.view(ctx.terminal_size.0 as usize, self.permission.permission_queue.len()),
-                ],
-                (_, true) => vec![self.render_messages_drawer(ctx)],
-                _ => vec![self.build_command_panel(ctx).view(ctx)],
-            }).gap(Gap::row(1))]),
+            slot(
+                "footer",
+                [col(
+                    match (&self.interaction_modal, self.notification_area.is_visible()) {
+                        (Some(modal), _) => vec![modal.view(
+                            ctx.terminal_size.0 as usize,
+                            self.permission.permission_queue.len(),
+                        )],
+                        (_, true) => vec![self.render_messages_drawer(ctx)],
+                        _ => vec![self.build_command_panel(ctx).view(ctx)],
+                    },
+                )
+                .gap(Gap::row(1))],
+            ),
             // Overlay
             self.popup_overlay_view(ctx),
         ])
@@ -308,19 +326,18 @@ impl OilChatApp {
             if words > 0 {
                 indicator.thinking_words = Some(words);
             }
-        } else if let Some(node) = self
-            .container_list
-            .nodes()
-            .iter()
-            .rev()
-            .find(|n| matches!(n, ChatNode::AssistantResponse { thinking, .. } if !thinking.is_empty()))
-        {
-            if let ChatNode::AssistantResponse { thinking, text, complete: false, .. } = node {
-                if text.is_empty() {
-                    let total_words: usize = thinking.iter().map(|t| t.word_count()).sum();
-                    if total_words > 0 {
-                        indicator.thinking_words = Some(total_words);
-                    }
+        } else if let Some(ChatNode::AssistantResponse {
+            thinking,
+            text,
+            complete: false,
+            ..
+        }) = self.container_list.nodes().iter().rev().find(
+            |n| matches!(n, ChatNode::AssistantResponse { thinking, .. } if !thinking.is_empty()),
+        ) {
+            if text.is_empty() {
+                let total_words: usize = thinking.iter().map(|t| t.word_count()).sum();
+                if total_words > 0 {
+                    indicator.thinking_words = Some(total_words);
                 }
             }
         }
@@ -379,8 +396,8 @@ impl OilChatApp {
                     }
                 };
                 let elapsed = instant.elapsed();
-                let created = chrono::Local::now()
-                    - chrono::Duration::from_std(elapsed).unwrap_or_default();
+                let created =
+                    chrono::Local::now() - chrono::Duration::from_std(elapsed).unwrap_or_default();
                 let timestamp = created.format("%H:%M:%S").to_string();
                 let message = notif.message.trim_end();
                 NotificationEntry::new(message, kind, timestamp)
@@ -479,7 +496,10 @@ impl OilChatApp {
     }
 
     /// Drain completed containers and return graduation content for stdout.
-    pub(crate) fn drain_graduated(&mut self, ctx: &ViewContext<'_>) -> Option<crucible_oil::Graduation> {
+    pub(crate) fn drain_graduated(
+        &mut self,
+        ctx: &ViewContext<'_>,
+    ) -> Option<crucible_oil::Graduation> {
         let ctx = &ViewContext {
             spinner_frame: self.spinner_frame(),
             show_thinking: self.show_thinking,

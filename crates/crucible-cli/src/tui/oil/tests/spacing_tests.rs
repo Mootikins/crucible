@@ -7,9 +7,9 @@
 //! Uses `vt_render` (real terminal path) and counts blank lines between
 //! content patterns.
 
+use super::helpers::vt_render;
 use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
-use super::helpers::vt_render;
 
 /// Count blank lines between the last line matching `before` and the first
 /// line matching `after` (searching after the `before` line).
@@ -132,7 +132,9 @@ fn tool_then_text_one_blank_line() {
     });
 
     // Continuation text after tool
-    app.on_message(ChatAppMsg::TextDelta("Based on the file contents here is the explanation.".into()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Based on the file contents here is the explanation.".into(),
+    ));
     app.on_message(ChatAppMsg::StreamComplete);
 
     // Render through vt100 for full graduation
@@ -191,7 +193,9 @@ fn user_then_assistant_one_blank_line() {
 fn thinking_then_tools_one_blank_line() {
     let mut app = OilChatApp::init();
     app.on_message(ChatAppMsg::UserMessage("Plan and execute".into()));
-    app.on_message(ChatAppMsg::ThinkingDelta("I need to check the codebase first".into()));
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "I need to check the codebase first".into(),
+    ));
     app.on_message(ChatAppMsg::TextDelta("Let me check.".into()));
 
     // Tool follows thinking+text
@@ -219,7 +223,11 @@ fn thinking_then_tools_one_blank_line() {
     assert_no_triple_blanks(&stripped, "thinking_then_tools");
 
     // All content present
-    assert!(stripped.contains("Let me check"), "Text present.\n{}", stripped);
+    assert!(
+        stripped.contains("Let me check"),
+        "Text present.\n{}",
+        stripped
+    );
     assert!(
         stripped.contains("bash") || stripped.contains("ls src/"),
         "Tool present.\n{}",
@@ -267,7 +275,9 @@ fn permission_modal_does_not_cause_double_blanks() {
     vt.render_frame(&mut app);
 
     // Thinking + text
-    app.on_message(ChatAppMsg::ThinkingDelta("I need to explore the repo structure".into()));
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "I need to explore the repo structure".into(),
+    ));
     vt.render_frame(&mut app);
     app.on_message(ChatAppMsg::TextDelta("I'll explore the repository.".into()));
     vt.render_frame(&mut app);
@@ -316,8 +326,16 @@ fn permission_modal_does_not_cause_double_blanks() {
     // Check for double blanks
     for i in 0..lines.len().saturating_sub(1) {
         if lines[i].trim().is_empty() && lines[i + 1].trim().is_empty() {
-            let before = if i > 0 { lines[i - 1].trim() } else { "(start)" };
-            let after = if i + 2 < lines.len() { lines[i + 2].trim() } else { "(end)" };
+            let before = if i > 0 {
+                lines[i - 1].trim()
+            } else {
+                "(start)"
+            };
+            let after = if i + 2 < lines.len() {
+                lines[i + 2].trim()
+            } else {
+                "(end)"
+            };
             panic!(
                 "Double blank at line {} (between {:?} and {:?})",
                 i, before, after
@@ -419,7 +437,12 @@ fn tools_across_graduation_batches_no_gap() {
     eprintln!("\n=== With text before tools ===");
     let lines2: Vec<&str> = stripped2.lines().collect();
     for (i, line) in lines2.iter().enumerate() {
-        eprintln!("{:3} {}{}", i, if line.trim().is_empty() { "B " } else { "  " }, line);
+        eprintln!(
+            "{:3} {}{}",
+            i,
+            if line.trim().is_empty() { "B " } else { "  " },
+            line
+        );
     }
     for i in 1..lines2.len().saturating_sub(1) {
         let prev = lines2[i - 1].trim();
@@ -456,7 +479,12 @@ fn tools_across_graduation_batches_no_gap() {
     // Find lines with tool indicators
     let lines: Vec<&str> = stripped.lines().collect();
     for (i, line) in lines.iter().enumerate() {
-        eprintln!("{:3} {}{}", i, if line.trim().is_empty() { "B " } else { "  " }, line);
+        eprintln!(
+            "{:3} {}{}",
+            i,
+            if line.trim().is_empty() { "B " } else { "  " },
+            line
+        );
     }
 
     // Assert: no blank line between adjacent tool lines
