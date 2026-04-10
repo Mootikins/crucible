@@ -157,8 +157,7 @@ targets = [
 ]
 hosting = ["github"]
 checksum = "sha256"
-features = ["storage-sqlite"]
-default-features = false
+features = ["fastembed", "web", "storage-sqlite"]
 github-build-setup = "../build-setup.yml"
 
 [workspace.metadata.dist.dependencies.apt]
