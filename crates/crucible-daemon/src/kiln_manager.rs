@@ -750,8 +750,16 @@ async fn create_pipeline(
     let change_detector = Arc::new(InMemoryChangeDetectionStore::new());
 
     let embedding_provider = if let Some(config) = enrichment_config {
-        info!("Kiln enrichment active: embedding provider configured");
-        Some(get_or_create_embedding_provider(config).await?)
+        match get_or_create_embedding_provider(config).await {
+            Ok(provider) => {
+                info!("Kiln enrichment active: embedding provider configured");
+                Some(provider)
+            }
+            Err(e) => {
+                tracing::warn!("Embedding provider unavailable, semantic search disabled: {e}");
+                None
+            }
+        }
     } else {
         info!("Kiln enrichment skipped (no config)");
         None
