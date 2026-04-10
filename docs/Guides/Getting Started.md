@@ -241,6 +241,45 @@ Reduce parallel workers: `cru process --parallel 1`
 
 Make sure your LLM provider is running and configured. For Ollama: `cru chat --provider ollama`. For other providers, check your `config.toml` settings.
 
+## Uninstalling
+
+### Stop the daemon
+
+```bash
+cru daemon stop
+```
+
+### Remove the binary
+
+If installed via the installer script or `cargo binstall`:
+
+```bash
+rm ~/.cargo/bin/cru
+```
+
+If installed via Homebrew:
+
+```bash
+brew uninstall crucible
+```
+
+### Remove configuration and data (optional)
+
+These directories contain your settings, plugins, session history, and project registry. Only remove them if you want a clean slate:
+
+```bash
+# Configuration (config.toml, plugins, MCP settings, permission whitelists)
+rm -rf ~/.config/crucible/
+
+# Project registry and session data
+rm -rf ~/.crucible/
+
+# Runtime socket (auto-cleaned on reboot)
+rm -f "${XDG_RUNTIME_DIR:-/tmp}/crucible.sock"
+```
+
+Your **kilns** (note collections) are plain markdown directories and are never modified by uninstalling. They remain wherever you created them.
+
 ## See Also
 
 - `:h frontmatter` - YAML metadata format
