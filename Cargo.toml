@@ -19,7 +19,7 @@ members = [
 default-members = ["crates/crucible-cli"]
 
 [workspace.package]
-version = "0.5.3"
+version = "0.5.4"
 authors = ["Matthew Krohn <matthew.d.krohn@gmail.com>"]
 license = "MIT OR Apache-2.0"
 edition = "2021"
@@ -157,9 +157,10 @@ targets = [
 ]
 hosting = ["github"]
 checksum = "sha256"
-features = ["storage-sqlite", "web"]
+features = ["storage-sqlite", "web", "fastembed"]
 default-features = false
 github-build-setup = "../build-setup.yml"
+github-custom-runners = { x86_64-unknown-linux-gnu = "ubuntu-24.04", aarch64-unknown-linux-gnu = "ubuntu-24.04" }
 
 [workspace.metadata.dist.dependencies.apt]
 protobuf-compiler = { stage = ["build"] }
