@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 # SQLite - must match workspace (burn uses 0.37)
-rusqlite = { version = "0.38", features = ["bundled", "vtab", "blob", "modern_sqlite"] }
+rusqlite = { version = "0.39", features = ["bundled", "vtab", "blob", "modern_sqlite"] }
 # Using Arc<Mutex<Connection>> instead of r2d2 to avoid version conflicts
 parking_lot = "0.12"
 
