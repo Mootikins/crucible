@@ -19,7 +19,7 @@ members = [
 default-members = ["crates/crucible-cli"]
 
 [workspace.package]
-version = "0.5.4"
+version = "0.5.5"
 authors = ["Matthew Krohn <matthew.d.krohn@gmail.com>"]
 license = "MIT OR Apache-2.0"
 edition = "2021"
@@ -151,8 +151,6 @@ ci = ["github"]
 installers = ["shell"]
 targets = [
     "x86_64-unknown-linux-gnu",
-    "aarch64-unknown-linux-gnu",
-    "x86_64-apple-darwin",
     "aarch64-apple-darwin",
 ]
 hosting = ["github"]
