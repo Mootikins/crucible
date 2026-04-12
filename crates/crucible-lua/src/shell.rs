@@ -366,4 +366,38 @@ mod tests {
         assert!(result.success);
         assert_eq!(result.stdout.trim(), "test_value");
     }
+
+    #[tokio::test]
+    async fn test_exec_with_stdin() {
+        let policy = ShellPolicy::permissive();
+        let result = exec_command("cat", &[], None, None, Some("hello world"), &policy)
+            .await
+            .unwrap();
+
+        assert!(result.success);
+        assert_eq!(result.stdout.trim(), "hello world");
+    }
+
+    #[tokio::test]
+    async fn test_exec_with_stdin_multiline() {
+        let policy = ShellPolicy::permissive();
+        let content = "line1\nline2\nline3";
+        let result = exec_command("cat", &[], None, None, Some(content), &policy)
+            .await
+            .unwrap();
+
+        assert!(result.success);
+        assert_eq!(result.stdout, content);
+    }
+
+    #[tokio::test]
+    async fn test_exec_without_stdin_does_not_hang() {
+        let policy = ShellPolicy::permissive();
+        let result = exec_command("echo", &["no-stdin".to_string()], None, None, None, &policy)
+            .await
+            .unwrap();
+
+        assert!(result.success);
+        assert_eq!(result.stdout.trim(), "no-stdin");
+    }
 }

@@ -189,7 +189,9 @@ pub(crate) async fn handle_lua_shutdown_session(
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
 
-    // Fire on_session_end hooks before removing the Lua session
+    // Fire on_session_end hooks before removing the Lua session.
+    // Note: hooks may also fire via handle_session_end (dispatch.rs) — plugins
+    // must be idempotent (OCI plugin guards with `if not active then return end`).
     if let Some(state) = lua_sessions.get(session_id) {
         let state = state.value().clone();
         let mut state = state.lock().await;

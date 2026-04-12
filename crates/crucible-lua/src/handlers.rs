@@ -2244,6 +2244,46 @@ end
     }
 
     #[tokio::test]
+    async fn execute_runtime_handler_returns_handled() {
+        let lua = Lua::new();
+        let registry = LuaScriptHandlerRegistry::new();
+
+        let handler_fn = lua
+            .create_function(|lua, _: (mlua::Table, mlua::Table)| {
+                let result = lua.create_table().unwrap();
+                result.set("handled", true).unwrap();
+                let inner = lua.create_table().unwrap();
+                inner.set("output", "from plugin").unwrap();
+                result.set("result", inner).unwrap();
+                Ok(mlua::Value::Table(result))
+            })
+            .unwrap();
+
+        let key = lua.create_registry_value(handler_fn).unwrap();
+        registry
+            .handler_functions
+            .lock()
+            .unwrap()
+            .insert("handled_handler".to_string(), key);
+
+        let event = SessionEvent::Custom {
+            name: "test".to_string(),
+            payload: serde_json::json!({}),
+        };
+
+        let result = registry
+            .execute_runtime_handler(&lua, "handled_handler", &event)
+            .await;
+        assert!(result.is_ok());
+        match result.unwrap() {
+            ScriptHandlerResult::Handled { result } => {
+                assert_eq!(result["output"], "from plugin");
+            }
+            other => panic!("Expected Handled, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
     async fn execute_runtime_handler_not_found() {
         let lua = Lua::new();
         let registry = LuaScriptHandlerRegistry::new();
