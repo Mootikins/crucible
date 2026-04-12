@@ -67,6 +67,7 @@ pub const TOOL_DISPLAY_COMPLETE_EVENT: &str = "tool:display_complete";
 /// - PassThrough: Handler returned nil (no changes)
 /// - Cancel: Handler returned `{cancel=true, reason="..."}` to abort
 /// - Inject: Handler wants to inject a follow-up message
+/// - Handled: Handler fully handled the event and provides the result directly
 #[derive(Debug, Clone)]
 pub enum ScriptHandlerResult {
     /// Handler returned modified event - continue with changes
@@ -83,6 +84,9 @@ pub enum ScriptHandlerResult {
         /// Where to inject: "user_prefix" (default), "user_suffix"
         position: String,
     },
+    /// Handler fully handled the event — use this result instead of default execution.
+    /// Returned when Lua handler returns `{ handled = true, result = ... }`.
+    Handled { result: JsonValue },
 }
 
 /// Handler for Lua script execution
@@ -227,6 +231,10 @@ impl LuaScriptHandler {
                 debug!("Handler returned Inject result (will be processed by daemon)");
                 Ok(None)
             }
+            ScriptHandlerResult::Handled { .. } => {
+                debug!("Handler returned Handled result (will be processed by daemon)");
+                Ok(None)
+            }
         }
     }
 
@@ -266,6 +274,10 @@ impl LuaScriptHandler {
                     content, position
                 );
                 Ok(event)
+            }
+            ScriptHandlerResult::Handled { result } => {
+                debug!("Handler returned Handled result");
+                Ok(result)
             }
         }
     }
@@ -309,6 +321,17 @@ pub fn interpret_handler_result(result: &Value) -> LuaResult<ScriptHandlerResult
                     .get::<String>("position")
                     .unwrap_or_else(|_| "user_prefix".to_string());
                 return Ok(ScriptHandlerResult::Inject { content, position });
+            }
+            // Check for handled convention: {handled=true, result=...}
+            if let Ok(true) = t.get::<bool>("handled") {
+                let result = match lua_table_to_json(t) {
+                    Ok(json) => json
+                        .get("result")
+                        .cloned()
+                        .unwrap_or(JsonValue::Null),
+                    Err(_) => JsonValue::Null,
+                };
+                return Ok(ScriptHandlerResult::Handled { result });
             }
             // Check for cancel convention: {cancel=true, reason="..."}
             if let Ok(cancel) = t.get::<bool>("cancel") {
@@ -373,6 +396,8 @@ pub struct RuntimeHandler {
     pub name: String,
     /// Priority (lower = earlier)
     pub priority: i64,
+    /// Optional glob pattern to filter events (e.g., tool name for pre_tool_call)
+    pub pattern: Option<String>,
 }
 
 impl LuaScriptHandlerRegistry {
@@ -536,17 +561,33 @@ impl LuaScriptHandlerRegistry {
     ///
     /// * `event_type` - The event type to match (e.g., "turn:complete", "pre_tool_call")
     ///
+    /// # Arguments
+    ///
+    /// * `event_type` - The event type to filter by (exact match)
+    /// * `identifier` - Optional identifier to match against handler patterns (e.g., tool name)
+    ///
     /// # Returns
     ///
-    /// A vector of `RuntimeHandler` clones matching the event type, sorted by priority.
-    pub fn runtime_handlers_for(&self, event_type: &str) -> Vec<RuntimeHandler> {
+    /// A vector of `RuntimeHandler` clones matching the event type and pattern, sorted by priority.
+    pub fn runtime_handlers_for(
+        &self,
+        event_type: &str,
+        identifier: Option<&str>,
+    ) -> Vec<RuntimeHandler> {
         let handlers = self
             .runtime_handlers
             .lock()
             .expect("runtime_handlers: poisoned while querying event handlers");
         let mut matching: Vec<RuntimeHandler> = handlers
             .iter()
-            .filter(|h| h.event_type == event_type)
+            .filter(|h| {
+                h.event_type == event_type
+                    && match (&h.pattern, identifier) {
+                        (Some(pattern), Some(id)) => glob_match(pattern, id),
+                        (Some(_), None) => true, // pattern but no identifier = match all
+                        (None, _) => true,        // no pattern = match all
+                    }
+            })
             .cloned()
             .collect();
         matching.sort_by_key(|h| h.priority);
@@ -567,26 +608,30 @@ impl LuaScriptHandlerRegistry {
     /// # Returns
     ///
     /// Returns `Ok(ScriptHandlerResult)` on success, or `Err` if handler not found or execution fails.
-    pub fn execute_runtime_handler(
+    pub async fn execute_runtime_handler(
         &self,
         lua: &Lua,
         name: &str,
         event: &SessionEvent,
     ) -> LuaResult<ScriptHandlerResult> {
-        let handler_functions = self
-            .handler_functions
-            .lock()
-            .expect("handler_functions: poisoned while executing Lua handler function");
-        let key = handler_functions
-            .get(name)
-            .ok_or_else(|| mlua::Error::RuntimeError(format!("Handler not found: {}", name)))?;
-
-        let handler: Function = lua.registry_value(key)?;
+        // Get the handler Function while holding the lock, then drop it before await
+        let handler: Function = {
+            let handler_functions = self
+                .handler_functions
+                .lock()
+                .expect("handler_functions: poisoned while executing Lua handler function");
+            let key = handler_functions
+                .get(name)
+                .ok_or_else(|| {
+                    mlua::Error::RuntimeError(format!("Handler not found: {}", name))
+                })?;
+            lua.registry_value(key)?
+        };
 
         let ctx_table = lua.create_table()?;
         let event_table = session_event_to_lua(lua, event)?;
 
-        let result: Value = handler.call((ctx_table, event_table))?;
+        let result: Value = handler.call_async((ctx_table, event_table)).await?;
 
         interpret_handler_result(&result)
     }
@@ -648,15 +693,14 @@ impl Default for LuaScriptHandlerRegistry {
 
 /// Register the crucible.on() API for runtime handler registration
 ///
-/// This allows Lua scripts to register handlers dynamically:
+/// Supports two calling conventions:
 ///
 /// ```lua
-/// crucible.on("pre_tool_call", function(event)
-///     if event.tool == "dangerous" then
-///         return { cancel = true, reason = "blocked" }
-///     end
-///     return event
-/// end)
+/// -- Simple (backward compatible):
+/// crucible.on("pre_tool_call", function(ctx, event) ... end)
+///
+/// -- With options (pattern + priority):
+/// crucible.on("pre_tool_call", { pattern = "bash", priority = 50 }, function(ctx, event) ... end)
 /// ```
 pub fn register_crucible_on_api(
     lua: &Lua,
@@ -674,7 +718,55 @@ pub fn register_crucible_on_api(
 
     let handlers = runtime_handlers.clone();
     let functions = handler_functions.clone();
-    let on_fn = lua.create_function(move |lua, (event_type, handler): (String, Function)| {
+    let on_fn = lua.create_function(move |lua, args: mlua::MultiValue| {
+        // Parse arguments: crucible.on(event_type, handler) or crucible.on(event_type, opts, handler)
+        let args_vec: Vec<Value> = args.into_vec();
+        if args_vec.len() < 2 {
+            return Err(mlua::Error::RuntimeError(
+                "crucible.on requires at least 2 arguments: (event_type, handler) or (event_type, opts, handler)".into(),
+            ));
+        }
+
+        let event_type: String = match &args_vec[0] {
+            Value::String(s) => s.to_str()?.to_string(),
+            _ => {
+                return Err(mlua::Error::RuntimeError(
+                    "crucible.on: first argument must be a string (event type)".into(),
+                ))
+            }
+        };
+
+        let (pattern, priority, handler) = match &args_vec[1] {
+            Value::Function(f) => {
+                // crucible.on(event_type, handler) — backward compatible
+                (None, 100i64, f.clone())
+            }
+            Value::Table(opts) => {
+                // crucible.on(event_type, opts, handler)
+                if args_vec.len() < 3 {
+                    return Err(mlua::Error::RuntimeError(
+                        "crucible.on: when second argument is a table, third argument must be the handler function".into(),
+                    ));
+                }
+                let handler = match &args_vec[2] {
+                    Value::Function(f) => f.clone(),
+                    _ => {
+                        return Err(mlua::Error::RuntimeError(
+                            "crucible.on: third argument must be a function".into(),
+                        ))
+                    }
+                };
+                let pattern: Option<String> = opts.get("pattern").ok();
+                let priority: i64 = opts.get("priority").unwrap_or(100);
+                (pattern, priority, handler)
+            }
+            _ => {
+                return Err(mlua::Error::RuntimeError(
+                    "crucible.on: second argument must be a function or options table".into(),
+                ))
+            }
+        };
+
         let mut guard = handlers
             .lock()
             .map_err(|e| mlua::Error::RuntimeError(format!("Failed to lock handlers: {}", e)))?;
@@ -683,7 +775,8 @@ pub fn register_crucible_on_api(
         guard.push(RuntimeHandler {
             event_type: event_type.clone(),
             name: name.clone(),
-            priority: 100,
+            priority,
+            pattern: pattern.clone(),
         });
 
         let key = lua.create_registry_value(handler)?;
@@ -693,8 +786,8 @@ pub fn register_crucible_on_api(
         func_guard.insert(name.clone(), key);
 
         debug!(
-            "Registered runtime handler '{}' for event '{}'",
-            name, event_type
+            "Registered runtime handler '{}' for event '{}' (priority={}, pattern={:?})",
+            name, event_type, priority, pattern
         );
         Ok(())
     })?;
@@ -761,12 +854,12 @@ impl ToolDisplayCompleteHints {
     }
 }
 
-pub fn execute_tool_display_start_hooks(
+pub async fn execute_tool_display_start_hooks(
     lua: &Lua,
     registry: &LuaScriptHandlerRegistry,
     event: &ToolDisplayStartEvent,
 ) -> LuaResult<Option<ToolDisplayStartHints>> {
-    let handlers = registry.runtime_handlers_for(TOOL_DISPLAY_START_EVENT);
+    let handlers = registry.runtime_handlers_for(TOOL_DISPLAY_START_EVENT, None);
     if handlers.is_empty() {
         return Ok(None);
     }
@@ -777,7 +870,7 @@ pub fn execute_tool_display_start_hooks(
     });
 
     for handler in handlers {
-        match execute_runtime_json_handler(lua, registry, &handler.name, payload.clone())? {
+        match execute_runtime_json_handler(lua, registry, &handler.name, payload.clone()).await? {
             ScriptHandlerResult::Transform(payload) => {
                 let hints = parse_display_start_hints(&payload);
                 if !hints.is_empty() {
@@ -786,19 +879,20 @@ pub fn execute_tool_display_start_hooks(
             }
             ScriptHandlerResult::PassThrough
             | ScriptHandlerResult::Cancel { .. }
-            | ScriptHandlerResult::Inject { .. } => {}
+            | ScriptHandlerResult::Inject { .. }
+            | ScriptHandlerResult::Handled { .. } => {}
         }
     }
 
     Ok(None)
 }
 
-pub fn execute_tool_display_complete_hooks(
+pub async fn execute_tool_display_complete_hooks(
     lua: &Lua,
     registry: &LuaScriptHandlerRegistry,
     event: &ToolDisplayCompleteEvent,
 ) -> LuaResult<Option<ToolDisplayCompleteHints>> {
-    let handlers = registry.runtime_handlers_for(TOOL_DISPLAY_COMPLETE_EVENT);
+    let handlers = registry.runtime_handlers_for(TOOL_DISPLAY_COMPLETE_EVENT, None);
     if handlers.is_empty() {
         return Ok(None);
     }
@@ -810,7 +904,7 @@ pub fn execute_tool_display_complete_hooks(
     });
 
     for handler in handlers {
-        match execute_runtime_json_handler(lua, registry, &handler.name, payload.clone())? {
+        match execute_runtime_json_handler(lua, registry, &handler.name, payload.clone()).await? {
             ScriptHandlerResult::Transform(payload) => {
                 let hints = parse_display_complete_hints(&payload);
                 if !hints.is_empty() {
@@ -819,7 +913,8 @@ pub fn execute_tool_display_complete_hooks(
             }
             ScriptHandlerResult::PassThrough
             | ScriptHandlerResult::Cancel { .. }
-            | ScriptHandlerResult::Inject { .. } => {}
+            | ScriptHandlerResult::Inject { .. }
+            | ScriptHandlerResult::Handled { .. } => {}
         }
     }
 
@@ -881,12 +976,12 @@ pub struct ToolBeforeExecuteResult {
 /// Each hook receives `{ name, args, env }` where `env` starts empty.
 /// Hooks can populate `env` with key-value pairs to inject into bash commands.
 /// Multiple hooks accumulate env vars; later hooks override earlier ones for the same key.
-pub fn execute_tool_before_execute_hooks(
+pub async fn execute_tool_before_execute_hooks(
     lua: &Lua,
     registry: &LuaScriptHandlerRegistry,
     event: &ToolBeforeExecuteEvent,
 ) -> LuaResult<Option<ToolBeforeExecuteResult>> {
-    let handlers = registry.runtime_handlers_for(TOOL_BEFORE_EXECUTE_EVENT);
+    let handlers = registry.runtime_handlers_for(TOOL_BEFORE_EXECUTE_EVENT, None);
     if handlers.is_empty() {
         return Ok(None);
     }
@@ -900,7 +995,7 @@ pub fn execute_tool_before_execute_hooks(
     let mut accumulated_env = std::collections::HashMap::new();
 
     for handler in handlers {
-        match execute_runtime_json_handler(lua, registry, &handler.name, payload.clone())? {
+        match execute_runtime_json_handler(lua, registry, &handler.name, payload.clone()).await? {
             ScriptHandlerResult::Transform(result) => {
                 if let Some(env_obj) = result.get("env").and_then(|v| v.as_object()) {
                     for (k, v) in env_obj {
@@ -912,7 +1007,8 @@ pub fn execute_tool_before_execute_hooks(
             }
             ScriptHandlerResult::PassThrough
             | ScriptHandlerResult::Cancel { .. }
-            | ScriptHandlerResult::Inject { .. } => {}
+            | ScriptHandlerResult::Inject { .. }
+            | ScriptHandlerResult::Handled { .. } => {}
         }
     }
 
@@ -925,24 +1021,26 @@ pub fn execute_tool_before_execute_hooks(
     }
 }
 
-fn execute_runtime_json_handler(
+async fn execute_runtime_json_handler(
     lua: &Lua,
     registry: &LuaScriptHandlerRegistry,
     name: &str,
     payload: JsonValue,
 ) -> LuaResult<ScriptHandlerResult> {
-    let handler_functions = registry
-        .handler_functions
-        .lock()
-        .expect("handler_functions: poisoned while executing Lua display handler");
-    let key = handler_functions
-        .get(name)
-        .ok_or_else(|| mlua::Error::RuntimeError(format!("Handler not found: {}", name)))?;
-    let handler: Function = lua.registry_value(key)?;
+    let handler: Function = {
+        let handler_functions = registry
+            .handler_functions
+            .lock()
+            .expect("handler_functions: poisoned while executing Lua display handler");
+        let key = handler_functions
+            .get(name)
+            .ok_or_else(|| mlua::Error::RuntimeError(format!("Handler not found: {}", name)))?;
+        lua.registry_value(key)?
+    };
 
     let ctx_table = lua.create_table()?;
     let payload_val = lua.to_value(&payload)?;
-    let result: Value = handler.call((ctx_table, payload_val))?;
+    let result: Value = handler.call_async((ctx_table, payload_val)).await?;
 
     interpret_handler_result(&result)
 }
@@ -2118,8 +2216,8 @@ end
         // Both transformations should be applied
     }
 
-    #[test]
-    fn execute_runtime_handler_receives_event() {
+    #[tokio::test]
+    async fn execute_runtime_handler_receives_event() {
         let lua = Lua::new();
         let registry = LuaScriptHandlerRegistry::new();
 
@@ -2147,12 +2245,12 @@ end
             payload: serde_json::json!({}),
         };
 
-        let result = registry.execute_runtime_handler(&lua, "test_handler", &event);
+        let result = registry.execute_runtime_handler(&lua, "test_handler", &event).await;
         assert!(result.is_ok());
     }
 
-    #[test]
-    fn execute_runtime_handler_returns_cancel() {
+    #[tokio::test]
+    async fn execute_runtime_handler_returns_cancel() {
         let lua = Lua::new();
         let registry = LuaScriptHandlerRegistry::new();
 
@@ -2178,7 +2276,7 @@ end
             payload: serde_json::json!({}),
         };
 
-        let result = registry.execute_runtime_handler(&lua, "cancel_handler", &event);
+        let result = registry.execute_runtime_handler(&lua, "cancel_handler", &event).await;
         assert!(result.is_ok());
         match result.unwrap() {
             ScriptHandlerResult::Cancel { reason } => {
@@ -2188,8 +2286,8 @@ end
         }
     }
 
-    #[test]
-    fn execute_runtime_handler_not_found() {
+    #[tokio::test]
+    async fn execute_runtime_handler_not_found() {
         let lua = Lua::new();
         let registry = LuaScriptHandlerRegistry::new();
 
@@ -2198,7 +2296,7 @@ end
             payload: serde_json::json!({}),
         };
 
-        let result = registry.execute_runtime_handler(&lua, "nonexistent", &event);
+        let result = registry.execute_runtime_handler(&lua, "nonexistent", &event).await;
         assert!(result.is_err());
     }
 
@@ -2212,29 +2310,32 @@ end
                 event_type: "turn:complete".to_string(),
                 name: "handler_a".to_string(),
                 priority: 100,
+                pattern: None,
             });
             handlers.push(RuntimeHandler {
                 event_type: "pre_tool_call".to_string(),
                 name: "handler_b".to_string(),
                 priority: 50,
+                pattern: None,
             });
             handlers.push(RuntimeHandler {
                 event_type: "turn:complete".to_string(),
                 name: "handler_c".to_string(),
                 priority: 200,
+                pattern: None,
             });
         }
 
-        let matching = registry.runtime_handlers_for("turn:complete");
+        let matching = registry.runtime_handlers_for("turn:complete", None);
         assert_eq!(matching.len(), 2);
         assert_eq!(matching[0].name, "handler_a");
         assert_eq!(matching[1].name, "handler_c");
 
-        let other = registry.runtime_handlers_for("pre_tool_call");
+        let other = registry.runtime_handlers_for("pre_tool_call", None);
         assert_eq!(other.len(), 1);
         assert_eq!(other[0].name, "handler_b");
 
-        let none = registry.runtime_handlers_for("nonexistent");
+        let none = registry.runtime_handlers_for("nonexistent", None);
         assert!(none.is_empty());
     }
 
@@ -2248,20 +2349,23 @@ end
                 event_type: "turn:complete".to_string(),
                 name: "low_priority".to_string(),
                 priority: 200,
+                pattern: None,
             });
             handlers.push(RuntimeHandler {
                 event_type: "turn:complete".to_string(),
                 name: "high_priority".to_string(),
                 priority: 10,
+                pattern: None,
             });
             handlers.push(RuntimeHandler {
                 event_type: "turn:complete".to_string(),
                 name: "medium_priority".to_string(),
                 priority: 100,
+                pattern: None,
             });
         }
 
-        let handlers = registry.runtime_handlers_for("turn:complete");
+        let handlers = registry.runtime_handlers_for("turn:complete", None);
         assert_eq!(handlers.len(), 3);
         assert_eq!(handlers[0].name, "high_priority");
         assert_eq!(handlers[0].priority, 10);
@@ -2269,6 +2373,121 @@ end
         assert_eq!(handlers[1].priority, 100);
         assert_eq!(handlers[2].name, "low_priority");
         assert_eq!(handlers[2].priority, 200);
+    }
+
+    #[test]
+    fn pattern_filtering_matches_exact_tool_name() {
+        let registry = LuaScriptHandlerRegistry::new();
+        {
+            let mut handlers = registry.runtime_handlers.lock().unwrap();
+            handlers.push(RuntimeHandler {
+                event_type: "pre_tool_call".to_string(),
+                name: "bash_handler".to_string(),
+                priority: 10,
+                pattern: Some("bash".to_string()),
+            });
+            handlers.push(RuntimeHandler {
+                event_type: "pre_tool_call".to_string(),
+                name: "all_handler".to_string(),
+                priority: 100,
+                pattern: None,
+            });
+        }
+
+        // With identifier "bash" — both match
+        let matching = registry.runtime_handlers_for("pre_tool_call", Some("bash"));
+        assert_eq!(matching.len(), 2);
+        assert_eq!(matching[0].name, "bash_handler"); // priority 10
+        assert_eq!(matching[1].name, "all_handler"); // priority 100
+
+        // With identifier "read_file" — only the no-pattern handler matches
+        let matching = registry.runtime_handlers_for("pre_tool_call", Some("read_file"));
+        assert_eq!(matching.len(), 1);
+        assert_eq!(matching[0].name, "all_handler");
+
+        // With no identifier — both match (pattern handlers match when no identifier)
+        let matching = registry.runtime_handlers_for("pre_tool_call", None);
+        assert_eq!(matching.len(), 2);
+    }
+
+    #[test]
+    fn pattern_filtering_supports_glob() {
+        let registry = LuaScriptHandlerRegistry::new();
+        {
+            let mut handlers = registry.runtime_handlers.lock().unwrap();
+            handlers.push(RuntimeHandler {
+                event_type: "pre_tool_call".to_string(),
+                name: "read_handler".to_string(),
+                priority: 10,
+                pattern: Some("read_*".to_string()),
+            });
+        }
+
+        let matching = registry.runtime_handlers_for("pre_tool_call", Some("read_file"));
+        assert_eq!(matching.len(), 1);
+
+        let matching = registry.runtime_handlers_for("pre_tool_call", Some("write_file"));
+        assert_eq!(matching.len(), 0);
+    }
+
+    #[test]
+    fn crucible_on_with_opts_table_sets_pattern_and_priority() {
+        let lua = Lua::new();
+        let registry = LuaScriptHandlerRegistry::new();
+
+        register_crucible_on_api(
+            &lua,
+            registry.runtime_handlers(),
+            registry.handler_functions(),
+        )
+        .unwrap();
+
+        lua.load(
+            r#"
+            crucible.on("pre_tool_call", { pattern = "bash", priority = 10 }, function(ctx, event)
+                return nil
+            end)
+        "#,
+        )
+        .exec()
+        .unwrap();
+
+        let handlers = registry.runtime_handlers_for("pre_tool_call", Some("bash"));
+        assert_eq!(handlers.len(), 1);
+        assert_eq!(handlers[0].priority, 10);
+        assert_eq!(handlers[0].pattern, Some("bash".to_string()));
+
+        // Doesn't match other tools
+        let handlers = registry.runtime_handlers_for("pre_tool_call", Some("grep"));
+        assert_eq!(handlers.len(), 0);
+    }
+
+    #[test]
+    fn crucible_on_backward_compat_no_opts() {
+        let lua = Lua::new();
+        let registry = LuaScriptHandlerRegistry::new();
+
+        register_crucible_on_api(
+            &lua,
+            registry.runtime_handlers(),
+            registry.handler_functions(),
+        )
+        .unwrap();
+
+        lua.load(
+            r#"
+            crucible.on("turn:complete", function(ctx, event)
+                return nil
+            end)
+        "#,
+        )
+        .exec()
+        .unwrap();
+
+        let handlers = registry.runtime_handlers_for("turn:complete", None);
+        assert_eq!(handlers.len(), 1);
+        assert_eq!(handlers[0].priority, 100); // default
+        assert_eq!(handlers[0].pattern, None);
     }
 
     #[test]
@@ -2434,8 +2653,8 @@ end
     // FSM Handler Pattern Integration Test
     // ============================================================================
 
-    #[test]
-    fn todo_enforcer_pattern_integration() {
+    #[tokio::test]
+    async fn todo_enforcer_pattern_integration() {
         // This test demonstrates the full FSM handler pattern:
         // 1. Register handler with crucible.on("turn:complete", fn)
         // 2. Handler checks event for incomplete todos pattern
@@ -2484,6 +2703,7 @@ end
 
         let result = registry
             .execute_runtime_handler(&lua, "runtime_handler_0", &event_with_todo)
+            .await
             .unwrap();
 
         // Verify result is Inject with expected content
@@ -2511,6 +2731,7 @@ end
 
         let result = registry
             .execute_runtime_handler(&lua, "runtime_handler_0", &event_complete)
+            .await
             .unwrap();
 
         // Verify result is PassThrough (no injection)
@@ -2776,8 +2997,8 @@ end
         assert_eq!(result.unwrap(), PermissionHookResult::Allow);
     }
 
-    #[test]
-    fn lua_display_start_hook_returns_label_and_detail() {
+    #[tokio::test]
+    async fn lua_display_start_hook_returns_label_and_detail() {
         let lua = Lua::new();
         let registry = LuaScriptHandlerRegistry::new();
 
@@ -2806,7 +3027,7 @@ end
             args: "{}".to_string(),
         };
 
-        let result = execute_tool_display_start_hooks(&lua, &registry, &event).unwrap();
+        let result = execute_tool_display_start_hooks(&lua, &registry, &event).await.unwrap();
         assert_eq!(
             result,
             Some(ToolDisplayStartHints {
@@ -2818,8 +3039,8 @@ end
         );
     }
 
-    #[test]
-    fn lua_display_complete_hook_returns_summary() {
+    #[tokio::test]
+    async fn lua_display_complete_hook_returns_summary() {
         let lua = Lua::new();
         let registry = LuaScriptHandlerRegistry::new();
 
@@ -2848,7 +3069,7 @@ end
             result: "Found 5 notes about authentication".to_string(),
         };
 
-        let result = execute_tool_display_complete_hooks(&lua, &registry, &event).unwrap();
+        let result = execute_tool_display_complete_hooks(&lua, &registry, &event).await.unwrap();
         assert_eq!(
             result,
             Some(ToolDisplayCompleteHints {
@@ -2856,5 +3077,89 @@ end
                 max_lines: None,
             })
         );
+    }
+
+    // =========================================================================
+    // interpret_handler_result tests — Handled variant
+    // =========================================================================
+
+    #[test]
+    fn test_interpret_nil_returns_passthrough() {
+        let result = interpret_handler_result(&Value::Nil).unwrap();
+        assert!(matches!(result, ScriptHandlerResult::PassThrough));
+    }
+
+    #[test]
+    fn test_interpret_handled_with_result() {
+        let lua = Lua::new();
+        let table = lua.create_table().unwrap();
+        table.set("handled", true).unwrap();
+        let result_table = lua.create_table().unwrap();
+        result_table.set("answer", 42).unwrap();
+        table.set("result", result_table).unwrap();
+
+        let result = interpret_handler_result(&Value::Table(table)).unwrap();
+        match result {
+            ScriptHandlerResult::Handled { result } => {
+                assert_eq!(result["answer"], 42);
+            }
+            other => panic!("Expected Handled, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_interpret_handled_without_result_gives_null() {
+        let lua = Lua::new();
+        let table = lua.create_table().unwrap();
+        table.set("handled", true).unwrap();
+
+        let result = interpret_handler_result(&Value::Table(table)).unwrap();
+        match result {
+            ScriptHandlerResult::Handled { result } => {
+                assert!(result.is_null());
+            }
+            other => panic!("Expected Handled, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_interpret_cancel_still_works() {
+        let lua = Lua::new();
+        let table = lua.create_table().unwrap();
+        table.set("cancel", true).unwrap();
+        table.set("reason", "blocked").unwrap();
+
+        let result = interpret_handler_result(&Value::Table(table)).unwrap();
+        match result {
+            ScriptHandlerResult::Cancel { reason } => {
+                assert_eq!(reason, "blocked");
+            }
+            other => panic!("Expected Cancel, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_interpret_handled_takes_priority_over_cancel() {
+        let lua = Lua::new();
+        let table = lua.create_table().unwrap();
+        table.set("handled", true).unwrap();
+        table.set("cancel", true).unwrap();
+        table.set("reason", "should not see this").unwrap();
+
+        let result = interpret_handler_result(&Value::Table(table)).unwrap();
+        // handled is checked before cancel
+        assert!(matches!(result, ScriptHandlerResult::Handled { .. }));
+    }
+
+    #[test]
+    fn test_interpret_handled_false_is_not_handled() {
+        let lua = Lua::new();
+        let table = lua.create_table().unwrap();
+        table.set("handled", false).unwrap();
+        table.set("foo", "bar").unwrap();
+
+        let result = interpret_handler_result(&Value::Table(table)).unwrap();
+        // handled=false → falls through to Transform
+        assert!(matches!(result, ScriptHandlerResult::Transform(_)));
     }
 }

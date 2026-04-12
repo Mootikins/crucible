@@ -516,6 +516,7 @@ impl AgentManager {
                 Arc::new(EmptyKnowledgeRepository),
                 Arc::new(EmptyEmbeddingProvider),
             ));
+
             Arc::new(DaemonToolDispatcher::new(vec![
                 Arc::new(
                     WorkspaceTools::new(&session.workspace)

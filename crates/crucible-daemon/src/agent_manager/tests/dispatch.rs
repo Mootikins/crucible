@@ -25,7 +25,7 @@ mod event_dispatch {
             .exec()
             .unwrap();
 
-        let handlers = state.registry.runtime_handlers_for("turn:complete");
+        let handlers = state.registry.runtime_handlers_for("turn:complete", None);
         assert_eq!(handlers.len(), 1);
 
         let event = SessionEvent::Custom {
@@ -35,7 +35,8 @@ mod event_dispatch {
 
         let result = state
             .registry
-            .execute_runtime_handler(&state.lua, &handlers[0].name, &event);
+            .execute_runtime_handler(&state.lua, &handlers[0].name, &event)
+            .await;
         assert!(result.is_ok());
     }
 
@@ -66,7 +67,7 @@ mod event_dispatch {
             .exec()
             .unwrap();
 
-        let handlers = state.registry.runtime_handlers_for("turn:complete");
+        let handlers = state.registry.runtime_handlers_for("turn:complete", None);
         assert_eq!(handlers.len(), 2);
 
         let event = SessionEvent::Custom {
@@ -77,7 +78,8 @@ mod event_dispatch {
         for handler in &handlers {
             let _ = state
                 .registry
-                .execute_runtime_handler(&state.lua, &handler.name, &event);
+                .execute_runtime_handler(&state.lua, &handler.name, &event)
+                .await;
         }
 
         let order: Vec<String> = state.lua.load("return execution_order").eval().unwrap();
@@ -111,7 +113,7 @@ mod event_dispatch {
             .exec()
             .unwrap();
 
-        let handlers = state.registry.runtime_handlers_for("turn:complete");
+        let handlers = state.registry.runtime_handlers_for("turn:complete", None);
         let event = SessionEvent::Custom {
             name: "turn:complete".to_string(),
             payload: serde_json::json!({}),
@@ -120,7 +122,8 @@ mod event_dispatch {
         for handler in &handlers {
             let _result = state
                 .registry
-                .execute_runtime_handler(&state.lua, &handler.name, &event);
+                .execute_runtime_handler(&state.lua, &handler.name, &event)
+                .await;
         }
 
         let order: Vec<String> = state.lua.load("return execution_order").eval().unwrap();
@@ -172,8 +175,8 @@ mod event_dispatch {
         let state_1 = session_state_1.lock().await;
         let state_2 = session_state_2.lock().await;
 
-        let handlers_1 = state_1.registry.runtime_handlers_for("turn:complete");
-        let handlers_2 = state_2.registry.runtime_handlers_for("turn:complete");
+        let handlers_1 = state_1.registry.runtime_handlers_for("turn:complete", None);
+        let handlers_2 = state_2.registry.runtime_handlers_for("turn:complete", None);
 
         assert_eq!(handlers_1.len(), 1, "Session 1 should have 1 handler");
         assert_eq!(handlers_2.len(), 2, "Session 2 should have 2 handlers");
@@ -204,7 +207,7 @@ mod event_dispatch {
             .exec()
             .unwrap();
 
-        let handlers = state.registry.runtime_handlers_for("turn:complete");
+        let handlers = state.registry.runtime_handlers_for("turn:complete", None);
         let event = SessionEvent::Custom {
             name: "turn:complete".to_string(),
             payload: serde_json::json!({
@@ -215,7 +218,8 @@ mod event_dispatch {
 
         let _ = state
             .registry
-            .execute_runtime_handler(&state.lua, &handlers[0].name, &event);
+            .execute_runtime_handler(&state.lua, &handlers[0].name, &event)
+            .await;
 
         let session_id: String = state.lua.load("return received_session_id").eval().unwrap();
         let message_id: String = state.lua.load("return received_message_id").eval().unwrap();
@@ -244,7 +248,7 @@ mod event_dispatch {
             .exec()
             .unwrap();
 
-        let handlers = state.registry.runtime_handlers_for("turn:complete");
+        let handlers = state.registry.runtime_handlers_for("turn:complete", None);
         let event = SessionEvent::Custom {
             name: "turn:complete".to_string(),
             payload: serde_json::json!({}),
@@ -253,6 +257,7 @@ mod event_dispatch {
         let result = state
             .registry
             .execute_runtime_handler(&state.lua, &handlers[0].name, &event)
+            .await
             .unwrap();
 
         match result {

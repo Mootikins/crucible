@@ -131,7 +131,7 @@ pub(crate) async fn handle_lua_execute_hook(
 
     let state = state.value().clone();
     let state = state.lock().await;
-    let handlers = state.registry.runtime_handlers_for(hook_name);
+    let handlers = state.registry.runtime_handlers_for(hook_name, None);
     let mut results = Vec::new();
 
     for handler in handlers {
@@ -144,7 +144,9 @@ pub(crate) async fn handle_lua_execute_hook(
             state.executor.lua(),
             &handler.name,
             &event,
-        ) {
+        )
+        .await
+        {
             Ok(ScriptHandlerResult::Transform(payload)) => {
                 serde_json::json!({"handler": handler.name, "type": "transform", "payload": payload})
             }
@@ -159,6 +161,11 @@ pub(crate) async fn handle_lua_execute_hook(
                 "type": "inject",
                 "content": content,
                 "position": position,
+            }),
+            Ok(ScriptHandlerResult::Handled { result }) => serde_json::json!({
+                "handler": handler.name,
+                "type": "handled",
+                "result": result,
             }),
             Err(e) => {
                 serde_json::json!({"handler": handler.name, "type": "error", "error": e.to_string()})
@@ -181,6 +188,21 @@ pub(crate) async fn handle_lua_shutdown_session(
     lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
+
+    // Fire on_session_end hooks before removing the Lua session
+    if let Some(state) = lua_sessions.get(session_id) {
+        let state = state.value().clone();
+        let mut state = state.lock().await;
+        if let Err(e) = state.executor.sync_session_end_hooks() {
+            warn!(session_id = %session_id, error = %e, "Failed to sync session_end hooks");
+        }
+        if let Some(session) = state.executor.session_manager().get_current() {
+            if let Err(e) = state.executor.fire_session_end_hooks(&session) {
+                warn!(session_id = %session_id, error = %e, "Failed to fire session_end hooks");
+            }
+        }
+    }
+
     let removed = lua_sessions.remove(session_id).is_some();
     Response::success(
         req.id,

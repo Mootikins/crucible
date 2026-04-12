@@ -30,6 +30,7 @@ pub struct LuaExecutor {
     fennel: Option<FennelCompiler>,
     session_manager: SessionManager,
     on_session_start_hooks: Vec<RegistryKey>,
+    on_session_end_hooks: Vec<RegistryKey>,
     on_tools_registered_hooks: Vec<RegistryKey>,
 }
 
@@ -68,6 +69,7 @@ impl LuaExecutor {
             fennel,
             session_manager,
             on_session_start_hooks: Vec::new(),
+            on_session_end_hooks: Vec::new(),
             on_tools_registered_hooks: Vec::new(),
         })
     }
@@ -120,6 +122,34 @@ impl LuaExecutor {
                 }
                 Err(e) => {
                     tracing::error!("Failed to retrieve session start hook from registry: {}", e);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Sync session end hooks from Lua environment
+    pub fn sync_session_end_hooks(&mut self) -> Result<(), LuaError> {
+        use crate::hooks::get_session_end_hooks;
+        let hooks = get_session_end_hooks(&self.lua)?;
+        self.on_session_end_hooks = hooks;
+        Ok(())
+    }
+
+    /// Fire all registered session end hooks
+    ///
+    /// Calls each hook with the session object. Logs errors but continues
+    /// to next hook (error isolation). Returns Ok even if some hooks fail.
+    pub fn fire_session_end_hooks(&self, session: &Session) -> Result<(), LuaError> {
+        for key in &self.on_session_end_hooks {
+            match self.lua.registry_value::<Function>(key) {
+                Ok(func) => {
+                    if let Err(e) = func.call::<()>(session.clone()) {
+                        tracing::error!("Session end hook failed: {}", e);
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to retrieve session end hook from registry: {}", e);
                 }
             }
         }
@@ -497,6 +527,49 @@ mod tests {
         executor.fire_session_start_hooks(&session).unwrap();
 
         let called: bool = executor.lua().load("return test_called").eval().unwrap();
+        assert!(called);
+    }
+
+    #[test]
+    fn test_on_session_end_registers_hook() {
+        let mut executor = LuaExecutor::new().unwrap();
+        executor
+            .lua()
+            .load(r#"crucible.on_session_end(function(s) end)"#)
+            .exec()
+            .unwrap();
+        executor.sync_session_end_hooks().unwrap();
+        assert_eq!(executor.on_session_end_hooks.len(), 1);
+    }
+
+    #[test]
+    fn test_fire_session_end_hooks_calls_registered_hooks() {
+        use crate::session_api::Session;
+
+        let mut executor = LuaExecutor::new().unwrap();
+        executor
+            .lua()
+            .load(
+                r#"
+            test_end_called = false
+            crucible.on_session_end(function(s)
+                test_end_called = true
+            end)
+        "#,
+            )
+            .exec()
+            .unwrap();
+        executor.sync_session_end_hooks().unwrap();
+
+        let session = Session::new("test".to_string());
+        session.bind(Box::new(crate::session_api::tests::MockRpc::new()));
+        executor.fire_session_end_hooks(&session).unwrap();
+
+        let called: bool = executor
+            .lua()
+            .load("return test_end_called")
+            .eval()
+            .unwrap();
         assert!(called);
     }
 

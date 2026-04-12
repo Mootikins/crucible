@@ -88,7 +88,7 @@ struct NoopSessionRpc;
 impl SessionConfigRpc for NoopSessionRpc {}
 
 pub struct LuaSessionState {
-    executor: LuaExecutor,
+    pub(crate) executor: LuaExecutor,
     registry: LuaScriptHandlerRegistry,
 }
 

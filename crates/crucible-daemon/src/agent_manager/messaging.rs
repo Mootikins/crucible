@@ -598,7 +598,7 @@ impl AgentManager {
             }
         };
 
-        let handlers = state.registry.runtime_handlers_for("pre_llm_call");
+        let handlers = state.registry.runtime_handlers_for("pre_llm_call", None);
         for handler in handlers {
             let event = SessionEvent::Custom {
                 name: "pre_llm_call".to_string(),
@@ -610,6 +610,7 @@ impl AgentManager {
             match state
                 .registry
                 .execute_runtime_handler(&state.lua, &handler.name, &event)
+                .await
             {
                 Ok(crucible_lua::ScriptHandlerResult::Transform(val)) => {
                     if let Some(prompt) = val.get("prompt").and_then(|v| v.as_str()) {
@@ -913,7 +914,7 @@ impl AgentManager {
                 }
             }
 
-            for handler in state.registry.runtime_handlers_for("pre_tool_call") {
+            for handler in state.registry.runtime_handlers_for("pre_tool_call", Some(&tool_call.name)) {
                 let event = SessionEvent::Custom {
                     name: "pre_tool_call".to_string(),
                     payload: serde_json::json!({
@@ -924,6 +925,7 @@ impl AgentManager {
                 match state
                     .registry
                     .execute_runtime_handler(&state.lua, &handler.name, &event)
+                    .await
                 {
                     Ok(crucible_lua::ScriptHandlerResult::Cancel { reason }) => {
                         debug!(
@@ -953,6 +955,44 @@ impl AgentManager {
                             name: tool_call.name.clone(),
                             result: String::new(),
                             error: Some(error_msg),
+                            call_id: Some(call_id.clone()),
+                        });
+                    }
+                    Ok(crucible_lua::ScriptHandlerResult::Handled { result }) => {
+                        debug!(
+                            session_id = %stream_ctx.session_id,
+                            tool = %tool_call.name,
+                            handler = %handler.name,
+                            "pre_tool_call handler provided result"
+                        );
+                        // Emit tool_call event so TUI shows tool running
+                        emit_event(
+                            &stream_ctx.event_tx,
+                            SessionEventMessage::tool_call(
+                                &stream_ctx.session_id,
+                                &call_id,
+                                &tool_call.name,
+                                args.clone(),
+                            ),
+                        );
+                        let result_string = match result {
+                            serde_json::Value::String(s) => s,
+                            other => other.to_string(),
+                        };
+                        // Emit tool_result event so TUI shows completion
+                        emit_event(
+                            &stream_ctx.event_tx,
+                            SessionEventMessage::tool_result(
+                                &stream_ctx.session_id,
+                                &call_id,
+                                &tool_call.name,
+                                serde_json::json!({ "result": &result_string }),
+                            ),
+                        );
+                        return Some(crucible_core::traits::chat::ChatToolResult {
+                            name: tool_call.name.clone(),
+                            result: result_string,
+                            error: None,
                             call_id: Some(call_id.clone()),
                         });
                     }
@@ -1005,7 +1045,7 @@ impl AgentManager {
                 name: tool_call.name.clone(),
                 args: args_str.clone(),
             };
-            match execute_tool_display_start_hooks(&state.lua, &state.registry, &hook_event) {
+            match execute_tool_display_start_hooks(&state.lua, &state.registry, &hook_event).await {
                 Ok(Some(hints)) => {
                     if let Some(label) = hints.label {
                         description = Some(label);
@@ -1055,7 +1095,7 @@ impl AgentManager {
                 name: tool_call.name.clone(),
                 args: args.clone(),
             };
-            match execute_tool_before_execute_hooks(&state.lua, &state.registry, &hook_event) {
+            match execute_tool_before_execute_hooks(&state.lua, &state.registry, &hook_event).await {
                 Ok(Some(result)) => result.env,
                 Ok(None) => std::collections::HashMap::new(),
                 Err(error) => {
@@ -1159,7 +1199,7 @@ impl AgentManager {
                 args: args_str,
                 result: error_str.clone().unwrap_or_else(|| result_str.clone()),
             };
-            match execute_tool_display_complete_hooks(&state.lua, &state.registry, &hook_event) {
+            match execute_tool_display_complete_hooks(&state.lua, &state.registry, &hook_event).await {
                 Ok(Some(hints)) => {
                     if let Some(summary) = hints.summary {
                         event_result["summary"] = serde_json::json!(summary);
@@ -1794,7 +1834,7 @@ impl AgentManager {
             );
         }
 
-        for handler in state.registry.runtime_handlers_for("post_llm_call") {
+        for handler in state.registry.runtime_handlers_for("post_llm_call", None) {
             let event = SessionEvent::Custom {
                 name: "post_llm_call".to_string(),
                 payload: serde_json::json!({
@@ -1807,6 +1847,7 @@ impl AgentManager {
                 state
                     .registry
                     .execute_runtime_handler(&state.lua, &handler.name, &event)
+                    .await
             {
                 warn!(
                     session_id = %stream_ctx.session_id,
@@ -1827,7 +1868,7 @@ impl AgentManager {
         use crucible_lua::ScriptHandlerResult;
 
         let state = session_state.lock().await;
-        let handlers = state.registry.runtime_handlers_for("turn:complete");
+        let handlers = state.registry.runtime_handlers_for("turn:complete", None);
 
         if handlers.is_empty() {
             return None;
@@ -1856,6 +1897,7 @@ impl AgentManager {
             match state
                 .registry
                 .execute_runtime_handler(&state.lua, &handler.name, &event)
+                .await
             {
                 Ok(result) => {
                     debug!(

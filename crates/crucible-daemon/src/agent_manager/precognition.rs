@@ -12,7 +12,7 @@ struct ExecuteMultiKilnSearchParams<'a> {
 use super::*;
 
 impl AgentManager {
-    fn format_with_precognition_runtime_hook(
+    async fn format_with_precognition_runtime_hook(
         session_id: &str,
         original_content: &str,
         results: &[crucible_core::SearchResult],
@@ -24,7 +24,8 @@ impl AgentManager {
             original_content,
             results,
             state,
-        );
+        )
+        .await;
 
         if let Some(context_block) = custom_formatted {
             format!("{}\n\n{}", context_block, original_content)
@@ -33,7 +34,7 @@ impl AgentManager {
         }
     }
 
-    fn execute_precognition_format_handlers(
+    async fn execute_precognition_format_handlers(
         session_id: &str,
         original_content: &str,
         results: &[crucible_core::SearchResult],
@@ -41,7 +42,7 @@ impl AgentManager {
     ) -> Option<String> {
         use crucible_lua::ScriptHandlerResult;
 
-        let handlers = state.registry.runtime_handlers_for("precognition_format");
+        let handlers = state.registry.runtime_handlers_for("precognition_format", None);
         if handlers.is_empty() {
             return None;
         }
@@ -84,6 +85,7 @@ impl AgentManager {
             match state
                 .registry
                 .execute_runtime_handler(&state.lua, &handler.name, &event)
+                .await
             {
                 Ok(ScriptHandlerResult::Transform(value)) => {
                     if let Some(formatted) = value.as_str() {
@@ -92,7 +94,8 @@ impl AgentManager {
                 }
                 Ok(ScriptHandlerResult::PassThrough)
                 | Ok(ScriptHandlerResult::Cancel { .. })
-                | Ok(ScriptHandlerResult::Inject { .. }) => {}
+                | Ok(ScriptHandlerResult::Inject { .. })
+                | Ok(ScriptHandlerResult::Handled { .. }) => {}
                 Err(error) => {
                     warn!(
                         session_id = %session_id,
@@ -324,6 +327,7 @@ impl AgentManager {
                 &session.kiln,
                 &state,
             )
+            .await
         };
         let note_info = extract_note_info(&results, &session.kiln);
         let deduped_count = note_info.len();
@@ -752,8 +756,8 @@ mod precognition_format_hook_tests {
         }
     }
 
-    #[test]
-    fn precognition_format_hook_customizes_output() {
+    #[tokio::test]
+    async fn precognition_format_hook_customizes_output() {
         let state = make_session_event_state();
         state
             .lua
@@ -780,7 +784,8 @@ mod precognition_format_hook_tests {
             &results,
             std::path::Path::new("/home/user/notes"),
             &state,
-        );
+        )
+        .await;
 
         assert!(output.starts_with("## Custom Format"));
         assert!(output.contains("What is Rust?"));
@@ -788,8 +793,8 @@ mod precognition_format_hook_tests {
         assert!(!output.starts_with("<system>"));
     }
 
-    #[test]
-    fn precognition_format_no_handler_uses_default() {
+    #[tokio::test]
+    async fn precognition_format_no_handler_uses_default() {
         let state = make_session_event_state();
         let results = vec![make_result(
             "notes/Rust.md",
@@ -804,7 +809,8 @@ mod precognition_format_hook_tests {
             &results,
             std::path::Path::new("/home/user/notes"),
             &state,
-        );
+        )
+        .await;
 
         assert!(output.contains("<system>"));
         assert!(output.contains("Found 1 relevant notes:"));

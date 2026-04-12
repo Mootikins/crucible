@@ -775,6 +775,28 @@ impl RpcDispatcher {
     }
 
     async fn handle_session_end(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        // Fire on_session_end Lua hooks before ending the session
+        // Plugins use this for cleanup (e.g., releasing resources, stopping services)
+        let session_id = req
+            .params
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if !session_id.is_empty() {
+            if let Some(state) = self.ctx.lua_sessions.get(session_id) {
+                let state = state.value().clone();
+                let mut state = state.lock().await;
+                if let Err(e) = state.executor.sync_session_end_hooks() {
+                    tracing::warn!(session_id = %session_id, error = %e, "Failed to sync session_end hooks");
+                }
+                if let Some(session) = state.executor.session_manager().get_current() {
+                    if let Err(e) = state.executor.fire_session_end_hooks(&session) {
+                        tracing::warn!(session_id = %session_id, error = %e, "Failed to fire session_end hooks");
+                    }
+                }
+            }
+        }
+
         let resp = crate::server::session::handle_session_end(
             req.clone(),
             &self.ctx.sessions,

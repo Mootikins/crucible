@@ -83,6 +83,17 @@ Crucible uses a **single `cru` binary** with a built-in daemon for multi-session
 - Config: `session.set_thinking_budget`, `session.get_thinking_budget`
 - Events: `session.subscribe`, `session.unsubscribe`
 
+### Tool Interception via Hooks
+
+Plugins can fully handle tool calls via `crucible.on("pre_tool_call", opts, handler)`:
+- Return `{ handled = true, result = ... }` to provide the tool result (skips default executor)
+- Return `{ cancel = true, reason = "..." }` to block with error
+- Return `nil` to observe without interfering
+- Use `pattern` option to filter by tool name: `{ pattern = "bash" }`
+- Use `priority` option to control execution order: `{ priority = 10 }` (lower = first, default 100)
+- Handlers CAN call async APIs (`cru.shell.exec`, `cru.http`, `cru.timer.sleep`, etc.)
+- Reference implementation: `runtime/plugins/oci/` — container tool execution via generic hooks
+
 ### Cross-Layer Feature Checklist
 
 When implementing features that affect agent/session behavior (not just UI display):

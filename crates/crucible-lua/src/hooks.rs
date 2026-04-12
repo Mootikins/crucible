@@ -1,7 +1,7 @@
 //! Hook registration system for Crucible Lua API
 //!
-//! Provides `crucible.on_session_start(fn)` and `crucible.on_tools_registered(fn)`
-//! for registering lifecycle hooks.
+//! Provides `crucible.on_session_start(fn)`, `crucible.on_session_end(fn)`, and
+//! `crucible.on_tools_registered(fn)` for registering lifecycle hooks.
 //!
 //! Tool execution hooks use the RuntimeHandler system via `crucible.on("tool:before_execute", fn)`.
 //! See `handlers.rs` for details.
@@ -75,6 +75,29 @@ pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
 
     crucible.set("on_tools_registered", on_tools_registered)?;
 
+    let on_session_end = lua.create_function(|lua, func: Function| {
+        let key = lua.create_registry_value(func)?;
+
+        let globals = lua.globals();
+        let hooks_table: Table = globals
+            .get("__crucible_hooks__")
+            .unwrap_or_else(|_| lua.create_table().unwrap());
+
+        let session_end_hooks: Table = hooks_table
+            .get("on_session_end")
+            .unwrap_or_else(|_| lua.create_table().unwrap());
+
+        let len = session_end_hooks.raw_len();
+        session_end_hooks.raw_set(len + 1, key)?;
+
+        hooks_table.set("on_session_end", session_end_hooks)?;
+        globals.set("__crucible_hooks__", hooks_table)?;
+
+        Ok(())
+    })?;
+
+    crucible.set("on_session_end", on_session_end)?;
+
     // Tool execution hooks use the RuntimeHandler system via crucible.on("tool:before_execute", fn).
     // See handlers.rs for execute_tool_before_execute_hooks().
 
@@ -83,6 +106,10 @@ pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
 
 pub fn get_session_start_hooks(lua: &Lua) -> LuaResult<Vec<mlua::RegistryKey>> {
     get_hooks_by_name(lua, "on_session_start")
+}
+
+pub fn get_session_end_hooks(lua: &Lua) -> LuaResult<Vec<mlua::RegistryKey>> {
+    get_hooks_by_name(lua, "on_session_end")
 }
 
 pub fn get_tools_registered_hooks(lua: &Lua) -> LuaResult<Vec<mlua::RegistryKey>> {
@@ -432,5 +459,53 @@ mod tests {
 
         assert_eq!(get_session_start_hooks(&lua).unwrap().len(), 1);
         assert_eq!(get_tools_registered_hooks(&lua).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_on_session_end_stores_function() {
+        let (lua, _) = TestLuaBuilder::new().build_with_hooks();
+
+        lua.load(r#"crucible.on_session_end(function(s) end)"#)
+            .exec()
+            .unwrap();
+
+        let hooks = get_session_end_hooks(&lua).unwrap();
+        assert_eq!(hooks.len(), 1);
+    }
+
+    #[test]
+    fn test_on_session_end_multiple_hooks() {
+        let (lua, _) = TestLuaBuilder::new().build_with_hooks();
+
+        lua.load(
+            r#"
+            crucible.on_session_end(function(s) end)
+            crucible.on_session_end(function(s) end)
+            crucible.on_session_end(function(s) end)
+        "#,
+        )
+        .exec()
+        .unwrap();
+
+        let hooks = get_session_end_hooks(&lua).unwrap();
+        assert_eq!(hooks.len(), 3);
+    }
+
+    #[test]
+    fn test_session_start_and_end_hooks_independent() {
+        let (lua, _) = TestLuaBuilder::new().build_with_hooks();
+
+        lua.load(
+            r#"
+            crucible.on_session_start(function(s) end)
+            crucible.on_session_end(function(s) end)
+            crucible.on_session_end(function(s) end)
+        "#,
+        )
+        .exec()
+        .unwrap();
+
+        assert_eq!(get_session_start_hooks(&lua).unwrap().len(), 1);
+        assert_eq!(get_session_end_hooks(&lua).unwrap().len(), 2);
     }
 }
