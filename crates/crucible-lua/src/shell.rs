@@ -108,9 +108,9 @@ pub async fn exec_command(
     args: &[String],
     cwd: Option<&str>,
     env: Option<&HashMap<String, String>>,
+    stdin_data: Option<&str>,
     policy: &ShellPolicy,
 ) -> Result<ExecResult, LuaError> {
-    // Check policy
     if !policy.is_allowed(cmd) {
         return Err(LuaError::Runtime(format!(
             "Command '{}' is not allowed by shell policy",
@@ -123,21 +123,18 @@ pub async fn exec_command(
     let mut command = Command::new(cmd);
     command.args(args);
 
-    // Set working directory
     if let Some(dir) = cwd {
         command.current_dir(dir);
     } else if let Some(default) = &policy.default_cwd {
         command.current_dir(default);
     }
 
-    // Set environment variables
     if let Some(env_vars) = env {
         for (key, value) in env_vars {
             command.env(key, value);
         }
     }
 
-    // Configure I/O
     command.stdout(Stdio::piped());
     if policy.capture_stderr {
         command.stderr(Stdio::piped());
@@ -145,29 +142,53 @@ pub async fn exec_command(
         command.stderr(Stdio::inherit());
     }
 
-    // Execute with timeout
-    let output = tokio::time::timeout(
-        std::time::Duration::from_secs(policy.timeout_secs),
-        command.output(),
-    )
-    .await
-    .map_err(|_| {
-        LuaError::Runtime(format!(
-            "Command '{}' timed out after {} seconds",
-            cmd, policy.timeout_secs
-        ))
-    })?
-    .map_err(|e| LuaError::Runtime(format!("Failed to execute '{}': {}", cmd, e)))?;
+    if stdin_data.is_some() {
+        command.stdin(Stdio::piped());
+    }
 
-    let exit_code = output.status.code().unwrap_or(-1);
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let timeout = std::time::Duration::from_secs(policy.timeout_secs);
+
+    // If stdin data is provided, spawn the process and pipe it
+    let output = if let Some(data) = stdin_data {
+        let mut child = command
+            .spawn()
+            .map_err(|e| LuaError::Runtime(format!("Failed to execute '{}': {}", cmd, e)))?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            use tokio::io::AsyncWriteExt;
+            stdin
+                .write_all(data.as_bytes())
+                .await
+                .map_err(|e| LuaError::Runtime(format!("stdin write failed: {}", e)))?;
+            drop(stdin);
+        }
+
+        tokio::time::timeout(timeout, child.wait_with_output())
+            .await
+            .map_err(|_| {
+                LuaError::Runtime(format!(
+                    "Command '{}' timed out after {} seconds",
+                    cmd, policy.timeout_secs
+                ))
+            })?
+            .map_err(|e| LuaError::Runtime(format!("Failed to execute '{}': {}", cmd, e)))?
+    } else {
+        tokio::time::timeout(timeout, command.output())
+            .await
+            .map_err(|_| {
+                LuaError::Runtime(format!(
+                    "Command '{}' timed out after {} seconds",
+                    cmd, policy.timeout_secs
+                ))
+            })?
+            .map_err(|e| LuaError::Runtime(format!("Failed to execute '{}': {}", cmd, e)))?
+    };
 
     Ok(ExecResult {
         success: output.status.success(),
-        exit_code,
-        stdout,
-        stderr,
+        exit_code: output.status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
     })
 }
 
@@ -184,15 +205,14 @@ pub fn register_shell_module(lua: &Lua, policy: ShellPolicy) -> Result<(), LuaEr
         move |lua, (cmd, args, options): (String, Vec<String>, Option<Table>)| {
             let policy = policy_clone.clone();
             async move {
-                // Parse options
                 let mut cwd = None;
                 let mut env = None;
+                let mut stdin_data = None;
 
                 if let Some(opts) = options {
                     if let Ok(dir) = opts.get::<String>("cwd") {
                         cwd = Some(dir);
                     }
-
                     if let Ok(env_table) = opts.get::<Table>("env") {
                         let mut env_map = HashMap::new();
                         for (k, v) in env_table.pairs::<String, String>().flatten() {
@@ -200,12 +220,21 @@ pub fn register_shell_module(lua: &Lua, policy: ShellPolicy) -> Result<(), LuaEr
                         }
                         env = Some(env_map);
                     }
+                    if let Ok(data) = opts.get::<String>("stdin") {
+                        stdin_data = Some(data);
+                    }
                 }
 
-                // Execute command
-                let result = exec_command(&cmd, &args, cwd.as_deref(), env.as_ref(), &policy)
-                    .await
-                    .map_err(mlua::Error::external)?;
+                let result = exec_command(
+                    &cmd,
+                    &args,
+                    cwd.as_deref(),
+                    env.as_ref(),
+                    stdin_data.as_deref(),
+                    &policy,
+                )
+                .await
+                .map_err(mlua::Error::external)?;
 
                 // Build result table
                 let result_table = lua.create_table()?;
@@ -291,7 +320,7 @@ mod tests {
     #[tokio::test]
     async fn test_exec_echo() {
         let policy = ShellPolicy::permissive();
-        let result = exec_command("echo", &["hello".to_string()], None, None, &policy)
+        let result = exec_command("echo", &["hello".to_string()], None, None, None, &policy)
             .await
             .unwrap();
 
@@ -306,6 +335,7 @@ mod tests {
         let result = exec_command(
             "rm",
             &["-rf".to_string(), "/".to_string()],
+            None,
             None,
             None,
             &policy,
@@ -327,6 +357,7 @@ mod tests {
             &["-c".to_string(), "echo $MY_VAR".to_string()],
             None,
             Some(&env),
+            None,
             &policy,
         )
         .await

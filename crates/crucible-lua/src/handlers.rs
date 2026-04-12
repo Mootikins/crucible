@@ -181,24 +181,16 @@ impl LuaScriptHandler {
     /// * `Ok(None)` - Handler returned nil (pass through unchanged)
     /// * `Err(e)` - Execution failed
     pub fn execute(&self, lua: &Lua, event: &SessionEvent) -> LuaResult<Option<SessionEvent>> {
-        // Load and execute the source to define functions
         lua.load(&self.source).exec()?;
-
-        // Get the handler function
         let handler: Function = lua.globals().get(self.metadata.handler_fn.as_str())?;
 
-        // Create context table
         let ctx_table = lua.create_table()?;
         ctx_table.set("handler_name", self.metadata.name.as_str())?;
         ctx_table.set("priority", self.metadata.priority)?;
 
-        // Convert event to Lua table
         let event_table = session_event_to_lua(lua, event)?;
-
-        // Call handler with (ctx, event)
         let result: Value = handler.call((ctx_table, event_table))?;
 
-        // Process result using return conventions
         match interpret_handler_result(&result)? {
             ScriptHandlerResult::Transform(json) => {
                 // Try to deserialize JSON back to SessionEvent
@@ -247,20 +239,13 @@ impl LuaScriptHandler {
         ctx: JsonValue,
         event: JsonValue,
     ) -> LuaResult<JsonValue> {
-        // Load and execute the source
         lua.load(&self.source).exec()?;
-
-        // Get the handler function
         let handler: Function = lua.globals().get(self.metadata.handler_fn.as_str())?;
 
-        // Convert to Lua values
         let ctx_val = lua.to_value(&ctx)?;
         let event_val = lua.to_value(&event)?;
-
-        // Call handler
         let result: Value = handler.call((ctx_val, event_val))?;
 
-        // Process result using return conventions
         match interpret_handler_result(&result)? {
             ScriptHandlerResult::Transform(json) => Ok(json),
             ScriptHandlerResult::PassThrough => Ok(event), // Pass through unchanged
@@ -313,36 +298,30 @@ pub fn interpret_handler_result(result: &Value) -> LuaResult<ScriptHandlerResult
     match result {
         Value::Nil => Ok(ScriptHandlerResult::PassThrough),
         Value::Table(t) => {
-            // Check for inject convention: {inject={content="...", position="..."}}
+            // {inject={content="...", position="..."}}
             if let Ok(inject_table) = t.get::<Table>("inject") {
-                // CRITICAL: content field is required. Missing content is a handler bug.
                 let content = inject_table.get::<String>("content")?;
                 let position = inject_table
                     .get::<String>("position")
                     .unwrap_or_else(|_| "user_prefix".to_string());
                 return Ok(ScriptHandlerResult::Inject { content, position });
             }
-            // Check for handled convention: {handled=true, result=...}
+            // {handled=true, result=...}
             if let Ok(true) = t.get::<bool>("handled") {
                 let result = match lua_table_to_json(t) {
-                    Ok(json) => json
-                        .get("result")
-                        .cloned()
-                        .unwrap_or(JsonValue::Null),
+                    Ok(json) => json.get("result").cloned().unwrap_or(JsonValue::Null),
                     Err(_) => JsonValue::Null,
                 };
                 return Ok(ScriptHandlerResult::Handled { result });
             }
-            // Check for cancel convention: {cancel=true, reason="..."}
-            if let Ok(cancel) = t.get::<bool>("cancel") {
-                if cancel {
-                    let reason = t
-                        .get::<String>("reason")
-                        .unwrap_or_else(|_| "cancelled".to_string());
-                    return Ok(ScriptHandlerResult::Cancel { reason });
-                }
+            // {cancel=true, reason="..."}
+            if t.get::<bool>("cancel").unwrap_or(false) {
+                let reason = t
+                    .get::<String>("reason")
+                    .unwrap_or_else(|_| "cancelled".to_string());
+                return Ok(ScriptHandlerResult::Cancel { reason });
             }
-            // Not a cancel or inject, treat as transform - convert to JSON for safety
+            // Anything else is a transform
             let json = lua_table_to_json(t)?;
             Ok(ScriptHandlerResult::Transform(json))
         }
@@ -552,23 +531,15 @@ impl LuaScriptHandlerRegistry {
         self.handler_functions.clone()
     }
 
-    /// Get runtime handlers matching an event type, sorted by priority
+    /// Get runtime handlers matching an event type, sorted by priority.
     ///
     /// Returns handlers registered via `crucible.on()` that match the given event type,
     /// sorted by priority (lower priority values execute first).
     ///
     /// # Arguments
     ///
-    /// * `event_type` - The event type to match (e.g., "turn:complete", "pre_tool_call")
-    ///
-    /// # Arguments
-    ///
     /// * `event_type` - The event type to filter by (exact match)
     /// * `identifier` - Optional identifier to match against handler patterns (e.g., tool name)
-    ///
-    /// # Returns
-    ///
-    /// A vector of `RuntimeHandler` clones matching the event type and pattern, sorted by priority.
     pub fn runtime_handlers_for(
         &self,
         event_type: &str,
@@ -584,8 +555,8 @@ impl LuaScriptHandlerRegistry {
                 h.event_type == event_type
                     && match (&h.pattern, identifier) {
                         (Some(pattern), Some(id)) => glob_match(pattern, id),
-                        (Some(_), None) => true, // pattern but no identifier = match all
-                        (None, _) => true,        // no pattern = match all
+                        (Some(_), None) => false, // handler requires pattern match but caller provides no identifier
+                        (None, _) => true,         // no pattern = match all
                     }
             })
             .cloned()
@@ -719,7 +690,6 @@ pub fn register_crucible_on_api(
     let handlers = runtime_handlers.clone();
     let functions = handler_functions.clone();
     let on_fn = lua.create_function(move |lua, args: mlua::MultiValue| {
-        // Parse arguments: crucible.on(event_type, handler) or crucible.on(event_type, opts, handler)
         let args_vec: Vec<Value> = args.into_vec();
         if args_vec.len() < 2 {
             return Err(mlua::Error::RuntimeError(
@@ -1089,7 +1059,6 @@ pub fn register_permission_hook_api(
         }
     };
 
-    // Create crucible.permissions namespace
     let permissions: Table = match crucible.get("permissions") {
         Ok(t) => t,
         Err(_) => {
@@ -1138,6 +1107,9 @@ pub fn register_permission_hook_api(
 /// * `PermissionHookResult::Allow` - Hook returned `{allow=true}`
 /// * `PermissionHookResult::Deny` - Hook returned `{deny=true}`
 /// * `PermissionHookResult::Prompt` - All hooks returned nil or no hooks registered
+///
+/// Note: deliberately sync (not async). Permission decisions must be fast and cannot
+/// call async APIs. The MutexGuards from the caller are not Send across await points.
 pub fn execute_permission_hooks(
     lua: &Lua,
     hooks: &[PermissionHook],
@@ -1148,7 +1120,6 @@ pub fn execute_permission_hooks(
         return Ok(PermissionHookResult::Prompt);
     }
 
-    // Create request table
     let request_table = lua.create_table()?;
     request_table.set("tool_name", request.tool_name.as_str())?;
     request_table.set("args", lua.to_value(&request.args)?)?;
@@ -1170,32 +1141,23 @@ pub fn execute_permission_hooks(
 
         match result {
             Value::Nil => {
-                // Continue to next hook
                 debug!("Permission hook '{}' returned nil, continuing", hook.name);
             }
             Value::Table(t) => {
-                // Check for allow
-                if let Ok(allow) = t.get::<bool>("allow") {
-                    if allow {
-                        debug!("Permission hook '{}' returned allow=true", hook.name);
-                        return Ok(PermissionHookResult::Allow);
-                    }
+                if t.get::<bool>("allow").unwrap_or(false) {
+                    debug!("Permission hook '{}' returned allow=true", hook.name);
+                    return Ok(PermissionHookResult::Allow);
                 }
-                // Check for deny
-                if let Ok(deny) = t.get::<bool>("deny") {
-                    if deny {
-                        debug!("Permission hook '{}' returned deny=true", hook.name);
-                        return Ok(PermissionHookResult::Deny);
-                    }
+                if t.get::<bool>("deny").unwrap_or(false) {
+                    debug!("Permission hook '{}' returned deny=true", hook.name);
+                    return Ok(PermissionHookResult::Deny);
                 }
-                // Table without allow/deny - treat as prompt
                 debug!(
                     "Permission hook '{}' returned table without allow/deny",
                     hook.name
                 );
             }
             _ => {
-                // Other values - treat as prompt
                 debug!(
                     "Permission hook '{}' returned unexpected type, treating as prompt",
                     hook.name
@@ -1212,20 +1174,16 @@ pub fn execute_permission_hooks(
 /// Creates a Lua table representation of the event suitable for script processing.
 fn session_event_to_lua(lua: &Lua, event: &SessionEvent) -> LuaResult<Table> {
     let table = lua.create_table()?;
-
-    // Common fields
     table.set("type", event.type_name())?;
     table.set("event_type", event.event_type())?;
     table.set("summary", event.summary(200))?;
 
-    // Serialize event to JSON and then to Lua for full access to fields
+    // Flatten serialized event fields into the table for Lua access
     match serde_json::to_value(event) {
         Ok(json) => {
-            // Flatten JSON fields into the table
             if let JsonValue::Object(map) = json {
                 for (key, value) in map {
                     if key != "type" {
-                        // Don't overwrite our type field
                         let lua_val = lua.to_value(&value)?;
                         table.set(key, lua_val)?;
                     }
@@ -1272,7 +1230,6 @@ fn lua_table_to_json(table: &Table) -> LuaResult<JsonValue> {
     for pair in table.clone().pairs::<Value, Value>() {
         let (key, value) = pair?;
 
-        // Convert key to string
         let key_str = match key {
             Value::String(s) => s.to_str()?.to_string(),
             Value::Integer(i) => i.to_string(),
@@ -2405,9 +2362,10 @@ end
         assert_eq!(matching.len(), 1);
         assert_eq!(matching[0].name, "all_handler");
 
-        // With no identifier — both match (pattern handlers match when no identifier)
+        // With no identifier — only no-pattern handler matches (pattern handlers require identifier)
         let matching = registry.runtime_handlers_for("pre_tool_call", None);
-        assert_eq!(matching.len(), 2);
+        assert_eq!(matching.len(), 1);
+        assert_eq!(matching[0].name, "all_handler");
     }
 
     #[test]

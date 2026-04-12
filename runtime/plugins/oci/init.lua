@@ -36,14 +36,26 @@ local function sq(s)
   return s:gsub("'", "'\\''")
 end
 
+-- Format a list of lines with a count footer, truncating if over limit
+local function truncate_lines(lines, limit, noun)
+  local truncated = #lines > limit
+  local kept = {}
+  for i = 1, math.min(#lines, limit) do kept[i] = lines[i] end
+  local suffix = truncated
+    and string.format("\n\n[%d %s, truncated at %d]", #kept, noun, limit)
+    or  string.format("\n\n[%d %s]", #kept, noun)
+  return table.concat(kept, "\n") .. suffix
+end
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Tool handlers
 -- ─────────────────────────────────────────────────────────────────────────────
 
 local function handle_bash(ctx, event)
   if not active then return nil end
-  local cmd = event.args and event.args.command or ""
-  local timeout = (event.args and event.args.timeout_ms) or 120000
+  local args = event.args or {}
+  local cmd = args.command or ""
+  local timeout = args.timeout_ms or 120000
 
   local r = cru.shell.exec(active.runtime, {
     "exec", "-w", "/workspace", active.name, "sh", "-c", cmd,
@@ -58,9 +70,10 @@ end
 
 local function handle_read_file(ctx, event)
   if not active then return nil end
-  local path = remap_path(active.workspace, event.args and event.args.path)
-  local offset = (event.args and event.args.offset) or 1
-  local limit = event.args and event.args.limit
+  local args = event.args or {}
+  local path = remap_path(active.workspace, args.path)
+  local offset = args.offset or 1
+  local limit = args.limit
 
   local script
   if limit and limit > 0 then
@@ -80,8 +93,9 @@ end
 
 local function handle_write_file(ctx, event)
   if not active then return nil end
-  local path = remap_path(active.workspace, event.args and event.args.path)
-  local content = event.args and event.args.content or ""
+  local args = event.args or {}
+  local path = remap_path(active.workspace, args.path)
+  local content = args.content or ""
 
   local script = string.format("mkdir -p \"$(dirname '%s')\" && cat > '%s'", sq(path), sq(path))
   local r = cru.shell.exec(active.runtime, {
@@ -92,18 +106,18 @@ local function handle_write_file(ctx, event)
     return { handled = true, result = cru.json.encode({ result = "Error: " .. (r.stderr or "write failed") }) }
   end
   return { handled = true, result = cru.json.encode({
-    result = string.format("Written %d bytes to %s", #content, event.args.path or path)
+    result = string.format("Written %d bytes to %s", #content, args.path or path)
   }) }
 end
 
 local function handle_edit_file(ctx, event)
   if not active then return nil end
-  local path = remap_path(active.workspace, event.args and event.args.path)
-  local old_string = event.args and event.args.old_string or ""
-  local new_string = event.args and event.args.new_string or ""
-  local replace_all = event.args and event.args.replace_all
+  local args = event.args or {}
+  local path = remap_path(active.workspace, args.path)
+  local old_string = args.old_string or ""
+  local new_string = args.new_string or ""
+  local replace_all = args.replace_all
 
-  -- Read current content via container
   local r = cru.shell.exec(active.runtime, { "exec", active.name, "cat", path })
   if not r.success then
     return { handled = true, result = cru.json.encode({ result = "Error: " .. (r.stderr or "read failed") }) }
@@ -114,27 +128,19 @@ local function handle_edit_file(ctx, event)
     return { handled = true, result = cru.json.encode({ result = "Error: old_string not found in file" }) }
   end
 
+  -- Escape Lua pattern metacharacters for safe gsub
+  local escaped = old_string:gsub("([%(%)%.%%%+%-%*%?%[%^%$])", "%%%1")
+  local escaped_replacement = new_string:gsub("%%", "%%%%")
+
   local new_content, count
   if replace_all then
-    new_content, count = content:gsub(old_string, new_string, nil)
-    -- gsub with pattern; use plain replacement
-    new_content = content
-    count = 0
-    local pos = 1
-    while true do
-      local s, e = content:find(old_string, pos, true)
-      if not s then break end
-      count = count + 1
-      pos = e + 1
-    end
-    new_content = content:gsub(old_string:gsub("([%(%)%.%%%+%-%*%?%[%^%$])", "%%%1"), new_string)
+    new_content, count = content:gsub(escaped, escaped_replacement)
   else
     local s, e = content:find(old_string, 1, true)
     new_content = content:sub(1, s - 1) .. new_string .. content:sub(e + 1)
     count = 1
   end
 
-  -- Write back via container
   local write_script = string.format("cat > '%s'", sq(path))
   cru.shell.exec(active.runtime, {
     "exec", "-i", active.name, "sh", "-c", write_script,
@@ -147,11 +153,11 @@ end
 
 local function handle_glob(ctx, event)
   if not active then return nil end
-  local pattern = event.args and event.args.pattern or "*"
-  local path = event.args and event.args.path
-  local limit = (event.args and event.args.limit) or 100
+  local args = event.args or {}
+  local pattern = args.pattern or "*"
+  local limit = args.limit or 100
 
-  local search_dir = path and remap_path(active.workspace, path) or "/workspace"
+  local search_dir = args.path and remap_path(active.workspace, args.path) or "/workspace"
 
   local script
   if pattern:find("/") or pattern:find("%*%*") then
@@ -166,31 +172,22 @@ local function handle_glob(ctx, event)
   local r = cru.shell.exec(active.runtime, { "exec", active.name, "sh", "-c", script })
   local lines = {}
   for line in (r.stdout or ""):gmatch("[^\n]+") do
-    if line ~= "" then table.insert(lines, line) end
+    if line ~= "" then lines[#lines + 1] = line end
   end
 
-  local truncated = #lines > limit
-  local files = {}
-  for i = 1, math.min(#lines, limit) do files[i] = lines[i] end
-
-  local result
-  if truncated then
-    result = table.concat(files, "\n") .. string.format("\n\n[%d files, truncated at %d]", #files, limit)
-  else
-    result = table.concat(files, "\n") .. string.format("\n\n[%d files]", #files)
-  end
-
-  return { handled = true, result = cru.json.encode({ result = result }) }
+  return { handled = true, result = cru.json.encode({
+    result = truncate_lines(lines, limit, "files")
+  }) }
 end
 
 local function handle_grep(ctx, event)
   if not active then return nil end
-  local pattern = event.args and event.args.pattern or ""
-  local path = event.args and event.args.path
-  local glob_filter = event.args and event.args.glob
-  local limit = (event.args and event.args.limit) or 50
+  local args = event.args or {}
+  local pattern = args.pattern or ""
+  local glob_filter = args.glob
+  local limit = args.limit or 50
 
-  local search_path = path and remap_path(active.workspace, path) or "/workspace"
+  local search_path = args.path and remap_path(active.workspace, args.path) or "/workspace"
 
   -- Try rg first, fall back to grep -rn
   local script = "rg --line-number --max-count 1000 "
@@ -203,22 +200,13 @@ local function handle_grep(ctx, event)
   local r = cru.shell.exec(active.runtime, { "exec", active.name, "sh", "-c", script })
   local lines = {}
   for line in (r.stdout or ""):gmatch("[^\n]+") do
-    table.insert(lines, line)
+    lines[#lines + 1] = line
     if #lines > limit then break end
   end
 
-  local truncated = #lines > limit
-  local result_lines = {}
-  for i = 1, math.min(#lines, limit) do result_lines[i] = lines[i] end
-
-  local result
-  if truncated then
-    result = table.concat(result_lines, "\n") .. string.format("\n\n[%d matches, truncated at %d]", #result_lines, limit)
-  else
-    result = table.concat(result_lines, "\n") .. string.format("\n\n[%d matches]", #result_lines)
-  end
-
-  return { handled = true, result = cru.json.encode({ result = result }) }
+  return { handled = true, result = cru.json.encode({
+    result = truncate_lines(lines, limit, "matches")
+  }) }
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────

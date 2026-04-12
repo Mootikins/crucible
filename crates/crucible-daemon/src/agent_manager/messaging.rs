@@ -541,22 +541,23 @@ impl AgentManager {
 
         current_content = match state.reactor.emit(pre_event).await {
             Ok(EmitResult::Completed { event, .. }) => {
-                if let SessionEvent::Internal(inner) = event {
-                    if let InternalSessionEvent::PreLlmCall { prompt, .. } = inner.as_ref() {
+                match &event {
+                    SessionEvent::Internal(inner)
+                        if matches!(inner.as_ref(), InternalSessionEvent::PreLlmCall { .. }) =>
+                    {
+                        let InternalSessionEvent::PreLlmCall { prompt, .. } = inner.as_ref()
+                        else {
+                            unreachable!()
+                        };
                         prompt.clone()
-                    } else {
+                    }
+                    _ => {
                         warn!(
                             session_id = %stream_ctx.session_id,
                             "PreLlmCall handler returned unexpected event type, using original prompt"
                         );
                         current_content
                     }
-                } else {
-                    warn!(
-                        session_id = %stream_ctx.session_id,
-                        "PreLlmCall handler returned unexpected event type, using original prompt"
-                    );
-                    current_content
                 }
             }
             Ok(EmitResult::Cancelled { by_handler, .. }) => {
@@ -1536,8 +1537,7 @@ impl AgentManager {
                     if chunk
                         .tool_calls
                         .as_ref()
-                        .map(|calls| !calls.is_empty())
-                        .unwrap_or(false)
+                        .is_some_and(|calls| !calls.is_empty())
                     {
                         tool_calls_dispatched = true;
                     }
