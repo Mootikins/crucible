@@ -140,12 +140,10 @@ pub(crate) async fn handle_lua_execute_hook(
             payload: context.clone(),
         };
 
-        let result = match state.registry.execute_runtime_handler(
-            state.executor.lua(),
-            &handler.name,
-            &event,
-        )
-        .await
+        let result = match state
+            .registry
+            .execute_runtime_handler(state.executor.lua(), &handler.name, &event)
+            .await
         {
             Ok(ScriptHandlerResult::Transform(payload)) => {
                 serde_json::json!({"handler": handler.name, "type": "transform", "payload": payload})

@@ -556,7 +556,7 @@ impl LuaScriptHandlerRegistry {
                     && match (&h.pattern, identifier) {
                         (Some(pattern), Some(id)) => glob_match(pattern, id),
                         (Some(_), None) => false, // handler requires pattern match but caller provides no identifier
-                        (None, _) => true,         // no pattern = match all
+                        (None, _) => true,        // no pattern = match all
                     }
             })
             .cloned()
@@ -593,9 +593,7 @@ impl LuaScriptHandlerRegistry {
                 .expect("handler_functions: poisoned while executing Lua handler function");
             let key = handler_functions
                 .get(name)
-                .ok_or_else(|| {
-                    mlua::Error::RuntimeError(format!("Handler not found: {}", name))
-                })?;
+                .ok_or_else(|| mlua::Error::RuntimeError(format!("Handler not found: {}", name)))?;
             lua.registry_value(key)?
         };
 
@@ -2202,7 +2200,9 @@ end
             payload: serde_json::json!({}),
         };
 
-        let result = registry.execute_runtime_handler(&lua, "test_handler", &event).await;
+        let result = registry
+            .execute_runtime_handler(&lua, "test_handler", &event)
+            .await;
         assert!(result.is_ok());
     }
 
@@ -2233,7 +2233,9 @@ end
             payload: serde_json::json!({}),
         };
 
-        let result = registry.execute_runtime_handler(&lua, "cancel_handler", &event).await;
+        let result = registry
+            .execute_runtime_handler(&lua, "cancel_handler", &event)
+            .await;
         assert!(result.is_ok());
         match result.unwrap() {
             ScriptHandlerResult::Cancel { reason } => {
@@ -2293,7 +2295,9 @@ end
             payload: serde_json::json!({}),
         };
 
-        let result = registry.execute_runtime_handler(&lua, "nonexistent", &event).await;
+        let result = registry
+            .execute_runtime_handler(&lua, "nonexistent", &event)
+            .await;
         assert!(result.is_err());
     }
 
@@ -3025,7 +3029,9 @@ end
             args: "{}".to_string(),
         };
 
-        let result = execute_tool_display_start_hooks(&lua, &registry, &event).await.unwrap();
+        let result = execute_tool_display_start_hooks(&lua, &registry, &event)
+            .await
+            .unwrap();
         assert_eq!(
             result,
             Some(ToolDisplayStartHints {
@@ -3067,7 +3073,9 @@ end
             result: "Found 5 notes about authentication".to_string(),
         };
 
-        let result = execute_tool_display_complete_hooks(&lua, &registry, &event).await.unwrap();
+        let result = execute_tool_display_complete_hooks(&lua, &registry, &event)
+            .await
+            .unwrap();
         assert_eq!(
             result,
             Some(ToolDisplayCompleteHints {

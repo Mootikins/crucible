@@ -540,26 +540,23 @@ impl AgentManager {
         });
 
         current_content = match state.reactor.emit(pre_event).await {
-            Ok(EmitResult::Completed { event, .. }) => {
-                match &event {
-                    SessionEvent::Internal(inner)
-                        if matches!(inner.as_ref(), InternalSessionEvent::PreLlmCall { .. }) =>
-                    {
-                        let InternalSessionEvent::PreLlmCall { prompt, .. } = inner.as_ref()
-                        else {
-                            unreachable!()
-                        };
-                        prompt.clone()
-                    }
-                    _ => {
-                        warn!(
-                            session_id = %stream_ctx.session_id,
-                            "PreLlmCall handler returned unexpected event type, using original prompt"
-                        );
-                        current_content
-                    }
+            Ok(EmitResult::Completed { event, .. }) => match &event {
+                SessionEvent::Internal(inner)
+                    if matches!(inner.as_ref(), InternalSessionEvent::PreLlmCall { .. }) =>
+                {
+                    let InternalSessionEvent::PreLlmCall { prompt, .. } = inner.as_ref() else {
+                        unreachable!()
+                    };
+                    prompt.clone()
                 }
-            }
+                _ => {
+                    warn!(
+                        session_id = %stream_ctx.session_id,
+                        "PreLlmCall handler returned unexpected event type, using original prompt"
+                    );
+                    current_content
+                }
+            },
             Ok(EmitResult::Cancelled { by_handler, .. }) => {
                 warn!(
                     session_id = %stream_ctx.session_id,
@@ -915,7 +912,10 @@ impl AgentManager {
                 }
             }
 
-            for handler in state.registry.runtime_handlers_for("pre_tool_call", Some(&tool_call.name)) {
+            for handler in state
+                .registry
+                .runtime_handlers_for("pre_tool_call", Some(&tool_call.name))
+            {
                 let event = SessionEvent::Custom {
                     name: "pre_tool_call".to_string(),
                     payload: serde_json::json!({
@@ -1096,7 +1096,8 @@ impl AgentManager {
                 name: tool_call.name.clone(),
                 args: args.clone(),
             };
-            match execute_tool_before_execute_hooks(&state.lua, &state.registry, &hook_event).await {
+            match execute_tool_before_execute_hooks(&state.lua, &state.registry, &hook_event).await
+            {
                 Ok(Some(result)) => result.env,
                 Ok(None) => std::collections::HashMap::new(),
                 Err(error) => {
@@ -1200,7 +1201,9 @@ impl AgentManager {
                 args: args_str,
                 result: error_str.clone().unwrap_or_else(|| result_str.clone()),
             };
-            match execute_tool_display_complete_hooks(&state.lua, &state.registry, &hook_event).await {
+            match execute_tool_display_complete_hooks(&state.lua, &state.registry, &hook_event)
+                .await
+            {
                 Ok(Some(hints)) => {
                     if let Some(summary) = hints.summary {
                         event_result["summary"] = serde_json::json!(summary);
@@ -1843,11 +1846,10 @@ impl AgentManager {
                     "duration_ms": duration_ms,
                 }),
             };
-            if let Err(error) =
-                state
-                    .registry
-                    .execute_runtime_handler(&state.lua, &handler.name, &event)
-                    .await
+            if let Err(error) = state
+                .registry
+                .execute_runtime_handler(&state.lua, &handler.name, &event)
+                .await
             {
                 warn!(
                     session_id = %stream_ctx.session_id,

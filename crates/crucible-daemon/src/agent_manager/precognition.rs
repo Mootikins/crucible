@@ -42,7 +42,9 @@ impl AgentManager {
     ) -> Option<String> {
         use crucible_lua::ScriptHandlerResult;
 
-        let handlers = state.registry.runtime_handlers_for("precognition_format", None);
+        let handlers = state
+            .registry
+            .runtime_handlers_for("precognition_format", None);
         if handlers.is_empty() {
             return None;
         }
