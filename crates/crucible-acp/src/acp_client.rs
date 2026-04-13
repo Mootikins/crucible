@@ -38,12 +38,12 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use agent_client_protocol::{
     Client, ClientSideConnection, CreateTerminalRequest, CreateTerminalResponse, Error as AcpError,
-    ExtNotification, ExtRequest, ExtResponse, KillTerminalCommandRequest,
-    KillTerminalCommandResponse, ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalRequest,
-    ReleaseTerminalResponse, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, Result as AcpResult, SelectedPermissionOutcome, SessionNotification,
-    TerminalOutputRequest, TerminalOutputResponse, WaitForTerminalExitRequest,
-    WaitForTerminalExitResponse, WriteTextFileRequest, WriteTextFileResponse,
+    ExtNotification, ExtRequest, ExtResponse, KillTerminalRequest, KillTerminalResponse,
+    ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalRequest, ReleaseTerminalResponse,
+    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    Result as AcpResult, SelectedPermissionOutcome, SessionNotification, TerminalOutputRequest,
+    TerminalOutputResponse, WaitForTerminalExitRequest, WaitForTerminalExitResponse,
+    WriteTextFileRequest, WriteTextFileResponse,
 };
 
 use crucible_core::interaction::PermRequest;
@@ -323,11 +323,8 @@ impl Client for CrucibleClient {
         Err(AcpError::method_not_found())
     }
 
-    async fn kill_terminal_command(
-        &self,
-        _args: KillTerminalCommandRequest,
-    ) -> AcpResult<KillTerminalCommandResponse> {
-        tracing::warn!("kill_terminal_command not implemented");
+    async fn kill_terminal(&self, _args: KillTerminalRequest) -> AcpResult<KillTerminalResponse> {
+        tracing::warn!("kill_terminal not implemented");
         Err(AcpError::method_not_found())
     }
 

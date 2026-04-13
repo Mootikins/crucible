@@ -111,7 +111,7 @@ impl FolderDiscovery {
             source: e,
         })?;
 
-        let content_hash = format!("{:x}", Sha256::digest(content.as_bytes()));
+        let content_hash = hex::encode(Sha256::digest(content.as_bytes()));
 
         let source = SkillSource {
             agent: search_path.agent.clone(),
