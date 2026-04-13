@@ -106,10 +106,11 @@ impl InProcessMcpHost {
         let service = StreamableHttpService::new(
             move || Ok(mcp_server.clone()),
             LocalSessionManager::default().into(),
-            StreamableHttpServerConfig {
-                sse_keep_alive: Some(std::time::Duration::from_secs(30)),
-                cancellation_token: shutdown.clone(),
-                ..Default::default()
+            {
+                let mut cfg = StreamableHttpServerConfig::default();
+                cfg.sse_keep_alive = Some(std::time::Duration::from_secs(30));
+                cfg.cancellation_token = shutdown.clone();
+                cfg
             },
         );
 
