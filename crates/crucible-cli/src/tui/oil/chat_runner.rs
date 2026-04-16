@@ -11,13 +11,11 @@ use anyhow::Result;
 use crossterm::event::{Event as CtEvent, EventStream, KeyCode, KeyModifiers};
 use crucible_core::events::SessionEvent;
 use crucible_core::interaction::InteractionRequest;
-use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatResult, SubagentEventType};
+use crucible_core::traits::chat::AgentHandle;
 use crucible_lua::SessionCommand;
 use crucible_oil::focus::FocusContext;
 use crucible_oil::terminal::Terminal;
 use crucible_oil::FrameRenderer;
-use futures::stream::BoxStream;
-use futures::StreamExt;
 use std::io;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -73,7 +71,6 @@ struct HandleSelectedEventParams<'a, A: AgentHandle> {
     pub app: &'a mut OilChatApp,
     pub agent: &'a mut A,
     pub bridge: &'a AgentEventBridge,
-    pub active_stream: &'a mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
     pub msg_tx: &'a mpsc::UnboundedSender<ChatAppMsg>,
     pub background_tasks: &'a mut Vec<JoinHandle<()>>,
 }
@@ -84,7 +81,6 @@ struct HandleSelectOutcomeParams<'a, A: AgentHandle> {
     pub app: &'a mut OilChatApp,
     pub agent: &'a mut A,
     pub bridge: &'a AgentEventBridge,
-    pub active_stream: &'a mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
     pub msg_tx: &'a mpsc::UnboundedSender<ChatAppMsg>,
     pub background_tasks: &'a mut Vec<JoinHandle<()>>,
 }
@@ -95,7 +91,6 @@ struct ProcessActionParams<'a, A: AgentHandle> {
     pub app: &'a mut OilChatApp,
     pub agent: &'a mut A,
     pub bridge: &'a AgentEventBridge,
-    pub active_stream: &'a mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
     pub msg_tx: &'a mpsc::UnboundedSender<ChatAppMsg>,
     pub background_tasks: &'a mut Vec<JoinHandle<()>>,
 }
@@ -579,7 +574,6 @@ impl OilChatRunner {
         &mut self,
         mut params: EventLoopParams<'_, A>,
     ) -> Result<()> {
-        let mut active_stream: Option<BoxStream<'static, ChatResult<ChatChunk>>> = None;
         let mut event_stream = EventStream::new();
         let mut tick_interval = tokio::time::interval(self.tick_rate);
         let mut session_cmd_rx = self.session_cmd_rx.take();
@@ -595,14 +589,16 @@ impl OilChatRunner {
         loop {
             self.render_app_frame(params.app)?;
 
-            match self.drain_phase_outcome(
-                params.app,
-                params.agent,
-                params.bridge,
-                &mut active_stream,
-                &mut params.msg_rx,
-                &mut replay_auto_exit_deadline,
-            ) {
+            match self
+                .drain_phase_outcome(
+                    params.app,
+                    params.agent,
+                    params.bridge,
+                    &mut params.msg_rx,
+                    &mut replay_auto_exit_deadline,
+                )
+                .await
+            {
                 DrainPhaseOutcome::Quit => return Ok(()),
                 DrainPhaseOutcome::Continue => continue,
                 DrainPhaseOutcome::Wait => {}
@@ -611,13 +607,8 @@ impl OilChatRunner {
             let select_outcome = tokio::select! {
                 biased;
 
-                event_opt = event_stream.next() => {
+                event_opt = futures::StreamExt::next(&mut event_stream) => {
                     self.handle_terminal_event(event_opt)?
-                }
-
-                Some(chunk_result) = Self::next_active_chunk(&mut active_stream) => {
-                    self.handle_stream_chunk(chunk_result, &mut active_stream, &params.msg_tx);
-                    EventLoopSelectOutcome::Continue
                 }
 
                 _ = tick_interval.tick() => {
@@ -640,7 +631,6 @@ impl OilChatRunner {
                             app: params.app,
                             agent: params.agent,
                             bridge: params.bridge,
-                            active_stream: &mut active_stream,
                             msg_tx: &params.msg_tx,
                             background_tasks: params.background_tasks,
                         }).await;
@@ -666,7 +656,6 @@ impl OilChatRunner {
                     app: params.app,
                     agent: params.agent,
                     bridge: params.bridge,
-                    active_stream: &mut active_stream,
                     msg_tx: &params.msg_tx,
                     background_tasks: params.background_tasks,
                 })
@@ -679,23 +668,17 @@ impl OilChatRunner {
         Ok(())
     }
 
-    fn drain_phase_outcome<A: AgentHandle>(
+    async fn drain_phase_outcome<A: AgentHandle>(
         &mut self,
         app: &mut OilChatApp,
         agent: &mut A,
         bridge: &AgentEventBridge,
-        active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
         msg_rx: &mut mpsc::UnboundedReceiver<ChatAppMsg>,
         replay_auto_exit_deadline: &mut Option<tokio::time::Instant>,
     ) -> DrainPhaseOutcome {
-        let drain_outcome = self.drain_pending_messages(
-            app,
-            agent,
-            bridge,
-            active_stream,
-            msg_rx,
-            replay_auto_exit_deadline,
-        );
+        let drain_outcome = self
+            .drain_pending_messages(app, agent, bridge, msg_rx, replay_auto_exit_deadline)
+            .await;
 
         if drain_outcome == DrainMessagesOutcome::Quit {
             return DrainPhaseOutcome::Quit;
@@ -741,7 +724,6 @@ impl OilChatRunner {
                 app: params.app,
                 agent: params.agent,
                 bridge: params.bridge,
-                active_stream: params.active_stream,
                 msg_tx: params.msg_tx,
                 background_tasks: params.background_tasks,
             })
@@ -769,171 +751,10 @@ impl OilChatRunner {
             app: params.app,
             agent: params.agent,
             bridge: params.bridge,
-            active_stream: params.active_stream,
             msg_tx: params.msg_tx,
             background_tasks: params.background_tasks,
         })
         .await
-    }
-
-    fn handle_stream_chunk(
-        &self,
-        chunk_result: ChatResult<ChatChunk>,
-        active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
-        msg_tx: &mpsc::UnboundedSender<ChatAppMsg>,
-    ) {
-        match chunk_result {
-            Ok(chunk) => {
-                tracing::debug!(
-                    delta_len = chunk.delta.len(),
-                    done = chunk.done,
-                    has_tool_calls = chunk.tool_calls.is_some(),
-                    has_tool_results = chunk.tool_results.is_some(),
-                    "Received chunk"
-                );
-
-                // Process thinking before text — the model reasons first,
-                // then produces output. Reversing this causes the thinking
-                // block to appear after text that arrived in the same chunk.
-                if let Some(ref reasoning) = chunk.reasoning {
-                    if !reasoning.is_empty()
-                        && msg_tx
-                            .send(ChatAppMsg::ThinkingDelta(reasoning.clone()))
-                            .is_err()
-                    {
-                        tracing::warn!("UI channel closed, ThinkingDelta dropped");
-                    }
-                }
-
-                if !chunk.delta.is_empty()
-                    && msg_tx.send(ChatAppMsg::TextDelta(chunk.delta)).is_err()
-                {
-                    tracing::warn!("UI channel closed, TextDelta dropped");
-                }
-
-                if let Some(ref tool_calls) = chunk.tool_calls {
-                    for tc in tool_calls {
-                        let args_str = match &tc.arguments {
-                            Some(v) if !v.is_null() => v.to_string(),
-                            _ => String::new(),
-                        };
-                        if msg_tx
-                            .send(ChatAppMsg::ToolCall {
-                                name: tc.name.clone(),
-                                args: args_str,
-                                call_id: tc.id.clone(),
-                                description: None,
-                                source: None,
-                                lua_primary_arg: None,
-                            })
-                            .is_err()
-                        {
-                            tracing::warn!(tool = %tc.name, "UI channel closed, ToolCall dropped");
-                        }
-                    }
-                }
-
-                if let Some(ref tool_results) = chunk.tool_results {
-                    for tr in tool_results {
-                        if let Some(ref error) = tr.error {
-                            let cleaned =
-                                crucible_core::error_utils::strip_tool_error_prefix(error);
-                            let _ = msg_tx.send(ChatAppMsg::ToolResultError {
-                                name: tr.name.clone(),
-                                error: cleaned,
-                                call_id: tr.call_id.clone(),
-                            });
-                        } else if tr.result.starts_with("Error: ") {
-                            let cleaned = crucible_core::error_utils::strip_tool_error_prefix(
-                                tr.result.strip_prefix("Error: ").unwrap_or(&tr.result),
-                            );
-                            let _ = msg_tx.send(ChatAppMsg::ToolResultError {
-                                name: tr.name.clone(),
-                                error: cleaned,
-                                call_id: tr.call_id.clone(),
-                            });
-                        } else {
-                            if !tr.result.is_empty() {
-                                let _ = msg_tx.send(ChatAppMsg::ToolResultDelta {
-                                    name: tr.name.clone(),
-                                    delta: tr.result.clone(),
-                                    call_id: tr.call_id.clone(),
-                                });
-                            }
-                            let _ = msg_tx.send(ChatAppMsg::ToolResultComplete {
-                                name: tr.name.clone(),
-                                call_id: tr.call_id.clone(),
-                            });
-                        }
-                    }
-                }
-
-                if let Some(ref subagent_events) = chunk.subagent_events {
-                    for event in subagent_events {
-                        let msg = match event.event_type {
-                            SubagentEventType::Spawned => ChatAppMsg::SubagentSpawned {
-                                id: event.id.clone(),
-                                prompt: event.prompt.clone().unwrap_or_default(),
-                            },
-                            SubagentEventType::Completed => ChatAppMsg::SubagentCompleted {
-                                id: event.id.clone(),
-                                summary: event.summary.clone().unwrap_or_default(),
-                            },
-                            SubagentEventType::Failed => ChatAppMsg::SubagentFailed {
-                                id: event.id.clone(),
-                                error: event
-                                    .error
-                                    .clone()
-                                    .unwrap_or_else(|| "Unknown error".to_string()),
-                            },
-                        };
-                        if msg_tx.send(msg).is_err() {
-                            tracing::warn!(
-                                id = %event.id,
-                                event_type = ?event.event_type,
-                                "UI channel closed, SubagentEvent dropped"
-                            );
-                        }
-                    }
-                }
-
-                if let Some(ref usage) = chunk.usage {
-                    if msg_tx
-                        .send(ChatAppMsg::ContextUsage {
-                            used: usage.total_tokens as usize,
-                            total: self.context_limit.load(Ordering::Relaxed),
-                        })
-                        .is_err()
-                    {
-                        tracing::warn!("UI channel closed, ContextUsage dropped");
-                    }
-                }
-
-                if let Some(notes_count) = chunk.precognition_notes_count {
-                    let notes = chunk.precognition_notes.unwrap_or_default();
-                    if notes_count > 0
-                        && msg_tx
-                            .send(ChatAppMsg::PrecognitionResult { notes_count, notes })
-                            .is_err()
-                    {
-                        tracing::warn!("UI channel closed, PrecognitionResult dropped");
-                    }
-                }
-
-                if chunk.done {
-                    *active_stream = None;
-                    if msg_tx.send(ChatAppMsg::StreamComplete).is_err() {
-                        tracing::warn!("UI channel closed, StreamComplete dropped");
-                    }
-                }
-            }
-            Err(e) => {
-                *active_stream = None;
-                if msg_tx.send(ChatAppMsg::Error(e.to_string())).is_err() {
-                    tracing::warn!("UI channel closed, Error dropped");
-                }
-            }
-        }
     }
 
     fn handle_terminal_event(
@@ -972,15 +793,6 @@ impl OilChatRunner {
             app.on_message(msg)
         } else {
             Action::Continue
-        }
-    }
-
-    async fn next_active_chunk(
-        active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
-    ) -> Option<ChatResult<ChatChunk>> {
-        match active_stream {
-            Some(stream) => stream.next().await,
-            None => std::future::pending().await,
         }
     }
 
@@ -1050,35 +862,43 @@ impl OilChatRunner {
         }
     }
 
-    fn process_message<A: AgentHandle>(
+    /// Route a `ChatAppMsg` to the app reducer, and — in live mode — kick
+    /// off any side-effects (e.g. sending a user message via RPC).
+    ///
+    /// Live sends are fire-and-forget: the daemon broadcasts the ensuing
+    /// turn as `SessionEvent`s, which `live_event_consumer` feeds back into
+    /// this channel. In replay mode the daemon already drives everything,
+    /// so `UserMessage` is purely a display signal.
+    async fn process_message<A: AgentHandle>(
         msg: &ChatAppMsg,
         app: &mut OilChatApp,
         agent: &mut A,
         bridge: &AgentEventBridge,
-        active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
         is_replay: bool,
     ) -> Action<ChatAppMsg> {
         match msg {
             ChatAppMsg::UserMessage(content) => {
-                if !is_replay && active_stream.is_none() && !app.precognition() {
+                if !is_replay && !app.is_streaming() && !app.precognition() {
                     bridge.ring.push(SessionEvent::MessageReceived {
                         content: content.clone(),
                         participant_id: "user".to_string(),
                     });
-                    let stream = agent.send_message_stream(content.clone());
-                    *active_stream = Some(stream);
+                    if let Err(e) = agent.send_message_fire_and_forget(content.clone()).await {
+                        tracing::warn!(error = %e, "send_message_fire_and_forget failed");
+                    }
                 }
             }
             ChatAppMsg::EnrichedMessage {
                 original, enriched, ..
             } => {
-                if !is_replay && active_stream.is_none() {
+                if !is_replay && !app.is_streaming() {
                     bridge.ring.push(SessionEvent::MessageReceived {
                         content: original.clone(),
                         participant_id: "user".to_string(),
                     });
-                    let stream = agent.send_message_stream(enriched.clone());
-                    *active_stream = Some(stream);
+                    if let Err(e) = agent.send_message_fire_and_forget(enriched.clone()).await {
+                        tracing::warn!(error = %e, "send_message_fire_and_forget failed");
+                    }
                 }
             }
             ChatAppMsg::FetchModels => {
@@ -1090,23 +910,21 @@ impl OilChatRunner {
     }
 
     #[cfg(test)]
-    pub(crate) fn process_message_for_test<A: AgentHandle>(
+    pub(crate) async fn process_message_for_test<A: AgentHandle>(
         msg: &ChatAppMsg,
         app: &mut OilChatApp,
         agent: &mut A,
         bridge: &AgentEventBridge,
-        active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
         is_replay: bool,
     ) -> Action<ChatAppMsg> {
-        Self::process_message(msg, app, agent, bridge, active_stream, is_replay)
+        Self::process_message(msg, app, agent, bridge, is_replay).await
     }
 
-    fn drain_pending_messages<A: AgentHandle>(
+    async fn drain_pending_messages<A: AgentHandle>(
         &mut self,
         app: &mut OilChatApp,
         agent: &mut A,
         bridge: &AgentEventBridge,
-        active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
         msg_rx: &mut mpsc::UnboundedReceiver<ChatAppMsg>,
         replay_auto_exit_deadline: &mut Option<tokio::time::Instant>,
     ) -> DrainMessagesOutcome {
@@ -1125,19 +943,12 @@ impl OilChatRunner {
             }
 
             // Unified message processing for all paths.
-            // In replay mode, process_message skips send_message_stream so
-            // the recorded events drive the UI without hitting the daemon.
-            let mut action =
-                Self::process_message(&msg, app, agent, bridge, active_stream, self.is_replay);
+            // In replay mode, process_message skips the RPC send so the
+            // recorded events drive the UI without hitting the daemon.
+            let mut action = Self::process_message(&msg, app, agent, bridge, self.is_replay).await;
             while let Action::Send(follow_up) = action {
-                action = Self::process_message(
-                    &follow_up,
-                    app,
-                    agent,
-                    bridge,
-                    active_stream,
-                    self.is_replay,
-                );
+                action =
+                    Self::process_message(&follow_up, app, agent, bridge, self.is_replay).await;
             }
             if action.is_quit() {
                 return DrainMessagesOutcome::Quit;
@@ -1173,7 +984,7 @@ impl OilChatRunner {
                             );
                             return Ok(false);
                         }
-                        if params.active_stream.is_some() {
+                        if params.app.is_streaming() {
                             params.app.add_notification(
                                 crucible_core::types::Notification::warning(
                                     "Cannot undo while streaming".to_string(),
@@ -1224,25 +1035,21 @@ impl OilChatRunner {
                             );
                             return Ok(false);
                         }
-                        if params.active_stream.is_some() {
+                        if params.app.is_streaming() {
                             if let Err(e) = params.agent.cancel().await {
                                 tracing::warn!(error = %e, "Failed to cancel agent stream");
                             }
-                            *params.active_stream = None;
                         }
                         params.agent.clear_history().await;
                         params.app.reset_session();
                         tracing::info!("New session started (history cleared)");
                     }
                     ChatAppMsg::StreamCancelled => {
-                        if params.active_stream.is_some() {
+                        if params.app.is_streaming() {
                             if let Err(e) = params.agent.cancel().await {
                                 tracing::warn!(error = %e, "Failed to cancel agent stream on daemon");
                             }
-                            tracing::info!(
-                                "Dropping active stream due to cancellation (from action)"
-                            );
-                            *params.active_stream = None;
+                            tracing::info!("Cancelled active turn via session.cancel RPC");
                         }
                     }
                     ChatAppMsg::SwitchModel(model_id) => {
@@ -1565,13 +1372,18 @@ impl OilChatRunner {
                         }
                     }
                     ChatAppMsg::UserMessage(ref content) => {
-                        if params.active_stream.is_none() {
+                        if !self.is_replay && !params.app.is_streaming() {
                             params.bridge.ring.push(SessionEvent::MessageReceived {
                                 content: content.clone(),
                                 participant_id: "user".to_string(),
                             });
-                            let stream = params.agent.send_message_stream(content.clone());
-                            *params.active_stream = Some(stream);
+                            if let Err(e) = params
+                                .agent
+                                .send_message_fire_and_forget(content.clone())
+                                .await
+                            {
+                                tracing::warn!(error = %e, "send_message_fire_and_forget failed");
+                            }
                         }
                     }
                     ChatAppMsg::ReloadPlugin(ref name) if !self.is_replay => {
@@ -1656,8 +1468,11 @@ impl OilChatRunner {
                     }
                     ChatAppMsg::ExecuteSlashCommand(ref cmd) if !self.is_replay => {
                         tracing::info!(command = %cmd, "Forwarding slash command as user message");
-                        let stream = params.agent.send_message_stream(cmd.clone());
-                        *params.active_stream = Some(stream);
+                        if let Err(e) =
+                            params.agent.send_message_fire_and_forget(cmd.clone()).await
+                        {
+                            tracing::warn!(error = %e, "send_message_fire_and_forget failed for slash command");
+                        }
                     }
                     ChatAppMsg::ExportSession(ref export_path) if !self.is_replay => {
                         let session_dir = match params.app.session_dir() {
@@ -1714,7 +1529,6 @@ impl OilChatRunner {
                     app: params.app,
                     agent: params.agent,
                     bridge: params.bridge,
-                    active_stream: params.active_stream,
                     msg_tx: params.msg_tx,
                     background_tasks: params.background_tasks,
                 }))
@@ -1727,7 +1541,6 @@ impl OilChatRunner {
                         app: params.app,
                         agent: params.agent,
                         bridge: params.bridge,
-                        active_stream: params.active_stream,
                         msg_tx: params.msg_tx,
                         background_tasks: params.background_tasks,
                     }))

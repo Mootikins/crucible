@@ -1,4 +1,4 @@
-//! Tests that `process_message` gates `send_message_stream` on `is_replay`.
+//! Tests that `process_message` gates fire-and-forget sends on `is_replay`.
 //!
 //! Replay mode delivers user messages as SessionEvent broadcasts from the
 //! daemon's replay session — the TUI must not re-send them via RPC. This
@@ -34,14 +34,19 @@ impl AgentHandle for CountingAgent {
         &mut self,
         _message: String,
     ) -> BoxStream<'static, ChatResult<ChatChunk>> {
+        // Not used on this path post-Phase 4, but the trait still requires it.
+        // If ever called, count it as a send so regressions to the old
+        // ChatChunk path get flagged.
         self.sends.fetch_add(1, Ordering::Relaxed);
         Box::pin(futures::stream::empty())
     }
 
-    async fn set_mode_str(
-        &mut self,
-        _mode_id: &str,
-    ) -> ChatResult<()> {
+    async fn send_message_fire_and_forget(&mut self, _message: String) -> ChatResult<()> {
+        self.sends.fetch_add(1, Ordering::Relaxed);
+        Ok(())
+    }
+
+    async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
         Ok(())
     }
 
@@ -50,43 +55,39 @@ impl AgentHandle for CountingAgent {
     }
 }
 
-#[test]
-fn replay_user_message_does_not_invoke_send_message_stream() {
+#[tokio::test]
+async fn replay_user_message_does_not_invoke_send() {
     let mut agent = CountingAgent::new();
     let mut app = OilChatApp::default();
     let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
-    let mut active_stream = None;
 
     let _ = OilChatRunner::process_message_for_test(
         &ChatAppMsg::UserMessage("hi".into()),
         &mut app,
         &mut agent,
         &bridge,
-        &mut active_stream,
         /* is_replay */ true,
-    );
+    )
+    .await;
 
     assert_eq!(agent.sends.load(Ordering::Relaxed), 0);
-    assert!(active_stream.is_none());
 }
 
-#[test]
-fn live_user_message_invokes_send_message_stream_once() {
+#[tokio::test]
+async fn live_user_message_invokes_send_once() {
     let mut agent = CountingAgent::new();
     let mut app = OilChatApp::default();
     app.set_precognition(false);
     let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
-    let mut active_stream = None;
 
     let _ = OilChatRunner::process_message_for_test(
         &ChatAppMsg::UserMessage("hi".into()),
         &mut app,
         &mut agent,
         &bridge,
-        &mut active_stream,
         /* is_replay */ false,
-    );
+    )
+    .await;
 
     assert_eq!(agent.sends.load(Ordering::Relaxed), 1);
-    assert!(active_stream.is_some());
 }
