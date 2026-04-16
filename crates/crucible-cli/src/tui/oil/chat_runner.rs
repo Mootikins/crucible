@@ -2083,6 +2083,58 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
     }
 }
 
+/// Stateful SessionEvent → ChatAppMsg converter.
+///
+/// Tracks `saw_text_delta` per turn so `message_complete.full_response`
+/// only produces a TextDelta when no granular text_deltas preceded it
+/// (the "coarse resume" case — daemon drops text_delta during storage
+/// compaction, keeping only the final message_complete snapshot).
+pub struct SessionEventStream {
+    saw_text_delta: bool,
+}
+
+impl SessionEventStream {
+    pub fn new() -> Self {
+        Self {
+            saw_text_delta: false,
+        }
+    }
+
+    pub fn translate(
+        &mut self,
+        event_type: &str,
+        data: &serde_json::Value,
+    ) -> Vec<ChatAppMsg> {
+        if event_type == "text_delta" {
+            self.saw_text_delta = true;
+        } else if event_type == "user_message" {
+            self.saw_text_delta = false;
+        }
+
+        // Late thinking summaries arrive after text_delta and
+        // duplicate incremental thinking deltas — drop them.
+        if event_type == "thinking" && self.saw_text_delta {
+            return Vec::new();
+        }
+
+        let raw = session_event_to_chat_msgs(event_type, data);
+
+        if self.saw_text_delta && event_type == "message_complete" {
+            raw.into_iter()
+                .filter(|m| !matches!(m, ChatAppMsg::TextDelta(_)))
+                .collect()
+        } else {
+            raw
+        }
+    }
+}
+
+impl Default for SessionEventStream {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub(crate) async fn replay_event_consumer(
     replay_session_id: String,
     mut event_rx: tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>,
