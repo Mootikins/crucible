@@ -1043,10 +1043,11 @@ impl OilChatRunner {
         agent: &mut A,
         bridge: &AgentEventBridge,
         active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
+        is_replay: bool,
     ) -> Action<ChatAppMsg> {
         match msg {
             ChatAppMsg::UserMessage(content) => {
-                if active_stream.is_none() && !app.precognition() {
+                if !is_replay && active_stream.is_none() && !app.precognition() {
                     bridge.ring.push(SessionEvent::MessageReceived {
                         content: content.clone(),
                         participant_id: "user".to_string(),
@@ -1058,7 +1059,7 @@ impl OilChatRunner {
             ChatAppMsg::EnrichedMessage {
                 original, enriched, ..
             } => {
-                if active_stream.is_none() {
+                if !is_replay && active_stream.is_none() {
                     bridge.ring.push(SessionEvent::MessageReceived {
                         content: original.clone(),
                         participant_id: "user".to_string(),
@@ -1073,6 +1074,18 @@ impl OilChatRunner {
             _ => {}
         }
         app.on_message(msg.clone())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn process_message_for_test<A: AgentHandle>(
+        msg: &ChatAppMsg,
+        app: &mut OilChatApp,
+        agent: &mut A,
+        bridge: &AgentEventBridge,
+        active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
+        is_replay: bool,
+    ) -> Action<ChatAppMsg> {
+        Self::process_message(msg, app, agent, bridge, active_stream, is_replay)
     }
 
     fn drain_pending_messages<A: AgentHandle>(
@@ -1099,11 +1112,19 @@ impl OilChatRunner {
             }
 
             // Unified message processing for all paths.
-            // In replay mode, process_message still runs but the agent handle
-            // is a replay agent that doesn't re-send to LLM.
-            let mut action = Self::process_message(&msg, app, agent, bridge, active_stream);
+            // In replay mode, process_message skips send_message_stream so
+            // the recorded events drive the UI without hitting the daemon.
+            let mut action =
+                Self::process_message(&msg, app, agent, bridge, active_stream, self.is_replay);
             while let Action::Send(follow_up) = action {
-                action = Self::process_message(&follow_up, app, agent, bridge, active_stream);
+                action = Self::process_message(
+                    &follow_up,
+                    app,
+                    agent,
+                    bridge,
+                    active_stream,
+                    self.is_replay,
+                );
             }
             if action.is_quit() {
                 return DrainMessagesOutcome::Quit;

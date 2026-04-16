@@ -23,6 +23,7 @@ mod graduation_tests;
 mod inter_frame_invariant_tests;
 mod message_routing_tests;
 mod rendering_regression_tests;
+mod replay_mode_tests;
 mod session_event_stream_tests;
 mod spacing_tests;
 mod visual_inspection;
