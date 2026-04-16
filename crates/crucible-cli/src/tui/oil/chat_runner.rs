@@ -6,7 +6,7 @@ use crate::tui::oil::chat_app::{
 };
 use crate::tui::oil::event::Event;
 use crate::tui::oil::theme;
-use anyhow::{Context, Result};
+use anyhow::Result;
 #[allow(unused_imports)] // WIP: KeyCode, KeyModifiers not yet used
 use crossterm::event::{Event as CtEvent, EventStream, KeyCode, KeyModifiers};
 use crucible_core::events::SessionEvent;
@@ -389,7 +389,6 @@ impl OilChatRunner {
             let (mut agent, replay_session_id, event_rx) =
                 crate::factories::create_daemon_replay_agent(&replay_path, self.replay_speed)
                     .await?;
-            let user_msgs = extract_user_messages_from_recording(&replay_path)?;
 
             tracing::info!(
                 session_id = %replay_session_id,
@@ -398,16 +397,9 @@ impl OilChatRunner {
             );
 
             self.is_replay = true;
-            self.replay_remaining_completes = user_msgs.len().max(1);
+            self.replay_remaining_completes = 1;
             app.set_precognition(false);
             app.set_status("Replay");
-
-            if let Some((first, rest)) = user_msgs.split_first() {
-                let _ = msg_tx.send(ChatAppMsg::UserMessage(first.clone()));
-                for msg in rest {
-                    let _ = msg_tx.send(ChatAppMsg::QueueMessage(msg.clone()));
-                }
-            }
 
             let msg_tx_clone = msg_tx.clone();
             background_tasks.push(tokio::spawn(replay_event_consumer(
@@ -1879,45 +1871,6 @@ impl OilChatRunner {
             _ => None,
         }
     }
-}
-
-fn extract_user_messages_from_recording(path: &std::path::Path) -> Result<Vec<String>> {
-    use std::io::{BufRead, BufReader};
-
-    let file = std::fs::File::open(path)
-        .with_context(|| format!("Failed to open replay file {}", path.display()))?;
-    let reader = BufReader::new(file);
-    let mut lines = reader.lines();
-
-    let Some(header_line) = lines.next() else {
-        return Ok(Vec::new());
-    };
-
-    let _header_line = header_line
-        .with_context(|| format!("Failed reading replay header line from {}", path.display()))?;
-
-    let mut user_messages = Vec::new();
-    for line in lines {
-        let line = line
-            .with_context(|| format!("Failed reading replay event line from {}", path.display()))?;
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        if let Ok(event) = serde_json::from_str::<serde_json::Value>(&line) {
-            if event.get("event").and_then(|v| v.as_str()) == Some("user_message") {
-                if let Some(content) = event
-                    .get("data")
-                    .and_then(|d| d.get("content"))
-                    .and_then(|c| c.as_str())
-                {
-                    user_messages.push(content.to_string());
-                }
-            }
-        }
-    }
-
-    Ok(user_messages)
 }
 
 /// Convert a session event into `ChatAppMsg`(s) for the TUI.
