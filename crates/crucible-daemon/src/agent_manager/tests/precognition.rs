@@ -1,5 +1,4 @@
 use super::*;
-use crucible_core::storage::NoteStore;
 
 #[tokio::test]
 async fn test_precognition_skipped_when_disabled() {

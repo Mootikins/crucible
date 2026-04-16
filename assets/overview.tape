@@ -13,6 +13,6 @@ Set Padding 20
 Set TypingSpeed 40ms
 Set PlaybackSpeed 2
 
-Type "cru --version && cru stats -C assets/demo-config.toml --no-process"
+Type "cru --version && cru stats --standalone"
 Enter
 Sleep 5s
