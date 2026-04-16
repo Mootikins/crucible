@@ -360,7 +360,12 @@ impl ChatSession {
     pub async fn run_deferred<F, Fut, A>(&mut self, create_agent: F) -> Result<()>
     where
         F: Fn(crate::tui::AgentSelection) -> Fut,
-        Fut: std::future::Future<Output = Result<A>>,
+        Fut: std::future::Future<
+            Output = Result<(
+                A,
+                Option<tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>>,
+            )>,
+        >,
         A: AgentHandle,
     {
         let _session_folder = self.core.session_folder();

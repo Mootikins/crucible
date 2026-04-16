@@ -716,7 +716,9 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
 
             match selection {
                 AgentSelection::Acp(_) | AgentSelection::Internal => {
-                    factories::create_agent(&config, params).await
+                    let (handle, _session_id, event_rx) =
+                        factories::create_daemon_agent_with_events(&config, &params).await?;
+                    Ok((handle, Some(event_rx)))
                 }
                 AgentSelection::Cancelled => {
                     anyhow::bail!("Agent selection was cancelled")

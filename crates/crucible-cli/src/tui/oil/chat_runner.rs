@@ -325,7 +325,12 @@ impl OilChatRunner {
     ) -> Result<()>
     where
         F: Fn(AgentSelection) -> Fut,
-        Fut: std::future::Future<Output = Result<A>>,
+        Fut: std::future::Future<
+            Output = Result<(
+                A,
+                Option<mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>>,
+            )>,
+        >,
         A: AgentHandle,
     {
         self.terminal.enter()?;
@@ -430,11 +435,27 @@ impl OilChatRunner {
         }
 
         let selection = self.discover_agent().await;
-        let mut agent = create_agent(selection).await?;
+        let (mut agent, live_event_rx) = create_agent(selection).await?;
         self.is_replay = false;
         self.replay_remaining_completes = 0;
 
         app.set_status("Ready");
+
+        // Spawn the live SessionEvent consumer if the factory handed us a
+        // raw event receiver. This is the unified event path: the daemon's
+        // broadcast flows through SessionEventStream → ChatAppMsg, matching
+        // replay and resume. Live turns do not consume ChatChunk streams.
+        if let Some(event_rx) = live_event_rx {
+            let session_id = agent.session_id().unwrap_or("").to_string();
+            let msg_tx_live = msg_tx.clone();
+            let context_limit = self.context_limit.clone();
+            background_tasks.push(tokio::spawn(live_event_consumer(
+                session_id,
+                event_rx,
+                msg_tx_live,
+                context_limit,
+            )));
+        }
 
         if !self.initial_sets.is_empty() {
             for effect in std::mem::take(&mut self.initial_sets) {
@@ -2190,18 +2211,35 @@ impl Default for SessionEventStream {
     }
 }
 
-pub(crate) async fn replay_event_consumer(
-    replay_session_id: String,
+/// Shared event-pump used by both replay and live consumers.
+///
+/// Filters out events for other sessions via `session_filter`, feeds the
+/// survivors through `SessionEventStream`, and forwards the resulting
+/// `ChatAppMsg`s to the app's event channel. Returns when `event_rx`
+/// closes, the filter rejects an event that the caller wants to stop on
+/// (via returning `None` from `on_event`), or `msg_tx` closes.
+///
+/// `on_event` lets the replay path recognize `replay_complete` and emit
+/// a terminal Status message. Live mode passes a no-op.
+async fn consume_session_events<F, E>(
     mut event_rx: tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>,
     msg_tx: tokio::sync::mpsc::UnboundedSender<ChatAppMsg>,
-) {
+    context_limit: Option<Arc<AtomicUsize>>,
+    session_filter: F,
+    mut on_event: E,
+) where
+    F: Fn(&crucible_daemon::SessionEvent) -> bool,
+    E: FnMut(&crucible_daemon::SessionEvent, &tokio::sync::mpsc::UnboundedSender<ChatAppMsg>) -> bool,
+{
     let mut stream = SessionEventStream::new();
+    if let Some(limit) = context_limit {
+        stream = stream.with_context_limit(limit);
+    }
     while let Some(event) = event_rx.recv().await {
-        if event.session_id != replay_session_id {
+        if !session_filter(&event) {
             continue;
         }
-        if event.event_type == "replay_complete" {
-            let _ = msg_tx.send(ChatAppMsg::Status("Replay complete".to_string()));
+        if !on_event(&event, &msg_tx) {
             return;
         }
         for msg in stream.translate(&event.event_type, &event.data) {
@@ -2210,6 +2248,63 @@ pub(crate) async fn replay_event_consumer(
             }
         }
     }
+}
+
+pub(crate) async fn replay_event_consumer(
+    replay_session_id: String,
+    event_rx: tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>,
+    msg_tx: tokio::sync::mpsc::UnboundedSender<ChatAppMsg>,
+) {
+    let filter_id = replay_session_id.clone();
+    consume_session_events(
+        event_rx,
+        msg_tx,
+        None,
+        move |event| event.session_id == filter_id,
+        |event, tx| {
+            if event.event_type == "replay_complete" {
+                let _ = tx.send(ChatAppMsg::Status("Replay complete".to_string()));
+                false
+            } else {
+                true
+            }
+        },
+    )
+    .await;
+}
+
+/// Live session event consumer.
+///
+/// Drains the daemon's SessionEvent broadcast for `live_session_id` through
+/// the unified `SessionEventStream`. Replaces the old ChatChunk-based path:
+/// the TUI no longer consumes `AgentHandle::send_message_stream`, instead
+/// observing turns through this channel — same as replay and resume.
+pub(crate) async fn live_event_consumer(
+    live_session_id: String,
+    event_rx: tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>,
+    msg_tx: tokio::sync::mpsc::UnboundedSender<ChatAppMsg>,
+    context_limit: Arc<AtomicUsize>,
+) {
+    let filter_id = live_session_id.clone();
+    consume_session_events(
+        event_rx,
+        msg_tx,
+        Some(context_limit),
+        move |event| event.session_id == filter_id,
+        |event, tx| {
+            // Daemon reports fatal turn failures via `ended { reason: "error: ..." }`.
+            // Surface them as an Error ChatAppMsg so the status bar shows the cause.
+            if event.event_type == "ended" {
+                if let Some(reason) = event.data.get("reason").and_then(|v| v.as_str()) {
+                    if let Some(err) = reason.strip_prefix("error: ") {
+                        let _ = tx.send(ChatAppMsg::Error(err.to_string()));
+                    }
+                }
+            }
+            true
+        },
+    )
+    .await;
 }
 
 // TODO: rebuild chat_runner tests (disabled during component rewrite)
