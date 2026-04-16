@@ -34,6 +34,13 @@ pub struct DaemonAgentHandle {
     router_session_id: Arc<tokio::sync::watch::Sender<String>>,
     streaming_rx: Arc<Mutex<mpsc::UnboundedReceiver<SessionEvent>>>,
     interaction_rx: Option<mpsc::UnboundedReceiver<InteractionEvent>>,
+    /// Raw SessionEvent receiver for callers that want to bypass the
+    /// streaming_rx → ChatChunk conversion (e.g. live TUI post-Phase 4,
+    /// which consumes SessionEvents directly). Set at construction time
+    /// via `new_with_raw_forwarding`. Only one of `streaming_rx` /
+    /// `raw_event_rx` gets populated per handle: when raw forwarding is
+    /// enabled, the router skips `streaming_tx`.
+    raw_event_rx: Option<mpsc::UnboundedReceiver<SessionEvent>>,
     mode_id: String,
     connected: bool,
     cached_model: Option<String>,
@@ -66,13 +73,53 @@ impl DaemonAgentHandle {
         session_id: String,
         event_rx: mpsc::UnboundedReceiver<SessionEvent>,
     ) -> Self {
+        Self::new_inner(client, session_id, event_rx, false)
+    }
+
+    /// Create a handle that forwards raw SessionEvents to a caller-owned channel.
+    ///
+    /// Used by the live TUI: instead of converting events into ChatChunks via
+    /// `send_message_stream`, the TUI consumes SessionEvents directly through
+    /// the returned receiver (obtained via [`take_raw_event_receiver`]). The
+    /// router still extracts interactions into the usual interaction channel.
+    ///
+    /// In this mode, `send_message_stream` will block indefinitely — callers
+    /// must use `send_message_fire_and_forget` instead.
+    pub fn new_with_raw_forwarding(
+        client: Arc<DaemonClient>,
+        session_id: String,
+        event_rx: mpsc::UnboundedReceiver<SessionEvent>,
+    ) -> Self {
+        Self::new_inner(client, session_id, event_rx, true)
+    }
+
+    fn new_inner(
+        client: Arc<DaemonClient>,
+        session_id: String,
+        event_rx: mpsc::UnboundedReceiver<SessionEvent>,
+        raw_forwarding: bool,
+    ) -> Self {
         let (streaming_tx, streaming_rx) = mpsc::unbounded_channel();
         let (interaction_tx, interaction_rx) = mpsc::unbounded_channel();
 
         let (session_id_tx, session_id_rx) = tokio::sync::watch::channel(session_id.clone());
 
+        let (raw_event_tx, raw_event_rx) = if raw_forwarding {
+            let (tx, rx) = mpsc::unbounded_channel();
+            (Some(tx), Some(rx))
+        } else {
+            (None, None)
+        };
+
         let event_router_task = tokio::spawn(async move {
-            event_router(event_rx, streaming_tx, interaction_tx, session_id_rx).await;
+            event_router(
+                event_rx,
+                streaming_tx,
+                interaction_tx,
+                raw_event_tx,
+                session_id_rx,
+            )
+            .await;
         });
 
         Self {
@@ -81,6 +128,7 @@ impl DaemonAgentHandle {
             router_session_id: Arc::new(session_id_tx),
             streaming_rx: Arc::new(Mutex::new(streaming_rx)),
             interaction_rx: Some(interaction_rx),
+            raw_event_rx,
             mode_id: "normal".to_string(),
             connected: true,
             cached_model: None,
@@ -103,11 +151,40 @@ impl DaemonAgentHandle {
         }
     }
 
+    /// Take the raw SessionEvent receiver, consumable once.
+    ///
+    /// Only populated when the handle was constructed with
+    /// `new_with_raw_forwarding`. Used by the live TUI to feed events
+    /// through the unified `SessionEventStream` converter.
+    pub fn take_raw_event_receiver(&mut self) -> Option<mpsc::UnboundedReceiver<SessionEvent>> {
+        self.raw_event_rx.take()
+    }
+
     /// Create a daemon agent handle and subscribe to its session
     pub async fn new_and_subscribe(
         client: Arc<DaemonClient>,
         session_id: String,
         event_rx: mpsc::UnboundedReceiver<SessionEvent>,
+    ) -> ChatResult<Self> {
+        Self::new_and_subscribe_inner(client, session_id, event_rx, false).await
+    }
+
+    /// Subscribe variant that forwards raw SessionEvents to the caller
+    /// (via `take_raw_event_receiver`) instead of converting them into
+    /// ChatChunks internally. Used by the live TUI.
+    pub async fn new_and_subscribe_with_raw_forwarding(
+        client: Arc<DaemonClient>,
+        session_id: String,
+        event_rx: mpsc::UnboundedReceiver<SessionEvent>,
+    ) -> ChatResult<Self> {
+        Self::new_and_subscribe_inner(client, session_id, event_rx, true).await
+    }
+
+    async fn new_and_subscribe_inner(
+        client: Arc<DaemonClient>,
+        session_id: String,
+        event_rx: mpsc::UnboundedReceiver<SessionEvent>,
+        raw_forwarding: bool,
     ) -> ChatResult<Self> {
         tracing::debug!(session_id = %session_id, "Subscribing to daemon session events");
 
@@ -118,7 +195,8 @@ impl DaemonAgentHandle {
 
         tracing::info!(session_id = %session_id, "Successfully subscribed to session events");
 
-        let mut handle = Self::new(client.clone(), session_id.clone(), event_rx);
+        let mut handle =
+            Self::new_inner(client.clone(), session_id.clone(), event_rx, raw_forwarding);
 
         // Fetch initial cached values from daemon (best-effort, default to None on failure)
         handle.cached_temperature = client
@@ -209,10 +287,16 @@ impl DaemonAgentHandle {
 ///
 /// Uses a `watch::Receiver` for the session_id so `clear_history` can atomically
 /// switch the router to a new session without restarting this task.
+///
+/// Routing:
+/// - `interaction_requested` → parsed and forwarded on `interaction_tx`
+/// - all others → forwarded on `raw_event_tx` if present (live TUI path),
+///   otherwise on `streaming_tx` (oneshot / ChatChunk path)
 async fn event_router(
     mut event_rx: mpsc::UnboundedReceiver<SessionEvent>,
     streaming_tx: mpsc::UnboundedSender<SessionEvent>,
     interaction_tx: mpsc::UnboundedSender<InteractionEvent>,
+    raw_event_tx: Option<mpsc::UnboundedSender<SessionEvent>>,
     session_id_rx: tokio::sync::watch::Receiver<String>,
 ) {
     while let Some(event) = event_rx.recv().await {
@@ -249,6 +333,11 @@ async fn event_router(
                 }
             } else {
                 tracing::warn!("Interaction event missing request_id or request data");
+            }
+        } else if let Some(raw_tx) = raw_event_tx.as_ref() {
+            if raw_tx.send(event).is_err() {
+                tracing::debug!("Raw event channel closed");
+                break;
             }
         } else if streaming_tx.send(event).is_err() {
             tracing::debug!("Streaming channel closed");
@@ -428,6 +517,15 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
 
 #[async_trait]
 impl AgentHandle for DaemonAgentHandle {
+    async fn send_message_fire_and_forget(&mut self, message: String) -> ChatResult<()> {
+        tracing::debug!(session_id = %self.session_id, "Sending message to daemon (fire-and-forget)");
+        self.client
+            .session_send_message(&self.session_id, &message, true)
+            .await
+            .map_err(|e| ChatError::Communication(format!("Failed to send message: {}", e)))?;
+        Ok(())
+    }
+
     fn send_message_stream(
         &mut self,
         message: String,

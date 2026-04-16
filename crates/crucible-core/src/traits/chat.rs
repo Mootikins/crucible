@@ -146,6 +146,21 @@ pub trait AgentHandle: Send + Sync {
     fn send_message_stream(&mut self, message: String)
         -> BoxStream<'static, ChatResult<ChatChunk>>;
 
+    /// Send a message without consuming the response stream.
+    ///
+    /// Used by clients that observe the response through a side channel
+    /// (e.g. the live TUI, which subscribes to SessionEvents directly).
+    /// The default impl drains `send_message_stream` and discards chunks,
+    /// so test mocks keep working without modification.
+    async fn send_message_fire_and_forget(&mut self, message: String) -> ChatResult<()> {
+        use futures::StreamExt;
+        let mut stream = self.send_message_stream(message);
+        while let Some(chunk) = stream.next().await {
+            chunk?;
+        }
+        Ok(())
+    }
+
     fn continue_with_tool_results(
         &mut self,
         _tool_calls: Vec<ChatToolCall>,
@@ -459,6 +474,10 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
         message: String,
     ) -> BoxStream<'static, ChatResult<ChatChunk>> {
         (**self).send_message_stream(message)
+    }
+
+    async fn send_message_fire_and_forget(&mut self, message: String) -> ChatResult<()> {
+        (**self).send_message_fire_and_forget(message).await
     }
 
     fn continue_with_tool_results(

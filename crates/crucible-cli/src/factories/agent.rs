@@ -256,6 +256,37 @@ pub async fn create_daemon_agent(
     config: &CliAppConfig,
     params: &AgentInitParams,
 ) -> Result<Box<dyn AgentHandle + Send + Sync>> {
+    let (handle, _session_id, _raw_rx) = create_daemon_agent_inner(config, params, false).await?;
+    Ok(handle)
+}
+
+/// Like [`create_daemon_agent`], but also returns the raw SessionEvent
+/// receiver for the session. Used by the live TUI, which consumes
+/// SessionEvents directly instead of through `send_message_stream`.
+pub async fn create_daemon_agent_with_events(
+    config: &CliAppConfig,
+    params: &AgentInitParams,
+) -> Result<(
+    Box<dyn AgentHandle + Send + Sync>,
+    String,
+    tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>,
+)> {
+    let (handle, session_id, raw_rx) = create_daemon_agent_inner(config, params, true).await?;
+    let raw_rx = raw_rx.ok_or_else(|| {
+        anyhow::anyhow!("Raw event receiver missing from daemon handle (internal error)")
+    })?;
+    Ok((handle, session_id, raw_rx))
+}
+
+async fn create_daemon_agent_inner(
+    config: &CliAppConfig,
+    params: &AgentInitParams,
+    raw_forwarding: bool,
+) -> Result<(
+    Box<dyn AgentHandle + Send + Sync>,
+    String,
+    Option<tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>>,
+)> {
     use crucible_daemon::DaemonAgentHandle;
     use std::sync::Arc;
 
@@ -352,16 +383,30 @@ pub async fn create_daemon_agent(
         resumed = !is_new_session,
         "Daemon agent handle ready"
     );
-    let handle = DaemonAgentHandle::new_and_subscribe(client, session_id, event_rx)
+    let mut handle = if raw_forwarding {
+        DaemonAgentHandle::new_and_subscribe_with_raw_forwarding(
+            client,
+            session_id.clone(),
+            event_rx,
+        )
         .await?
-        .with_kiln_path(config.kiln_path.clone())
-        .with_workspace(workspace.clone());
-    let handle = match session_agent {
-        Some(agent) => handle.with_agent_config(agent),
-        None => handle,
+    } else {
+        DaemonAgentHandle::new_and_subscribe(client, session_id.clone(), event_rx).await?
+    }
+    .with_kiln_path(config.kiln_path.clone())
+    .with_workspace(workspace.clone());
+
+    if let Some(agent) = session_agent {
+        handle = handle.with_agent_config(agent);
+    }
+
+    let raw_rx = if raw_forwarding {
+        handle.take_raw_event_receiver()
+    } else {
+        None
     };
 
-    Ok(Box::new(handle))
+    Ok((Box::new(handle), session_id, raw_rx))
 }
 
 async fn create_new_daemon_session(
