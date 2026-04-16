@@ -513,44 +513,15 @@ impl OilChatApp {
     /// Clears existing containers first, replays all events, then marks
     /// the response complete so graduated content flows to scrollback.
     pub(crate) fn load_history_events(&mut self, events: Vec<serde_json::Value>) {
-        use crate::tui::oil::chat_runner::session_event_to_chat_msgs;
+        use crate::tui::oil::chat_runner::SessionEventStream;
 
         self.container_list.clear();
-
-        // Track whether granular deltas were seen in the current turn.
-        // Recordings contain both granular deltas AND final summaries:
-        // - text_delta events + message_complete.full_response → text duplication
-        // - thinking deltas + late thinking summary → thinking block duplication
-        // Skip the summaries when granular deltas are present.
-        let mut saw_text_delta = false;
+        let mut stream = SessionEventStream::new();
 
         for event in &events {
             let event_type = event.get("event").and_then(|e| e.as_str()).unwrap_or("");
             let data = event.get("data").cloned().unwrap_or_default();
-
-            if event_type == "text_delta" {
-                saw_text_delta = true;
-            } else if event_type == "user_message" {
-                saw_text_delta = false;
-            }
-
-            // Skip late thinking events that arrive after text_delta.
-            // These are final thinking summaries from the API, not new
-            // thinking blocks. They duplicate content already received
-            // as incremental thinking deltas.
-            if event_type == "thinking" && saw_text_delta {
-                continue;
-            }
-
-            for msg in session_event_to_chat_msgs(event_type, &data) {
-                // Skip full_response text from message_complete when we
-                // already have granular text_deltas for this turn.
-                if saw_text_delta
-                    && event_type == "message_complete"
-                    && matches!(&msg, ChatAppMsg::TextDelta(_))
-                {
-                    continue;
-                }
+            for msg in stream.translate(event_type, &data) {
                 self.on_message(msg);
             }
         }
