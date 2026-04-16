@@ -1973,6 +1973,16 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
                     msgs.push(ChatAppMsg::TextDelta(text.to_string()));
                 }
             }
+            // If the daemon attached token counts to message_complete, surface
+            // them as ContextUsage. The `total` side requires a context-limit
+            // lookup, which the standalone converter cannot do — the caller
+            // (SessionEventStream) fills it in.
+            if let Some(total_tokens) = data.get("total_tokens").and_then(|v| v.as_u64()) {
+                msgs.push(ChatAppMsg::ContextUsage {
+                    used: total_tokens as usize,
+                    total: 0,
+                });
+            }
             msgs.push(ChatAppMsg::StreamComplete);
             msgs
         }
@@ -2049,6 +2059,51 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
                 _ => vec![],
             }
         }
+        "subagent_spawned" => {
+            let id = data.get("job_id").and_then(|v| v.as_str()).map(String::from);
+            let prompt = data
+                .get("prompt")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            match (id, prompt) {
+                (Some(id), Some(prompt)) => vec![ChatAppMsg::SubagentSpawned { id, prompt }],
+                (Some(id), None) => vec![ChatAppMsg::SubagentSpawned {
+                    id,
+                    prompt: String::new(),
+                }],
+                _ => vec![],
+            }
+        }
+        "subagent_completed" => {
+            let id = data.get("job_id").and_then(|v| v.as_str()).map(String::from);
+            let summary = data
+                .get("summary")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            match (id, summary) {
+                (Some(id), Some(summary)) => vec![ChatAppMsg::SubagentCompleted { id, summary }],
+                (Some(id), None) => vec![ChatAppMsg::SubagentCompleted {
+                    id,
+                    summary: String::new(),
+                }],
+                _ => vec![],
+            }
+        }
+        "subagent_failed" => {
+            let id = data.get("job_id").and_then(|v| v.as_str()).map(String::from);
+            let error = data
+                .get("error")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            match (id, error) {
+                (Some(id), Some(error)) => vec![ChatAppMsg::SubagentFailed { id, error }],
+                (Some(id), None) => vec![ChatAppMsg::SubagentFailed {
+                    id,
+                    error: "Unknown error".to_string(),
+                }],
+                _ => vec![],
+            }
+        }
         "replay_complete" => vec![],
         _ => {
             tracing::trace!(event_type = %event_type, "Skipping unknown session event");
@@ -2063,15 +2118,26 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
 /// only produces a TextDelta when no granular text_deltas preceded it
 /// (the "coarse resume" case — daemon drops text_delta during storage
 /// compaction, keeping only the final message_complete snapshot).
+///
+/// Optionally holds a `context_limit` handle so that `message_complete`
+/// token counts can be converted into a `ContextUsage` with the correct
+/// `total` field. Without a handle, the total defaults to 0.
 pub struct SessionEventStream {
     saw_text_delta: bool,
+    context_limit: Option<Arc<AtomicUsize>>,
 }
 
 impl SessionEventStream {
     pub fn new() -> Self {
         Self {
             saw_text_delta: false,
+            context_limit: None,
         }
+    }
+
+    pub fn with_context_limit(mut self, limit: Arc<AtomicUsize>) -> Self {
+        self.context_limit = Some(limit);
+        self
     }
 
     pub fn translate(
@@ -2093,9 +2159,24 @@ impl SessionEventStream {
 
         let raw = session_event_to_chat_msgs(event_type, data);
 
-        if self.saw_text_delta && event_type == "message_complete" {
+        // For message_complete, filter out the TextDelta if granular deltas
+        // were seen, and patch the ContextUsage with the real context limit.
+        if event_type == "message_complete" {
+            let saw_deltas = self.saw_text_delta;
+            let total_limit = self
+                .context_limit
+                .as_ref()
+                .map(|l| l.load(Ordering::Relaxed))
+                .unwrap_or(0);
             raw.into_iter()
-                .filter(|m| !matches!(m, ChatAppMsg::TextDelta(_)))
+                .filter_map(|m| match m {
+                    ChatAppMsg::TextDelta(_) if saw_deltas => None,
+                    ChatAppMsg::ContextUsage { used, .. } => Some(ChatAppMsg::ContextUsage {
+                        used,
+                        total: total_limit,
+                    }),
+                    other => Some(other),
+                })
                 .collect()
         } else {
             raw

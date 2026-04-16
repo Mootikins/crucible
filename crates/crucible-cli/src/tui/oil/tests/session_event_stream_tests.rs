@@ -105,6 +105,117 @@ fn state_resets_per_turn() {
 }
 
 #[test]
+fn subagent_spawned_maps_to_chat_msg() {
+    let mut stream = SessionEventStream::new();
+    let msgs = stream.translate(
+        "subagent_spawned",
+        &json!({
+            "job_id": "sa1",
+            "session_link": "crucible://session/child1",
+            "prompt": "analyze the code",
+        }),
+    );
+    assert_eq!(msgs.len(), 1);
+    match &msgs[0] {
+        ChatAppMsg::SubagentSpawned { id, prompt } => {
+            assert_eq!(id, "sa1");
+            assert_eq!(prompt, "analyze the code");
+        }
+        other => panic!("Expected SubagentSpawned, got {:?}", other),
+    }
+}
+
+#[test]
+fn subagent_completed_maps_to_chat_msg() {
+    let mut stream = SessionEventStream::new();
+    let msgs = stream.translate(
+        "subagent_completed",
+        &json!({
+            "job_id": "sa2",
+            "session_link": "crucible://session/child2",
+            "summary": "done with analysis",
+        }),
+    );
+    assert_eq!(msgs.len(), 1);
+    match &msgs[0] {
+        ChatAppMsg::SubagentCompleted { id, summary } => {
+            assert_eq!(id, "sa2");
+            assert_eq!(summary, "done with analysis");
+        }
+        other => panic!("Expected SubagentCompleted, got {:?}", other),
+    }
+}
+
+#[test]
+fn subagent_failed_maps_to_chat_msg() {
+    let mut stream = SessionEventStream::new();
+    let msgs = stream.translate(
+        "subagent_failed",
+        &json!({
+            "job_id": "sa3",
+            "session_link": "crucible://session/child3",
+            "error": "timeout",
+        }),
+    );
+    assert_eq!(msgs.len(), 1);
+    match &msgs[0] {
+        ChatAppMsg::SubagentFailed { id, error } => {
+            assert_eq!(id, "sa3");
+            assert_eq!(error, "timeout");
+        }
+        other => panic!("Expected SubagentFailed, got {:?}", other),
+    }
+}
+
+#[test]
+fn message_complete_with_token_counts_emits_context_usage() {
+    let mut stream = SessionEventStream::new();
+    // No granular deltas: text_delta path is empty.
+    let msgs = stream.translate(
+        "message_complete",
+        &json!({
+            "message_id": "m1",
+            "full_response": "hi",
+            "prompt_tokens": 100,
+            "completion_tokens": 50,
+            "total_tokens": 150,
+        }),
+    );
+    // Expect TextDelta + ContextUsage + StreamComplete.
+    let has_context_usage = msgs.iter().any(|m| {
+        matches!(
+            m,
+            ChatAppMsg::ContextUsage { used: 150, total: _ }
+        )
+    });
+    assert!(
+        has_context_usage,
+        "Expected ContextUsage(used=150) in msgs: {:?}",
+        msgs
+    );
+}
+
+#[test]
+fn message_complete_without_token_counts_does_not_emit_context_usage() {
+    let mut stream = SessionEventStream::new();
+    let msgs = stream.translate(
+        "message_complete",
+        &json!({
+            "message_id": "m1",
+            "full_response": "hi",
+        }),
+    );
+    let has_context_usage = msgs
+        .iter()
+        .any(|m| matches!(m, ChatAppMsg::ContextUsage { .. }));
+    assert!(
+        !has_context_usage,
+        "Did not expect ContextUsage without token counts: {:?}",
+        msgs
+    );
+}
+
+#[test]
 fn delegation_fixture_renders_without_duplication() {
     use std::fs::read_to_string;
 
