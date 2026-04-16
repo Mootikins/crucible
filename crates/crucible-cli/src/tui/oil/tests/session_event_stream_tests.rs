@@ -103,3 +103,37 @@ fn state_resets_per_turn() {
         .collect();
     assert_eq!(deltas, vec!["r2"]);
 }
+
+#[test]
+fn delegation_fixture_renders_without_duplication() {
+    use std::fs::read_to_string;
+
+    let jsonl = read_to_string("../../assets/fixtures/delegation-demo.jsonl")
+        .expect("fixture present");
+    let mut stream = SessionEventStream::new();
+    let mut all_msgs = Vec::new();
+
+    for line in jsonl.lines() {
+        let v: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let Some(event_type) = v.get("event").and_then(|x| x.as_str()) else {
+            continue;
+        };
+        let data = v.get("data").cloned().unwrap_or_default();
+        all_msgs.extend(stream.translate(event_type, &data));
+    }
+
+    let text: String = all_msgs
+        .iter()
+        .filter_map(|m| match m {
+            ChatAppMsg::TextDelta(s) => Some(s.as_str()),
+            _ => None,
+        })
+        .collect();
+
+    // The response text should appear exactly once.
+    let occurrences = text.matches("Agent profiles").count();
+    assert_eq!(occurrences, 1, "assembled text duplicates 'Agent profiles'");
+}

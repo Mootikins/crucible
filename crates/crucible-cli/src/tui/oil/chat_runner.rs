@@ -2140,6 +2140,7 @@ pub(crate) async fn replay_event_consumer(
     mut event_rx: tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>,
     msg_tx: tokio::sync::mpsc::UnboundedSender<ChatAppMsg>,
 ) {
+    let mut stream = SessionEventStream::new();
     while let Some(event) = event_rx.recv().await {
         if event.session_id != replay_session_id {
             continue;
@@ -2148,7 +2149,7 @@ pub(crate) async fn replay_event_consumer(
             let _ = msg_tx.send(ChatAppMsg::Status("Replay complete".to_string()));
             return;
         }
-        for msg in session_event_to_chat_msgs(&event.event_type, &event.data) {
+        for msg in stream.translate(&event.event_type, &event.data) {
             if msg_tx.send(msg).is_err() {
                 return;
             }
