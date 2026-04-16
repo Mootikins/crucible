@@ -369,14 +369,6 @@ impl OilChatRunner {
             app.set_slash_commands(std::mem::take(&mut self.slash_commands));
         }
 
-        // Hydrate viewport with conversation history from a resumed session
-        if let Some(events) = self.resume_history.take() {
-            if !events.is_empty() {
-                tracing::info!(count = events.len(), "Loading resume history into viewport");
-                app.load_history_events(events);
-            }
-        }
-
         let terminal_size = self.terminal.size();
         let ctx = ViewContext::with_terminal_size(&self.focus, theme::active(), terminal_size);
         let tree = app.view(&ctx);
@@ -384,6 +376,30 @@ impl OilChatRunner {
 
         let (msg_tx, msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
         let mut background_tasks: Vec<JoinHandle<()>> = Vec::new();
+
+        // Hydrate viewport with conversation history from a resumed session by
+        // pumping stored events through the shared SessionEventStream — the
+        // same path live and replay use. `message_complete` in the stream
+        // produces a `StreamComplete` that finalizes the final turn.
+        if let Some(events) = self.resume_history.take() {
+            if !events.is_empty() {
+                tracing::info!(count = events.len(), "Loading resume history into viewport");
+                let msg_tx_resume = msg_tx.clone();
+                background_tasks.push(tokio::spawn(async move {
+                    let mut stream = SessionEventStream::new();
+                    for event in events {
+                        let event_type =
+                            event.get("event").and_then(|e| e.as_str()).unwrap_or("");
+                        let data = event.get("data").cloned().unwrap_or_default();
+                        for m in stream.translate(event_type, &data) {
+                            if msg_tx_resume.send(m).is_err() {
+                                return;
+                            }
+                        }
+                    }
+                }));
+            }
+        }
 
         if let Some(replay_path) = self.replay_path.clone() {
             let (mut agent, replay_session_id, event_rx) =

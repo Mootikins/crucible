@@ -508,27 +508,6 @@ impl OilChatApp {
         self.container_list.drain_completed(ctx)
     }
 
-    /// Replay stored session events through the live event path.
-    ///
-    /// Clears existing containers first, replays all events, then marks
-    /// the response complete so graduated content flows to scrollback.
-    pub(crate) fn load_history_events(&mut self, events: Vec<serde_json::Value>) {
-        use crate::tui::oil::chat_runner::SessionEventStream;
-
-        self.container_list.clear();
-        let mut stream = SessionEventStream::new();
-
-        for event in &events {
-            let event_type = event.get("event").and_then(|e| e.as_str()).unwrap_or("");
-            let data = event.get("data").cloned().unwrap_or_default();
-            for msg in stream.translate(event_type, &data) {
-                self.on_message(msg);
-            }
-        }
-
-        self.container_list.complete_response();
-    }
-
     fn push_shell_history(&mut self, cmd: String) {
         if self.shell_history.shell_history.len() >= MAX_SHELL_HISTORY {
             self.shell_history.shell_history.pop_front();

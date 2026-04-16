@@ -173,9 +173,6 @@ pub enum ChatAppMsg {
         request_id: String,
         response: InteractionResponse,
     },
-    /// **Event** (daemon → TUI): Load chat history from stored session events.
-    /// Events are replayed through `session_event_to_chat_msgs` → `on_message`.
-    LoadHistoryEvents(Vec<serde_json::Value>),
     /// **Command** (TUI → daemon): Reload a Lua/Fennel plugin.
     ReloadPlugin(String),
     /// **Command** (TUI → daemon): Execute a slash command (/:command args).
@@ -265,7 +262,6 @@ impl ChatAppMsg {
             | Self::ToggleMessages
             | Self::OpenInteraction { .. }
             | Self::CloseInteraction { .. }
-            | Self::LoadHistoryEvents(_)
             | Self::PrecognitionResult { .. }
             | Self::EnrichedMessage { .. }
             | Self::ExecuteSlashCommand(_)

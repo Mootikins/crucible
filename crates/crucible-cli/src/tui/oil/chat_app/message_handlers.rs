@@ -238,9 +238,6 @@ impl OilChatApp {
                 self.context_used = used;
                 self.context_total = total;
             }
-            ChatAppMsg::LoadHistoryEvents(events) => {
-                self.load_history_events(events);
-            }
             ChatAppMsg::PrecognitionResult { notes_count, notes } => {
                 self.precognition.last_notes_count = Some(notes_count);
                 self.precognition.last_notes = notes;
