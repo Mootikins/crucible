@@ -1097,6 +1097,12 @@ mod rpc {
             None => None,
         };
 
+        let agent_type = if params.agent.is_some() {
+            "acp"
+        } else {
+            "internal"
+        };
+
         let result = client
             .session_create(crucible_daemon::rpc_client::SessionCreateParams {
                 session_type: params.session_type.to_string(),
@@ -1105,6 +1111,7 @@ mod rpc {
                 connect_kilns: vec![],
                 recording_mode: recording_mode_parsed,
                 recording_path: None,
+                agent_type: Some(agent_type.to_string()),
             })
             .await?;
 

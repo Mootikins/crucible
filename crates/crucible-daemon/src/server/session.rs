@@ -54,6 +54,13 @@ pub(crate) async fn handle_session_create(
         .and_then(|s| s.parse::<RecordingMode>().ok());
     let custom_recording_path = optional_param!(req, "recording_path", as_str).map(PathBuf::from);
 
+    // Read but don't store — Task 1.2f's setup task will read the same way
+    // to branch between ACP and internal-agent setup flows. Kept local to
+    // avoid speculative storage on `Session` until a consumer materializes.
+    // `resolve_provider_trust_level_for_create` above already reads this
+    // field for trust resolution.
+    let _agent_type = optional_param!(req, "agent_type", as_str).unwrap_or("internal");
+
     let project_path = workspace.as_ref().unwrap_or(&kiln);
     if let Err(e) = pm.register_if_missing(project_path) {
         tracing::warn!(path = %project_path.display(), error = %e, "Failed to auto-register project");

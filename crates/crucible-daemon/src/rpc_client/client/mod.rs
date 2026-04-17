@@ -304,19 +304,24 @@ struct ProcessEventsSubscription {
 // =========================================================================
 
 /// Request for `session.create`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionCreateRequest {
     #[serde(rename = "type")]
     pub session_type: String,
     pub kiln: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub connect_kilns: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recording_mode: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recording_path: Option<String>,
+    /// "acp" | "internal"; None treated as "internal" for back-compat.
+    /// Lets the daemon's setup task branch on agent type at create time,
+    /// before `session.configure_agent` has been called.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_type: Option<String>,
 }
 
 /// Parameters for creating a session.
@@ -328,6 +333,8 @@ pub struct SessionCreateParams {
     pub connect_kilns: Vec<PathBuf>,
     pub recording_mode: Option<String>,
     pub recording_path: Option<PathBuf>,
+    /// "acp" | "internal"; None treated as "internal" for back-compat.
+    pub agent_type: Option<String>,
 }
 
 /// Request for `session.list`.
@@ -1714,6 +1721,7 @@ impl DaemonClient {
                 recording_path: params
                     .recording_path
                     .map(|p| p.to_string_lossy().to_string()),
+                agent_type: params.agent_type,
             },
         )
         .await
@@ -1737,6 +1745,7 @@ impl DaemonClient {
             connect_kilns: connect_kilns.iter().map(|p| p.to_path_buf()).collect(),
             recording_mode: recording_mode.map(|m| m.to_string()),
             recording_path: recording_path.map(|p| p.to_path_buf()),
+            agent_type: None,
         })
         .await
     }
@@ -2674,6 +2683,71 @@ mod tests {
         assert_eq!(result, "pong");
     }
 
+    // ---- SessionCreateRequest wire-format tests (Task 1.2a) ----
+    // The daemon and CLI may be at different versions; the `agent_type` field
+    // must be forward/backward compatible.
+
+    #[test]
+    fn session_create_request_without_agent_type_deserializes_as_none() {
+        // Old-style payload (pre-Task 1.2a) — no `agent_type`.
+        let json = serde_json::json!({
+            "type": "chat",
+            "kiln": "/tmp/kiln",
+        });
+        let req: SessionCreateRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(req.session_type, "chat");
+        assert_eq!(req.kiln, "/tmp/kiln");
+        assert_eq!(req.agent_type, None);
+    }
+
+    #[test]
+    fn session_create_request_with_agent_type_acp_roundtrips() {
+        let json = serde_json::json!({
+            "type": "chat",
+            "kiln": "/tmp/kiln",
+            "agent_type": "acp",
+        });
+        let req: SessionCreateRequest = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(req.agent_type.as_deref(), Some("acp"));
+        // Re-serialize and confirm the field survives the round-trip.
+        let roundtrip = serde_json::to_value(&req).unwrap();
+        assert_eq!(roundtrip["agent_type"], "acp");
+    }
+
+    #[test]
+    fn session_create_request_with_agent_type_internal_roundtrips() {
+        let json = serde_json::json!({
+            "type": "chat",
+            "kiln": "/tmp/kiln",
+            "agent_type": "internal",
+        });
+        let req: SessionCreateRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(req.agent_type.as_deref(), Some("internal"));
+        let roundtrip = serde_json::to_value(&req).unwrap();
+        assert_eq!(roundtrip["agent_type"], "internal");
+    }
+
+    #[test]
+    fn session_create_request_omits_agent_type_when_none() {
+        // Ensure over-the-wire backward compatibility: a None `agent_type`
+        // must not appear in the serialized payload, so old daemons don't
+        // see an unexpected field.
+        let req = SessionCreateRequest {
+            session_type: "chat".to_string(),
+            kiln: "/tmp/kiln".to_string(),
+            workspace: None,
+            connect_kilns: None,
+            recording_mode: None,
+            recording_path: None,
+            agent_type: None,
+        };
+        let json = serde_json::to_value(&req).unwrap();
+        assert!(
+            json.get("agent_type").is_none(),
+            "agent_type should be omitted when None, got: {json}"
+        );
+    }
+
     #[tokio::test]
     async fn test_client_capabilities() {
         let (_tmp, sock_path, _handle) = setup_test_server().await;
@@ -2786,6 +2860,7 @@ mod tests {
                 connect_kilns: vec![],
                 recording_mode: None,
                 recording_path: None,
+                agent_type: None,
             })
             .await
             .unwrap();
@@ -2821,6 +2896,7 @@ mod tests {
                 connect_kilns: vec![],
                 recording_mode: None,
                 recording_path: None,
+                agent_type: None,
             })
             .await
             .unwrap();
@@ -2850,6 +2926,7 @@ mod tests {
                 connect_kilns: vec![],
                 recording_mode: None,
                 recording_path: None,
+                agent_type: None,
             })
             .await
             .unwrap();
@@ -2878,6 +2955,7 @@ mod tests {
                 connect_kilns: vec![],
                 recording_mode: None,
                 recording_path: None,
+                agent_type: None,
             })
             .await
             .unwrap();
@@ -2905,6 +2983,7 @@ mod tests {
                 connect_kilns: vec![],
                 recording_mode: None,
                 recording_path: None,
+                agent_type: None,
             })
             .await
             .unwrap();

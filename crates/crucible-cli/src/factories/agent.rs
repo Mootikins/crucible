@@ -302,6 +302,14 @@ async fn create_daemon_agent_inner(
         .clone()
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| config.kiln_path.clone()));
 
+    // Compute up-front so `session.create` can tell the daemon which agent type
+    // this will be (Task 1.2f's setup task branches on it).
+    let is_acp = params
+        .agent_type
+        .map(|t| t == AgentType::Acp)
+        .unwrap_or_else(|| config.chat.agent_preference == crucible_config::AgentPreference::Acp);
+    let create_agent_type = if is_acp { "acp" } else { "internal" };
+
     let (session_id, is_new_session) = match &params.resume_session_id {
         Some(id) if !id.is_empty() => {
             info!("Resuming specific daemon session: {}", id);
@@ -343,6 +351,7 @@ async fn create_daemon_agent_inner(
                         &workspace,
                         params.recording_mode.as_deref(),
                         params.recording_path.as_deref(),
+                        create_agent_type,
                     )
                     .await?,
                     true,
@@ -356,16 +365,12 @@ async fn create_daemon_agent_inner(
                 &workspace,
                 params.recording_mode.as_deref(),
                 params.recording_path.as_deref(),
+                create_agent_type,
             )
             .await?,
             true,
         ),
     };
-
-    let is_acp = params
-        .agent_type
-        .map(|t| t == AgentType::Acp)
-        .unwrap_or_else(|| config.chat.agent_preference == crucible_config::AgentPreference::Acp);
 
     let session_agent = if is_new_session {
         let agent = if is_acp {
@@ -415,6 +420,7 @@ async fn create_new_daemon_session(
     workspace: &std::path::Path,
     recording_mode: Option<&str>,
     recording_path: Option<&std::path::Path>,
+    agent_type: &str,
 ) -> Result<String> {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
@@ -424,6 +430,7 @@ async fn create_new_daemon_session(
             connect_kilns: vec![],
             recording_mode: recording_mode.map(|m| m.to_string()),
             recording_path: recording_path.map(|p| p.to_path_buf()),
+            agent_type: Some(agent_type.to_string()),
         })
         .await?;
 

@@ -671,6 +671,7 @@ impl AgentHandle for DaemonAgentHandle {
                 connect_kilns: vec![],
                 recording_mode: None,
                 recording_path: None,
+                agent_type: None,
             })
             .await
         {
