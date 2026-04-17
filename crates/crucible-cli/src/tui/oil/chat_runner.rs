@@ -450,7 +450,15 @@ impl OilChatRunner {
         self.is_replay = false;
         self.replay_remaining_completes = 0;
 
-        app.set_status("Ready");
+        // Fresh sessions show "Loading..." and flip to "Ready" once the
+        // daemon's setup task emits `mcp_servers_ready` (the last common
+        // setup event). Resumed sessions don't receive setup events, so
+        // stay at "Ready" immediately.
+        if self.resume_session_id.is_some() {
+            app.set_status("Ready");
+        } else {
+            app.set_status("Loading...");
+        }
 
         // Spawn the live SessionEvent consumer if the factory handed us a
         // raw event receiver. This is the unified event path: the daemon's
@@ -508,40 +516,44 @@ impl OilChatRunner {
             }
         }
 
-        // Connect to MCP servers in background and update display
-        if !self.mcp_servers.is_empty() {
-            if let Some(ref mcp_config) = self.mcp_config {
-                let mcp_config = mcp_config.clone();
-                let mcp_tx = msg_tx.clone();
-                background_tasks.push(tokio::spawn(async move {
-                    use crucible_daemon::tools::mcp_gateway::McpGatewayManager;
-                    match McpGatewayManager::from_config(&mcp_config).await {
-                        Ok(gateway) => {
-                            let servers: Vec<McpServerDisplay> = gateway
-                                .upstream_names()
-                                .map(|name| {
-                                    let tools_for_upstream: Vec<_> = gateway
-                                        .all_tools()
-                                        .into_iter()
-                                        .filter(|t| t.upstream == name)
-                                        .collect();
-                                    McpServerDisplay {
-                                        name: name.to_string(),
-                                        prefix: name.to_string(),
-                                        tool_count: tools_for_upstream.len(),
-                                        connected: !tools_for_upstream.is_empty(),
-                                    }
-                                })
-                                .collect();
-                            let _ = mcp_tx.send(ChatAppMsg::McpStatusLoaded(servers));
-                        }
-                        Err(e) => {
-                            tracing::warn!("Failed to connect MCP servers: {}", e);
-                        }
+        // Connect to MCP servers in background to update tool_count /
+        // connected state. The initial list (name, prefix, connected)
+        // arrives from the daemon's `mcp_servers_ready` setup event;
+        // this background task refines it with live upstream-connect
+        // info. Triggered whenever an MCP config is present — we no
+        // longer gate on `self.mcp_servers`, which is empty until the
+        // setup event lands.
+        if let Some(ref mcp_config) = self.mcp_config {
+            let mcp_config = mcp_config.clone();
+            let mcp_tx = msg_tx.clone();
+            background_tasks.push(tokio::spawn(async move {
+                use crucible_daemon::tools::mcp_gateway::McpGatewayManager;
+                match McpGatewayManager::from_config(&mcp_config).await {
+                    Ok(gateway) => {
+                        let servers: Vec<McpServerDisplay> = gateway
+                            .upstream_names()
+                            .map(|name| {
+                                let tools_for_upstream: Vec<_> = gateway
+                                    .all_tools()
+                                    .into_iter()
+                                    .filter(|t| t.upstream == name)
+                                    .collect();
+                                McpServerDisplay {
+                                    name: name.to_string(),
+                                    prefix: name.to_string(),
+                                    tool_count: tools_for_upstream.len(),
+                                    connected: !tools_for_upstream.is_empty(),
+                                }
+                            })
+                            .collect();
+                        let _ = mcp_tx.send(ChatAppMsg::McpStatusLoaded(servers));
                     }
-                    // Drop the gateway — Phase A is display-only
-                }));
-            }
+                    Err(e) => {
+                        tracing::warn!("Failed to connect MCP servers: {}", e);
+                    }
+                }
+                // Drop the gateway — Phase A is display-only
+            }));
         }
 
         // Prefetch available models in background — daemon cache should be warm,
@@ -1967,6 +1979,110 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
             }
         }
         "replay_complete" => vec![],
+        "session_initialized" => {
+            match serde_json::from_value::<
+                crucible_core::protocol::session_events::SessionInitializedPayload,
+            >(data.clone())
+            {
+                Ok(payload) => vec![ChatAppMsg::SessionInitialized(payload)],
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to decode session_initialized payload");
+                    vec![]
+                }
+            }
+        }
+        "providers_listed" => {
+            match serde_json::from_value::<
+                crucible_core::protocol::session_events::ProvidersListedPayload,
+            >(data.clone())
+            {
+                Ok(payload) => vec![ChatAppMsg::ProvidersListed(payload.providers)],
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to decode providers_listed payload");
+                    vec![]
+                }
+            }
+        }
+        "context_limit_resolved" => {
+            match serde_json::from_value::<
+                crucible_core::protocol::session_events::ContextLimitResolvedPayload,
+            >(data.clone())
+            {
+                Ok(payload) => vec![ChatAppMsg::ContextLimitResolved {
+                    limit: payload.limit,
+                    source: payload.source,
+                }],
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to decode context_limit_resolved payload");
+                    vec![]
+                }
+            }
+        }
+        "workspace_indexed" => {
+            match serde_json::from_value::<
+                crucible_core::protocol::session_events::WorkspaceIndexedPayload,
+            >(data.clone())
+            {
+                Ok(payload) => vec![ChatAppMsg::WorkspaceIndexed(payload.files)],
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to decode workspace_indexed payload");
+                    vec![]
+                }
+            }
+        }
+        "kiln_notes_indexed" => {
+            match serde_json::from_value::<
+                crucible_core::protocol::session_events::KilnNotesIndexedPayload,
+            >(data.clone())
+            {
+                Ok(payload) => vec![ChatAppMsg::KilnNotesIndexed(payload.notes)],
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to decode kiln_notes_indexed payload");
+                    vec![]
+                }
+            }
+        }
+        "plugins_discovered" => {
+            match serde_json::from_value::<
+                crucible_core::protocol::session_events::PluginsDiscoveredPayload,
+            >(data.clone())
+            {
+                Ok(payload) => vec![ChatAppMsg::PluginsDiscovered(payload.plugins)],
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to decode plugins_discovered payload");
+                    vec![]
+                }
+            }
+        }
+        "mcp_servers_ready" => {
+            match serde_json::from_value::<
+                crucible_core::protocol::session_events::McpServersReadyPayload,
+            >(data.clone())
+            {
+                Ok(payload) => {
+                    // Map McpServerInfo (tools: Vec<String>) → McpServerDisplay
+                    // (tool_count: usize). The TUI renders tool_count only;
+                    // collapsing at the boundary keeps the rest of the TUI
+                    // unchanged. The real connected-state / tool count is
+                    // refreshed later by the background MCP gateway task.
+                    let servers: Vec<McpServerDisplay> = payload
+                        .servers
+                        .into_iter()
+                        .map(|s| McpServerDisplay {
+                            name: s.name,
+                            prefix: s.prefix.trim_end_matches('_').to_string(),
+                            tool_count: s.tools.len(),
+                            connected: s.connected,
+                        })
+                        .collect();
+                    vec![ChatAppMsg::McpServersReady(servers)]
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to decode mcp_servers_ready payload");
+                    vec![]
+                }
+            }
+        }
         _ => {
             tracing::trace!(event_type = %event_type, "Skipping unknown session event");
             vec![]
@@ -2016,6 +2132,19 @@ impl SessionEventStream {
         }
 
         let raw = session_event_to_chat_msgs(event_type, data);
+
+        // When the daemon's setup task emits `context_limit_resolved`, also
+        // stamp the atomic so that subsequent `message_complete` events pick
+        // up the real total for their `ContextUsage` patching.
+        if event_type == "context_limit_resolved" {
+            if let Some(ref limit) = self.context_limit {
+                for msg in &raw {
+                    if let ChatAppMsg::ContextLimitResolved { limit: l, .. } = msg {
+                        limit.store(*l, Ordering::Relaxed);
+                    }
+                }
+            }
+        }
 
         // For message_complete, filter out the TextDelta if granular deltas
         // were seen, and patch the ContextUsage with the real context limit.
@@ -2317,5 +2446,168 @@ mod tests {
             .await
             .expect("Timeout waiting for consumer task")
             .expect("Consumer task should complete");
+    }
+
+    // ─── Setup-event translation (Task 1.3) ─────────────────────────────
+
+    #[test]
+    fn translate_session_initialized_produces_payload_msg() {
+        use serde_json::json;
+        let data = json!({
+            "model": "glm-5",
+            "mode": "plan",
+            "agent_name": "claude",
+            "kiln_path": "/k",
+            "workspace_path": "/w",
+        });
+        let msgs = session_event_to_chat_msgs("session_initialized", &data);
+        assert_eq!(msgs.len(), 1);
+        match &msgs[0] {
+            ChatAppMsg::SessionInitialized(p) => {
+                assert_eq!(p.model, "glm-5");
+                assert_eq!(p.mode, "plan");
+                assert_eq!(p.agent_name.as_deref(), Some("claude"));
+            }
+            other => panic!("expected SessionInitialized, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn translate_providers_listed_carries_providers() {
+        use serde_json::json;
+        let data = json!({
+            "providers": [{
+                "name": "OpenAI", "provider_type": "openai", "available": true,
+                "default_model": null, "models": [], "endpoint": null,
+                "reason": null, "is_local": false,
+            }],
+        });
+        let msgs = session_event_to_chat_msgs("providers_listed", &data);
+        assert_eq!(msgs.len(), 1);
+        match &msgs[0] {
+            ChatAppMsg::ProvidersListed(providers) => {
+                assert_eq!(providers.len(), 1);
+                assert_eq!(providers[0].name, "OpenAI");
+            }
+            other => panic!("expected ProvidersListed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn translate_context_limit_resolved_parses_source() {
+        use crucible_core::protocol::session_events::ContextLimitSource;
+        use serde_json::json;
+        let data = json!({ "limit": 128_000, "source": "provider_api" });
+        let msgs = session_event_to_chat_msgs("context_limit_resolved", &data);
+        assert_eq!(msgs.len(), 1);
+        match &msgs[0] {
+            ChatAppMsg::ContextLimitResolved { limit, source } => {
+                assert_eq!(*limit, 128_000);
+                assert_eq!(*source, ContextLimitSource::ProviderApi);
+            }
+            other => panic!("expected ContextLimitResolved, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn translate_workspace_indexed_carries_files() {
+        use serde_json::json;
+        let data = json!({ "files": ["src/lib.rs", "README.md"] });
+        let msgs = session_event_to_chat_msgs("workspace_indexed", &data);
+        match msgs.as_slice() {
+            [ChatAppMsg::WorkspaceIndexed(files)] => assert_eq!(
+                files,
+                &vec!["src/lib.rs".to_string(), "README.md".to_string()]
+            ),
+            other => panic!("expected WorkspaceIndexed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn translate_kiln_notes_indexed_carries_notes() {
+        use serde_json::json;
+        let data = json!({ "notes": ["note:Daily.md"] });
+        let msgs = session_event_to_chat_msgs("kiln_notes_indexed", &data);
+        match msgs.as_slice() {
+            [ChatAppMsg::KilnNotesIndexed(notes)] => {
+                assert_eq!(notes, &vec!["note:Daily.md".to_string()])
+            }
+            other => panic!("expected KilnNotesIndexed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn translate_plugins_discovered_carries_entries() {
+        use serde_json::json;
+        let data = json!({
+            "plugins": [
+                { "name": "kiln-expert", "version": "0.1.0", "state": "loaded", "error": null }
+            ]
+        });
+        let msgs = session_event_to_chat_msgs("plugins_discovered", &data);
+        match msgs.as_slice() {
+            [ChatAppMsg::PluginsDiscovered(entries)] => {
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0].name, "kiln-expert");
+                assert_eq!(entries[0].state, "loaded");
+            }
+            other => panic!("expected PluginsDiscovered, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn translate_mcp_servers_ready_maps_to_display_and_collapses_tools() {
+        use serde_json::json;
+        let data = json!({
+            "servers": [
+                {
+                    "name": "context7",
+                    "prefix": "c7_",
+                    "tools": ["query-docs", "resolve-library-id"],
+                    "connected": true,
+                }
+            ]
+        });
+        let msgs = session_event_to_chat_msgs("mcp_servers_ready", &data);
+        match msgs.as_slice() {
+            [ChatAppMsg::McpServersReady(servers)] => {
+                assert_eq!(servers.len(), 1);
+                assert_eq!(servers[0].name, "context7");
+                // trailing `_` stripped to match legacy McpServerDisplay shape
+                assert_eq!(servers[0].prefix, "c7");
+                assert_eq!(servers[0].tool_count, 2);
+                assert!(servers[0].connected);
+            }
+            other => panic!("expected McpServersReady, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn translate_bad_payload_shape_returns_empty() {
+        use serde_json::json;
+        // Missing required fields — the type-strict deserializer fails and the
+        // translator returns an empty vec rather than panicking.
+        let msgs = session_event_to_chat_msgs("context_limit_resolved", &json!({}));
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn translate_unknown_event_returns_empty() {
+        use serde_json::json;
+        let msgs = session_event_to_chat_msgs("never_heard_of_it", &json!({}));
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn translate_context_limit_resolved_updates_atomic_through_stream() {
+        use serde_json::json;
+        let limit = Arc::new(AtomicUsize::new(0));
+        let mut stream = SessionEventStream::new().with_context_limit(limit.clone());
+        let msgs = stream.translate(
+            "context_limit_resolved",
+            &json!({ "limit": 4096, "source": "config" }),
+        );
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(limit.load(Ordering::Relaxed), 4096);
     }
 }

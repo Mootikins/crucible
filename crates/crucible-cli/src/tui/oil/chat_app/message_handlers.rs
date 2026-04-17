@@ -270,6 +270,61 @@ impl OilChatApp {
                 self.close_interaction();
                 // The actual response is sent by process_action in chat_runner
             }
+
+            // --- Setup Events (daemon → TUI, fire once per session) ---
+            ChatAppMsg::SessionInitialized(payload) => {
+                // Model from the daemon's SessionAgent. Empty means the
+                // daemon didn't have a configured model yet (ACP sessions
+                // with agent-owned model, etc.); preserve the existing
+                // display value in that case.
+                if !payload.model.is_empty() {
+                    self.set_model(payload.model);
+                }
+                if !payload.mode.is_empty() {
+                    self.mode = super::state::ChatMode::parse(&payload.mode);
+                }
+                // agent_name doesn't have a dedicated field on OilChatApp;
+                // display_model already captured it at runner construction.
+                // If the daemon reports a different value, log it for now.
+                if let Some(name) = payload.agent_name.as_ref() {
+                    tracing::debug!(agent_name = %name, "session_initialized agent_name");
+                }
+            }
+            ChatAppMsg::ProvidersListed(providers) => {
+                // Surface the first available provider as the "current"
+                // display string. Matches the old preflight behavior.
+                if let Some(p) = providers.iter().find(|p| p.available) {
+                    self.current_provider = p.name.clone();
+                }
+            }
+            ChatAppMsg::ContextLimitResolved { limit, source } => {
+                tracing::debug!(limit, ?source, "context_limit_resolved");
+                self.context_total = limit;
+            }
+            ChatAppMsg::WorkspaceIndexed(files) => {
+                self.set_workspace_files(files);
+            }
+            ChatAppMsg::KilnNotesIndexed(notes) => {
+                self.set_kiln_notes(notes);
+            }
+            ChatAppMsg::PluginsDiscovered(entries) => {
+                for entry in &entries {
+                    if let Some(ref err) = entry.error {
+                        self.add_notification(crucible_core::types::Notification::warning(
+                            format!("Plugin '{}' failed to load: {}", entry.name, err),
+                        ));
+                    }
+                }
+                self.set_plugin_status(entries);
+            }
+            ChatAppMsg::McpServersReady(servers) => {
+                self.set_mcp_servers(servers);
+                // mcp_servers_ready is the last common setup event the daemon
+                // emits. Flip the status bar from "Loading..." to "Ready" so
+                // the user can start typing.
+                self.set_status("Ready");
+            }
+
             // Command-only: side effects handled by chat_runner::process_action
             ChatAppMsg::QueueMessage(_)
             | ChatAppMsg::ReloadPlugin(_)

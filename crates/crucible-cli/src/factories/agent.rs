@@ -297,6 +297,18 @@ async fn create_daemon_agent_inner(
 
     let client = Arc::new(client);
 
+    // Subscribe-first: wildcard-subscribe BEFORE session.create so the
+    // setup task's events (emitted the moment the session is registered)
+    // are not missed by the race where the client subscribes after create
+    // returns. The secondary specific-session subscribe later in
+    // `new_and_subscribe` is idempotent.
+    if let Err(e) = client.session_subscribe(&["*"]).await {
+        tracing::warn!(
+            "Wildcard pre-subscribe failed (setup events may be missed): {}",
+            e
+        );
+    }
+
     let workspace = params
         .working_dir
         .clone()

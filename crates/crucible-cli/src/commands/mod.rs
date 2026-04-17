@@ -2,6 +2,7 @@
 pub mod agents;
 pub mod auth;
 pub mod chat;
+pub mod chat_preflight;
 pub mod completions;
 pub mod daemon;
 pub mod doctor;
