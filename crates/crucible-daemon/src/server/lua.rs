@@ -219,22 +219,93 @@ pub(crate) async fn handle_lua_shutdown_session(
 pub(crate) async fn handle_lua_discover_plugins(req: Request) -> Response {
     let kiln_path = require_param!(req, "kiln_path", as_str).to_string();
 
-    match PluginManager::initialize(Some(Path::new(&kiln_path))) {
-        Ok(manager) => {
-            let plugins: Vec<serde_json::Value> = manager
-                .list()
-                .map(|p| {
-                    serde_json::json!({
-                        "name": p.name(),
-                        "version": p.version(),
-                        "state": p.state.to_string(),
-                        "error": p.last_error,
-                    })
-                })
-                .collect();
-            Response::success(req.id, serde_json::json!({ "plugins": plugins }))
-        }
+    match discover_plugins_for_kiln(Path::new(&kiln_path)) {
+        Ok(entries) => Response::success(
+            req.id,
+            serde_json::json!({
+                "plugins": entries,
+            }),
+        ),
         Err(e) => internal_error(req.id, e),
+    }
+}
+
+/// Discover plugins available for a kiln and return their status entries.
+///
+/// Internal-facing helper so `session.create`'s setup task (Task 1.2f) can
+/// obtain the same data the `lua.discover_plugins` RPC returns without a
+/// round-trip. Mirrors the RPC handler's behavior: initializes a
+/// [`PluginManager`] scoped to `kiln_path`, then projects each discovered
+/// plugin into a [`PluginStatusEntry`].
+pub(crate) fn discover_plugins_for_kiln(
+    kiln_path: &Path,
+) -> anyhow::Result<Vec<crucible_core::types::PluginStatusEntry>> {
+    let manager = PluginManager::initialize(Some(kiln_path))?;
+    Ok(manager
+        .list()
+        .map(|p| crucible_core::types::PluginStatusEntry {
+            name: p.name().to_string(),
+            version: p.version().to_string(),
+            state: p.state.to_string(),
+            error: p.last_error.clone(),
+        })
+        .collect())
+}
+
+#[cfg(test)]
+mod discover_plugins_tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    /// Create a minimal valid plugin inside `<root>/plugins/<name>/`.
+    ///
+    /// `PluginManager::initialize` searches the kiln's `plugins/` subdirectory
+    /// (among others), so this is the canonical per-kiln install location.
+    fn write_kiln_plugin(kiln_root: &Path, name: &str, version: &str) {
+        let plugin_dir = kiln_root.join("plugins").join(name);
+        fs::create_dir_all(&plugin_dir).unwrap();
+        fs::write(
+            plugin_dir.join("plugin.yaml"),
+            format!("name: {name}\nversion: \"{version}\"\nmain: init.lua\n"),
+        )
+        .unwrap();
+        fs::write(
+            plugin_dir.join("init.lua"),
+            "return { setup = function() end }\n",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn returns_ok_for_empty_kiln() {
+        let kiln = TempDir::new().unwrap();
+        let result = discover_plugins_for_kiln(kiln.path());
+        // `PluginManager::initialize` might still find plugins from the user's
+        // config_dir; we only assert the call itself succeeds and returns a
+        // Vec. The projection shape is covered by `projects_kiln_plugin`.
+        assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
+    }
+
+    #[test]
+    fn projects_kiln_plugin_into_status_entry() {
+        let kiln = TempDir::new().unwrap();
+        write_kiln_plugin(kiln.path(), "krohn-test-plugin", "0.1.0");
+
+        let entries = discover_plugins_for_kiln(kiln.path()).expect("discovery succeeds");
+        let entry = entries
+            .iter()
+            .find(|e| e.name == "krohn-test-plugin")
+            .unwrap_or_else(|| {
+                panic!(
+                    "expected 'krohn-test-plugin' in results, got {:?}",
+                    entries.iter().map(|e| &e.name).collect::<Vec<_>>()
+                )
+            });
+
+        assert_eq!(entry.version, "0.1.0");
+        // `state` is `Loaded` / `Error` / etc. — stringified variant.
+        assert!(!entry.state.is_empty());
     }
 }
 
