@@ -284,6 +284,14 @@ impl OilChatRunner {
         self.agent_name.is_some()
     }
 
+    /// Queue an initial `FetchModels` message so the `:model` popup has data
+    /// without a user-triggered round-trip.
+    ///
+    /// Structurally live-path only: called exclusively from
+    /// `run_with_factory`. The replay entry point (added in Task 2.3c) does
+    /// not invoke this. If `FetchModels` ever reaches the event loop under
+    /// replay anyway, the guard on the `ChatAppMsg::FetchModels` arm
+    /// swallows it — see the match-arm comment there.
     fn queue_model_prefetch(&self, msg_tx: &mpsc::UnboundedSender<ChatAppMsg>) {
         if self.is_acp_session() {
             return;
@@ -503,6 +511,10 @@ impl OilChatRunner {
         // info. Triggered whenever an MCP config is present — we no
         // longer gate on `self.mcp_servers`, which is empty until the
         // setup event lands.
+        //
+        // Structurally live-path only: this runs inside `run_with_factory`.
+        // The replay entry point (Task 2.3c) never reaches this code, so
+        // the MCP gateway is not instantiated during replay.
         if let Some(ref mcp_config) = self.mcp_config {
             let mcp_config = mcp_config.clone();
             let mcp_tx = msg_tx.clone();
@@ -1079,7 +1091,10 @@ impl OilChatRunner {
                             }
                         }
                     }
-                    ChatAppMsg::FetchModels => {
+                    ChatAppMsg::FetchModels if !self.is_replay => {
+                        // Skipped in replay mode to preserve the TUI-only guarantee
+                        // (no daemon RPC calls). Replay never populates the model
+                        // picker — `:model` is moot when there's no live session.
                         if self.is_acp_session() {
                             params.app.add_notification(
                                 crucible_core::types::Notification::warning(
@@ -1394,6 +1409,8 @@ impl OilChatRunner {
                             }
                         }
                     }
+                    // Gated on `!self.is_replay`: plugin reload opens a fresh
+                    // `DaemonClient::connect()` and must not fire during replay.
                     ChatAppMsg::ReloadPlugin(ref name) if !self.is_replay => {
                         tracing::info!(plugin = %name, "Plugin reload requested");
                         let name = name.clone();
@@ -1474,6 +1491,9 @@ impl OilChatRunner {
                             }
                         }));
                     }
+                    // Gated on `!self.is_replay`: slash commands forward to the
+                    // agent (and thus the daemon). Defense-in-depth — user
+                    // keystrokes during replay must not hit the daemon.
                     ChatAppMsg::ExecuteSlashCommand(ref cmd) if !self.is_replay => {
                         tracing::info!(command = %cmd, "Forwarding slash command as user message");
                         if let Err(e) = params.agent.send_message_fire_and_forget(cmd.clone()).await
@@ -1481,6 +1501,9 @@ impl OilChatRunner {
                             tracing::warn!(error = %e, "send_message_fire_and_forget failed for slash command");
                         }
                     }
+                    // Gated on `!self.is_replay`: export reads the recording
+                    // from the session directory via `crucible_daemon::load_events`.
+                    // During replay there is no live session to export.
                     ChatAppMsg::ExportSession(ref export_path) if !self.is_replay => {
                         let session_dir = match params.app.session_dir() {
                             Some(dir) => dir.to_path_buf(),
@@ -1525,9 +1548,22 @@ impl OilChatRunner {
                             }
                         }
                     }
+                    // Swallow daemon-bound messages during replay. The match
+                    // guards on the live arms above (`if !self.is_replay`)
+                    // mean these land here in replay mode. Any new daemon
+                    // side-effect for these variants must stay behind that
+                    // guard so the TUI-only guarantee holds.
                     ChatAppMsg::ReloadPlugin(_)
                     | ChatAppMsg::ExecuteSlashCommand(_)
-                    | ChatAppMsg::ExportSession(_) => {}
+                    | ChatAppMsg::ExportSession(_)
+                    | ChatAppMsg::FetchModels => {
+                        if self.is_replay {
+                            tracing::debug!(
+                                ?msg,
+                                "daemon-bound message ignored in replay mode"
+                            );
+                        }
+                    }
                     _ => {}
                 }
                 let action = params.app.on_message(msg);
