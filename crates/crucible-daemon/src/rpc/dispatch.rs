@@ -730,6 +730,8 @@ impl RpcDispatcher {
             &self.ctx.llm_config,
             &self.ctx.kiln,
             &self.ctx.event_tx,
+            &self.ctx.agents,
+            self.ctx.mcp_config.as_ref(),
         )
         .await;
         map_server_resp(resp)
@@ -1366,6 +1368,7 @@ mod tests {
             Arc::new(tokio::sync::Mutex::new(None)),
             None,
             Arc::new(McpServerManager::new()),
+            None,
         )
     }
 
