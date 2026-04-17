@@ -94,6 +94,10 @@ check:
 clippy:
     cargo clippy --all-targets -- -D warnings
 
+# Check for oversized Rust files (enforces 1500-line ceiling via whitelist)
+file-size-check:
+    scripts/check-file-sizes.sh
+
 # Format code
 fmt:
     cargo fmt
@@ -235,7 +239,7 @@ coverage-open: coverage
 # === CI ===
 
 # Run full CI check (mirrors GitHub CI workflow)
-ci: fmt-check clippy test-ci web-test
+ci: fmt-check clippy file-size-check test-ci web-test
     @echo "CI checks passed!"
 
 # Run tests with CI profile (matches GitHub Actions)
