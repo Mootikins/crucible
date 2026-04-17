@@ -349,6 +349,7 @@ impl ReactorTestHarness {
                 &self.event_tx,
                 true,
                 None,
+                false,
             )
             .await
             .unwrap();

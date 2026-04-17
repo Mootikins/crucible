@@ -31,6 +31,7 @@ impl AgentManager {
         event_tx: &broadcast::Sender<SessionEventMessage>,
         is_interactive: bool,
         permission_override: Option<PermissionMode>,
+        dangerously_skip_permissions: bool,
     ) -> Result<String, AgentError> {
         let session = self
             .session_manager
@@ -67,6 +68,7 @@ impl AgentManager {
                 &event_tx_clone,
                 is_interactive,
                 permission_override,
+                dangerously_skip_permissions,
             )
             .await
         {
@@ -203,6 +205,7 @@ impl AgentManager {
         event_tx: &broadcast::Sender<SessionEventMessage>,
         is_interactive: bool,
         permission_override: Option<PermissionMode>,
+        dangerously_skip_permissions: bool,
     ) -> Result<Arc<Mutex<BoxedAgentHandle>>, AgentError> {
         // Check cache first
         if let Some(cached) = self.agent_cache.get(session_id) {
@@ -219,6 +222,7 @@ impl AgentManager {
                 event_tx,
                 is_interactive,
                 permission_override,
+                dangerously_skip_permissions,
             )
             .await?;
 
@@ -246,6 +250,7 @@ impl AgentManager {
         event_tx: &broadcast::Sender<SessionEventMessage>,
         is_interactive: bool,
         permission_override: Option<PermissionMode>,
+        dangerously_skip_permissions: bool,
     ) -> Result<(BoxedAgentHandle, SessionAgent), AgentError> {
         let mut resolved_config = if agent_config.endpoint.is_none() {
             let provider_key = agent_config
@@ -297,6 +302,7 @@ impl AgentManager {
                 is_interactive,
                 permission_override,
                 agent_permissions,
+                dangerously_skip_permissions,
             ))
         } else {
             None
@@ -393,7 +399,45 @@ impl AgentManager {
         is_interactive: bool,
         permission_override: Option<PermissionMode>,
         agent_permissions: Option<PermissionConfig>,
+        dangerously_skip_permissions: bool,
     ) -> crucible_acp::client::PermissionRequestHandler {
+        // Hard bypass: auto-approve every ACP permission request with
+        // AllowAlways, ignoring all config and rules. Used by
+        // --dangerously-skip-permissions for unattended automation.
+        if dangerously_skip_permissions {
+            tracing::warn!(
+                session_id = %session_id,
+                "dangerously_skip_permissions: ACP permission handler will auto-allow everything"
+            );
+            return Arc::new(
+                move |request: agent_client_protocol::RequestPermissionRequest| {
+                    Box::pin(async move {
+                        use agent_client_protocol::{
+                            PermissionOptionKind, RequestPermissionOutcome,
+                            SelectedPermissionOutcome,
+                        };
+                        request
+                            .options
+                            .iter()
+                            .find(|opt| opt.kind == PermissionOptionKind::AllowAlways)
+                            .or_else(|| {
+                                request
+                                    .options
+                                    .iter()
+                                    .find(|opt| opt.kind == PermissionOptionKind::AllowOnce)
+                            })
+                            .or_else(|| request.options.first())
+                            .map(|opt| {
+                                RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                                    opt.option_id.clone(),
+                                ))
+                            })
+                            .unwrap_or(RequestPermissionOutcome::Cancelled)
+                    })
+                },
+            );
+        }
+
         let pending_permissions = self.pending_permissions.clone();
         let session_id_owned = session_id.to_string();
         let event_tx_owned = event_tx.clone();
@@ -2249,5 +2293,90 @@ mod permission_override_tests {
             !response.allowed,
             "--permissions deny must block tools even when base config allows them"
         );
+    }
+
+    #[tokio::test]
+    async fn dangerously_skip_permissions_auto_selects_allow_always() {
+        use crate::agent_manager::{AgentManager, AgentManagerParams};
+        use crate::background_manager::BackgroundJobManager;
+        use crate::kiln_manager::KilnManager;
+        use crate::session_manager::SessionManager;
+        use crate::session_storage::FileSessionStorage;
+        use crate::tools::workspace::WorkspaceTools;
+        use agent_client_protocol::{
+            PermissionOption, PermissionOptionKind, RequestPermissionOutcome,
+            RequestPermissionRequest, SessionId, ToolCallId, ToolCallUpdate, ToolCallUpdateFields,
+        };
+
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let (event_tx, _) = broadcast::channel::<SessionEventMessage>(16);
+        let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
+
+        // A permission_config with an ask rule that would normally block Task.
+        let base = PermissionConfig {
+            default: PermissionMode::Ask,
+            allow: Vec::new(),
+            deny: Vec::new(),
+            ask: vec!["Task:*".to_string()],
+        };
+
+        let manager = AgentManager::new(AgentManagerParams {
+            kiln_manager: Arc::new(KilnManager::new()),
+            session_manager,
+            background_manager,
+            mcp_gateway: None,
+            llm_config: None,
+            acp_config: None,
+            permission_config: Some(base),
+            plugin_loader: None,
+            workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
+        });
+
+        let handler = manager.build_acp_permission_handler(
+            "sess-bypass",
+            &event_tx,
+            false,
+            None,
+            None,
+            true, // dangerously_skip_permissions
+        );
+
+        let tool_call =
+            ToolCallUpdate::new(ToolCallId::from("tc-1"), ToolCallUpdateFields::default());
+        let options = vec![
+            PermissionOption::new(
+                "reject_once",
+                "Reject".to_string(),
+                PermissionOptionKind::RejectOnce,
+            ),
+            PermissionOption::new(
+                "allow_once",
+                "Allow once".to_string(),
+                PermissionOptionKind::AllowOnce,
+            ),
+            PermissionOption::new(
+                "allow_always",
+                "Allow always".to_string(),
+                PermissionOptionKind::AllowAlways,
+            ),
+        ];
+        let request = RequestPermissionRequest::new(
+            SessionId::from("sess-bypass".to_string()),
+            tool_call,
+            options,
+        );
+
+        let outcome = handler(request).await;
+        match outcome {
+            RequestPermissionOutcome::Selected(selected) => {
+                assert_eq!(
+                    selected.option_id.0.as_ref(),
+                    "allow_always",
+                    "dangerously_skip_permissions must prefer AllowAlways"
+                );
+            }
+            other => panic!("expected Selected outcome, got {:?}", other),
+        }
     }
 }

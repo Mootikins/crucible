@@ -55,7 +55,14 @@ async fn send_message_emits_text_delta_events_in_order() {
 
     let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
     let message_id = agent_manager
-        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
+        .send_message(
+            &session.id,
+            "test".to_string(),
+            &event_tx,
+            true,
+            None,
+            false,
+        )
         .await
         .unwrap();
 
@@ -129,7 +136,14 @@ async fn send_message_emits_thinking_before_text_delta() {
 
     let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
     agent_manager
-        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
+        .send_message(
+            &session.id,
+            "test".to_string(),
+            &event_tx,
+            true,
+            None,
+            false,
+        )
         .await
         .unwrap();
 
@@ -199,7 +213,14 @@ async fn same_chunk_thinking_emitted_before_text_delta() {
 
     let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
     agent_manager
-        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
+        .send_message(
+            &session.id,
+            "test".to_string(),
+            &event_tx,
+            true,
+            None,
+            false,
+        )
         .await
         .unwrap();
 
@@ -306,7 +327,14 @@ async fn send_message_emits_tool_call_and_tool_result_events() {
 
     let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
     let message_id = agent_manager
-        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
+        .send_message(
+            &session.id,
+            "test".to_string(),
+            &event_tx,
+            true,
+            None,
+            false,
+        )
         .await
         .unwrap();
 
@@ -415,7 +443,14 @@ async fn display_hook_lua_tool_enriches_tool_call_metadata() {
 
     let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
     agent_manager
-        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
+        .send_message(
+            &session.id,
+            "test".to_string(),
+            &event_tx,
+            true,
+            None,
+            false,
+        )
         .await
         .unwrap();
 
@@ -473,7 +508,14 @@ async fn test_execute_agent_stream_empty_response_emits_error_event() {
 
     let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
     agent_manager
-        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
+        .send_message(
+            &session.id,
+            "test".to_string(),
+            &event_tx,
+            true,
+            None,
+            false,
+        )
         .await
         .unwrap();
 
@@ -580,7 +622,14 @@ async fn test_execute_agent_stream_tool_call_only_is_not_error() {
 
     let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
     let message_id = agent_manager
-        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
+        .send_message(
+            &session.id,
+            "test".to_string(),
+            &event_tx,
+            true,
+            None,
+            false,
+        )
         .await
         .unwrap();
 

@@ -1083,6 +1083,7 @@ async fn test_send_message_with_permission_override_accepted() {
             "Hello with allow override!",
             false,
             Some("allow".to_string()),
+            false,
         )
         .await;
 
