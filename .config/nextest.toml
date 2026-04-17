@@ -1,6 +1,8 @@
 # Nextest configuration for crucible test suite
 # See: https://nexte.st/book/configuration.html
 
+experimental = ["setup-scripts"]
+
 [store]
 dir = "target/nextest"
 
@@ -36,6 +38,22 @@ default-filter = "not (test(/slow/) | test(/manual/))"
 retries = 0
 fail-fast = true
 slow-timeout = { period = "30s", terminate-after = 1 }
+
+# Setup scripts — build test fixtures before test runs
+[scripts.setup.build-test-fixtures]
+command = 'cargo build -p crucible-acp --features test-utils --bin mock-acp-agent'
+
+[[profile.default.scripts]]
+filter = 'package(crucible-daemon)'
+setup = 'build-test-fixtures'
+
+[[profile.ci.scripts]]
+filter = 'package(crucible-daemon)'
+setup = 'build-test-fixtures'
+
+[[profile.integration.scripts]]
+filter = 'package(crucible-daemon)'
+setup = 'build-test-fixtures'
 
 # Test groups for filtering
 # Usage: cargo nextest run --profile ci -E 'not test(/slow/)'
