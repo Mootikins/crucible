@@ -58,16 +58,20 @@ impl TestServer {
     }
 }
 
-/// Collect setup events for `session_id` from `event_rx` until the timeout
-/// elapses, returning them in receive order.
+/// Collect setup events for `session_id` from `event_rx`, returning early
+/// once every event name in `expected` has been observed, or when the
+/// timeout elapses.
 ///
 /// We can't simply assert "got all 7" because the setup task runs tasks
 /// concurrently (indexers/discovery) and because `context_limit_resolved`
-/// is conditional. Instead, callers assert on the resulting set + the
-/// position of `session_initialized`.
+/// is conditional. Instead, callers pass the set of required events and
+/// the collector exits as soon as that set is satisfied — avoiding a
+/// blanket wall-clock wait. The `timeout` is an upper bound for CI
+/// headroom if something genuinely stalls.
 async fn collect_setup_events(
     event_rx: &mut mpsc::UnboundedReceiver<SessionEvent>,
     session_id: &str,
+    expected: &HashSet<&str>,
     timeout: Duration,
 ) -> Vec<SessionEvent> {
     let setup_event_names: HashSet<&str> = [
@@ -83,6 +87,7 @@ async fn collect_setup_events(
     .collect();
 
     let mut events = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
         let now = tokio::time::Instant::now();
@@ -93,7 +98,11 @@ async fn collect_setup_events(
             Ok(Some(ev)) => {
                 if ev.session_id == session_id && setup_event_names.contains(ev.event_type.as_str())
                 {
+                    seen.insert(ev.event_type.clone());
                     events.push(ev);
+                    if expected.iter().all(|name| seen.contains(*name)) {
+                        break;
+                    }
                 }
             }
             Ok(None) => break, // channel closed
@@ -147,7 +156,23 @@ async fn session_create_emits_setup_events_for_internal_agent() {
         .expect("session_id must be string")
         .to_string();
 
-    let events = collect_setup_events(&mut event_rx, &session_id, Duration::from_secs(3)).await;
+    let expected: HashSet<&str> = [
+        "session_initialized",
+        "workspace_indexed",
+        "kiln_notes_indexed",
+        "plugins_discovered",
+        "mcp_servers_ready",
+        "providers_listed",
+    ]
+    .into_iter()
+    .collect();
+    let events = collect_setup_events(
+        &mut event_rx,
+        &session_id,
+        &expected,
+        Duration::from_secs(5),
+    )
+    .await;
 
     let event_types: Vec<String> = events.iter().map(|e| e.event_type.clone()).collect();
     let event_set: HashSet<&str> = event_types.iter().map(|s| s.as_str()).collect();
@@ -228,7 +253,19 @@ async fn session_create_omits_llm_events_for_acp_agent() {
         .expect("session_id must be string")
         .to_string();
 
-    let events = collect_setup_events(&mut event_rx, &session_id, Duration::from_secs(3)).await;
+    // For ACP we assert on *absence* of LLM events, so we cannot early-exit
+    // the moment the common events arrive — we need to drain the full
+    // window to catch a regression where `providers_listed` would leak in
+    // later. Pass an expected set that will never fully match so the
+    // collector waits the whole timeout.
+    let never_completes: HashSet<&str> = ["__sentinel_never_fires__"].into_iter().collect();
+    let events = collect_setup_events(
+        &mut event_rx,
+        &session_id,
+        &never_completes,
+        Duration::from_secs(5),
+    )
+    .await;
     let event_types: Vec<String> = events.iter().map(|e| e.event_type.clone()).collect();
     let event_set: HashSet<&str> = event_types.iter().map(|s| s.as_str()).collect();
 

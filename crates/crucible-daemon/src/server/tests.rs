@@ -55,8 +55,10 @@ fn test_agent_manager(
     let background_manager = Arc::new(crate::background_manager::BackgroundJobManager::new(
         event_tx,
     ));
+    // These tests never drive workspace tools — WorkspaceTools just needs a
+    // path value. Use a per-process temp path rather than hardcoding /tmp.
     let workspace_tools = Arc::new(crate::tools::workspace::WorkspaceTools::new(
-        &std::path::PathBuf::from("/tmp"),
+        std::env::temp_dir().join(format!("crucible-server-test-{}", std::process::id())),
     ));
     Arc::new(AgentManager::new(
         crate::agent_manager::AgentManagerParams {
