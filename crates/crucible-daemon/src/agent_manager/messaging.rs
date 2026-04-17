@@ -456,16 +456,14 @@ impl AgentManager {
             })
         });
 
-        // Priority: CLI override (mode only) > agent-specific > global config
-        let base_config = agent_permissions.or_else(|| self.permission_config.clone());
-        let effective_config = match permission_override {
-            Some(mode) => {
-                let mut config = base_config.unwrap_or_default();
-                config.default = mode;
-                Some(config)
-            }
-            None => base_config,
-        };
+        // Priority: CLI override > agent-specific > global config.
+        // For Allow and Deny overrides, the user's intent is unconditional —
+        // ignore base-config rules entirely. For Ask, preserve rules (interactive default).
+        let effective_config = resolve_effective_permission_config(
+            permission_override,
+            agent_permissions,
+            self.permission_config.clone(),
+        );
 
         let gate: Arc<dyn PermissionGate> = Arc::new(
             DaemonPermissionGate::new(effective_config, is_interactive)
@@ -2086,5 +2084,170 @@ impl AgentManager {
             warn!(session_id = %session_id, "No active request to cancel");
             false
         }
+    }
+}
+
+/// Resolve the permission config to apply for a turn given the CLI override,
+/// any agent-specific permissions, and the daemon's global permission config.
+///
+/// Priority: CLI override > agent-specific > global config.
+///
+/// For `Allow` and `Deny` overrides the user's intent is unconditional — the
+/// returned config has the requested default and *empty* allow/deny/ask rule
+/// lists, so base-config rules cannot re-introduce prompts or blocks. For
+/// `Ask` the existing allow/deny/ask rules are preserved (interactive default).
+fn resolve_effective_permission_config(
+    permission_override: Option<PermissionMode>,
+    agent_permissions: Option<PermissionConfig>,
+    global_permission_config: Option<PermissionConfig>,
+) -> Option<PermissionConfig> {
+    match permission_override {
+        Some(mode @ (PermissionMode::Allow | PermissionMode::Deny)) => Some(PermissionConfig {
+            default: mode,
+            allow: Vec::new(),
+            deny: Vec::new(),
+            ask: Vec::new(),
+        }),
+        Some(PermissionMode::Ask) => {
+            let mut config = agent_permissions
+                .or(global_permission_config)
+                .unwrap_or_default();
+            config.default = PermissionMode::Ask;
+            Some(config)
+        }
+        None => agent_permissions.or(global_permission_config),
+    }
+}
+
+#[cfg(test)]
+mod permission_override_tests {
+    use super::*;
+
+    fn base_config_with_ask_rule() -> PermissionConfig {
+        PermissionConfig {
+            default: PermissionMode::Ask,
+            allow: Vec::new(),
+            deny: Vec::new(),
+            // Matches any input for the `Task` tool (glob `*` against JSON args).
+            ask: vec!["Task:*".to_string()],
+        }
+    }
+
+    #[test]
+    fn allow_override_discards_base_ask_rules() {
+        let base = base_config_with_ask_rule();
+        let effective =
+            resolve_effective_permission_config(Some(PermissionMode::Allow), None, Some(base))
+                .expect("config produced");
+        assert_eq!(effective.default, PermissionMode::Allow);
+        assert!(effective.allow.is_empty());
+        assert!(effective.deny.is_empty());
+        assert!(
+            effective.ask.is_empty(),
+            "ask rules must be dropped so --permissions allow is unconditional"
+        );
+    }
+
+    #[test]
+    fn allow_override_discards_agent_specific_rules() {
+        let mut agent = base_config_with_ask_rule();
+        agent.deny = vec!["bash:rm *".to_string()];
+        let effective =
+            resolve_effective_permission_config(Some(PermissionMode::Allow), Some(agent), None)
+                .expect("config produced");
+        assert_eq!(effective.default, PermissionMode::Allow);
+        assert!(effective.deny.is_empty());
+        assert!(effective.ask.is_empty());
+    }
+
+    #[test]
+    fn deny_override_discards_base_rules() {
+        let mut base = base_config_with_ask_rule();
+        base.allow = vec!["*:read_file".to_string()];
+        let effective =
+            resolve_effective_permission_config(Some(PermissionMode::Deny), None, Some(base))
+                .expect("config produced");
+        assert_eq!(effective.default, PermissionMode::Deny);
+        assert!(effective.allow.is_empty());
+        assert!(effective.deny.is_empty());
+        assert!(effective.ask.is_empty());
+    }
+
+    #[test]
+    fn ask_override_preserves_base_rules() {
+        let mut base = base_config_with_ask_rule();
+        base.allow = vec!["*:read_file".to_string()];
+        let effective = resolve_effective_permission_config(
+            Some(PermissionMode::Ask),
+            None,
+            Some(base.clone()),
+        )
+        .expect("config produced");
+        assert_eq!(effective.default, PermissionMode::Ask);
+        assert_eq!(effective.allow, base.allow);
+        assert_eq!(effective.ask, base.ask);
+    }
+
+    #[test]
+    fn no_override_falls_back_to_agent_then_global() {
+        let mut agent = PermissionConfig::default();
+        agent.default = PermissionMode::Allow;
+        let mut global = PermissionConfig::default();
+        global.default = PermissionMode::Deny;
+
+        let with_agent =
+            resolve_effective_permission_config(None, Some(agent.clone()), Some(global.clone()))
+                .expect("config produced");
+        assert_eq!(with_agent.default, PermissionMode::Allow);
+
+        let without_agent = resolve_effective_permission_config(None, None, Some(global.clone()))
+            .expect("config produced");
+        assert_eq!(without_agent.default, PermissionMode::Deny);
+
+        let neither = resolve_effective_permission_config(None, None, None);
+        assert!(neither.is_none());
+    }
+
+    #[tokio::test]
+    async fn gate_with_allow_override_approves_tool_blocked_by_base_ask_rule() {
+        use crate::permission_bridge::DaemonPermissionGate;
+        use crucible_core::interaction::PermRequest;
+        use crucible_core::traits::PermissionGate;
+
+        let base = base_config_with_ask_rule();
+        let effective =
+            resolve_effective_permission_config(Some(PermissionMode::Allow), None, Some(base));
+        let gate = DaemonPermissionGate::new(effective, false);
+
+        let response = gate
+            .request_permission(PermRequest::tool("Task", serde_json::json!({})))
+            .await;
+        assert!(
+            response.allowed,
+            "--permissions allow must approve tools even when base config has ask rules for them"
+        );
+    }
+
+    #[tokio::test]
+    async fn gate_with_deny_override_blocks_tool_allowed_by_base_allow_rule() {
+        use crate::permission_bridge::DaemonPermissionGate;
+        use crucible_core::interaction::PermRequest;
+        use crucible_core::traits::PermissionGate;
+
+        let mut base = PermissionConfig::default();
+        base.default = PermissionMode::Allow;
+        base.allow = vec!["Task:*".to_string()];
+
+        let effective =
+            resolve_effective_permission_config(Some(PermissionMode::Deny), None, Some(base));
+        let gate = DaemonPermissionGate::new(effective, false);
+
+        let response = gate
+            .request_permission(PermRequest::tool("Task", serde_json::json!({})))
+            .await;
+        assert!(
+            !response.allowed,
+            "--permissions deny must block tools even when base config allows them"
+        );
     }
 }
