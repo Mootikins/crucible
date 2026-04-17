@@ -2,8 +2,9 @@ use super::*;
 use chrono::{Duration as ChronoDuration, Utc};
 
 pub(super) fn internal_error(req_id: Option<RequestId>, err: impl std::fmt::Display) -> Response {
-    error!("Internal error: {}", err);
-    Response::error(req_id, INTERNAL_ERROR, "Internal server error")
+    let msg = err.to_string();
+    error!("Internal error: {}", msg);
+    Response::error(req_id, INTERNAL_ERROR, format!("Internal error: {}", msg))
 }
 
 /// Log client error details and return a sanitized error message.

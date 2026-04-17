@@ -1926,7 +1926,7 @@ fn test_internal_error_returns_correct_code_and_message() {
     assert!(response.error.is_some());
     let error = response.error.unwrap();
     assert_eq!(error.code, INTERNAL_ERROR);
-    assert_eq!(error.message, "Internal server error");
+    assert_eq!(error.message, format!("Internal error: {}", err_msg));
     assert!(response.result.is_none());
 }
 
