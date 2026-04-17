@@ -1,17 +1,8 @@
 use super::*;
-use serde::Serialize;
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize)]
-pub struct ProviderInfo {
-    pub name: String,
-    pub provider_type: String,
-    pub available: bool,
-    pub default_model: Option<String>,
-    pub models: Vec<String>,
-    pub endpoint: Option<String>,
-    pub reason: Option<String>,
-    pub is_local: bool,
-}
+// `ProviderInfo` now lives in `crucible-core` so session-setup event
+// consumers (the CLI/TUI) can depend on it without pulling in the daemon.
+pub use crucible_core::types::ProviderInfo;
 
 fn build_provider_info(
     backend: BackendType,

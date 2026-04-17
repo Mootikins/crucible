@@ -19,9 +19,12 @@ pub mod acp;
 pub mod database;
 pub mod grammar;
 pub mod hashing;
+pub mod mcp_status;
 pub mod mode;
 pub mod notification;
+pub mod plugin_status;
 pub mod popup;
+pub mod provider_info;
 pub mod tool_ref;
 pub mod undo;
 pub mod undo_tree;
@@ -87,3 +90,13 @@ pub use crate::types::undo_tree::{NodeId as UndoNodeId, TreeNode, TreeSummary, U
 
 // Re-export notification types
 pub use crate::types::notification::{Notification, NotificationKind, NotificationQueue};
+
+// Re-export provider info (used by daemon RPC and session-setup events)
+pub use crate::types::provider_info::ProviderInfo;
+
+// Re-export plugin status entry (used by session-setup events)
+pub use crate::types::plugin_status::PluginStatusEntry;
+
+// NOTE: `mcp_status::McpServerInfo` is intentionally NOT re-exported at
+// `types::` top-level to avoid collision with `traits::mcp::McpServerInfo`
+// (distinct: protocol-level identity vs. display-oriented status).
