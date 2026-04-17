@@ -128,7 +128,8 @@ demo name speed="3":
 # Generate all demo GIFs
 demo-all: (demo "demo") (demo "acp-demo") (demo "delegation-demo") (demo "overview")
     cp assets/demo.gif docs-site/public/demo.gif
-    @echo "Copied hero demo to docs-site/public/"
+    cp assets/delegation-demo.gif docs-site/public/delegation-demo.gif
+    @echo "Copied demo GIFs to docs-site/public/"
 
 # Validate demo fixtures render without duplication or styling issues
 demo-validate:
