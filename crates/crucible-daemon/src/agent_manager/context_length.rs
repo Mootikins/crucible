@@ -143,6 +143,8 @@ async fn try_ollama_api_show(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[tokio::test]
     async fn returns_none_when_endpoint_unreachable() {
@@ -153,9 +155,6 @@ mod tests {
 
     #[tokio::test]
     async fn fetches_context_length_from_ollama_api_show() {
-        use wiremock::matchers::{method, path};
-        use wiremock::{Mock, MockServer, ResponseTemplate};
-
         let mock_server = MockServer::start().await;
 
         // Mock the /v1/models endpoint to return 404 (not found)
@@ -181,5 +180,116 @@ mod tests {
 
         let result = fetch_model_context_length(&mock_server.uri(), "test-model").await;
         assert_eq!(result, Some(131072));
+    }
+
+    #[tokio::test]
+    async fn parses_num_ctx_from_ollama_parameters() {
+        let mock_server = MockServer::start().await;
+
+        // Mock the /v1/models endpoint to return 404
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&mock_server)
+            .await;
+
+        // Mock the /api/show endpoint with num_ctx in parameters
+        let show_response = serde_json::json!({
+            "model_info": {},
+            "parameters": "num_ctx 4096\nstop \"<|im_start|>\""
+        });
+
+        Mock::given(method("POST"))
+            .and(path("/api/show"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(show_response))
+            .mount(&mock_server)
+            .await;
+
+        let result = fetch_model_context_length(&mock_server.uri(), "test-model").await;
+        assert_eq!(result, Some(4096));
+    }
+
+    #[tokio::test]
+    async fn parses_generic_context_length_key_from_model_info() {
+        let mock_server = MockServer::start().await;
+
+        // Mock the /v1/models endpoint to return 404
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&mock_server)
+            .await;
+
+        // Mock the /api/show endpoint with generic context_length key
+        let show_response = serde_json::json!({
+            "model_info": {
+                "context_length": 8192
+            }
+        });
+
+        Mock::given(method("POST"))
+            .and(path("/api/show"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(show_response))
+            .mount(&mock_server)
+            .await;
+
+        let result = fetch_model_context_length(&mock_server.uri(), "test-model").await;
+        assert_eq!(result, Some(8192));
+    }
+
+    #[tokio::test]
+    async fn returns_none_when_ollama_model_info_is_empty() {
+        let mock_server = MockServer::start().await;
+
+        // Mock the /v1/models endpoint to return 404
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&mock_server)
+            .await;
+
+        // Mock the /api/show endpoint with empty model_info
+        let show_response = serde_json::json!({
+            "model_info": {}
+        });
+
+        Mock::given(method("POST"))
+            .and(path("/api/show"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(show_response))
+            .mount(&mock_server)
+            .await;
+
+        let result = fetch_model_context_length(&mock_server.uri(), "test-model").await;
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn strips_v1_suffix_when_calling_ollama_api_show() {
+        let mock_server = MockServer::start().await;
+
+        // Mock the /v1/models endpoint to return 404
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&mock_server)
+            .await;
+
+        // Mock the /api/show endpoint
+        let show_response = serde_json::json!({
+            "model_info": {
+                "llama.context_length": 2048
+            }
+        });
+
+        Mock::given(method("POST"))
+            .and(path("/api/show"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(show_response))
+            .mount(&mock_server)
+            .await;
+
+        // Call with /v1 suffix in endpoint
+        let endpoint_with_v1 = format!("{}/v1", mock_server.uri());
+        let result = fetch_model_context_length(&endpoint_with_v1, "test-model").await;
+        assert_eq!(result, Some(2048));
     }
 }
