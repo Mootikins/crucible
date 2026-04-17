@@ -10,7 +10,10 @@ pub(crate) async fn handle_session_create(
     pm: &Arc<ProjectManager>,
     llm_config: &Option<LlmConfig>,
     km: &Arc<KilnManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
+    // TODO(task-1.2f): used by setup task to emit setup events.
+    let _ = event_tx;
     let session_type_str = optional_param!(req, "type", as_str).unwrap_or("chat");
     let session_type = match session_type_str {
         "chat" => SessionType::Chat,

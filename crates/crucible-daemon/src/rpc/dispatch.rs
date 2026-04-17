@@ -729,6 +729,7 @@ impl RpcDispatcher {
             &self.ctx.project_manager,
             &self.ctx.llm_config,
             &self.ctx.kiln,
+            &self.ctx.event_tx,
         )
         .await;
         map_server_resp(resp)
