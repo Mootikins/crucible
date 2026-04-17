@@ -9,7 +9,6 @@
 # Priority batches — see thoughts/shared/plans/2026-04-17-god-file-decomposition.md
 #
 # === Batch 1 (non-daemon, safe to start now) ===
-crates/crucible-cli/src/cli.rs
 crates/crucible-config/src/components/permissions.rs
 crates/crucible-config/src/includes.rs
 crates/crucible-sqlite/src/query/render/sqlite.rs
