@@ -121,6 +121,31 @@ fn select_session_kiln(config: &CliConfig) -> Option<PathBuf> {
 }
 
 pub async fn execute(params: ExecuteParams) -> Result<()> {
+    if let Some(ref replay_path) = params.replay {
+        if !replay_path.exists() {
+            anyhow::bail!("replay file not found: {}", replay_path.display());
+        }
+        if params.query.is_some() {
+            anyhow::bail!("--replay cannot be combined with a query argument");
+        }
+        if params.record.is_some() {
+            anyhow::bail!("--replay cannot be combined with --record");
+        }
+        if params.resume_session_id.is_some() {
+            anyhow::bail!("--replay cannot be combined with --resume");
+        }
+        if params.agent_name.is_some() {
+            anyhow::bail!("--replay cannot be combined with --agent");
+        }
+        return run_replay(
+            replay_path.clone(),
+            params.replay_speed,
+            params.replay_auto_exit,
+            &params.config,
+        )
+        .await;
+    }
+
     let ExecuteParams {
         config,
         agent_name,
@@ -199,6 +224,15 @@ pub async fn execute(params: ExecuteParams) -> Result<()> {
             .await
         }
     }
+}
+
+async fn run_replay(
+    _path: std::path::PathBuf,
+    _speed: f64,
+    _auto_exit: Option<u64>,
+    _config: &CliConfig,
+) -> Result<()> {
+    todo!("Task 2.3c will implement this")
 }
 
 fn parse_env_overrides(env_overrides: &[String]) -> std::collections::HashMap<String, String> {

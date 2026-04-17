@@ -127,11 +127,11 @@ pub enum Commands {
         plan: bool,
 
         /// Record TUI session to a JSONL file for later replay
-        #[arg(long, conflicts_with = "replay")]
+        #[arg(long)]
         record: Option<PathBuf>,
 
         /// Replay a previously recorded JSONL session
-        #[arg(long, conflicts_with = "record")]
+        #[arg(long)]
         replay: Option<PathBuf>,
 
         /// Playback speed multiplier for replay (default: 1.0)
