@@ -389,8 +389,7 @@ impl OilChatRunner {
                 background_tasks.push(tokio::spawn(async move {
                     let mut stream = SessionEventStream::new();
                     for event in events {
-                        let event_type =
-                            event.get("event").and_then(|e| e.as_str()).unwrap_or("");
+                        let event_type = event.get("event").and_then(|e| e.as_str()).unwrap_or("");
                         let data = event.get("data").cloned().unwrap_or_default();
                         for m in stream.translate(event_type, &data) {
                             if msg_tx_resume.send(m).is_err() {
@@ -1485,8 +1484,7 @@ impl OilChatRunner {
                     }
                     ChatAppMsg::ExecuteSlashCommand(ref cmd) if !self.is_replay => {
                         tracing::info!(command = %cmd, "Forwarding slash command as user message");
-                        if let Err(e) =
-                            params.agent.send_message_fire_and_forget(cmd.clone()).await
+                        if let Err(e) = params.agent.send_message_fire_and_forget(cmd.clone()).await
                         {
                             tracing::warn!(error = %e, "send_message_fire_and_forget failed for slash command");
                         }
@@ -1918,7 +1916,10 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
             }
         }
         "subagent_spawned" => {
-            let id = data.get("job_id").and_then(|v| v.as_str()).map(String::from);
+            let id = data
+                .get("job_id")
+                .and_then(|v| v.as_str())
+                .map(String::from);
             let prompt = data
                 .get("prompt")
                 .and_then(|v| v.as_str())
@@ -1933,7 +1934,10 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
             }
         }
         "subagent_completed" => {
-            let id = data.get("job_id").and_then(|v| v.as_str()).map(String::from);
+            let id = data
+                .get("job_id")
+                .and_then(|v| v.as_str())
+                .map(String::from);
             let summary = data
                 .get("summary")
                 .and_then(|v| v.as_str())
@@ -1948,11 +1952,11 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
             }
         }
         "subagent_failed" => {
-            let id = data.get("job_id").and_then(|v| v.as_str()).map(String::from);
-            let error = data
-                .get("error")
+            let id = data
+                .get("job_id")
                 .and_then(|v| v.as_str())
                 .map(String::from);
+            let error = data.get("error").and_then(|v| v.as_str()).map(String::from);
             match (id, error) {
                 (Some(id), Some(error)) => vec![ChatAppMsg::SubagentFailed { id, error }],
                 (Some(id), None) => vec![ChatAppMsg::SubagentFailed {
@@ -1998,11 +2002,7 @@ impl SessionEventStream {
         self
     }
 
-    pub fn translate(
-        &mut self,
-        event_type: &str,
-        data: &serde_json::Value,
-    ) -> Vec<ChatAppMsg> {
+    pub fn translate(&mut self, event_type: &str, data: &serde_json::Value) -> Vec<ChatAppMsg> {
         if event_type == "text_delta" {
             self.saw_text_delta = true;
         } else if event_type == "user_message" {
@@ -2066,7 +2066,10 @@ async fn consume_session_events<F, E>(
     mut on_event: E,
 ) where
     F: Fn(&crucible_daemon::SessionEvent) -> bool,
-    E: FnMut(&crucible_daemon::SessionEvent, &tokio::sync::mpsc::UnboundedSender<ChatAppMsg>) -> bool,
+    E: FnMut(
+        &crucible_daemon::SessionEvent,
+        &tokio::sync::mpsc::UnboundedSender<ChatAppMsg>,
+    ) -> bool,
 {
     let mut stream = SessionEventStream::new();
     if let Some(limit) = context_limit {

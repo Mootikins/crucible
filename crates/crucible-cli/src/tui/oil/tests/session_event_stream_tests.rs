@@ -185,7 +185,10 @@ fn message_complete_with_token_counts_emits_context_usage() {
     let has_context_usage = msgs.iter().any(|m| {
         matches!(
             m,
-            ChatAppMsg::ContextUsage { used: 150, total: _ }
+            ChatAppMsg::ContextUsage {
+                used: 150,
+                total: _
+            }
         )
     });
     assert!(
@@ -219,8 +222,8 @@ fn message_complete_without_token_counts_does_not_emit_context_usage() {
 fn delegation_fixture_renders_without_duplication() {
     use std::fs::read_to_string;
 
-    let jsonl = read_to_string("../../assets/fixtures/delegation-demo.jsonl")
-        .expect("fixture present");
+    let jsonl =
+        read_to_string("../../assets/fixtures/delegation-demo.jsonl").expect("fixture present");
     let mut stream = SessionEventStream::new();
     let mut all_msgs = Vec::new();
 
