@@ -227,12 +227,45 @@ pub async fn execute(params: ExecuteParams) -> Result<()> {
 }
 
 async fn run_replay(
-    _path: std::path::PathBuf,
-    _speed: f64,
-    _auto_exit: Option<u64>,
-    _config: &CliConfig,
+    path: PathBuf,
+    speed: f64,
+    auto_exit: Option<u64>,
+    config: &CliConfig,
 ) -> Result<()> {
-    todo!("Task 2.3c will implement this")
+    use crate::chat::bridge::AgentEventBridge;
+    use crate::tui::oil::{ChatMode, OilChatRunner};
+    use crucible_core::events::EventRing;
+
+    // The replay entry short-circuits inside `run_with_factory` before the
+    // factory is invoked, so the supplied closure is a stub that never runs.
+    // The bridge is still required by the entry-point signature; it is
+    // backed by a throwaway ring because nothing consumes it in replay.
+    let ring = Arc::new(EventRing::new(4096));
+    let bridge = AgentEventBridge::new(ring);
+
+    let mut runner = OilChatRunner::new()?
+        .with_mode(ChatMode::Normal)
+        .with_model("replay")
+        .with_context_limit(0)
+        .with_show_thinking(config.chat.show_thinking)
+        .with_replay_path(Some(path))
+        .with_replay_speed(speed)
+        .with_replay_auto_exit(auto_exit);
+
+    let factory = |_selection: crate::tui::AgentSelection| async move {
+        // Unreachable: replay short-circuits before the factory is called.
+        Err::<
+            (
+                Box<dyn crucible_core::traits::chat::AgentHandle + Send + Sync>,
+                Option<tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>>,
+            ),
+            anyhow::Error,
+        >(anyhow::anyhow!(
+            "factory called during replay (should be unreachable)"
+        ))
+    };
+
+    runner.run_with_factory(&bridge, factory).await
 }
 
 fn parse_env_overrides(env_overrides: &[String]) -> std::collections::HashMap<String, String> {

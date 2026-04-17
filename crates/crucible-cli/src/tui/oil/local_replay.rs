@@ -82,11 +82,8 @@ pub async fn drive_replay(
         }
     }
 
-    let mut done = SessionEventMessage::new(
-        new_session_id,
-        "replay_complete",
-        serde_json::json!({}),
-    );
+    let mut done =
+        SessionEventMessage::new(new_session_id, "replay_complete", serde_json::json!({}));
     done.msg_type = "replay_event".into();
     let _ = tx.send(done);
 }

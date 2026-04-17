@@ -130,10 +130,7 @@ impl AgentHandle for NoopAgentHandle {
         true
     }
 
-    async fn on_commands_update(
-        &mut self,
-        _commands: Vec<CommandDescriptor>,
-    ) -> ChatResult<()> {
+    async fn on_commands_update(&mut self, _commands: Vec<CommandDescriptor>) -> ChatResult<()> {
         Ok(())
     }
 
@@ -293,9 +290,7 @@ impl AgentHandle for NoopAgentHandle {
         Ok(())
     }
 
-    fn take_interaction_receiver(
-        &mut self,
-    ) -> Option<mpsc::UnboundedReceiver<InteractionEvent>> {
+    fn take_interaction_receiver(&mut self) -> Option<mpsc::UnboundedReceiver<InteractionEvent>> {
         self.interaction_rx.take()
     }
 
@@ -354,7 +349,10 @@ mod tests {
             let mut s = agent.send_message_stream("hi".into());
             assert!(s.next().await.is_none());
         }
-        assert!(agent.send_message_fire_and_forget("hi".into()).await.is_ok());
+        assert!(agent
+            .send_message_fire_and_forget("hi".into())
+            .await
+            .is_ok());
         {
             let mut s = agent.continue_with_tool_results(Vec::new(), Vec::new());
             assert!(s.next().await.is_none());
@@ -432,10 +430,7 @@ mod tests {
 
         // Interaction
         assert!(agent
-            .interaction_respond(
-                "req-1".into(),
-                InteractionResponse::Cancelled,
-            )
+            .interaction_respond("req-1".into(), InteractionResponse::Cancelled,)
             .await
             .is_ok());
 

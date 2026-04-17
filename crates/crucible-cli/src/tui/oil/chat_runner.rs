@@ -390,15 +390,70 @@ impl OilChatRunner {
         }
 
         if let Some(replay_path) = self.replay_path.clone() {
-            let (mut agent, replay_session_id, event_rx) =
-                crate::factories::create_daemon_replay_agent(&replay_path, self.replay_speed)
-                    .await?;
+            // Read the recording directly off disk. No daemon contact.
+            let (header, events) = crate::tui::oil::local_replay::read_recording(&replay_path)?;
 
+            // Header's terminal_size records the geometry the recording was
+            // rendered against. The real terminal's size is whatever the user
+            // has right now; we log the recorded size for diagnostics rather
+            // than resizing the live terminal.
+            if let Some((cols, rows)) = header.terminal_size {
+                tracing::info!(
+                    recorded_cols = cols,
+                    recorded_rows = rows,
+                    "Replay recording terminal_size (informational)"
+                );
+            }
             tracing::info!(
-                session_id = %replay_session_id,
+                original_session = %header.session_id,
+                started_at = %header.started_at,
+                event_count = events.len(),
                 speed = self.replay_speed,
-                "Connected to daemon replay session"
+                "Replaying recording from disk"
             );
+
+            let replay_session_id = format!(
+                "local-replay-{}",
+                chrono::Utc::now().format("%Y%m%d-%H%M%S-%f")
+            );
+
+            // Local driver pumps RecordedEvents out as SessionEventMessages.
+            // An adapter converts them into daemon SessionEvents so we can
+            // feed the existing replay_event_consumer unchanged (consumer
+            // unification is Task 2.5).
+            let (msg_tx_driver, mut msg_rx_driver) = tokio::sync::mpsc::unbounded_channel::<
+                crucible_core::protocol::SessionEventMessage,
+            >();
+            let (event_tx_adapter, event_rx_adapter) =
+                tokio::sync::mpsc::unbounded_channel::<crucible_daemon::SessionEvent>();
+
+            let driver_session_id = replay_session_id.clone();
+            let driver_speed = self.replay_speed;
+            background_tasks.push(tokio::spawn(async move {
+                crate::tui::oil::local_replay::drive_replay(
+                    events,
+                    driver_speed,
+                    driver_session_id,
+                    msg_tx_driver,
+                )
+                .await;
+            }));
+
+            // Adapter: SessionEventMessage → SessionEvent. The consumer only
+            // reads session_id/event_type/data, so a straight projection is
+            // enough; timestamp/seq are informational.
+            background_tasks.push(tokio::spawn(async move {
+                while let Some(msg) = msg_rx_driver.recv().await {
+                    let event = crucible_daemon::SessionEvent {
+                        session_id: msg.session_id,
+                        event_type: msg.event,
+                        data: msg.data,
+                    };
+                    if event_tx_adapter.send(event).is_err() {
+                        return;
+                    }
+                }
+            }));
 
             self.is_replay = true;
             self.replay_remaining_completes = 1;
@@ -407,11 +462,14 @@ impl OilChatRunner {
 
             let msg_tx_clone = msg_tx.clone();
             background_tasks.push(tokio::spawn(replay_event_consumer(
-                replay_session_id,
-                event_rx,
+                replay_session_id.clone(),
+                event_rx_adapter,
                 msg_tx_clone,
             )));
 
+            // NoopAgentHandle: pure-display replay. No daemon RPC under any
+            // code path. Drops cleanly (no session.end call).
+            let mut agent = crate::tui::oil::noop_agent::NoopAgentHandle::new(replay_session_id);
             let interaction_rx = agent.take_interaction_receiver();
 
             let event_loop_result = self
@@ -1558,10 +1616,7 @@ impl OilChatRunner {
                     | ChatAppMsg::ExportSession(_)
                     | ChatAppMsg::FetchModels => {
                         if self.is_replay {
-                            tracing::debug!(
-                                ?msg,
-                                "daemon-bound message ignored in replay mode"
-                            );
+                            tracing::debug!(?msg, "daemon-bound message ignored in replay mode");
                         }
                     }
                     _ => {}
