@@ -265,16 +265,20 @@ fn error_missing_required_arg_shows_help() {
 #[test]
 #[serial]
 fn error_conflicting_args_shows_message() {
+    let tmp = tempfile::tempdir().unwrap();
+    let fake_replay = tmp.path().join("replay.jsonl");
+    std::fs::write(&fake_replay, "").unwrap();
+
     let mut cmd = Command::cargo_bin("cru").unwrap();
     cmd.arg("chat")
         .arg("--record")
         .arg("recording.jsonl")
         .arg("--replay")
-        .arg("replay.jsonl");
+        .arg(&fake_replay);
 
     cmd.assert()
         .failure()
-        .stderr(predicates::str::contains("cannot be used with"))
-        .stderr(predicates::str::contains("--record"))
-        .stderr(predicates::str::contains("--replay"));
+        .stderr(predicates::str::contains(
+            "--replay cannot be combined with --record",
+        ));
 }
