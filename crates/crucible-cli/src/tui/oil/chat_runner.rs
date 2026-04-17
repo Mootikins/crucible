@@ -419,8 +419,7 @@ impl OilChatRunner {
 
             // Local driver pumps RecordedEvents out as SessionEventMessages.
             // An adapter converts them into daemon SessionEvents so we can
-            // feed the existing replay_event_consumer unchanged (consumer
-            // unification is Task 2.5).
+            // feed the unified session_event_consumer (Task 2.5).
             let (msg_tx_driver, mut msg_rx_driver) = tokio::sync::mpsc::unbounded_channel::<
                 crucible_core::protocol::SessionEventMessage,
             >();
@@ -461,10 +460,11 @@ impl OilChatRunner {
             app.set_status("Replay");
 
             let msg_tx_clone = msg_tx.clone();
-            background_tasks.push(tokio::spawn(replay_event_consumer(
+            background_tasks.push(tokio::spawn(session_event_consumer(
                 replay_session_id.clone(),
                 event_rx_adapter,
                 msg_tx_clone,
+                None,
             )));
 
             // NoopAgentHandle: pure-display replay. No daemon RPC under any
@@ -514,11 +514,11 @@ impl OilChatRunner {
             let session_id = agent.session_id().unwrap_or("").to_string();
             let msg_tx_live = msg_tx.clone();
             let context_limit = self.context_limit.clone();
-            background_tasks.push(tokio::spawn(live_event_consumer(
+            background_tasks.push(tokio::spawn(session_event_consumer(
                 session_id,
                 event_rx,
                 msg_tx_live,
-                context_limit,
+                Some(context_limit),
             )));
         }
 
@@ -944,9 +944,9 @@ impl OilChatRunner {
     /// off any side-effects (e.g. sending a user message via RPC).
     ///
     /// Live sends are fire-and-forget: the daemon broadcasts the ensuing
-    /// turn as `SessionEvent`s, which `live_event_consumer` feeds back into
-    /// this channel. In replay mode the daemon already drives everything,
-    /// so `UserMessage` is purely a display signal.
+    /// turn as `SessionEvent`s, which `session_event_consumer` feeds back
+    /// into this channel. In replay mode the daemon already drives
+    /// everything, so `UserMessage` is purely a display signal.
     async fn process_message<A: AgentHandle>(
         msg: &ChatAppMsg,
         app: &mut OilChatApp,
@@ -1011,7 +1011,7 @@ impl OilChatRunner {
         while let Ok(msg) = msg_rx.try_recv() {
             processed_any = true;
 
-            // Handle replay-complete signal (from replay_event_consumer)
+            // Handle replay-complete signal (from session_event_consumer)
             if self.is_replay && matches!(msg, ChatAppMsg::Status(ref s) if s == "Replay complete")
             {
                 self.replay_remaining_completes = 0;
@@ -2290,56 +2290,50 @@ async fn consume_session_events<F, E>(
     }
 }
 
-pub(crate) async fn replay_event_consumer(
-    replay_session_id: String,
-    event_rx: tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>,
-    msg_tx: tokio::sync::mpsc::UnboundedSender<ChatAppMsg>,
+/// Daemon reports fatal turn failures via `ended { reason: "error: ..." }`.
+/// Surface them as an `Error` ChatAppMsg so the status bar shows the cause.
+/// Shared by both live and replay paths — replay of an error-ending recording
+/// renders identically to a live session that ended with that error.
+fn promote_ended_error(
+    event: &crucible_daemon::SessionEvent,
+    tx: &tokio::sync::mpsc::UnboundedSender<ChatAppMsg>,
 ) {
-    let filter_id = replay_session_id.clone();
-    consume_session_events(
-        event_rx,
-        msg_tx,
-        None,
-        move |event| event.session_id == filter_id,
-        |event, tx| {
-            if event.event_type == "replay_complete" {
-                let _ = tx.send(ChatAppMsg::Status("Replay complete".to_string()));
-                false
-            } else {
-                true
+    if event.event_type == "ended" {
+        if let Some(reason) = event.data.get("reason").and_then(|v| v.as_str()) {
+            if let Some(err) = reason.strip_prefix("error: ") {
+                let _ = tx.send(ChatAppMsg::Error(err.to_string()));
             }
-        },
-    )
-    .await;
+        }
+    }
 }
 
-/// Live session event consumer.
+/// Unified session event consumer for both live and replay modes.
 ///
-/// Drains the daemon's SessionEvent broadcast for `live_session_id` through
-/// the unified `SessionEventStream`. Replaces the old ChatChunk-based path:
-/// the TUI no longer consumes `AgentHandle::send_message_stream`, instead
-/// observing turns through this channel — same as replay and resume.
-pub(crate) async fn live_event_consumer(
-    live_session_id: String,
+/// Drains `event_rx`, filtering events for `session_id` and translating them
+/// through `SessionEventStream` into `ChatAppMsg`s on `msg_tx`. Both paths
+/// share the `ended: error: ...` → `ChatAppMsg::Error` promotion. Replay
+/// additionally terminates on `replay_complete`, emitting a final Status.
+///
+/// `context_limit` is `Some(_)` for live (so `message_complete` can fill in
+/// the total for `ContextUsage`) and `None` for replay (the recorded events
+/// already carry the total).
+pub(crate) async fn session_event_consumer(
+    session_id: String,
     event_rx: tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>,
     msg_tx: tokio::sync::mpsc::UnboundedSender<ChatAppMsg>,
-    context_limit: Arc<AtomicUsize>,
+    context_limit: Option<Arc<AtomicUsize>>,
 ) {
-    let filter_id = live_session_id.clone();
+    let filter_id = session_id.clone();
     consume_session_events(
         event_rx,
         msg_tx,
-        Some(context_limit),
+        context_limit,
         move |event| event.session_id == filter_id,
         |event, tx| {
-            // Daemon reports fatal turn failures via `ended { reason: "error: ..." }`.
-            // Surface them as an Error ChatAppMsg so the status bar shows the cause.
-            if event.event_type == "ended" {
-                if let Some(reason) = event.data.get("reason").and_then(|v| v.as_str()) {
-                    if let Some(err) = reason.strip_prefix("error: ") {
-                        let _ = tx.send(ChatAppMsg::Error(err.to_string()));
-                    }
-                }
+            promote_ended_error(event, tx);
+            if event.event_type == "replay_complete" {
+                let _ = tx.send(ChatAppMsg::Status("Replay complete".to_string()));
+                return false;
             }
             true
         },
@@ -2363,7 +2357,7 @@ mod tests {
         let session_id_clone = replay_session_id.clone();
 
         let consumer_task = tokio::spawn(async move {
-            replay_event_consumer(session_id_clone, event_rx, msg_tx).await;
+            session_event_consumer(session_id_clone, event_rx, msg_tx, None).await;
         });
 
         event_tx
@@ -2423,7 +2417,7 @@ mod tests {
         let session_id_clone = replay_session_id.clone();
 
         let consumer_task = tokio::spawn(async move {
-            replay_event_consumer(session_id_clone, event_rx, msg_tx).await;
+            session_event_consumer(session_id_clone, event_rx, msg_tx, None).await;
         });
 
         event_tx
@@ -2477,7 +2471,7 @@ mod tests {
         let session_id_clone = replay_session_id.clone();
 
         let consumer_task = tokio::spawn(async move {
-            replay_event_consumer(session_id_clone, event_rx, msg_tx).await;
+            session_event_consumer(session_id_clone, event_rx, msg_tx, None).await;
         });
 
         event_tx
@@ -2680,5 +2674,48 @@ mod tests {
         );
         assert_eq!(msgs.len(), 1);
         assert_eq!(limit.load(Ordering::Relaxed), 4096);
+    }
+
+    /// `ended { reason: "error: ..." }` must promote to `ChatAppMsg::Error`
+    /// through the unified consumer regardless of mode (live vs replay).
+    /// This is the Task 2.5 invariant: replay of an error-ending recording
+    /// surfaces the error identically to a live session that hit it.
+    #[tokio::test]
+    async fn consumer_promotes_ended_error_in_both_modes() {
+        use serde_json::json;
+        use tokio::time::{timeout, Duration};
+
+        for context_limit in [None, Some(Arc::new(AtomicUsize::new(0)))] {
+            let (msg_tx, mut msg_rx) = mpsc::unbounded_channel();
+            let (event_tx, event_rx) = mpsc::unbounded_channel();
+
+            let session_id = "test-session-ended-error".to_string();
+            let sid_clone = session_id.clone();
+            let ctx_limit = context_limit.clone();
+
+            let consumer = tokio::spawn(async move {
+                session_event_consumer(sid_clone, event_rx, msg_tx, ctx_limit).await;
+            });
+
+            event_tx
+                .send(crucible_daemon::SessionEvent {
+                    session_id: session_id.clone(),
+                    event_type: "ended".to_string(),
+                    data: json!({ "reason": "error: LLM timeout" }),
+                })
+                .unwrap();
+            drop(event_tx);
+
+            let msg = timeout(Duration::from_secs(1), msg_rx.recv())
+                .await
+                .expect("timely")
+                .expect("some msg");
+            match msg {
+                ChatAppMsg::Error(s) => assert_eq!(s, "LLM timeout"),
+                other => panic!("expected Error, got {:?}", other),
+            }
+
+            consumer.abort();
+        }
     }
 }
