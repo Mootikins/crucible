@@ -9,6 +9,7 @@ use crate::tui::oil::theme;
 use anyhow::Result;
 #[allow(unused_imports)] // WIP: KeyCode, KeyModifiers not yet used
 use crossterm::event::{Event as CtEvent, EventStream, KeyCode, KeyModifiers};
+use crucible_core::error_utils::strip_tool_error_prefix;
 use crucible_core::events::SessionEvent;
 use crucible_core::interaction::InteractionRequest;
 use crucible_core::traits::chat::AgentHandle;
@@ -1794,15 +1795,22 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
             if let Some(err) = error {
                 vec![ChatAppMsg::ToolResultError {
                     name,
-                    error: err.to_string(),
+                    error: strip_tool_error_prefix(err),
                     call_id,
                 }]
             } else {
                 let result_str = result_data
                     .and_then(|r| r.get("result"))
                     .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
+                    .unwrap_or("");
+                // Strip nested tool-error prefixes from result text that
+                // looks like an error (matches old handle_stream_chunk
+                // behaviour).
+                let result_str = if result_str.starts_with("Error: ") {
+                    strip_tool_error_prefix(result_str)
+                } else {
+                    result_str.to_string()
+                };
                 vec![
                     ChatAppMsg::ToolResultDelta {
                         name: name.clone(),
@@ -2136,240 +2144,9 @@ pub(crate) async fn live_event_consumer(
     .await;
 }
 
-// TODO: rebuild chat_runner tests (disabled during component rewrite)
 #[cfg(test)]
-#[cfg(any())] // disabled: awaiting test reconstruction
 mod tests {
     use super::*;
-    use crate::tui::oil::chat_app::ModelListState;
-    use async_trait::async_trait;
-    use crucible_core::events::EventRing;
-    use crucible_core::traits::chat::{ChatError, ChatResult};
-    use futures::stream::{self, BoxStream};
-    use std::sync::Arc;
-
-    struct EmptyAgent;
-
-    struct ModelsAgent {
-        models: Vec<String>,
-    }
-
-    #[async_trait]
-    impl AgentHandle for EmptyAgent {
-        fn send_message_stream(
-            &mut self,
-            _message: String,
-        ) -> BoxStream<'static, ChatResult<ChatChunk>> {
-            Box::pin(stream::empty())
-        }
-
-        fn is_connected(&self) -> bool {
-            true
-        }
-
-        async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
-            Ok(())
-        }
-
-        fn get_mode_id(&self) -> &str {
-            "normal"
-        }
-
-        async fn cancel(&self) -> ChatResult<()> {
-            Ok(())
-        }
-
-        async fn clear_history(&mut self) {}
-
-        async fn switch_model(&mut self, _model_id: &str) -> ChatResult<()> {
-            Ok(())
-        }
-
-        async fn fetch_available_models(&mut self) -> Vec<String> {
-            Vec::new()
-        }
-
-        async fn set_thinking_budget(&mut self, _budget: i64) -> ChatResult<()> {
-            Err(ChatError::NotSupported("set_thinking_budget".to_string()))
-        }
-
-        fn get_thinking_budget(&self) -> Option<i64> {
-            None
-        }
-
-        async fn set_temperature(&mut self, _temperature: f64) -> ChatResult<()> {
-            Ok(())
-        }
-
-        fn get_temperature(&self) -> Option<f64> {
-            None
-        }
-
-        async fn set_max_tokens(&mut self, _max_tokens: Option<u32>) -> ChatResult<()> {
-            Ok(())
-        }
-
-        fn get_max_tokens(&self) -> Option<u32> {
-            None
-        }
-    }
-
-    #[async_trait]
-    impl AgentHandle for ModelsAgent {
-        fn send_message_stream(
-            &mut self,
-            _message: String,
-        ) -> BoxStream<'static, ChatResult<ChatChunk>> {
-            Box::pin(stream::empty())
-        }
-
-        fn is_connected(&self) -> bool {
-            true
-        }
-
-        async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
-            Ok(())
-        }
-
-        fn get_mode_id(&self) -> &str {
-            "normal"
-        }
-
-        async fn cancel(&self) -> ChatResult<()> {
-            Ok(())
-        }
-
-        async fn clear_history(&mut self) {}
-
-        async fn switch_model(&mut self, _model_id: &str) -> ChatResult<()> {
-            Ok(())
-        }
-
-        async fn fetch_available_models(&mut self) -> Vec<String> {
-            self.models.clone()
-        }
-
-        async fn set_thinking_budget(&mut self, _budget: i64) -> ChatResult<()> {
-            Err(ChatError::NotSupported("set_thinking_budget".to_string()))
-        }
-
-        fn get_thinking_budget(&self) -> Option<i64> {
-            None
-        }
-
-        async fn set_temperature(&mut self, _temperature: f64) -> ChatResult<()> {
-            Ok(())
-        }
-
-        fn get_temperature(&self) -> Option<f64> {
-            None
-        }
-
-        async fn set_max_tokens(&mut self, _max_tokens: Option<u32>) -> ChatResult<()> {
-            Ok(())
-        }
-
-        fn get_max_tokens(&self) -> Option<u32> {
-            None
-        }
-    }
-
-    #[test]
-    fn drain_pending_messages_marks_user_turn_active() {
-        let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
-        let mut app = OilChatApp::default();
-        let mut agent = EmptyAgent;
-        let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
-        let (msg_tx, mut msg_rx) = mpsc::unbounded_channel();
-        let mut active_stream = None;
-        let mut replay_deadline = None;
-
-        msg_tx
-            .send(ChatAppMsg::UserMessage("show spinner".to_string()))
-            .unwrap();
-
-        let outcome = runner.drain_pending_messages(
-            &mut app,
-            &mut agent,
-            &bridge,
-            &mut active_stream,
-            &mut msg_rx,
-            &mut replay_deadline,
-        );
-
-        assert_eq!(outcome, DrainMessagesOutcome::Processed);
-        assert!(app.is_streaming());
-    }
-
-    #[test]
-    fn processed_messages_should_not_wait_for_next_event() {
-        assert!(
-            !OilChatRunner::should_wait_for_event(DrainMessagesOutcome::Processed),
-            "Processed messages should trigger immediate rerender"
-        );
-    }
-
-    #[test]
-    fn non_acp_init_prefetch_moves_model_state_out_of_not_loaded() {
-        let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
-        let mut app = OilChatApp::default();
-        let mut agent = ModelsAgent {
-            models: vec!["ollama/llama3".to_string()],
-        };
-        let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
-        let (msg_tx, mut msg_rx) = mpsc::unbounded_channel();
-        let mut active_stream = None;
-        let mut replay_deadline = None;
-
-        runner.queue_model_prefetch(&msg_tx);
-        let _ = runner.drain_pending_messages(
-            &mut app,
-            &mut agent,
-            &bridge,
-            &mut active_stream,
-            &mut msg_rx,
-            &mut replay_deadline,
-        );
-
-        assert!(
-            matches!(
-                app.model_list_state(),
-                ModelListState::Loading | ModelListState::Loaded
-            ),
-            "non-ACP init should prefetch models (state should be Loading or Loaded, got {:?})",
-            app.model_list_state()
-        );
-    }
-
-    #[test]
-    fn acp_init_prefetch_is_skipped_and_state_stays_not_loaded() {
-        let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24))
-            .with_agent_name(Some("claude".to_string()));
-        let mut app = OilChatApp::default();
-        let mut agent = ModelsAgent {
-            models: vec!["ollama/llama3".to_string()],
-        };
-        let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
-        let (msg_tx, mut msg_rx) = mpsc::unbounded_channel();
-        let mut active_stream = None;
-        let mut replay_deadline = None;
-
-        runner.queue_model_prefetch(&msg_tx);
-        let _ = runner.drain_pending_messages(
-            &mut app,
-            &mut agent,
-            &bridge,
-            &mut active_stream,
-            &mut msg_rx,
-            &mut replay_deadline,
-        );
-
-        assert_eq!(
-            app.model_list_state(),
-            &ModelListState::NotLoaded,
-            "ACP init should skip model prefetch"
-        );
-    }
 
     #[tokio::test]
     async fn replay_consumer_handles_delegation_spawned() {

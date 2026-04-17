@@ -47,7 +47,15 @@ command = 'cargo build -p crucible-acp --features test-utils --bin mock-acp-agen
 filter = 'package(crucible-daemon)'
 setup = 'build-test-fixtures'
 
+[[profile.unit.scripts]]
+filter = 'package(crucible-daemon)'
+setup = 'build-test-fixtures'
+
 [[profile.ci.scripts]]
+filter = 'package(crucible-daemon)'
+setup = 'build-test-fixtures'
+
+[[profile.contract.scripts]]
 filter = 'package(crucible-daemon)'
 setup = 'build-test-fixtures'
 

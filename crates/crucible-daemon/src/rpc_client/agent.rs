@@ -35,11 +35,12 @@ pub struct DaemonAgentHandle {
     streaming_rx: Arc<Mutex<mpsc::UnboundedReceiver<SessionEvent>>>,
     interaction_rx: Option<mpsc::UnboundedReceiver<InteractionEvent>>,
     /// Raw SessionEvent receiver for callers that want to bypass the
-    /// streaming_rx → ChatChunk conversion (e.g. live TUI post-Phase 4,
-    /// which consumes SessionEvents directly). Set at construction time
-    /// via `new_and_subscribe_with_raw_forwarding`. Only one of
-    /// `streaming_rx` / `raw_event_rx` gets populated per handle: when
-    /// raw forwarding is enabled, the router skips `streaming_tx`.
+    /// streaming_rx → ChatChunk conversion. Used by the live TUI, which
+    /// subscribes to SessionEvents directly instead of consuming ChatChunks.
+    /// Set at construction time via `new_and_subscribe_with_raw_forwarding`.
+    /// Only one of `streaming_rx` / `raw_event_rx` gets populated per
+    /// handle: when raw forwarding is enabled, the router skips
+    /// `streaming_tx`.
     raw_event_rx: Option<mpsc::UnboundedReceiver<SessionEvent>>,
     mode_id: String,
     connected: bool,
@@ -63,24 +64,17 @@ pub struct DaemonAgentHandle {
 }
 
 impl DaemonAgentHandle {
-    /// Create a new daemon agent handle with event routing
-    ///
-    /// Spawns a background task that routes incoming events:
-    /// - Streaming events (text_delta, tool_call, etc.) go to the streaming channel
-    /// - Interaction events (interaction_requested) go to the interaction channel
-    pub fn new(
+    /// Build a handle with all default cached fields. Both public constructors
+    /// call this, then patch their specific overrides, avoiding field-list
+    /// duplication.
+    fn new_base(
         client: Arc<DaemonClient>,
         session_id: String,
-        event_rx: mpsc::UnboundedReceiver<SessionEvent>,
+        session_id_tx: tokio::sync::watch::Sender<String>,
+        streaming_rx: mpsc::UnboundedReceiver<SessionEvent>,
+        interaction_rx: mpsc::UnboundedReceiver<InteractionEvent>,
+        event_router_task: JoinHandle<()>,
     ) -> Self {
-        let (streaming_tx, streaming_rx) = mpsc::unbounded_channel();
-        let (interaction_tx, interaction_rx) = mpsc::unbounded_channel();
-        let (session_id_tx, session_id_rx) = tokio::sync::watch::channel(session_id.clone());
-
-        let event_router_task = tokio::spawn(async move {
-            event_router(event_rx, streaming_tx, interaction_tx, None, session_id_rx).await;
-        });
-
         Self {
             client,
             session_id,
@@ -108,6 +102,34 @@ impl DaemonAgentHandle {
             cached_agent_config: None,
             event_router_task: Some(event_router_task),
         }
+    }
+
+    /// Create a new daemon agent handle with event routing
+    ///
+    /// Spawns a background task that routes incoming events:
+    /// - Streaming events (text_delta, tool_call, etc.) go to the streaming channel
+    /// - Interaction events (interaction_requested) go to the interaction channel
+    pub fn new(
+        client: Arc<DaemonClient>,
+        session_id: String,
+        event_rx: mpsc::UnboundedReceiver<SessionEvent>,
+    ) -> Self {
+        let (streaming_tx, streaming_rx) = mpsc::unbounded_channel();
+        let (interaction_tx, interaction_rx) = mpsc::unbounded_channel();
+        let (session_id_tx, session_id_rx) = tokio::sync::watch::channel(session_id.clone());
+
+        let event_router_task = tokio::spawn(async move {
+            event_router(event_rx, streaming_tx, interaction_tx, None, session_id_rx).await;
+        });
+
+        Self::new_base(
+            client,
+            session_id,
+            session_id_tx,
+            streaming_rx,
+            interaction_rx,
+            event_router_task,
+        )
     }
 
     /// Take the raw SessionEvent receiver, consumable once.
@@ -160,33 +182,15 @@ impl DaemonAgentHandle {
             .await;
         });
 
-        let mut handle = Self {
-            client: client.clone(),
-            session_id: session_id.clone(),
-            router_session_id: Arc::new(session_id_tx),
-            streaming_rx: Arc::new(Mutex::new(streaming_rx)),
-            interaction_rx: Some(interaction_rx),
-            raw_event_rx: Some(raw_event_rx),
-            mode_id: "normal".to_string(),
-            connected: true,
-            cached_model: None,
-            cached_temperature: None,
-            cached_max_tokens: None,
-            cached_thinking_budget: None,
-            cached_max_iterations: None,
-            cached_execution_timeout: None,
-            cached_system_prompt: None,
-            cached_context_budget: None,
-            cached_context_strategy: None,
-            cached_context_window: None,
-            cached_output_validation: None,
-            cached_validation_retries: None,
-            cached_precognition_results: None,
-            kiln_path: None,
-            workspace: None,
-            cached_agent_config: None,
-            event_router_task: Some(event_router_task),
-        };
+        let mut handle = Self::new_base(
+            client.clone(),
+            session_id.clone(),
+            session_id_tx,
+            streaming_rx,
+            interaction_rx,
+            event_router_task,
+        );
+        handle.raw_event_rx = Some(raw_event_rx);
         handle.fetch_cached_values(&client, &session_id).await;
         Ok(handle)
     }
