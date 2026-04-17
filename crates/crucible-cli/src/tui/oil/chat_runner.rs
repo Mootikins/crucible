@@ -210,16 +210,6 @@ impl OilChatRunner {
         self
     }
 
-    pub fn with_workspace_files(mut self, files: Vec<String>) -> Self {
-        self.workspace_files = files;
-        self
-    }
-
-    pub fn with_kiln_notes(mut self, notes: Vec<String>) -> Self {
-        self.kiln_notes = notes;
-        self
-    }
-
     pub fn with_session_dir(mut self, path: PathBuf) -> Self {
         self.session_dir = Some(path);
         self
@@ -232,16 +222,6 @@ impl OilChatRunner {
 
     pub fn with_resume_history(mut self, history: Vec<serde_json::Value>) -> Self {
         self.resume_history = Some(history);
-        self
-    }
-
-    pub fn with_mcp_servers(mut self, servers: Vec<McpServerDisplay>) -> Self {
-        self.mcp_servers = servers;
-        self
-    }
-
-    pub fn with_plugin_status(mut self, entries: Vec<PluginStatusEntry>) -> Self {
-        self.plugin_status = entries;
         self
     }
 

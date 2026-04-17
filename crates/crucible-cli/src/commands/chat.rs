@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
-use crate::commands::chat_preflight::ensure_valid_kiln;
+use crate::commands::chat_preflight::{ensure_valid_kiln, fill_default_model_if_missing};
 use crate::config::CliConfig;
 use crate::context_enricher::ContextEnricher;
 use crate::core_facade::KilnContext;
@@ -160,6 +160,7 @@ pub async fn execute(params: ExecuteParams) -> Result<()> {
     if query.is_none() {
         ensure_valid_kiln(&mut config).await?;
     }
+    fill_default_model_if_missing(&mut config);
 
     match query {
         None => {
@@ -562,8 +563,6 @@ async fn run_oneshot_chat(params: RunOneshotChatParams) -> Result<()> {
 
     status.update("Initializing storage...");
     let storage_handle = factories::get_storage(&config).await?;
-
-    let _storage_client: Option<()> = None;
 
     status.update("Discovering agent...");
     let mut handle = factories::create_agent(&config, agent_params).await?;

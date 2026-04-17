@@ -14,6 +14,7 @@ use tracing::info;
 
 use crate::config::CliConfig;
 use crate::kiln_discover::{discover_kiln, DiscoverySource};
+use crate::provider_detect::detect_providers;
 
 /// Ensure the CLI has a valid kiln to hand to the daemon.
 ///
@@ -83,4 +84,27 @@ pub async fn ensure_valid_kiln(config: &mut CliConfig) -> Result<()> {
 
     config.kiln_path = expanded;
     Ok(())
+}
+
+/// Backfill `config.chat.model` from the detected Ollama provider's default
+/// model when the config has none set. First-run Ollama users would otherwise
+/// land on `DEFAULT_CHAT_MODEL`, which may not match what they actually have
+/// installed locally.
+///
+/// This mirrors a side-effect that `run_preflight_checks` did before setup
+/// moved daemon-side. Detection is purely local (env + config + credentials),
+/// no HTTP probing.
+pub fn fill_default_model_if_missing(config: &mut CliConfig) {
+    if config.chat.model.is_some() {
+        return;
+    }
+
+    let providers = detect_providers(&config.chat);
+    if let Some(ollama) = providers.iter().find(|p| p.provider_type == "ollama") {
+        info!("Auto-detected Ollama: {}", ollama.reason.as_str());
+        if let Some(ref model) = ollama.default_model {
+            config.chat.model = Some(model.clone());
+            info!("Set default model to {}", model);
+        }
+    }
 }

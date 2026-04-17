@@ -302,12 +302,14 @@ async fn create_daemon_agent_inner(
     // are not missed by the race where the client subscribes after create
     // returns. The secondary specific-session subscribe later in
     // `new_and_subscribe` is idempotent.
-    if let Err(e) = client.session_subscribe(&["*"]).await {
-        tracing::warn!(
-            "Wildcard pre-subscribe failed (setup events may be missed): {}",
-            e
-        );
-    }
+    //
+    // If this fails, the TUI would hang on "Loading..." forever waiting on
+    // setup events that never arrive, so propagate the error and let the
+    // CLI exit with a clear message.
+    client
+        .session_subscribe(&["*"])
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to subscribe to session events: {}", e))?;
 
     let workspace = params
         .working_dir
