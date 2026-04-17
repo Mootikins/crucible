@@ -47,9 +47,7 @@
 use std::path::PathBuf;
 
 use crucible_core::interaction::{InteractionRequest, InteractionResponse};
-use crucible_core::protocol::session_events::{
-    ContextLimitSource, SessionInitializedPayload,
-};
+use crucible_core::protocol::session_events::{ContextLimitSource, SessionInitializedPayload};
 use crucible_core::traits::chat::PrecognitionNoteInfo;
 use crucible_core::types::ProviderInfo;
 
@@ -204,7 +202,10 @@ pub enum ChatAppMsg {
     /// **Event** (daemon → TUI): provider list fetched by the daemon (internal agents only).
     ProvidersListed(Vec<ProviderInfo>),
     /// **Event** (daemon → TUI): daemon resolved the active model's context window size.
-    ContextLimitResolved { limit: usize, source: ContextLimitSource },
+    ContextLimitResolved {
+        limit: usize,
+        source: ContextLimitSource,
+    },
     /// **Event** (daemon → TUI): workspace file list indexed by the daemon.
     WorkspaceIndexed(Vec<String>),
     /// **Event** (daemon → TUI): kiln note list indexed by the daemon.

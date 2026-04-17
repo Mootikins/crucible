@@ -33,9 +33,7 @@ fn test_app_init() {
 #[test]
 fn setup_events_populate_app_progressively() {
     use crate::tui::oil::app::App;
-    use crucible_core::protocol::session_events::{
-        ContextLimitSource, SessionInitializedPayload,
-    };
+    use crucible_core::protocol::session_events::{ContextLimitSource, SessionInitializedPayload};
     use std::path::PathBuf;
 
     let mut app = OilChatApp::init();

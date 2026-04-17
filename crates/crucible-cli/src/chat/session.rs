@@ -347,7 +347,6 @@ impl ChatSession {
 
         Ok(())
     }
-
 }
 
 #[cfg(test)]

@@ -342,5 +342,4 @@ mod tests {
         );
         assert_eq!(ollama_endpoint(), "https://secure-ollama.example.com");
     }
-
 }
