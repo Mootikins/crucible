@@ -13,7 +13,6 @@
 # === Batch 2 (blocked on refactor/daemon-owns-setup) ===
 crates/crucible-daemon/src/server/tests.rs
 crates/crucible-daemon/src/tools/notes.rs
-crates/crucible-daemon/src/agent_manager/messaging.rs
 
 # === Batch 3 (blocked on TUI SessionEventStream stabilization) ===
 crates/crucible-cli/src/tui/oil/chat_runner.rs
