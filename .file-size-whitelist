@@ -13,7 +13,6 @@
 # === Batch 2 (blocked on refactor/daemon-owns-setup) ===
 
 # === Batch 3 (blocked on TUI SessionEventStream stabilization) ===
-crates/crucible-cli/src/tui/oil/components/interaction_modal.rs
 crates/crucible-cli/src/tui/oil/markdown.rs
 
 # === Test files (lowest priority; split when convenient) ===
