@@ -802,11 +802,14 @@ mod resolve_agent_profile_tests {
     use crate::agent_manager::resolve_agent_profile;
 
     fn make_profile_with_permissions(mode: PermissionMode) -> AgentProfile {
-        let mut p = AgentProfile::default();
-        let mut perms = PermissionConfig::default();
-        perms.default = mode;
-        p.permissions = Some(perms);
-        p
+        let perms = PermissionConfig {
+            default: mode,
+            ..Default::default()
+        };
+        AgentProfile {
+            permissions: Some(perms),
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -827,8 +830,10 @@ mod resolve_agent_profile_tests {
     #[test]
     fn resolve_agent_profile_no_permissions_returns_none() {
         let mut configured = HashMap::new();
-        let mut p = AgentProfile::default();
-        p.extends = Some("opencode".to_string());
+        let p = AgentProfile {
+            extends: Some("opencode".to_string()),
+            ..Default::default()
+        };
         configured.insert("my-opencode".to_string(), p);
         let available = default_agent_profiles();
 

@@ -174,8 +174,10 @@ fn non_interactive_ask_default_becomes_deny() {
 fn non_interactive_allow_default_stays_allow() {
     // When default mode is Allow and no deny rules match,
     // non-interactive should still allow (only Ask→Deny conversion).
-    let mut config = PermissionConfig::default();
-    config.default = PermissionMode::Allow;
+    let config = PermissionConfig {
+        default: PermissionMode::Allow,
+        ..Default::default()
+    };
     let engine = PermissionEngine::new(Some(&config));
     let decision = engine.evaluate("some_tool", "{}", false);
     assert_eq!(decision, PermissionDecision::Allow);
@@ -184,9 +186,11 @@ fn non_interactive_allow_default_stays_allow() {
 #[test]
 fn deny_rules_enforced_even_with_allow_default() {
     // Explicit deny rules should fire even when default=Allow.
-    let mut config = PermissionConfig::default();
-    config.default = PermissionMode::Allow;
-    config.deny = vec!["bash:rm *".to_string()];
+    let config = PermissionConfig {
+        default: PermissionMode::Allow,
+        deny: vec!["bash:rm *".to_string()],
+        ..Default::default()
+    };
     let engine = PermissionEngine::new(Some(&config));
     let decision = engine.evaluate("bash", "rm /tmp/test.txt", false);
     assert!(
@@ -199,8 +203,10 @@ fn deny_rules_enforced_even_with_allow_default() {
 fn non_interactive_deny_default_stays_deny() {
     // When default mode is Deny and no allow rules match,
     // non-interactive should deny (no conversion needed, already Deny).
-    let mut config = PermissionConfig::default();
-    config.default = PermissionMode::Deny;
+    let config = PermissionConfig {
+        default: PermissionMode::Deny,
+        ..Default::default()
+    };
     let engine = PermissionEngine::new(Some(&config));
     let decision = engine.evaluate("dangerous_tool", "{}", false);
     assert!(matches!(decision, PermissionDecision::Deny { .. }));

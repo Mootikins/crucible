@@ -117,11 +117,11 @@ mod tests {
 
     /// Create a tempdir that is NOT a git repo so `git ls-files` fails and we
     /// exercise the walkdir fallback path deterministically.
+    ///
+    /// Ensure no ambient .git picks it up: the tempdir root is fresh, so
+    /// `git -C <dir> ls-files` will fail with "not a git repository".
     fn non_git_tempdir() -> TempDir {
-        let dir = tempfile::tempdir().expect("tempdir");
-        // Ensure no ambient .git picks it up: the tempdir root is fresh, so
-        // `git -C <dir> ls-files` will fail with "not a git repository".
-        dir
+        tempfile::tempdir().expect("tempdir")
     }
 
     #[test]

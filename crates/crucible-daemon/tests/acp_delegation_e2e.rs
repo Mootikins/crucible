@@ -296,7 +296,7 @@ async fn test_acp_delegation_pipeline_all_fixes_work() {
         .filter_map(|tool| tool["name"].as_str())
         .collect();
     assert!(
-        tool_names.iter().any(|name| *name == "delegate_session"),
+        tool_names.contains(&"delegate_session"),
         "tools/list should include delegate_session when delegation is enabled, got: {tool_names:?}",
     );
 

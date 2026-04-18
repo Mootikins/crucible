@@ -2240,10 +2240,14 @@ mod permission_override_tests {
 
     #[test]
     fn no_override_falls_back_to_agent_then_global() {
-        let mut agent = PermissionConfig::default();
-        agent.default = PermissionMode::Allow;
-        let mut global = PermissionConfig::default();
-        global.default = PermissionMode::Deny;
+        let agent = PermissionConfig {
+            default: PermissionMode::Allow,
+            ..Default::default()
+        };
+        let global = PermissionConfig {
+            default: PermissionMode::Deny,
+            ..Default::default()
+        };
 
         let with_agent =
             resolve_effective_permission_config(None, Some(agent.clone()), Some(global.clone()))
@@ -2284,9 +2288,11 @@ mod permission_override_tests {
         use crucible_core::interaction::PermRequest;
         use crucible_core::traits::PermissionGate;
 
-        let mut base = PermissionConfig::default();
-        base.default = PermissionMode::Allow;
-        base.allow = vec!["Task:*".to_string()];
+        let base = PermissionConfig {
+            default: PermissionMode::Allow,
+            allow: vec!["Task:*".to_string()],
+            ..Default::default()
+        };
 
         let effective =
             resolve_effective_permission_config(Some(PermissionMode::Deny), None, Some(base));

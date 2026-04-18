@@ -605,46 +605,48 @@ async fn test_acp_tool_roundtrip_with_mcp_server() {
         .await
         .expect("MCP tool roundtrip should complete");
 
-    let captured = chunks.lock().unwrap();
+    {
+        let captured = chunks.lock().unwrap();
 
-    // Verify ToolStart arrived with correct MCP-prefixed tool name
-    let tool_start = captured
-        .iter()
-        .find(|c| matches!(c, StreamingChunk::ToolStart { .. }))
-        .expect("should have ToolStart chunk");
+        // Verify ToolStart arrived with correct MCP-prefixed tool name
+        let tool_start = captured
+            .iter()
+            .find(|c| matches!(c, StreamingChunk::ToolStart { .. }))
+            .expect("should have ToolStart chunk");
 
-    match tool_start {
-        StreamingChunk::ToolStart {
-            name,
-            id,
-            arguments,
-        } => {
-            // MCP-prefixed names get humanized
-            assert_eq!(name, "List Notes", "MCP tool name should be humanized");
-            assert_eq!(id, "tc-list-1");
-            let args = arguments.as_ref().expect("arguments should be present");
-            assert_eq!(args["limit"], 10);
+        match tool_start {
+            StreamingChunk::ToolStart {
+                name,
+                id,
+                arguments,
+            } => {
+                // MCP-prefixed names get humanized
+                assert_eq!(name, "List Notes", "MCP tool name should be humanized");
+                assert_eq!(id, "tc-list-1");
+                let args = arguments.as_ref().expect("arguments should be present");
+                assert_eq!(args["limit"], 10);
+            }
+            _ => unreachable!(),
         }
-        _ => unreachable!(),
-    }
 
-    // Verify ToolEnd has the simulated result
-    let tool_end = captured
-        .iter()
-        .find(|c| matches!(c, StreamingChunk::ToolEnd { .. }))
-        .expect("should have ToolEnd chunk");
+        // Verify ToolEnd has the simulated result
+        let tool_end = captured
+            .iter()
+            .find(|c| matches!(c, StreamingChunk::ToolEnd { .. }))
+            .expect("should have ToolEnd chunk");
 
-    match tool_end {
-        StreamingChunk::ToolEnd { id, result, error } => {
-            assert_eq!(id, "tc-list-1");
-            let result_text = result.as_ref().expect("should have result");
-            assert!(
-                result_text.contains("test-note"),
-                "result should mention the test note"
-            );
-            assert!(error.is_none());
+        match tool_end {
+            StreamingChunk::ToolEnd { id, result, error } => {
+                assert_eq!(id, "tc-list-1");
+                let result_text = result.as_ref().expect("should have result");
+                assert!(
+                    result_text.contains("test-note"),
+                    "result should mention the test note"
+                );
+                assert!(error.is_none());
+            }
+            _ => unreachable!(),
         }
-        _ => unreachable!(),
     }
 
     // Verify accumulated state

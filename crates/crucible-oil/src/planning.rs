@@ -264,8 +264,7 @@ mod tests {
 
         assert!(para2_idx > para1_idx + 1);
 
-        for spacer_idx in (para1_idx + 1)..para2_idx {
-            let spacer_line = lines[spacer_idx];
+        for spacer_line in lines.iter().take(para2_idx).skip(para1_idx + 1).copied() {
             let stripped = strip_ansi(spacer_line);
             assert!(stripped.chars().all(|c| c == ' '));
             assert!(!spacer_line.contains('\x1b'));
