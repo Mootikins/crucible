@@ -13,11 +13,9 @@ Set Theme "GruvboxDark"
 Set Padding 20
 Set TypingSpeed 60ms
 
-Type "cru chat -a claude"
 Hide
-Ctrl+U
 Type "/tmp/cru-demo-wrapper"
 Enter
-Sleep 3s
+Sleep 2s
 Show
-Sleep 10s
+Sleep 25s
