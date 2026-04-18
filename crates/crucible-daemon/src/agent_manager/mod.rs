@@ -287,6 +287,10 @@ struct StreamContext {
     session_dir: PathBuf,
     agent_stream_config: AgentStreamConfig,
     tool_dispatcher: Arc<dyn ToolDispatcher>,
+    /// When true, all tool-call permission checks in the streaming path
+    /// (Lua hooks, default-prompt) are bypassed with an auto-allow. Used
+    /// for automation when the user passes `--dangerously-skip-permissions`.
+    dangerously_skip_permissions: bool,
 }
 
 #[allow(dead_code)] // fields capture config snapshot; model used in events, others reserved for stream configuration

@@ -117,6 +117,7 @@ impl AgentManager {
             session_dir: session.storage_path(),
             agent_stream_config: AgentStreamConfig::from_session_agent(&agent_config),
             tool_dispatcher: self.get_or_create_session_dispatcher(&session),
+            dangerously_skip_permissions,
         };
 
         let task = tokio::spawn(async move {
@@ -685,6 +686,19 @@ impl AgentManager {
         call_id: &str,
         args: &serde_json::Value,
     ) -> bool {
+        // Hard bypass: --dangerously-skip-permissions auto-allows every
+        // streaming-path tool call. Skips Lua hooks, pattern store, and
+        // the default-prompt fallback. Complements the ACP-side short-circuit
+        // in build_acp_permission_handler.
+        if stream_ctx.dangerously_skip_permissions {
+            tracing::warn!(
+                session_id = %stream_ctx.session_id,
+                tool = %tool_call.name,
+                "dangerously_skip_permissions: auto-allowing tool call (streaming path)"
+            );
+            return true;
+        }
+
         let project_path = stream_ctx.workspace_path.to_string_lossy();
         let pattern_store = PatternStore::load_sync(&project_path).unwrap_or_default();
         let pattern_matched = Self::check_pattern_match(&tool_call.name, args, &pattern_store);
@@ -1819,6 +1833,7 @@ impl AgentManager {
                     session_dir: stream_ctx.session_dir.clone(),
                     agent_stream_config: stream_ctx.agent_stream_config.clone(),
                     tool_dispatcher: stream_ctx.tool_dispatcher.clone(),
+                    dangerously_skip_permissions: stream_ctx.dangerously_skip_permissions,
                 };
 
                 Box::pin(Self::execute_agent_stream(
