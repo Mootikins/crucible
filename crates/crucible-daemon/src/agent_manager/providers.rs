@@ -197,27 +197,13 @@ mod tests {
     use crate::kiln_manager::KilnManager;
     use crate::session_manager::SessionManager;
     use crate::session_storage::FileSessionStorage;
+    use crate::agent_manager::tests::{clear_provider_env, ENV_LOCK};
     use crate::tools::workspace::WorkspaceTools;
     use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
-    use crucible_core::test_support::EnvVarGuard;
     use std::collections::{HashMap, HashSet};
     use std::path::PathBuf;
-    use std::sync::{Arc, LazyLock, Mutex};
+    use std::sync::Arc;
     use tokio::sync::broadcast;
-
-    static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
-
-    fn clear_provider_env() -> Vec<EnvVarGuard> {
-        vec![
-            EnvVarGuard::remove("OLLAMA_HOST"),
-            EnvVarGuard::remove("OPENAI_API_KEY"),
-            EnvVarGuard::remove("ANTHROPIC_API_KEY"),
-            EnvVarGuard::remove("COHERE_API_KEY"),
-            EnvVarGuard::remove("GOOGLE_API_KEY"),
-            EnvVarGuard::remove("OPENROUTER_API_KEY"),
-            EnvVarGuard::remove("GLM_AUTH_TOKEN"),
-        ]
-    }
 
     fn make_agent_manager_with_config(config: Option<LlmConfig>) -> AgentManager {
         let (event_tx, _) = broadcast::channel(16);
@@ -243,7 +229,11 @@ mod tests {
     // It must be held for the entire test body (including await points) to prevent cross-test races.
     #[allow(clippy::await_holding_lock)]
     async fn test_list_providers_empty_config() {
-        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+        // Poison-tolerant: if a prior test panicked while holding this lock,
+        // recover the inner value instead of failing. The env state was
+        // already clobbered; the current test's own clear_provider_env
+        // will re-normalize it.
+        let _env_lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _env_guards = clear_provider_env();
         let manager = make_agent_manager_with_config(Some(LlmConfig::default()));
 
@@ -257,7 +247,11 @@ mod tests {
     // It must be held for the entire test body (including await points) to prevent cross-test races.
     #[allow(clippy::await_holding_lock)]
     async fn test_list_providers_with_configured_provider() {
-        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+        // Poison-tolerant: if a prior test panicked while holding this lock,
+        // recover the inner value instead of failing. The env state was
+        // already clobbered; the current test's own clear_provider_env
+        // will re-normalize it.
+        let _env_lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _env_guards = clear_provider_env();
         let config = LlmConfig {
             providers: HashMap::from([(
@@ -293,7 +287,11 @@ mod tests {
     // It must be held for the entire test body (including await points) to prevent cross-test races.
     #[allow(clippy::await_holding_lock)]
     async fn test_list_providers_filters_non_chat_providers() {
-        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+        // Poison-tolerant: if a prior test panicked while holding this lock,
+        // recover the inner value instead of failing. The env state was
+        // already clobbered; the current test's own clear_provider_env
+        // will re-normalize it.
+        let _env_lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _env_guards = clear_provider_env();
         let config = LlmConfig {
             providers: HashMap::from([(
@@ -377,7 +375,11 @@ mod tests {
     }
     #[test]
     fn test_discover_env_providers_returns_empty_with_no_env_vars() {
-        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+        // Poison-tolerant: if a prior test panicked while holding this lock,
+        // recover the inner value instead of failing. The env state was
+        // already clobbered; the current test's own clear_provider_env
+        // will re-normalize it.
+        let _env_lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _env_guards = clear_provider_env();
         let manager = make_agent_manager_with_config(Some(LlmConfig::default()));
 
@@ -391,7 +393,11 @@ mod tests {
     // It must be held for the entire test body (including await points) to prevent cross-test races.
     #[allow(clippy::await_holding_lock)]
     async fn test_list_providers_with_classification_filter() {
-        let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+        // Poison-tolerant: if a prior test panicked while holding this lock,
+        // recover the inner value instead of failing. The env state was
+        // already clobbered; the current test's own clear_provider_env
+        // will re-normalize it.
+        let _env_lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _env_guards = clear_provider_env();
         use crucible_config::TrustLevel;
 
