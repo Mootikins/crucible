@@ -1168,6 +1168,21 @@ impl AgentManager {
             }
         };
 
+        // ACP agents execute their own tools internally; Crucible only sees the
+        // tool_call / tool_result as notifications. If the tool isn't in our
+        // dispatcher, skip dispatch — the tool_call event was already emitted
+        // above (for TUI display), and the ACP ToolEnd chunk will emit the
+        // matching tool_result separately. Dispatching would produce a bogus
+        // "Unknown tool" error that the TUI would render as a failed call.
+        if !stream_ctx.tool_dispatcher.has_tool(&tool_call.name) {
+            debug!(
+                session_id = %stream_ctx.session_id,
+                tool = %tool_call.name,
+                "Tool not in local dispatcher; leaving result to external agent"
+            );
+            return None;
+        }
+
         let tool_result = tokio::time::timeout(
             std::time::Duration::from_secs(30),
             stream_ctx
