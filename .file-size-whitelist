@@ -11,7 +11,6 @@
 # === Batch 1 (non-daemon, safe to start now) ===
 
 # === Batch 2 (blocked on refactor/daemon-owns-setup) ===
-crates/crucible-daemon/src/rpc_client/client/mod.rs
 crates/crucible-daemon/src/server/tests.rs
 crates/crucible-daemon/src/server/session.rs
 crates/crucible-daemon/src/tools/notes.rs
