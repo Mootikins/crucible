@@ -69,7 +69,6 @@ async fn test_send_message_no_agent() {
             &event_tx,
             true,
             None,
-            false,
         )
         .await;
 

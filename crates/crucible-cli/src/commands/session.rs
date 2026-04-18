@@ -150,7 +150,6 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             session_id_flag,
             raw,
             permissions,
-            dangerously_skip_permissions,
         } => {
             let permission_mode = resolve_permission_mode(permissions.as_deref())?;
             let (resolved_session_id, resolved_message_arg, used_deprecated_flag) =
@@ -170,15 +169,7 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
                     }
                 }
             };
-            rpc::send(
-                &config,
-                &session_id,
-                &message,
-                raw,
-                permission_mode,
-                dangerously_skip_permissions,
-            )
-            .await
+            rpc::send(&config, &session_id, &message, raw, permission_mode).await
         }
         SessionCommands::Configure {
             session_id,
@@ -1259,7 +1250,6 @@ mod rpc {
         message: &str,
         raw: bool,
         permission_mode: Option<String>,
-        dangerously_skip_permissions: bool,
     ) -> Result<()> {
         use crucible_daemon::DaemonClient;
         use std::io::Write;
@@ -1274,7 +1264,6 @@ mod rpc {
                 message,
                 false,
                 permission_mode.clone(),
-                dangerously_skip_permissions,
             )
             .await
         {
@@ -1290,7 +1279,6 @@ mod rpc {
                         message,
                         false,
                         permission_mode,
-                        dangerously_skip_permissions,
                     )
                     .await?
             }

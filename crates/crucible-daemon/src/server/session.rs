@@ -914,11 +914,6 @@ pub(crate) async fn handle_session_send_message(
             s.parse::<crucible_config::components::permissions::PermissionMode>()
                 .ok()
         });
-    let dangerously_skip_permissions = req
-        .params
-        .get("dangerously_skip_permissions")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
 
     match am
         .send_message(
@@ -927,7 +922,6 @@ pub(crate) async fn handle_session_send_message(
             event_tx,
             is_interactive,
             permission_override,
-            dangerously_skip_permissions,
         )
         .await
     {

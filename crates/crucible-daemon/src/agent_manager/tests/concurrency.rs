@@ -58,7 +58,6 @@ async fn concurrent_send_to_same_session_returns_error() {
             &event_tx,
             true,
             None,
-            false,
         )
         .await;
 
@@ -105,7 +104,6 @@ async fn cancel_during_streaming_emits_ended_event() {
             &event_tx,
             true,
             None,
-            false,
         )
         .await
         .unwrap();
@@ -159,7 +157,6 @@ async fn empty_stream_without_done_cleans_up_request_state() {
             &event_tx,
             true,
             None,
-            false,
         )
         .await
         .unwrap();

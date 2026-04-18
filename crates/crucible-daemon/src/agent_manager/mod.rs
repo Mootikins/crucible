@@ -16,7 +16,7 @@ use crate::tool_dispatch::{DaemonToolDispatcher, ToolDispatcher};
 use crate::tools::workspace::WorkspaceTools;
 use crate::trust_resolution::resolve_provider_trust;
 use crucible_acp::discovery::default_agent_profiles;
-use crucible_config::components::permissions::PermissionConfig;
+use crucible_config::components::permissions::{PermissionConfig, PermissionMode};
 use crucible_config::{
     AcpConfig, AgentProfile, BackendType, DataClassification, LlmProviderConfig, PatternStore,
 };
@@ -287,10 +287,11 @@ struct StreamContext {
     session_dir: PathBuf,
     agent_stream_config: AgentStreamConfig,
     tool_dispatcher: Arc<dyn ToolDispatcher>,
-    /// When true, all tool-call permission checks in the streaming path
-    /// (Lua hooks, default-prompt) are bypassed with an auto-allow. Used
-    /// for automation when the user passes `--dangerously-skip-permissions`.
-    dangerously_skip_permissions: bool,
+    /// Explicit CLI-level permission override (e.g. `--permissions allow`).
+    /// When `Some(Allow)` or `Some(Deny)`, the streaming-path permission
+    /// handler short-circuits without invoking Lua hooks or the default
+    /// prompt. `Some(Ask)` and `None` fall through to the standard flow.
+    permission_override: Option<PermissionMode>,
 }
 
 #[allow(dead_code)] // fields capture config snapshot; model used in events, others reserved for stream configuration

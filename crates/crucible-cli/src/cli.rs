@@ -634,14 +634,9 @@ pub enum SessionCommands {
         raw: bool,
 
         /// Override permission mode (allow, deny, or ask). Overrides CRUCIBLE_PERMISSIONS env var.
+        /// Use `--permissions allow` for automation / fixture recording to bypass prompts.
         #[arg(long, value_name = "MODE", value_parser = ["allow", "deny", "ask"])]
         permissions: Option<String>,
-
-        /// Bypass ALL permission prompts including ACP agent tool approvals.
-        /// Equivalent to Claude Code's --dangerously-skip-permissions. Use only
-        /// for automation and fixture recording.
-        #[arg(long)]
-        dangerously_skip_permissions: bool,
     },
 
     /// Configure agent backend (provider + model + endpoint) for a session.
@@ -1567,7 +1562,6 @@ mod tests {
             session_id_flag,
             raw,
             permissions,
-            dangerously_skip_permissions,
         })) = cli.command
         {
             assert_eq!(session_id_pos, Some("chat-123".to_string()));
@@ -1575,7 +1569,6 @@ mod tests {
             assert_eq!(session_id_flag, None);
             assert!(!raw);
             assert_eq!(permissions, None);
-            assert!(!dangerously_skip_permissions);
         } else {
             panic!("Expected Session Send command");
         }
@@ -1591,7 +1584,6 @@ mod tests {
             session_id_flag,
             raw,
             permissions,
-            dangerously_skip_permissions,
         })) = cli.command
         {
             assert_eq!(session_id_pos, Some("hello".to_string()));
@@ -1599,7 +1591,6 @@ mod tests {
             assert_eq!(session_id_flag, Some("chat-123".to_string()));
             assert!(!raw);
             assert_eq!(permissions, None);
-            assert!(!dangerously_skip_permissions);
         } else {
             panic!("Expected Session Send command");
         }
@@ -1614,35 +1605,12 @@ mod tests {
             session_id_flag,
             raw,
             permissions: _,
-            dangerously_skip_permissions: _,
         })) = cli.command
         {
             assert_eq!(session_id_pos, Some("hello".to_string()));
             assert_eq!(message, None);
             assert_eq!(session_id_flag, None);
             assert!(!raw);
-        } else {
-            panic!("Expected Session Send command");
-        }
-    }
-
-    #[test]
-    fn test_session_send_dangerously_skip_permissions_flag() {
-        let cli = Cli::try_parse_from([
-            "cru",
-            "session",
-            "send",
-            "chat-123",
-            "hello",
-            "--dangerously-skip-permissions",
-        ])
-        .unwrap();
-        if let Some(Commands::Session(SessionCommands::Send {
-            dangerously_skip_permissions,
-            ..
-        })) = cli.command
-        {
-            assert!(dangerously_skip_permissions);
         } else {
             panic!("Expected Session Send command");
         }

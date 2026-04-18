@@ -413,8 +413,6 @@ pub struct SessionSendMessageRequest {
     pub is_interactive: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub permission_mode: Option<String>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub dangerously_skip_permissions: bool,
 }
 
 /// Request for `session.interaction_respond`.
@@ -1913,7 +1911,7 @@ impl DaemonClient {
         content: &str,
         is_interactive: bool,
     ) -> Result<String> {
-        self.session_send_message_with_permissions(session_id, content, is_interactive, None, false)
+        self.session_send_message_with_permissions(session_id, content, is_interactive, None)
             .await
     }
 
@@ -1923,7 +1921,6 @@ impl DaemonClient {
         content: &str,
         is_interactive: bool,
         permission_mode: Option<String>,
-        dangerously_skip_permissions: bool,
     ) -> Result<String> {
         let resp: SessionSendMessageResponse = self
             .typed_call(
@@ -1933,7 +1930,6 @@ impl DaemonClient {
                     content: content.to_string(),
                     is_interactive,
                     permission_mode,
-                    dangerously_skip_permissions,
                 },
             )
             .await?;

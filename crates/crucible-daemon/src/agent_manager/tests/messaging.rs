@@ -61,7 +61,6 @@ async fn send_message_emits_text_delta_events_in_order() {
             &event_tx,
             true,
             None,
-            false,
         )
         .await
         .unwrap();
@@ -142,7 +141,6 @@ async fn send_message_emits_thinking_before_text_delta() {
             &event_tx,
             true,
             None,
-            false,
         )
         .await
         .unwrap();
@@ -219,7 +217,6 @@ async fn same_chunk_thinking_emitted_before_text_delta() {
             &event_tx,
             true,
             None,
-            false,
         )
         .await
         .unwrap();
@@ -333,7 +330,6 @@ async fn send_message_emits_tool_call_and_tool_result_events() {
             &event_tx,
             true,
             None,
-            false,
         )
         .await
         .unwrap();
@@ -449,7 +445,6 @@ async fn display_hook_lua_tool_enriches_tool_call_metadata() {
             &event_tx,
             true,
             None,
-            false,
         )
         .await
         .unwrap();
@@ -514,7 +509,6 @@ async fn test_execute_agent_stream_empty_response_emits_error_event() {
             &event_tx,
             true,
             None,
-            false,
         )
         .await
         .unwrap();
@@ -628,7 +622,6 @@ async fn test_execute_agent_stream_tool_call_only_is_not_error() {
             &event_tx,
             true,
             None,
-            false,
         )
         .await
         .unwrap();

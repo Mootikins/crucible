@@ -50,7 +50,6 @@ async fn test_precognition_skipped_when_disabled() {
             &event_tx,
             true,
             None,
-            false,
         )
         .await
         .unwrap();
@@ -109,7 +108,6 @@ async fn test_precognition_skipped_for_search_command() {
             &event_tx,
             true,
             None,
-            false,
         )
         .await
         .unwrap();
@@ -167,7 +165,6 @@ async fn test_precognition_skipped_when_no_kiln() {
             &event_tx,
             true,
             None,
-            false,
         )
         .await
         .unwrap();
@@ -231,7 +228,6 @@ async fn test_precognition_complete_event_emitted_when_enrichment_runs() {
             &event_tx,
             true,
             None,
-            false,
         )
         .await
         .unwrap();
@@ -332,7 +328,6 @@ async fn test_precognition_enriched_content_reaches_agent() {
             &event_tx,
             true,
             None,
-            false,
         )
         .await
         .unwrap();
@@ -468,7 +463,6 @@ async fn test_precognition_emits_note_info_in_event() {
             &event_tx,
             true,
             None,
-            false,
         )
         .await
         .unwrap();
