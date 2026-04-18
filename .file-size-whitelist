@@ -11,7 +11,6 @@
 # === Batch 1 (non-daemon, safe to start now) ===
 
 # === Batch 2 (blocked on refactor/daemon-owns-setup) ===
-crates/crucible-daemon/src/server/tests.rs
 
 # === Batch 3 (blocked on TUI SessionEventStream stabilization) ===
 crates/crucible-cli/src/tui/oil/chat_runner.rs
