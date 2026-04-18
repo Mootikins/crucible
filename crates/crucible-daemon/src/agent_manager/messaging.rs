@@ -66,7 +66,7 @@ impl AgentManager {
                 &session.workspace,
                 &event_tx_clone,
                 is_interactive,
-                permission_override.clone(),
+                permission_override,
             )
             .await
         {
@@ -115,7 +115,7 @@ impl AgentManager {
             session_dir: session.storage_path(),
             agent_stream_config: AgentStreamConfig::from_session_agent(&agent_config),
             tool_dispatcher: self.get_or_create_session_dispatcher(&session).await,
-            permission_override: permission_override.clone(),
+            permission_override,
         };
 
         let task = tokio::spawn(async move {
@@ -1824,7 +1824,7 @@ impl AgentManager {
                     session_dir: stream_ctx.session_dir.clone(),
                     agent_stream_config: stream_ctx.agent_stream_config.clone(),
                     tool_dispatcher: stream_ctx.tool_dispatcher.clone(),
-                    permission_override: stream_ctx.permission_override.clone(),
+                    permission_override: stream_ctx.permission_override,
                 };
 
                 Box::pin(Self::execute_agent_stream(

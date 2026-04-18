@@ -35,6 +35,7 @@ fn emit_setup_event<P: serde::Serialize>(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn handle_session_create(
     req: Request,
     sm: &Arc<SessionManager>,
