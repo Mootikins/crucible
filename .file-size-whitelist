@@ -19,4 +19,3 @@ crates/crucible-cli/tests/tui_e2e_tests.rs
 crates/crucible-web/tests/route_contract_tests.rs
 crates/crucible-daemon/tests/rpc_integration.rs
 crates/crucible-lua/tests/integration.rs
-crates/crucible-daemon/src/agent_manager/tests/models.rs
