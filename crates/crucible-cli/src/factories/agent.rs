@@ -297,10 +297,32 @@ async fn create_daemon_agent_inner(
 
     let client = Arc::new(client);
 
+    // Subscribe-first: wildcard-subscribe BEFORE session.create so the
+    // setup task's events (emitted the moment the session is registered)
+    // are not missed by the race where the client subscribes after create
+    // returns. The secondary specific-session subscribe later in
+    // `new_and_subscribe` is idempotent.
+    //
+    // If this fails, the TUI would hang on "Loading..." forever waiting on
+    // setup events that never arrive, so propagate the error and let the
+    // CLI exit with a clear message.
+    client
+        .session_subscribe(&["*"])
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to subscribe to session events: {}", e))?;
+
     let workspace = params
         .working_dir
         .clone()
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| config.kiln_path.clone()));
+
+    // Compute up-front so `session.create` can tell the daemon which agent type
+    // this will be (Task 1.2f's setup task branches on it).
+    let is_acp = params
+        .agent_type
+        .map(|t| t == AgentType::Acp)
+        .unwrap_or_else(|| config.chat.agent_preference == crucible_config::AgentPreference::Acp);
+    let create_agent_type = if is_acp { "acp" } else { "internal" };
 
     let (session_id, is_new_session) = match &params.resume_session_id {
         Some(id) if !id.is_empty() => {
@@ -343,6 +365,7 @@ async fn create_daemon_agent_inner(
                         &workspace,
                         params.recording_mode.as_deref(),
                         params.recording_path.as_deref(),
+                        create_agent_type,
                     )
                     .await?,
                     true,
@@ -356,16 +379,12 @@ async fn create_daemon_agent_inner(
                 &workspace,
                 params.recording_mode.as_deref(),
                 params.recording_path.as_deref(),
+                create_agent_type,
             )
             .await?,
             true,
         ),
     };
-
-    let is_acp = params
-        .agent_type
-        .map(|t| t == AgentType::Acp)
-        .unwrap_or_else(|| config.chat.agent_preference == crucible_config::AgentPreference::Acp);
 
     let session_agent = if is_new_session {
         let agent = if is_acp {
@@ -415,6 +434,7 @@ async fn create_new_daemon_session(
     workspace: &std::path::Path,
     recording_mode: Option<&str>,
     recording_path: Option<&std::path::Path>,
+    agent_type: &str,
 ) -> Result<String> {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
@@ -424,6 +444,7 @@ async fn create_new_daemon_session(
             connect_kilns: vec![],
             recording_mode: recording_mode.map(|m| m.to_string()),
             recording_path: recording_path.map(|p| p.to_path_buf()),
+            agent_type: Some(agent_type.to_string()),
         })
         .await?;
 
@@ -434,54 +455,6 @@ async fn create_new_daemon_session(
 
     info!("Created new daemon session: {}", session_id);
     Ok(session_id)
-}
-
-/// Returns `(no-op agent handle, replay_session_id, event_rx)`.
-/// Real events flow through `event_rx` to a consumer task; agent handle is for type compatibility.
-pub async fn create_daemon_replay_agent(
-    replay_path: &std::path::Path,
-    speed: f64,
-) -> Result<(
-    Box<dyn AgentHandle + Send + Sync>,
-    String,
-    tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>,
-)> {
-    use crucible_daemon::DaemonAgentHandle;
-    use std::sync::Arc;
-
-    info!("Connecting to daemon for replay session");
-    let (client, event_rx) = crate::common::daemon_client_with_events()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to connect to daemon: {}", e))?;
-
-    let replay_response = client
-        .session_replay(replay_path, speed)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to start daemon replay: {}", e))?;
-
-    let replay_session_id = replay_response
-        .get("session_id")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("No session_id in replay response"))?
-        .to_string();
-
-    let client = Arc::new(client);
-
-    client
-        .session_subscribe(&[&replay_session_id])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to subscribe to replay session: {}", e))?;
-
-    info!(
-        session_id = %replay_session_id,
-        speed = speed,
-        "Daemon replay session created and subscribed"
-    );
-
-    let (_, dummy_rx) = tokio::sync::mpsc::unbounded_channel();
-    let handle = DaemonAgentHandle::new(client, replay_session_id.clone(), dummy_rx);
-
-    Ok((Box::new(handle), replay_session_id, event_rx))
 }
 
 /// Create an agent via daemon (auto-starts if needed).

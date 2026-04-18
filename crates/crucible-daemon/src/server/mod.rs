@@ -223,6 +223,7 @@ impl Server {
             plugin_loader.clone(),
             params.llm_config.clone(),
             mcp_server_manager.clone(),
+            params.mcp_config.clone(),
         );
         let dispatcher = Arc::new(RpcDispatcher::new(ctx));
 

@@ -59,6 +59,7 @@ async fn create_session(client: &DaemonClient, kiln: &std::path::Path) -> String
             connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
+            agent_type: None,
         })
         .await
         .expect("session_create failed");
@@ -91,6 +92,7 @@ async fn test_session_create_returns_id() {
             connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
+            agent_type: None,
         })
         .await
         .expect("session_create failed");

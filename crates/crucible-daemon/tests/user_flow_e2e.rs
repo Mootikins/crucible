@@ -158,6 +158,7 @@ async fn test_complete_user_flow() {
             connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
+            agent_type: None,
         })
         .await
         .expect("session.create failed");
@@ -369,6 +370,7 @@ async fn test_user_flow_session_list_reflects_state() {
             connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
+            agent_type: None,
         })
         .await
         .expect("session.create failed");

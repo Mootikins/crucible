@@ -21,9 +21,13 @@ use std::sync::{LazyLock, Mutex as StdMutex};
 use tempfile::TempDir;
 use tokio::time::{timeout, Duration};
 
-static ENV_LOCK: LazyLock<StdMutex<()>> = LazyLock::new(|| StdMutex::new(()));
+/// Shared lock for any test that mutates process-wide env vars related
+/// to provider configuration. Tests in `providers.rs` and sibling files
+/// all acquire this single lock so env state cannot race across them.
+/// Poison-tolerant: a panic in one test does not poison subsequent tests.
+pub(crate) static ENV_LOCK: LazyLock<StdMutex<()>> = LazyLock::new(|| StdMutex::new(()));
 
-fn clear_provider_env() -> Vec<EnvVarGuard> {
+pub(crate) fn clear_provider_env() -> Vec<EnvVarGuard> {
     vec![
         EnvVarGuard::remove("OLLAMA_HOST"),
         EnvVarGuard::remove("OPENAI_API_KEY"),

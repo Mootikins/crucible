@@ -127,11 +127,11 @@ pub enum Commands {
         plan: bool,
 
         /// Record TUI session to a JSONL file for later replay
-        #[arg(long, conflicts_with = "replay")]
+        #[arg(long)]
         record: Option<PathBuf>,
 
         /// Replay a previously recorded JSONL session
-        #[arg(long, conflicts_with = "record")]
+        #[arg(long)]
         replay: Option<PathBuf>,
 
         /// Playback speed multiplier for replay (default: 1.0)
@@ -634,6 +634,7 @@ pub enum SessionCommands {
         raw: bool,
 
         /// Override permission mode (allow, deny, or ask). Overrides CRUCIBLE_PERMISSIONS env var.
+        /// Use `--permissions allow` for automation / fixture recording to bypass prompts.
         #[arg(long, value_name = "MODE", value_parser = ["allow", "deny", "ask"])]
         permissions: Option<String>,
     },

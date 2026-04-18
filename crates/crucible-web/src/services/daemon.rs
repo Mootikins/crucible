@@ -243,6 +243,7 @@ impl ReconnectingDaemon {
                         connect_kilns,
                         recording_mode: recording_mode.clone(),
                         recording_path: recording_path.clone(),
+                        agent_type: None,
                     })
                     .await
             })

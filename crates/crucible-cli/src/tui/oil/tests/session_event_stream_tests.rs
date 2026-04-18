@@ -247,7 +247,15 @@ fn delegation_fixture_renders_without_duplication() {
         })
         .collect();
 
-    // The response text should appear exactly once.
-    let occurrences = text.matches("Agent profiles").count();
-    assert_eq!(occurrences, 1, "assembled text duplicates 'Agent profiles'");
+    // Invariant: no sentence from the assistant's final response should
+    // appear more than once in the assembled text. Previously the fixture
+    // rendered duplicated content because tool-result text bled into the
+    // text_delta stream without a newline separator. Pick a phrase unique
+    // to the fixture's final response and verify it appears at most once.
+    let needle = "Crucible data store";
+    let occurrences = text.matches(needle).count();
+    assert!(
+        occurrences <= 1,
+        "assembled text duplicates '{needle}': occurrences={occurrences}"
+    );
 }

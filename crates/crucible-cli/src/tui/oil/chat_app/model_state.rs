@@ -15,10 +15,6 @@ pub struct McpServerDisplay {
     pub connected: bool,
 }
 
-#[derive(Debug, Clone)]
-pub struct PluginStatusEntry {
-    pub name: String,
-    pub version: String,
-    pub state: String,
-    pub error: Option<String>,
-}
+// `PluginStatusEntry` now lives in `crucible-core` so session-setup events
+// (emitted by the daemon, consumed here) share the canonical type.
+pub use crucible_core::types::PluginStatusEntry;

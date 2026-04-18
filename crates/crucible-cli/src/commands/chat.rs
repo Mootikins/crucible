@@ -5,24 +5,18 @@
 //! Supports toggleable plan (read-only) and act (write-enabled) modes.
 
 use anyhow::Result;
-use crucible_daemon::{
-    DaemonClient, LuaDiscoverPluginsRequest, LuaInitSessionRequest, LuaShutdownSessionRequest,
-};
+use crucible_daemon::{DaemonClient, LuaInitSessionRequest, LuaShutdownSessionRequest};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
-use colored::Colorize;
-
+use crate::commands::chat_preflight::{ensure_valid_kiln, fill_default_model_if_missing};
 use crate::config::CliConfig;
 use crate::context_enricher::ContextEnricher;
 use crate::core_facade::KilnContext;
 use crate::factories;
-use crate::kiln_discover::{discover_kiln, DiscoverySource};
 use crate::output;
 use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
-use crate::provider_detect::{detect_providers, fetch_model_context_length};
-use crate::tui::oil::{McpServerDisplay, PluginStatusEntry};
 use crate::tui::AgentSelection;
 use crucible_core::traits::chat::{is_read_only, mode_display_name};
 
@@ -127,6 +121,31 @@ fn select_session_kiln(config: &CliConfig) -> Option<PathBuf> {
 }
 
 pub async fn execute(params: ExecuteParams) -> Result<()> {
+    if let Some(ref replay_path) = params.replay {
+        if !replay_path.exists() {
+            anyhow::bail!("replay file not found: {}", replay_path.display());
+        }
+        if params.query.is_some() {
+            anyhow::bail!("--replay cannot be combined with a query argument");
+        }
+        if params.record.is_some() {
+            anyhow::bail!("--replay cannot be combined with --record");
+        }
+        if params.resume_session_id.is_some() {
+            anyhow::bail!("--replay cannot be combined with --resume");
+        }
+        if params.agent_name.is_some() {
+            anyhow::bail!("--replay cannot be combined with --agent");
+        }
+        return run_replay(
+            replay_path.clone(),
+            params.replay_speed,
+            params.replay_auto_exit,
+            &params.config,
+        )
+        .await;
+    }
+
     let ExecuteParams {
         config,
         agent_name,
@@ -164,8 +183,9 @@ pub async fn execute(params: ExecuteParams) -> Result<()> {
     };
 
     if query.is_none() {
-        run_preflight_checks(&mut config).await?;
+        ensure_valid_kiln(&mut config).await?;
     }
+    fill_default_model_if_missing(&mut config);
 
     match query {
         None => {
@@ -206,6 +226,48 @@ pub async fn execute(params: ExecuteParams) -> Result<()> {
     }
 }
 
+async fn run_replay(
+    path: PathBuf,
+    speed: f64,
+    auto_exit: Option<u64>,
+    config: &CliConfig,
+) -> Result<()> {
+    use crate::chat::bridge::AgentEventBridge;
+    use crate::tui::oil::{ChatMode, OilChatRunner};
+    use crucible_core::events::EventRing;
+
+    // The replay entry short-circuits inside `run_with_factory` before the
+    // factory is invoked, so the supplied closure is a stub that never runs.
+    // The bridge is still required by the entry-point signature; it is
+    // backed by a throwaway ring because nothing consumes it in replay.
+    let ring = Arc::new(EventRing::new(4096));
+    let bridge = AgentEventBridge::new(ring);
+
+    let mut runner = OilChatRunner::new()?
+        .with_mode(ChatMode::Normal)
+        .with_model("replay")
+        .with_context_limit(0)
+        .with_show_thinking(config.chat.show_thinking)
+        .with_replay_path(Some(path))
+        .with_replay_speed(speed)
+        .with_replay_auto_exit(auto_exit);
+
+    let factory = |_selection: crate::tui::AgentSelection| async move {
+        // Unreachable: replay short-circuits before the factory is called.
+        Err::<
+            (
+                Box<dyn crucible_core::traits::chat::AgentHandle + Send + Sync>,
+                Option<tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>>,
+            ),
+            anyhow::Error,
+        >(anyhow::anyhow!(
+            "factory called during replay (should be unreachable)"
+        ))
+    };
+
+    runner.run_with_factory(&bridge, factory).await
+}
+
 fn parse_env_overrides(env_overrides: &[String]) -> std::collections::HashMap<String, String> {
     let parsed: std::collections::HashMap<String, String> = env_overrides
         .iter()
@@ -229,173 +291,6 @@ fn parse_env_overrides(env_overrides: &[String]) -> std::collections::HashMap<St
     }
 
     parsed
-}
-
-async fn run_preflight_checks(config: &mut CliConfig) -> Result<()> {
-    let config_kiln_valid = config.kiln_path.join(".crucible").is_dir();
-    let daemon = crate::common::daemon_client().await.ok();
-    let providers = match daemon.as_ref() {
-        Some(client) => client.list_providers(None).await.unwrap_or_default(),
-        None => {
-            // Daemon not available (e.g., first run before daemon starts)
-            // Fall back to local detection
-            detect_providers(&config.chat)
-                .into_iter()
-                .map(
-                    |p| crucible_daemon::agent_manager::providers::ProviderInfo {
-                        name: p.name,
-                        provider_type: p.provider_type,
-                        available: p.available,
-                        default_model: p.default_model,
-                        models: Vec::new(),
-                        endpoint: None,
-                        reason: Some(p.reason),
-                        is_local: true,
-                    },
-                )
-                .collect()
-        }
-    };
-
-    if !config_kiln_valid {
-        // Config kiln not valid, try discovery
-        let discovered = discover_kiln(None, None);
-        match discovered {
-            Some(found) => {
-                info!(
-                    "Discovered kiln at {} (via {:?})",
-                    found.path.display(),
-                    found.source
-                );
-                if found.source != DiscoverySource::CliFlag {
-                    config.kiln_path = found.path;
-                }
-            }
-            None => {
-                info!("No kiln found, prompting for path");
-                println!(
-                    "{} No kiln found. A kiln is a folder where Crucible stores your notes and sessions.",
-                    "Setup:".cyan().bold()
-                );
-                println!("  {} A kiln is like a vault — it holds all your markdown notes, embeddings, and chat history.", "What is a kiln?".dimmed());
-                println!("  {} A good default is a folder in your home directory or Documents (e.g., ~/crucible).", "Tip:".dimmed());
-
-                let path_input: String = dialoguer::Input::new()
-                    .with_prompt("Kiln path")
-                    .default("~/crucible".to_string())
-                    .interact_text()?;
-
-                let expanded = crate::kiln_validate::expand_tilde(path_input.trim());
-
-                if !expanded.exists() {
-                    std::fs::create_dir_all(&expanded)?;
-                }
-
-                let crucible_dir = expanded.join(".crucible");
-                if !crucible_dir.join("config.toml").exists() {
-                    let (provider, model) = if let Some(p) = providers.first() {
-                        let m = p
-                            .default_model
-                            .clone()
-                            .unwrap_or_else(|| "llama3.2".to_string());
-                        (p.provider_type.clone(), m)
-                    } else {
-                        ("ollama".to_string(), "llama3.2".to_string())
-                    };
-
-                    let config_content =
-                        crate::commands::init::generate_config_with_provider(&provider, &model);
-                    crate::commands::init::create_kiln_with_config(
-                        &crucible_dir,
-                        &config_content,
-                        false,
-                    )?;
-
-                    println!("{} Kiln initialized at {}", "✓".green(), expanded.display());
-                }
-
-                config.kiln_path = expanded;
-            }
-        }
-    } else {
-        info!("Using kiln from config: {}", config.kiln_path.display());
-    }
-
-    // If cwd matches a registered project, open that project's kilns (reuse daemon connection)
-    if let Err(e) = open_project_kilns_if_matched(config, daemon.as_ref()).await {
-        debug!("Project kiln auto-open skipped: {}", e);
-    }
-
-    if providers.is_empty() {
-        warn!("No LLM providers detected");
-        println!("{} No LLM provider configured.", "Error:".red().bold());
-        println!();
-        println!("  Crucible needs an LLM provider to chat. Choose one of these:");
-        println!();
-        println!(
-            "  {} Set an API key environment variable:",
-            "Option 1:".bold()
-        );
-        println!(
-            "    {} (for OpenAI)",
-            "export OPENAI_API_KEY=sk-...".dimmed()
-        );
-        println!(
-            "    {} (for Anthropic)",
-            "export ANTHROPIC_API_KEY=sk-ant-...".dimmed()
-        );
-        println!(
-            "    {} (for other providers)",
-            "export OPENROUTER_API_KEY=sk-...".dimmed()
-        );
-        println!();
-        println!(
-            "  {} Use the interactive credential manager:",
-            "Option 2:".bold()
-        );
-        println!("    {}", "cru auth login".dimmed());
-        println!();
-        println!(
-            "  {} Configure a provider in your config file:",
-            "Option 3:".bold()
-        );
-        println!(
-            "    {} (see docs/Guides/Getting Started.md)",
-            "~/.config/crucible/config.toml".dimmed()
-        );
-        println!();
-        println!(
-            "  {}",
-            "Chat will not work without a provider. Please set up one of the above.".dimmed()
-        );
-    } else {
-        let has_cloud_provider = providers
-            .iter()
-            .any(|p| p.provider_type == "openai" || p.provider_type == "anthropic");
-
-        if !has_cloud_provider {
-            if let Some(ollama) = providers.iter().find(|p| p.provider_type == "ollama") {
-                info!(
-                    "Auto-detected Ollama: {}",
-                    ollama.reason.as_deref().unwrap_or("detected")
-                );
-                if config.chat.model.is_none() {
-                    if let Some(ref model) = ollama.default_model {
-                        config.chat.model = Some(model.clone());
-                        info!("Set default model to {}", model);
-                    }
-                }
-            }
-        }
-
-        debug!(
-            "Detected {} provider(s): {:?}",
-            providers.len(),
-            providers.iter().map(|p| &p.name).collect::<Vec<_>>()
-        );
-    }
-
-    Ok(())
 }
 
 /// If the current working directory matches a registered project, open that
@@ -473,7 +368,6 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
         replay_auto_exit,
     } = params;
     use crate::chat::bridge::AgentEventBridge;
-    use crate::chat::session::{index_kiln_notes, index_workspace_files};
     use crate::tui::oil::{ChatMode, OilChatRunner};
     use crucible_core::events::EventRing;
     use crucible_core::traits::chat::is_read_only;
@@ -512,13 +406,6 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
         .as_ref()
         .map(|p| p.model.clone())
         .unwrap_or_else(|| config.chat_model());
-    // Context length is only used for the usage display — fetch in background after TUI starts
-    let context_endpoint = effective_llm
-        .as_ref()
-        .map(|p| p.endpoint.clone())
-        .or_else(|| config.chat.endpoint.clone())
-        .unwrap_or_else(|| crucible_config::DEFAULT_OLLAMA_ENDPOINT.to_string());
-    let context_model = model_name.clone();
 
     let display_model = agent_name
         .as_deref()
@@ -570,15 +457,17 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
         }
     }
 
-    let workspace_root = working_dir.clone().unwrap_or_else(|| {
-        std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
-    });
+    // Daemon owns setup (indexing, plugin discovery, MCP config read,
+    // provider detection, context-length fetch). Results arrive as session
+    // events from the setup task the daemon spawns on session.create. We
+    // still need a daemon client here for two CLI-local concerns:
+    //   1. Open project-registered kilns before session.create runs.
+    //   2. Initialize the Lua session (RPC the TUI uses for slash commands).
     let kiln_root = config.kiln_path.clone();
-
     let lua_session_id = resume_session_id
         .clone()
         .unwrap_or_else(|| format!("chat-{}", chrono::Utc::now().format("%Y%m%d-%H%M%S")));
-    // Connect to daemon once and reuse for Lua init + plugin discovery
+
     let lua_client = match crate::common::daemon_client().await {
         Ok(client) => Some(client),
         Err(e) => {
@@ -587,84 +476,46 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
         }
     };
 
-    // Run Lua init + plugin discovery (sharing daemon client) concurrently with file indexing
-    let file_index_fut = tokio::task::spawn_blocking({
-        let root = workspace_root.clone();
-        move || index_workspace_files(&root)
-    });
-    let note_index_fut = tokio::task::spawn_blocking({
-        let root = kiln_root.clone();
-        move || index_kiln_notes(&root)
-    });
+    if let Some(client) = lua_client.as_ref() {
+        if let Err(e) = open_project_kilns_if_matched(&config, Some(client)).await {
+            debug!("Project kiln auto-open skipped: {}", e);
+        }
+    }
 
-    // Lua init and plugin discovery share the same client, run sequentially with each other
-    // but concurrently with file indexing
-    let lua_and_plugins_fut = async {
-        let lua_initialized = if let Some(client) = lua_client.as_ref() {
-            let init_params = LuaInitSessionRequest {
-                session_id: lua_session_id.clone(),
-                kiln_path: kiln_root.to_string_lossy().to_string(),
-                config: serde_json::Value::Null,
-            };
-            match client.lua_init_session(init_params).await {
-                Ok(response) => {
-                    debug!(
-                        session_id = %response.session_id,
-                        commands = response.commands.len(),
-                        views = response.views.len(),
-                        "Initialized Lua session via daemon RPC"
-                    );
-                    true
-                }
-                Err(e) => {
-                    warn!("Failed to initialize Lua session via daemon RPC: {}", e);
-                    false
-                }
-            }
-        } else {
-            false
+    let lua_initialized = if let Some(client) = lua_client.as_ref() {
+        let init_params = LuaInitSessionRequest {
+            session_id: lua_session_id.clone(),
+            kiln_path: kiln_root.to_string_lossy().to_string(),
+            config: serde_json::Value::Null,
         };
-        let plugin_entries = discover_plugin_status(lua_client.as_ref(), &kiln_root).await;
-        (lua_initialized, plugin_entries)
+        match client.lua_init_session(init_params).await {
+            Ok(response) => {
+                debug!(
+                    session_id = %response.session_id,
+                    commands = response.commands.len(),
+                    views = response.views.len(),
+                    "Initialized Lua session via daemon RPC"
+                );
+                true
+            }
+            Err(e) => {
+                warn!("Failed to initialize Lua session via daemon RPC: {}", e);
+                false
+            }
+        }
+    } else {
+        false
     };
 
-    let (files, notes, (lua_initialized, plugin_entries)) =
-        tokio::join!(file_index_fut, note_index_fut, lua_and_plugins_fut);
-
-    if let Ok(files) = files {
-        runner = runner.with_workspace_files(files);
-    }
-    if let Ok(notes) = notes {
-        runner = runner.with_kiln_notes(notes);
-    }
-
-    let mcp_servers: Vec<McpServerDisplay> = config
-        .mcp
-        .as_ref()
-        .map(|mcp| {
-            mcp.servers
-                .iter()
-                .map(|s| McpServerDisplay {
-                    name: s.name.clone(),
-                    prefix: s.prefix.trim_end_matches('_').to_string(),
-                    tool_count: 0,
-                    connected: false,
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    if !mcp_servers.is_empty() {
-        runner = runner.with_mcp_servers(mcp_servers);
-    }
+    // MCP config is still passed to the runner because the runner's
+    // background MCP gateway task connects to upstream servers to update
+    // tool counts / connection status. The initial display list (name,
+    // prefix) now arrives from the daemon's `mcp_servers_ready` event.
     if let Some(ref mcp) = config.mcp {
         runner = runner.with_mcp_config(mcp.clone());
     }
 
     runner = runner.with_slash_commands(known_slash_commands());
-
-    if !plugin_entries.is_empty() {
-        runner = runner.with_plugin_status(plugin_entries);
-    }
 
     let session_id = format!("chat-{}", chrono::Utc::now().format("%Y%m%d-%H%M%S"));
     let session_dir = config
@@ -727,19 +578,9 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
         }
     };
 
-    // Fetch model context length in background — only needed for context usage display
-    let _context_fetch = {
-        let limit_handle = runner.context_limit_handle();
-        tokio::spawn(async move {
-            if let Some(limit) = fetch_model_context_length(&context_endpoint, &context_model).await
-            {
-                if limit > 0 {
-                    info!("Model {} context length: {} tokens", context_model, limit);
-                    limit_handle.store(limit, std::sync::atomic::Ordering::Relaxed);
-                }
-            }
-        })
-    };
+    // Context length now arrives via the daemon's `context_limit_resolved`
+    // setup event (internal-agent sessions only). The runner's
+    // SessionEventStream updates its AtomicUsize handle as that event fires.
 
     let run_result = runner.run_with_factory(&bridge, factory).await;
 
@@ -789,8 +630,6 @@ async fn run_oneshot_chat(params: RunOneshotChatParams) -> Result<()> {
 
     status.update("Initializing storage...");
     let storage_handle = factories::get_storage(&config).await?;
-
-    let _storage_client: Option<()> = None;
 
     status.update("Discovering agent...");
     let mut handle = factories::create_agent(&config, agent_params).await?;
@@ -999,52 +838,6 @@ pub fn known_slash_commands() -> Vec<(String, String)> {
         ("view".into(), "Open or list Lua-defined views".into()),
         ("models".into(), "List or switch models".into()),
     ]
-}
-
-async fn discover_plugin_status(
-    client: Option<&DaemonClient>,
-    kiln_path: &std::path::Path,
-) -> Vec<PluginStatusEntry> {
-    let client = match client {
-        Some(c) => c,
-        None => return Vec::new(),
-    };
-
-    let request = LuaDiscoverPluginsRequest {
-        kiln_path: kiln_path.to_string_lossy().to_string(),
-    };
-
-    match client.lua_discover_plugins(request).await {
-        Ok(response) => response
-            .plugins
-            .iter()
-            .map(|p| PluginStatusEntry {
-                name: p
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown")
-                    .to_string(),
-                version: p
-                    .get("version")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("0.0.0")
-                    .to_string(),
-                state: p
-                    .get("state")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown")
-                    .to_string(),
-                error: p
-                    .get("error")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
-            })
-            .collect(),
-        Err(e) => {
-            warn!("Plugin discovery failed: {}", e);
-            Vec::new()
-        }
-    }
 }
 
 #[cfg(test)]

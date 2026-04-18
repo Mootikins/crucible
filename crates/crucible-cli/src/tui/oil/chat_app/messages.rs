@@ -47,7 +47,9 @@
 use std::path::PathBuf;
 
 use crucible_core::interaction::{InteractionRequest, InteractionResponse};
+use crucible_core::protocol::session_events::{ContextLimitSource, SessionInitializedPayload};
 use crucible_core::traits::chat::PrecognitionNoteInfo;
+use crucible_core::types::ProviderInfo;
 
 use super::{McpServerDisplay, PluginStatusEntry};
 
@@ -193,6 +195,26 @@ pub enum ChatAppMsg {
         turns: usize,
         messages_removed: usize,
     },
+
+    // --- Setup Events (daemon → TUI, fire once per session) ---
+    /// **Event** (daemon → TUI): session is registered; initial model/mode/agent_name known.
+    SessionInitialized(SessionInitializedPayload),
+    /// **Event** (daemon → TUI): provider list fetched by the daemon (internal agents only).
+    ProvidersListed(Vec<ProviderInfo>),
+    /// **Event** (daemon → TUI): daemon resolved the active model's context window size.
+    ContextLimitResolved {
+        limit: usize,
+        source: ContextLimitSource,
+    },
+    /// **Event** (daemon → TUI): workspace file list indexed by the daemon.
+    WorkspaceIndexed(Vec<String>),
+    /// **Event** (daemon → TUI): kiln note list indexed by the daemon.
+    KilnNotesIndexed(Vec<String>),
+    /// **Event** (daemon → TUI): plugins discovered by the daemon.
+    PluginsDiscovered(Vec<PluginStatusEntry>),
+    /// **Event** (daemon → TUI): MCP servers read from config (name, prefix, tools, connected).
+    /// Arrives as `McpServerDisplay` after translation — tools are collapsed to `tool_count`.
+    McpServersReady(Vec<McpServerDisplay>),
 }
 
 /// Category of a `ChatAppMsg` for top-level dispatch.
@@ -268,7 +290,14 @@ impl ChatAppMsg {
             | Self::ExportSession(_)
             | Self::ReloadPlugin(_)
             | Self::Undo(_)
-            | Self::UndoComplete { .. } => MsgCategory::Ui,
+            | Self::UndoComplete { .. }
+            | Self::SessionInitialized(_)
+            | Self::ProvidersListed(_)
+            | Self::ContextLimitResolved { .. }
+            | Self::WorkspaceIndexed(_)
+            | Self::KilnNotesIndexed(_)
+            | Self::PluginsDiscovered(_)
+            | Self::McpServersReady(_) => MsgCategory::Ui,
         }
     }
 }

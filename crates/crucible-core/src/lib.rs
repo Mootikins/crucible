@@ -24,6 +24,7 @@ pub mod project;
 pub mod prompts;
 pub mod properties;
 pub mod protocol;
+pub mod recording;
 pub mod serde_helpers;
 pub mod serde_md;
 pub mod session;

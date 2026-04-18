@@ -192,7 +192,7 @@ async fn test_factory_propagates_errors() {
 
 // Integration test notes:
 //
-// The actual factory closure in run_deferred_chat() creates real agents:
+// The actual factory closure in run_interactive_chat() creates real agents:
 // - AgentSelection::Acp -> factories::create_agent() -> Box<dyn AgentHandle>
 // - AgentSelection::Internal -> factories::create_agent() -> Box<dyn AgentHandle>
 // - AgentSelection::Cancelled -> Error

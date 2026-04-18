@@ -88,6 +88,7 @@ async fn test_interaction_event_flows_to_receiver() {
             connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
+            agent_type: None,
         })
         .await
         .expect("session_create failed");
@@ -764,6 +765,7 @@ async fn test_session_create_and_list() {
             connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
+            agent_type: None,
         })
         .await
         .expect("session_create failed");
@@ -812,6 +814,7 @@ async fn test_session_subscribe_and_unsubscribe() {
             connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
+            agent_type: None,
         })
         .await
         .expect("session_create failed");
@@ -857,6 +860,7 @@ async fn test_daemon_agent_handle_creation() {
             connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
+            agent_type: None,
         })
         .await
         .expect("session_create failed");
@@ -896,6 +900,7 @@ async fn test_session_configure_agent() {
             connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
+            agent_type: None,
         })
         .await
         .expect("session_create failed");
@@ -961,6 +966,7 @@ async fn test_session_send_message_returns_message_id() {
             connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
+            agent_type: None,
         })
         .await
         .expect("session_create failed");
@@ -1013,6 +1019,7 @@ async fn test_send_message_with_is_interactive_false_accepted() {
             connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
+            agent_type: None,
         })
         .await
         .expect("session_create failed");
@@ -1060,6 +1067,7 @@ async fn test_send_message_with_permission_override_accepted() {
             connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
+            agent_type: None,
         })
         .await
         .expect("session_create failed");
@@ -1112,6 +1120,7 @@ async fn test_session_cancel() {
             connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
+            agent_type: None,
         })
         .await
         .expect("session_create failed");
@@ -1152,6 +1161,7 @@ async fn test_tui_sessions_command_flow() {
             connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
+            agent_type: None,
         })
         .await
         .expect("session_create 1 failed");
@@ -1165,6 +1175,7 @@ async fn test_tui_sessions_command_flow() {
             connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
+            agent_type: None,
         })
         .await
         .expect("session_create 2 failed");
@@ -1213,6 +1224,7 @@ async fn test_tui_resume_command_flow() {
             connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
+            agent_type: None,
         })
         .await
         .expect("session_create failed");
@@ -1260,6 +1272,7 @@ async fn test_tui_daemon_agent_full_flow() {
             connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
+            agent_type: None,
         })
         .await
         .expect("session_create failed");
@@ -1343,6 +1356,7 @@ async fn test_event_streaming_with_background_reader() {
             connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
+            agent_type: None,
         })
         .await
         .expect("session_create failed");
@@ -1642,6 +1656,7 @@ async fn test_session_switch_model() {
             connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
+            agent_type: None,
         })
         .await
         .expect("session_create failed");
@@ -1727,6 +1742,7 @@ async fn test_daemon_agent_handle_switch_model() {
             connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
+            agent_type: None,
         })
         .await
         .expect("session_create failed");
@@ -1816,6 +1832,7 @@ async fn test_session_create_with_granular_recording_mode() {
             connect_kilns: vec![],
             recording_mode: Some("granular".to_string()),
             recording_path: None,
+            agent_type: None,
         })
         .await
         .expect("session_create with recording_mode failed");
@@ -1852,6 +1869,7 @@ async fn test_session_create_with_no_recording_mode() {
             connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
+            agent_type: None,
         })
         .await
         .expect("session_create without recording_mode failed");
@@ -1916,6 +1934,7 @@ async fn test_recording_footer_regression_drop_ends_session() {
             connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
+            agent_type: None,
         })
         .await
         .expect("session_create failed");

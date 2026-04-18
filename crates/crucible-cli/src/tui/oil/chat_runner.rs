@@ -210,16 +210,6 @@ impl OilChatRunner {
         self
     }
 
-    pub fn with_workspace_files(mut self, files: Vec<String>) -> Self {
-        self.workspace_files = files;
-        self
-    }
-
-    pub fn with_kiln_notes(mut self, notes: Vec<String>) -> Self {
-        self.kiln_notes = notes;
-        self
-    }
-
     pub fn with_session_dir(mut self, path: PathBuf) -> Self {
         self.session_dir = Some(path);
         self
@@ -232,16 +222,6 @@ impl OilChatRunner {
 
     pub fn with_resume_history(mut self, history: Vec<serde_json::Value>) -> Self {
         self.resume_history = Some(history);
-        self
-    }
-
-    pub fn with_mcp_servers(mut self, servers: Vec<McpServerDisplay>) -> Self {
-        self.mcp_servers = servers;
-        self
-    }
-
-    pub fn with_plugin_status(mut self, entries: Vec<PluginStatusEntry>) -> Self {
-        self.plugin_status = entries;
         self
     }
 
@@ -304,6 +284,14 @@ impl OilChatRunner {
         self.agent_name.is_some()
     }
 
+    /// Queue an initial `FetchModels` message so the `:model` popup has data
+    /// without a user-triggered round-trip.
+    ///
+    /// Structurally live-path only: called exclusively from
+    /// `run_with_factory`. The replay entry point (added in Task 2.3c) does
+    /// not invoke this. If `FetchModels` ever reaches the event loop under
+    /// replay anyway, the guard on the `ChatAppMsg::FetchModels` arm
+    /// swallows it — see the match-arm comment there.
     fn queue_model_prefetch(&self, msg_tx: &mpsc::UnboundedSender<ChatAppMsg>) {
         if self.is_acp_session() {
             return;
@@ -402,15 +390,69 @@ impl OilChatRunner {
         }
 
         if let Some(replay_path) = self.replay_path.clone() {
-            let (mut agent, replay_session_id, event_rx) =
-                crate::factories::create_daemon_replay_agent(&replay_path, self.replay_speed)
-                    .await?;
+            // Read the recording directly off disk. No daemon contact.
+            let (header, events) = crate::tui::oil::local_replay::read_recording(&replay_path)?;
 
+            // Header's terminal_size records the geometry the recording was
+            // rendered against. The real terminal's size is whatever the user
+            // has right now; we log the recorded size for diagnostics rather
+            // than resizing the live terminal.
+            if let Some((cols, rows)) = header.terminal_size {
+                tracing::info!(
+                    recorded_cols = cols,
+                    recorded_rows = rows,
+                    "Replay recording terminal_size (informational)"
+                );
+            }
             tracing::info!(
-                session_id = %replay_session_id,
+                original_session = %header.session_id,
+                started_at = %header.started_at,
+                event_count = events.len(),
                 speed = self.replay_speed,
-                "Connected to daemon replay session"
+                "Replaying recording from disk"
             );
+
+            let replay_session_id = format!(
+                "local-replay-{}",
+                chrono::Utc::now().format("%Y%m%d-%H%M%S-%f")
+            );
+
+            // Local driver pumps RecordedEvents out as SessionEventMessages.
+            // An adapter converts them into daemon SessionEvents so we can
+            // feed the unified session_event_consumer (Task 2.5).
+            let (msg_tx_driver, mut msg_rx_driver) = tokio::sync::mpsc::unbounded_channel::<
+                crucible_core::protocol::SessionEventMessage,
+            >();
+            let (event_tx_adapter, event_rx_adapter) =
+                tokio::sync::mpsc::unbounded_channel::<crucible_daemon::SessionEvent>();
+
+            let driver_session_id = replay_session_id.clone();
+            let driver_speed = self.replay_speed;
+            background_tasks.push(tokio::spawn(async move {
+                crate::tui::oil::local_replay::drive_replay(
+                    events,
+                    driver_speed,
+                    driver_session_id,
+                    msg_tx_driver,
+                )
+                .await;
+            }));
+
+            // Adapter: SessionEventMessage → SessionEvent. The consumer only
+            // reads session_id/event_type/data, so a straight projection is
+            // enough; timestamp/seq are informational.
+            background_tasks.push(tokio::spawn(async move {
+                while let Some(msg) = msg_rx_driver.recv().await {
+                    let event = crucible_daemon::SessionEvent {
+                        session_id: msg.session_id,
+                        event_type: msg.event,
+                        data: msg.data,
+                    };
+                    if event_tx_adapter.send(event).is_err() {
+                        return;
+                    }
+                }
+            }));
 
             self.is_replay = true;
             self.replay_remaining_completes = 1;
@@ -418,12 +460,16 @@ impl OilChatRunner {
             app.set_status("Replay");
 
             let msg_tx_clone = msg_tx.clone();
-            background_tasks.push(tokio::spawn(replay_event_consumer(
-                replay_session_id,
-                event_rx,
+            background_tasks.push(tokio::spawn(session_event_consumer(
+                replay_session_id.clone(),
+                event_rx_adapter,
                 msg_tx_clone,
+                None,
             )));
 
+            // NoopAgentHandle: pure-display replay. No daemon RPC under any
+            // code path. Drops cleanly (no session.end call).
+            let mut agent = crate::tui::oil::noop_agent::NoopAgentHandle::new(replay_session_id);
             let interaction_rx = agent.take_interaction_receiver();
 
             let event_loop_result = self
@@ -450,7 +496,15 @@ impl OilChatRunner {
         self.is_replay = false;
         self.replay_remaining_completes = 0;
 
-        app.set_status("Ready");
+        // Fresh sessions show "Loading..." and flip to "Ready" once the
+        // daemon's setup task emits `mcp_servers_ready` (the last common
+        // setup event). Resumed sessions don't receive setup events, so
+        // stay at "Ready" immediately.
+        if self.resume_session_id.is_some() {
+            app.set_status("Ready");
+        } else {
+            app.set_status("Loading...");
+        }
 
         // Spawn the live SessionEvent consumer if the factory handed us a
         // raw event receiver. This is the unified event path: the daemon's
@@ -460,11 +514,11 @@ impl OilChatRunner {
             let session_id = agent.session_id().unwrap_or("").to_string();
             let msg_tx_live = msg_tx.clone();
             let context_limit = self.context_limit.clone();
-            background_tasks.push(tokio::spawn(live_event_consumer(
+            background_tasks.push(tokio::spawn(session_event_consumer(
                 session_id,
                 event_rx,
                 msg_tx_live,
-                context_limit,
+                Some(context_limit),
             )));
         }
 
@@ -508,40 +562,48 @@ impl OilChatRunner {
             }
         }
 
-        // Connect to MCP servers in background and update display
-        if !self.mcp_servers.is_empty() {
-            if let Some(ref mcp_config) = self.mcp_config {
-                let mcp_config = mcp_config.clone();
-                let mcp_tx = msg_tx.clone();
-                background_tasks.push(tokio::spawn(async move {
-                    use crucible_daemon::tools::mcp_gateway::McpGatewayManager;
-                    match McpGatewayManager::from_config(&mcp_config).await {
-                        Ok(gateway) => {
-                            let servers: Vec<McpServerDisplay> = gateway
-                                .upstream_names()
-                                .map(|name| {
-                                    let tools_for_upstream: Vec<_> = gateway
-                                        .all_tools()
-                                        .into_iter()
-                                        .filter(|t| t.upstream == name)
-                                        .collect();
-                                    McpServerDisplay {
-                                        name: name.to_string(),
-                                        prefix: name.to_string(),
-                                        tool_count: tools_for_upstream.len(),
-                                        connected: !tools_for_upstream.is_empty(),
-                                    }
-                                })
-                                .collect();
-                            let _ = mcp_tx.send(ChatAppMsg::McpStatusLoaded(servers));
-                        }
-                        Err(e) => {
-                            tracing::warn!("Failed to connect MCP servers: {}", e);
-                        }
+        // Connect to MCP servers in background to update tool_count /
+        // connected state. The initial list (name, prefix, connected)
+        // arrives from the daemon's `mcp_servers_ready` setup event;
+        // this background task refines it with live upstream-connect
+        // info. Triggered whenever an MCP config is present — we no
+        // longer gate on `self.mcp_servers`, which is empty until the
+        // setup event lands.
+        //
+        // Structurally live-path only: this runs inside `run_with_factory`.
+        // The replay entry point (Task 2.3c) never reaches this code, so
+        // the MCP gateway is not instantiated during replay.
+        if let Some(ref mcp_config) = self.mcp_config {
+            let mcp_config = mcp_config.clone();
+            let mcp_tx = msg_tx.clone();
+            background_tasks.push(tokio::spawn(async move {
+                use crucible_daemon::tools::mcp_gateway::McpGatewayManager;
+                match McpGatewayManager::from_config(&mcp_config).await {
+                    Ok(gateway) => {
+                        let servers: Vec<McpServerDisplay> = gateway
+                            .upstream_names()
+                            .map(|name| {
+                                let tools_for_upstream: Vec<_> = gateway
+                                    .all_tools()
+                                    .into_iter()
+                                    .filter(|t| t.upstream == name)
+                                    .collect();
+                                McpServerDisplay {
+                                    name: name.to_string(),
+                                    prefix: name.to_string(),
+                                    tool_count: tools_for_upstream.len(),
+                                    connected: !tools_for_upstream.is_empty(),
+                                }
+                            })
+                            .collect();
+                        let _ = mcp_tx.send(ChatAppMsg::McpStatusLoaded(servers));
                     }
-                    // Drop the gateway — Phase A is display-only
-                }));
-            }
+                    Err(e) => {
+                        tracing::warn!("Failed to connect MCP servers: {}", e);
+                    }
+                }
+                // Drop the gateway — Phase A is display-only
+            }));
         }
 
         // Prefetch available models in background — daemon cache should be warm,
@@ -882,9 +944,9 @@ impl OilChatRunner {
     /// off any side-effects (e.g. sending a user message via RPC).
     ///
     /// Live sends are fire-and-forget: the daemon broadcasts the ensuing
-    /// turn as `SessionEvent`s, which `live_event_consumer` feeds back into
-    /// this channel. In replay mode the daemon already drives everything,
-    /// so `UserMessage` is purely a display signal.
+    /// turn as `SessionEvent`s, which `session_event_consumer` feeds back
+    /// into this channel. In replay mode the daemon already drives
+    /// everything, so `UserMessage` is purely a display signal.
     async fn process_message<A: AgentHandle>(
         msg: &ChatAppMsg,
         app: &mut OilChatApp,
@@ -949,7 +1011,7 @@ impl OilChatRunner {
         while let Ok(msg) = msg_rx.try_recv() {
             processed_any = true;
 
-            // Handle replay-complete signal (from replay_event_consumer)
+            // Handle replay-complete signal (from session_event_consumer)
             if self.is_replay && matches!(msg, ChatAppMsg::Status(ref s) if s == "Replay complete")
             {
                 self.replay_remaining_completes = 0;
@@ -1087,7 +1149,10 @@ impl OilChatRunner {
                             }
                         }
                     }
-                    ChatAppMsg::FetchModels => {
+                    ChatAppMsg::FetchModels if !self.is_replay => {
+                        // Skipped in replay mode to preserve the TUI-only guarantee
+                        // (no daemon RPC calls). Replay never populates the model
+                        // picker — `:model` is moot when there's no live session.
                         if self.is_acp_session() {
                             params.app.add_notification(
                                 crucible_core::types::Notification::warning(
@@ -1402,6 +1467,8 @@ impl OilChatRunner {
                             }
                         }
                     }
+                    // Gated on `!self.is_replay`: plugin reload opens a fresh
+                    // `DaemonClient::connect()` and must not fire during replay.
                     ChatAppMsg::ReloadPlugin(ref name) if !self.is_replay => {
                         tracing::info!(plugin = %name, "Plugin reload requested");
                         let name = name.clone();
@@ -1482,6 +1549,9 @@ impl OilChatRunner {
                             }
                         }));
                     }
+                    // Gated on `!self.is_replay`: slash commands forward to the
+                    // agent (and thus the daemon). Defense-in-depth — user
+                    // keystrokes during replay must not hit the daemon.
                     ChatAppMsg::ExecuteSlashCommand(ref cmd) if !self.is_replay => {
                         tracing::info!(command = %cmd, "Forwarding slash command as user message");
                         if let Err(e) = params.agent.send_message_fire_and_forget(cmd.clone()).await
@@ -1489,6 +1559,9 @@ impl OilChatRunner {
                             tracing::warn!(error = %e, "send_message_fire_and_forget failed for slash command");
                         }
                     }
+                    // Gated on `!self.is_replay`: export reads the recording
+                    // from the session directory via `crucible_daemon::load_events`.
+                    // During replay there is no live session to export.
                     ChatAppMsg::ExportSession(ref export_path) if !self.is_replay => {
                         let session_dir = match params.app.session_dir() {
                             Some(dir) => dir.to_path_buf(),
@@ -1533,9 +1606,19 @@ impl OilChatRunner {
                             }
                         }
                     }
+                    // Swallow daemon-bound messages during replay. The match
+                    // guards on the live arms above (`if !self.is_replay`)
+                    // mean these land here in replay mode. Any new daemon
+                    // side-effect for these variants must stay behind that
+                    // guard so the TUI-only guarantee holds.
                     ChatAppMsg::ReloadPlugin(_)
                     | ChatAppMsg::ExecuteSlashCommand(_)
-                    | ChatAppMsg::ExportSession(_) => {}
+                    | ChatAppMsg::ExportSession(_)
+                    | ChatAppMsg::FetchModels => {
+                        if self.is_replay {
+                            tracing::debug!(?msg, "daemon-bound message ignored in replay mode");
+                        }
+                    }
                     _ => {}
                 }
                 let action = params.app.on_message(msg);
@@ -1967,6 +2050,110 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
             }
         }
         "replay_complete" => vec![],
+        "session_initialized" => {
+            match serde_json::from_value::<
+                crucible_core::protocol::session_events::SessionInitializedPayload,
+            >(data.clone())
+            {
+                Ok(payload) => vec![ChatAppMsg::SessionInitialized(payload)],
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to decode session_initialized payload");
+                    vec![]
+                }
+            }
+        }
+        "providers_listed" => {
+            match serde_json::from_value::<
+                crucible_core::protocol::session_events::ProvidersListedPayload,
+            >(data.clone())
+            {
+                Ok(payload) => vec![ChatAppMsg::ProvidersListed(payload.providers)],
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to decode providers_listed payload");
+                    vec![]
+                }
+            }
+        }
+        "context_limit_resolved" => {
+            match serde_json::from_value::<
+                crucible_core::protocol::session_events::ContextLimitResolvedPayload,
+            >(data.clone())
+            {
+                Ok(payload) => vec![ChatAppMsg::ContextLimitResolved {
+                    limit: payload.limit,
+                    source: payload.source,
+                }],
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to decode context_limit_resolved payload");
+                    vec![]
+                }
+            }
+        }
+        "workspace_indexed" => {
+            match serde_json::from_value::<
+                crucible_core::protocol::session_events::WorkspaceIndexedPayload,
+            >(data.clone())
+            {
+                Ok(payload) => vec![ChatAppMsg::WorkspaceIndexed(payload.files)],
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to decode workspace_indexed payload");
+                    vec![]
+                }
+            }
+        }
+        "kiln_notes_indexed" => {
+            match serde_json::from_value::<
+                crucible_core::protocol::session_events::KilnNotesIndexedPayload,
+            >(data.clone())
+            {
+                Ok(payload) => vec![ChatAppMsg::KilnNotesIndexed(payload.notes)],
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to decode kiln_notes_indexed payload");
+                    vec![]
+                }
+            }
+        }
+        "plugins_discovered" => {
+            match serde_json::from_value::<
+                crucible_core::protocol::session_events::PluginsDiscoveredPayload,
+            >(data.clone())
+            {
+                Ok(payload) => vec![ChatAppMsg::PluginsDiscovered(payload.plugins)],
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to decode plugins_discovered payload");
+                    vec![]
+                }
+            }
+        }
+        "mcp_servers_ready" => {
+            match serde_json::from_value::<
+                crucible_core::protocol::session_events::McpServersReadyPayload,
+            >(data.clone())
+            {
+                Ok(payload) => {
+                    // Map McpServerInfo (tools: Vec<String>) → McpServerDisplay
+                    // (tool_count: usize). The TUI renders tool_count only;
+                    // collapsing at the boundary keeps the rest of the TUI
+                    // unchanged. The real connected-state / tool count is
+                    // refreshed later by the background MCP gateway task.
+                    let servers: Vec<McpServerDisplay> = payload
+                        .servers
+                        .into_iter()
+                        .map(|s| McpServerDisplay {
+                            name: s.name,
+                            prefix: s.prefix.trim_end_matches('_').to_string(),
+                            tool_count: s.tools.len(),
+                            connected: s.connected,
+                        })
+                        .collect();
+                    vec![ChatAppMsg::McpServersReady(servers)]
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to decode mcp_servers_ready payload");
+                    vec![]
+                }
+            }
+        }
         _ => {
             tracing::trace!(event_type = %event_type, "Skipping unknown session event");
             vec![]
@@ -2016,6 +2203,19 @@ impl SessionEventStream {
         }
 
         let raw = session_event_to_chat_msgs(event_type, data);
+
+        // When the daemon's setup task emits `context_limit_resolved`, also
+        // stamp the atomic so that subsequent `message_complete` events pick
+        // up the real total for their `ContextUsage` patching.
+        if event_type == "context_limit_resolved" {
+            if let Some(ref limit) = self.context_limit {
+                for msg in &raw {
+                    if let ChatAppMsg::ContextLimitResolved { limit: l, .. } = msg {
+                        limit.store(*l, Ordering::Relaxed);
+                    }
+                }
+            }
+        }
 
         // For message_complete, filter out the TextDelta if granular deltas
         // were seen, and patch the ContextUsage with the real context limit.
@@ -2090,56 +2290,50 @@ async fn consume_session_events<F, E>(
     }
 }
 
-pub(crate) async fn replay_event_consumer(
-    replay_session_id: String,
-    event_rx: tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>,
-    msg_tx: tokio::sync::mpsc::UnboundedSender<ChatAppMsg>,
+/// Daemon reports fatal turn failures via `ended { reason: "error: ..." }`.
+/// Surface them as an `Error` ChatAppMsg so the status bar shows the cause.
+/// Shared by both live and replay paths — replay of an error-ending recording
+/// renders identically to a live session that ended with that error.
+fn promote_ended_error(
+    event: &crucible_daemon::SessionEvent,
+    tx: &tokio::sync::mpsc::UnboundedSender<ChatAppMsg>,
 ) {
-    let filter_id = replay_session_id.clone();
-    consume_session_events(
-        event_rx,
-        msg_tx,
-        None,
-        move |event| event.session_id == filter_id,
-        |event, tx| {
-            if event.event_type == "replay_complete" {
-                let _ = tx.send(ChatAppMsg::Status("Replay complete".to_string()));
-                false
-            } else {
-                true
+    if event.event_type == "ended" {
+        if let Some(reason) = event.data.get("reason").and_then(|v| v.as_str()) {
+            if let Some(err) = reason.strip_prefix("error: ") {
+                let _ = tx.send(ChatAppMsg::Error(err.to_string()));
             }
-        },
-    )
-    .await;
+        }
+    }
 }
 
-/// Live session event consumer.
+/// Unified session event consumer for both live and replay modes.
 ///
-/// Drains the daemon's SessionEvent broadcast for `live_session_id` through
-/// the unified `SessionEventStream`. Replaces the old ChatChunk-based path:
-/// the TUI no longer consumes `AgentHandle::send_message_stream`, instead
-/// observing turns through this channel — same as replay and resume.
-pub(crate) async fn live_event_consumer(
-    live_session_id: String,
+/// Drains `event_rx`, filtering events for `session_id` and translating them
+/// through `SessionEventStream` into `ChatAppMsg`s on `msg_tx`. Both paths
+/// share the `ended: error: ...` → `ChatAppMsg::Error` promotion. Replay
+/// additionally terminates on `replay_complete`, emitting a final Status.
+///
+/// `context_limit` is `Some(_)` for live (so `message_complete` can fill in
+/// the total for `ContextUsage`) and `None` for replay (the recorded events
+/// already carry the total).
+pub(crate) async fn session_event_consumer(
+    session_id: String,
     event_rx: tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>,
     msg_tx: tokio::sync::mpsc::UnboundedSender<ChatAppMsg>,
-    context_limit: Arc<AtomicUsize>,
+    context_limit: Option<Arc<AtomicUsize>>,
 ) {
-    let filter_id = live_session_id.clone();
+    let filter_id = session_id.clone();
     consume_session_events(
         event_rx,
         msg_tx,
-        Some(context_limit),
+        context_limit,
         move |event| event.session_id == filter_id,
         |event, tx| {
-            // Daemon reports fatal turn failures via `ended { reason: "error: ..." }`.
-            // Surface them as an Error ChatAppMsg so the status bar shows the cause.
-            if event.event_type == "ended" {
-                if let Some(reason) = event.data.get("reason").and_then(|v| v.as_str()) {
-                    if let Some(err) = reason.strip_prefix("error: ") {
-                        let _ = tx.send(ChatAppMsg::Error(err.to_string()));
-                    }
-                }
+            promote_ended_error(event, tx);
+            if event.event_type == "replay_complete" {
+                let _ = tx.send(ChatAppMsg::Status("Replay complete".to_string()));
+                return false;
             }
             true
         },
@@ -2163,7 +2357,7 @@ mod tests {
         let session_id_clone = replay_session_id.clone();
 
         let consumer_task = tokio::spawn(async move {
-            replay_event_consumer(session_id_clone, event_rx, msg_tx).await;
+            session_event_consumer(session_id_clone, event_rx, msg_tx, None).await;
         });
 
         event_tx
@@ -2223,7 +2417,7 @@ mod tests {
         let session_id_clone = replay_session_id.clone();
 
         let consumer_task = tokio::spawn(async move {
-            replay_event_consumer(session_id_clone, event_rx, msg_tx).await;
+            session_event_consumer(session_id_clone, event_rx, msg_tx, None).await;
         });
 
         event_tx
@@ -2277,7 +2471,7 @@ mod tests {
         let session_id_clone = replay_session_id.clone();
 
         let consumer_task = tokio::spawn(async move {
-            replay_event_consumer(session_id_clone, event_rx, msg_tx).await;
+            session_event_consumer(session_id_clone, event_rx, msg_tx, None).await;
         });
 
         event_tx
@@ -2317,5 +2511,211 @@ mod tests {
             .await
             .expect("Timeout waiting for consumer task")
             .expect("Consumer task should complete");
+    }
+
+    // ─── Setup-event translation (Task 1.3) ─────────────────────────────
+
+    #[test]
+    fn translate_session_initialized_produces_payload_msg() {
+        use serde_json::json;
+        let data = json!({
+            "model": "glm-5",
+            "mode": "plan",
+            "agent_name": "claude",
+            "kiln_path": "/k",
+            "workspace_path": "/w",
+        });
+        let msgs = session_event_to_chat_msgs("session_initialized", &data);
+        assert_eq!(msgs.len(), 1);
+        match &msgs[0] {
+            ChatAppMsg::SessionInitialized(p) => {
+                assert_eq!(p.model, "glm-5");
+                assert_eq!(p.mode, "plan");
+                assert_eq!(p.agent_name.as_deref(), Some("claude"));
+            }
+            other => panic!("expected SessionInitialized, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn translate_providers_listed_carries_providers() {
+        use serde_json::json;
+        let data = json!({
+            "providers": [{
+                "name": "OpenAI", "provider_type": "openai", "available": true,
+                "default_model": null, "models": [], "endpoint": null,
+                "reason": null, "is_local": false,
+            }],
+        });
+        let msgs = session_event_to_chat_msgs("providers_listed", &data);
+        assert_eq!(msgs.len(), 1);
+        match &msgs[0] {
+            ChatAppMsg::ProvidersListed(providers) => {
+                assert_eq!(providers.len(), 1);
+                assert_eq!(providers[0].name, "OpenAI");
+            }
+            other => panic!("expected ProvidersListed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn translate_context_limit_resolved_parses_source() {
+        use crucible_core::protocol::session_events::ContextLimitSource;
+        use serde_json::json;
+        let data = json!({ "limit": 128_000, "source": "provider_api" });
+        let msgs = session_event_to_chat_msgs("context_limit_resolved", &data);
+        assert_eq!(msgs.len(), 1);
+        match &msgs[0] {
+            ChatAppMsg::ContextLimitResolved { limit, source } => {
+                assert_eq!(*limit, 128_000);
+                assert_eq!(*source, ContextLimitSource::ProviderApi);
+            }
+            other => panic!("expected ContextLimitResolved, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn translate_workspace_indexed_carries_files() {
+        use serde_json::json;
+        let data = json!({ "files": ["src/lib.rs", "README.md"] });
+        let msgs = session_event_to_chat_msgs("workspace_indexed", &data);
+        match msgs.as_slice() {
+            [ChatAppMsg::WorkspaceIndexed(files)] => assert_eq!(
+                files,
+                &vec!["src/lib.rs".to_string(), "README.md".to_string()]
+            ),
+            other => panic!("expected WorkspaceIndexed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn translate_kiln_notes_indexed_carries_notes() {
+        use serde_json::json;
+        let data = json!({ "notes": ["note:Daily.md"] });
+        let msgs = session_event_to_chat_msgs("kiln_notes_indexed", &data);
+        match msgs.as_slice() {
+            [ChatAppMsg::KilnNotesIndexed(notes)] => {
+                assert_eq!(notes, &vec!["note:Daily.md".to_string()])
+            }
+            other => panic!("expected KilnNotesIndexed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn translate_plugins_discovered_carries_entries() {
+        use serde_json::json;
+        let data = json!({
+            "plugins": [
+                { "name": "kiln-expert", "version": "0.1.0", "state": "loaded", "error": null }
+            ]
+        });
+        let msgs = session_event_to_chat_msgs("plugins_discovered", &data);
+        match msgs.as_slice() {
+            [ChatAppMsg::PluginsDiscovered(entries)] => {
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0].name, "kiln-expert");
+                assert_eq!(entries[0].state, "loaded");
+            }
+            other => panic!("expected PluginsDiscovered, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn translate_mcp_servers_ready_maps_to_display_and_collapses_tools() {
+        use serde_json::json;
+        let data = json!({
+            "servers": [
+                {
+                    "name": "context7",
+                    "prefix": "c7_",
+                    "tools": ["query-docs", "resolve-library-id"],
+                    "connected": true,
+                }
+            ]
+        });
+        let msgs = session_event_to_chat_msgs("mcp_servers_ready", &data);
+        match msgs.as_slice() {
+            [ChatAppMsg::McpServersReady(servers)] => {
+                assert_eq!(servers.len(), 1);
+                assert_eq!(servers[0].name, "context7");
+                // trailing `_` stripped to match legacy McpServerDisplay shape
+                assert_eq!(servers[0].prefix, "c7");
+                assert_eq!(servers[0].tool_count, 2);
+                assert!(servers[0].connected);
+            }
+            other => panic!("expected McpServersReady, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn translate_bad_payload_shape_returns_empty() {
+        use serde_json::json;
+        // Missing required fields — the type-strict deserializer fails and the
+        // translator returns an empty vec rather than panicking.
+        let msgs = session_event_to_chat_msgs("context_limit_resolved", &json!({}));
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn translate_unknown_event_returns_empty() {
+        use serde_json::json;
+        let msgs = session_event_to_chat_msgs("never_heard_of_it", &json!({}));
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn translate_context_limit_resolved_updates_atomic_through_stream() {
+        use serde_json::json;
+        let limit = Arc::new(AtomicUsize::new(0));
+        let mut stream = SessionEventStream::new().with_context_limit(limit.clone());
+        let msgs = stream.translate(
+            "context_limit_resolved",
+            &json!({ "limit": 4096, "source": "config" }),
+        );
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(limit.load(Ordering::Relaxed), 4096);
+    }
+
+    /// `ended { reason: "error: ..." }` must promote to `ChatAppMsg::Error`
+    /// through the unified consumer regardless of mode (live vs replay).
+    /// This is the Task 2.5 invariant: replay of an error-ending recording
+    /// surfaces the error identically to a live session that hit it.
+    #[tokio::test]
+    async fn consumer_promotes_ended_error_in_both_modes() {
+        use serde_json::json;
+        use tokio::time::{timeout, Duration};
+
+        for context_limit in [None, Some(Arc::new(AtomicUsize::new(0)))] {
+            let (msg_tx, mut msg_rx) = mpsc::unbounded_channel();
+            let (event_tx, event_rx) = mpsc::unbounded_channel();
+
+            let session_id = "test-session-ended-error".to_string();
+            let sid_clone = session_id.clone();
+            let ctx_limit = context_limit.clone();
+
+            let consumer = tokio::spawn(async move {
+                session_event_consumer(sid_clone, event_rx, msg_tx, ctx_limit).await;
+            });
+
+            event_tx
+                .send(crucible_daemon::SessionEvent {
+                    session_id: session_id.clone(),
+                    event_type: "ended".to_string(),
+                    data: json!({ "reason": "error: LLM timeout" }),
+                })
+                .unwrap();
+            drop(event_tx);
+
+            let msg = timeout(Duration::from_secs(1), msg_rx.recv())
+                .await
+                .expect("timely")
+                .expect("some msg");
+            match msg {
+                ChatAppMsg::Error(s) => assert_eq!(s, "LLM timeout"),
+                other => panic!("expected Error, got {:?}", other),
+            }
+
+            consumer.abort();
+        }
     }
 }

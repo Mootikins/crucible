@@ -34,6 +34,7 @@ pub mod file_watch_bridge;
 pub mod internal_events;
 pub mod kiln_manager;
 pub mod lifecycle;
+pub mod mcp;
 pub mod mcp_host;
 pub mod mcp_server;
 pub mod multi_kiln_search;
@@ -60,6 +61,7 @@ pub mod tools;
 pub mod tools_bridge;
 pub mod trust_resolution;
 pub mod watch;
+pub mod workspace;
 
 pub use acp_handle::{AcpAgentHandle, AcpHandleError};
 pub use agent_factory::{create_agent_from_session_config, AgentFactoryError};

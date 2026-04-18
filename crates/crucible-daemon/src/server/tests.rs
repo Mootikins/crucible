@@ -42,6 +42,39 @@ fn build_llm_config_with_trust(
     }
 }
 
+/// Build an `AgentManager` suitable for tests that don't actually drive an
+/// agent — they just need a value to pass to `handle_session_create` so the
+/// setup task has a handle for `list_providers`. The returned manager has no
+/// MCP gateway, no ACP config, no plugin loader.
+fn test_agent_manager(
+    kiln_manager: Arc<KilnManager>,
+    session_manager: Arc<SessionManager>,
+    event_tx: broadcast::Sender<SessionEventMessage>,
+    llm_config: Option<LlmConfig>,
+) -> Arc<AgentManager> {
+    let background_manager = Arc::new(crate::background_manager::BackgroundJobManager::new(
+        event_tx,
+    ));
+    // These tests never drive workspace tools — WorkspaceTools just needs a
+    // path value. Use a per-process temp path rather than hardcoding /tmp.
+    let workspace_tools = Arc::new(crate::tools::workspace::WorkspaceTools::new(
+        std::env::temp_dir().join(format!("crucible-server-test-{}", std::process::id())),
+    ));
+    Arc::new(AgentManager::new(
+        crate::agent_manager::AgentManagerParams {
+            kiln_manager,
+            session_manager,
+            background_manager,
+            mcp_gateway: None,
+            llm_config,
+            acp_config: None,
+            permission_config: None,
+            plugin_loader: None,
+            workspace_tools,
+        },
+    ))
+}
+
 fn create_session_request(kiln: &Path, workspace: &Path, provider_key: &str) -> Request {
     serde_json::from_value(json!({
         "jsonrpc": "2.0",
@@ -171,7 +204,10 @@ async fn cloud_provider_confidential_kiln_returns_insufficient_error() {
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
 
-    let response = handle_session_create(request, &sm, &pm, &llm_config, &km).await;
+    let (event_tx, _event_rx) = broadcast::channel(16);
+    let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
+    let response =
+        handle_session_create(request, &sm, &pm, &llm_config, &km, &event_tx, &am, None).await;
     let error = response.error.expect("expected trust-level rejection");
 
     assert_eq!(error.code, INVALID_PARAMS);
@@ -200,7 +236,10 @@ async fn local_provider_confidential_kiln_allows_session_creation() {
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
 
-    let response = handle_session_create(request, &sm, &pm, &llm_config, &km).await;
+    let (event_tx, _event_rx) = broadcast::channel(16);
+    let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
+    let response =
+        handle_session_create(request, &sm, &pm, &llm_config, &km, &event_tx, &am, None).await;
 
     assert!(response.error.is_none());
     assert!(response.result.is_some());
@@ -226,7 +265,10 @@ async fn cloud_provider_public_or_missing_classification_allows_session_creation
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
 
-    let response = handle_session_create(request, &sm, &pm, &llm_config, &km).await;
+    let (event_tx, _event_rx) = broadcast::channel(16);
+    let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
+    let response =
+        handle_session_create(request, &sm, &pm, &llm_config, &km, &event_tx, &am, None).await;
 
     assert!(response.error.is_none());
     assert!(response.result.is_some());
@@ -253,7 +295,10 @@ async fn untrusted_provider_internal_kiln_returns_error() {
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
 
-    let response = handle_session_create(request, &sm, &pm, &llm_config, &km).await;
+    let (event_tx, _event_rx) = broadcast::channel(16);
+    let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
+    let response =
+        handle_session_create(request, &sm, &pm, &llm_config, &km, &event_tx, &am, None).await;
     let error = response.error.expect("expected trust-level rejection");
 
     assert_eq!(error.code, INVALID_PARAMS);
@@ -1881,7 +1926,7 @@ fn test_internal_error_returns_correct_code_and_message() {
     assert!(response.error.is_some());
     let error = response.error.unwrap();
     assert_eq!(error.code, INTERNAL_ERROR);
-    assert_eq!(error.message, "Internal server error");
+    assert_eq!(error.message, format!("Internal error: {}", err_msg));
     assert!(response.result.is_none());
 }
 

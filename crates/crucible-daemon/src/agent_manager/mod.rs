@@ -16,7 +16,7 @@ use crate::tool_dispatch::{DaemonToolDispatcher, ToolDispatcher};
 use crate::tools::workspace::WorkspaceTools;
 use crate::trust_resolution::resolve_provider_trust;
 use crucible_acp::discovery::default_agent_profiles;
-use crucible_config::components::permissions::PermissionConfig;
+use crucible_config::components::permissions::{PermissionConfig, PermissionMode};
 use crucible_config::{
     AcpConfig, AgentProfile, BackendType, DataClassification, LlmProviderConfig, PatternStore,
 };
@@ -287,6 +287,11 @@ struct StreamContext {
     session_dir: PathBuf,
     agent_stream_config: AgentStreamConfig,
     tool_dispatcher: Arc<dyn ToolDispatcher>,
+    /// Explicit CLI-level permission override (e.g. `--permissions allow`).
+    /// When `Some(Allow)` or `Some(Deny)`, the streaming-path permission
+    /// handler short-circuits without invoking Lua hooks or the default
+    /// prompt. `Some(Ask)` and `None` fall through to the standard flow.
+    permission_override: Option<PermissionMode>,
 }
 
 #[allow(dead_code)] // fields capture config snapshot; model used in events, others reserved for stream configuration
@@ -494,7 +499,7 @@ impl AgentManager {
         self.model_cache.clear();
     }
 
-    pub fn get_or_create_session_dispatcher(
+    pub async fn get_or_create_session_dispatcher(
         &self,
         session: &crucible_core::session::Session,
     ) -> Arc<dyn ToolDispatcher> {
@@ -511,10 +516,43 @@ impl AgentManager {
             use crate::tool_dispatch::McpToolExecutor;
             use crate::tools::mcp_server::CrucibleMcpServer;
 
+            // Resolve real knowledge repo + embedding provider from the kiln
+            // when available. Falls back to empty impls only when the kiln
+            // cannot be opened or no enrichment is configured — in which case
+            // semantic_search will honestly report its unavailable state.
+            let (knowledge_repo, embedding_provider): (
+                Arc<dyn crucible_core::traits::KnowledgeRepository>,
+                Arc<dyn crucible_core::enrichment::EmbeddingProvider>,
+            ) = {
+                let kiln_path = session.kiln.as_path();
+                let repo: Arc<dyn crucible_core::traits::KnowledgeRepository> =
+                    match self.kiln_manager.get_or_open(kiln_path).await {
+                        Ok(storage) => storage.as_knowledge_repository(),
+                        Err(_) => Arc::new(EmptyKnowledgeRepository),
+                    };
+                let embed: Arc<dyn crucible_core::enrichment::EmbeddingProvider> =
+                    if let Some(config) = self.kiln_manager.enrichment_config().cloned() {
+                        match crate::embedding::get_or_create_embedding_provider(&config).await {
+                            Ok(provider) => provider,
+                            Err(e) => {
+                                tracing::warn!(
+                                    error = %e,
+                                    "Failed to create embedding provider for session dispatcher; \
+                                     semantic_search will report unavailable"
+                                );
+                                Arc::new(EmptyEmbeddingProvider)
+                            }
+                        }
+                    } else {
+                        Arc::new(EmptyEmbeddingProvider)
+                    };
+                (repo, embed)
+            };
+
             let mcp = Arc::new(CrucibleMcpServer::new(
                 session.kiln.to_string_lossy().to_string(),
-                Arc::new(EmptyKnowledgeRepository),
-                Arc::new(EmptyEmbeddingProvider),
+                knowledge_repo,
+                embedding_provider,
             ));
 
             Arc::new(DaemonToolDispatcher::new(vec![
@@ -753,6 +791,7 @@ impl AgentManager {
     }
 }
 
+pub mod context_length;
 mod iter;
 mod messaging;
 mod models;

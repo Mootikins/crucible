@@ -8,21 +8,16 @@
 //! during event architecture cleanup. Use --query for one-shot mode.
 
 use anyhow::Result;
-use std::path::Path;
-use std::process::Command;
 use std::sync::Arc;
 
-use crate::chat::bridge::AgentEventBridge;
 use crate::chat::handlers;
 use crate::chat::mode_registry::ModeRegistry;
 use crate::chat::slash_registry::{SlashCommandRegistry, SlashCommandRegistryBuilder};
 use crate::chat::{AgentHandle, ChatError, ChatResult};
 use crate::context_enricher::ContextEnricher;
 use crate::core_facade::KilnContext;
-use crate::tui::oil::{AgentSelection, ChatMode, OilChatRunner};
-use crucible_core::events::EventRing;
+use crate::tui::AgentSelection;
 use crucible_core::traits::registry::RegistryBuilder;
-use walkdir::WalkDir;
 
 /// Default number of context results to include in enriched prompts
 pub const DEFAULT_CONTEXT_SIZE: usize = 5;
@@ -352,143 +347,6 @@ impl ChatSession {
 
         Ok(())
     }
-
-    /// Run the session with deferred agent creation.
-    ///
-    /// Shows splash for agent selection, then creates agent using the factory.
-    /// All happens within a single TUI session (no terminal flicker).
-    pub async fn run_deferred<F, Fut, A>(&mut self, create_agent: F) -> Result<()>
-    where
-        F: Fn(crate::tui::AgentSelection) -> Fut,
-        Fut: std::future::Future<
-            Output = Result<(
-                A,
-                Option<tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>>,
-            )>,
-        >,
-        A: AgentHandle,
-    {
-        let _session_folder = self.core.session_folder();
-        let ring = std::sync::Arc::new(EventRing::new(4096));
-        let bridge = AgentEventBridge::new(ring.clone());
-
-        let mode = ChatMode::parse(&self.config.initial_mode_id);
-
-        let workspace_root =
-            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        let kiln_root = self.core.config().kiln_path.clone();
-
-        let (files, notes) = tokio::join!(
-            tokio::task::spawn_blocking(move || index_workspace_files(&workspace_root)),
-            tokio::task::spawn_blocking(move || index_kiln_notes(&kiln_root)),
-        );
-
-        let mut runner = OilChatRunner::new()?.with_mode(mode);
-        if let Ok(files) = files {
-            runner = runner.with_workspace_files(files);
-        }
-        if let Ok(notes) = notes {
-            runner = runner.with_kiln_notes(notes);
-        }
-        if let Some(session_dir) = self.config.session_kiln_path.clone() {
-            runner = runner.with_session_dir(session_dir);
-        }
-        if let Some(session_id) = self.config.resume_session_id.clone() {
-            runner = runner.with_resume_session(session_id);
-        }
-
-        runner = runner.with_slash_commands(crate::commands::chat::known_slash_commands());
-
-        runner.run_with_factory(&bridge, create_agent).await
-    }
-}
-
-pub fn index_workspace_files(root: &Path) -> Vec<String> {
-    const MAX_ENTRIES: usize = 2000;
-    // Try git ls-files to respect gitignore
-    if let Ok(output) = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["ls-files", "--cached", "--others", "--exclude-standard"])
-        .output()
-    {
-        if output.status.success() {
-            if let Ok(text) = String::from_utf8(output.stdout) {
-                let mut files: Vec<String> = text
-                    .lines()
-                    .filter(|l| !l.trim().is_empty())
-                    .take(MAX_ENTRIES)
-                    .map(|s| s.replace('\\', "/"))
-                    .collect();
-                files.sort();
-                files.dedup();
-                return files;
-            }
-        }
-    }
-
-    let mut files = Vec::new();
-    for entry in WalkDir::new(root)
-        .into_iter()
-        .filter_entry(|e| !is_hidden_entry(e))
-        .filter_map(|e| e.ok())
-    {
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        if files.len() >= MAX_ENTRIES {
-            break;
-        }
-        if let Ok(rel) = entry.path().strip_prefix(root) {
-            if let Some(path_str) = rel.to_str() {
-                files.push(path_str.replace('\\', "/"));
-            }
-        }
-    }
-    files.sort();
-    files.dedup();
-    files
-}
-
-pub fn index_kiln_notes(kiln_root: &Path) -> Vec<String> {
-    const MAX_ENTRIES: usize = 2000;
-    if !kiln_root.exists() {
-        return Vec::new();
-    }
-    let mut notes = Vec::new();
-    for entry in WalkDir::new(kiln_root)
-        .into_iter()
-        .filter_entry(|e| !is_hidden_entry(e))
-        .filter_map(|e| e.ok())
-    {
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        if let Some(ext) = entry.path().extension() {
-            if ext != "md" {
-                continue;
-            }
-        } else {
-            continue;
-        }
-        if notes.len() >= MAX_ENTRIES {
-            break;
-        }
-        if let Ok(rel) = entry.path().strip_prefix(kiln_root) {
-            if let Some(path_str) = rel.to_str() {
-                notes.push(format!("note:{}", path_str.replace('\\', "/")));
-            }
-        }
-    }
-    notes.sort();
-    notes.dedup();
-    notes
-}
-
-fn is_hidden_entry(entry: &walkdir::DirEntry) -> bool {
-    // Don't filter the root directory (depth 0)
-    // Only check non-root entries for hidden names
-    entry.depth() > 0 && entry.file_name().to_string_lossy().starts_with('.')
 }
 
 #[cfg(test)]
@@ -742,35 +600,6 @@ mod tests {
             command_registry.get("help").is_some(),
             "Registry should have help command"
         );
-    }
-
-    #[test]
-    fn test_index_workspace_files_skips_hidden() {
-        let dir = tempfile::tempdir().unwrap();
-        // Initialize git repo so git ls-files works predictably
-        std::process::Command::new("git")
-            .args(["init", "-q"])
-            .current_dir(dir.path())
-            .status()
-            .ok();
-        // Add gitignore to exclude hidden directories
-        std::fs::write(dir.path().join(".gitignore"), ".*\n").unwrap();
-        std::fs::write(dir.path().join("visible.txt"), "hi").unwrap();
-        std::fs::create_dir_all(dir.path().join(".hidden")).unwrap();
-        std::fs::write(dir.path().join(".hidden").join("ignored.txt"), "x").unwrap();
-        let files = index_workspace_files(dir.path());
-        assert!(files.contains(&"visible.txt".to_string()));
-        assert!(!files.iter().any(|f| f.contains(".hidden")));
-    }
-
-    #[test]
-    fn test_index_kiln_notes_md_only() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("note1.md"), "# Note").unwrap();
-        std::fs::write(dir.path().join("skip.txt"), "text").unwrap();
-        let notes = index_kiln_notes(dir.path());
-        assert!(notes.contains(&"note:note1.md".to_string()));
-        assert!(!notes.iter().any(|n| n.contains("skip.txt")));
     }
 
     #[tokio::test]

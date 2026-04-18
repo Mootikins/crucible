@@ -90,6 +90,7 @@ mockito = { workspace = true }
 tokio-test = "0.4"
 tracing-subscriber = { workspace = true }
 encoding_rs = "0.8"
+wiremock = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -7,7 +7,7 @@ use crate::mcp_server::McpServerManager;
 use crate::protocol::SessionEventMessage;
 use crate::session_manager::SessionManager;
 use crate::subscription::SubscriptionManager;
-use crucible_config::LlmConfig;
+use crucible_config::{LlmConfig, McpConfig};
 use dashmap::DashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
@@ -24,6 +24,10 @@ pub struct RpcContext {
     pub plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
     pub llm_config: Option<LlmConfig>,
     pub mcp_server_manager: Arc<McpServerManager>,
+    /// Daemon-global MCP config, threaded through so `session.create`'s setup
+    /// task (Task 1.2f) can surface the configured servers as a setup event
+    /// without a round-trip through the MCP gateway.
+    pub mcp_config: Option<McpConfig>,
 }
 
 impl RpcContext {
@@ -40,6 +44,7 @@ impl RpcContext {
         plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
         llm_config: Option<LlmConfig>,
         mcp_server_manager: Arc<McpServerManager>,
+        mcp_config: Option<McpConfig>,
     ) -> Self {
         Self {
             kiln,
@@ -53,6 +58,7 @@ impl RpcContext {
             plugin_loader,
             llm_config,
             mcp_server_manager,
+            mcp_config,
         }
     }
 }
