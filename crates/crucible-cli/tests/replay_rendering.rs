@@ -15,8 +15,7 @@ use std::time::{Duration, Instant};
 use expectrl::session::Session;
 
 fn fixture_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../assets/fixtures/demo.jsonl")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/fixtures/demo.jsonl")
 }
 
 /// Drains all PTY output until EOF or the deadline passes.
@@ -41,10 +40,7 @@ fn drain_until_done<S: Read>(stream: &mut S, deadline: Instant) -> Vec<u8> {
 }
 
 #[test]
-#[cfg_attr(
-    not(unix),
-    ignore = "PTY-based test requires a Unix host"
-)]
+#[cfg_attr(not(unix), ignore = "PTY-based test requires a Unix host")]
 fn demo_fixture_renders_without_rpc_error() {
     let fixture = fixture_path();
     if !fixture.exists() {

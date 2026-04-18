@@ -21,8 +21,7 @@ fn have_strace() -> bool {
 
 fn fixture_path() -> PathBuf {
     // CARGO_MANIFEST_DIR points at crates/crucible-cli; walk up to repo root.
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../assets/fixtures/demo.jsonl")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/fixtures/demo.jsonl")
 }
 
 #[test]
@@ -82,9 +81,7 @@ fn replay_makes_no_socket_or_network_syscalls() {
     // Assertion 2: no AF_INET/AF_INET6 connect() calls.
     let net_connects: Vec<_> = trace
         .lines()
-        .filter(|l| {
-            (l.contains("AF_INET") || l.contains("AF_INET6")) && l.contains("connect(")
-        })
+        .filter(|l| (l.contains("AF_INET") || l.contains("AF_INET6")) && l.contains("connect("))
         .collect();
     assert!(
         net_connects.is_empty(),

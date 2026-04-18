@@ -2300,5 +2300,4 @@ mod permission_override_tests {
             "--permissions deny must block tools even when base config allows them"
         );
     }
-
 }

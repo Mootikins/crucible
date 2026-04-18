@@ -193,11 +193,11 @@ fn ollama_endpoint_from_env() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent_manager::tests::{clear_provider_env, ENV_LOCK};
     use crate::background_manager::BackgroundJobManager;
     use crate::kiln_manager::KilnManager;
     use crate::session_manager::SessionManager;
     use crate::session_storage::FileSessionStorage;
-    use crate::agent_manager::tests::{clear_provider_env, ENV_LOCK};
     use crate::tools::workspace::WorkspaceTools;
     use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::{HashMap, HashSet};

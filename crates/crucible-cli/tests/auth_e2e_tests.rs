@@ -276,9 +276,7 @@ fn error_conflicting_args_shows_message() {
         .arg("--replay")
         .arg(&fake_replay);
 
-    cmd.assert()
-        .failure()
-        .stderr(predicates::str::contains(
-            "--replay cannot be combined with --record",
-        ));
+    cmd.assert().failure().stderr(predicates::str::contains(
+        "--replay cannot be combined with --record",
+    ));
 }
