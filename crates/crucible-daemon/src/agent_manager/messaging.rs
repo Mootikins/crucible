@@ -114,7 +114,7 @@ impl AgentManager {
             workspace_path: session.workspace.clone(),
             session_dir: session.storage_path(),
             agent_stream_config: AgentStreamConfig::from_session_agent(&agent_config),
-            tool_dispatcher: self.get_or_create_session_dispatcher(&session),
+            tool_dispatcher: self.get_or_create_session_dispatcher(&session).await,
             permission_override: permission_override.clone(),
         };
 

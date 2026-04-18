@@ -45,7 +45,7 @@ async fn session_workspace_used_for_workspace_tools() {
         .await
         .unwrap();
 
-    let dispatcher = agent_manager.get_or_create_session_dispatcher(&session);
+    let dispatcher = agent_manager.get_or_create_session_dispatcher(&session).await;
     let result = dispatcher
         .dispatch_tool("bash", json!({ "command": "pwd" }), Default::default())
         .await
@@ -98,7 +98,7 @@ async fn session_kiln_used_for_crucible_mcp_server() {
         .await
         .unwrap();
 
-    let dispatcher = agent_manager.get_or_create_session_dispatcher(&session);
+    let dispatcher = agent_manager.get_or_create_session_dispatcher(&session).await;
     let result = dispatcher
         .dispatch_tool("list_notes", json!({}), Default::default())
         .await
@@ -150,7 +150,7 @@ async fn regression_workspace_equals_kiln_tools_still_work() {
         .await
         .unwrap();
 
-    let dispatcher = agent_manager.get_or_create_session_dispatcher(&session);
+    let dispatcher = agent_manager.get_or_create_session_dispatcher(&session).await;
 
     let pwd_result = dispatcher
         .dispatch_tool("bash", json!({ "command": "pwd" }), Default::default())
@@ -201,7 +201,7 @@ async fn empty_workspace_uses_default_dispatcher_without_panic() {
         .with_workspace(PathBuf::new());
     session_manager.register_transient(session.clone());
 
-    let dispatcher = agent_manager.get_or_create_session_dispatcher(&session);
+    let dispatcher = agent_manager.get_or_create_session_dispatcher(&session).await;
     let result = dispatcher
         .dispatch_tool("bash", json!({ "command": "pwd" }), Default::default())
         .await
