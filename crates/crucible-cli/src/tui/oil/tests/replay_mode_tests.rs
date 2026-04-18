@@ -102,7 +102,7 @@ async fn live_user_message_invokes_send_once() {
 /// swallow-arm at the end of the match.
 #[test]
 fn replay_swallow_arm_documented_variants() {
-    let src = include_str!("../chat_runner.rs");
+    let src = include_str!("../chat_runner/actions.rs");
     // The swallow arm that no-ops daemon-bound messages during replay.
     // If any of these disappear, the match arms above must also be
     // re-audited for their `is_replay` guards.
@@ -114,7 +114,7 @@ fn replay_swallow_arm_documented_variants() {
     ] {
         assert!(
             src.contains(variant),
-            "expected daemon-bound variant {} to still appear in chat_runner.rs \
+            "expected daemon-bound variant {} to still appear in chat_runner/actions.rs \
              swallow arm; audit the match arms and re-check their is_replay guards",
             variant
         );
@@ -128,7 +128,7 @@ fn replay_swallow_arm_documented_variants() {
     ] {
         assert!(
             src.contains(guard_line),
-            "expected guarded arm `{}` in chat_runner.rs; the Task 2.3b audit \
+            "expected guarded arm `{}` in chat_runner/actions.rs; the Task 2.3b audit \
              requires every daemon-reaching match arm to guard on !self.is_replay",
             guard_line
         );
