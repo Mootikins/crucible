@@ -5,7 +5,7 @@
 //!
 //! These tests modify `XDG_RUNTIME_DIR` and use `#[serial]` to prevent conflicts.
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use crucible_cli::config::CliConfig;
 use crucible_cli::factories::get_storage;
 use crucible_config::StorageConfig;
@@ -13,10 +13,33 @@ use crucible_core::test_support::EnvVarGuard;
 use crucible_daemon::rpc_client::lifecycle;
 use crucible_daemon::Server;
 use serial_test::serial;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tempfile::TempDir;
+use tokio::net::UnixStream;
 use tokio::task::JoinHandle;
+use tokio::time::Instant;
+
+const DAEMON_READY_TIMEOUT: Duration = Duration::from_secs(2);
+const DAEMON_READY_POLL: Duration = Duration::from_millis(10);
+
+/// Poll until the daemon socket accepts connections, or timeout.
+async fn wait_for_daemon_ready(socket_path: &Path) -> Result<()> {
+    let deadline = Instant::now() + DAEMON_READY_TIMEOUT;
+    loop {
+        if UnixStream::connect(socket_path).await.is_ok() {
+            return Ok(());
+        }
+        if Instant::now() > deadline {
+            bail!(
+                "daemon at {} did not become connectable within {:?}",
+                socket_path.display(),
+                DAEMON_READY_TIMEOUT
+            );
+        }
+        tokio::time::sleep(DAEMON_READY_POLL).await;
+    }
+}
 
 /// Test fixture that starts a real daemon server for integration testing.
 ///
@@ -25,7 +48,7 @@ use tokio::task::JoinHandle;
 struct TestServer {
     _env_guard: EnvVarGuard,
     _temp_dir: TempDir,
-    _server_handle: JoinHandle<()>,
+    server_handle: JoinHandle<()>,
     shutdown_handle: tokio::sync::broadcast::Sender<()>,
 }
 
@@ -53,20 +76,19 @@ impl TestServer {
             let _ = server.run().await;
         });
 
-        // Wait for server to be ready
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        wait_for_daemon_ready(&socket_path).await?;
 
         Ok(Self {
             _env_guard,
             _temp_dir: temp_dir,
-            _server_handle: server_handle,
+            server_handle,
             shutdown_handle,
         })
     }
 
     async fn shutdown(self) {
         let _ = self.shutdown_handle.send(());
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        let _ = tokio::time::timeout(Duration::from_secs(2), self.server_handle).await;
     }
 }
 

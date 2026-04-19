@@ -13,6 +13,44 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::sync::mpsc;
+use tokio::time::{timeout, Instant};
+
+/// Drain file-watch events with a quiet-period strategy that tolerates
+/// variable debounce delivery under CI load.
+///
+/// Waits up to `max_wait` for the first event (absorbing initial debounce),
+/// then keeps receiving until `settle` passes with no new events. This is
+/// robust to both slow and fast systems without blindly sleeping.
+async fn drain_events(
+    rx: &mut mpsc::UnboundedReceiver<FileEvent>,
+    max_wait: Duration,
+    settle: Duration,
+) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    let first_deadline = Instant::now() + max_wait;
+
+    // Wait for the first event (may never arrive if test expects none).
+    while Instant::now() < first_deadline {
+        match timeout(settle, rx.recv()).await {
+            Ok(Some(event)) => {
+                paths.push(event.path.clone());
+                break;
+            }
+            Ok(None) => return paths, // channel closed
+            Err(_) => continue,        // settle elapsed, keep waiting
+        }
+    }
+
+    // Drain until a full settle window passes with no event.
+    loop {
+        match timeout(settle, rx.recv()).await {
+            Ok(Some(event)) => paths.push(event.path.clone()),
+            Ok(None) => break,
+            Err(_) => break,
+        }
+    }
+    paths
+}
 
 /// Helper: set up a watcher with a filter, returning None to skip if resources exhausted.
 async fn setup_watcher_with_filter(
@@ -67,14 +105,8 @@ async fn test_notify_watcher_filters_by_extension() {
     fs::write(temp_dir.path().join("note.md"), "markdown content").unwrap();
     fs::write(temp_dir.path().join("data.log"), "log content").unwrap();
 
-    // Wait for debounce
-    tokio::time::sleep(Duration::from_millis(600)).await;
-
-    // Collect received events
-    let mut received_paths: Vec<PathBuf> = vec![];
-    while let Ok(event) = rx.try_recv() {
-        received_paths.push(event.path.clone());
-    }
+    let received_paths =
+        drain_events(&mut rx, Duration::from_secs(3), Duration::from_millis(200)).await;
 
     // Should have received event for .md file
     assert!(
@@ -110,14 +142,8 @@ async fn test_notify_watcher_excludes_directory() {
     fs::write(temp_dir.path().join("note.md"), "root note").unwrap();
     fs::write(crucible_dir.join("db.log"), "database log").unwrap();
 
-    // Wait for debounce
-    tokio::time::sleep(Duration::from_millis(600)).await;
-
-    // Collect received events
-    let mut received_paths: Vec<PathBuf> = vec![];
-    while let Ok(event) = rx.try_recv() {
-        received_paths.push(event.path.clone());
-    }
+    let received_paths =
+        drain_events(&mut rx, Duration::from_secs(3), Duration::from_millis(200)).await;
 
     // Should have received event for root file
     assert!(
@@ -160,14 +186,8 @@ async fn test_notify_watcher_combined_filter() {
     fs::write(db_dir.join("000031.log"), "db log file").unwrap();
     fs::write(crucible_dir.join("test.md"), "md in crucible").unwrap();
 
-    // Wait for debounce
-    tokio::time::sleep(Duration::from_millis(600)).await;
-
-    // Collect received events
-    let mut received_paths: Vec<PathBuf> = vec![];
-    while let Ok(event) = rx.try_recv() {
-        received_paths.push(event.path.clone());
-    }
+    let received_paths =
+        drain_events(&mut rx, Duration::from_secs(3), Duration::from_millis(200)).await;
 
     // Should ONLY have received event for note.md (root .md file)
     assert!(

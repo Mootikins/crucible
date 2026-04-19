@@ -9,7 +9,7 @@
 //! 3. Implements proper change detection
 //! 4. Executes all 5 pipeline phases
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use crucible_cli::commands::process;
 use crucible_cli::config::CliConfig;
 use crucible_config::{AcpConfig, BackendType, LlmConfig, LlmProviderConfig, StorageConfig};
@@ -18,11 +18,32 @@ use crucible_core::test_support::EnvVarGuard;
 use crucible_daemon::rpc_client::lifecycle;
 use crucible_daemon::Server;
 use serial_test::serial;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tempfile::TempDir;
+use tokio::net::UnixStream;
 use tokio::task::JoinHandle;
-use tokio::time::{sleep, Duration};
+use tokio::time::{sleep, Duration, Instant};
+
+const DAEMON_READY_TIMEOUT: Duration = Duration::from_secs(2);
+const DAEMON_READY_POLL: Duration = Duration::from_millis(10);
+
+async fn wait_for_daemon_ready(socket_path: &Path) -> Result<()> {
+    let deadline = Instant::now() + DAEMON_READY_TIMEOUT;
+    loop {
+        if UnixStream::connect(socket_path).await.is_ok() {
+            return Ok(());
+        }
+        if Instant::now() > deadline {
+            bail!(
+                "daemon at {} did not become connectable within {:?}",
+                socket_path.display(),
+                DAEMON_READY_TIMEOUT
+            );
+        }
+        tokio::time::sleep(DAEMON_READY_POLL).await;
+    }
+}
 
 /// Helper to create a test kiln with sample markdown files
 fn create_test_kiln() -> Result<TempDir> {
@@ -89,7 +110,7 @@ impl TestServer {
         let server_handle = tokio::spawn(async move {
             let _ = server.run().await;
         });
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        wait_for_daemon_ready(&socket_path).await?;
         Ok(Self {
             _env_guard,
             _temp_dir: temp_dir,
@@ -145,9 +166,6 @@ async fn test_storage_persists_across_runs() -> Result<()> {
     // When: Running process command the first time
     process::execute(config.clone(), None, false, false, false, false, None).await?;
 
-    // Give time for database to fully close
-    sleep(Duration::from_millis(100)).await;
-
     // And: Running process command a second time (same database)
     let config2 = create_process_test_config(kiln_path, db_path);
     let result = process::execute(config2, None, false, false, false, false, None).await;
@@ -179,9 +197,6 @@ async fn test_change_detection_skips_unchanged_files() -> Result<()> {
     // When: Processing files initially
     process::execute(config.clone(), None, false, false, false, false, None).await?;
 
-    // Give time for database to fully close
-    sleep(Duration::from_millis(100)).await;
-
     // And: Processing again without any file changes
     let config2 = create_process_test_config(kiln_path.clone(), db_path.clone());
     let result = process::execute(config2, None, false, false, false, false, None).await;
@@ -192,9 +207,6 @@ async fn test_change_detection_skips_unchanged_files() -> Result<()> {
     // 1. Change detection identified files as unchanged
     // 2. Pipeline quick filter skipped unchanged files
     // 3. No embeddings were regenerated
-
-    // Give time for database to fully close
-    sleep(Duration::from_millis(100)).await;
 
     // When: Modifying one file
     std::fs::write(
@@ -231,9 +243,6 @@ async fn test_force_flag_overrides_change_detection() -> Result<()> {
 
     // When: Processing initially
     process::execute(config.clone(), None, false, false, false, false, None).await?;
-
-    // Give time for database to fully close
-    sleep(Duration::from_millis(100)).await;
 
     // And: Processing again with --force flag
     let config_force = create_process_test_config(kiln_path, db_path);
@@ -442,8 +451,6 @@ async fn test_verbose_shows_merkle_diff_details() -> Result<()> {
     // Process initially
     process::execute(config.clone(), None, false, false, false, false, None).await?;
 
-    sleep(Duration::from_millis(100)).await;
-
     // Modify a file
     std::fs::write(
         kiln_path.join("note1.md"),
@@ -573,8 +580,6 @@ async fn test_dry_run_respects_change_detection() -> Result<()> {
     // Process initially
     process::execute(config.clone(), None, false, false, false, false, None).await?;
 
-    sleep(Duration::from_millis(100)).await;
-
     // WHEN: Running dry-run without changes
     let config_dry = create_process_test_config(kiln_path, db_path);
     let result = process::execute(config_dry, None, false, false, false, true, None).await;
@@ -605,8 +610,6 @@ async fn test_dry_run_with_force_shows_all_files() -> Result<()> {
 
     // Process initially
     process::execute(config.clone(), None, false, false, false, false, None).await?;
-
-    sleep(Duration::from_millis(100)).await;
 
     // WHEN: Running dry-run with --force (bypass change detection)
     let config_dry_force = create_process_test_config(kiln_path, db_path);

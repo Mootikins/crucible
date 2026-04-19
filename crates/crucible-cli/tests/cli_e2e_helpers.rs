@@ -5,10 +5,14 @@
 
 use assert_cmd::Command;
 use std::fs;
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command as StdCommand, Stdio};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+const DAEMON_READY_TIMEOUT: Duration = Duration::from_secs(5);
+const DAEMON_READY_POLL: Duration = Duration::from_millis(25);
 
 /// Create a `cru` CLI command via assert_cmd.
 pub fn cru() -> Command {
@@ -77,9 +81,9 @@ impl TestDaemon {
             .spawn()
             .expect("failed to spawn cru daemon serve");
 
-        for _ in 0..50 {
-            if socket_path.exists() {
-                thread::sleep(Duration::from_millis(50));
+        let deadline = Instant::now() + DAEMON_READY_TIMEOUT;
+        while Instant::now() < deadline {
+            if UnixStream::connect(&socket_path).is_ok() {
                 return Self {
                     socket_path,
                     config_path,
@@ -87,11 +91,15 @@ impl TestDaemon {
                     process,
                 };
             }
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(DAEMON_READY_POLL);
         }
         let _ = process.kill();
         let _ = process.wait();
-        panic!("daemon socket did not appear within 5 seconds");
+        panic!(
+            "daemon socket at {} did not become connectable within {:?}",
+            socket_path.display(),
+            DAEMON_READY_TIMEOUT
+        );
     }
 
     /// Create a `cru` command pre-wired with CRUCIBLE_SOCKET and --config.
