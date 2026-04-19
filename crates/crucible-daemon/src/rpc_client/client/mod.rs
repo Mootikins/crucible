@@ -3,8 +3,9 @@
 //! Provides a client for communicating with the Crucible daemon over Unix sockets.
 //! Supports both request/response RPC calls and asynchronous event streaming.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::collections::HashMap;
+use std::os::unix::net::SocketAddr;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -15,6 +16,21 @@ use tokio::net::UnixStream;
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, trace, warn};
+
+/// Reject socket paths the kernel can't use before we try to bind/connect to them.
+///
+/// Unix socket paths must fit in `sun_path` (108 bytes on Linux, 104 on macOS).
+/// Hitting this in the retry loop of [`DaemonClient::connect_or_start`] wastes
+/// ~50s on exponential backoff since a freshly-spawned daemon can't bind either.
+fn validate_socket_path(path: &Path) -> Result<()> {
+    SocketAddr::from_pathname(path).with_context(|| {
+        format!(
+            "invalid daemon socket path {:?} — set CRUCIBLE_SOCKET to a shorter path",
+            path
+        )
+    })?;
+    Ok(())
+}
 
 // Submodules for logical organization of RPC methods.
 // Each submodule adds methods to `DaemonClient` via `impl` blocks and
@@ -89,6 +105,7 @@ impl DaemonClient {
     /// Checks daemon version after connecting. If version mismatches (stale daemon),
     /// shuts down the old daemon and starts a fresh one.
     pub async fn connect_or_start() -> Result<Self> {
+        validate_socket_path(&crucible_core::protocol::socket_path())?;
         if let Ok(client) = Self::connect().await {
             if client.verify_or_restart().await {
                 return Ok(client);
@@ -104,6 +121,7 @@ impl DaemonClient {
     /// shuts down the old daemon and starts a fresh one.
     pub async fn connect_or_start_with_events(
     ) -> Result<(Self, mpsc::UnboundedReceiver<SessionEvent>)> {
+        validate_socket_path(&crucible_core::protocol::socket_path())?;
         if let Ok((client, rx)) = Self::connect_with_events().await {
             if client.verify_or_restart().await {
                 return Ok((client, rx));
@@ -660,6 +678,26 @@ mod tests {
         let client = DaemonClient::connect_to(&sock_path).await.unwrap();
         let result = client.ping().await.unwrap();
         assert_eq!(result, "pong");
+    }
+
+    #[test]
+    fn validate_socket_path_rejects_overlong_path() {
+        // 220-char path exceeds sun_path (108 on Linux / 104 on macOS).
+        let tmp = TempDir::new().unwrap();
+        let bad = tmp.path().join("s".repeat(220));
+        let err = validate_socket_path(&bad).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("invalid daemon socket path"),
+            "expected path-validation error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn validate_socket_path_accepts_short_path() {
+        let tmp = TempDir::new().unwrap();
+        let ok = tmp.path().join("short.sock");
+        validate_socket_path(&ok).expect("short path should validate");
     }
 
     // ---- SessionCreateRequest wire-format tests (Task 1.2a) ----
