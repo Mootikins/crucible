@@ -25,61 +25,85 @@
 
 use tracing::debug;
 
+/// Test framework whose output we know how to summarize.
+#[derive(Debug, Clone, Copy)]
+enum TestFramework {
+    Cargo,
+    Pytest,
+    Jest,
+    Go,
+    RSpecOrMix,
+}
+
+impl TestFramework {
+    /// Identify the test framework that produced `output`, if any.
+    fn detect(output: &str) -> Option<Self> {
+        if Self::looks_like_cargo(output) {
+            Some(Self::Cargo)
+        } else if Self::looks_like_pytest(output) {
+            Some(Self::Pytest)
+        } else if Self::looks_like_jest(output) {
+            Some(Self::Jest)
+        } else if Self::looks_like_go(output) {
+            Some(Self::Go)
+        } else if Self::looks_like_rspec_or_mix(output) {
+            Some(Self::RSpecOrMix)
+        } else {
+            None
+        }
+    }
+
+    fn looks_like_cargo(output: &str) -> bool {
+        output.contains("test result:") || (output.contains("running ") && output.contains(" test"))
+    }
+
+    fn looks_like_pytest(output: &str) -> bool {
+        output.contains("passed in ")
+            || output.contains("failed in ")
+            || (output.contains("=====")
+                && (output.contains("passed") || output.contains("failed")))
+    }
+
+    fn looks_like_jest(output: &str) -> bool {
+        output.contains("Test Suites:")
+            || (output.contains("Tests:")
+                && (output.contains("passed") || output.contains("failed")))
+    }
+
+    fn looks_like_go(output: &str) -> bool {
+        output.starts_with("PASS")
+            || output.starts_with("FAIL")
+            || output.contains("\nPASS\n")
+            || output.contains("\nFAIL\n")
+            || output.contains("\nok \t")
+            || output.contains("\nFAIL\t")
+    }
+
+    fn looks_like_rspec_or_mix(output: &str) -> bool {
+        (output.contains(" examples,") && output.contains(" failure"))
+            || (output.contains(" tests,") && output.contains(" failure"))
+            || output.contains("Finished in ")
+    }
+
+    /// Summarize `output` for this framework.
+    fn filter(self, output: &str) -> String {
+        match self {
+            Self::Cargo => filter_cargo_test(output),
+            Self::Pytest => filter_pytest(output),
+            Self::Jest => filter_jest(output),
+            Self::Go => filter_go_test(output),
+            Self::RSpecOrMix => filter_rspec_mix(output),
+        }
+    }
+}
+
 /// Filter test output to extract only summary and error information
 ///
 /// Returns `Some(filtered)` if the output was filtered, `None` if it should
 /// pass through unchanged (not recognized as test output).
 #[must_use]
 pub fn filter_test_output(output: &str) -> Option<String> {
-    // Detect which test framework produced this output
-    if is_cargo_test(output) {
-        Some(filter_cargo_test(output))
-    } else if is_pytest(output) {
-        Some(filter_pytest(output))
-    } else if is_jest(output) {
-        Some(filter_jest(output))
-    } else if is_go_test(output) {
-        Some(filter_go_test(output))
-    } else if is_rspec_or_mix(output) {
-        Some(filter_rspec_mix(output))
-    } else {
-        None // Not test output, pass through unchanged
-    }
-}
-
-/// Check if output looks like cargo test
-fn is_cargo_test(output: &str) -> bool {
-    output.contains("test result:") || (output.contains("running ") && output.contains(" test"))
-}
-
-/// Check if output looks like pytest
-fn is_pytest(output: &str) -> bool {
-    output.contains("passed in ")
-        || output.contains("failed in ")
-        || (output.contains("=====") && (output.contains("passed") || output.contains("failed")))
-}
-
-/// Check if output looks like Jest
-fn is_jest(output: &str) -> bool {
-    output.contains("Test Suites:")
-        || (output.contains("Tests:") && (output.contains("passed") || output.contains("failed")))
-}
-
-/// Check if output looks like go test
-fn is_go_test(output: &str) -> bool {
-    output.starts_with("PASS")
-        || output.starts_with("FAIL")
-        || output.contains("\nPASS\n")
-        || output.contains("\nFAIL\n")
-        || output.contains("\nok \t")
-        || output.contains("\nFAIL\t")
-}
-
-/// Check if output looks like `RSpec` or Mix test
-fn is_rspec_or_mix(output: &str) -> bool {
-    (output.contains(" examples,") && output.contains(" failure"))
-        || (output.contains(" tests,") && output.contains(" failure"))
-        || output.contains("Finished in ")
+    TestFramework::detect(output).map(|fw| fw.filter(output))
 }
 
 /// Filter cargo test output

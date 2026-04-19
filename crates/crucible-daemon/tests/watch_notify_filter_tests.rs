@@ -37,7 +37,7 @@ async fn drain_events(
                 break;
             }
             Ok(None) => return paths, // channel closed
-            Err(_) => continue,        // settle elapsed, keep waiting
+            Err(_) => continue,       // settle elapsed, keep waiting
         }
     }
 
