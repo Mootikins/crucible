@@ -45,6 +45,18 @@ async fn test_event_streaming_with_background_reader() {
         .await
         .expect("subscribe failed");
 
+    // Drain setup events that fire asynchronously on session creation
+    // (workspace_indexed, providers_listed, mcp_servers_ready, etc.).
+    // We're not testing setup events here — we're testing that unrelated
+    // RPC calls don't leak onto the event channel.
+    let drain_start = std::time::Instant::now();
+    while drain_start.elapsed() < Duration::from_millis(1000) {
+        match tokio::time::timeout(Duration::from_millis(50), event_rx.recv()).await {
+            Ok(Some(_)) => continue,
+            _ => break,
+        }
+    }
+
     let ping_result = client.ping().await.expect("ping failed");
     assert_eq!(ping_result, "pong");
 
@@ -54,7 +66,7 @@ async fn test_event_streaming_with_background_reader() {
     let timeout_result = tokio::time::timeout(Duration::from_millis(100), event_rx.recv()).await;
     assert!(
         timeout_result.is_err(),
-        "Should timeout since no events generated yet"
+        "ping and kiln_list should not produce events on the event channel"
     );
 
     server.shutdown().await;
