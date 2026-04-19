@@ -11,7 +11,7 @@ fn auth_login_stores_credential_non_interactive() {
     let env = AuthTestEnv::new();
 
     let mut cmd = env.command("auth");
-    cmd.arg("login")
+    cmd.arg("login").arg("--skip-check")
         .arg("--provider")
         .arg("openai")
         .arg("--key")
@@ -32,7 +32,7 @@ fn auth_login_overwrites_existing_credential() {
     let env = AuthTestEnv::new().with_credential("openai", "sk-old-key");
 
     let mut cmd = env.command("auth");
-    cmd.arg("login")
+    cmd.arg("login").arg("--skip-check")
         .arg("--provider")
         .arg("openai")
         .arg("--key")
@@ -52,7 +52,7 @@ fn auth_login_multiple_providers() {
     let env = AuthTestEnv::new();
 
     env.command("auth")
-        .arg("login")
+        .arg("login").arg("--skip-check")
         .arg("--provider")
         .arg("openai")
         .arg("--key")
@@ -61,7 +61,7 @@ fn auth_login_multiple_providers() {
         .success();
 
     env.command("auth")
-        .arg("login")
+        .arg("login").arg("--skip-check")
         .arg("--provider")
         .arg("anthropic")
         .arg("--key")
@@ -85,7 +85,7 @@ fn auth_login_rejects_empty_key() {
     let env = AuthTestEnv::new();
 
     env.command("auth")
-        .arg("login")
+        .arg("login").arg("--skip-check")
         .arg("--provider")
         .arg("openai")
         .arg("--key")
@@ -188,7 +188,7 @@ fn auth_roundtrip_login_list_logout() {
     let env = AuthTestEnv::new();
 
     env.command("auth")
-        .arg("login")
+        .arg("login").arg("--skip-check")
         .arg("--provider")
         .arg("openai")
         .arg("--key")
@@ -225,7 +225,7 @@ fn auth_login_creates_file_with_restricted_permissions() {
     let env = AuthTestEnv::new();
 
     env.command("auth")
-        .arg("login")
+        .arg("login").arg("--skip-check")
         .arg("--provider")
         .arg("openai")
         .arg("--key")

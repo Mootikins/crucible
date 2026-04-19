@@ -11,6 +11,12 @@ pub enum AuthCommands {
         /// API key value
         #[arg(short, long)]
         key: Option<String>,
+
+        /// Skip verification of the key against the provider's API.
+        /// Use this if you are offline or the provider has no cheap
+        /// auth-check endpoint.
+        #[arg(long)]
+        skip_check: bool,
     },
 
     /// Remove a stored credential

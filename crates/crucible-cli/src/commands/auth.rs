@@ -9,6 +9,7 @@ use crucible_config::credentials::{
     env_var_for_provider, CredentialSource, CredentialStore, SecretsFile,
 };
 use crucible_daemon::provider::copilot::{CopilotAuth, CopilotError};
+use std::time::Duration;
 
 use crate::cli::AuthCommands;
 
@@ -17,15 +18,66 @@ pub async fn execute(command: Option<AuthCommands>) -> Result<()> {
     let cmd = command.unwrap_or(AuthCommands::List);
 
     match cmd {
-        AuthCommands::Login { provider, key } => login(provider, key).await,
+        AuthCommands::Login {
+            provider,
+            key,
+            skip_check,
+        } => login(provider, key, skip_check).await,
         AuthCommands::Logout { provider } => logout(provider).await,
         AuthCommands::List => list().await,
         AuthCommands::Copilot { force } => copilot_auth(force).await,
     }
 }
 
+/// Verify a credential with the provider's API. Returns Ok(()) if the key is
+/// accepted, Err with a user-readable message otherwise. Unknown providers
+/// are treated as valid (best effort — we can't know their auth model).
+async fn validate_credential(provider: &str, key: &str) -> Result<()> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()?;
+
+    let (url, auth_header, auth_value) = match provider {
+        "openai" => (
+            "https://api.openai.com/v1/models",
+            "Authorization",
+            format!("Bearer {key}"),
+        ),
+        "anthropic" => (
+            "https://api.anthropic.com/v1/models",
+            "x-api-key",
+            key.to_string(),
+        ),
+        _ => return Ok(()), // unknown provider: skip validation
+    };
+
+    let mut req = client.get(url).header(auth_header, auth_value);
+    if provider == "anthropic" {
+        req = req.header("anthropic-version", "2023-06-01");
+    }
+
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("network error contacting {provider}: {e}"))?;
+
+    match resp.status().as_u16() {
+        200..=299 => Ok(()),
+        401 | 403 => {
+            anyhow::bail!(
+                "credential rejected by {provider} (HTTP {}): check the API key is correct",
+                resp.status()
+            )
+        }
+        status => anyhow::bail!(
+            "unexpected response from {provider} (HTTP {status}): {}",
+            resp.text().await.unwrap_or_default()
+        ),
+    }
+}
+
 /// Store a credential for a provider
-async fn login(provider: Option<String>, key: Option<String>) -> Result<()> {
+async fn login(provider: Option<String>, key: Option<String>, skip_check: bool) -> Result<()> {
     let provider = match provider {
         Some(p) => p,
         None => {
@@ -62,6 +114,17 @@ async fn login(provider: Option<String>, key: Option<String>) -> Result<()> {
 
     if key.is_empty() {
         anyhow::bail!("API key cannot be empty");
+    }
+
+    if !skip_check {
+        print!("Verifying credential with {}...", provider);
+        match validate_credential(&provider, &key).await {
+            Ok(()) => println!(" {}", "ok".green()),
+            Err(e) => {
+                println!(" {}", "failed".red());
+                anyhow::bail!("{}\n\nUse --skip-check to store without validating.", e);
+            }
+        }
     }
 
     let mut store = SecretsFile::new();
@@ -304,5 +367,13 @@ mod tests {
     #[test]
     fn mask_key_oauth_token() {
         assert_eq!(mask_key("gho_1234567890abcdef"), "gho_1****");
+    }
+
+    #[tokio::test]
+    async fn validate_credential_unknown_provider_is_noop() {
+        // Unknown providers don't hit the network and are accepted as-is.
+        validate_credential("some-custom-backend", "whatever")
+            .await
+            .expect("unknown provider should not fail validation");
     }
 }
