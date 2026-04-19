@@ -74,6 +74,7 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 which = "8.0"
 regex = "1.12"
 crucible-daemon = { path = "../crucible-daemon" }
+proptest = { workspace = true }
 
 # Test binaries for integration testing
 [[test]]
