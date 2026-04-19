@@ -1,6 +1,7 @@
 use std::sync::atomic::Ordering;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
+use super::recording::Direction;
 use super::{CrucibleAcpClient, REQUEST_ID};
 use crate::{ClientError, Result};
 
@@ -43,6 +44,10 @@ impl CrucibleAcpClient {
         // Serialize to JSON and add newline
         let json_str = serde_json::to_string(request)?;
         let line = format!("{}\n", json_str);
+
+        if let Some(rec) = self.recorder.as_mut() {
+            rec.record_line(Direction::Out, &json_str);
+        }
 
         // Try boxed writer first (for in-process transports), then fall back to agent_stdin
         if let Some(ref mut writer) = self.boxed_writer {
@@ -113,7 +118,13 @@ impl CrucibleAcpClient {
             Ok(0) => Err(ClientError::Connection(
                 "Agent closed connection".to_string(),
             )),
-            Ok(_bytes_read) => Ok(line.trim_end().to_string()),
+            Ok(_bytes_read) => {
+                let trimmed = line.trim_end().to_string();
+                if let Some(rec) = self.recorder.as_mut() {
+                    rec.record_line(Direction::In, &trimmed);
+                }
+                Ok(trimmed)
+            }
             Err(e) => Err(ClientError::Connection(format!(
                 "Failed to read from agent: {}",
                 e

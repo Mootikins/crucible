@@ -34,6 +34,8 @@ mod connection;
 mod io;
 mod permission;
 mod protocol;
+mod recording;
+pub mod replay;
 mod session_manager;
 mod streaming;
 mod tools;
@@ -42,6 +44,7 @@ mod types;
 #[cfg(test)]
 mod tests;
 
+pub use recording::{Direction, FixtureHeader, FrameRecord, Recorder};
 pub use types::{AgentProcess, ClientConfig};
 
 /// Type-erased async writer for agent communication
@@ -77,6 +80,9 @@ pub struct CrucibleAcpClient {
     pub(super) permission_handler: Option<PermissionRequestHandler>,
     /// Agent's MCP transport capabilities, populated after initialize()
     pub(super) agent_mcp_capabilities: Option<agent_client_protocol::McpCapabilities>,
+    /// Wire-level recorder. Populated automatically when
+    /// `CRUCIBLE_ACP_RECORD_DIR` is set, otherwise `None`.
+    pub(super) recorder: Option<recording::Recorder>,
 }
 
 // Manual Debug implementation since Child doesn't implement Debug
@@ -94,6 +100,7 @@ impl std::fmt::Debug for CrucibleAcpClient {
             .field("available_commands", &self.available_commands.len())
             .field("permission_handler", &self.permission_handler.is_some())
             .field("agent_mcp_capabilities", &self.agent_mcp_capabilities)
+            .field("recorder", &self.recorder)
             .finish()
     }
 }
@@ -123,6 +130,7 @@ impl CrucibleAcpClient {
 
     /// Create a new ACP client with a specific agent name
     pub fn with_name(config: ClientConfig, agent_name: String) -> Self {
+        let recorder = recording::Recorder::from_env(&agent_name);
         Self {
             config,
             agent_name,
@@ -135,7 +143,15 @@ impl CrucibleAcpClient {
             available_commands: Vec::new(),
             permission_handler: None,
             agent_mcp_capabilities: None,
+            recorder,
         }
+    }
+
+    /// Attach a recorder explicitly. Used by tests and tools that want to
+    /// record without going through the env-var path.
+    pub fn with_recorder(mut self, recorder: recording::Recorder) -> Self {
+        self.recorder = Some(recorder);
+        self
     }
 
     pub fn with_permission_handler(mut self, handler: PermissionRequestHandler) -> Self {
