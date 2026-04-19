@@ -15,4 +15,3 @@
 # === Batch 3 (blocked on TUI SessionEventStream stabilization) ===
 
 # === Test files (lowest priority; split when convenient) ===
-crates/crucible-lua/tests/integration.rs
