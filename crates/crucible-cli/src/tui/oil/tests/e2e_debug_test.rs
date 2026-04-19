@@ -4,7 +4,7 @@
 use super::vt100_runtime::Vt100TestRuntime;
 use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
-use crate::tui::oil::containers::{render_chat_node, ChatNode};
+use crate::tui::oil::containers::ChatNode;
 use crucible_oil::ansi::strip_ansi;
 
 /// Simulates the exact scenario from user testing:
@@ -205,7 +205,7 @@ fn debug_continuation_rendering() {
     let nodes = app.container_list().nodes();
     for (i, node) in nodes.iter().enumerate() {
         let prev = if i > 0 { Some(&nodes[i - 1]) } else { None };
-        let rendered = render_chat_node(node, prev, &ctx);
+        let rendered = node.render(prev, &ctx);
         let plain = render_to_plain_text(&rendered, 80);
         eprintln!("=== Node {} ===", i);
         eprintln!("{}", plain);
@@ -1422,7 +1422,7 @@ fn all_container_types_render_at_all_widths() {
         let nodes = app.container_list().nodes();
         for (i, node) in nodes.iter().enumerate() {
             let prev = if i > 0 { Some(&nodes[i - 1]) } else { None };
-            let rendered = render_chat_node(node, prev, &ctx);
+            let rendered = node.render(prev, &ctx);
             let plain = render_to_plain_text(&rendered, width as usize);
             assert!(
                 !plain.is_empty() || matches!(rendered, crucible_oil::node::Node::Empty),

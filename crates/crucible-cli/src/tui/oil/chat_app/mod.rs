@@ -4,7 +4,7 @@ use crate::tui::oil::components::{
     CommandPanel, InteractionModal, NotificationArea, ShellModal, StatusComponent,
 };
 use crate::tui::oil::config::RuntimeConfig;
-use crate::tui::oil::containers::{render_chat_node, ChatNode};
+use crate::tui::oil::containers::ChatNode;
 #[cfg(test)]
 use crate::tui::oil::event::InputAction;
 use crate::tui::oil::event::{Event, InputBuffer};
@@ -157,7 +157,7 @@ impl App for OilChatApp {
                         let nodes = self.container_list.nodes();
                         nodes.iter().enumerate().map(|(i, node)| {
                             let prev = if i > 0 { Some(&nodes[i - 1]) } else { None };
-                            render_chat_node(node, prev, ctx)
+                            node.render(prev, ctx)
                         })
                     })
                     .gap(Gap::row(1))

@@ -44,7 +44,7 @@ pub use chat_runner::OilChatRunner;
 pub use component::{Component, ComponentHarness};
 pub use components::{InputArea, InputMode, StatusBar, INPUT_MAX_CONTENT_LINES};
 pub use composer::{pad_popup_region, ComposerConfig};
-pub use containers::{render_chat_node, ChatNode, ContainerList};
+pub use containers::{ChatNode, ContainerList};
 pub use event::{Event, InputAction, InputBuffer};
 pub use lua_view::{LuaView, ViewAction};
 pub use render_state::RenderState;

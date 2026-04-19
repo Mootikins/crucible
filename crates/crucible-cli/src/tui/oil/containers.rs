@@ -1,7 +1,7 @@
 //! Chat node model for viewport content.
 //!
 //! Each `ChatNode` is a graduation unit with explicit lifecycle state.
-//! `render_chat_node()` produces Node trees. Graduated nodes are
+//! `ChatNode::render()` produces Node trees. Graduated nodes are
 //! removed from the list and written to scrollback.
 //!
 //! Spacing: uniform `gap(1)` between all nodes.
@@ -57,166 +57,152 @@ impl ChatNode {
             Self::SubagentTask { agent } => agent.is_terminal(),
         }
     }
-}
 
-// ─── Top-level renderer ─────────────────────────────────────────────────────
-
-/// Render a chat node. `is_continuation` derived from preceding node.
-pub fn render_chat_node(node: &ChatNode, prev: Option<&ChatNode>, ctx: &ViewContext<'_>) -> Node {
-    match node {
-        ChatNode::UserMessage { text } => render_user_message(text, ctx.width()),
-        ChatNode::AssistantResponse {
-            text,
-            thinking,
-            complete,
-        } => {
-            let is_continuation = matches!(
-                prev,
-                Some(
-                    ChatNode::ToolGroup { .. }
-                        | ChatNode::SubagentTask { .. }
-                        | ChatNode::ShellExecution { .. }
-                )
-            );
-            render_assistant_response(text, thinking, is_continuation, *complete, ctx)
+    /// Render this node. `is_continuation` is derived from `prev`.
+    pub fn render(&self, prev: Option<&ChatNode>, ctx: &ViewContext<'_>) -> Node {
+        match self {
+            Self::UserMessage { text } => Self::render_user_message(text, ctx.width()),
+            Self::AssistantResponse {
+                text,
+                thinking,
+                complete,
+            } => {
+                let is_continuation = matches!(
+                    prev,
+                    Some(
+                        Self::ToolGroup { .. }
+                            | Self::SubagentTask { .. }
+                            | Self::ShellExecution { .. }
+                    )
+                );
+                Self::render_assistant_response(text, thinking, is_continuation, *complete, ctx)
+            }
+            Self::ToolGroup { tools } => {
+                Self::render_tool_group(tools, ctx.spinner_frame, ctx.width())
+            }
+            Self::SubagentTask { agent } => render_subagent(agent, ctx.spinner_frame, ctx.width()),
+            Self::ShellExecution { shell } => render_shell_execution(shell),
+            Self::SystemMessage { text } => Self::render_system_message(text),
         }
-        ChatNode::ToolGroup { tools } => render_tool_group(tools, ctx.spinner_frame, ctx.width()),
-        ChatNode::SubagentTask { agent } => {
-            render_subagent_task(agent, ctx.spinner_frame, ctx.width())
-        }
-        ChatNode::ShellExecution { shell } => render_shell(shell),
-        ChatNode::SystemMessage { text } => render_system_message(text),
-    }
-}
-
-// ─── Render functions ───────────────────────────────────────────────────────
-
-/// User message with colored top/bottom bars.
-///
-/// ```text
-/// ▄▄▄▄▄▄▄▄▄▄▄▄ (user_message color background)
-///  > user text
-/// ▀▀▀▀▀▀▀▀▀▀▀▀ (user_message color background)
-/// ```
-fn render_user_message(content: &str, width: usize) -> Node {
-    let t = crate::tui::oil::theme::active();
-    let bg = t.resolve_color(t.colors.background);
-
-    let prefix = " > ";
-    let continuation_prefix = "   ";
-    let content_width = width.saturating_sub(prefix.len() + 1);
-    let lines = wrap_words(content, content_width);
-
-    let top_edge = styled(
-        t.decorations.half_block_bottom.to_string().repeat(width),
-        Style::new().fg(bg),
-    );
-    let bottom_edge = styled(
-        t.decorations.half_block_top.to_string().repeat(width),
-        Style::new().fg(bg),
-    );
-
-    let mut rows: Vec<Node> = Vec::with_capacity(lines.len() + 2);
-    rows.push(top_edge);
-
-    for (i, line) in lines.iter().enumerate() {
-        let line_len = line.width();
-        let line_padding = " ".repeat(content_width.saturating_sub(line_len) + 1);
-        let line_prefix = if i == 0 { prefix } else { continuation_prefix };
-        rows.push(styled(
-            format!("{}{}{}", line_prefix, line, line_padding),
-            Style::new().bg(bg),
-        ));
     }
 
-    rows.push(bottom_edge);
-    col(rows)
-}
+    /// User message with colored top/bottom bars.
+    ///
+    /// ```text
+    /// ▄▄▄▄▄▄▄▄▄▄▄▄ (user_message color background)
+    ///  > user text
+    /// ▀▀▀▀▀▀▀▀▀▀▀▀ (user_message color background)
+    /// ```
+    fn render_user_message(content: &str, width: usize) -> Node {
+        let t = crate::tui::oil::theme::active();
+        let bg = t.resolve_color(t.colors.background);
 
-/// Assistant response with optional thinking blocks and markdown content.
-fn render_assistant_response(
-    content: &str,
-    thinking: &[ThinkingComponent],
-    is_continuation: bool,
-    is_complete: bool,
-    ctx: &ViewContext<'_>,
-) -> Node {
-    let render_state = RenderState {
-        terminal_width: ctx.terminal_size.0,
-        spinner_frame: ctx.spinner_frame,
-        show_thinking: ctx.show_thinking,
-    };
+        let prefix = " > ";
+        let continuation_prefix = "   ";
+        let content_width = width.saturating_sub(prefix.len() + 1);
+        let lines = wrap_words(content, content_width);
 
-    let has_thinking = !thinking.is_empty();
-    let margins = if is_continuation || has_thinking {
-        Margins::assistant_continuation()
-    } else {
-        Margins::assistant()
-    };
+        let top_edge = styled(
+            t.decorations.half_block_bottom.to_string().repeat(width),
+            Style::new().fg(bg),
+        );
+        let bottom_edge = styled(
+            t.decorations.half_block_top.to_string().repeat(width),
+            Style::new().fg(bg),
+        );
 
-    let mut items: Vec<Node> = Vec::new();
+        let mut rows: Vec<Node> = Vec::with_capacity(lines.len() + 2);
+        rows.push(top_edge);
 
-    // Thinking renders when: text has started, container is complete, or graduated.
-    // While actively streaming with no text yet, the turn indicator shows
-    // "◐ Thinking… (N words)" — content stays empty to avoid duplication.
-    let thinking_finalized = !content.is_empty() || is_complete;
-    for tc in thinking {
-        if tc.is_graduated() || thinking_finalized {
-            let node = tc.render(&render_state, true);
-            if !matches!(node, Node::Empty) {
-                items.push(node);
+        for (i, line) in lines.iter().enumerate() {
+            let line_len = line.width();
+            let line_padding = " ".repeat(content_width.saturating_sub(line_len) + 1);
+            let line_prefix = if i == 0 { prefix } else { continuation_prefix };
+            rows.push(styled(
+                format!("{}{}{}", line_prefix, line, line_padding),
+                Style::new().bg(bg),
+            ));
+        }
+
+        rows.push(bottom_edge);
+        col(rows)
+    }
+
+    /// Assistant response with optional thinking blocks and markdown content.
+    fn render_assistant_response(
+        content: &str,
+        thinking: &[ThinkingComponent],
+        is_continuation: bool,
+        is_complete: bool,
+        ctx: &ViewContext<'_>,
+    ) -> Node {
+        let render_state = RenderState {
+            terminal_width: ctx.terminal_size.0,
+            spinner_frame: ctx.spinner_frame,
+            show_thinking: ctx.show_thinking,
+        };
+
+        let has_thinking = !thinking.is_empty();
+        let margins = if is_continuation || has_thinking {
+            Margins::assistant_continuation()
+        } else {
+            Margins::assistant()
+        };
+
+        let mut items: Vec<Node> = Vec::new();
+
+        // Thinking renders when: text has started, container is complete, or graduated.
+        // While actively streaming with no text yet, the turn indicator shows
+        // "◐ Thinking… (N words)" — content stays empty to avoid duplication.
+        let thinking_finalized = !content.is_empty() || is_complete;
+        for tc in thinking {
+            if tc.is_graduated() || thinking_finalized {
+                let node = tc.render(&render_state, true);
+                if !matches!(node, Node::Empty) {
+                    items.push(node);
+                }
             }
         }
+
+        // Then markdown content
+        if !content.is_empty() {
+            let style = RenderStyle::natural_with_margins(ctx.width(), margins);
+            let md_node = markdown_to_node_styled(content, style);
+            items.push(md_node);
+        }
+
+        match items.len() {
+            0 => Node::Empty,
+            1 => items.pop().unwrap(),
+            _ => col(items).gap(Gap::row(1)),
+        }
     }
 
-    // Then markdown content
-    if !content.is_empty() {
-        let style = RenderStyle::natural_with_margins(ctx.width(), margins);
-        let md_node = markdown_to_node_styled(content, style);
-        items.push(md_node);
+    /// Tool group: renders each tool via the existing tool renderer.
+    fn render_tool_group(tools: &[CachedToolCall], spinner_frame: usize, width: usize) -> Node {
+        let items: Vec<Node> = tools
+            .iter()
+            .map(|tool| tool.render_compact_with_frame(spinner_frame, width))
+            .filter(|n| !matches!(n, Node::Empty))
+            .collect();
+
+        match items.len() {
+            0 => Node::Empty,
+            1 => items.into_iter().next().unwrap(),
+            _ => col(items).gap(Gap::row(0)),
+        }
     }
 
-    match items.len() {
-        0 => Node::Empty,
-        1 => items.pop().unwrap(),
-        _ => col(items).gap(Gap::row(1)),
+    /// System message: italicized, muted, with asterisk prefix.
+    fn render_system_message(content: &str) -> Node {
+        let t = crate::tui::oil::theme::active();
+        styled(
+            format!(" * {} ", content),
+            Style::new()
+                .fg(t.resolve_color(t.colors.system_message))
+                .italic(),
+        )
     }
-}
-
-/// Tool group: renders each tool via the existing tool renderer.
-fn render_tool_group(tools: &[CachedToolCall], spinner_frame: usize, width: usize) -> Node {
-    let items: Vec<Node> = tools
-        .iter()
-        .map(|tool| tool.render_compact_with_frame(spinner_frame, width))
-        .filter(|n| !matches!(n, Node::Empty))
-        .collect();
-
-    match items.len() {
-        0 => Node::Empty,
-        1 => items.into_iter().next().unwrap(),
-        _ => col(items).gap(Gap::row(0)),
-    }
-}
-
-/// Subagent task: delegates to existing subagent renderer.
-fn render_subagent_task(agent: &CachedSubagent, spinner_frame: usize, width: usize) -> Node {
-    render_subagent(agent, spinner_frame, width)
-}
-
-/// Shell execution: delegates to existing shell renderer.
-fn render_shell(shell: &CachedShellExecution) -> Node {
-    render_shell_execution(shell)
-}
-
-/// System message: italicized, muted, with asterisk prefix.
-fn render_system_message(content: &str) -> Node {
-    let t = crate::tui::oil::theme::active();
-    styled(
-        format!(" * {} ", content),
-        Style::new()
-            .fg(t.resolve_color(t.colors.system_message))
-            .italic(),
-    )
 }
 
 // ─── ContainerList ──────────────────────────────────────────────────────────
@@ -502,7 +488,7 @@ impl ContainerList {
                 }
             }
 
-            rendered.push(render_chat_node(&node, prev.as_ref(), ctx));
+            rendered.push(node.render(prev.as_ref(), ctx));
             prev = Some(node);
         }
 
@@ -834,7 +820,7 @@ mod tests {
         let ctx = ViewContext::new(&focus);
         let nodes = list.nodes();
         let prev = Some(&nodes[0]);
-        let node = render_chat_node(&nodes[1], prev, &ctx);
+        let node = nodes[1].render(prev, &ctx);
         let plain = render_to_plain_text(&node, 80);
         // Continuation text should not have the assistant bullet
         assert!(
