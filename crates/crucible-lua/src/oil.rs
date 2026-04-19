@@ -4,66 +4,127 @@
 
 use crate::error::LuaError;
 use crate::lua_util::register_in_namespaces;
-use crucible_oil::template::{html_to_node, parse_color};
+use crucible_oil::template::html_to_node;
 use crucible_oil::{
     badge, bullet_list, divider, fragment, horizontal_rule, if_else, key_value, numbered_list,
-    popup, popup_item, progress_bar, spacer, spinner, styled, text, text_input, when, AlignItems,
-    Border, BoxNode, Direction, Gap, JustifyContent, Node, Padding, Style,
+    popup, popup_item, progress_bar, spacer, spinner, styled, text, text_input, when, Border,
+    BoxNode, Direction, Gap, Node, Padding, Style,
 };
 use mlua::{
     FromLua, Function, Lua, MultiValue, Result as LuaResult, Table, UserData, UserDataMethods,
     Value,
 };
 
-fn parse_border(s: &str) -> Border {
-    match s {
-        "double" => Border::Double,
-        "rounded" => Border::Rounded,
-        "heavy" => Border::Heavy,
-        _ => Border::Single,
-    }
-}
+/// Pure conversions from Lua values to crucible_oil primitives.
+///
+/// Grouped into a submodule so the registrar body below stays focused on
+/// wiring; callers use `parse::border(s)`, `parse::style_from_table(t)`, etc.
+mod parse {
+    use super::{LuaNode, Style};
+    use crucible_oil::template::parse_color;
+    use crucible_oil::{text, AlignItems, Border, JustifyContent, Node};
+    use mlua::{Result as LuaResult, Table, Value};
 
-fn extract_node_from_value(v: Value) -> Option<Node> {
-    match v {
-        Value::UserData(ud) => ud.borrow::<LuaNode>().ok().map(|n| n.0.clone()),
-        Value::String(s) => s.to_str().ok().map(|s| text(s.to_string())),
-        _ => None,
-    }
-}
-
-fn collect_child_nodes(values: impl Iterator<Item = Value>) -> Vec<Node> {
-    values.filter_map(extract_node_from_value).collect()
-}
-
-fn table_to_string_list(items: &Table) -> Vec<String> {
-    items
-        .pairs::<i64, String>()
-        .filter_map(|r| r.ok().map(|(_, v)| v))
-        .collect()
-}
-
-fn parse_color_with_error(value: &str, prop_name: &str) -> LuaResult<crucible_oil::Color> {
-    parse_color(value).map_err(|_| {
-        mlua::Error::RuntimeError(format!(
-            "invalid color '{}' for '{}'. Use named colors (red, green, blue, yellow, \
-             cyan, magenta, white, black) or hex (#ff0000)",
-            value, prop_name
-        ))
-    })
-}
-
-const PROP_KEYS: &[&str] = &[
-    "gap", "padding", "border", "justify", "align", "fg", "bg", "bold", "margin",
-];
-
-fn is_props_table(t: &Table) -> LuaResult<bool> {
-    for key in PROP_KEYS {
-        if t.contains_key(*key)? {
-            return Ok(true);
+    pub fn border(s: &str) -> Border {
+        match s {
+            "double" => Border::Double,
+            "rounded" => Border::Rounded,
+            "heavy" => Border::Heavy,
+            _ => Border::Single,
         }
     }
-    Ok(false)
+
+    pub fn justify(s: &str) -> JustifyContent {
+        match s.to_lowercase().replace('-', "_").as_str() {
+            "end" => JustifyContent::End,
+            "center" => JustifyContent::Center,
+            "space_between" => JustifyContent::SpaceBetween,
+            "space_around" => JustifyContent::SpaceAround,
+            "space_evenly" => JustifyContent::SpaceEvenly,
+            _ => JustifyContent::Start,
+        }
+    }
+
+    pub fn align(s: &str) -> AlignItems {
+        match s.to_lowercase().as_str() {
+            "end" => AlignItems::End,
+            "center" => AlignItems::Center,
+            "stretch" => AlignItems::Stretch,
+            _ => AlignItems::Start,
+        }
+    }
+
+    pub fn color(value: &str, prop_name: &str) -> LuaResult<crucible_oil::Color> {
+        parse_color(value).map_err(|_| {
+            mlua::Error::RuntimeError(format!(
+                "invalid color '{}' for '{}'. Use named colors (red, green, blue, yellow, \
+                 cyan, magenta, white, black) or hex (#ff0000)",
+                value, prop_name
+            ))
+        })
+    }
+
+    pub fn style_from_table(table: &Table) -> LuaResult<Style> {
+        let mut style = Style::default();
+
+        if let Ok(fg) = table.get::<String>("fg") {
+            style.fg = Some(color(&fg, "fg")?);
+        }
+        if let Ok(bg) = table.get::<String>("bg") {
+            style.bg = Some(color(&bg, "bg")?);
+        }
+
+        style.bold = bool_prop(table, "bold")?;
+        style.dim = bool_prop(table, "dim")?;
+        style.italic = bool_prop(table, "italic")?;
+        style.underline = bool_prop(table, "underline")?;
+
+        Ok(style)
+    }
+
+    pub fn extract_node(v: Value) -> Option<Node> {
+        match v {
+            Value::UserData(ud) => ud.borrow::<LuaNode>().ok().map(|n| n.0.clone()),
+            Value::String(s) => s.to_str().ok().map(|s| text(s.to_string())),
+            _ => None,
+        }
+    }
+
+    pub fn collect_child_nodes(values: impl Iterator<Item = Value>) -> Vec<Node> {
+        values.filter_map(extract_node).collect()
+    }
+
+    pub fn string_list(items: &Table) -> Vec<String> {
+        items
+            .pairs::<i64, String>()
+            .filter_map(|r| r.ok().map(|(_, v)| v))
+            .collect()
+    }
+
+    const PROP_KEYS: &[&str] = &[
+        "gap", "padding", "border", "justify", "align", "fg", "bg", "bold", "margin",
+    ];
+
+    pub fn is_props_table(t: &Table) -> LuaResult<bool> {
+        for key in PROP_KEYS {
+            if t.contains_key(*key)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn bool_prop(table: &Table, key: &str) -> LuaResult<bool> {
+        match table.get::<Value>(key) {
+            Ok(Value::Boolean(b)) => Ok(b),
+            Ok(Value::Nil) | Err(_) => Ok(false),
+            Ok(other) => Err(mlua::Error::RuntimeError(format!(
+                "style property '{}' must be a boolean, got {}",
+                key,
+                other.type_name()
+            ))),
+        }
+    }
 }
 
 fn child_type_error(position: usize, type_name: &str, hint: &str) -> mlua::Error {
@@ -73,33 +134,13 @@ fn child_type_error(position: usize, type_name: &str, hint: &str) -> mlua::Error
     ))
 }
 
-fn parse_justify(s: &str) -> JustifyContent {
-    match s.to_lowercase().replace('-', "_").as_str() {
-        "end" => JustifyContent::End,
-        "center" => JustifyContent::Center,
-        "space_between" => JustifyContent::SpaceBetween,
-        "space_around" => JustifyContent::SpaceAround,
-        "space_evenly" => JustifyContent::SpaceEvenly,
-        _ => JustifyContent::Start,
-    }
-}
-
-fn parse_align(s: &str) -> AlignItems {
-    match s.to_lowercase().as_str() {
-        "end" => AlignItems::End,
-        "center" => AlignItems::Center,
-        "stretch" => AlignItems::Stretch,
-        _ => AlignItems::Start,
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct LuaNode(pub Node);
 
 impl UserData for LuaNode {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("with_style", |_lua, this, style_table: Table| {
-            let style = parse_style_from_table(&style_table)?;
+            let style = parse::style_from_table(&style_table)?;
             Ok(LuaNode(this.0.clone().with_style(style)))
         });
 
@@ -108,7 +149,7 @@ impl UserData for LuaNode {
         });
 
         methods.add_method("with_border", |_, this, border_type: Option<String>| {
-            let border = border_type.as_deref().map_or(Border::Single, parse_border);
+            let border = border_type.as_deref().map_or(Border::Single, parse::border);
             Ok(LuaNode(this.0.clone().with_border(border)))
         });
 
@@ -121,11 +162,13 @@ impl UserData for LuaNode {
         });
 
         methods.add_method("justify", |_, this, justify_str: String| {
-            Ok(LuaNode(this.0.clone().justify(parse_justify(&justify_str))))
+            Ok(LuaNode(
+                this.0.clone().justify(parse::justify(&justify_str)),
+            ))
         });
 
         methods.add_method("align", |_, this, align_str: String| {
-            Ok(LuaNode(this.0.clone().align(parse_align(&align_str))))
+            Ok(LuaNode(this.0.clone().align(parse::align(&align_str))))
         });
     }
 }
@@ -167,7 +210,7 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
         };
 
         let style = match args_iter.next() {
-            Some(Value::Table(t)) => parse_style_from_table(&t)?,
+            Some(Value::Table(t)) => parse::style_from_table(&t)?,
             _ => Style::default(),
         };
 
@@ -206,7 +249,9 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
 
     // cru.oil.fragment(children...)
     let fragment_fn = lua.create_function(|_, children: MultiValue| {
-        Ok(LuaNode(fragment(collect_child_nodes(children.into_iter()))))
+        Ok(LuaNode(fragment(parse::collect_child_nodes(
+            children.into_iter(),
+        ))))
     })?;
     oil.set("fragment", fragment_fn)?;
 
@@ -349,7 +394,7 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
     // cru.oil.badge(label, opts?)
     let badge_fn = lua.create_function(|_, (label, opts): (String, Option<Table>)| {
         let style = opts
-            .map(|t| parse_style_from_table(&t))
+            .map(|t| parse::style_from_table(&t))
             .transpose()?
             .unwrap_or_default();
         Ok(LuaNode(badge(label, style)))
@@ -357,14 +402,13 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
     oil.set("badge", badge_fn)?;
 
     // cru.oil.bullet_list(items)
-    let bullet_list_fn = lua.create_function(|_, items: Table| {
-        Ok(LuaNode(bullet_list(table_to_string_list(&items))))
-    })?;
+    let bullet_list_fn = lua
+        .create_function(|_, items: Table| Ok(LuaNode(bullet_list(parse::string_list(&items)))))?;
     oil.set("bullet_list", bullet_list_fn)?;
 
     // cru.oil.numbered_list(items)
     let numbered_list_fn = lua.create_function(|_, items: Table| {
-        Ok(LuaNode(numbered_list(table_to_string_list(&items))))
+        Ok(LuaNode(numbered_list(parse::string_list(&items))))
     })?;
     oil.set("numbered_list", numbered_list_fn)?;
 
@@ -417,43 +461,13 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
         let mut args_iter = args.into_iter();
         // Skip the key argument
         let _key = args_iter.next();
-        Ok(LuaNode(fragment(collect_child_nodes(args_iter))))
+        Ok(LuaNode(fragment(parse::collect_child_nodes(args_iter))))
     })?;
     oil.set("scrollback", scrollback_fn)?;
 
     register_in_namespaces(lua, "oil", oil)?;
 
     Ok(())
-}
-
-fn get_bool_prop(table: &Table, key: &str) -> LuaResult<bool> {
-    match table.get::<Value>(key) {
-        Ok(Value::Boolean(b)) => Ok(b),
-        Ok(Value::Nil) | Err(_) => Ok(false),
-        Ok(other) => Err(mlua::Error::RuntimeError(format!(
-            "style property '{}' must be a boolean, got {}",
-            key,
-            other.type_name()
-        ))),
-    }
-}
-
-fn parse_style_from_table(table: &Table) -> LuaResult<Style> {
-    let mut style = Style::default();
-
-    if let Ok(fg) = table.get::<String>("fg") {
-        style.fg = Some(parse_color_with_error(&fg, "fg")?);
-    }
-    if let Ok(bg) = table.get::<String>("bg") {
-        style.bg = Some(parse_color_with_error(&bg, "bg")?);
-    }
-
-    style.bold = get_bool_prop(table, "bold")?;
-    style.dim = get_bool_prop(table, "dim")?;
-    style.italic = get_bool_prop(table, "italic")?;
-    style.underline = get_bool_prop(table, "underline")?;
-
-    Ok(style)
 }
 
 fn parse_container_args(_lua: &Lua, args: MultiValue) -> LuaResult<(Option<Table>, Vec<Node>)> {
@@ -463,7 +477,7 @@ fn parse_container_args(_lua: &Lua, args: MultiValue) -> LuaResult<(Option<Table
 
     for (i, arg) in args_vec.into_iter().enumerate() {
         match arg {
-            Value::Table(t) if i == 0 && is_props_table(&t)? => {
+            Value::Table(t) if i == 0 && parse::is_props_table(&t)? => {
                 opts = Some(t);
             }
             Value::Table(_) => {
@@ -532,17 +546,17 @@ fn create_box_node(direction: Direction, opts: Option<Table>, children: Vec<Node
             node.margin = Padding::all(margin);
         }
         if let Ok(border_str) = t.get::<String>("border") {
-            node.border = Some(parse_border(&border_str));
+            node.border = Some(parse::border(&border_str));
         } else if t.get::<bool>("border").unwrap_or(false) {
             node.border = Some(Border::Single);
         }
         if let Ok(justify) = t.get::<String>("justify") {
-            node.justify = parse_justify(&justify);
+            node.justify = parse::justify(&justify);
         }
         if let Ok(align) = t.get::<String>("align") {
-            node.align = parse_align(&align);
+            node.align = parse::align(&align);
         }
-        if let Ok(style) = parse_style_from_table(&t) {
+        if let Ok(style) = parse::style_from_table(&t) {
             node.style = style;
         }
     }
