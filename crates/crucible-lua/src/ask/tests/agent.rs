@@ -33,16 +33,14 @@ fn test_extract_json_raw() {
 
 #[test]
 fn test_extract_json_with_surrounding_text() {
-    let content =
-        r#"The answer is {"answers": [{"selected": [0], "other": null}]} and that's it."#;
+    let content = r#"The answer is {"answers": [{"selected": [0], "other": null}]} and that's it."#;
     let result = LuaAgentAskContext::extract_json(content);
     assert!(result.is_ok());
 }
 
 #[test]
 fn test_parse_response_single_choice() {
-    let batch =
-        AskBatch::new().question(AskQuestion::new("Q1", "First?").choice("A").choice("B"));
+    let batch = AskBatch::new().question(AskQuestion::new("Q1", "First?").choice("A").choice("B"));
 
     let content = r#"{"answers": [{"selected": [0], "other": null}]}"#;
     let result = LuaAgentAskContext::parse_response(content, batch);
@@ -56,8 +54,7 @@ fn test_parse_response_single_choice() {
 
 #[test]
 fn test_parse_response_with_other() {
-    let batch =
-        AskBatch::new().question(AskQuestion::new("Q1", "First?").choice("A").choice("B"));
+    let batch = AskBatch::new().question(AskQuestion::new("Q1", "First?").choice("A").choice("B"));
 
     let content = r#"{"answers": [{"selected": [], "other": "custom answer"}]}"#;
     let result = LuaAgentAskContext::parse_response(content, batch);

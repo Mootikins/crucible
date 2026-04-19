@@ -147,4 +147,3 @@ impl StreamingState {
             .map(|tool| tool.title.clone())
     }
 }
-

@@ -86,7 +86,7 @@ pub use merge::merge_includes;
 pub use path::resolve_include_path;
 #[cfg(feature = "toml")]
 pub use process::process_file_references;
-pub use reference::ResolveMode;
 #[allow(unused_imports)]
 #[cfg(feature = "toml")]
 pub use reference::read_include_file;
+pub use reference::ResolveMode;

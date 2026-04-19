@@ -62,8 +62,8 @@ fn test_tasks_blocked_parses() {
 
 #[test]
 fn test_tasks_blocked_with_reason_parses() {
-    let cli = Cli::try_parse_from(["cru", "tasks", "blocked", "task-1", "waiting for review"])
-        .unwrap();
+    let cli =
+        Cli::try_parse_from(["cru", "tasks", "blocked", "task-1", "waiting for review"]).unwrap();
     if let Some(Commands::Tasks { file: _, command }) = cli.command {
         if let crate::commands::tasks::TasksSubcommand::Blocked { id, reason } = command {
             assert_eq!(id, "task-1");

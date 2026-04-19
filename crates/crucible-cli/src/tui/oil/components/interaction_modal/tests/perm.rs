@@ -1,6 +1,6 @@
 use super::key_event;
 use crate::tui::oil::components::interaction_modal::{
-    InteractionMode, InteractionModal, InteractionModalMsg, InteractionModalOutput,
+    InteractionModal, InteractionModalMsg, InteractionModalOutput, InteractionMode,
 };
 use crossterm::event::KeyCode;
 use crucible_core::interaction::{InteractionRequest, PermRequest};
@@ -197,4 +197,3 @@ fn test_perm_modal_navigation_wraps_at_3() {
     modal.update(InteractionModalMsg::Key(key_event(KeyCode::Down)));
     assert_eq!(modal.selected, 0);
 }
-

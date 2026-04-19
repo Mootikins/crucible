@@ -35,10 +35,9 @@ pub mod types;
 pub use lua::{
     LuaDiscoverPluginsRequest, LuaDiscoverPluginsResponse, LuaExecuteHookRequest,
     LuaExecuteHookResponse, LuaGenerateStubsRequest, LuaGenerateStubsResponse,
-    LuaInitSessionRequest, LuaInitSessionResponse, LuaPluginHealthRequest,
-    LuaPluginHealthResponse, LuaRegisterHooksRequest, LuaRegisterHooksResponse,
-    LuaRunPluginTestsRequest, LuaRunPluginTestsResponse, LuaShutdownSessionRequest,
-    LuaShutdownSessionResponse,
+    LuaInitSessionRequest, LuaInitSessionResponse, LuaPluginHealthRequest, LuaPluginHealthResponse,
+    LuaRegisterHooksRequest, LuaRegisterHooksResponse, LuaRunPluginTestsRequest,
+    LuaRunPluginTestsResponse, LuaShutdownSessionRequest, LuaShutdownSessionResponse,
 };
 pub use session::SessionCreateParams;
 pub use types::{DaemonCapabilities, NameRequest, SessionEvent, VersionCheck};

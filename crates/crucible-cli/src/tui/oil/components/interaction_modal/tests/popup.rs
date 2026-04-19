@@ -1,6 +1,6 @@
 use super::key_event;
 use crate::tui::oil::components::interaction_modal::{
-    InteractionMode, InteractionModal, InteractionModalMsg, InteractionModalOutput,
+    InteractionModal, InteractionModalMsg, InteractionModalOutput, InteractionMode,
 };
 use crossterm::event::KeyCode;
 use crucible_core::interaction::{InteractionRequest, InteractionResponse, PopupRequest};

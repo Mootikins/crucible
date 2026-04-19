@@ -26,8 +26,7 @@ fn test_session_new() {
 fn test_session_with_workspace() {
     let kiln = PathBuf::from("/home/user/notes");
     let workspace = PathBuf::from("/home/user/project");
-    let session =
-        Session::new(SessionType::Agent, kiln.clone()).with_workspace(workspace.clone());
+    let session = Session::new(SessionType::Agent, kiln.clone()).with_workspace(workspace.clone());
 
     assert_eq!(session.kiln, kiln);
     assert_eq!(session.workspace, workspace);

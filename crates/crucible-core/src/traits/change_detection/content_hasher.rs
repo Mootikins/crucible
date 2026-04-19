@@ -2,7 +2,9 @@ use std::path::Path;
 
 use async_trait::async_trait;
 
-use crate::types::hashing::{BlockHash, BlockHashInfo, FileHash, FileHashInfo, HashAlgorithm, HashError};
+use crate::types::hashing::{
+    BlockHash, BlockHashInfo, FileHash, FileHashInfo, HashAlgorithm, HashError,
+};
 
 /// Trait for content hashing operations
 ///

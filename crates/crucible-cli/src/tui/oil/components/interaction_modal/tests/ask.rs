@@ -8,8 +8,7 @@ use crucible_core::interaction::{AskRequest, InteractionRequest, InteractionResp
 #[test]
 fn test_ask_modal_selection() {
     let ask = AskRequest::new("Choose one").choices(["A", "B", "C"]);
-    let mut modal =
-        InteractionModal::new("req-2".to_string(), InteractionRequest::Ask(ask), true);
+    let mut modal = InteractionModal::new("req-2".to_string(), InteractionRequest::Ask(ask), true);
 
     modal.update(InteractionModalMsg::Key(key_event(KeyCode::Down)));
     assert_eq!(modal.selected, 1);
@@ -35,8 +34,7 @@ fn test_ask_modal_selection() {
 #[test]
 fn test_ask_modal_cancel_esc() {
     let ask = AskRequest::new("Choose one").choices(["A", "B"]);
-    let mut modal =
-        InteractionModal::new("req-3".to_string(), InteractionRequest::Ask(ask), true);
+    let mut modal = InteractionModal::new("req-3".to_string(), InteractionRequest::Ask(ask), true);
 
     let output = modal.update(InteractionModalMsg::Key(key_event(KeyCode::Esc)));
     match output {
@@ -50,8 +48,7 @@ fn test_ask_modal_cancel_esc() {
 #[test]
 fn test_ask_modal_cancel_ctrl_c() {
     let ask = AskRequest::new("Choose one").choices(["A", "B"]);
-    let mut modal =
-        InteractionModal::new("req-4".to_string(), InteractionRequest::Ask(ask), true);
+    let mut modal = InteractionModal::new("req-4".to_string(), InteractionRequest::Ask(ask), true);
 
     let output = modal.update(InteractionModalMsg::Key(ctrl_c()));
     match output {

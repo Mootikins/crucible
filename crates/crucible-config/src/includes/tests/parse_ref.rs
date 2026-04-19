@@ -1,4 +1,4 @@
-use super::super::reference::{RefKind, parse_ref_kind};
+use super::super::reference::{parse_ref_kind, RefKind};
 use std::path::PathBuf;
 
 #[test]

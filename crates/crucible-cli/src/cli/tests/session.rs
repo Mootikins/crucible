@@ -12,8 +12,7 @@ fn test_session_list_parses() {
 
 #[test]
 fn test_session_list_with_options() {
-    let cli =
-        Cli::try_parse_from(["cru", "session", "list", "-n", "10", "-t", "chat"]).unwrap();
+    let cli = Cli::try_parse_from(["cru", "session", "list", "-n", "10", "-t", "chat"]).unwrap();
     if let Some(Commands::Session(SessionCommands::List {
         limit,
         session_type,
@@ -31,8 +30,7 @@ fn test_session_list_with_options() {
 
 #[test]
 fn test_session_show_parses() {
-    let cli =
-        Cli::try_parse_from(["cru", "session", "show", "chat-20260104-1530-a1b2"]).unwrap();
+    let cli = Cli::try_parse_from(["cru", "session", "show", "chat-20260104-1530-a1b2"]).unwrap();
     if let Some(Commands::Session(SessionCommands::Show { id, .. })) = cli.command {
         assert_eq!(id, Some("chat-20260104-1530-a1b2".to_string()));
     } else {
@@ -42,8 +40,7 @@ fn test_session_show_parses() {
 
 #[test]
 fn test_session_open_parses() {
-    let cli =
-        Cli::try_parse_from(["cru", "session", "open", "chat-20260104-1530-a1b2"]).unwrap();
+    let cli = Cli::try_parse_from(["cru", "session", "open", "chat-20260104-1530-a1b2"]).unwrap();
     if let Some(Commands::Session(SessionCommands::Open { id })) = cli.command {
         assert_eq!(id, Some("chat-20260104-1530-a1b2".to_string()));
     } else {
@@ -53,10 +50,8 @@ fn test_session_open_parses() {
 
 #[test]
 fn test_session_resume_parses() {
-    let cli =
-        Cli::try_parse_from(["cru", "session", "resume", "chat-20260104-1530-a1b2"]).unwrap();
-    if let Some(Commands::Session(SessionCommands::Resume { session_id, format })) = cli.command
-    {
+    let cli = Cli::try_parse_from(["cru", "session", "resume", "chat-20260104-1530-a1b2"]).unwrap();
+    if let Some(Commands::Session(SessionCommands::Resume { session_id, format })) = cli.command {
         assert_eq!(session_id, Some("chat-20260104-1530-a1b2".to_string()));
         assert_eq!(format, "text");
     } else {
@@ -74,8 +69,7 @@ fn test_session_export_parses() {
         "--timestamps",
     ])
     .unwrap();
-    if let Some(Commands::Session(SessionCommands::Export { id, timestamps, .. })) = cli.command
-    {
+    if let Some(Commands::Session(SessionCommands::Export { id, timestamps, .. })) = cli.command {
         assert_eq!(id, Some("chat-20260104-1530-a1b2".to_string()));
         assert!(timestamps);
     } else {
@@ -240,8 +234,7 @@ fn test_session_create_with_format_json() {
 
 #[test]
 fn test_session_create_with_title() {
-    let cli =
-        Cli::try_parse_from(["cru", "session", "create", "--title", "My Session"]).unwrap();
+    let cli = Cli::try_parse_from(["cru", "session", "create", "--title", "My Session"]).unwrap();
     if let Some(Commands::Session(SessionCommands::Create { title, .. })) = cli.command {
         assert_eq!(title, Some("My Session".to_string()));
     } else {
@@ -262,8 +255,7 @@ fn test_session_create_with_workspace() {
 #[test]
 fn test_session_pause_parses() {
     let cli = Cli::try_parse_from(["cru", "session", "pause", "session-123"]).unwrap();
-    if let Some(Commands::Session(SessionCommands::Pause { session_id, format })) = cli.command
-    {
+    if let Some(Commands::Session(SessionCommands::Pause { session_id, format })) = cli.command {
         assert_eq!(session_id, Some("session-123".to_string()));
         assert_eq!(format, "text");
     } else {
@@ -296,8 +288,7 @@ fn test_session_end_parses() {
 fn test_session_pause_with_format_json() {
     let cli =
         Cli::try_parse_from(["cru", "session", "pause", "session-123", "-f", "json"]).unwrap();
-    if let Some(Commands::Session(SessionCommands::Pause { session_id, format })) = cli.command
-    {
+    if let Some(Commands::Session(SessionCommands::Pause { session_id, format })) = cli.command {
         assert_eq!(session_id, Some("session-123".to_string()));
         assert_eq!(format, "json");
     } else {
@@ -316,8 +307,7 @@ fn test_session_resume_with_format_json() {
         "json",
     ])
     .unwrap();
-    if let Some(Commands::Session(SessionCommands::Resume { session_id, format })) = cli.command
-    {
+    if let Some(Commands::Session(SessionCommands::Resume { session_id, format })) = cli.command {
         assert_eq!(session_id, Some("chat-20260104-1530-a1b2".to_string()));
         assert_eq!(format, "json");
     } else {
@@ -327,8 +317,7 @@ fn test_session_resume_with_format_json() {
 
 #[test]
 fn test_session_end_with_format_json() {
-    let cli =
-        Cli::try_parse_from(["cru", "session", "end", "session-123", "-f", "json"]).unwrap();
+    let cli = Cli::try_parse_from(["cru", "session", "end", "session-123", "-f", "json"]).unwrap();
     if let Some(Commands::Session(SessionCommands::End { session_id, format })) = cli.command {
         assert_eq!(session_id, Some("session-123".to_string()));
         assert_eq!(format, "json");
@@ -360,8 +349,8 @@ fn test_session_send_positional_id_and_message() {
 
 #[test]
 fn test_session_send_deprecated_session_flag() {
-    let cli = Cli::try_parse_from(["cru", "session", "send", "--session", "chat-123", "hello"])
-        .unwrap();
+    let cli =
+        Cli::try_parse_from(["cru", "session", "send", "--session", "chat-123", "hello"]).unwrap();
     if let Some(Commands::Session(SessionCommands::Send {
         session_id_pos,
         message,

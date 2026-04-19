@@ -365,4 +365,3 @@ fn test_subagent_variants_still_deserialize() {
     let deserialized: SessionEvent = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(subagent_failed, deserialized);
 }
-

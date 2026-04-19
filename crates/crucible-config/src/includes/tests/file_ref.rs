@@ -1,4 +1,4 @@
-use super::super::{IncludeError, ResolveMode, process_file_references};
+use super::super::{process_file_references, IncludeError, ResolveMode};
 use std::fs;
 use tempfile::TempDir;
 

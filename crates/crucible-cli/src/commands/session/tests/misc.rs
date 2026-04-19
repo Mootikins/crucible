@@ -1,5 +1,5 @@
-use super::env_lock;
 use super::super::helpers::{resolve_send_inputs, resolve_session_id, truncate};
+use super::env_lock;
 
 #[test]
 fn session_id_resolver_explicit_wins_over_env() {

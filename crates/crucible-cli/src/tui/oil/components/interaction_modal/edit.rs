@@ -1,4 +1,4 @@
-use super::{InteractionMode, InteractionModal, InteractionModalOutput};
+use super::{InteractionModal, InteractionModalOutput, InteractionMode};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crucible_core::interaction::{EditRequest, EditResponse, InteractionResponse};
 use crucible_oil::node::{col, row, styled, text, Node};

@@ -1,5 +1,5 @@
 use super::helpers::prettify_tool_args;
-use super::{InteractionMode, InteractionModal, InteractionModalOutput};
+use super::{InteractionModal, InteractionModalOutput, InteractionMode};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crucible_core::interaction::{PermAction, PermRequest, PermResponse, PermissionScope};
 use crucible_oil::node::{col, row, styled, Node};

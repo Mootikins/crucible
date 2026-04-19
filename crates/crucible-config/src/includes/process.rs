@@ -8,7 +8,7 @@ use super::error::IncludeError;
 use super::path::resolve_include_path;
 use super::reference::ResolveMode;
 #[cfg(feature = "toml")]
-use super::reference::{RefKind, parse_ref_kind, read_dir_as_value, read_file_as_value};
+use super::reference::{parse_ref_kind, read_dir_as_value, read_file_as_value, RefKind};
 
 /// Process all `{file:path}`, `{env:VAR}`, and `{dir:path}` references in a TOML value tree
 ///

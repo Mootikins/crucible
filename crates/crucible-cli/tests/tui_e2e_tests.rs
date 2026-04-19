@@ -52,19 +52,19 @@ mod tui_e2e_harness;
 #[path = "tui_e2e_tests/shared.rs"]
 mod shared;
 
-#[path = "tui_e2e_tests/smoke.rs"]
-mod smoke;
 #[path = "tui_e2e_tests/chat.rs"]
 mod chat;
-#[path = "tui_e2e_tests/oil.rs"]
-mod oil;
-#[path = "tui_e2e_tests/model.rs"]
-mod model;
-#[path = "tui_e2e_tests/popup.rs"]
-mod popup;
-#[path = "tui_e2e_tests/terminal.rs"]
-mod terminal;
 #[path = "tui_e2e_tests/errors.rs"]
 mod errors;
+#[path = "tui_e2e_tests/model.rs"]
+mod model;
+#[path = "tui_e2e_tests/oil.rs"]
+mod oil;
+#[path = "tui_e2e_tests/popup.rs"]
+mod popup;
+#[path = "tui_e2e_tests/smoke.rs"]
+mod smoke;
+#[path = "tui_e2e_tests/terminal.rs"]
+mod terminal;
 #[path = "tui_e2e_tests/vt100.rs"]
 mod vt100;

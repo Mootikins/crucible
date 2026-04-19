@@ -214,9 +214,7 @@ fn agent_responded_to_markdown() {
 fn agent_responded_with_call_id_to_markdown() {
     let event = SessionEvent::AgentResponded {
         content: "".into(),
-        tool_calls: vec![
-            ToolCall::new("search", json!({"query": "test"})).with_call_id("call_123")
-        ],
+        tool_calls: vec![ToolCall::new("search", json!({"query": "test"})).with_call_id("call_123")],
     };
 
     let md = event.to_markdown_block(Some(TEST_TIMESTAMP_MS));

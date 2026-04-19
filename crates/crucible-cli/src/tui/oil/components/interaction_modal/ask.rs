@@ -1,4 +1,4 @@
-use super::{InteractionMode, InteractionModal, InteractionModalOutput};
+use super::{InteractionModal, InteractionModalOutput, InteractionMode};
 use crossterm::event::{KeyCode, KeyEvent};
 use crucible_core::interaction::{AskBatch, AskRequest, AskResponse, InteractionResponse};
 use crucible_oil::node::{col, row, styled, text, Node};
@@ -176,11 +176,7 @@ impl InteractionModal {
         self.render_ask_common(question, choices, multi_select, allow_other, 1, term_width)
     }
 
-    pub(super) fn render_ask_interaction_batch(
-        &self,
-        batch: &AskBatch,
-        term_width: usize,
-    ) -> Node {
+    pub(super) fn render_ask_interaction_batch(&self, batch: &AskBatch, term_width: usize) -> Node {
         if self.current_question >= batch.questions.len() {
             return Node::Empty;
         }

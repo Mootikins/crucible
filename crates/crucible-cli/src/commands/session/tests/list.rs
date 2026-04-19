@@ -1,5 +1,5 @@
-use super::setup_test_session;
 use super::super::list::list_persisted;
+use super::setup_test_session;
 use crate::config::CliConfig;
 use tempfile::TempDir;
 

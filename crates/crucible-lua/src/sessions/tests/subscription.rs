@@ -93,8 +93,7 @@ impl DaemonSessionApi for AsyncMockDaemonApi {
     fn get_session(
         &self,
         _: String,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<serde_json::Value>, String>> + Send>>
-    {
+    ) -> Pin<Box<dyn Future<Output = Result<Option<serde_json::Value>, String>> + Send>> {
         Box::pin(async { Ok(None) })
     }
     fn list_sessions(
@@ -125,10 +124,7 @@ impl DaemonSessionApi for AsyncMockDaemonApi {
     fn resume(&self, _: String) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
         Box::pin(async { Ok(()) })
     }
-    fn end_session(
-        &self,
-        _: String,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+    fn end_session(&self, _: String) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
         Box::pin(async { Ok(()) })
     }
     fn respond_to_permission(
@@ -160,10 +156,7 @@ impl DaemonSessionApi for AsyncMockDaemonApi {
         Box::pin(async { Ok(rx) })
     }
 
-    fn unsubscribe(
-        &self,
-        _: String,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+    fn unsubscribe(&self, _: String) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
         Box::pin(async { Ok(()) })
     }
 
@@ -215,9 +208,8 @@ impl DaemonSessionApi for AsyncMockDaemonApi {
         _max_tool_result_len: Option<usize>,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<tokio::sync::mpsc::UnboundedReceiver<ResponsePart>, String>,
-                > + Send,
+            dyn Future<Output = Result<tokio::sync::mpsc::UnboundedReceiver<ResponsePart>, String>>
+                + Send,
         >,
     > {
         Box::pin(async {

@@ -418,4 +418,3 @@ fn crucible_on_backward_compat_no_opts() {
     assert_eq!(handlers[0].priority, 100); // default
     assert_eq!(handlers[0].pattern, None);
 }
-

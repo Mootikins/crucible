@@ -1,8 +1,6 @@
-use super::{InteractionMode, InteractionModal, InteractionModalOutput};
+use super::{InteractionModal, InteractionModalOutput, InteractionMode};
 use crossterm::event::{KeyCode, KeyEvent};
-use crucible_core::interaction::{
-    InteractionResponse, InteractivePanel, PanelResult, PanelState,
-};
+use crucible_core::interaction::{InteractionResponse, InteractivePanel, PanelResult, PanelState};
 use crucible_oil::node::{col, row, styled, text, Node};
 use crucible_oil::style::Style;
 

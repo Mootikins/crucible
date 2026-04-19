@@ -34,13 +34,13 @@ fn test_session_is_granular() {
     let kiln = PathBuf::from("/home/user/notes");
 
     // Granular mode returns true
-    let granular_session = Session::new(SessionType::Chat, kiln.clone())
-        .with_recording_mode(RecordingMode::Granular);
+    let granular_session =
+        Session::new(SessionType::Chat, kiln.clone()).with_recording_mode(RecordingMode::Granular);
     assert!(granular_session.is_granular());
 
     // Coarse mode returns false
-    let coarse_session = Session::new(SessionType::Chat, kiln.clone())
-        .with_recording_mode(RecordingMode::Coarse);
+    let coarse_session =
+        Session::new(SessionType::Chat, kiln.clone()).with_recording_mode(RecordingMode::Coarse);
     assert!(!coarse_session.is_granular());
 
     // None returns false

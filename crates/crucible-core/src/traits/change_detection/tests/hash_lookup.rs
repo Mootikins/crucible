@@ -143,10 +143,7 @@ impl MockHashLookupStorage {
 
 #[async_trait]
 impl HashLookupStorage for MockHashLookupStorage {
-    async fn lookup_file_hash(
-        &self,
-        relative_path: &str,
-    ) -> Result<Option<StoredHash>, HashError> {
+    async fn lookup_file_hash(&self, relative_path: &str) -> Result<Option<StoredHash>, HashError> {
         Ok(self.hashes.get(relative_path).cloned())
     }
 

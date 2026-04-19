@@ -1,4 +1,4 @@
-use super::{InteractionMode, InteractionModal, InteractionModalOutput};
+use super::{InteractionModal, InteractionModalOutput, InteractionMode};
 use crossterm::event::{KeyCode, KeyEvent};
 use crucible_core::interaction::{InteractionResponse, PopupRequest, PopupResponse};
 use crucible_oil::node::{col, row, styled, text, Node};

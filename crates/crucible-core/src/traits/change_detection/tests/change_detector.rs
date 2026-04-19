@@ -140,10 +140,7 @@ impl MockChangeDetector {
 
 #[async_trait]
 impl ChangeDetector for MockChangeDetector {
-    async fn detect_changes(
-        &self,
-        current_files: &[FileHashInfo],
-    ) -> Result<ChangeSet, HashError> {
+    async fn detect_changes(&self, current_files: &[FileHashInfo]) -> Result<ChangeSet, HashError> {
         let mut changes = ChangeSet::new();
         let mut current_paths = std::collections::HashSet::new();
 

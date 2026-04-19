@@ -1,4 +1,4 @@
-use super::super::{IncludeError, merge_includes};
+use super::super::{merge_includes, IncludeError};
 use std::fs;
 use tempfile::TempDir;
 

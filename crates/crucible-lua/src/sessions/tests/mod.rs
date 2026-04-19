@@ -46,8 +46,7 @@ impl DaemonSessionApi for MockDaemonApi {
     fn get_session(
         &self,
         session_id: String,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<serde_json::Value>, String>> + Send>>
-    {
+    ) -> Pin<Box<dyn Future<Output = Result<Option<serde_json::Value>, String>> + Send>> {
         Box::pin(async move {
             if session_id == "exists-123" {
                 Ok(Some(serde_json::json!({
@@ -233,9 +232,8 @@ impl DaemonSessionApi for MockDaemonApi {
         _max_tool_result_len: Option<usize>,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<tokio::sync::mpsc::UnboundedReceiver<ResponsePart>, String>,
-                > + Send,
+            dyn Future<Output = Result<tokio::sync::mpsc::UnboundedReceiver<ResponsePart>, String>>
+                + Send,
         >,
     > {
         Box::pin(async {

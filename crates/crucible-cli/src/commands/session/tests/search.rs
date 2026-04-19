@@ -1,7 +1,7 @@
-use super::setup_test_session;
 use super::super::search::{
     extract_session_id_from_path, search, search_in_memory, search_with_ripgrep,
 };
+use super::setup_test_session;
 use crate::config::CliConfig;
 use tempfile::TempDir;
 
@@ -41,9 +41,7 @@ async fn test_search_in_memory() {
 
     let id = setup_test_session(&sessions_path).await;
 
-    let results = search_in_memory(&sessions_path, "hello", 10)
-        .await
-        .unwrap();
+    let results = search_in_memory(&sessions_path, "hello", 10).await.unwrap();
 
     assert!(!results.is_empty());
     assert_eq!(results[0].0, id.to_string());
