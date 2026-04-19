@@ -552,7 +552,7 @@ impl FromLua for ThemeColors {
         match value {
             Value::Table(table) => {
                 let mut colors = ThemeColors::default();
-                parse_colors_into(&table, &mut colors);
+                colors.apply_table(&table);
                 Ok(colors)
             }
             Value::Nil => Ok(ThemeColors::default()),
@@ -570,7 +570,7 @@ impl FromLua for ThemeDecorations {
         match value {
             Value::Table(table) => {
                 let mut decorations = ThemeDecorations::default();
-                parse_decorations_into(&table, &mut decorations);
+                decorations.apply_table(&table);
                 Ok(decorations)
             }
             Value::Nil => Ok(ThemeDecorations::default()),
@@ -588,7 +588,7 @@ impl FromLua for ThemeIcons {
         match value {
             Value::Table(table) => {
                 let mut icons = ThemeIcons::default();
-                parse_icons_into(&table, &mut icons);
+                icons.apply_table(&table);
                 Ok(icons)
             }
             Value::Nil => Ok(ThemeIcons::default()),
@@ -606,7 +606,7 @@ impl FromLua for ThemeLayout {
         match value {
             Value::Table(table) => {
                 let mut layout = ThemeLayout::default();
-                parse_layout_into(&table, &mut layout);
+                layout.apply_table(&table);
                 Ok(layout)
             }
             Value::Nil => Ok(ThemeLayout::default()),
@@ -624,10 +624,12 @@ impl FromLua for ThemeSpinnerStyle {
         match value {
             Value::String(_) => {
                 let spinner = String::from_lua(value, lua)?;
-                parse_spinner_style(&spinner).ok_or_else(|| mlua::Error::FromLuaConversionError {
-                    from: "string",
-                    to: "ThemeSpinnerStyle".to_string(),
-                    message: Some(format!("unknown spinner style '{spinner}'")),
+                ThemeSpinnerStyle::from_name(&spinner).ok_or_else(|| {
+                    mlua::Error::FromLuaConversionError {
+                        from: "string",
+                        to: "ThemeSpinnerStyle".to_string(),
+                        message: Some(format!("unknown spinner style '{spinner}'")),
+                    }
                 })
             }
             Value::Nil => Ok(ThemeSpinnerStyle::default()),
@@ -645,7 +647,7 @@ impl FromLua for BorderStyle {
         match value {
             Value::String(_) => {
                 let border_style = String::from_lua(value, lua)?;
-                parse_border_style(&border_style).ok_or_else(|| {
+                BorderStyle::from_name(&border_style).ok_or_else(|| {
                     mlua::Error::FromLuaConversionError {
                         from: "string",
                         to: "BorderStyle".to_string(),
@@ -668,7 +670,7 @@ impl FromLua for StatusBarPosition {
         match value {
             Value::String(_) => {
                 let position = String::from_lua(value, lua)?;
-                parse_status_bar_position(&position).ok_or_else(|| {
+                StatusBarPosition::from_name(&position).ok_or_else(|| {
                     mlua::Error::FromLuaConversionError {
                         from: "string",
                         to: "StatusBarPosition".to_string(),
@@ -750,147 +752,161 @@ fn parse_color_string(s: &str) -> Option<Color> {
     }
 }
 
-fn parse_colors_into(table: &Table, colors: &mut ThemeColors) {
-    macro_rules! parse_color_field {
-        ($field:ident) => {
-            if let Ok(val) = table.get::<Value>(stringify!($field)) {
-                match parse_adaptive_color(&val) {
-                    Some(c) => colors.$field = c,
-                    None => {
-                        warn!(
-                            "Invalid color for '{}': {:?}, using default",
-                            stringify!($field),
-                            val
-                        );
+impl ThemeColors {
+    fn apply_table(&mut self, table: &Table) {
+        macro_rules! parse_color_field {
+            ($field:ident) => {
+                if let Ok(val) = table.get::<Value>(stringify!($field)) {
+                    match parse_adaptive_color(&val) {
+                        Some(c) => self.$field = c,
+                        None => {
+                            warn!(
+                                "Invalid color for '{}': {:?}, using default",
+                                stringify!($field),
+                                val
+                            );
+                        }
                     }
                 }
+            };
+        }
+        parse_color_field!(primary);
+        parse_color_field!(secondary);
+        parse_color_field!(background);
+        parse_color_field!(background_panel);
+        parse_color_field!(command_bg);
+        parse_color_field!(shell_bg);
+        parse_color_field!(input_bg);
+        parse_color_field!(text);
+        parse_color_field!(text_muted);
+        parse_color_field!(text_dim);
+        parse_color_field!(text_emphasized);
+        parse_color_field!(error);
+        parse_color_field!(warning);
+        parse_color_field!(success);
+        parse_color_field!(info);
+        parse_color_field!(border);
+        parse_color_field!(border_focused);
+        parse_color_field!(border_dim);
+        parse_color_field!(user_message);
+        parse_color_field!(assistant_message);
+        parse_color_field!(system_message);
+        parse_color_field!(mode_normal);
+        parse_color_field!(mode_insert);
+        parse_color_field!(mode_plan);
+        parse_color_field!(mode_auto);
+        parse_color_field!(diff_added);
+        parse_color_field!(diff_removed);
+        parse_color_field!(diff_added_bg);
+        parse_color_field!(diff_removed_bg);
+        parse_color_field!(diff_context);
+        parse_color_field!(popup_bg);
+        parse_color_field!(popup_selected_bg);
+        parse_color_field!(toast_bg);
+        parse_color_field!(overlay_text);
+        parse_color_field!(overlay_bright);
+        parse_color_field!(code_inline);
+        parse_color_field!(code_fallback);
+        parse_color_field!(fence_marker);
+        parse_color_field!(bullet_prefix);
+        parse_color_field!(blockquote_prefix);
+        parse_color_field!(blockquote_text);
+        parse_color_field!(link);
+        parse_color_field!(heading_1);
+        parse_color_field!(heading_2);
+        parse_color_field!(heading_3);
+    }
+}
+
+impl ThemeDecorations {
+    fn apply_table(&mut self, table: &Table) {
+        if let Ok(s) = table.get::<String>("border_style") {
+            match BorderStyle::from_name(&s) {
+                Some(style) => self.border_style = style,
+                None => warn!("Unknown border_style '{}', using default", s),
             }
-        };
+        }
+        parse_string_field!(table, self, message_user_indicator);
+        parse_string_field!(table, self, message_assistant_indicator);
+        parse_string_field!(table, self, tool_pending_icon);
+        parse_string_field!(table, self, tool_success_icon);
+        parse_string_field!(table, self, tool_error_icon);
+        parse_string_field!(table, self, bullet_char);
+        parse_string_field!(table, self, divider_char);
+        parse_string_field!(table, self, check_char);
+        parse_string_field!(table, self, error_char);
+        parse_string_field!(table, self, separator_char);
+        parse_char_field!(table, self, half_block_top);
+        parse_char_field!(table, self, half_block_bottom);
     }
-    parse_color_field!(primary);
-    parse_color_field!(secondary);
-    parse_color_field!(background);
-    parse_color_field!(background_panel);
-    parse_color_field!(command_bg);
-    parse_color_field!(shell_bg);
-    parse_color_field!(input_bg);
-    parse_color_field!(text);
-    parse_color_field!(text_muted);
-    parse_color_field!(text_dim);
-    parse_color_field!(text_emphasized);
-    parse_color_field!(error);
-    parse_color_field!(warning);
-    parse_color_field!(success);
-    parse_color_field!(info);
-    parse_color_field!(border);
-    parse_color_field!(border_focused);
-    parse_color_field!(border_dim);
-    parse_color_field!(user_message);
-    parse_color_field!(assistant_message);
-    parse_color_field!(system_message);
-    parse_color_field!(mode_normal);
-    parse_color_field!(mode_insert);
-    parse_color_field!(mode_plan);
-    parse_color_field!(mode_auto);
-    parse_color_field!(diff_added);
-    parse_color_field!(diff_removed);
-    parse_color_field!(diff_added_bg);
-    parse_color_field!(diff_removed_bg);
-    parse_color_field!(diff_context);
-    parse_color_field!(popup_bg);
-    parse_color_field!(popup_selected_bg);
-    parse_color_field!(toast_bg);
-    parse_color_field!(overlay_text);
-    parse_color_field!(overlay_bright);
-    parse_color_field!(code_inline);
-    parse_color_field!(code_fallback);
-    parse_color_field!(fence_marker);
-    parse_color_field!(bullet_prefix);
-    parse_color_field!(blockquote_prefix);
-    parse_color_field!(blockquote_text);
-    parse_color_field!(link);
-    parse_color_field!(heading_1);
-    parse_color_field!(heading_2);
-    parse_color_field!(heading_3);
 }
 
-fn parse_decorations_into(table: &Table, dec: &mut ThemeDecorations) {
-    if let Ok(s) = table.get::<String>("border_style") {
-        match parse_border_style(&s) {
-            Some(style) => dec.border_style = style,
-            None => warn!("Unknown border_style '{}', using default", s),
+impl ThemeIcons {
+    fn apply_table(&mut self, table: &Table) {
+        parse_string_field!(table, self, check);
+        parse_string_field!(table, self, error);
+        parse_string_field!(table, self, warning);
+        parse_string_field!(table, self, info);
+        parse_string_field!(table, self, loading);
+        parse_string_field!(table, self, arrow_right);
+    }
+}
+
+impl ThemeLayout {
+    fn apply_table(&mut self, table: &Table) {
+        if let Ok(s) = table.get::<String>("status_bar_position") {
+            match StatusBarPosition::from_name(&s) {
+                Some(position) => self.status_bar_position = position,
+                None => warn!("Unknown status_bar_position '{}', using default", s),
+            }
+        }
+        if let Ok(n) = table.get::<u16>("message_spacing") {
+            self.message_spacing = n;
+        }
+        if let Ok(n) = table.get::<u16>("code_block_margin") {
+            self.code_block_margin = n;
+        }
+        if let Ok(n) = table.get::<u16>("input_max_lines") {
+            self.input_max_lines = n;
         }
     }
-    parse_string_field!(table, dec, message_user_indicator);
-    parse_string_field!(table, dec, message_assistant_indicator);
-    parse_string_field!(table, dec, tool_pending_icon);
-    parse_string_field!(table, dec, tool_success_icon);
-    parse_string_field!(table, dec, tool_error_icon);
-    parse_string_field!(table, dec, bullet_char);
-    parse_string_field!(table, dec, divider_char);
-    parse_string_field!(table, dec, check_char);
-    parse_string_field!(table, dec, error_char);
-    parse_string_field!(table, dec, separator_char);
-    parse_char_field!(table, dec, half_block_top);
-    parse_char_field!(table, dec, half_block_bottom);
 }
 
-fn parse_icons_into(table: &Table, icons: &mut ThemeIcons) {
-    parse_string_field!(table, icons, check);
-    parse_string_field!(table, icons, error);
-    parse_string_field!(table, icons, warning);
-    parse_string_field!(table, icons, info);
-    parse_string_field!(table, icons, loading);
-    parse_string_field!(table, icons, arrow_right);
-}
-
-fn parse_layout_into(table: &Table, layout: &mut ThemeLayout) {
-    if let Ok(s) = table.get::<String>("status_bar_position") {
-        match parse_status_bar_position(&s) {
-            Some(position) => layout.status_bar_position = position,
-            None => warn!("Unknown status_bar_position '{}', using default", s),
+impl ThemeSpinnerStyle {
+    fn from_name(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "braille" => Some(Self::Braille),
+            "braille_minidot" => Some(Self::BrailleMinidot),
+            "ascii" => Some(Self::Ascii),
+            "pulse" => Some(Self::Pulse),
+            "none" => Some(Self::None),
+            _ => None,
         }
     }
-    if let Ok(n) = table.get::<u16>("message_spacing") {
-        layout.message_spacing = n;
-    }
-    if let Ok(n) = table.get::<u16>("code_block_margin") {
-        layout.code_block_margin = n;
-    }
-    if let Ok(n) = table.get::<u16>("input_max_lines") {
-        layout.input_max_lines = n;
+}
+
+impl BorderStyle {
+    fn from_name(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "rounded" => Some(Self::Rounded),
+            "sharp" => Some(Self::Sharp),
+            "double" => Some(Self::Double),
+            "thick" => Some(Self::Thick),
+            "ascii" => Some(Self::Ascii),
+            "hidden" => Some(Self::Hidden),
+            _ => None,
+        }
     }
 }
 
-fn parse_spinner_style(s: &str) -> Option<ThemeSpinnerStyle> {
-    match s.to_lowercase().as_str() {
-        "braille" => Some(ThemeSpinnerStyle::Braille),
-        "braille_minidot" => Some(ThemeSpinnerStyle::BrailleMinidot),
-        "ascii" => Some(ThemeSpinnerStyle::Ascii),
-        "pulse" => Some(ThemeSpinnerStyle::Pulse),
-        "none" => Some(ThemeSpinnerStyle::None),
-        _ => None,
-    }
-}
-
-fn parse_border_style(s: &str) -> Option<BorderStyle> {
-    match s.to_lowercase().as_str() {
-        "rounded" => Some(BorderStyle::Rounded),
-        "sharp" => Some(BorderStyle::Sharp),
-        "double" => Some(BorderStyle::Double),
-        "thick" => Some(BorderStyle::Thick),
-        "ascii" => Some(BorderStyle::Ascii),
-        "hidden" => Some(BorderStyle::Hidden),
-        _ => None,
-    }
-}
-
-fn parse_status_bar_position(s: &str) -> Option<StatusBarPosition> {
-    match s.to_lowercase().as_str() {
-        "top" => Some(StatusBarPosition::Top),
-        "bottom" => Some(StatusBarPosition::Bottom),
-        "hidden" => Some(StatusBarPosition::Hidden),
-        _ => None,
+impl StatusBarPosition {
+    fn from_name(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "top" => Some(Self::Top),
+            "bottom" => Some(Self::Bottom),
+            "hidden" => Some(Self::Hidden),
+            _ => None,
+        }
     }
 }
 
