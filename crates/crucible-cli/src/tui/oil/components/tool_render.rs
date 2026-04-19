@@ -11,273 +11,269 @@ use crucible_oil::style::Style;
 use crucible_oil::truncate_to_width;
 use std::time::Duration;
 
-/// Render a tool call with default spinner frame (0).
-pub fn render_tool_call(tool: &CachedToolCall, width: usize) -> Node {
-    render_tool_call_with_frame(tool, 0, width)
-}
-
-/// Render a tool call with specified spinner frame for animation.
-pub fn render_tool_call_with_frame(
-    tool: &CachedToolCall,
-    spinner_frame: usize,
-    width: usize,
-) -> Node {
-    if tool.superseded {
-        return Node::Empty;
+impl CachedToolCall {
+    /// Render a compact tool call with default spinner frame (0).
+    pub fn render_compact(&self, width: usize) -> Node {
+        self.render_compact_with_frame(0, width)
     }
 
-    let display_name = display_tool_name(&tool.name);
-    let auto_primary = format_primary_arg(&tool.args);
-    let primary_arg: &str = tool
-        .lua_primary_arg
-        .as_deref()
-        .filter(|s| !s.is_empty())
-        .unwrap_or(&auto_primary);
-    let result_str = tool.result();
-
-    let inner = if let Some(ref error) = tool.error {
-        render_tool_error(tool, &display_name, primary_arg, error, width)
-    } else if tool.complete {
-        render_tool_complete(tool, &display_name, primary_arg, &result_str, width)
-    } else {
-        render_tool_running(
-            tool,
-            &display_name,
-            primary_arg,
-            &result_str,
-            spinner_frame,
-            width,
-        )
-    };
-
-    let description_node = render_tool_description(tool);
-    if matches!(description_node, Node::Empty) {
-        inner
-    } else {
-        col([inner, description_node])
-    }
-}
-
-fn render_tool_description(tool: &CachedToolCall) -> Node {
-    let desc = match tool.description.as_deref() {
-        Some(d) if !d.is_empty() => d,
-        _ => return Node::Empty,
-    };
-    let t = crate::tui::oil::theme::active();
-    styled(
-        format!("    {}", desc),
-        Style::new().fg(t.resolve_color(t.colors.text_muted)).dim(),
-    )
-}
-
-fn render_source_badge(tool: &CachedToolCall) -> Node {
-    let source = match tool.source {
-        Some(ref s) => s,
-        None => return Node::Empty,
-    };
-    let t = crate::tui::oil::theme::active();
-    styled(
-        format!(" [{}]", source.label()),
-        Style::new().fg(t.resolve_color(t.colors.text_muted)).dim(),
-    )
-}
-
-fn render_tool_error(
-    tool: &CachedToolCall,
-    display_name: &str,
-    primary_arg: &str,
-    error: &str,
-    width: usize,
-) -> Node {
-    let t = crate::tui::oil::theme::active();
-    let icon = format!(" {} ", t.decorations.tool_error_icon);
-    let source_badge = render_source_badge(tool);
-    let arg_part = if primary_arg.is_empty() {
-        " ".to_string()
-    } else {
-        format!(" {} ", primary_arg)
-    };
-    let prefix_width =
-        visible_width(&icon) + visible_width(display_name) + visible_width(&arg_part);
-    let remaining = width.saturating_sub(prefix_width + 2).max(10);
-    let error_first_line = error.lines().next().unwrap_or(error);
-    let error_visible = visible_width(error_first_line);
-    if error_visible <= remaining {
-        row([
-            styled(icon, Style::new().fg(t.resolve_color(t.colors.error))),
-            styled(
-                display_name,
-                Style::new().fg(t.resolve_color(t.colors.text_dim)),
-            ),
-            source_badge,
-            styled(
-                arg_part,
-                Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
-            ),
-            styled(
-                format!("\u{2192} {}", error_first_line),
-                Style::new().fg(t.resolve_color(t.colors.error)).bold(),
-            ),
-        ])
-    } else {
-        let header = row([
-            styled(icon, Style::new().fg(t.resolve_color(t.colors.error))),
-            styled(
-                display_name,
-                Style::new().fg(t.resolve_color(t.colors.text_dim)),
-            ),
-            source_badge,
-            styled(
-                arg_part,
-                Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
-            ),
-        ]);
-        let error_node = styled(
-            format!("  \u{2192} {}", error_first_line),
-            Style::new().fg(t.resolve_color(t.colors.error)).bold(),
-        );
-        col([header, error_node])
-    }
-}
-
-fn render_tool_complete(
-    tool: &CachedToolCall,
-    display_name: &str,
-    primary_arg: &str,
-    result_str: &str,
-    width: usize,
-) -> Node {
-    let result_summary = if !result_str.is_empty() {
-        summarize_tool_result(&tool.name, result_str)
-    } else {
-        None
-    };
-
-    let collapsed = collapse_result(&tool.name, result_str, result_summary.as_deref());
-    let has_arrow_suffix = collapsed.is_some();
-
-    let t = crate::tui::oil::theme::active();
-    let arrow_suffix = if let Some(ref s) = collapsed {
-        styled(
-            format!("→ {}", s),
-            Style::new().fg(t.resolve_color(t.colors.text_muted)),
-        )
-    } else {
-        Node::Empty
-    };
-
-    let source_badge = render_source_badge(tool);
-    let arg_node = if primary_arg.is_empty() {
-        if has_arrow_suffix {
-            styled(" ", Style::new())
-        } else {
-            Node::Empty
+    /// Render a compact tool call with specified spinner frame for animation.
+    pub fn render_compact_with_frame(&self, spinner_frame: usize, width: usize) -> Node {
+        if self.superseded {
+            return Node::Empty;
         }
-    } else if has_arrow_suffix {
-        styled(
-            format!(" {} ", primary_arg),
-            Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
-        )
-    } else {
-        styled(
-            format!(" {}", primary_arg),
-            Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
-        )
-    };
-    let header = row([
-        styled(
-            format!(" {} ", t.decorations.tool_success_icon),
-            Style::new().fg(t.resolve_color(t.colors.success)),
-        ),
-        styled(
-            display_name,
-            Style::new().fg(t.resolve_color(t.colors.text_dim)),
-        ),
-        source_badge,
-        arg_node,
-        arrow_suffix,
-    ]);
 
-    let result_node = if has_arrow_suffix || result_str.is_empty() {
-        Node::Empty
-    } else {
-        format_tool_result(&tool.name, result_str, width)
-    };
+        let display_name = self.display_name();
+        let auto_primary = format_primary_arg(&self.args);
+        let primary_arg: &str = self
+            .lua_primary_arg
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(&auto_primary);
+        let result_str = self.result();
 
-    if matches!(result_node, Node::Empty) {
-        header
-    } else {
-        col([header, result_node])
+        let inner = if let Some(ref error) = self.error {
+            self.render_error(&display_name, primary_arg, error, width)
+        } else if self.complete {
+            self.render_complete(&display_name, primary_arg, &result_str, width)
+        } else {
+            self.render_running(
+                &display_name,
+                primary_arg,
+                &result_str,
+                spinner_frame,
+                width,
+            )
+        };
+
+        let description_node = self.render_description();
+        if matches!(description_node, Node::Empty) {
+            inner
+        } else {
+            col([inner, description_node])
+        }
     }
-}
 
-fn render_tool_running(
-    tool: &CachedToolCall,
-    display_name: &str,
-    primary_arg: &str,
-    result_str: &str,
-    spinner_frame: usize,
-    width: usize,
-) -> Node {
-    let elapsed = tool.elapsed();
-    let show_elapsed = elapsed >= Duration::from_secs(2);
+    fn display_name(&self) -> String {
+        crucible_acp::streaming::humanize_tool_title(&self.name)
+    }
 
-    let t = crate::tui::oil::theme::active();
-    // No animated spinner in container content — spinners are chrome only.
-    // Pending tools show a static ● indicator instead.
-    let _ = spinner_frame; // unused — animation is in turn indicator
-    let pending_icon = styled(
-        "\u{25CF}",
-        Style::new().fg(t.resolve_color(t.colors.text_dim)),
-    );
-    let source_badge = render_source_badge(tool);
-    let arg_node = if primary_arg.is_empty() {
-        Node::Empty
-    } else {
+    fn render_description(&self) -> Node {
+        let desc = match self.description.as_deref() {
+            Some(d) if !d.is_empty() => d,
+            _ => return Node::Empty,
+        };
+        let t = crate::tui::oil::theme::active();
         styled(
-            format!(" {}", primary_arg),
-            Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+            format!("    {}", desc),
+            Style::new().fg(t.resolve_color(t.colors.text_muted)).dim(),
         )
-    };
-    let header = row([
-        styled(" ", Style::new()),
-        pending_icon,
-        styled(" ", Style::new()),
+    }
+
+    fn render_source_badge(&self) -> Node {
+        let source = match self.source {
+            Some(ref s) => s,
+            None => return Node::Empty,
+        };
+        let t = crate::tui::oil::theme::active();
         styled(
-            display_name,
-            Style::new().fg(t.resolve_color(t.colors.text_dim)),
-        ),
-        source_badge,
-        arg_node,
-        if show_elapsed {
+            format!(" [{}]", source.label()),
+            Style::new().fg(t.resolve_color(t.colors.text_muted)).dim(),
+        )
+    }
+
+    fn render_error(
+        &self,
+        display_name: &str,
+        primary_arg: &str,
+        error: &str,
+        width: usize,
+    ) -> Node {
+        let t = crate::tui::oil::theme::active();
+        let icon = format!(" {} ", t.decorations.tool_error_icon);
+        let source_badge = self.render_source_badge();
+        let arg_part = if primary_arg.is_empty() {
+            " ".to_string()
+        } else {
+            format!(" {} ", primary_arg)
+        };
+        let prefix_width =
+            visible_width(&icon) + visible_width(display_name) + visible_width(&arg_part);
+        let remaining = width.saturating_sub(prefix_width + 2).max(10);
+        let error_first_line = error.lines().next().unwrap_or(error);
+        let error_visible = visible_width(error_first_line);
+        if error_visible <= remaining {
+            row([
+                styled(icon, Style::new().fg(t.resolve_color(t.colors.error))),
+                styled(
+                    display_name,
+                    Style::new().fg(t.resolve_color(t.colors.text_dim)),
+                ),
+                source_badge,
+                styled(
+                    arg_part,
+                    Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+                ),
+                styled(
+                    format!("\u{2192} {}", error_first_line),
+                    Style::new().fg(t.resolve_color(t.colors.error)).bold(),
+                ),
+            ])
+        } else {
+            let header = row([
+                styled(icon, Style::new().fg(t.resolve_color(t.colors.error))),
+                styled(
+                    display_name,
+                    Style::new().fg(t.resolve_color(t.colors.text_dim)),
+                ),
+                source_badge,
+                styled(
+                    arg_part,
+                    Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+                ),
+            ]);
+            let error_node = styled(
+                format!("  \u{2192} {}", error_first_line),
+                Style::new().fg(t.resolve_color(t.colors.error)).bold(),
+            );
+            col([header, error_node])
+        }
+    }
+
+    fn render_complete(
+        &self,
+        display_name: &str,
+        primary_arg: &str,
+        result_str: &str,
+        width: usize,
+    ) -> Node {
+        let result_summary = if !result_str.is_empty() {
+            summarize_tool_result(&self.name, result_str)
+        } else {
+            None
+        };
+
+        let collapsed = collapse_result(&self.name, result_str, result_summary.as_deref());
+        let has_arrow_suffix = collapsed.is_some();
+
+        let t = crate::tui::oil::theme::active();
+        let arrow_suffix = if let Some(ref s) = collapsed {
             styled(
-                format!("  {}", format_elapsed(elapsed)),
-                Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+                format!("→ {}", s),
+                Style::new().fg(t.resolve_color(t.colors.text_muted)),
             )
         } else {
             Node::Empty
-        },
-    ]);
+        };
 
-    let result_node = if result_str.is_empty() {
-        Node::Empty
-    } else {
-        format_streaming_output(result_str, width)
-    };
+        let source_badge = self.render_source_badge();
+        let arg_node = if primary_arg.is_empty() {
+            if has_arrow_suffix {
+                styled(" ", Style::new())
+            } else {
+                Node::Empty
+            }
+        } else if has_arrow_suffix {
+            styled(
+                format!(" {} ", primary_arg),
+                Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+            )
+        } else {
+            styled(
+                format!(" {}", primary_arg),
+                Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+            )
+        };
+        let header = row([
+            styled(
+                format!(" {} ", t.decorations.tool_success_icon),
+                Style::new().fg(t.resolve_color(t.colors.success)),
+            ),
+            styled(
+                display_name,
+                Style::new().fg(t.resolve_color(t.colors.text_dim)),
+            ),
+            source_badge,
+            arg_node,
+            arrow_suffix,
+        ]);
 
-    if matches!(result_node, Node::Empty) {
-        header
-    } else {
-        col([header, result_node])
+        let result_node = if has_arrow_suffix || result_str.is_empty() {
+            Node::Empty
+        } else {
+            format_tool_result(&self.name, result_str, width)
+        };
+
+        if matches!(result_node, Node::Empty) {
+            header
+        } else {
+            col([header, result_node])
+        }
+    }
+
+    fn render_running(
+        &self,
+        display_name: &str,
+        primary_arg: &str,
+        result_str: &str,
+        spinner_frame: usize,
+        width: usize,
+    ) -> Node {
+        let elapsed = self.elapsed();
+        let show_elapsed = elapsed >= Duration::from_secs(2);
+
+        let t = crate::tui::oil::theme::active();
+        // No animated spinner in container content — spinners are chrome only.
+        // Pending tools show a static ● indicator instead.
+        let _ = spinner_frame; // unused — animation is in turn indicator
+        let pending_icon = styled(
+            "\u{25CF}",
+            Style::new().fg(t.resolve_color(t.colors.text_dim)),
+        );
+        let source_badge = self.render_source_badge();
+        let arg_node = if primary_arg.is_empty() {
+            Node::Empty
+        } else {
+            styled(
+                format!(" {}", primary_arg),
+                Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+            )
+        };
+        let header = row([
+            styled(" ", Style::new()),
+            pending_icon,
+            styled(" ", Style::new()),
+            styled(
+                display_name,
+                Style::new().fg(t.resolve_color(t.colors.text_dim)),
+            ),
+            source_badge,
+            arg_node,
+            if show_elapsed {
+                styled(
+                    format!("  {}", format_elapsed(elapsed)),
+                    Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+                )
+            } else {
+                Node::Empty
+            },
+        ]);
+
+        let result_node = if result_str.is_empty() {
+            Node::Empty
+        } else {
+            format_streaming_output(result_str, width)
+        };
+
+        if matches!(result_node, Node::Empty) {
+            header
+        } else {
+            col([header, result_node])
+        }
     }
 }
 
-// --- Utility functions ---
-
-fn display_tool_name(name: &str) -> String {
-    // Use humanize_tool_title from crucible-acp for consistent formatting
-    crucible_acp::streaming::humanize_tool_title(name)
-}
+// --- Pure string/format utilities ---
 
 pub(crate) fn format_elapsed(duration: Duration) -> String {
     let secs = duration.as_secs();
@@ -711,7 +707,7 @@ mod tests {
     #[test]
     fn render_tool_call_complete() {
         let tool = test_tool_with_output("mcp_read", r#"{"path": "test.rs"}"#, "content", true);
-        let node = render_tool_call(&tool, 80);
+        let node = tool.render_compact(80);
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("✓"), "Should show checkmark: {:?}", plain);
         assert!(
@@ -724,7 +720,7 @@ mod tests {
     #[test]
     fn render_tool_call_in_progress() {
         let tool = test_tool("mcp_bash", r#"{"command": "ls"}"#, false);
-        let node = render_tool_call(&tool, 80);
+        let node = tool.render_compact(80);
         let plain = render_to_plain_text(&node, 80);
         assert!(
             plain.contains("Bash"),
@@ -737,7 +733,7 @@ mod tests {
     fn render_tool_call_with_error() {
         let mut tool = test_tool("mcp_bash", r#"{"command": "false"}"#, false);
         tool.set_error("Command failed with exit code 1".to_string());
-        let node = render_tool_call(&tool, 80);
+        let node = tool.render_compact(80);
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("✗"), "Should show error icon: {:?}", plain);
         assert!(
@@ -750,7 +746,7 @@ mod tests {
     #[test]
     fn render_tool_call_collapses_short_result() {
         let tool = test_tool_with_output("unknown_tool", "{}", "OK", true);
-        let node = render_tool_call(&tool, 80);
+        let node = tool.render_compact(80);
         let plain = render_to_plain_text(&node, 80);
         assert!(
             plain.contains("→ OK"),
@@ -794,7 +790,7 @@ mod tests {
     fn tool_result_with_json_encoded_newlines() {
         let json_result = r#""line1\nline2\nline3""#;
         let tool = test_tool_with_output("mcp_bash", r#"{"command": "ls"}"#, json_result, true);
-        let node = render_tool_call(&tool, 80);
+        let node = tool.render_compact(80);
         let plain = render_to_plain_text(&node, 80);
         assert!(
             plain.contains("│ line1") || plain.contains("→"),
@@ -816,7 +812,7 @@ mod tests {
             "line1\nline2\nline3",
             true,
         );
-        let node = render_tool_call(&tool, 80);
+        let node = tool.render_compact(80);
         let plain = render_to_plain_text(&node, 80);
         let lines: Vec<&str> = plain.lines().collect();
 
@@ -861,7 +857,7 @@ mod tests {
         tool.set_error(long_error.clone());
 
         // Render at width=120 (wide terminal)
-        let node = render_tool_call(&tool, 80);
+        let node = tool.render_compact(80);
         let plain = render_to_plain_text(&node, 120);
 
         // The full error should be visible at width=120
@@ -883,7 +879,7 @@ mod tests {
         tool.set_error(long_error.clone());
 
         // Render at width=80
-        let node = render_tool_call(&tool, 80);
+        let node = tool.render_compact(80);
         let plain = render_to_plain_text(&node, 80);
 
         // The error should NOT be truncated to hardcoded 50 chars
@@ -907,7 +903,7 @@ mod tests {
         tool.set_error(cjk_error.to_string());
 
         // Render at width=80 — should not panic
-        let node = render_tool_call(&tool, 80);
+        let node = tool.render_compact(80);
         let plain = render_to_plain_text(&node, 80);
 
         // Verify every line fits within width
@@ -940,7 +936,7 @@ mod tests {
         let error = "Connection refused: port 8080 is already in use by another process running on this machine";
         tool.set_error(error.to_string());
 
-        let node = render_tool_call(&tool, 80);
+        let node = tool.render_compact(80);
         let plain = render_to_plain_text(&node, 120);
 
         assert!(
@@ -1015,7 +1011,7 @@ mod tests {
     #[test]
     fn compact_read_file_shows_path() {
         let tool = test_tool_with_output("mcp_read", r#"{"path": "src/lib.rs"}"#, "content", true);
-        let node = render_tool_call(&tool, 80);
+        let node = tool.render_compact(80);
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("✓"), "Should show checkmark: {:?}", plain);
         assert!(plain.contains("Read"), "Should show tool name: {:?}", plain);
@@ -1040,7 +1036,7 @@ mod tests {
     fn compact_bash_shows_command() {
         let tool =
             test_tool_with_output("mcp_bash", r#"{"command": "ls -la"}"#, "file1\nfile2", true);
-        let node = render_tool_call(&tool, 80);
+        let node = tool.render_compact(80);
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("Bash"), "Should show tool name: {:?}", plain);
         assert!(
@@ -1058,7 +1054,7 @@ mod tests {
     #[test]
     fn compact_no_args_no_parens() {
         let tool = test_tool_with_output("get_kiln_info", "{}", "kiln data", true);
-        let node = render_tool_call(&tool, 80);
+        let node = tool.render_compact(80);
         let plain = render_to_plain_text(&node, 80);
         assert!(
             plain.contains("Get Kiln Info"),

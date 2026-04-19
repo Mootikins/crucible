@@ -13,9 +13,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::tui::oil::app::ViewContext;
 use crate::tui::oil::components::thinking_component::ThinkingComponent;
-use crate::tui::oil::components::{
-    render_shell_execution, render_subagent, render_tool_call_with_frame,
-};
+use crate::tui::oil::components::{render_shell_execution, render_subagent};
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
 use crate::tui::oil::render_state::RenderState;
 use crate::tui::oil::utils::wrap_words;
@@ -189,7 +187,7 @@ fn render_assistant_response(
 fn render_tool_group(tools: &[CachedToolCall], spinner_frame: usize, width: usize) -> Node {
     let items: Vec<Node> = tools
         .iter()
-        .map(|tool| render_tool_call_with_frame(tool, spinner_frame, width))
+        .map(|tool| tool.render_compact_with_frame(spinner_frame, width))
         .filter(|n| !matches!(n, Node::Empty))
         .collect();
 

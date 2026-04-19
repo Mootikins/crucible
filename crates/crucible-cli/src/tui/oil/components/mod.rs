@@ -40,7 +40,6 @@ pub use status_component::StatusComponent;
 pub use subagent_render::render_subagent;
 pub use thinking_component::ThinkingComponent;
 pub use tool_render::{
-    format_streaming_output, format_tool_args, format_tool_result, render_tool_call,
-    render_tool_call_with_frame, summarize_tool_result,
+    format_streaming_output, format_tool_args, format_tool_result, summarize_tool_result,
 };
 pub use turn_indicator::TurnIndicator;
