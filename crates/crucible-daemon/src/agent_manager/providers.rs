@@ -461,7 +461,7 @@ mod tests {
         let all_types_set: std::collections::HashSet<_> = all_types.iter().copied().collect();
 
         // Verify each variant is in the array by matching exhaustively
-        let _ = match BackendType::Ollama {
+        match BackendType::Ollama {
             BackendType::Ollama => (),
             BackendType::OpenAI => (),
             BackendType::Anthropic => (),
@@ -474,7 +474,7 @@ mod tests {
             BackendType::ZAI => (),
             BackendType::Custom => (),
             BackendType::Mock => (),
-        };
+        }
 
         // Now verify all variants are in the array
         assert!(

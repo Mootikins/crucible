@@ -2,5 +2,509 @@
 //!
 //! Methods for managing kilns, notes, and storage operations.
 
-// Storage methods are implemented in mod.rs
-// This module serves as a logical grouping for documentation
+use anyhow::Result;
+use std::path::{Path, PathBuf};
+use tracing::warn;
+
+use super::types::{EmptyParams, KilnPathRequest, PathRequest};
+use super::DaemonClient;
+
+/// Request for `kiln.open`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct KilnOpenRequest {
+    pub path: String,
+    pub process: bool,
+    pub force: bool,
+}
+
+/// Request for `kiln.set_classification`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct KilnSetClassificationRequest {
+    pub path: String,
+    pub classification: String,
+}
+
+/// Request for `get_note_by_name`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct GetNoteByNameRequest {
+    pub kiln: String,
+    pub name: String,
+}
+
+/// Request for `note.upsert`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct NoteUpsertRequest {
+    pub kiln: String,
+    pub note: serde_json::Value,
+}
+
+/// Request for `note.get` and `note.delete`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct NotePathRequest {
+    pub kiln: String,
+    pub path: String,
+}
+
+/// Request for `process_batch`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ProcessBatchRequest {
+    pub kiln: String,
+    pub paths: Vec<String>,
+}
+
+/// Request for `storage.backup`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StorageBackupRequest {
+    pub kiln: String,
+    pub dest: String,
+}
+
+/// Request for `storage.restore`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StorageRestoreRequest {
+    pub kiln: String,
+    pub source: String,
+}
+
+/// Request for `mcp.start`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct McpStartRequest {
+    pub kiln_path: String,
+    pub no_just: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transport: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub just_dir: Option<String>,
+}
+
+/// Request for `search_vectors`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SearchVectorsRequest {
+    pub kiln: String,
+    pub vector: Vec<f32>,
+    pub limit: usize,
+}
+
+/// Request for `list_notes`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ListNotesRequest {
+    pub kiln: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path_filter: Option<String>,
+}
+
+impl DaemonClient {
+    // =========================================================================
+    // Kiln RPC Methods
+    // =========================================================================
+
+    pub async fn kiln_open(&self, path: &Path) -> Result<()> {
+        self.kiln_open_with_options(path, false, false).await?;
+        Ok(())
+    }
+
+    pub async fn kiln_open_with_options(
+        &self,
+        path: &Path,
+        process: bool,
+        force: bool,
+    ) -> Result<serde_json::Value> {
+        self.typed_call(
+            "kiln.open",
+            KilnOpenRequest {
+                path: path.to_string_lossy().to_string(),
+                process,
+                force,
+            },
+        )
+        .await
+    }
+
+    pub async fn kiln_set_classification(&self, path: &Path, classification: &str) -> Result<()> {
+        let _: serde_json::Value = self
+            .typed_call(
+                "kiln.set_classification",
+                KilnSetClassificationRequest {
+                    path: path.to_string_lossy().to_string(),
+                    classification: classification.to_string(),
+                },
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn kiln_list(&self) -> Result<Vec<serde_json::Value>> {
+        let result: serde_json::Value = self.typed_call("kiln.list", EmptyParams {}).await?;
+        Ok(result.as_array().cloned().unwrap_or_default())
+    }
+
+    // =========================================================================
+    // Search RPC Methods
+    // =========================================================================
+
+    pub async fn search_vectors(
+        &self,
+        kiln_path: &Path,
+        vector: &[f32],
+        limit: usize,
+    ) -> Result<Vec<(String, f64)>> {
+        let result: serde_json::Value = self
+            .typed_call(
+                "search_vectors",
+                SearchVectorsRequest {
+                    kiln: kiln_path.to_string_lossy().to_string(),
+                    vector: vector.to_vec(),
+                    limit,
+                },
+            )
+            .await?;
+
+        let results: Vec<(String, f64)> = result
+            .as_array()
+            .unwrap_or(&vec![])
+            .iter()
+            .filter_map(|item| {
+                let doc_id = item.get("document_id")?.as_str()?.to_string();
+                let score = item.get("score")?.as_f64()?;
+                Some((doc_id, score))
+            })
+            .collect();
+
+        Ok(results)
+    }
+
+    pub async fn list_notes(
+        &self,
+        kiln_path: &Path,
+        path_filter: Option<&str>,
+    ) -> Result<Vec<(String, String, Option<String>, Vec<String>, Option<String>)>> {
+        let result: serde_json::Value = self
+            .typed_call(
+                "list_notes",
+                ListNotesRequest {
+                    kiln: kiln_path.to_string_lossy().to_string(),
+                    path_filter: path_filter.map(|f| f.to_string()),
+                },
+            )
+            .await?;
+
+        let notes: Vec<_> = result
+            .as_array()
+            .unwrap_or(&vec![])
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, item)| {
+                let name = item.get("name").and_then(|v| v.as_str());
+                let path = item.get("path").and_then(|v| v.as_str());
+
+                if name.is_none() || path.is_none() {
+                    warn!(
+                        idx,
+                        has_name = name.is_some(),
+                        has_path = path.is_some(),
+                        "Skipping malformed note record in list_notes response"
+                    );
+                    return None;
+                }
+
+                let name = name.unwrap().to_string();
+                let path = path.unwrap().to_string();
+                let title = item.get("title").and_then(|v| v.as_str()).map(String::from);
+                let tags: Vec<String> = item
+                    .get("tags")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|t| t.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let updated_at = item
+                    .get("updated_at")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                Some((name, path, title, tags, updated_at))
+            })
+            .collect();
+
+        Ok(notes)
+    }
+
+    pub async fn get_note_by_name(
+        &self,
+        kiln_path: &Path,
+        name: &str,
+    ) -> Result<Option<serde_json::Value>> {
+        let result: serde_json::Value = self
+            .typed_call(
+                "get_note_by_name",
+                GetNoteByNameRequest {
+                    kiln: kiln_path.to_string_lossy().to_string(),
+                    name: name.to_string(),
+                },
+            )
+            .await?;
+
+        if result.is_null() {
+            Ok(None)
+        } else {
+            Ok(Some(result))
+        }
+    }
+
+    // =========================================================================
+    // NoteStore RPC Methods
+    // =========================================================================
+
+    pub async fn note_upsert(
+        &self,
+        kiln_path: &Path,
+        note: &crucible_core::storage::NoteRecord,
+    ) -> Result<()> {
+        let _: serde_json::Value = self
+            .typed_call(
+                "note.upsert",
+                NoteUpsertRequest {
+                    kiln: kiln_path.to_string_lossy().to_string(),
+                    note: serde_json::to_value(note)?,
+                },
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn note_get(
+        &self,
+        kiln_path: &Path,
+        path: &str,
+    ) -> Result<Option<crucible_core::storage::NoteRecord>> {
+        let result: serde_json::Value = self
+            .typed_call(
+                "note.get",
+                NotePathRequest {
+                    kiln: kiln_path.to_string_lossy().to_string(),
+                    path: path.to_string(),
+                },
+            )
+            .await?;
+
+        if result.is_null() {
+            Ok(None)
+        } else {
+            let note: crucible_core::storage::NoteRecord = serde_json::from_value(result)?;
+            Ok(Some(note))
+        }
+    }
+
+    pub async fn note_delete(&self, kiln_path: &Path, path: &str) -> Result<()> {
+        let _: serde_json::Value = self
+            .typed_call(
+                "note.delete",
+                NotePathRequest {
+                    kiln: kiln_path.to_string_lossy().to_string(),
+                    path: path.to_string(),
+                },
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn note_list(
+        &self,
+        kiln_path: &Path,
+    ) -> Result<Vec<crucible_core::storage::NoteRecord>> {
+        self.typed_call(
+            "note.list",
+            KilnPathRequest {
+                kiln: kiln_path.to_string_lossy().to_string(),
+            },
+        )
+        .await
+    }
+
+    // =========================================================================
+    // Pipeline RPC Methods
+    // =========================================================================
+
+    pub async fn process_batch(
+        &self,
+        kiln_path: &Path,
+        file_paths: &[PathBuf],
+    ) -> Result<(usize, usize, Vec<(String, String)>)> {
+        let paths: Vec<String> = file_paths
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
+
+        let result: serde_json::Value = self
+            .typed_call(
+                "process_batch",
+                ProcessBatchRequest {
+                    kiln: kiln_path.to_string_lossy().to_string(),
+                    paths,
+                },
+            )
+            .await?;
+
+        let processed = result
+            .get("processed")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
+        let skipped = result.get("skipped").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+
+        let errors: Vec<(String, String)> = result
+            .get("errors")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|e| {
+                        let path = e.get("path")?.as_str()?.to_string();
+                        let error = e.get("error")?.as_str()?.to_string();
+                        Some((path, error))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        Ok((processed, skipped, errors))
+    }
+
+    // =========================================================================
+    // Storage Maintenance RPC Methods (stubs)
+    // =========================================================================
+
+    pub async fn storage_verify(&self, kiln_path: &Path) -> Result<serde_json::Value> {
+        self.typed_call(
+            "storage.verify",
+            KilnPathRequest {
+                kiln: kiln_path.to_string_lossy().to_string(),
+            },
+        )
+        .await
+    }
+
+    pub async fn storage_cleanup(&self, kiln_path: &Path) -> Result<serde_json::Value> {
+        self.typed_call(
+            "storage.cleanup",
+            KilnPathRequest {
+                kiln: kiln_path.to_string_lossy().to_string(),
+            },
+        )
+        .await
+    }
+
+    pub async fn storage_backup(&self, kiln_path: &Path, dest: &Path) -> Result<serde_json::Value> {
+        self.typed_call(
+            "storage.backup",
+            StorageBackupRequest {
+                kiln: kiln_path.to_string_lossy().to_string(),
+                dest: dest.to_string_lossy().to_string(),
+            },
+        )
+        .await
+    }
+
+    pub async fn storage_restore(
+        &self,
+        kiln_path: &Path,
+        source: &Path,
+    ) -> Result<serde_json::Value> {
+        self.typed_call(
+            "storage.restore",
+            StorageRestoreRequest {
+                kiln: kiln_path.to_string_lossy().to_string(),
+                source: source.to_string_lossy().to_string(),
+            },
+        )
+        .await
+    }
+
+    // =========================================================================
+    // MCP Server RPC Methods
+    // =========================================================================
+
+    /// Start the daemon-managed MCP server.
+    ///
+    /// Spawns an MCP server exposing Crucible's tools for the given kiln.
+    /// Supports SSE (default) and stdio transports.
+    pub async fn mcp_start(
+        &self,
+        kiln_path: &str,
+        transport: Option<&str>,
+        port: Option<u16>,
+        no_just: bool,
+        just_dir: Option<&str>,
+    ) -> Result<serde_json::Value> {
+        self.typed_call(
+            "mcp.start",
+            McpStartRequest {
+                kiln_path: kiln_path.to_string(),
+                no_just,
+                transport: transport.map(|t| t.to_string()),
+                port,
+                just_dir: just_dir.map(|d| d.to_string()),
+            },
+        )
+        .await
+    }
+
+    /// Stop the daemon-managed MCP server.
+    pub async fn mcp_stop(&self) -> Result<serde_json::Value> {
+        self.typed_call("mcp.stop", EmptyParams {}).await
+    }
+
+    /// Get the status of the daemon-managed MCP server.
+    pub async fn mcp_status(&self) -> Result<serde_json::Value> {
+        self.typed_call("mcp.status", EmptyParams {}).await
+    }
+
+    // =========================================================================
+    // Project RPC Methods
+    // =========================================================================
+
+    pub async fn project_register(&self, path: &Path) -> Result<crucible_core::Project> {
+        self.typed_call_with_retry(
+            "project.register",
+            PathRequest {
+                path: path.to_string_lossy().to_string(),
+            },
+        )
+        .await
+    }
+
+    pub async fn project_unregister(&self, path: &Path) -> Result<()> {
+        let _: serde_json::Value = self
+            .typed_call_with_retry(
+                "project.unregister",
+                PathRequest {
+                    path: path.to_string_lossy().to_string(),
+                },
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn project_list(&self) -> Result<Vec<crucible_core::Project>> {
+        self.typed_call_with_retry("project.list", EmptyParams {})
+            .await
+    }
+
+    pub async fn project_get(&self, path: &Path) -> Result<Option<crucible_core::Project>> {
+        let result: serde_json::Value = self
+            .typed_call_with_retry(
+                "project.get",
+                PathRequest {
+                    path: path.to_string_lossy().to_string(),
+                },
+            )
+            .await?;
+
+        if result.is_null() {
+            Ok(None)
+        } else {
+            Ok(Some(serde_json::from_value(result)?))
+        }
+    }
+}

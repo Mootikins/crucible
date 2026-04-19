@@ -252,63 +252,6 @@ pub(crate) fn discover_plugins_for_kiln(
         .collect())
 }
 
-#[cfg(test)]
-mod discover_plugins_tests {
-    use super::*;
-    use std::fs;
-    use tempfile::TempDir;
-
-    /// Create a minimal valid plugin inside `<root>/plugins/<name>/`.
-    ///
-    /// `PluginManager::initialize` searches the kiln's `plugins/` subdirectory
-    /// (among others), so this is the canonical per-kiln install location.
-    fn write_kiln_plugin(kiln_root: &Path, name: &str, version: &str) {
-        let plugin_dir = kiln_root.join("plugins").join(name);
-        fs::create_dir_all(&plugin_dir).unwrap();
-        fs::write(
-            plugin_dir.join("plugin.yaml"),
-            format!("name: {name}\nversion: \"{version}\"\nmain: init.lua\n"),
-        )
-        .unwrap();
-        fs::write(
-            plugin_dir.join("init.lua"),
-            "return { setup = function() end }\n",
-        )
-        .unwrap();
-    }
-
-    #[test]
-    fn returns_ok_for_empty_kiln() {
-        let kiln = TempDir::new().unwrap();
-        let result = discover_plugins_for_kiln(kiln.path());
-        // `PluginManager::initialize` might still find plugins from the user's
-        // config_dir; we only assert the call itself succeeds and returns a
-        // Vec. The projection shape is covered by `projects_kiln_plugin`.
-        assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
-    }
-
-    #[test]
-    fn projects_kiln_plugin_into_status_entry() {
-        let kiln = TempDir::new().unwrap();
-        write_kiln_plugin(kiln.path(), "krohn-test-plugin", "0.1.0");
-
-        let entries = discover_plugins_for_kiln(kiln.path()).expect("discovery succeeds");
-        let entry = entries
-            .iter()
-            .find(|e| e.name == "krohn-test-plugin")
-            .unwrap_or_else(|| {
-                panic!(
-                    "expected 'krohn-test-plugin' in results, got {:?}",
-                    entries.iter().map(|e| &e.name).collect::<Vec<_>>()
-                )
-            });
-
-        assert_eq!(entry.version, "0.1.0");
-        // `state` is `Loaded` / `Error` / etc. — stringified variant.
-        assert!(!entry.state.is_empty());
-    }
-}
-
 pub(crate) async fn handle_lua_plugin_health(req: Request) -> Response {
     let plugin_path_str = require_param!(req, "plugin_path", as_str).to_string();
     let plugin_path = PathBuf::from(&plugin_path_str);
@@ -686,3 +629,60 @@ pub(super) fn collect_plugin_test_files(dir: &Path, out: &mut Vec<PathBuf>) -> R
 // ─────────────────────────────────────────────────────────────────────────────
 // Storage maintenance RPC stubs
 // ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod discover_plugins_tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    /// Create a minimal valid plugin inside `<root>/plugins/<name>/`.
+    ///
+    /// `PluginManager::initialize` searches the kiln's `plugins/` subdirectory
+    /// (among others), so this is the canonical per-kiln install location.
+    fn write_kiln_plugin(kiln_root: &Path, name: &str, version: &str) {
+        let plugin_dir = kiln_root.join("plugins").join(name);
+        fs::create_dir_all(&plugin_dir).unwrap();
+        fs::write(
+            plugin_dir.join("plugin.yaml"),
+            format!("name: {name}\nversion: \"{version}\"\nmain: init.lua\n"),
+        )
+        .unwrap();
+        fs::write(
+            plugin_dir.join("init.lua"),
+            "return { setup = function() end }\n",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn returns_ok_for_empty_kiln() {
+        let kiln = TempDir::new().unwrap();
+        let result = discover_plugins_for_kiln(kiln.path());
+        // `PluginManager::initialize` might still find plugins from the user's
+        // config_dir; we only assert the call itself succeeds and returns a
+        // Vec. The projection shape is covered by `projects_kiln_plugin`.
+        assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
+    }
+
+    #[test]
+    fn projects_kiln_plugin_into_status_entry() {
+        let kiln = TempDir::new().unwrap();
+        write_kiln_plugin(kiln.path(), "krohn-test-plugin", "0.1.0");
+
+        let entries = discover_plugins_for_kiln(kiln.path()).expect("discovery succeeds");
+        let entry = entries
+            .iter()
+            .find(|e| e.name == "krohn-test-plugin")
+            .unwrap_or_else(|| {
+                panic!(
+                    "expected 'krohn-test-plugin' in results, got {:?}",
+                    entries.iter().map(|e| &e.name).collect::<Vec<_>>()
+                )
+            });
+
+        assert_eq!(entry.version, "0.1.0");
+        // `state` is `Loaded` / `Error` / etc. — stringified variant.
+        assert!(!entry.state.is_empty());
+    }
+}

@@ -157,8 +157,10 @@ mod tests {
     #[tokio::test]
     async fn permission_override_allow_approves_ask_tools() {
         use crucible_config::components::permissions::{PermissionConfig, PermissionMode};
-        let mut config = PermissionConfig::default();
-        config.default = PermissionMode::Allow;
+        let config = PermissionConfig {
+            default: PermissionMode::Allow,
+            ..Default::default()
+        };
         let gate = DaemonPermissionGate::new(Some(config), false);
         let request = PermRequest::tool("dangerous_tool", json!({}));
         let response = gate.request_permission(request).await;
@@ -171,8 +173,10 @@ mod tests {
     #[tokio::test]
     async fn permission_override_deny_blocks_all_tools() {
         use crucible_config::components::permissions::{PermissionConfig, PermissionMode};
-        let mut config = PermissionConfig::default();
-        config.default = PermissionMode::Deny;
+        let config = PermissionConfig {
+            default: PermissionMode::Deny,
+            ..Default::default()
+        };
         let gate = DaemonPermissionGate::new(Some(config), false);
         let request = PermRequest::tool("dangerous_tool", json!({}));
         let response = gate.request_permission(request).await;

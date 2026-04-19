@@ -29,6 +29,8 @@ jobs:
         run: mkdir -p crates/crucible-web/web/dist && echo "<html></html>" > crates/crucible-web/web/dist/index.html
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --lib --bins --tests -- -W warnings
+      - name: Check for god files
+        run: scripts/check-file-sizes.sh
 
   test:
     name: Test

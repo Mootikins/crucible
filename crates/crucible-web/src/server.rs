@@ -150,7 +150,7 @@ mod tests {
         let origins = build_cors_origins(&web_config);
         let has_origin = |value: &str| {
             let value = HeaderValue::from_str(value).unwrap();
-            origins.iter().any(|origin| origin == value)
+            origins.contains(&value)
         };
 
         assert!(has_origin("http://localhost:3000"));

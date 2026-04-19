@@ -1,0 +1,17 @@
+# Files currently exceeding the 1500-line ceiling enforced by
+# scripts/check-file-sizes.sh. Each entry is a decomposition target.
+#
+# Rules:
+#   - New files over the ceiling are rejected by CI.
+#   - Remove an entry once the file is decomposed below the limit.
+#   - Adding a new entry requires a note in the decomposition plan.
+#
+# Priority batches — see thoughts/shared/plans/2026-04-17-god-file-decomposition.md
+#
+# === Batch 1 (non-daemon, safe to start now) ===
+
+# === Batch 2 (blocked on refactor/daemon-owns-setup) ===
+
+# === Batch 3 (blocked on TUI SessionEventStream stabilization) ===
+
+# === Test files (lowest priority; split when convenient) ===

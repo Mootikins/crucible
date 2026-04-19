@@ -69,8 +69,10 @@ async fn contract_non_interactive_skips_callback_returns_deny() {
 
 #[tokio::test]
 async fn contract_permission_override_allow_bypasses_ask() {
-    let mut config = PermissionConfig::default();
-    config.default = PermissionMode::Allow;
+    let config = PermissionConfig {
+        default: PermissionMode::Allow,
+        ..Default::default()
+    };
 
     let gate = DaemonPermissionGate::new(Some(config), false);
     let request = PermRequest::tool("dangerous_tool", json!({}));
@@ -81,9 +83,11 @@ async fn contract_permission_override_allow_bypasses_ask() {
 
 #[tokio::test]
 async fn contract_permission_override_deny_blocks_even_safe_patterns() {
-    let mut config = PermissionConfig::default();
-    config.default = PermissionMode::Deny;
-    config.deny = vec!["*:*".to_string()];
+    let config = PermissionConfig {
+        default: PermissionMode::Deny,
+        deny: vec!["*:*".to_string()],
+        ..Default::default()
+    };
 
     let gate = DaemonPermissionGate::new(Some(config), true);
     let request = PermRequest::tool("dangerous_tool", json!({"target": "workspace"}));
@@ -106,11 +110,15 @@ async fn contract_non_interactive_safe_actions_still_allowed() {
 
 #[tokio::test]
 async fn agent_specific_permissions_override_global() {
-    let mut global = PermissionConfig::default();
-    global.default = PermissionMode::Ask;
+    let _global = PermissionConfig {
+        default: PermissionMode::Ask,
+        ..Default::default()
+    };
 
-    let mut agent_config = PermissionConfig::default();
-    agent_config.default = PermissionMode::Allow;
+    let agent_config = PermissionConfig {
+        default: PermissionMode::Allow,
+        ..Default::default()
+    };
 
     let gate = DaemonPermissionGate::new(Some(agent_config), false);
     let response = gate
@@ -124,8 +132,10 @@ async fn agent_specific_permissions_override_global() {
 
 #[tokio::test]
 async fn agent_without_permissions_falls_back_to_global() {
-    let mut global = PermissionConfig::default();
-    global.default = PermissionMode::Allow;
+    let global = PermissionConfig {
+        default: PermissionMode::Allow,
+        ..Default::default()
+    };
 
     let gate = DaemonPermissionGate::new(Some(global), false);
     let response = gate
@@ -136,11 +146,15 @@ async fn agent_without_permissions_falls_back_to_global() {
 
 #[tokio::test]
 async fn cli_permissions_override_agent_specific_default() {
-    let mut agent_config = PermissionConfig::default();
-    agent_config.default = PermissionMode::Allow;
+    let agent_config = PermissionConfig {
+        default: PermissionMode::Allow,
+        ..Default::default()
+    };
 
-    let mut override_config = agent_config.clone();
-    override_config.default = PermissionMode::Deny;
+    let override_config = PermissionConfig {
+        default: PermissionMode::Deny,
+        ..agent_config.clone()
+    };
 
     let gate = DaemonPermissionGate::new(Some(override_config), false);
     let response = gate
@@ -154,9 +168,11 @@ async fn cli_permissions_override_agent_specific_default() {
 
 #[tokio::test]
 async fn agent_deny_rules_enforced_even_with_allow_default() {
-    let mut agent_config = PermissionConfig::default();
-    agent_config.default = PermissionMode::Allow;
-    agent_config.deny = vec!["bash:rm *".to_string()];
+    let agent_config = PermissionConfig {
+        default: PermissionMode::Allow,
+        deny: vec!["bash:rm *".to_string()],
+        ..Default::default()
+    };
 
     let gate = DaemonPermissionGate::new(Some(agent_config), false);
     let response = gate
