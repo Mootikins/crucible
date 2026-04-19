@@ -252,3 +252,46 @@ impl std::fmt::Display for ToolProvider {
         }
     }
 }
+
+/// Broad classification of a session event, used to filter events by concern.
+///
+/// Every event belongs to exactly one category. When an event could arguably fit
+/// multiple categories (e.g. an `EmbeddingStored` is both embedding-related and
+/// storage-related) the more specific category wins — `Embedding` here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EventCategory {
+    /// User/participant message.
+    Message,
+    /// Agent response or thinking.
+    Agent,
+    /// Tool call, completion, or discovery.
+    Tool,
+    /// Session lifecycle (start/end/pause/resume/compaction).
+    Lifecycle,
+    /// Delegation to an external agent.
+    Delegation,
+    /// Incremental streaming output.
+    Streaming,
+    /// Structured interaction request/response.
+    Interaction,
+    /// Pre-event interception point (fires before the corresponding action).
+    Pre,
+    /// Note parsed/created/modified/deleted.
+    Note,
+    /// Raw file-system change (pre-parse).
+    File,
+    /// Embedding lifecycle (request/store/fail/batch).
+    Embedding,
+    /// Database persistence for non-embedding entities.
+    Storage,
+    /// Subagent lifecycle.
+    Subagent,
+    /// Background (bash/task) job lifecycle.
+    BackgroundTask,
+    /// MCP server connection/discovery.
+    Mcp,
+    /// User-defined custom event.
+    Custom,
+    /// Anything else that doesn't fit a specific category.
+    Other,
+}

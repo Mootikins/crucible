@@ -12,8 +12,8 @@ use serde_json::Value as JsonValue;
 use std::path::PathBuf;
 
 use super::{
-    EntityType, FileChangeKind, InputType, NoteChangeType, NotePayload, Priority, TerminalStream,
-    ToolProvider,
+    EntityType, EventCategory, FileChangeKind, InputType, NoteChangeType, NotePayload, Priority,
+    TerminalStream, ToolProvider,
 };
 
 /// Internal session events that flow through the daemon's event system but never
@@ -596,107 +596,55 @@ impl InternalSessionEvent {
         }
     }
 
-    /// Check if this is a note-related event.
-    pub fn is_note_event(&self) -> bool {
-        matches!(
-            self,
+    /// Broad classification used for filtering internal events by concern.
+    pub fn category(&self) -> EventCategory {
+        match self {
             Self::NoteParsed { .. }
-                | Self::NoteCreated { .. }
-                | Self::NoteModified { .. }
-                | Self::NoteDeleted { .. }
-        )
-    }
+            | Self::NoteCreated { .. }
+            | Self::NoteModified { .. }
+            | Self::NoteDeleted { .. } => EventCategory::Note,
 
-    /// Check if this is a file system event.
-    pub fn is_file_event(&self) -> bool {
-        matches!(
-            self,
-            Self::FileChanged { .. } | Self::FileDeleted { .. } | Self::FileMoved { .. }
-        )
-    }
+            Self::FileChanged { .. } | Self::FileDeleted { .. } | Self::FileMoved { .. } => {
+                EventCategory::File
+            }
 
-    /// Check if this is an embedding-related event.
-    pub fn is_embedding_event(&self) -> bool {
-        matches!(
-            self,
             Self::EmbeddingRequested { .. }
-                | Self::EmbeddingStored { .. }
-                | Self::EmbeddingFailed { .. }
-                | Self::EmbeddingBatchComplete { .. }
-                | Self::EmbeddingModelMismatch { .. }
-        )
-    }
+            | Self::EmbeddingStored { .. }
+            | Self::EmbeddingFailed { .. }
+            | Self::EmbeddingBatchComplete { .. }
+            | Self::EmbeddingModelMismatch { .. } => EventCategory::Embedding,
 
-    /// Check if this is a storage event.
-    pub fn is_storage_event(&self) -> bool {
-        matches!(
-            self,
             Self::EntityStored { .. }
-                | Self::EntityDeleted { .. }
-                | Self::BlocksUpdated { .. }
-                | Self::RelationStored { .. }
-                | Self::RelationDeleted { .. }
-                | Self::TagAssociated { .. }
-                | Self::EmbeddingRequested { .. }
-                | Self::EmbeddingStored { .. }
-                | Self::EmbeddingFailed { .. }
-                | Self::EmbeddingBatchComplete { .. }
-        )
-    }
+            | Self::EntityDeleted { .. }
+            | Self::BlocksUpdated { .. }
+            | Self::RelationStored { .. }
+            | Self::RelationDeleted { .. }
+            | Self::TagAssociated { .. } => EventCategory::Storage,
 
-    /// Check if this is a pre-event (interception point).
-    pub fn is_pre_event(&self) -> bool {
-        matches!(
-            self,
-            Self::PreToolCall { .. } | Self::PreParse { .. } | Self::PreLlmCall { .. }
-        )
-    }
+            Self::PreToolCall { .. } | Self::PreParse { .. } | Self::PreLlmCall { .. } => {
+                EventCategory::Pre
+            }
 
-    /// Check if this is a lifecycle event.
-    pub fn is_lifecycle_event(&self) -> bool {
-        matches!(
-            self,
             Self::SessionCompacted { .. }
-                | Self::SessionStateChanged { .. }
-                | Self::SessionPaused { .. }
-                | Self::SessionResumed { .. }
-        )
-    }
+            | Self::SessionStateChanged { .. }
+            | Self::SessionPaused { .. }
+            | Self::SessionResumed { .. } => EventCategory::Lifecycle,
 
-    /// Check if this is a subagent event.
-    pub fn is_subagent_event(&self) -> bool {
-        matches!(
-            self,
             Self::SubagentSpawned { .. }
-                | Self::SubagentCompleted { .. }
-                | Self::SubagentFailed { .. }
-        )
-    }
+            | Self::SubagentCompleted { .. }
+            | Self::SubagentFailed { .. } => EventCategory::Subagent,
 
-    /// Check if this is a background task event.
-    pub fn is_background_task_event(&self) -> bool {
-        matches!(
-            self,
             Self::BashTaskSpawned { .. }
-                | Self::BashTaskCompleted { .. }
-                | Self::BashTaskFailed { .. }
-                | Self::BackgroundTaskCompleted { .. }
-        )
-    }
+            | Self::BashTaskCompleted { .. }
+            | Self::BashTaskFailed { .. }
+            | Self::BackgroundTaskCompleted { .. } => EventCategory::BackgroundTask,
 
-    /// Check if this is a tool-related event.
-    pub fn is_tool_event(&self) -> bool {
-        matches!(self, Self::ToolDiscovered { .. })
-    }
+            Self::ToolDiscovered { .. } => EventCategory::Tool,
+            Self::TerminalOutput { .. } => EventCategory::Streaming,
+            Self::McpAttached { .. } => EventCategory::Mcp,
 
-    /// Check if this is a streaming event.
-    pub fn is_streaming_event(&self) -> bool {
-        matches!(self, Self::TerminalOutput { .. })
-    }
-
-    /// Check if this is an MCP-related event.
-    pub fn is_mcp_event(&self) -> bool {
-        matches!(self, Self::McpAttached { .. })
+            _ => EventCategory::Other,
+        }
     }
 
     /// Estimate content length for token estimation.

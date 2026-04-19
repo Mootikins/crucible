@@ -266,64 +266,93 @@ fn test_session_event_identifier() {
 #[test]
 fn test_session_event_category_helpers() {
     // Tool events
-    assert!(SessionEvent::ToolCalled {
-        name: "".into(),
-        args: JsonValue::Null,
-        description: None,
-        source: None,
-    }
-    .is_tool_event());
-    assert!(SessionEvent::ToolCompleted {
-        name: "".into(),
-        result: "".into(),
-        error: None
-    }
-    .is_tool_event());
-    assert!(!SessionEvent::MessageReceived {
-        content: "".into(),
-        participant_id: "".into()
-    }
-    .is_tool_event());
+    assert!(
+        SessionEvent::ToolCalled {
+            name: "".into(),
+            args: JsonValue::Null,
+            description: None,
+            source: None,
+        }
+        .category()
+            == EventCategory::Tool
+    );
+    assert!(
+        SessionEvent::ToolCompleted {
+            name: "".into(),
+            result: "".into(),
+            error: None
+        }
+        .category()
+            == EventCategory::Tool
+    );
+    assert!(
+        SessionEvent::MessageReceived {
+            content: "".into(),
+            participant_id: "".into()
+        }
+        .category()
+            != EventCategory::Tool
+    );
 
     // Note events
-    assert!(SessionEvent::internal(InternalSessionEvent::NoteParsed {
-        path: PathBuf::new(),
-        block_count: 0,
-        payload: None,
-    })
-    .is_note_event());
-    assert!(SessionEvent::internal(InternalSessionEvent::NoteCreated {
-        path: PathBuf::new(),
-        title: None
-    })
-    .is_note_event());
-    assert!(SessionEvent::internal(InternalSessionEvent::NoteDeleted {
-        path: PathBuf::from("/notes/test.md"),
-        existed: true,
-    })
-    .is_note_event());
-    assert!(!SessionEvent::ToolCalled {
-        name: "".into(),
-        args: JsonValue::Null,
-        description: None,
-        source: None,
-    }
-    .is_note_event());
+    assert!(
+        SessionEvent::internal(InternalSessionEvent::NoteParsed {
+            path: PathBuf::new(),
+            block_count: 0,
+            payload: None,
+        })
+        .category()
+            == EventCategory::Note
+    );
+    assert!(
+        SessionEvent::internal(InternalSessionEvent::NoteCreated {
+            path: PathBuf::new(),
+            title: None
+        })
+        .category()
+            == EventCategory::Note
+    );
+    assert!(
+        SessionEvent::internal(InternalSessionEvent::NoteDeleted {
+            path: PathBuf::from("/notes/test.md"),
+            existed: true,
+        })
+        .category()
+            == EventCategory::Note
+    );
+    assert!(
+        SessionEvent::ToolCalled {
+            name: "".into(),
+            args: JsonValue::Null,
+            description: None,
+            source: None,
+        }
+        .category()
+            != EventCategory::Note
+    );
 
     // Lifecycle events
-    assert!(SessionEvent::SessionStarted {
-        config: SessionEventConfig::default()
-    }
-    .is_lifecycle_event());
-    assert!(SessionEvent::SessionEnded { reason: "".into() }.is_lifecycle_event());
+    assert!(
+        SessionEvent::SessionStarted {
+            config: SessionEventConfig::default()
+        }
+        .category()
+            == EventCategory::Lifecycle
+    );
+    assert!(
+        SessionEvent::SessionEnded { reason: "".into() }.category() == EventCategory::Lifecycle
+    );
 
     // Agent events
-    assert!(SessionEvent::AgentResponded {
-        content: "".into(),
-        tool_calls: vec![]
-    }
-    .is_agent_event());
-    assert!(SessionEvent::AgentThinking { thought: "".into() }.is_agent_event());
+    assert!(
+        SessionEvent::AgentResponded {
+            content: "".into(),
+            tool_calls: vec![]
+        }
+        .category()
+            == EventCategory::Agent
+    );
+    assert!(SessionEvent::AgentThinking { thought: "".into() }.category() == EventCategory::Agent);
 
     // Subagent events
     assert!(
@@ -331,37 +360,53 @@ fn test_session_event_category_helpers() {
             id: "".into(),
             prompt: "".into()
         })
-        .is_subagent_event()
+        .category()
+            == EventCategory::Subagent
     );
 
     // Streaming events
-    assert!(SessionEvent::TextDelta {
-        delta: "".into(),
-        seq: 0
-    }
-    .is_streaming_event());
+    assert!(
+        SessionEvent::TextDelta {
+            delta: "".into(),
+            seq: 0
+        }
+        .category()
+            == EventCategory::Streaming
+    );
 
     // File events
-    assert!(SessionEvent::internal(InternalSessionEvent::FileChanged {
-        path: PathBuf::new(),
-        kind: FileChangeKind::Created
-    })
-    .is_file_event());
-    assert!(SessionEvent::internal(InternalSessionEvent::FileDeleted {
-        path: PathBuf::new()
-    })
-    .is_file_event());
-    assert!(SessionEvent::internal(InternalSessionEvent::FileMoved {
-        from: PathBuf::new(),
-        to: PathBuf::new()
-    })
-    .is_file_event());
+    assert!(
+        SessionEvent::internal(InternalSessionEvent::FileChanged {
+            path: PathBuf::new(),
+            kind: FileChangeKind::Created
+        })
+        .category()
+            == EventCategory::File
+    );
+    assert!(
+        SessionEvent::internal(InternalSessionEvent::FileDeleted {
+            path: PathBuf::new()
+        })
+        .category()
+            == EventCategory::File
+    );
+    assert!(
+        SessionEvent::internal(InternalSessionEvent::FileMoved {
+            from: PathBuf::new(),
+            to: PathBuf::new()
+        })
+        .category()
+            == EventCategory::File
+    );
     // File events are not note events
-    assert!(!SessionEvent::internal(InternalSessionEvent::FileChanged {
-        path: PathBuf::new(),
-        kind: FileChangeKind::Modified
-    })
-    .is_note_event());
+    assert!(
+        SessionEvent::internal(InternalSessionEvent::FileChanged {
+            path: PathBuf::new(),
+            kind: FileChangeKind::Modified
+        })
+        .category()
+            != EventCategory::Note
+    );
 
     // Embedding events
     assert!(
@@ -370,7 +415,8 @@ fn test_session_event_category_helpers() {
             block_id: None,
             priority: Priority::Normal
         })
-        .is_embedding_event()
+        .category()
+            == EventCategory::Embedding
     );
     assert!(
         SessionEvent::internal(InternalSessionEvent::EmbeddingStored {
@@ -379,7 +425,8 @@ fn test_session_event_category_helpers() {
             dimensions: 0,
             model: "".into()
         })
-        .is_embedding_event()
+        .category()
+            == EventCategory::Embedding
     );
     assert!(
         SessionEvent::internal(InternalSessionEvent::EmbeddingFailed {
@@ -387,7 +434,8 @@ fn test_session_event_category_helpers() {
             block_id: None,
             error: "".into()
         })
-        .is_embedding_event()
+        .category()
+            == EventCategory::Embedding
     );
     assert!(
         SessionEvent::internal(InternalSessionEvent::EmbeddingBatchComplete {
@@ -395,38 +443,52 @@ fn test_session_event_category_helpers() {
             count: 5,
             duration_ms: 100
         })
-        .is_embedding_event()
+        .category()
+            == EventCategory::Embedding
     );
     // Non-embedding events
-    assert!(!SessionEvent::internal(InternalSessionEvent::EntityStored {
-        entity_id: "".into(),
-        entity_type: EntityType::Note
-    })
-    .is_embedding_event());
+    assert!(
+        SessionEvent::internal(InternalSessionEvent::EntityStored {
+            entity_id: "".into(),
+            entity_type: EntityType::Note
+        })
+        .category()
+            != EventCategory::Embedding
+    );
 
     // Storage events
-    assert!(SessionEvent::internal(InternalSessionEvent::EntityStored {
-        entity_id: "".into(),
-        entity_type: EntityType::Note
-    })
-    .is_storage_event());
-    assert!(SessionEvent::internal(InternalSessionEvent::EntityDeleted {
-        entity_id: "".into(),
-        entity_type: EntityType::Note
-    })
-    .is_storage_event());
-    assert!(SessionEvent::internal(InternalSessionEvent::BlocksUpdated {
-        entity_id: "".into(),
-        block_count: 0
-    })
-    .is_storage_event());
+    assert!(
+        SessionEvent::internal(InternalSessionEvent::EntityStored {
+            entity_id: "".into(),
+            entity_type: EntityType::Note
+        })
+        .category()
+            == EventCategory::Storage
+    );
+    assert!(
+        SessionEvent::internal(InternalSessionEvent::EntityDeleted {
+            entity_id: "".into(),
+            entity_type: EntityType::Note
+        })
+        .category()
+            == EventCategory::Storage
+    );
+    assert!(
+        SessionEvent::internal(InternalSessionEvent::BlocksUpdated {
+            entity_id: "".into(),
+            block_count: 0
+        })
+        .category()
+            == EventCategory::Storage
+    );
     assert!(
         SessionEvent::internal(InternalSessionEvent::RelationStored {
             from_id: "".into(),
             to_id: "".into(),
             relation_type: "".into()
         })
-        .is_storage_event()
+        .category()
+            == EventCategory::Storage
     );
     assert!(
         SessionEvent::internal(InternalSessionEvent::RelationDeleted {
@@ -434,61 +496,39 @@ fn test_session_event_category_helpers() {
             to_id: "".into(),
             relation_type: "".into()
         })
-        .is_storage_event()
+        .category()
+            == EventCategory::Storage
     );
-    assert!(
-        SessionEvent::internal(InternalSessionEvent::EmbeddingRequested {
-            entity_id: "".into(),
-            block_id: None,
-            priority: Priority::Normal
-        })
-        .is_storage_event()
-    );
-    assert!(
-        SessionEvent::internal(InternalSessionEvent::EmbeddingStored {
-            entity_id: "".into(),
-            block_id: None,
-            dimensions: 0,
-            model: "".into()
-        })
-        .is_storage_event()
-    );
-    assert!(
-        SessionEvent::internal(InternalSessionEvent::EmbeddingFailed {
-            entity_id: "".into(),
-            block_id: None,
-            error: "".into()
-        })
-        .is_storage_event()
-    );
-    assert!(
-        SessionEvent::internal(InternalSessionEvent::EmbeddingBatchComplete {
-            entity_id: "".into(),
-            count: 5,
-            duration_ms: 100
-        })
-        .is_storage_event()
-    );
+    // Embedding events are categorized as Embedding, not Storage — single-category semantics.
     // Storage events are not note events
-    assert!(!SessionEvent::internal(InternalSessionEvent::EntityStored {
-        entity_id: "".into(),
-        entity_type: EntityType::Note
-    })
-    .is_note_event());
+    assert!(
+        SessionEvent::internal(InternalSessionEvent::EntityStored {
+            entity_id: "".into(),
+            entity_type: EntityType::Note
+        })
+        .category()
+            != EventCategory::Note
+    );
 
     // MCP events
-    assert!(SessionEvent::internal(InternalSessionEvent::McpAttached {
-        server: "".into(),
-        tool_count: 0
-    })
-    .is_mcp_event());
+    assert!(
+        SessionEvent::internal(InternalSessionEvent::McpAttached {
+            server: "".into(),
+            tool_count: 0
+        })
+        .category()
+            == EventCategory::Mcp
+    );
 
     // Custom events
-    assert!(SessionEvent::Custom {
-        name: "".into(),
-        payload: JsonValue::Null
-    }
-    .is_custom_event());
+    assert!(
+        SessionEvent::Custom {
+            name: "".into(),
+            payload: JsonValue::Null
+        }
+        .category()
+            == EventCategory::Custom
+    );
 }
 
 #[test]

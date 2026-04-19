@@ -75,5 +75,5 @@ fn test_awaiting_input_not_pre_event() {
         input_type: InputType::Message,
         context: None,
     });
-    assert!(!event.is_pre_event());
+    assert!(event.category() != EventCategory::Pre);
 }

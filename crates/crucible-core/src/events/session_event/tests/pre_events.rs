@@ -10,8 +10,8 @@ fn test_pre_tool_call_event_type() {
         args: serde_json::json!({"q": "rust"}),
     });
     assert_eq!(event.event_type(), "pre_tool_call");
-    assert!(event.is_pre_event());
-    assert!(!event.is_tool_event()); // Pre-events are separate from tool events
+    assert!(event.category() == EventCategory::Pre);
+    assert!(event.category() != EventCategory::Tool); // Pre-events are separate from tool events
 }
 
 #[test]
@@ -20,8 +20,8 @@ fn test_pre_parse_event_type() {
         path: PathBuf::from("/notes/test.md"),
     });
     assert_eq!(event.event_type(), "pre_parse");
-    assert!(event.is_pre_event());
-    assert!(!event.is_note_event()); // Pre-events are separate from note events
+    assert!(event.category() == EventCategory::Pre);
+    assert!(event.category() != EventCategory::Note); // Pre-events are separate from note events
 }
 
 #[test]
@@ -31,7 +31,7 @@ fn test_pre_llm_call_event_type() {
         model: "gpt-4".into(),
     });
     assert_eq!(event.event_type(), "pre_llm_call");
-    assert!(event.is_pre_event());
+    assert!(event.category() == EventCategory::Pre);
 }
 
 #[test]

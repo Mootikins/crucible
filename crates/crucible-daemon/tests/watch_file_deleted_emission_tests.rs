@@ -3,7 +3,7 @@
 //! These tests verify that the IndexingHandler correctly emits SessionEvent::FileDeleted
 //! events when processing file deletion events.
 
-use crucible_core::events::{InternalSessionEvent, Priority, SessionEvent};
+use crucible_core::events::{EventCategory, InternalSessionEvent, Priority, SessionEvent};
 use crucible_core::test_support::mocks::MockEventEmitter;
 use crucible_daemon::watch::handlers::IndexingHandler;
 use crucible_daemon::watch::traits::EventHandler;
@@ -257,7 +257,7 @@ async fn test_file_deleted_is_file_event() {
 
     // FileDeleted should be categorized as a file event
     assert!(
-        emitted_events[0].is_file_event(),
+        emitted_events[0].category() == EventCategory::File,
         "FileDeleted should be categorized as a file event"
     );
 }
@@ -280,7 +280,7 @@ async fn test_file_deleted_is_not_note_event() {
 
     // FileDeleted should NOT be categorized as a note event
     assert!(
-        !emitted_events[0].is_note_event(),
+        emitted_events[0].category() != EventCategory::Note,
         "FileDeleted should NOT be categorized as a note event"
     );
 }

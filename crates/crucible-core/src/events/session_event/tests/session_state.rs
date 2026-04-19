@@ -14,7 +14,7 @@ fn test_session_state_changed_event() {
     });
 
     assert_eq!(event.event_type(), "session_state_changed");
-    assert!(event.is_lifecycle_event());
+    assert!(event.category() == EventCategory::Lifecycle);
     assert_eq!(
         event.identifier(),
         "session:state_changed:chat-2025-01-08T1530-abc123"
@@ -33,7 +33,7 @@ fn test_session_paused_event() {
     });
 
     assert_eq!(event.event_type(), "session_paused");
-    assert!(event.is_lifecycle_event());
+    assert!(event.category() == EventCategory::Lifecycle);
     assert_eq!(
         event.identifier(),
         "session:paused:chat-2025-01-08T1530-abc123"
@@ -51,7 +51,7 @@ fn test_session_resumed_event() {
     });
 
     assert_eq!(event.event_type(), "session_resumed");
-    assert!(event.is_lifecycle_event());
+    assert!(event.category() == EventCategory::Lifecycle);
     assert_eq!(
         event.identifier(),
         "session:resumed:chat-2025-01-08T1530-abc123"
@@ -71,8 +71,8 @@ fn test_terminal_output_event() {
     });
 
     assert_eq!(event.event_type(), "terminal_output");
-    assert!(event.is_streaming_event());
-    assert!(!event.is_lifecycle_event());
+    assert!(event.category() == EventCategory::Streaming);
+    assert!(event.category() != EventCategory::Lifecycle);
     assert_eq!(
         event.identifier(),
         "terminal:chat-2025-01-08T1530-abc123:stdout"

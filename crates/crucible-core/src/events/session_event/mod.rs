@@ -24,7 +24,7 @@
 //!     change_type: NoteChangeType::Content,
 //! };
 //!
-//! assert!(event.is_note_event());
+//! assert!(event.category() == EventCategory::Note);
 //! assert_eq!(event.event_type(), "note_modified");
 //! ```
 
@@ -49,7 +49,8 @@ pub use internal::InternalSessionEvent;
 pub use payloads::{NotePayload, SessionEventConfig};
 pub use tool_call::ToolCall;
 pub use types::{
-    EntityType, FileChangeKind, InputType, NoteChangeType, Priority, TerminalStream, ToolProvider,
+    EntityType, EventCategory, FileChangeKind, InputType, NoteChangeType, Priority, TerminalStream,
+    ToolProvider,
 };
 
 /// Events that flow through a session (wire-facing).
@@ -262,131 +263,26 @@ impl SessionEvent {
         identifier_for_event(self)
     }
 
-    /// Check if this is a tool-related event.
-    pub fn is_tool_event(&self) -> bool {
-        match self {
-            Self::ToolCalled { .. } | Self::ToolCompleted { .. } => true,
-            Self::Internal(inner) => inner.is_tool_event(),
-            _ => false,
-        }
-    }
-
-    /// Check if this is a pre-event (interception point).
+    /// Broad classification used for filtering events by concern.
     ///
-    /// Pre-events are emitted before the corresponding action occurs,
-    /// allowing handlers to modify or cancel the operation.
-    pub fn is_pre_event(&self) -> bool {
+    /// Each event belongs to exactly one category; see [`EventCategory`] for the
+    /// tiebreak rule when an event could plausibly fit multiple categories.
+    pub fn category(&self) -> EventCategory {
         match self {
-            Self::Internal(inner) => inner.is_pre_event(),
-            _ => false,
+            Self::MessageReceived { .. } => EventCategory::Message,
+            Self::AgentResponded { .. } | Self::AgentThinking { .. } => EventCategory::Agent,
+            Self::ToolCalled { .. } | Self::ToolCompleted { .. } => EventCategory::Tool,
+            Self::SessionStarted { .. } | Self::SessionEnded { .. } => EventCategory::Lifecycle,
+            Self::DelegationSpawned { .. }
+            | Self::DelegationCompleted { .. }
+            | Self::DelegationFailed { .. } => EventCategory::Delegation,
+            Self::TextDelta { .. } => EventCategory::Streaming,
+            Self::InteractionRequested { .. } | Self::InteractionCompleted { .. } => {
+                EventCategory::Interaction
+            }
+            Self::Custom { .. } => EventCategory::Custom,
+            Self::Internal(inner) => inner.category(),
         }
-    }
-
-    /// Check if this is an interaction event.
-    ///
-    /// Interaction events represent structured user input requests and responses.
-    pub fn is_interaction_event(&self) -> bool {
-        matches!(
-            self,
-            Self::InteractionRequested { .. } | Self::InteractionCompleted { .. }
-        )
-    }
-
-    /// Check if this is a note-related event.
-    pub fn is_note_event(&self) -> bool {
-        match self {
-            Self::Internal(inner) => inner.is_note_event(),
-            _ => false,
-        }
-    }
-
-    /// Check if this is a session lifecycle event.
-    pub fn is_lifecycle_event(&self) -> bool {
-        match self {
-            Self::SessionStarted { .. } | Self::SessionEnded { .. } => true,
-            Self::Internal(inner) => inner.is_lifecycle_event(),
-            _ => false,
-        }
-    }
-
-    /// Check if this is an agent-related event.
-    pub fn is_agent_event(&self) -> bool {
-        matches!(
-            self,
-            Self::AgentResponded { .. } | Self::AgentThinking { .. }
-        )
-    }
-
-    /// Check if this is a subagent-related event.
-    pub fn is_subagent_event(&self) -> bool {
-        match self {
-            Self::Internal(inner) => inner.is_subagent_event(),
-            _ => false,
-        }
-    }
-
-    /// Check if this is a background task event (bash tasks or completion notifications).
-    pub fn is_background_task_event(&self) -> bool {
-        match self {
-            Self::Internal(inner) => inner.is_background_task_event(),
-            _ => false,
-        }
-    }
-
-    /// Check if this is a streaming event.
-    pub fn is_streaming_event(&self) -> bool {
-        match self {
-            Self::TextDelta { .. } => true,
-            Self::Internal(inner) => inner.is_streaming_event(),
-            _ => false,
-        }
-    }
-
-    /// Check if this is a file system event (raw file changes).
-    ///
-    /// File events represent raw file system changes before parsing.
-    /// They are distinct from note events which represent parsed content.
-    pub fn is_file_event(&self) -> bool {
-        match self {
-            Self::Internal(inner) => inner.is_file_event(),
-            _ => false,
-        }
-    }
-
-    /// Check if this is an embedding-related event.
-    ///
-    /// Embedding events track the lifecycle of embedding generation:
-    /// request, success (stored), or failure.
-    pub fn is_embedding_event(&self) -> bool {
-        match self {
-            Self::Internal(inner) => inner.is_embedding_event(),
-            _ => false,
-        }
-    }
-
-    /// Check if this is a storage event (database operations).
-    ///
-    /// Storage events represent persistence operations to the database.
-    /// They are emitted after entities, blocks, relations, tags, or embeddings
-    /// are stored or deleted.
-    pub fn is_storage_event(&self) -> bool {
-        match self {
-            Self::Internal(inner) => inner.is_storage_event(),
-            _ => false,
-        }
-    }
-
-    /// Check if this is an MCP-related event.
-    pub fn is_mcp_event(&self) -> bool {
-        match self {
-            Self::Internal(inner) => inner.is_mcp_event(),
-            _ => false,
-        }
-    }
-
-    /// Check if this is a custom event.
-    pub fn is_custom_event(&self) -> bool {
-        matches!(self, Self::Custom { .. })
     }
 
     /// Get the priority of this event.

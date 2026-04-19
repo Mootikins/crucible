@@ -4,7 +4,9 @@
 //! events when processing FileChanged events. This tests the second stage of the
 //! event pipeline: FileChanged -> ParserHandler -> NoteParsed
 
-use crucible_core::events::{FileChangeKind, InternalSessionEvent, NotePayload, SessionEvent};
+use crucible_core::events::{
+    EventCategory, FileChangeKind, InternalSessionEvent, NotePayload, SessionEvent,
+};
 use crucible_core::test_support::mocks::MockEventEmitter;
 use crucible_daemon::watch::handlers::ParserHandler;
 use std::path::PathBuf;
@@ -394,7 +396,7 @@ async fn test_note_parsed_event_type() {
 
     let event = &emitted_events[0];
     assert_eq!(event.event_type(), "note_parsed");
-    assert!(event.is_note_event());
+    assert!(event.category() == EventCategory::Note);
 }
 
 /// Test that NoteParsed includes path for identifier matching.
