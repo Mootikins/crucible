@@ -22,7 +22,7 @@ pub enum SkillsCommands {
         /// Search query
         query: String,
         /// Maximum results
-        #[arg(short, long, default_value = "10")]
+        #[arg(short = 'n', long, default_value = "10")]
         limit: usize,
     },
 }

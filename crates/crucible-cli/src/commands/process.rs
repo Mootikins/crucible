@@ -8,6 +8,7 @@
 //! sends changed files to the daemon for processing.
 
 use anyhow::Result;
+use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{info, warn};
@@ -15,6 +16,24 @@ use tracing::{info, warn};
 use crate::config::CliConfig;
 use crate::{factories, output};
 use crucible_core::EXCLUDED_DIRS;
+
+#[derive(Serialize)]
+struct ProcessError {
+    path: String,
+    error: String,
+}
+
+#[derive(Serialize)]
+struct ProcessSummary {
+    target: String,
+    mode: &'static str,
+    dry_run: bool,
+    discovered: u64,
+    processed: u64,
+    skipped: u64,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    errors: Vec<ProcessError>,
+}
 
 /// Execute the process command
 ///
@@ -26,6 +45,7 @@ use crucible_core::EXCLUDED_DIRS;
 /// * `verbose` - If true, show detailed progress and timing information
 /// * `dry_run` - If true, preview changes without writing to database
 /// * `parallel` - Optional number of parallel workers (unused -- daemon handles parallelism)
+#[allow(clippy::too_many_arguments)]
 pub async fn execute(
     config: CliConfig,
     path: Option<PathBuf>,
@@ -34,6 +54,7 @@ pub async fn execute(
     verbose: bool,
     dry_run: bool,
     _parallel: Option<usize>,
+    json: bool,
 ) -> Result<()> {
     info!("Starting process command");
 
@@ -43,9 +64,13 @@ pub async fn execute(
     info!("Dry-run mode: {}", dry_run);
 
     // Initialize storage -- always daemon-backed
-    output::info("Initializing storage...");
+    if !json {
+        output::info("Initializing storage...");
+    }
     let storage_handle = factories::get_storage(&config).await?;
-    output::success("Storage initialized (daemon mode)");
+    if !json {
+        output::success("Storage initialized (daemon mode)");
+    }
 
     let client = storage_handle.as_daemon_client().daemon_client();
 
@@ -54,7 +79,20 @@ pub async fn execute(
         if target.is_file() {
             info!("Processing single file: {}", target.display());
             if dry_run {
-                println!("Dry-run: would process {}", target.display());
+                if json {
+                    let summary = ProcessSummary {
+                        target: target.display().to_string(),
+                        mode: "single-file",
+                        dry_run: true,
+                        discovered: 1,
+                        processed: 0,
+                        skipped: 0,
+                        errors: Vec::new(),
+                    };
+                    println!("{}", serde_json::to_string_pretty(&summary)?);
+                } else {
+                    println!("Dry-run: would process {}", target.display());
+                }
                 return Ok(());
             }
 
@@ -62,18 +100,39 @@ pub async fn execute(
             let paths = vec![target.clone()];
             match client.process_batch(&config.kiln_path, &paths).await {
                 Ok((processed, skipped, errors)) => {
-                    println!("Pipeline processing complete!");
-                    println!("  Processed: {} files", processed);
-                    println!("  Skipped (unchanged): {} files", skipped);
-                    if !errors.is_empty() {
-                        println!("  Errors: {} files", errors.len());
-                        for (path, err) in &errors {
-                            eprintln!("  Error: {} - {}", path, err);
+                    if json {
+                        let summary = ProcessSummary {
+                            target: target.display().to_string(),
+                            mode: "single-file",
+                            dry_run: false,
+                            discovered: 1,
+                            processed: processed as u64,
+                            skipped: skipped as u64,
+                            errors: errors
+                                .iter()
+                                .map(|(p, e)| ProcessError {
+                                    path: p.clone(),
+                                    error: e.clone(),
+                                })
+                                .collect(),
+                        };
+                        println!("{}", serde_json::to_string_pretty(&summary)?);
+                    } else {
+                        println!("Pipeline processing complete!");
+                        println!("  Processed: {} files", processed);
+                        println!("  Skipped (unchanged): {} files", skipped);
+                        if !errors.is_empty() {
+                            println!("  Errors: {} files", errors.len());
+                            for (path, err) in &errors {
+                                eprintln!("  Error: {} - {}", path, err);
+                            }
                         }
                     }
                 }
                 Err(e) => {
-                    eprintln!("Error processing file: {}", e);
+                    if !json {
+                        eprintln!("Error processing file: {}", e);
+                    }
                     return Err(e);
                 }
             }
@@ -89,11 +148,26 @@ pub async fn execute(
 
     // Full kiln (or subdirectory) processing -- daemon handles file discovery
     if dry_run {
-        println!("Dry-run: daemon would discover and process all markdown files in kiln");
+        if json {
+            let summary = ProcessSummary {
+                target: target_path.display().to_string(),
+                mode: "kiln",
+                dry_run: true,
+                discovered: 0,
+                processed: 0,
+                skipped: 0,
+                errors: Vec::new(),
+            };
+            println!("{}", serde_json::to_string_pretty(&summary)?);
+        } else {
+            println!("Dry-run: daemon would discover and process all markdown files in kiln");
+        }
         return Ok(());
     }
 
-    println!("Processing kiln via daemon...");
+    if !json {
+        println!("Processing kiln via daemon...");
+    }
     let result = client
         .kiln_open_with_options(&config.kiln_path, true, force)
         .await?;
@@ -108,29 +182,47 @@ pub async fn execute(
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
     let skipped = result.get("skipped").and_then(|v| v.as_u64()).unwrap_or(0);
-    let errors = result
+    let err_entries: Vec<ProcessError> = result
         .get("errors")
         .and_then(|v| v.as_array())
-        .map(|a| a.len())
-        .unwrap_or(0);
+        .map(|arr| {
+            arr.iter()
+                .map(|err| ProcessError {
+                    path: err
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("<unknown>")
+                        .to_string(),
+                    error: err
+                        .get("error")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown error")
+                        .to_string(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
-    println!("Pipeline processing complete!");
-    println!("  Discovered: {} markdown files", discovered);
-    println!("  Processed: {} files", processed);
-    println!("  Skipped (unchanged): {} files", skipped);
-    if errors > 0 {
-        println!("  Errors: {} files", errors);
-        if let Some(err_arr) = result.get("errors").and_then(|v| v.as_array()) {
-            for err in err_arr {
-                let path = err
-                    .get("path")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("<unknown>");
-                let msg = err
-                    .get("error")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown error");
-                eprintln!("  Error: {} - {}", path, msg);
+    if json {
+        let summary = ProcessSummary {
+            target: target_path.display().to_string(),
+            mode: "kiln",
+            dry_run: false,
+            discovered,
+            processed,
+            skipped,
+            errors: err_entries,
+        };
+        println!("{}", serde_json::to_string_pretty(&summary)?);
+    } else {
+        println!("Pipeline processing complete!");
+        println!("  Discovered: {} markdown files", discovered);
+        println!("  Processed: {} files", processed);
+        println!("  Skipped (unchanged): {} files", skipped);
+        if !err_entries.is_empty() {
+            println!("  Errors: {} files", err_entries.len());
+            for err in &err_entries {
+                eprintln!("  Error: {} - {}", err.path, err.error);
             }
         }
     }

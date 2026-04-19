@@ -218,6 +218,10 @@ pub enum Commands {
         /// Number of parallel workers for processing (default: num_cpus / 2)
         #[arg(short = 'j', long = "parallel")]
         parallel: Option<usize>,
+
+        /// Emit a single JSON result summary instead of human-readable text
+        #[arg(long, conflicts_with = "watch")]
+        json: bool,
     },
 
     /// Search kiln notes using semantic and/or text search
@@ -370,11 +374,16 @@ Examples:
 
     /// Evaluate Lua code in the daemon's plugin runtime
     #[command(
-        long_about = "Evaluate Lua code in the daemon's plugin runtime.\n\nRuns code in the same Lua VM that plugins use. Use '=' prefix for expressions.\n\nExamples:\n  # Evaluate an expression\n  cru lua '=1+1'\n\n  # Call a function\n  cru lua 'print(\"hello\")'\n\n  # Inspect the cru namespace\n  cru lua '=cru'"
+        long_about = "Evaluate Lua code in the daemon's plugin runtime.\n\nRuns code in the same Lua VM that plugins use. Use '=' prefix for expressions.\n\nExamples:\n  # Evaluate an expression\n  cru lua '=1+1'\n\n  # Call a function\n  cru lua 'print(\"hello\")'\n\n  # Inspect the cru namespace\n  cru lua '=cru'\n\n  # Run a script file\n  cru lua --file plugin_test.lua\n\n  # Pipe from stdin\n  echo 'print(42)' | cru lua -"
     )]
     Lua {
-        /// Lua code to evaluate. Use '=' prefix for expressions (e.g., '=1+1').
-        code: String,
+        /// Lua code to evaluate. Use '=' prefix for expressions (e.g., '=1+1'),
+        /// or '-' to read from stdin. Mutually exclusive with --file.
+        #[arg(conflicts_with = "file")]
+        code: Option<String>,
+        /// Read Lua code from a file instead of as an argument.
+        #[arg(long, value_name = "PATH")]
+        file: Option<PathBuf>,
     },
 
     /// Initialize a new kiln or project
@@ -448,12 +457,12 @@ Examples:
         force: bool,
     },
 
-    /// Generate shell completion scripts for bash and zsh
+    /// Generate shell completion scripts for bash, zsh, and fish
     #[command(
-        long_about = "Generate shell completion scripts for bash and zsh.\n\nOutput completion script to stdout for installation in your shell configuration.\n\nExamples:\n  # Generate bash completions\n  cru completions bash\n\n  # Generate zsh completions\n  cru completions zsh\n\n  # Install bash completions\n  cru completions bash | sudo tee /etc/bash_completion.d/cru\n\n  # Install zsh completions\n  cru completions zsh | sudo tee /usr/share/zsh/site-functions/_cru"
+        long_about = "Generate shell completion scripts for bash, zsh, and fish.\n\nOutput completion script to stdout for installation in your shell configuration.\n\nExamples:\n  # Generate bash completions\n  cru completions bash\n\n  # Generate zsh completions\n  cru completions zsh\n\n  # Generate fish completions\n  cru completions fish\n\n  # Install bash completions\n  cru completions bash | sudo tee /etc/bash_completion.d/cru\n\n  # Install zsh completions\n  cru completions zsh | sudo tee /usr/share/zsh/site-functions/_cru\n\n  # Install fish completions\n  cru completions fish > ~/.config/fish/completions/cru.fish"
     )]
     Completions {
-        /// Shell type (bash or zsh)
+        /// Shell type (bash, zsh, or fish)
         #[arg(value_name = "SHELL")]
         shell: String,
     },

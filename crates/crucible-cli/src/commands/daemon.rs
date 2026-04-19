@@ -6,6 +6,7 @@ use clap::Subcommand;
 use crucible_daemon::rpc_client::lifecycle::is_daemon_running;
 use crucible_daemon::DaemonClient;
 use crucible_daemon::{socket_path, BindWithPluginConfigParams, Server};
+use serde::Serialize;
 use std::path::PathBuf;
 use std::process::Stdio;
 use tracing::info;
@@ -30,7 +31,11 @@ pub enum DaemonCommands {
         wait: bool,
     },
     /// Check daemon status
-    Status,
+    Status {
+        /// Emit status as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Internal: run as foreground daemon (used by auto-spawn)
     #[command(hide = true)]
     Serve,
@@ -44,7 +49,7 @@ pub async fn handle(cmd: DaemonCommands, config_path: Option<PathBuf>) -> Result
         DaemonCommands::Stop => stop_daemon().await,
         DaemonCommands::Restart { wait: _ } => restart_daemon(config_path).await,
         DaemonCommands::Serve => start_daemon(true, false, config_path).await,
-        DaemonCommands::Status => show_status().await,
+        DaemonCommands::Status { json } => show_status(json).await,
     }
 }
 
@@ -179,35 +184,84 @@ async fn restart_daemon(config_path: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-async fn show_status() -> Result<()> {
+#[derive(Serialize)]
+struct KilnStatus {
+    path: String,
+    last_access_secs_ago: u64,
+}
+
+#[derive(Serialize)]
+struct DaemonStatus {
+    /// "running", "unreachable" (socket present but connect failed), or "stopped"
+    state: &'static str,
+    socket: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    kilns: Vec<KilnStatus>,
+}
+
+async fn show_status(json: bool) -> Result<()> {
     let sock = socket_path();
-    if is_daemon_running(&sock) {
+    let sock_str = sock.display().to_string();
+
+    let status = if is_daemon_running(&sock) {
         match DaemonClient::connect().await {
             Ok(client) => {
-                let _ = client.ping().await?;
-                println!("Daemon is running");
+                client.ping().await?;
+                let kilns = client
+                    .kiln_list()
+                    .await?
+                    .into_iter()
+                    .filter_map(|k| {
+                        let path = k.get("path")?.as_str()?.to_string();
+                        let last_access_secs_ago = k
+                            .get("last_access_secs_ago")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
+                        Some(KilnStatus {
+                            path,
+                            last_access_secs_ago,
+                        })
+                    })
+                    .collect();
+                DaemonStatus {
+                    state: "running",
+                    socket: sock_str,
+                    kilns,
+                }
+            }
+            Err(_) => DaemonStatus {
+                state: "unreachable",
+                socket: sock_str,
+                kilns: Vec::new(),
+            },
+        }
+    } else {
+        DaemonStatus {
+            state: "stopped",
+            socket: sock_str,
+            kilns: Vec::new(),
+        }
+    };
 
-                // Show open kilns
-                let kilns = client.kiln_list().await?;
-                if !kilns.is_empty() {
+    if json {
+        println!("{}", serde_json::to_string_pretty(&status)?);
+    } else {
+        match status.state {
+            "running" => {
+                println!("Daemon is running");
+                if !status.kilns.is_empty() {
                     println!("\nOpen kilns:");
-                    for kiln in kilns {
-                        if let Some(path) = kiln.get("path").and_then(|v| v.as_str()) {
-                            let secs = kiln
-                                .get("last_access_secs_ago")
-                                .and_then(|v| v.as_u64())
-                                .unwrap_or(0);
-                            println!("  {} (last access: {}s ago)", path, secs);
-                        }
+                    for k in &status.kilns {
+                        println!(
+                            "  {} (last access: {}s ago)",
+                            k.path, k.last_access_secs_ago
+                        );
                     }
                 }
             }
-            Err(_) => {
-                println!("Daemon socket exists but cannot connect");
-            }
+            "unreachable" => println!("Daemon socket exists but cannot connect"),
+            _ => println!("Daemon is not running"),
         }
-    } else {
-        println!("Daemon is not running");
     }
 
     Ok(())

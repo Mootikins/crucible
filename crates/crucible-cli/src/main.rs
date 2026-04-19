@@ -278,9 +278,19 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             watch,
             dry_run,
             parallel,
+            json,
         }) => {
-            commands::process::execute(config, path, force, watch, cli.verbose, dry_run, parallel)
-                .await?
+            commands::process::execute(
+                config,
+                path,
+                force,
+                watch,
+                cli.verbose,
+                dry_run,
+                parallel,
+                json,
+            )
+            .await?
         }
 
         Some(Commands::Search {
@@ -331,8 +341,8 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             commands::plugin::execute(config, cmd).await?;
         }
 
-        Some(Commands::Lua { code }) => {
-            commands::lua::execute(code).await?;
+        Some(Commands::Lua { code, file }) => {
+            commands::lua::execute(code, file).await?;
         }
 
         Some(Commands::Init { path, force, yes }) => {
