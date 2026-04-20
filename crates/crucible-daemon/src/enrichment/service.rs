@@ -7,7 +7,6 @@
 use super::types::{BlockEmbedding, EnrichmentMetadata};
 use anyhow::Result;
 use crucible_core::enrichment::{EmbeddingProvider, EnrichedNote};
-use crucible_core::events::{InternalSessionEvent, SessionEvent, SharedEventBus};
 use crucible_core::ParsedNote;
 use std::sync::Arc;
 use tracing::{debug, info};
@@ -23,7 +22,6 @@ pub struct Enricher {
     embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
     min_words_for_embedding: usize,
     max_batch_size: usize,
-    emitter: Option<SharedEventBus<SessionEvent>>,
 }
 
 struct BlockCandidate {
@@ -40,7 +38,6 @@ impl Enricher {
             embedding_provider: Some(embedding_provider),
             min_words_for_embedding: DEFAULT_MIN_WORDS_FOR_EMBEDDING,
             max_batch_size: DEFAULT_MAX_BATCH_SIZE,
-            emitter: None,
         }
     }
 
@@ -50,7 +47,6 @@ impl Enricher {
             embedding_provider: None,
             min_words_for_embedding: DEFAULT_MIN_WORDS_FOR_EMBEDDING,
             max_batch_size: DEFAULT_MAX_BATCH_SIZE,
-            emitter: None,
         }
     }
 
@@ -71,13 +67,6 @@ impl Enricher {
     #[allow(dead_code)] // builder API, exercised by tests
     pub fn with_max_batch_size(mut self, max_batch_size: usize) -> Self {
         self.max_batch_size = max_batch_size;
-        self
-    }
-
-    /// Attach an event bus so batch-complete events reach subscribers.
-    #[allow(dead_code)] // builder API, completes configuration surface
-    pub fn with_emitter(mut self, emitter: SharedEventBus<SessionEvent>) -> Self {
-        self.emitter = Some(emitter);
         self
     }
 
@@ -104,43 +93,18 @@ impl Enricher {
         parsed: ParsedNote,
         changed_blocks: Vec<String>,
     ) -> Result<EnrichedNote> {
-        use std::time::Instant;
-
         info!(
             "Enriching note: {} ({} changed blocks)",
             parsed.path.display(),
             changed_blocks.len()
         );
 
-        let embed_start = Instant::now();
-
         let (embeddings, metadata) = tokio::join!(
             self.generate_embeddings(&parsed, &changed_blocks),
             self.extract_metadata(&parsed),
         );
 
-        let embeddings = embeddings?;
-        let embed_duration = embed_start.elapsed();
-
-        if !embeddings.is_empty() {
-            if let Some(ref emitter) = self.emitter {
-                let entity_id = format!("note:{}", parsed.path.display());
-                drop(emitter.emit(SessionEvent::internal(
-                    InternalSessionEvent::EmbeddingBatchComplete {
-                        entity_id,
-                        count: embeddings.len(),
-                        duration_ms: embed_duration.as_millis() as u64,
-                    },
-                )));
-                debug!(
-                    "Emitted EmbeddingBatchComplete for {} embeddings in {}ms",
-                    embeddings.len(),
-                    embed_duration.as_millis()
-                );
-            }
-        }
-
-        Ok(EnrichedNote::new(parsed, embeddings, metadata?))
+        Ok(EnrichedNote::new(parsed, embeddings?, metadata?))
     }
 
     /// Generate embeddings for changed blocks only.
@@ -476,7 +440,6 @@ fn build_breadcrumbs(parsed: &ParsedNote) -> std::collections::HashMap<usize, St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_core::events::{EmitOutcome, EventEmitter};
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -636,24 +599,6 @@ mod tests {
         note
     }
 
-    #[derive(Default)]
-    struct RecordingEmitter {
-        emitted: std::sync::Mutex<Vec<SessionEvent>>,
-    }
-
-    #[async_trait::async_trait]
-    impl EventEmitter for RecordingEmitter {
-        type Event = SessionEvent;
-
-        async fn emit(
-            &self,
-            event: Self::Event,
-        ) -> crucible_core::events::EmitResult<EmitOutcome<Self::Event>> {
-            self.emitted.lock().unwrap().push(event.clone());
-            Ok(EmitOutcome::new(event))
-        }
-    }
-
     #[tokio::test]
     async fn generate_embeddings_with_empty_changed_blocks_embeds_all() {
         let provider = Arc::new(MockEmbeddingProvider::new());
@@ -739,31 +684,6 @@ mod tests {
 
         let result = service.generate_embeddings(&parsed, &[]).await;
         assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn enrich_with_emitter_keeps_enrichment_successful() {
-        let provider = Arc::new(MockEmbeddingProvider::new());
-        let recording_emitter = Arc::new(RecordingEmitter::default());
-        let service = Enricher::new(provider)
-            .with_emitter(recording_emitter.clone() as Arc<dyn EventEmitter<Event = SessionEvent>>);
-        let parsed = create_test_parsed_note_with_content();
-
-        let enriched = service.enrich(parsed, vec![]).await.unwrap();
-        assert_eq!(enriched.embeddings.len(), 2);
-        assert!(recording_emitter.emitted.lock().unwrap().is_empty());
-    }
-
-    #[tokio::test]
-    async fn enrich_skips_emitter_when_no_embeddings() {
-        let recording_emitter = Arc::new(RecordingEmitter::default());
-        let service = Enricher::without_embeddings()
-            .with_emitter(recording_emitter.clone() as Arc<dyn EventEmitter<Event = SessionEvent>>);
-        let parsed = create_test_parsed_note_with_content();
-
-        let enriched = service.enrich(parsed, vec![]).await.unwrap();
-        assert!(enriched.embeddings.is_empty());
-        assert!(recording_emitter.emitted.lock().unwrap().is_empty());
     }
 
     #[test]

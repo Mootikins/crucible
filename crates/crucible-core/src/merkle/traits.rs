@@ -33,8 +33,8 @@ use crate::parser::ParsedNote;
 ///     }
 /// }
 ///
-/// // Service using the builder
-/// struct EnrichmentService<M: MerkleTreeBuilder> {
+/// // A type that uses the builder
+/// struct DocumentIndexer<M: MerkleTreeBuilder> {
 ///     merkle_builder: M,
 ///     // ... other fields
 /// }
