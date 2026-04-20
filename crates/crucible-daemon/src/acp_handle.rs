@@ -302,9 +302,8 @@ impl AgentHandle for AcpAgentHandle {
                 *guard = Some(owned_client);
             }
 
-            let _ = result_tx.send(result.map(|(content, tools, response)| {
-                (content, tools, response, usage)
-            }));
+            let _ = result_tx
+                .send(result.map(|(content, tools, response)| (content, tools, response, usage)));
         });
 
         type UnfoldState = Option<(

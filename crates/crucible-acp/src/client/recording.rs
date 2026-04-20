@@ -141,13 +141,21 @@ impl Recorder {
 
 impl std::fmt::Debug for Recorder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Recorder").field("path", &self.path).finish()
+        f.debug_struct("Recorder")
+            .field("path", &self.path)
+            .finish()
     }
 }
 
 fn sanitize(name: &str) -> String {
     name.chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -205,7 +213,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("test.jsonl");
         let mut rec = Recorder::create(&path, "claude", Some("basic".into())).unwrap();
-        rec.record_line(Direction::Out, r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#);
+        rec.record_line(
+            Direction::Out,
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#,
+        );
         rec.record_line(Direction::In, r#"{"jsonrpc":"2.0","id":1,"result":{}}"#);
         drop(rec);
 

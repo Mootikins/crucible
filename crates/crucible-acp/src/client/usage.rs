@@ -71,9 +71,8 @@ pub fn extract_usage(result: &Value) -> Option<TokenUsage> {
 
     let prompt_tokens = saturating_u32(input.unwrap_or(0));
     let completion_tokens = saturating_u32(output.unwrap_or(0));
-    let total_tokens = saturating_u32(
-        total.unwrap_or_else(|| input.unwrap_or(0) + output.unwrap_or(0)),
-    );
+    let total_tokens =
+        saturating_u32(total.unwrap_or_else(|| input.unwrap_or(0) + output.unwrap_or(0)));
 
     Some(TokenUsage {
         prompt_tokens,

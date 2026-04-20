@@ -51,7 +51,10 @@ impl std::fmt::Display for DivergenceKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::UnexpectedOutgoing { method } => {
-                write!(f, "client sent unexpected request {method:?}; fixture exhausted")
+                write!(
+                    f,
+                    "client sent unexpected request {method:?}; fixture exhausted"
+                )
             }
             Self::WrongDirection => write!(f, "transport received frame from wrong side"),
             Self::MethodMismatch { expected, actual } => {
@@ -200,7 +203,9 @@ async fn run_driver(
                 Ok(0) => break, // clean EOF
                 Ok(_) => {
                     let method = parse_method(&line).unwrap_or_else(|| "<unknown>".into());
-                    outcome.divergences.push(DivergenceKind::UnexpectedOutgoing { method });
+                    outcome
+                        .divergences
+                        .push(DivergenceKind::UnexpectedOutgoing { method });
                 }
                 Err(_) => break,
             }
@@ -225,9 +230,11 @@ async fn run_driver(
         let parsed: serde_json::Value = match serde_json::from_str(trimmed) {
             Ok(v) => v,
             Err(_) => {
-                outcome.divergences.push(DivergenceKind::UnparseableOutgoing {
-                    raw: trimmed.into(),
-                });
+                outcome
+                    .divergences
+                    .push(DivergenceKind::UnparseableOutgoing {
+                        raw: trimmed.into(),
+                    });
                 continue;
             }
         };

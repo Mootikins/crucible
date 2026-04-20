@@ -24,7 +24,9 @@ use lancedb::{Connection, Table};
 use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
-use crucible_core::storage::{StorageError, StorageResult, StorageResultExt, VectorMatch, VectorStore};
+use crucible_core::storage::{
+    StorageError, StorageResult, StorageResultExt, VectorMatch, VectorStore,
+};
 
 const TABLE_NAME: &str = "vectors";
 const DEFAULT_EMBEDDING_DIM: usize = 768;
@@ -137,8 +139,11 @@ impl LanceVectorIndex {
         let id_arr = StringArray::from(vec![id]);
         let values = Float32Array::from(embedding.to_vec());
         let field = Arc::new(Field::new("item", DataType::Float32, true));
-        let list = FixedSizeListArray::try_new(field, self.dimension as i32, Arc::new(values), None)
-            .map_err(|e| StorageError::Backend(format!("failed to build embedding array: {e}")))?;
+        let list =
+            FixedSizeListArray::try_new(field, self.dimension as i32, Arc::new(values), None)
+                .map_err(|e| {
+                    StorageError::Backend(format!("failed to build embedding array: {e}"))
+                })?;
         RecordBatch::try_new(
             Arc::new(self.schema.clone()),
             vec![Arc::new(id_arr), Arc::new(list)],
@@ -259,8 +264,12 @@ mod tests {
     #[tokio::test]
     async fn upsert_then_search_returns_match() {
         let (_dir, idx) = open_test_index(4).await;
-        idx.upsert("note-a", vec![1.0, 0.0, 0.0, 0.0]).await.unwrap();
-        idx.upsert("note-b", vec![0.0, 1.0, 0.0, 0.0]).await.unwrap();
+        idx.upsert("note-a", vec![1.0, 0.0, 0.0, 0.0])
+            .await
+            .unwrap();
+        idx.upsert("note-b", vec![0.0, 1.0, 0.0, 0.0])
+            .await
+            .unwrap();
 
         let results = idx.search(&[1.0, 0.0, 0.0, 0.0], 2).await.unwrap();
         assert_eq!(results.len(), 2);
@@ -309,12 +318,16 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         {
-            let idx = LanceVectorIndex::open_with_dimension(path_str, 4).await.unwrap();
+            let idx = LanceVectorIndex::open_with_dimension(path_str, 4)
+                .await
+                .unwrap();
             idx.upsert("a", vec![1.0, 0.0, 0.0, 0.0]).await.unwrap();
             idx.upsert("b", vec![0.0, 1.0, 0.0, 0.0]).await.unwrap();
         }
 
-        let idx = LanceVectorIndex::open_with_dimension(path_str, 4).await.unwrap();
+        let idx = LanceVectorIndex::open_with_dimension(path_str, 4)
+            .await
+            .unwrap();
         assert_eq!(idx.count().await.unwrap(), 2);
     }
 }
