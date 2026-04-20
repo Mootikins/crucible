@@ -45,10 +45,9 @@ pub use error_utils::strip_tool_error_prefix;
 pub use interaction_context::{EventPushCallback, InteractionContext};
 pub use kiln::EXCLUDED_DIRS;
 
-// Re-export enrichment traits and types (implementations in crucible-daemon::enrichment)
+// Re-export enrichment types (concrete implementation lives in crucible-daemon::enrichment)
 pub use enrichment::{
     BlockEmbedding, CachedEmbedding, EmbeddingProvider, EnrichedNote, EnrichmentMetadata,
-    EnrichmentService, InferredRelation, RelationType,
 };
 
 // Re-export merkle tree abstractions

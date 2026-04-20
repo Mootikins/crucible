@@ -8,44 +8,32 @@ use serde::{Deserialize, Serialize};
 
 /// A fully enriched note ready for storage
 ///
-/// Contains the original parsed AST plus all enrichment data:
+/// Contains the original parsed AST plus enrichment data:
 /// - Vector embeddings (for changed blocks only)
-/// - Merkle tree (for change detection)
 /// - Extracted metadata (word counts, language, etc.)
-/// - Inferred relations (similarity, clustering, etc.)
 #[derive(Debug, Clone)]
 pub struct EnrichedNote {
     /// Original parsed note with AST
     pub parsed: crate::parser::ParsedNote,
-
-    /// Merkle tree computed from AST (for future change detection)
-    // merkle_tree moved to crucible-daemon::enrichment to avoid circular deps
 
     /// Vector embeddings for blocks (only changed blocks)
     pub embeddings: Vec<BlockEmbedding>,
 
     /// Extracted and computed metadata
     pub metadata: EnrichmentMetadata,
-
-    /// Inferred relations (semantic similarity, etc.)
-    pub inferred_relations: Vec<InferredRelation>,
 }
 
 impl EnrichedNote {
     /// Create a new enriched note
     pub fn new(
         parsed: crate::parser::ParsedNote,
-        // merkle_tree: moved to EnrichedNoteWithTree in crucible-daemon::enrichment
         embeddings: Vec<BlockEmbedding>,
         metadata: EnrichmentMetadata,
-        inferred_relations: Vec<InferredRelation>,
     ) -> Self {
         Self {
             parsed,
-            // merkle_tree,
             embeddings,
             metadata,
-            inferred_relations,
         }
     }
 
@@ -241,73 +229,6 @@ impl EnrichmentMetadata {
     }
 }
 
-/// An inferred relation between notes or blocks
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InferredRelation {
-    /// Source block ID
-    pub source_block_id: String,
-
-    /// Target block ID
-    pub target_block_id: String,
-
-    /// Type of relation (similarity, clustering, etc.)
-    pub relation_type: RelationType,
-
-    /// Confidence score (0.0 to 1.0)
-    pub confidence: f64,
-
-    /// When this relation was inferred
-    pub inferred_at: DateTime<Utc>,
-}
-
-/// Type of inferred relation
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum RelationType {
-    /// Semantic similarity based on embeddings
-    SemanticSimilarity,
-
-    /// Cluster membership (blocks in same semantic cluster)
-    ClusterMembership,
-
-    /// Topic relation (shared topics/concepts)
-    TopicRelation,
-
-    /// Custom relation type
-    Custom(String),
-}
-
-impl InferredRelation {
-    /// Create a new inferred relation
-    pub fn new(
-        source_block_id: String,
-        target_block_id: String,
-        relation_type: RelationType,
-        confidence: f64,
-    ) -> Self {
-        Self {
-            source_block_id,
-            target_block_id,
-            relation_type,
-            confidence: confidence.clamp(0.0, 1.0),
-            inferred_at: Utc::now(),
-        }
-    }
-
-    /// Create a semantic similarity relation
-    pub fn semantic_similarity(
-        source_block_id: String,
-        target_block_id: String,
-        confidence: f64,
-    ) -> Self {
-        Self::new(
-            source_block_id,
-            target_block_id,
-            RelationType::SemanticSimilarity,
-            confidence,
-        )
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -324,34 +245,5 @@ mod tests {
         assert_eq!(embedding.vector(), &[0.1, 0.2, 0.3]);
         assert_eq!(embedding.model(), "test-model");
         assert_eq!(embedding.dimensions(), 3);
-    }
-
-    #[test]
-    fn test_inferred_relation_confidence_clamping() {
-        let relation = InferredRelation::new(
-            "a".to_string(),
-            "b".to_string(),
-            RelationType::SemanticSimilarity,
-            1.5, // Over 1.0
-        );
-
-        assert_eq!(relation.confidence, 1.0);
-
-        let relation2 = InferredRelation::new(
-            "a".to_string(),
-            "b".to_string(),
-            RelationType::SemanticSimilarity,
-            -0.5, // Under 0.0
-        );
-
-        assert_eq!(relation2.confidence, 0.0);
-    }
-
-    #[test]
-    fn test_enrichment_metadata_default() {
-        let metadata = EnrichmentMetadata::default();
-        assert_eq!(metadata.reading_time_minutes, 0.0);
-        assert_eq!(metadata.complexity_score, 0.0);
-        assert_eq!(metadata.language, None);
     }
 }

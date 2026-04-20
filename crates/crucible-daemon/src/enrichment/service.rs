@@ -1,12 +1,11 @@
-//! Enrichment Service
+//! Note enrichment.
 //!
-//! Orchestrates all enrichment operations including embedding generation,
-//! metadata extraction, and relation inference. Follows clean architecture
-//! principles with dependency injection.
+//! Turns a `ParsedNote` + list of changed block IDs into an `EnrichedNote`
+//! ready for storage. Runs embedding generation and metadata extraction in
+//! parallel.
 
-use super::types::{BlockEmbedding, EnrichmentMetadata, InferredRelation};
+use super::types::{BlockEmbedding, EnrichmentMetadata};
 use anyhow::Result;
-use async_trait::async_trait;
 use crucible_core::enrichment::{EmbeddingProvider, EnrichedNote};
 use crucible_core::events::{InternalSessionEvent, SessionEvent, SharedEventBus};
 use crucible_core::ParsedNote;
@@ -19,25 +18,11 @@ pub const DEFAULT_MIN_WORDS_FOR_EMBEDDING: usize = 5;
 /// Default maximum batch size for embedding generation
 pub const DEFAULT_MAX_BATCH_SIZE: usize = 10;
 
-/// Service that orchestrates all enrichment operations
-///
-/// Receives a ParsedNote and list of changed blocks, then coordinates:
-/// - Embedding generation (only for changed blocks)
-/// - Metadata extraction (word counts, language, etc.)
-/// - Relation inference (semantic similarity, clustering)
-///
-/// Returns an EnrichedNote ready for storage.
-pub struct DefaultEnrichmentService {
-    /// Embedding provider (dependency injected)
+/// Enriches parsed notes with embeddings and metadata.
+pub struct Enricher {
     embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
-
-    /// Minimum word count for embedding generation
     min_words_for_embedding: usize,
-
-    /// Maximum blocks to embed in a single batch (prevents memory issues)
     max_batch_size: usize,
-
-    /// Event emitter for SessionEvent emission (EmbeddingBatchComplete, etc.)
     emitter: Option<SharedEventBus<SessionEvent>>,
 }
 
@@ -48,8 +33,8 @@ struct BlockCandidate {
     text: String,
 }
 
-impl DefaultEnrichmentService {
-    /// Create a new enrichment service with an embedding provider
+impl Enricher {
+    /// Create an enricher with an embedding provider.
     pub fn new(embedding_provider: Arc<dyn EmbeddingProvider>) -> Self {
         Self {
             embedding_provider: Some(embedding_provider),
@@ -59,7 +44,7 @@ impl DefaultEnrichmentService {
         }
     }
 
-    /// Create an enrichment service without embeddings (metadata/relations only)
+    /// Create an enricher without embeddings (metadata only).
     pub fn without_embeddings() -> Self {
         Self {
             embedding_provider: None,
@@ -69,45 +54,52 @@ impl DefaultEnrichmentService {
         }
     }
 
-    /// Set the minimum word count for embedding generation (builder pattern)
+    /// Create an enricher, using embeddings if a provider is supplied.
+    pub fn from_optional_provider(provider: Option<Arc<dyn EmbeddingProvider>>) -> Self {
+        match provider {
+            Some(p) => Self::new(p),
+            None => Self::without_embeddings(),
+        }
+    }
+
     #[allow(dead_code)] // builder API, exercised by tests
     pub fn with_min_words(mut self, min_words: usize) -> Self {
         self.min_words_for_embedding = min_words;
         self
     }
 
-    /// Set the maximum batch size for embedding generation (builder pattern)
     #[allow(dead_code)] // builder API, exercised by tests
     pub fn with_max_batch_size(mut self, max_batch_size: usize) -> Self {
         self.max_batch_size = max_batch_size;
         self
     }
 
-    /// Set the event emitter for SessionEvent emission (builder pattern)
-    ///
-    /// The emitter is used to emit `SessionEvent` variants (e.g., `EmbeddingBatchComplete`)
-    /// when enrichment operations complete.
+    /// Attach an event bus so batch-complete events reach subscribers.
     #[allow(dead_code)] // builder API, completes configuration surface
     pub fn with_emitter(mut self, emitter: SharedEventBus<SessionEvent>) -> Self {
         self.emitter = Some(emitter);
         self
     }
 
-    /// Get a reference to the event emitter (if configured)
-    #[allow(dead_code)] // accessor, completes EnrichmentService API surface
-    pub fn emitter(&self) -> Option<&SharedEventBus<SessionEvent>> {
-        self.emitter.as_ref()
+    pub fn min_words_for_embedding(&self) -> usize {
+        self.min_words_for_embedding
     }
 
-    /// Enrich a parsed note with all available enrichments
+    pub fn max_batch_size(&self) -> usize {
+        self.max_batch_size
+    }
+
+    pub fn has_embedding_provider(&self) -> bool {
+        self.embedding_provider.is_some()
+    }
+
+    /// Enrich a parsed note.
     ///
-    /// # Arguments
-    /// * `parsed` - The parsed note with AST
-    /// * `changed_blocks` - List of block IDs that changed
-    ///
-    /// # Returns
-    /// An EnrichedNote with embeddings, metadata, and inferred relations
-    pub async fn enrich_internal(
+    /// `changed_blocks` is the list of block IDs known to have changed. Pass
+    /// an empty slice to embed every block. Section-style IDs (e.g.
+    /// `modified_section_0`) also trigger embed-all since they don't map to
+    /// concrete block IDs.
+    pub async fn enrich(
         &self,
         parsed: ParsedNote,
         changed_blocks: Vec<String>,
@@ -120,20 +112,16 @@ impl DefaultEnrichmentService {
             changed_blocks.len()
         );
 
-        // Track embedding generation time
         let embed_start = Instant::now();
 
-        // Run enrichment operations in parallel
-        let (embeddings, metadata, relations) = tokio::join!(
+        let (embeddings, metadata) = tokio::join!(
             self.generate_embeddings(&parsed, &changed_blocks),
             self.extract_metadata(&parsed),
-            self.infer_relations(&parsed),
         );
 
         let embeddings = embeddings?;
         let embed_duration = embed_start.elapsed();
 
-        // Emit EmbeddingBatchComplete if we have an emitter and generated embeddings
         if !embeddings.is_empty() {
             if let Some(ref emitter) = self.emitter {
                 let entity_id = format!("note:{}", parsed.path.display());
@@ -152,25 +140,20 @@ impl DefaultEnrichmentService {
             }
         }
 
-        Ok(EnrichedNote::new(parsed, embeddings, metadata?, relations?))
+        Ok(EnrichedNote::new(parsed, embeddings, metadata?))
     }
 
-    /// Generate embeddings for changed blocks only
-    ///
-    /// Uses Merkle tree diffs to identify changed blocks and only generates
-    /// embeddings for those blocks, avoiding redundant API calls.
+    /// Generate embeddings for changed blocks only.
     async fn generate_embeddings(
         &self,
         parsed: &ParsedNote,
         changed_blocks: &[String],
     ) -> Result<Vec<BlockEmbedding>> {
-        // If no embedding provider, return empty
         let Some(provider) = &self.embedding_provider else {
             debug!("No embedding provider configured, skipping embeddings");
             return Ok(Vec::new());
         };
 
-        // Extract text from changed blocks
         let block_texts = self.extract_block_texts(parsed, changed_blocks);
 
         if block_texts.is_empty() {
@@ -191,7 +174,6 @@ impl DefaultEnrichmentService {
 
         let mut all_embeddings = Vec::new();
 
-        // Process in batches to limit memory usage
         for (batch_idx, chunk) in block_texts.chunks(self.max_batch_size).enumerate() {
             debug!(
                 "Processing batch {} ({} blocks)",
@@ -202,10 +184,8 @@ impl DefaultEnrichmentService {
             let texts: Vec<&str> = chunk.iter().map(|(_, text)| text.as_str()).collect();
             let block_ids: Vec<&String> = chunk.iter().map(|(id, _)| id).collect();
 
-            // Batch embed
             let vectors = provider.embed_batch(&texts).await?;
 
-            // Package results as BlockEmbedding
             let batch_embeddings: Vec<BlockEmbedding> = block_ids
                 .iter()
                 .zip(vectors)
@@ -226,11 +206,6 @@ impl DefaultEnrichmentService {
         Ok(all_embeddings)
     }
 
-    /// Extract block texts that meet embedding criteria
-    ///
-    /// Traverses the ParsedNote's content structure and extracts text from blocks
-    /// that meet the minimum word count threshold. Adds breadcrumbs (heading hierarchy)
-    /// to provide context without causing cascade re-embeddings.
     fn extract_block_texts(
         &self,
         parsed: &ParsedNote,
@@ -238,12 +213,11 @@ impl DefaultEnrichmentService {
     ) -> Vec<(String, String)> {
         let mut blocks = Vec::new();
 
-        // Build heading hierarchy for breadcrumbs
         let breadcrumbs = build_breadcrumbs(parsed);
 
-        // Check if we should embed all blocks:
-        // 1. Empty changed_blocks means embed everything
-        // 2. Section-style IDs (from pipeline) don't map to block IDs, so embed all
+        // Embed everything when caller passes no block IDs, or when the IDs
+        // are section-style (from the pipeline's diff layer) rather than
+        // concrete block IDs.
         let embed_all = changed_blocks.is_empty()
             || changed_blocks.iter().any(|id| {
                 id.starts_with("modified_section")
@@ -398,7 +372,6 @@ impl DefaultEnrichmentService {
         }
     }
 
-    /// Extract metadata from the parsed note
     async fn extract_metadata(&self, parsed: &ParsedNote) -> Result<EnrichmentMetadata> {
         debug!(
             "Computing enrichment metadata for {}",
@@ -407,14 +380,11 @@ impl DefaultEnrichmentService {
 
         let mut metadata = EnrichmentMetadata::new();
 
-        // Use structural metadata from parser
         let parser_meta = &parsed.metadata;
 
-        // Compute reading time from word count (parser provides this)
         metadata.reading_time_minutes =
             EnrichmentMetadata::compute_reading_time(parser_meta.word_count);
 
-        // Compute complexity score from element counts (parser provides these)
         metadata.complexity_score = EnrichmentMetadata::compute_complexity(
             parser_meta.heading_count,
             parser_meta.code_block_count,
@@ -422,8 +392,6 @@ impl DefaultEnrichmentService {
             parser_meta.latex_count,
         );
 
-        // Language detection: default to English
-        // TODO: Could use actual language detection library if needed
         metadata.language = Some("en".to_string());
 
         debug!(
@@ -433,60 +401,26 @@ impl DefaultEnrichmentService {
 
         Ok(metadata)
     }
-
-    /// Infer relations based on content analysis
-    async fn infer_relations(&self, parsed: &ParsedNote) -> Result<Vec<InferredRelation>> {
-        debug!("Inferring relations for {}", parsed.path.display());
-
-        // TODO: Implement relation inference
-        // This could include:
-        // - Semantic similarity to other notes (if we have embeddings stored)
-        // - Topic clustering
-        // - Temporal proximity
-        // - Structural similarity
-
-        // For now, return empty - will be implemented in later phases
-        let relations = Vec::new();
-
-        debug!("Inferred {} relations", relations.len());
-
-        Ok(relations)
-    }
 }
 
-/// Build breadcrumbs (heading hierarchy) for all content positions
+/// Build breadcrumbs (heading hierarchy) for all content positions.
 ///
-/// Creates a map from byte offsets to heading paths, allowing blocks to
-/// include their hierarchical context in embeddings. The breadcrumb format is:
-/// `Filename > H1 > H2 > ...` to provide full document context.
-///
-/// This is a pure function that operates on the AST structure of a parsed note.
-/// It doesn't depend on any service state, making it easier to test and reuse.
-///
-/// # Arguments
-///
-/// * `parsed` - The parsed note with heading structure
-///
-/// # Returns
-///
-/// A HashMap mapping byte offsets to breadcrumb strings
-///
+/// Maps byte offsets to paths like `Filename > H1 > H2 > ...`, letting blocks
+/// include their hierarchical context in embeddings without triggering cascade
+/// re-embeddings when a heading changes.
 fn build_breadcrumbs(parsed: &ParsedNote) -> std::collections::HashMap<usize, String> {
     use std::collections::HashMap;
 
     let mut breadcrumbs = HashMap::new();
     let mut heading_stack: Vec<(u8, &str, usize)> = Vec::new(); // (level, text, start_offset)
 
-    // Extract filename (without extension) for breadcrumb prefix
     let filename = parsed
         .path
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("Unknown");
 
-    // Process all headings and build hierarchical paths
     for heading in &parsed.content.headings {
-        // Pop headings at same or higher level (lower number)
         while let Some(&(stack_level, _, _)) = heading_stack.last() {
             if stack_level >= heading.level {
                 heading_stack.pop();
@@ -495,18 +429,14 @@ fn build_breadcrumbs(parsed: &ParsedNote) -> std::collections::HashMap<usize, St
             }
         }
 
-        // Add current heading to stack
         heading_stack.push((heading.level, &heading.text, heading.offset));
 
-        // Build breadcrumb path: Filename > H1 > H2 > ...
         let mut path_parts: Vec<&str> = vec![filename];
         path_parts.extend(heading_stack.iter().map(|(_, text, _)| *text));
         let breadcrumb = path_parts.join(" > ");
 
-        // Associate this breadcrumb with the heading's offset
         breadcrumbs.insert(heading.offset, breadcrumb.clone());
 
-        // Find the next heading offset or use file end
         let next_offset = parsed
             .content
             .headings
@@ -515,8 +445,6 @@ fn build_breadcrumbs(parsed: &ParsedNote) -> std::collections::HashMap<usize, St
             .map(|h| h.offset)
             .unwrap_or(usize::MAX);
 
-        // Apply this breadcrumb to all content in this section
-        // (paragraphs, code blocks, etc. between this heading and the next)
         for para in &parsed.content.paragraphs {
             if para.offset > heading.offset && para.offset < next_offset {
                 breadcrumbs.insert(para.offset, breadcrumb.clone());
@@ -545,49 +473,6 @@ fn build_breadcrumbs(parsed: &ParsedNote) -> std::collections::HashMap<usize, St
     breadcrumbs
 }
 
-// Trait implementation for SOLID principles (Dependency Inversion)
-#[async_trait]
-impl crucible_core::enrichment::EnrichmentService for DefaultEnrichmentService {
-    async fn enrich(
-        &self,
-        parsed: ParsedNote,
-        changed_block_ids: Vec<String>,
-    ) -> Result<EnrichedNote> {
-        self.enrich_internal(parsed, changed_block_ids).await
-    }
-
-    async fn enrich_with_tree(
-        &self,
-        parsed: ParsedNote,
-        changed_block_ids: Vec<String>,
-    ) -> Result<EnrichedNote> {
-        // Same as enrich - tree building is now handled elsewhere if needed
-        self.enrich_internal(parsed, changed_block_ids).await
-    }
-
-    async fn infer_relations(
-        &self,
-        _enriched: &EnrichedNote,
-        _threshold: f64,
-    ) -> Result<Vec<InferredRelation>> {
-        // Delegate to existing infer_relations method
-        // Current implementation returns empty for now (placeholder)
-        Ok(Vec::new())
-    }
-
-    fn min_words_for_embedding(&self) -> usize {
-        self.min_words_for_embedding
-    }
-
-    fn max_batch_size(&self) -> usize {
-        self.max_batch_size
-    }
-
-    fn has_embedding_provider(&self) -> bool {
-        self.embedding_provider.is_some()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -595,7 +480,6 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    /// Mock embedding provider for testing
     struct MockEmbeddingProvider {
         model: String,
         dimensions: usize,
@@ -659,34 +543,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_enrichment_service_with_provider() {
+    async fn new_with_provider_keeps_provider() {
         let provider = Arc::new(MockEmbeddingProvider::new());
-        let service = DefaultEnrichmentService::new(provider);
+        let service = Enricher::new(provider);
 
         assert!(service.embedding_provider.is_some());
         assert_eq!(service.min_words_for_embedding, 5);
     }
 
     #[tokio::test]
-    async fn test_enrichment_service_without_provider() {
-        let service = DefaultEnrichmentService::without_embeddings();
+    async fn without_embeddings_has_no_provider() {
+        let service = Enricher::without_embeddings();
 
         assert!(service.embedding_provider.is_none());
     }
 
     #[tokio::test]
-    async fn test_enrichment_service_with_custom_min_words() {
+    async fn with_min_words_overrides_default() {
         let provider = Arc::new(MockEmbeddingProvider::new());
-        let service = DefaultEnrichmentService::new(provider).with_min_words(10);
+        let service = Enricher::new(provider).with_min_words(10);
 
         assert_eq!(service.min_words_for_embedding, 10);
     }
 
     #[tokio::test]
-    async fn test_generate_embeddings_without_provider() {
-        let service = DefaultEnrichmentService::without_embeddings();
+    async fn generate_embeddings_returns_empty_without_provider() {
+        let service = Enricher::without_embeddings();
 
-        // Create a minimal ParsedNote for testing
         let parsed = create_test_parsed_note();
 
         let embeddings = service
@@ -694,51 +577,34 @@ mod tests {
             .await
             .unwrap();
 
-        // Should return empty when no provider
         assert_eq!(embeddings.len(), 0);
     }
 
     #[tokio::test]
-    async fn test_extract_metadata() {
-        let service = DefaultEnrichmentService::without_embeddings();
+    async fn extract_metadata_computes_defaults_for_empty_note() {
+        let service = Enricher::without_embeddings();
         let parsed = create_test_parsed_note();
 
         let metadata = service.extract_metadata(&parsed).await.unwrap();
 
-        // Empty note should have zero reading time and complexity (computed from parser metadata)
         assert_eq!(metadata.language, Some("en".to_string()));
         assert_eq!(metadata.reading_time_minutes, 0.0);
         assert_eq!(metadata.complexity_score, 0.0);
 
-        // Verify parser provided structural metadata
         assert_eq!(parsed.metadata.word_count, 0);
     }
 
-    #[tokio::test]
-    async fn test_infer_relations() {
-        let service = DefaultEnrichmentService::without_embeddings();
-        let parsed = create_test_parsed_note();
-
-        let relations = service.infer_relations(&parsed).await.unwrap();
-
-        // Should return empty for now (placeholder implementation)
-        assert_eq!(relations.len(), 0);
-    }
-
-    /// Helper to create a minimal ParsedNote for testing
     fn create_test_parsed_note() -> ParsedNote {
         use crucible_core::parser::ParsedNoteBuilder;
 
         ParsedNoteBuilder::new(PathBuf::from("/test/note.md")).build()
     }
 
-    /// Helper to create a ParsedNote with content for testing embeddings
     fn create_test_parsed_note_with_content() -> ParsedNote {
         use crucible_core::parser::{Paragraph, ParsedNoteBuilder};
 
         let mut note = ParsedNoteBuilder::new(PathBuf::from("/test/note.md")).build();
 
-        // Add paragraphs with sufficient words (>= 5 to meet embedding threshold)
         note.content.paragraphs.push(Paragraph::new(
             "This is the first paragraph with more than five words for embedding.".to_string(),
             0,
@@ -788,18 +654,15 @@ mod tests {
         }
     }
 
-    /// Test that embeddings are generated when changed_blocks is empty (embed all)
     #[tokio::test]
-    async fn test_generate_embeddings_with_empty_changed_blocks() {
+    async fn generate_embeddings_with_empty_changed_blocks_embeds_all() {
         let provider = Arc::new(MockEmbeddingProvider::new());
-        let service = DefaultEnrichmentService::new(provider);
+        let service = Enricher::new(provider);
 
         let parsed = create_test_parsed_note_with_content();
 
-        // Empty changed_blocks should embed ALL blocks
         let embeddings = service.generate_embeddings(&parsed, &[]).await.unwrap();
 
-        // Should have embeddings for both paragraphs
         assert_eq!(
             embeddings.len(),
             2,
@@ -809,17 +672,13 @@ mod tests {
         assert_eq!(embeddings[1].block_id, "paragraph_1");
     }
 
-    /// Test that section-style changed_blocks (from pipeline) trigger embedding all blocks
-    /// This is the bug reproduction test - with section-style IDs, no blocks should be skipped
     #[tokio::test]
-    async fn test_generate_embeddings_with_section_style_changed_blocks() {
+    async fn section_style_changed_blocks_embed_all() {
         let provider = Arc::new(MockEmbeddingProvider::new());
-        let service = DefaultEnrichmentService::new(provider);
+        let service = Enricher::new(provider);
 
         let parsed = create_test_parsed_note_with_content();
 
-        // Section-style IDs from pipeline (modified_section_0, added_section_1, etc.)
-        // These don't match block IDs (paragraph_0, heading_0, etc.)
         let section_style_ids = vec![
             "modified_section_0".to_string(),
             "added_section_1".to_string(),
@@ -830,8 +689,6 @@ mod tests {
             .await
             .unwrap();
 
-        // Section-style IDs (modified_section_*, added_section_*) trigger embed-all behavior
-        // per extract_block_texts() lines 238-243, so all blocks get embedded
         assert_eq!(
             embeddings.len(),
             2,
@@ -840,33 +697,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_enrich_internal_full_flow_without_embeddings() {
-        let service = DefaultEnrichmentService::without_embeddings();
+    async fn enrich_full_flow_without_embeddings() {
+        let service = Enricher::without_embeddings();
         let parsed = create_test_parsed_note_with_content();
 
-        let enriched = service.enrich_internal(parsed, vec![]).await.unwrap();
+        let enriched = service.enrich(parsed, vec![]).await.unwrap();
 
         assert!(enriched.embeddings.is_empty());
         assert_eq!(enriched.metadata.language, Some("en".to_string()));
-        assert!(enriched.inferred_relations.is_empty());
     }
 
     #[tokio::test]
-    async fn test_enrich_internal_full_flow_with_embeddings() {
+    async fn enrich_full_flow_with_embeddings() {
         let provider = Arc::new(MockEmbeddingProvider::new());
-        let service = DefaultEnrichmentService::new(provider);
+        let service = Enricher::new(provider);
         let parsed = create_test_parsed_note_with_content();
 
-        let enriched = service.enrich_internal(parsed, vec![]).await.unwrap();
+        let enriched = service.enrich(parsed, vec![]).await.unwrap();
 
         assert_eq!(enriched.embeddings.len(), 2);
         assert_eq!(enriched.embeddings[0].model, "mock-model");
     }
 
     #[tokio::test]
-    async fn test_generate_embeddings_batches_by_max_batch_size() {
+    async fn generate_embeddings_batches_by_max_batch_size() {
         let provider = Arc::new(MockEmbeddingProvider::new());
-        let service = DefaultEnrichmentService::new(provider.clone()).with_max_batch_size(1);
+        let service = Enricher::new(provider.clone()).with_max_batch_size(1);
         let parsed = create_test_parsed_note_with_content();
 
         let embeddings = service.generate_embeddings(&parsed, &[]).await.unwrap();
@@ -876,9 +732,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_generate_embeddings_propagates_mid_batch_failure() {
+    async fn generate_embeddings_propagates_mid_batch_failure() {
         let provider = Arc::new(MockEmbeddingProvider::with_failure_on_batch_call(2));
-        let service = DefaultEnrichmentService::new(provider).with_max_batch_size(1);
+        let service = Enricher::new(provider).with_max_batch_size(1);
         let parsed = create_test_parsed_note_with_three_paragraphs();
 
         let result = service.generate_embeddings(&parsed, &[]).await;
@@ -886,54 +742,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_enrich_internal_with_emitter_keeps_enrichment_successful() {
+    async fn enrich_with_emitter_keeps_enrichment_successful() {
         let provider = Arc::new(MockEmbeddingProvider::new());
         let recording_emitter = Arc::new(RecordingEmitter::default());
-        let service = DefaultEnrichmentService::new(provider)
+        let service = Enricher::new(provider)
             .with_emitter(recording_emitter.clone() as Arc<dyn EventEmitter<Event = SessionEvent>>);
         let parsed = create_test_parsed_note_with_content();
 
-        let enriched = service.enrich_internal(parsed, vec![]).await.unwrap();
+        let enriched = service.enrich(parsed, vec![]).await.unwrap();
         assert_eq!(enriched.embeddings.len(), 2);
         assert!(recording_emitter.emitted.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
-    async fn test_enrich_internal_skips_emitter_when_no_embeddings() {
+    async fn enrich_skips_emitter_when_no_embeddings() {
         let recording_emitter = Arc::new(RecordingEmitter::default());
-        let service = DefaultEnrichmentService::without_embeddings()
+        let service = Enricher::without_embeddings()
             .with_emitter(recording_emitter.clone() as Arc<dyn EventEmitter<Event = SessionEvent>>);
         let parsed = create_test_parsed_note_with_content();
 
-        let enriched = service.enrich_internal(parsed, vec![]).await.unwrap();
+        let enriched = service.enrich(parsed, vec![]).await.unwrap();
         assert!(enriched.embeddings.is_empty());
         assert!(recording_emitter.emitted.lock().unwrap().is_empty());
     }
 
-    #[tokio::test]
-    async fn test_trait_impl_enrich() {
-        use crucible_core::enrichment::EnrichmentService;
-
-        let service = DefaultEnrichmentService::without_embeddings();
-        let parsed = create_test_parsed_note();
-
-        let enriched = service.enrich(parsed, vec![]).await.unwrap();
-        assert!(enriched.embeddings.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_trait_impl_has_embedding_provider() {
-        use crucible_core::enrichment::EnrichmentService;
-
-        let without = DefaultEnrichmentService::without_embeddings();
-        assert!(!without.has_embedding_provider());
-
-        let with = DefaultEnrichmentService::new(Arc::new(MockEmbeddingProvider::new()));
-        assert!(with.has_embedding_provider());
-    }
-
     #[test]
-    fn test_build_breadcrumbs_with_headings() {
+    fn build_breadcrumbs_with_headings() {
         use crucible_core::parser::{Heading, Paragraph, ParsedNoteBuilder};
 
         let mut note = ParsedNoteBuilder::new(PathBuf::from("/test/note.md")).build();
@@ -958,17 +792,17 @@ mod tests {
     }
 
     #[test]
-    fn test_build_breadcrumbs_empty_note() {
+    fn build_breadcrumbs_empty_note() {
         let note = create_test_parsed_note();
         let crumbs = build_breadcrumbs(&note);
         assert!(crumbs.is_empty());
     }
 
     #[test]
-    fn test_extract_block_texts_skips_short_blocks() {
+    fn extract_block_texts_skips_short_blocks() {
         use crucible_core::parser::{Paragraph, ParsedNoteBuilder};
 
-        let service = DefaultEnrichmentService::without_embeddings();
+        let service = Enricher::without_embeddings();
         let mut note = ParsedNoteBuilder::new(PathBuf::from("/test/note.md")).build();
         note.content
             .paragraphs
@@ -1038,8 +872,8 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_block_texts_all_block_types_with_context() {
-        let service = DefaultEnrichmentService::without_embeddings();
+    fn extract_block_texts_all_block_types_with_context() {
+        let service = Enricher::without_embeddings();
         let note = create_test_note_with_all_extractable_block_types();
 
         let blocks = service.extract_block_texts(&note, &[]);
@@ -1084,8 +918,8 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_block_texts_respects_changed_block_ids() {
-        let service = DefaultEnrichmentService::without_embeddings();
+    fn extract_block_texts_respects_changed_block_ids() {
+        let service = Enricher::without_embeddings();
         let note = create_test_note_with_all_extractable_block_types();
         let changed_blocks = vec![
             "heading_2".to_string(),
@@ -1129,9 +963,9 @@ mod tests {
     }
 
     #[test]
-    fn test_builder_with_max_batch_size() {
+    fn builder_with_max_batch_size_stores_value() {
         let provider = Arc::new(MockEmbeddingProvider::new());
-        let service = DefaultEnrichmentService::new(provider).with_max_batch_size(5);
+        let service = Enricher::new(provider).with_max_batch_size(5);
         assert_eq!(service.max_batch_size, 5);
     }
 }

@@ -70,7 +70,6 @@
 mod change_detector;
 mod completion;
 mod content_hasher;
-mod enrichment;
 mod event_emitter;
 mod hash_lookup;
 mod hashing;
@@ -79,7 +78,6 @@ mod storage;
 pub use change_detector::MockChangeDetector;
 pub use completion::MockCompletionBackend;
 pub use content_hasher::MockContentHasher;
-pub use enrichment::MockEnrichmentService;
 pub use event_emitter::{MockEmitterBehavior, MockEventEmitter, MockEventEmitterStats};
 pub use hash_lookup::MockHashLookupStorage;
 pub use hashing::MockHashingAlgorithm;

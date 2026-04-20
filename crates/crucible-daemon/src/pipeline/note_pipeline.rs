@@ -17,11 +17,11 @@
 //! - **Error Recovery**: Graceful handling of failures at each phase
 //! - **Single Responsibility**: Pipeline coordinates; infrastructure crates provide capabilities
 
+use crate::enrichment::Enricher;
 use anyhow::{Context, Result};
 use crucible_core::parser::{traits::MarkdownParser, CrucibleParser};
 use crucible_core::processing::{ChangeDetectionStore, FileState, ProcessingResult};
 use crucible_core::storage::{NoteRecord, NoteStore, VectorStore};
-use crucible_core::EnrichmentService;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -59,7 +59,7 @@ pub struct NotePipelineConfig {
 /// NotePipeline (orchestration)
 ///   ├─> ChangeDetectionStore (Phase 1: skip checks)
 ///   ├─> crucible-parser (Phase 2: AST)
-///   ├─> EnrichmentService (Phase 3: embeddings)
+///   ├─> Enricher (Phase 3: embeddings)
 ///   └─> NoteStore (Phase 4: persistence)
 /// ```
 ///
@@ -70,8 +70,8 @@ pub struct NotePipeline {
     /// Storage for file state tracking (Phase 1)
     change_detector: Arc<dyn ChangeDetectionStore>,
 
-    /// Enrichment service for embeddings and metadata (Phase 3)
-    enrichment_service: Arc<dyn EnrichmentService>,
+    /// Enricher for embeddings and metadata (Phase 3)
+    enricher: Arc<Enricher>,
 
     /// Storage for notes (Phase 4) - backend-agnostic via NoteStore trait
     note_store: Arc<dyn NoteStore>,
@@ -97,7 +97,7 @@ impl NotePipeline {
     /// Create a new pipeline with dependencies (uses default config)
     pub fn new(
         change_detector: Arc<dyn ChangeDetectionStore>,
-        enrichment_service: Arc<dyn EnrichmentService>,
+        enricher: Arc<Enricher>,
         note_store: Arc<dyn NoteStore>,
     ) -> Self {
         let config = NotePipelineConfig::default();
@@ -106,7 +106,7 @@ impl NotePipeline {
         Self {
             parser,
             change_detector,
-            enrichment_service,
+            enricher,
             note_store,
             vector_store: None,
             config,
@@ -117,7 +117,7 @@ impl NotePipeline {
     /// Create a new pipeline with custom configuration
     pub fn with_config(
         change_detector: Arc<dyn ChangeDetectionStore>,
-        enrichment_service: Arc<dyn EnrichmentService>,
+        enricher: Arc<Enricher>,
         note_store: Arc<dyn NoteStore>,
         config: NotePipelineConfig,
     ) -> Self {
@@ -126,7 +126,7 @@ impl NotePipeline {
         Self {
             parser,
             change_detector,
-            enrichment_service,
+            enricher,
             note_store,
             vector_store: None,
             config,
@@ -220,7 +220,7 @@ impl NotePipeline {
             debug!("Phase 3: Enriching note");
 
             // Enrich all blocks (empty changed_blocks means embed all)
-            self.enrichment_service
+            self.enricher
                 .enrich(parsed.clone(), Vec::new())
                 .await
                 .with_context(|| format!("Phase 3: Failed to enrich note '{}'", path.display()))?
@@ -229,20 +229,14 @@ impl NotePipeline {
 
             // Create minimal enriched note without embeddings
             use crucible_core::enrichment::{EnrichedNote, EnrichmentMetadata};
-            EnrichedNote::new(
-                parsed.clone(),
-                Vec::new(), // No embeddings
-                EnrichmentMetadata::default(),
-                Vec::new(), // No inferred relations
-            )
+            EnrichedNote::new(parsed.clone(), Vec::new(), EnrichmentMetadata::default())
         };
 
         let embeddings_generated = !enriched.embeddings.is_empty();
         let phase3_duration = phase3_start.elapsed().as_millis() as u64;
         debug!(
-            "Phase 3: Generated {} embeddings, {} relations",
-            enriched.embeddings.len(),
-            enriched.inferred_relations.len()
+            "Phase 3: Generated {} embeddings",
+            enriched.embeddings.len()
         );
 
         // Phase 4: Storage
@@ -448,74 +442,43 @@ impl NotePipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_core::enrichment::EnrichmentMetadata;
-    use crucible_core::enrichment::{EnrichedNote, EnrichmentService, InferredRelation};
+    use crucible_core::enrichment::EmbeddingProvider;
     use crucible_core::events::{InternalSessionEvent, SessionEvent};
-    use crucible_core::parser::{BlockHash, ParsedNote};
+    use crucible_core::parser::BlockHash;
     use crucible_core::processing::InMemoryChangeDetectionStore;
     use crucible_core::storage::{Filter, NoteRecord, SearchResult, StorageError};
     use std::io::Write;
     use std::sync::Arc;
     use tempfile::NamedTempFile;
 
-    // -- Mock EnrichmentService --
-
-    struct MockEnrichmentService {
-        should_fail: bool,
-    }
-
-    impl MockEnrichmentService {
-        fn new() -> Self {
-            Self { should_fail: false }
-        }
-
-        fn failing() -> Self {
-            Self { should_fail: true }
-        }
-    }
+    /// Embedding provider whose batch call always fails; used to make the
+    /// enricher propagate errors through Phase 3.
+    struct FailingEmbeddingProvider;
 
     #[async_trait::async_trait]
-    impl EnrichmentService for MockEnrichmentService {
-        async fn enrich(
-            &self,
-            parsed: ParsedNote,
-            _changed_block_ids: Vec<String>,
-        ) -> Result<EnrichedNote> {
-            if self.should_fail {
-                anyhow::bail!("mock enrichment failure");
-            }
-            Ok(EnrichedNote::new(
-                parsed,
-                Vec::new(),
-                EnrichmentMetadata::default(),
-                Vec::new(),
-            ))
+    impl EmbeddingProvider for FailingEmbeddingProvider {
+        async fn embed(&self, _text: &str) -> Result<Vec<f32>> {
+            anyhow::bail!("intentional embed failure")
         }
 
-        async fn enrich_with_tree(
-            &self,
-            parsed: ParsedNote,
-            changed_block_ids: Vec<String>,
-        ) -> Result<EnrichedNote> {
-            self.enrich(parsed, changed_block_ids).await
+        async fn embed_batch(&self, _texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+            anyhow::bail!("intentional embed failure")
         }
 
-        async fn infer_relations(
-            &self,
-            _enriched: &EnrichedNote,
-            _threshold: f64,
-        ) -> Result<Vec<InferredRelation>> {
-            Ok(Vec::new())
+        fn model_name(&self) -> &str {
+            "failing-mock"
         }
 
-        fn min_words_for_embedding(&self) -> usize {
-            5
+        fn dimensions(&self) -> usize {
+            3
         }
-        fn max_batch_size(&self) -> usize {
-            10
+
+        fn provider_name(&self) -> &str {
+            "failing-mock"
         }
-        fn has_embedding_provider(&self) -> bool {
-            false
+
+        async fn list_models(&self) -> Result<Vec<String>> {
+            Ok(vec!["failing-mock".to_string()])
         }
     }
 
@@ -579,17 +542,22 @@ mod tests {
         }
     }
 
-    fn create_pipeline(
-        enrichment: Arc<dyn EnrichmentService>,
-        note_store: Arc<dyn NoteStore>,
-    ) -> NotePipeline {
+    fn create_pipeline(enricher: Arc<Enricher>, note_store: Arc<dyn NoteStore>) -> NotePipeline {
         let change_detector = Arc::new(InMemoryChangeDetectionStore::new());
         let config = NotePipelineConfig {
             skip_enrichment: false,
             force_reprocess: true,
             ..Default::default()
         };
-        NotePipeline::with_config(change_detector, enrichment, note_store, config)
+        NotePipeline::with_config(change_detector, enricher, note_store, config)
+    }
+
+    fn passing_enricher() -> Arc<Enricher> {
+        Arc::new(Enricher::without_embeddings())
+    }
+
+    fn failing_enricher() -> Arc<Enricher> {
+        Arc::new(Enricher::new(Arc::new(FailingEmbeddingProvider)))
     }
 
     fn write_temp_note(content: &str) -> NamedTempFile {
@@ -600,9 +568,8 @@ mod tests {
 
     #[tokio::test]
     async fn pipeline_processes_markdown_file_successfully() {
-        let enrichment = Arc::new(MockEnrichmentService::new());
         let store = Arc::new(MockNoteStore::new());
-        let pipeline = create_pipeline(enrichment, store);
+        let pipeline = create_pipeline(passing_enricher(), store);
 
         let tmp = write_temp_note("# Hello World\n\nSome content here.\n");
         let result = pipeline.process(tmp.path()).await.unwrap();
@@ -615,7 +582,6 @@ mod tests {
     #[tokio::test]
     async fn pipeline_skips_unchanged_file_on_second_pass() {
         let change_detector = Arc::new(InMemoryChangeDetectionStore::new());
-        let enrichment: Arc<dyn EnrichmentService> = Arc::new(MockEnrichmentService::new());
         let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::new());
 
         // force_reprocess=false so the change detector is consulted
@@ -624,7 +590,8 @@ mod tests {
             force_reprocess: false,
             ..Default::default()
         };
-        let pipeline = NotePipeline::with_config(change_detector, enrichment, store, config);
+        let pipeline =
+            NotePipeline::with_config(change_detector, passing_enricher(), store, config);
 
         let tmp = write_temp_note("# Test\n\nParagraph.\n");
 
@@ -642,11 +609,13 @@ mod tests {
 
     #[tokio::test]
     async fn pipeline_enrichment_error_propagates_with_context() {
-        let enrichment = Arc::new(MockEnrichmentService::failing());
         let store = Arc::new(MockNoteStore::new());
-        let pipeline = create_pipeline(enrichment, store);
+        let pipeline = create_pipeline(failing_enricher(), store);
 
-        let tmp = write_temp_note("# Oops\n\nThis should fail enrichment.\n");
+        // Paragraph is long enough to trigger an embed call, which then fails.
+        let tmp = write_temp_note(
+            "# Oops\n\nThis paragraph has more than five words so embed_batch runs.\n",
+        );
         let err = pipeline.process(tmp.path()).await.unwrap_err();
         let msg = format!("{:#}", err);
         assert!(
@@ -657,9 +626,8 @@ mod tests {
 
     #[tokio::test]
     async fn pipeline_storage_error_propagates_with_context() {
-        let enrichment = Arc::new(MockEnrichmentService::new());
         let store = Arc::new(MockNoteStore::failing());
-        let pipeline = create_pipeline(enrichment, store);
+        let pipeline = create_pipeline(passing_enricher(), store);
 
         let tmp = write_temp_note("# Store fail\n\nContent.\n");
         let err = pipeline.process(tmp.path()).await.unwrap_err();
@@ -676,7 +644,6 @@ mod tests {
     #[tokio::test]
     async fn pipeline_skip_enrichment_config_bypasses_enrichment() {
         let change_detector = Arc::new(InMemoryChangeDetectionStore::new());
-        let enrichment: Arc<dyn EnrichmentService> = Arc::new(MockEnrichmentService::failing());
         let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::new());
 
         let config = NotePipelineConfig {
@@ -684,20 +651,20 @@ mod tests {
             force_reprocess: true,
             ..Default::default()
         };
-        let pipeline = NotePipeline::with_config(change_detector, enrichment, store, config);
+        // Enrichment is configured to fail, but skip_enrichment=true means it
+        // never runs — the pipeline should still succeed.
+        let pipeline =
+            NotePipeline::with_config(change_detector, failing_enricher(), store, config);
 
         let tmp = write_temp_note("# Skip enrichment\n\nBody text.\n");
-        // Should succeed even though enrichment would fail,
-        // because enrichment is skipped
         let result = pipeline.process(tmp.path()).await.unwrap();
         assert!(!result.is_skipped());
     }
 
     #[tokio::test]
     async fn pipeline_nonexistent_file_returns_error() {
-        let enrichment = Arc::new(MockEnrichmentService::new());
         let store = Arc::new(MockNoteStore::new());
-        let pipeline = create_pipeline(enrichment, store);
+        let pipeline = create_pipeline(passing_enricher(), store);
 
         let result = pipeline
             .process(std::path::Path::new("/nonexistent/file.md"))
@@ -722,7 +689,6 @@ mod tests {
     #[tokio::test]
     async fn force_reprocess_overrides_skip() {
         let change_detector = Arc::new(InMemoryChangeDetectionStore::new());
-        let enrichment: Arc<dyn EnrichmentService> = Arc::new(MockEnrichmentService::new());
         let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::new());
 
         let config = NotePipelineConfig {
@@ -730,7 +696,8 @@ mod tests {
             force_reprocess: true,
             ..Default::default()
         };
-        let pipeline = NotePipeline::with_config(change_detector, enrichment, store, config);
+        let pipeline =
+            NotePipeline::with_config(change_detector, passing_enricher(), store, config);
 
         let tmp = write_temp_note("# Force Test\n\nContent here.\n");
 
@@ -748,9 +715,8 @@ mod tests {
 
     #[tokio::test]
     async fn empty_markdown_processes_successfully() {
-        let enrichment = Arc::new(MockEnrichmentService::new());
         let store = Arc::new(MockNoteStore::new());
-        let pipeline = create_pipeline(enrichment, store);
+        let pipeline = create_pipeline(passing_enricher(), store);
 
         let tmp = write_temp_note("");
         let result = pipeline.process(tmp.path()).await.unwrap();
@@ -762,9 +728,8 @@ mod tests {
 
     #[tokio::test]
     async fn malformed_frontmatter_returns_success_with_warnings() {
-        let enrichment = Arc::new(MockEnrichmentService::new());
         let store = Arc::new(MockNoteStore::new());
-        let pipeline = create_pipeline(enrichment, store);
+        let pipeline = create_pipeline(passing_enricher(), store);
 
         let tmp = write_temp_note("---\ntitle: [unterminated\n---\n\n# Heading\n");
         let result = pipeline.process(tmp.path()).await.unwrap();

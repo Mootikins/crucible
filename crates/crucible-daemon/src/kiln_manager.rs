@@ -631,21 +631,17 @@ async fn create_pipeline(
         info!("Kiln enrichment skipped (no config)");
         None
     };
-    let enrichment_service =
-        crate::enrichment::create_default_enrichment_service(embedding_provider)?;
+    let enricher = Arc::new(crate::enrichment::Enricher::from_optional_provider(
+        embedding_provider,
+    ));
 
     // Get NoteStore from handle
     let note_store = handle.as_note_store();
 
     let config = pipeline_config(enrichment_config);
 
-    let pipeline = NotePipeline::with_config(
-        change_detector,
-        enrichment_service,
-        note_store,
-        config,
-    )
-    .with_vector_store(handle.vectors.clone());
+    let pipeline = NotePipeline::with_config(change_detector, enricher, note_store, config)
+        .with_vector_store(handle.vectors.clone());
 
     Ok(pipeline)
 }
