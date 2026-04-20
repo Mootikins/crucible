@@ -48,6 +48,7 @@ impl CrucibleAcpClient {
             permission_handler: None,
             agent_mcp_capabilities: None,
             recorder: None,
+            last_usage: None,
         }
     }
 

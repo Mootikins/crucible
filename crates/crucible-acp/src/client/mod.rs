@@ -40,6 +40,9 @@ mod session_manager;
 mod streaming;
 mod tools;
 mod types;
+mod usage;
+
+pub use usage::extract_usage;
 
 #[cfg(test)]
 mod tests;
@@ -83,6 +86,11 @@ pub struct CrucibleAcpClient {
     /// Wire-level recorder. Populated automatically when
     /// `CRUCIBLE_ACP_RECORD_DIR` is set, otherwise `None`.
     pub(super) recorder: Option<recording::Recorder>,
+    /// Token usage from the most recent prompt response. Set by the
+    /// streaming code when an ACP `PromptResponse` carries a `usage`
+    /// field (currently behind `unstable_session_usage` upstream — see
+    /// `client/usage.rs`). Consumed via `take_last_usage()`.
+    pub(super) last_usage: Option<crucible_core::traits::llm::TokenUsage>,
 }
 
 // Manual Debug implementation since Child doesn't implement Debug
@@ -101,6 +109,7 @@ impl std::fmt::Debug for CrucibleAcpClient {
             .field("permission_handler", &self.permission_handler.is_some())
             .field("agent_mcp_capabilities", &self.agent_mcp_capabilities)
             .field("recorder", &self.recorder)
+            .field("last_usage", &self.last_usage.is_some())
             .finish()
     }
 }
@@ -144,7 +153,15 @@ impl CrucibleAcpClient {
             permission_handler: None,
             agent_mcp_capabilities: None,
             recorder,
+            last_usage: None,
         }
+    }
+
+    /// Take the token usage captured from the most recent ACP prompt
+    /// response. Returns `None` if the agent didn't report usage or the
+    /// value has already been taken.
+    pub fn take_last_usage(&mut self) -> Option<crucible_core::traits::llm::TokenUsage> {
+        self.last_usage.take()
     }
 
     /// Attach a recorder explicitly. Used by tests and tools that want to

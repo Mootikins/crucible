@@ -291,13 +291,20 @@ impl AgentHandle for AcpAgentHandle {
             let result = owned_client
                 .send_prompt_with_callback(prompt_request, callback)
                 .await;
+            // Capture usage now while we still own the client. The streaming
+            // code parsed it from the ACP PromptResponse and stashed it on
+            // the client; we move it into the result so the terminal
+            // ChatChunk can carry it through to message_complete.
+            let usage = owned_client.take_last_usage();
 
             {
                 let mut guard = client_arc.lock().await;
                 *guard = Some(owned_client);
             }
 
-            let _ = result_tx.send(result);
+            let _ = result_tx.send(result.map(|(content, tools, response)| {
+                (content, tools, response, usage)
+            }));
         });
 
         type UnfoldState = Option<(
@@ -308,6 +315,7 @@ impl AgentHandle for AcpAgentHandle {
                         String,
                         Vec<crucible_acp::ToolCallInfo>,
                         agent_client_protocol::PromptResponse,
+                        Option<crucible_core::traits::llm::TokenUsage>,
                     ),
                     crucible_acp::ClientError,
                 >,
@@ -422,9 +430,13 @@ impl AgentHandle for AcpAgentHandle {
                         ))
                     }
                     None => match result_rx.await {
-                        Ok(Ok((_content, acp_tool_calls, _response))) => {
+                        Ok(Ok((_content, acp_tool_calls, _response, usage))) => {
                             let acp_tool_calls: Vec<crucible_acp::ToolCallInfo> = acp_tool_calls;
-                            debug!(tool_count = acp_tool_calls.len(), "ACP stream completed");
+                            debug!(
+                                tool_count = acp_tool_calls.len(),
+                                has_usage = usage.is_some(),
+                                "ACP stream completed"
+                            );
 
                             let final_tool_calls: Vec<ChatToolCall> = acp_tool_calls
                                 .into_iter()
@@ -446,7 +458,7 @@ impl AgentHandle for AcpAgentHandle {
                                     },
                                     tool_results: None,
                                     reasoning: None,
-                                    usage: None,
+                                    usage,
                                     subagent_events: None,
                                     precognition_notes_count: None,
                                     precognition_notes: None,

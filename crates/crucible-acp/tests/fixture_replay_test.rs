@@ -89,6 +89,19 @@ async fn claude_basic_chat_replays_cleanly() {
         "expected end-of-turn stop reason; got {stop}"
     );
 
+    // Track C: usage extracted from the ACP PromptResponse should be
+    // surfaced via take_last_usage(). The fixture has:
+    //   {"usage":{"inputTokens":3,"outputTokens":7,"totalTokens":22706,
+    //             "cachedReadTokens":0,"cachedWriteTokens":22696}}
+    let usage = client
+        .take_last_usage()
+        .expect("usage should be captured from claude response");
+    assert_eq!(usage.prompt_tokens, 3);
+    assert_eq!(usage.completion_tokens, 7);
+    assert_eq!(usage.total_tokens, 22706);
+    assert_eq!(usage.cache_read_tokens, Some(0));
+    assert_eq!(usage.cache_creation_tokens, Some(22696));
+
     drop(client);
     let outcome: ReplayOutcome = driver_handle.await.expect("driver panicked");
     assert!(

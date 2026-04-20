@@ -265,6 +265,7 @@ impl CrucibleAcpClient {
                 let result = response.get("result").ok_or_else(|| {
                     ClientError::Session("Missing result in prompt response".to_string())
                 })?;
+                self.last_usage = super::usage::extract_usage(result);
                 let prompt_response = serde_json::from_value(result.clone())?;
                 return Ok(Some(prompt_response));
             }
@@ -482,6 +483,7 @@ impl CrucibleAcpClient {
                 let result = response.get("result").ok_or_else(|| {
                     ClientError::Session("Missing result in prompt response".to_string())
                 })?;
+                self.last_usage = super::usage::extract_usage(result);
                 let prompt_response = serde_json::from_value(result.clone())?;
                 return Ok(Some(prompt_response));
             } else {
