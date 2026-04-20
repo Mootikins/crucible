@@ -64,12 +64,9 @@ impl DaemonSessionApi for DaemonSessionBridge {
         connected_kilns: Vec<String>,
     ) -> BoxFut<serde_json::Value> {
         bridge_async!(self.session_manager, |sm| async move {
-            let st = match session_type.as_str() {
-                "chat" => SessionType::Chat,
-                "agent" => SessionType::Agent,
-                "workflow" => SessionType::Workflow,
-                other => return Err(format!("Invalid session type: {}", other)),
-            };
+            let st: SessionType = session_type
+                .parse()
+                .map_err(|_| format!("Invalid session type: {}", session_type))?;
             let kiln_path = kiln
                 .map(PathBuf::from)
                 .unwrap_or_else(crucible_config::crucible_home);

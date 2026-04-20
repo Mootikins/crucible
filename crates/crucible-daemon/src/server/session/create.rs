@@ -17,11 +17,9 @@ pub(crate) async fn handle_session_create(
     mcp_config: Option<&McpConfig>,
 ) -> Response {
     let session_type_str = optional_param!(req, "type", as_str).unwrap_or("chat");
-    let session_type = match session_type_str {
-        "chat" => SessionType::Chat,
-        "agent" => SessionType::Agent,
-        "workflow" => SessionType::Workflow,
-        _ => {
+    let session_type: SessionType = match session_type_str.parse() {
+        Ok(st) => st,
+        Err(_) => {
             return Response::error(
                 req.id,
                 INVALID_PARAMS,

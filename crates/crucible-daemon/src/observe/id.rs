@@ -52,7 +52,11 @@ impl SessionId {
         Self::new(SessionType::Chat, Utc::now())
     }
 
-    /// Parse a session ID from string
+    /// Parse a session ID from string.
+    ///
+    /// Accepts legacy prefixes (`sub-`, `mcp-`) and rewrites them to their
+    /// canonical counterparts (`agent-`, `chat-`) so existing on-disk
+    /// sessions from before the Phase 4 consolidation still load.
     pub fn parse(s: &str) -> Result<Self, SessionIdError> {
         // Validate format: type-YYYYMMDD-HHMM-hash
         let parts: Vec<&str> = s.split('-').collect();
@@ -60,8 +64,13 @@ impl SessionId {
             return Err(SessionIdError::InvalidFormat(s.to_string()));
         }
 
-        // Validate type
-        let _session_type: SessionType = parts[0]
+        // Normalize legacy prefixes before validating the type.
+        let canonical_type = match parts[0] {
+            "sub" => "agent",
+            "mcp" => "chat",
+            other => other,
+        };
+        let _session_type: SessionType = canonical_type
             .parse()
             .map_err(|_| SessionIdError::InvalidType(parts[0].to_string()))?;
 
@@ -80,7 +89,14 @@ impl SessionId {
             return Err(SessionIdError::InvalidHash(parts[3].to_string()));
         }
 
-        Ok(Self(s.to_string()))
+        // Rewrite the string to the canonical prefix so downstream consumers
+        // (session_type(), storage lookup) see the current vocabulary.
+        let canonical = if canonical_type == parts[0] {
+            s.to_string()
+        } else {
+            format!("{canonical_type}-{}-{}-{}", parts[1], parts[2], parts[3])
+        };
+        Ok(Self(canonical))
     }
 
     /// Get the session type
@@ -181,10 +197,19 @@ mod tests {
     #[test]
     fn test_session_id_parse_invalid_type() {
         assert!(SessionId::parse("unknown-20260104-1530-a1b2").is_err());
-        // "sub" and "mcp" used to be valid observe prefixes; verify the
-        // Phase 4 consolidation removed them.
-        assert!(SessionId::parse("sub-20260104-1530-a1b2").is_err());
-        assert!(SessionId::parse("mcp-20260104-1530-a1b2").is_err());
+    }
+
+    #[test]
+    fn test_session_id_parse_rewrites_legacy_prefixes() {
+        // Legacy prefixes from before Phase 4 round-trip to the canonical
+        // variant so pre-consolidation session files still load.
+        let sub = SessionId::parse("sub-20260104-1530-a1b2").unwrap();
+        assert_eq!(sub.as_str(), "agent-20260104-1530-a1b2");
+        assert_eq!(sub.session_type(), SessionType::Agent);
+
+        let mcp = SessionId::parse("mcp-20260104-1530-beef").unwrap();
+        assert_eq!(mcp.as_str(), "chat-20260104-1530-beef");
+        assert_eq!(mcp.session_type(), SessionType::Chat);
     }
 
     #[test]

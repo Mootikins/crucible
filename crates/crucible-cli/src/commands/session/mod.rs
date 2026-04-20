@@ -12,7 +12,7 @@ use std::str::FromStr;
 mod acp;
 mod cleanup;
 mod export;
-mod helpers;
+pub(crate) mod helpers;
 mod io;
 mod list;
 mod reindex;
@@ -26,9 +26,7 @@ mod tests;
 pub use helpers::resolve_session_id;
 
 use acp::rpc;
-use helpers::{
-    canonicalize_session_type, resolve_permission_mode, resolve_send_inputs, warn_deprecated,
-};
+use helpers::{resolve_permission_mode, resolve_send_inputs, warn_deprecated};
 
 pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
     match cmd {
@@ -38,10 +36,7 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             format,
             state,
             all,
-        } => {
-            let session_type = session_type.map(|s| canonicalize_session_type(&s));
-            list::list(config, limit, session_type, format, state, all).await
-        }
+        } => list::list(config, limit, session_type, format, state, all).await,
         SessionCommands::Search {
             query,
             limit,
@@ -78,7 +73,6 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             workspace,
             permissions,
         } => {
-            let session_type = canonicalize_session_type(&session_type);
             let permission_mode = resolve_permission_mode(permissions.as_deref())?;
             let client = daemon_client().await?;
             rpc::create(

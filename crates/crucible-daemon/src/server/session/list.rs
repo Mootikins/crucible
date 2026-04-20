@@ -11,12 +11,8 @@ pub(crate) async fn handle_session_list(
     // Parse optional filters
     let kiln = optional_param!(req, "kiln", as_str).map(PathBuf::from);
     let workspace = optional_param!(req, "workspace", as_str).map(PathBuf::from);
-    let session_type = optional_param!(req, "type", as_str).and_then(|s| match s {
-        "chat" => Some(SessionType::Chat),
-        "agent" => Some(SessionType::Agent),
-        "workflow" => Some(SessionType::Workflow),
-        _ => None,
-    });
+    let session_type =
+        optional_param!(req, "type", as_str).and_then(|s| s.parse::<SessionType>().ok());
     let state = optional_param!(req, "state", as_str).and_then(|s| match s {
         "active" => Some(SessionState::Active),
         "paused" => Some(SessionState::Paused),

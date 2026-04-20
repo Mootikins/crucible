@@ -10,8 +10,12 @@ pub enum SessionCommands {
         #[arg(short = 'n', long, default_value = "20")]
         limit: u32,
 
-        /// Filter by session type (chat, workflow, mcp, agent)
-        #[arg(short = 't', long, value_parser = ["chat", "workflow", "mcp", "agent"])]
+        /// Filter by session type (chat, agent, workflow; legacy: mcp→chat)
+        #[arg(
+            short = 't',
+            long,
+            value_parser = crate::commands::session::helpers::parse_session_type_arg,
+        )]
         session_type: Option<String>,
 
         /// Output format (text, json)
@@ -95,8 +99,13 @@ pub enum SessionCommands {
 
     /// Create a new daemon session
     Create {
-        /// Session type (chat, workflow, mcp, agent)
-        #[arg(short = 't', long, default_value = "chat", value_parser = ["chat", "workflow", "mcp", "agent"])]
+        /// Session type (chat, agent, workflow; legacy: mcp→chat)
+        #[arg(
+            short = 't',
+            long,
+            default_value = "chat",
+            value_parser = crate::commands::session::helpers::parse_session_type_arg,
+        )]
         session_type: String,
 
         /// ACP agent profile to configure for the new session

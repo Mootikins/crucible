@@ -204,9 +204,11 @@ fn test_session_create_with_type_parses() {
 
 #[test]
 fn test_session_create_accepts_mcp_type() {
+    // `-t mcp` is accepted for backward compat but canonicalizes to `chat`
+    // at the clap-parser level (with an stderr deprecation warning).
     let cli = Cli::try_parse_from(["cru", "session", "create", "-t", "mcp"]).unwrap();
     if let Some(Commands::Session(SessionCommands::Create { session_type, .. })) = cli.command {
-        assert_eq!(session_type, "mcp");
+        assert_eq!(session_type, "chat");
     } else {
         panic!("Expected Session Create command");
     }

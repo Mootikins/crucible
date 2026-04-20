@@ -25,19 +25,31 @@ pub(super) fn warn_deprecated(old: &str, new: &str) {
     eprintln!("warning: '{}' is deprecated, use '{}' instead", old, new);
 }
 
-/// Remap legacy session-type strings to their canonical variants, emitting a
-/// one-time stderr warning when a deprecated value is in play. `mcp` was a
-/// historical prefix (observe-only) with no semantic distinction; it now maps
-/// to `chat`.
-pub(super) fn canonicalize_session_type(input: &str) -> String {
+/// The set of session-type strings clap accepts on the command line. Kept as
+/// a single source of truth so the clap `value_parser` list and the
+/// canonicalization step below can't drift.
+pub const ACCEPTED_SESSION_TYPES: &[&str] = &["chat", "agent", "workflow", "mcp"];
+
+/// clap `value_parser` used for `cru session create -t` and `cru session
+/// list -t`. Validates the input against [`ACCEPTED_SESSION_TYPES`] and
+/// rewrites legacy values to their canonical form, emitting a deprecation
+/// warning on stderr when we do so. The post-parse `session_type: String` is
+/// therefore always one of the canonical variants.
+pub fn parse_session_type_arg(input: &str) -> Result<String, String> {
+    if !ACCEPTED_SESSION_TYPES.contains(&input) {
+        return Err(format!(
+            "invalid session type '{input}' (expected one of: {})",
+            ACCEPTED_SESSION_TYPES.join(", ")
+        ));
+    }
     match input {
         "mcp" => {
             eprintln!(
                 "warning: session type 'mcp' is deprecated and mapped to 'chat'; pass -t chat explicitly"
             );
-            "chat".to_string()
+            Ok("chat".to_string())
         }
-        other => other.to_string(),
+        other => Ok(other.to_string()),
     }
 }
 
