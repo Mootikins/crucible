@@ -146,18 +146,34 @@ impl AgentHandle for DaemonAgentHandle {
         Ok(())
     }
 
-    async fn clear_history(&mut self) {
+    async fn clear_history(&mut self) -> ChatResult<()> {
+        // ACP sessions own their conversation state inside the spawned
+        // agent process. The session_end+session_create dance below would
+        // hijack the ACP session into an internal one (agent_type: None),
+        // so refuse and let the TUI surface the error.
+        if self
+            .cached_agent_config
+            .as_ref()
+            .is_some_and(|a| a.agent_type == "acp")
+        {
+            return Err(ChatError::NotSupported(
+                "ACP agents manage their own history; clearing would require restarting the agent"
+                    .into(),
+            ));
+        }
+
         tracing::info!(session_id = %self.session_id, "Clearing session — ending old, creating new");
 
         let _ = self.client.session_unsubscribe(&[&self.session_id]).await;
         let _ = self.client.session_end(&self.session_id).await;
 
         let (Some(kiln), Some(ws)) = (&self.kiln_path, &self.workspace) else {
-            tracing::warn!("Cannot create new session: missing kiln_path or workspace");
-            return;
+            return Err(ChatError::Internal(
+                "Cannot create new session: missing kiln_path or workspace".into(),
+            ));
         };
 
-        let result = match self
+        let result = self
             .client
             .session_create(crate::rpc_client::client::SessionCreateParams {
                 session_type: "chat".to_string(),
@@ -169,17 +185,12 @@ impl AgentHandle for DaemonAgentHandle {
                 agent_type: None,
             })
             .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::warn!(error = %e, "Failed to create new session after clear");
-                return;
-            }
-        };
+            .chat_comm()?;
 
         let Some(new_id) = result["session_id"].as_str() else {
-            tracing::warn!("No session_id in create response");
-            return;
+            return Err(ChatError::Internal(
+                "No session_id in session_create response".into(),
+            ));
         };
         let new_id = new_id.to_string();
 
@@ -212,6 +223,7 @@ impl AgentHandle for DaemonAgentHandle {
         tracing::info!(old = %self.session_id, new = %new_id, "Session switched");
         self.session_id = new_id.clone();
         let _ = self.router_session_id.send(new_id);
+        Ok(())
     }
 
     async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {

@@ -565,8 +565,16 @@ impl AgentHandle for AcpAgentHandle {
         &self.commands
     }
 
-    async fn clear_history(&mut self) {
-        // Daemon manages history — ACP handle is stateless w.r.t. conversation
+    async fn clear_history(&mut self) -> ChatResult<()> {
+        // ACP agents own their conversation state; clearing requires
+        // terminating and restarting the agent process, which the CLI
+        // path (DaemonAgentHandle::clear_history) refuses for ACP
+        // sessions. Surface the same error here in case this handle is
+        // ever invoked directly.
+        Err(ChatError::NotSupported(
+            "ACP agents manage their own history; clearing would require restarting the agent"
+                .into(),
+        ))
     }
 
     async fn set_temperature(&mut self, temperature: f64) -> ChatResult<()> {

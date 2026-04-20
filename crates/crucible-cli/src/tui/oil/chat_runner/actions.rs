@@ -160,9 +160,21 @@ impl OilChatRunner {
                                 tracing::warn!(error = %e, "Failed to cancel agent stream");
                             }
                         }
-                        params.agent.clear_history().await;
-                        params.app.reset_session();
-                        tracing::info!("New session started (history cleared)");
+                        match params.agent.clear_history().await {
+                            Ok(()) => {
+                                params.app.reset_session();
+                                tracing::info!("New session started (history cleared)");
+                            }
+                            Err(e) => {
+                                tracing::warn!(error = %e, "clear_history failed");
+                                params.app.add_notification(
+                                    crucible_core::types::Notification::warning(format!(
+                                        "Clear history failed: {}",
+                                        e
+                                    )),
+                                );
+                            }
+                        }
                     }
                     ChatAppMsg::StreamCancelled => {
                         if params.app.is_streaming() {
