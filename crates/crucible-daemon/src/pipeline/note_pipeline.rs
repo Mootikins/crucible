@@ -20,7 +20,7 @@
 use anyhow::{Context, Result};
 use crucible_core::parser::{traits::MarkdownParser, CrucibleParser};
 use crucible_core::processing::{ChangeDetectionStore, FileState, ProcessingResult};
-use crucible_core::storage::{NoteRecord, NoteStore};
+use crucible_core::storage::{NoteRecord, NoteStore, VectorStore};
 use crucible_core::EnrichmentService;
 use std::collections::HashMap;
 use std::path::Path;
@@ -76,6 +76,11 @@ pub struct NotePipeline {
     /// Storage for notes (Phase 4) - backend-agnostic via NoteStore trait
     note_store: Arc<dyn NoteStore>,
 
+    /// Vector index for embeddings (Phase 4 — Lance-backed). When set,
+    /// the pipeline writes the per-note embedding here keyed by note path.
+    /// `None` in tests that don't exercise vector search.
+    vector_store: Option<Arc<dyn VectorStore>>,
+
     /// Configuration
     config: NotePipelineConfig,
 
@@ -103,6 +108,7 @@ impl NotePipeline {
             change_detector,
             enrichment_service,
             note_store,
+            vector_store: None,
             config,
             kiln_root: None,
         }
@@ -122,9 +128,17 @@ impl NotePipeline {
             change_detector,
             enrichment_service,
             note_store,
+            vector_store: None,
             config,
             kiln_root: None,
         }
+    }
+
+    /// Attach a Lance-backed vector index. The pipeline writes each note's
+    /// embedding to this index after the SQLite metadata upsert succeeds.
+    pub fn with_vector_store(mut self, vectors: Arc<dyn VectorStore>) -> Self {
+        self.vector_store = Some(vectors);
+        self
     }
 
     /// Set the kiln root path for normalizing stored note paths.
@@ -237,12 +251,31 @@ impl NotePipeline {
         // Convert EnrichedNote to NoteRecord for storage
         let note_record = self.enriched_to_record(&enriched, &path_str)?;
 
+        // Capture the embedding before move so we can also write it to the
+        // Lance vector index. Cheap clone — this is the only copy made.
+        let embedding_for_vectors = note_record.embedding.clone();
+
         // Store via NoteStore trait (works with any backend)
         self.note_store
             .upsert(note_record)
             .await
             .map_err(|e| anyhow::anyhow!("Storage error: {}", e))
             .with_context(|| format!("Phase 4: Failed to store note for '{}'", path.display()))?;
+
+        // Mirror the embedding into the Lance vector index keyed by note
+        // path. Lance is the source of truth for similarity search; the
+        // SQLite copy persists for now but is no longer queried.
+        if let (Some(vectors), Some(embedding)) =
+            (self.vector_store.as_ref(), embedding_for_vectors)
+        {
+            if let Err(e) = vectors.upsert(&path_str, embedding).await {
+                tracing::warn!(
+                    path = %path_str,
+                    ?e,
+                    "vector index upsert failed; metadata persisted but search will miss this note"
+                );
+            }
+        }
 
         // Update file state tracking
         self.update_file_state(path).await.with_context(|| {

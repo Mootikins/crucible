@@ -4,7 +4,6 @@
 //! The actual session content lives in JSONL files; this index enables
 //! fast listing, searching, and filtering.
 
-#[cfg(feature = "storage-sqlite")]
 mod sqlite_impl {
     use crate::observe::id::{SessionId, SessionType};
     use crate::observe::session::{SessionError, SessionMetadata};
@@ -511,5 +510,4 @@ mod sqlite_impl {
     }
 }
 
-#[cfg(feature = "storage-sqlite")]
 pub use sqlite_impl::SessionIndex;

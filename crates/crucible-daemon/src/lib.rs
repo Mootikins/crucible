@@ -75,7 +75,6 @@ pub use kiln_manager::KilnManager;
 pub use lifecycle::{remove_socket, socket_path, wait_for_shutdown};
 pub use mcp_host::InProcessMcpHost;
 pub use mcp_server::McpServerManager;
-#[cfg(feature = "storage-sqlite")]
 pub use observe::SessionIndex;
 pub use observe::{events, id, indexer, markdown, serde_md, session, storage, truncate};
 pub use observe::{

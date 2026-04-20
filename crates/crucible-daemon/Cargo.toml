@@ -28,7 +28,8 @@ tokio-util = { version = "0.7", features = ["rt"] }
 crucible-core = { path = "../crucible-core" }
 crucible-config = { path = "../crucible-config" }
 
-crucible-sqlite = { path = "../crucible-sqlite", optional = true }
+crucible-sqlite = { path = "../crucible-sqlite" }
+crucible-lance = { path = "../crucible-lance" }
 
 crucible-lua = { path = "../crucible-lua", features = ["send"] }
 crucible-acp = { path = "../crucible-acp" }
@@ -52,7 +53,7 @@ walkdir = "2.5"
 sha2 = "0.11"
 hex = "0.4"
 serde_yaml = { workspace = true }
-rusqlite = { version = "0.39", features = ["bundled"], optional = true }
+rusqlite = { version = "0.39", features = ["bundled"] }
 rand = { workspace = true }
 
 # Tools dependencies (absorbed from crucible-tools)
@@ -70,13 +71,9 @@ grep = "0.4"
 ignore = "0.4"
 
 [features]
-default = ["storage-sqlite"]
+default = []
 
 web = []
-
-# Storage backend selection (mutually exclusive in practice)
-
-storage-sqlite = ["dep:crucible-sqlite", "dep:rusqlite"]
 
 # Test tier flags (see justfile for usage)
 test-fixtures = []       # Tests using docs/ kiln or examples/test-kiln

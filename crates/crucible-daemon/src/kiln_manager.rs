@@ -17,7 +17,7 @@ use crate::pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
 use crate::watch::{EventFilter, WatchManager, WatchManagerConfig};
 use crucible_core::processing::InMemoryChangeDetectionStore;
 use crucible_core::storage::note_store::NoteRecord;
-use crucible_core::storage::StorageError;
+use crucible_core::storage::VectorStore;
 use crucible_core::traits::{KnowledgeRepository, NoteInfo};
 use crucible_core::EXCLUDED_DIRS;
 
@@ -44,7 +44,7 @@ pub fn normalize_note_path(file_path: &Path, kiln_path: &Path) -> Option<String>
 }
 
 // Backend-specific imports
-#[cfg(feature = "storage-sqlite")]
+use crucible_lance::LanceVectorIndex;
 use crucible_sqlite::{adapters as sqlite_adapters, SqliteClientHandle, SqliteConfig};
 
 // ===========================================================================
@@ -55,114 +55,73 @@ use crucible_sqlite::{adapters as sqlite_adapters, SqliteClientHandle, SqliteCon
 // Backend Abstraction
 // ===========================================================================
 
-/// Storage backend handle that wraps the SQLite client
+/// Per-kiln storage. SQLite owns metadata, properties, and the
+/// `KnowledgeRepository` surface; LanceDB owns the vector index. Both
+/// always present; there is no single-backend mode.
 #[derive(Clone)]
-#[allow(dead_code)] // Variants may appear unused depending on feature flags
-pub enum StorageHandle {
-    #[cfg(feature = "storage-sqlite")]
-    Sqlite(SqliteClientHandle),
+pub struct StorageHandle {
+    pub sqlite: SqliteClientHandle,
+    pub vectors: Arc<LanceVectorIndex>,
 }
 
 impl StorageHandle {
-    /// Get the backend name for logging
+    /// Stable label for diagnostic logs.
     pub fn backend_name(&self) -> &'static str {
-        match self {
-            #[cfg(feature = "storage-sqlite")]
-            StorageHandle::Sqlite(_) => "sqlite",
-        }
+        "sqlite+lance"
     }
 
-    /// Get a NoteStore trait object for this storage backend
-    pub fn as_note_store(&self) -> std::sync::Arc<dyn crucible_core::storage::NoteStore> {
-        match self {
-            #[cfg(feature = "storage-sqlite")]
-            StorageHandle::Sqlite(client) => client.as_note_store(),
-        }
+    /// Note metadata store (SQLite).
+    pub fn as_note_store(&self) -> Arc<dyn crucible_core::storage::NoteStore> {
+        self.sqlite.as_note_store()
     }
 
-    /// Get a PropertyStore trait object for EAV property storage
-    pub fn as_property_store(&self) -> std::sync::Arc<dyn crucible_core::storage::PropertyStore> {
-        match self {
-            #[cfg(feature = "storage-sqlite")]
-            StorageHandle::Sqlite(client) => client.as_property_store(),
-        }
+    /// Property/EAV store (SQLite).
+    pub fn as_property_store(&self) -> Arc<dyn crucible_core::storage::PropertyStore> {
+        self.sqlite.as_property_store()
     }
 
-    /// Search for similar vectors - backend-agnostic VSS
+    /// Vector similarity search.
     ///
     /// Returns (document_id, score) pairs sorted by similarity descending.
+    /// Vector index lives in LanceDB; the document_id is the note path
+    /// stored at upsert time and looked up in SQLite if metadata hydration
+    /// is required.
     pub async fn search_vectors(
         &self,
         vector: Vec<f32>,
         limit: usize,
     ) -> Result<Vec<(String, f64)>> {
-        match self {
-            #[cfg(feature = "storage-sqlite")]
-            StorageHandle::Sqlite(client) => {
-                let store = client.as_note_store();
-                let results = store.search(&vector, limit, None).await?;
-                Ok(results
-                    .into_iter()
-                    .map(|r| (r.note.path, r.score as f64))
-                    .collect())
-            }
-        }
+        let matches = self.vectors.search(&vector, limit).await?;
+        Ok(matches
+            .into_iter()
+            .map(|m| (m.id, m.similarity as f64))
+            .collect())
     }
 
-    /// List notes in the kiln - backend-agnostic
-    ///
-    /// # Arguments
-    ///
-    /// * `path_filter` - Optional substring to filter note paths (case-sensitive).
-    ///   Notes are included if their path contains this substring.
-    ///
-    /// # Returns
-    ///
-    /// A list of notes with metadata. The `name` field is extracted from the file
-    /// stem of the path (e.g., "notes/daily.md" → "daily"), falling back to the
-    /// full path if stem extraction fails.
+    /// List notes by metadata filter. Always reads from SQLite.
     pub async fn list_notes(&self, path_filter: Option<&str>) -> Result<Vec<NoteInfo>> {
-        match self {
-            #[cfg(feature = "storage-sqlite")]
-            StorageHandle::Sqlite(client) => {
-                let store = client.as_note_store();
-                let records = store.list().await?;
-                Ok(records
-                    .into_iter()
-                    .filter(|r| path_filter.is_none_or(|p| r.path.contains(p)))
-                    .map(|r| NoteInfo {
-                        name: std::path::Path::new(&r.path)
-                            .file_stem()
-                            .and_then(|s| s.to_str())
-                            .unwrap_or(&r.path)
-                            .to_string(),
-                        path: r.path,
-                        title: Some(r.title),
-                        tags: r.tags,
-                        created_at: None,
-                        updated_at: Some(r.updated_at),
-                    })
-                    .collect())
-            }
-        }
+        let records = self.sqlite.as_note_store().list().await?;
+        Ok(records
+            .into_iter()
+            .filter(|r| path_filter.is_none_or(|p| r.path.contains(p)))
+            .map(|r| NoteInfo {
+                name: std::path::Path::new(&r.path)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(&r.path)
+                    .to_string(),
+                path: r.path,
+                title: Some(r.title),
+                tags: r.tags,
+                created_at: None,
+                updated_at: Some(r.updated_at),
+            })
+            .collect())
     }
 
-    /// Get a note by name - backend-agnostic
-    ///
-    /// Performs a case-insensitive fuzzy search, returning the first note whose
-    /// path or title contains the given name.
-    ///
-    /// # Performance
-    ///
-    /// Currently does a linear scan over all notes (O(n)). For large kilns with
-    /// 10k+ notes, consider adding backend-specific indexed queries (e.g., SQL
-    /// LIKE with index).
+    /// Case-insensitive fuzzy lookup by path or title.
     pub async fn get_note_by_name(&self, name: &str) -> Result<Option<NoteRecord>> {
-        let records: Vec<NoteRecord> = match self {
-            #[cfg(feature = "storage-sqlite")]
-            StorageHandle::Sqlite(client) => client.as_note_store().list().await?,
-        };
-
+        let records = self.sqlite.as_note_store().list().await?;
         let name_lower = name.to_lowercase();
         Ok(records.into_iter().find(|r| {
             r.path.to_lowercase().contains(&name_lower)
@@ -170,12 +129,9 @@ impl StorageHandle {
         }))
     }
 
-    /// Get a KnowledgeRepository trait object for this storage backend
+    /// Knowledge repository trait surface (SQLite-backed).
     pub fn as_knowledge_repository(&self) -> Arc<dyn KnowledgeRepository> {
-        match self {
-            #[cfg(feature = "storage-sqlite")]
-            StorageHandle::Sqlite(client) => client.as_knowledge_repository(),
-        }
+        self.sqlite.as_knowledge_repository()
     }
 }
 
@@ -244,8 +200,6 @@ impl KilnManager {
             }
         }
 
-        // Use backend-specific database names
-        #[cfg(feature = "storage-sqlite")]
         let db_path = canonical.join(".crucible").join("crucible-sqlite.db");
 
         info!("Opening kiln at {:?}", db_path);
@@ -540,105 +494,18 @@ impl KilnManager {
             .cloned()
     }
 
-    /// Check if the kiln has embeddings from a different model than currently configured.
+    /// Check whether the kiln's vector index was populated by a different
+    /// embedding model than what's currently configured.
     ///
-    /// Non-blocking diagnostic: logs a warning and emits an event if mismatch detected.
-    /// Does not fail kiln open on error.
-    async fn check_embedding_model_mismatch(&self, canonical: &Path) {
-        let current_model = match self.enrichment_config.as_ref() {
-            Some(config) => config.model().to_string(),
-            None => return, // No enrichment configured, nothing to check
-        };
-
-        let event_tx = match self.event_tx.as_ref() {
-            Some(tx) => tx,
-            None => return, // No event channel, can't emit warnings
-        };
-
-        // Clone handle to avoid holding the read lock during SQL query
-        let handle = {
-            let conns = self.connections.read().await;
-            match conns.get(canonical) {
-                Some(conn) => conn.handle.clone(),
-                None => return,
-            }
-        };
-
-        let canonical_str = canonical.to_string_lossy().to_string();
-
-        match &handle {
-            #[cfg(feature = "storage-sqlite")]
-            StorageHandle::Sqlite(client) => {
-                let pool = client.pool().clone();
-                let current_model_owned = current_model.clone();
-
-                let result = tokio::task::spawn_blocking(move || {
-                    pool.with_connection(|conn| {
-                        let mut stmt = conn
-                            .prepare(
-                                "SELECT DISTINCT embedding_model FROM notes \
-                                 WHERE embedding IS NOT NULL AND embedding_model IS NOT NULL",
-                            )
-                            .map_err(|e| StorageError::Backend(e.to_string()))?;
-
-                        let models: Vec<String> = stmt
-                            .query_map([], |row| row.get(0))
-                            .map_err(|e| StorageError::Backend(e.to_string()))?
-                            .filter_map(|r| r.ok())
-                            .collect();
-
-                        let mut mismatches = Vec::new();
-                        for model in models {
-                            if model != current_model_owned {
-                                let count: u32 = conn
-                                    .query_row(
-                                        "SELECT COUNT(*) FROM notes \
-                                         WHERE embedding_model = ?1 AND embedding IS NOT NULL",
-                                        [&model],
-                                        |row| row.get(0),
-                                    )
-                                    .map_err(|e| StorageError::Backend(e.to_string()))?;
-                                mismatches.push((model, count as usize));
-                            }
-                        }
-
-                        Ok(mismatches)
-                    })
-                })
-                .await;
-
-                match result {
-                    Ok(Ok(mismatches)) => {
-                        for (stored_model, note_count) in mismatches {
-                            warn!(
-                                kiln_path = %canonical_str,
-                                stored_model = %stored_model,
-                                current_model = %current_model,
-                                note_count,
-                                "Embedding model mismatch detected"
-                            );
-                            let event = SessionEventMessage::new(
-                                "system",
-                                "embedding_model_mismatch",
-                                serde_json::json!({
-                                    "kiln_path": canonical_str,
-                                    "stored_model": stored_model,
-                                    "current_model": current_model,
-                                    "note_count": note_count,
-                                }),
-                            );
-                            crate::event_emitter::emit_event(event_tx, event);
-                        }
-                    }
-                    Ok(Err(e)) => {
-                        warn!("Failed to check embedding model mismatch: {}", e);
-                    }
-                    Err(e) => {
-                        warn!("Failed to check embedding model mismatch: {}", e);
-                    }
-                }
-            }
-        }
+    /// Currently a no-op: the LanceDB vector index doesn't track which
+    /// model produced each embedding. If a mismatch happens, the user
+    /// re-runs `cru index` and the new vectors overwrite the old. Cheap
+    /// because the kiln owner is the only consumer.
+    ///
+    /// TODO: if multi-tenant kilns ever appear, store embedding model in
+    /// a sqlite-side `vector_index_metadata` table and validate here.
+    async fn check_embedding_model_mismatch(&self, _canonical: &Path) {
+        // intentionally empty
     }
 
     /// Open kilns by name from a registry. Returns names of successfully opened kilns.
@@ -772,31 +639,32 @@ async fn create_pipeline(
 
     let config = pipeline_config(enrichment_config);
 
-    Ok(NotePipeline::with_config(
+    let pipeline = NotePipeline::with_config(
         change_detector,
         enrichment_service,
         note_store,
         config,
-    ))
+    )
+    .with_vector_store(handle.vectors.clone());
+
+    Ok(pipeline)
 }
 
 /// Create a storage handle for the given database path.
-/// Uses SQLite as the default backend.
-#[allow(clippy::needless_return)] // Returns needed for cfg-gated branches
-async fn create_storage_handle(db_path: &Path) -> Result<StorageHandle> {
-    // SQLite is the default backend
-    #[cfg(feature = "storage-sqlite")]
-    {
-        let config = SqliteConfig::new(db_path);
-        let client = sqlite_adapters::create_sqlite_client(config).await?;
-        return Ok(StorageHandle::Sqlite(client));
-    }
+/// Open both backends for a kiln. SQLite for metadata + properties at
+/// `<kiln>/.crucible/crucible-sqlite.db`; LanceDB vector index at
+/// `<kiln>/.crucible/crucible-vectors.lance/`.
+async fn create_storage_handle(sqlite_db_path: &Path) -> Result<StorageHandle> {
+    let sqlite_config = SqliteConfig::new(sqlite_db_path);
+    let sqlite = sqlite_adapters::create_sqlite_client(sqlite_config).await?;
 
-    // If neither feature is enabled, compilation will fail here
-    #[cfg(not(feature = "storage-sqlite"))]
-    {
-        compile_error!("At least one storage backend must be enabled");
-    }
+    let lance_dir = sqlite_db_path
+        .parent()
+        .map(|p| p.join("crucible-vectors.lance"))
+        .unwrap_or_else(|| PathBuf::from("crucible-vectors.lance"));
+    let vectors = Arc::new(LanceVectorIndex::open(lance_dir.to_string_lossy().as_ref()).await?);
+
+    Ok(StorageHandle { sqlite, vectors })
 }
 
 // ===========================================================================

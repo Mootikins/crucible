@@ -54,7 +54,6 @@ pub enum SessionError {
     AlreadyExists(SessionId),
 }
 
-#[cfg(feature = "storage-sqlite")]
 impl From<rusqlite::Error> for SessionError {
     fn from(err: rusqlite::Error) -> Self {
         Self::Io(std::io::Error::other(err))

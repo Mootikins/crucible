@@ -22,6 +22,7 @@ pub mod graph;
 pub mod note_store;
 pub mod property_store;
 pub mod traits;
+pub mod vector_store;
 
 // Re-export main types for convenience
 pub use error::{StorageError, StorageResult};
@@ -30,3 +31,4 @@ pub use graph::InMemoryGraph;
 pub use note_store::{Filter, GraphView, NoteRecord, NoteStore, Op, SearchResult};
 pub use property_store::PropertyStore;
 pub use traits::{ContentHasher, QuotaUsage, StorageBackend, StorageStats};
+pub use vector_store::{VectorMatch, VectorStore};

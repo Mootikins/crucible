@@ -1804,6 +1804,7 @@ dependencies = [
  "crucible-acp",
  "crucible-config",
  "crucible-core",
+ "crucible-lance",
  "crucible-llm",
  "crucible-lua",
  "crucible-sqlite",

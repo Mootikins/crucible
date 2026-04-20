@@ -25,10 +25,12 @@
 
 pub mod note_store;
 pub mod store;
+pub mod vector_index;
 pub mod vector_search;
 
 // Re-export main types for convenience
 pub use crucible_core::storage::StorageResult as LanceResult;
 pub use note_store::{create_note_store, create_note_store_with_dimensions, LanceNoteStore};
 pub use store::LanceStore;
+pub use vector_index::LanceVectorIndex;
 pub use vector_search::VectorSearchResult;

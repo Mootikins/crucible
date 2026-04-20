@@ -61,5 +61,4 @@ pub use markdown::{render_to_markdown, RenderOptions};
 pub use session::{list_sessions, load_events, SessionError, SessionMetadata, SessionWriter};
 pub use truncate::{truncate_for_log, TruncateResult, DEFAULT_TRUNCATE_THRESHOLD};
 
-#[cfg(feature = "storage-sqlite")]
 pub use storage::SessionIndex;
