@@ -26,7 +26,7 @@ use crucible_core::events::{
 };
 use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, PermissionScope};
 use crucible_core::session::{ContextStrategy, OutputValidation, SessionAgent};
-use crucible_core::traits::chat::AgentHandle;
+use crucible_core::traits::chat::{AgentHandle, ChatError};
 use crucible_core::traits::tools::ToolExecutor;
 use crucible_core::traits::PermissionGate;
 use crucible_lua::{
@@ -170,6 +170,9 @@ pub enum AgentError {
 
     #[error("Operation not supported: {0}")]
     NotSupported(String),
+
+    #[error(transparent)]
+    Chat(#[from] ChatError),
 }
 
 struct RequestState {

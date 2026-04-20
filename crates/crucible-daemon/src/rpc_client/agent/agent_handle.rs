@@ -467,14 +467,16 @@ impl crucible_core::traits::Undoable for DaemonAgentHandle {
             .map_err(|e| ChatError::Communication(format!("Failed to undo: {}", e)))
     }
 
+    // `can_undo` and `undo_depth` are sync so we can't hit the daemon here.
+    // The authoritative values live on the daemon side (session.can_undo /
+    // session.undo_depth RPCs). No caller in the TUI consults these — the
+    // undo flow goes straight to `undo()` and inspects the returned summary.
+    // If these ever become hot paths, cache them from undo events.
     fn can_undo(&self) -> bool {
-        // Sync method — can't call async RPC here, so conservatively return
-        // true whenever connected. The authoritative check is daemon-side.
-        self.connected
+        false
     }
 
     fn undo_depth(&self) -> usize {
-        // No cached value; callers querying depth should hit RPC directly.
         0
     }
 }

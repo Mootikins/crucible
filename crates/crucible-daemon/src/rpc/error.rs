@@ -2,6 +2,7 @@
 
 use crate::agent_manager::AgentError;
 use crate::protocol::{RpcError, INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND};
+use crucible_core::traits::chat::ChatError;
 
 #[allow(dead_code)] // re-exported from rpc module; dispatch.rs uses its own copy
 pub type RpcResult<T> = Result<T, RpcError>;
@@ -33,6 +34,16 @@ pub fn agent_error_to_rpc_error(e: AgentError) -> RpcError {
         NotSupported(msg) => RpcError {
             code: METHOD_NOT_FOUND,
             message: msg,
+            data: None,
+        },
+        Chat(ChatError::NotSupported(msg)) => RpcError {
+            code: METHOD_NOT_FOUND,
+            message: msg,
+            data: None,
+        },
+        Chat(inner) => RpcError {
+            code: INTERNAL_ERROR,
+            message: inner.to_string(),
             data: None,
         },
         other => {
@@ -114,6 +125,25 @@ mod tests {
         assert_eq!(rpc_err.code, METHOD_NOT_FOUND);
         assert!(rpc_err.message.contains("undo not supported"));
         assert_eq!(rpc_err.data, None);
+    }
+
+    #[test]
+    fn agent_error_chat_not_supported_maps_to_method_not_found() {
+        use crate::protocol::METHOD_NOT_FOUND;
+        let err = AgentError::Chat(ChatError::NotSupported("switch_model".to_string()));
+        let rpc_err = agent_error_to_rpc_error(err);
+
+        assert_eq!(rpc_err.code, METHOD_NOT_FOUND);
+        assert!(rpc_err.message.contains("switch_model"));
+    }
+
+    #[test]
+    fn agent_error_chat_communication_maps_to_internal_error() {
+        let err = AgentError::Chat(ChatError::Communication("RPC timeout".to_string()));
+        let rpc_err = agent_error_to_rpc_error(err);
+
+        assert_eq!(rpc_err.code, INTERNAL_ERROR);
+        assert!(rpc_err.message.contains("RPC timeout"));
     }
 
     #[test]

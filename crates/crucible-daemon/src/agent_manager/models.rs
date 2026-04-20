@@ -848,8 +848,7 @@ impl AgentManager {
                 AgentError::NotSupported("undo not supported for this agent type".into())
             })?
             .undo(count)
-            .await
-            .map_err(|e| AgentError::InvalidConfig(format!("undo failed: {e}")))?;
+            .await?;
 
         if !summaries.is_empty() {
             if let Some(tx) = event_tx {
