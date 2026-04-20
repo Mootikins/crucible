@@ -845,7 +845,7 @@ impl AgentManager {
         let summaries = guard
             .as_undoable_mut()
             .ok_or_else(|| {
-                AgentError::InvalidConfig("undo not supported for this agent type".into())
+                AgentError::NotSupported("undo not supported for this agent type".into())
             })?
             .undo(count)
             .await

@@ -167,6 +167,9 @@ pub enum AgentError {
 
     #[error("Invalid configuration: {0}")]
     InvalidConfig(String),
+
+    #[error("Operation not supported: {0}")]
+    NotSupported(String),
 }
 
 struct RequestState {

@@ -1,7 +1,7 @@
 //! RPC error types and conversions
 
 use crate::agent_manager::AgentError;
-use crate::protocol::{RpcError, INTERNAL_ERROR, INVALID_PARAMS};
+use crate::protocol::{RpcError, INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND};
 
 #[allow(dead_code)] // re-exported from rpc module; dispatch.rs uses its own copy
 pub type RpcResult<T> = Result<T, RpcError>;
@@ -27,6 +27,11 @@ pub fn agent_error_to_rpc_error(e: AgentError) -> RpcError {
         },
         InvalidModelId(msg) => RpcError {
             code: INVALID_PARAMS,
+            message: msg,
+            data: None,
+        },
+        NotSupported(msg) => RpcError {
+            code: METHOD_NOT_FOUND,
             message: msg,
             data: None,
         },
@@ -97,6 +102,17 @@ mod tests {
 
         assert_eq!(rpc_err.code, INVALID_PARAMS);
         assert_eq!(rpc_err.message, "model-xyz is not valid");
+        assert_eq!(rpc_err.data, None);
+    }
+
+    #[test]
+    fn agent_error_not_supported_maps_to_method_not_found() {
+        use crate::protocol::METHOD_NOT_FOUND;
+        let err = AgentError::NotSupported("undo not supported for this agent type".to_string());
+        let rpc_err = agent_error_to_rpc_error(err);
+
+        assert_eq!(rpc_err.code, METHOD_NOT_FOUND);
+        assert!(rpc_err.message.contains("undo not supported"));
         assert_eq!(rpc_err.data, None);
     }
 

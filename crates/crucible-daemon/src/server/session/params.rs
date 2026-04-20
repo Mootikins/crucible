@@ -657,6 +657,9 @@ pub(crate) async fn handle_session_undo(
             INVALID_PARAMS,
             format!("Cannot undo while a request is in progress for session: {id}"),
         ),
+        Err(crate::agent_manager::AgentError::NotSupported(msg)) => {
+            Response::error(req.id, crate::protocol::METHOD_NOT_FOUND, msg)
+        }
         Err(e) => internal_error(req.id, e),
     }
 }
