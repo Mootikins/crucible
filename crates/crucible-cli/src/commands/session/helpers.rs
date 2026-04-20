@@ -25,6 +25,22 @@ pub(super) fn warn_deprecated(old: &str, new: &str) {
     eprintln!("warning: '{}' is deprecated, use '{}' instead", old, new);
 }
 
+/// Remap legacy session-type strings to their canonical variants, emitting a
+/// one-time stderr warning when a deprecated value is in play. `mcp` was a
+/// historical prefix (observe-only) with no semantic distinction; it now maps
+/// to `chat`.
+pub(super) fn canonicalize_session_type(input: &str) -> String {
+    match input {
+        "mcp" => {
+            eprintln!(
+                "warning: session type 'mcp' is deprecated and mapped to 'chat'; pass -t chat explicitly"
+            );
+            "chat".to_string()
+        }
+        other => other.to_string(),
+    }
+}
+
 pub(super) fn resolve_send_inputs(
     session_id_pos: Option<String>,
     message: Option<String>,

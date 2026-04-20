@@ -98,7 +98,11 @@ impl SessionWriter {
     pub async fn create_subagent(
         parent_session_dir: impl AsRef<Path>,
     ) -> Result<(Self, String), SessionError> {
-        let id = SessionId::new(SessionType::Subagent, Utc::now());
+        // Subagents used to carry a dedicated `Subagent` variant (prefix
+        // "sub-"); after the Phase 4 type consolidation they use the canonical
+        // Agent prefix. The parent→subagent relationship is expressed by
+        // directory layout (`{parent}/subagents/{id}/`), not the type tag.
+        let id = SessionId::new(SessionType::Agent, Utc::now());
         let subagents_dir = parent_session_dir.as_ref().join("subagents");
         let session_dir = subagents_dir.join(id.as_str());
 
@@ -444,9 +448,9 @@ mod tests {
 
         let (mut subagent, wikilink) = SessionWriter::create_subagent(&parent_dir).await.unwrap();
 
-        assert!(subagent.id().as_str().starts_with("sub-"));
+        assert!(subagent.id().as_str().starts_with("agent-"));
         assert!(subagent.session_dir().exists());
-        assert!(wikilink.starts_with("[[.subagents/sub-"));
+        assert!(wikilink.starts_with("[[.subagents/agent-"));
         assert!(wikilink.ends_with("/session]]"));
 
         subagent

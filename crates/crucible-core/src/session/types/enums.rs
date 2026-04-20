@@ -63,6 +63,19 @@ impl std::fmt::Display for SessionType {
     }
 }
 
+impl FromStr for SessionType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "chat" => Ok(SessionType::Chat),
+            "agent" => Ok(SessionType::Agent),
+            "workflow" => Ok(SessionType::Workflow),
+            other => Err(format!("unknown session type: {other}")),
+        }
+    }
+}
+
 /// Current state of a session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]

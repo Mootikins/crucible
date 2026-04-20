@@ -7,44 +7,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::fmt;
 
-/// Session type discriminant
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SessionType {
-    /// Interactive chat session
-    Chat,
-    /// Workflow execution session
-    Workflow,
-    /// MCP server session
-    Mcp,
-    /// Background subagent session (child of a parent session)
-    Subagent,
-}
-
-impl fmt::Display for SessionType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SessionType::Chat => write!(f, "chat"),
-            SessionType::Workflow => write!(f, "workflow"),
-            SessionType::Mcp => write!(f, "mcp"),
-            SessionType::Subagent => write!(f, "sub"),
-        }
-    }
-}
-
-impl std::str::FromStr for SessionType {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "chat" => Ok(SessionType::Chat),
-            "workflow" => Ok(SessionType::Workflow),
-            "mcp" => Ok(SessionType::Mcp),
-            "sub" => Ok(SessionType::Subagent),
-            other => Err(format!("unknown session type: {other}")),
-        }
-    }
-}
+// Re-export the canonical session-type enum from core. observe used to carry
+// its own copy with different variants (Mcp, Subagent); those were cosmetic
+// (ID prefix only) and collapsed away in Phase 4 of the simplification plan.
+pub use crucible_core::session::SessionType;
 
 /// A unique session identifier
 ///
@@ -200,6 +166,12 @@ mod tests {
     }
 
     #[test]
+    fn test_session_id_parse_agent() {
+        let id = SessionId::parse("agent-20260104-1530-c0de").unwrap();
+        assert_eq!(id.session_type(), SessionType::Agent);
+    }
+
+    #[test]
     fn test_session_id_parse_invalid_format() {
         assert!(SessionId::parse("invalid").is_err());
         assert!(SessionId::parse("chat-20260104").is_err());
@@ -209,6 +181,10 @@ mod tests {
     #[test]
     fn test_session_id_parse_invalid_type() {
         assert!(SessionId::parse("unknown-20260104-1530-a1b2").is_err());
+        // "sub" and "mcp" used to be valid observe prefixes; verify the
+        // Phase 4 consolidation removed them.
+        assert!(SessionId::parse("sub-20260104-1530-a1b2").is_err());
+        assert!(SessionId::parse("mcp-20260104-1530-a1b2").is_err());
     }
 
     #[test]
@@ -233,7 +209,7 @@ mod tests {
     fn test_session_type_display() {
         assert_eq!(SessionType::Chat.to_string(), "chat");
         assert_eq!(SessionType::Workflow.to_string(), "workflow");
-        assert_eq!(SessionType::Mcp.to_string(), "mcp");
+        assert_eq!(SessionType::Agent.to_string(), "agent");
     }
 
     #[test]
@@ -243,7 +219,7 @@ mod tests {
             "workflow".parse::<SessionType>().unwrap(),
             SessionType::Workflow
         );
-        assert_eq!("mcp".parse::<SessionType>().unwrap(), SessionType::Mcp);
+        assert_eq!("agent".parse::<SessionType>().unwrap(), SessionType::Agent);
         assert!("unknown".parse::<SessionType>().is_err());
     }
 
