@@ -112,14 +112,6 @@ impl OilChatRunner {
             Action::Send(msg) => {
                 match &msg {
                     ChatAppMsg::Undo(count) => {
-                        if self.is_acp_session() {
-                            params.app.add_notification(
-                                crucible_core::types::Notification::warning(
-                                    "Undo not supported for ACP agents".to_string(),
-                                ),
-                            );
-                            return Ok(false);
-                        }
                         if params.app.is_streaming() {
                             params.app.add_notification(
                                 crucible_core::types::Notification::warning(
@@ -163,14 +155,6 @@ impl OilChatRunner {
                         return Ok(false);
                     }
                     ChatAppMsg::ClearHistory => {
-                        if self.is_acp_session() {
-                            params.app.add_notification(
-                                crucible_core::types::Notification::warning(
-                                    "History clearing not supported for ACP agents".to_string(),
-                                ),
-                            );
-                            return Ok(false);
-                        }
                         if params.app.is_streaming() {
                             if let Err(e) = params.agent.cancel().await {
                                 tracing::warn!(error = %e, "Failed to cancel agent stream");
@@ -189,21 +173,19 @@ impl OilChatRunner {
                         }
                     }
                     ChatAppMsg::SwitchModel(model_id) => {
-                        if self.is_acp_session() {
-                            params.app.add_notification(
-                                crucible_core::types::Notification::warning(
-                                    "Model switching not supported for ACP agents".to_string(),
-                                ),
-                            );
-                            return Ok(false);
-                        }
                         tracing::info!(model = %model_id, "Model switch requested");
                         match params.agent.switch_model(model_id).await {
                             Ok(()) => {
                                 tracing::info!(model = %model_id, "Model switched successfully");
                             }
                             Err(e) => {
-                                tracing::warn!(model = %model_id, error = %e, "Model switch not supported by this agent");
+                                tracing::warn!(model = %model_id, error = %e, "Model switch failed");
+                                params.app.add_notification(
+                                    crucible_core::types::Notification::warning(format!(
+                                        "Model switch failed: {}",
+                                        e
+                                    )),
+                                );
                             }
                         }
                     }
@@ -211,14 +193,10 @@ impl OilChatRunner {
                         // Skipped in replay mode to preserve the TUI-only guarantee
                         // (no daemon RPC calls). Replay never populates the model
                         // picker — `:model` is moot when there's no live session.
-                        if self.is_acp_session() {
-                            params.app.add_notification(
-                                crucible_core::types::Notification::warning(
-                                    "Model listing not available for ACP agents".to_string(),
-                                ),
-                            );
-                            return Ok(false);
-                        }
+                        //
+                        // For ACP agents the fetched list is the daemon's configured
+                        // internal providers, not the ACP agent's own model — trying
+                        // to switch will surface a NotSupported error at that point.
                         // Spawn model fetch as background task to avoid blocking the event loop.
                         // Uses a fresh DaemonClient connection (same pattern as plugin reload).
                         let tx = params.msg_tx.clone();
@@ -255,132 +233,108 @@ impl OilChatRunner {
                         params.app.on_message(msg.clone());
                     }
                     ChatAppMsg::SetThinkingBudget(budget) => {
-                        if self.is_acp_session() {
-                            params.app.add_notification(
-                                crucible_core::types::Notification::warning(
-                                    "Thinking budget not supported for ACP agents".to_string(),
-                                ),
-                            );
-                            return Ok(false);
-                        }
                         tracing::info!(budget = budget, "Setting thinking budget");
                         match params.agent.set_thinking_budget(*budget).await {
                             Ok(()) => {
                                 tracing::info!(budget = budget, "Thinking budget set successfully");
                             }
                             Err(e) => {
-                                tracing::warn!(budget = budget, error = %e, "Thinking budget not supported by this agent");
+                                tracing::warn!(budget = budget, error = %e, "set_thinking_budget failed");
+                                params.app.add_notification(
+                                    crucible_core::types::Notification::warning(format!(
+                                        "Set thinking_budget failed: {}",
+                                        e
+                                    )),
+                                );
                             }
                         }
                     }
                     ChatAppMsg::SetTemperature(temp) => {
-                        if self.is_acp_session() {
-                            params.app.add_notification(
-                                crucible_core::types::Notification::warning(
-                                    "Temperature setting not supported for ACP agents".to_string(),
-                                ),
-                            );
-                            return Ok(false);
-                        }
                         tracing::info!(temperature = temp, "Setting temperature");
                         match params.agent.set_temperature(*temp).await {
                             Ok(()) => {
                                 tracing::info!(temperature = temp, "Temperature set successfully");
                             }
                             Err(e) => {
-                                tracing::warn!(temperature = temp, error = %e, "Temperature not supported by this agent");
+                                tracing::warn!(temperature = temp, error = %e, "set_temperature failed");
+                                params.app.add_notification(
+                                    crucible_core::types::Notification::warning(format!(
+                                        "Set temperature failed: {}",
+                                        e
+                                    )),
+                                );
                             }
                         }
                     }
                     ChatAppMsg::SetMaxTokens(max_tokens) => {
-                        if self.is_acp_session() {
-                            params.app.add_notification(
-                                crucible_core::types::Notification::warning(
-                                    "Max tokens setting not supported for ACP agents".to_string(),
-                                ),
-                            );
-                            return Ok(false);
-                        }
                         tracing::info!(max_tokens = ?max_tokens, "Setting max_tokens");
                         match params.agent.set_max_tokens(*max_tokens).await {
                             Ok(()) => {
                                 tracing::info!(max_tokens = ?max_tokens, "Max tokens set successfully");
                             }
                             Err(e) => {
-                                tracing::warn!(max_tokens = ?max_tokens, error = %e, "Max tokens not supported by this agent");
+                                tracing::warn!(max_tokens = ?max_tokens, error = %e, "set_max_tokens failed");
+                                params.app.add_notification(
+                                    crucible_core::types::Notification::warning(format!(
+                                        "Set max_tokens failed: {}",
+                                        e
+                                    )),
+                                );
                             }
                         }
                     }
                     ChatAppMsg::SetMaxIterations(max_iterations) => {
-                        if self.is_acp_session() {
-                            params.app.add_notification(
-                                crucible_core::types::Notification::warning(
-                                    "Max iterations setting not supported for ACP agents"
-                                        .to_string(),
-                                ),
-                            );
-                            return Ok(false);
-                        }
                         tracing::info!(max_iterations = ?max_iterations, "Setting max_iterations");
                         match params.agent.set_max_iterations(*max_iterations).await {
                             Ok(()) => {
                                 tracing::info!(max_iterations = ?max_iterations, "Max iterations set successfully");
                             }
                             Err(e) => {
-                                tracing::warn!(max_iterations = ?max_iterations, error = %e, "Max iterations not supported by this agent");
+                                tracing::warn!(max_iterations = ?max_iterations, error = %e, "set_max_iterations failed");
+                                params.app.add_notification(
+                                    crucible_core::types::Notification::warning(format!(
+                                        "Set max_iterations failed: {}",
+                                        e
+                                    )),
+                                );
                             }
                         }
                     }
                     ChatAppMsg::SetExecutionTimeout(timeout_secs) => {
-                        if self.is_acp_session() {
-                            params.app.add_notification(
-                                crucible_core::types::Notification::warning(
-                                    "Execution timeout setting not supported for ACP agents"
-                                        .to_string(),
-                                ),
-                            );
-                            return Ok(false);
-                        }
                         tracing::info!(timeout_secs = ?timeout_secs, "Setting execution_timeout");
                         match params.agent.set_execution_timeout(*timeout_secs).await {
                             Ok(()) => {
                                 tracing::info!(timeout_secs = ?timeout_secs, "Execution timeout set successfully");
                             }
                             Err(e) => {
-                                tracing::warn!(timeout_secs = ?timeout_secs, error = %e, "Execution timeout not supported by this agent");
+                                tracing::warn!(timeout_secs = ?timeout_secs, error = %e, "set_execution_timeout failed");
+                                params.app.add_notification(
+                                    crucible_core::types::Notification::warning(format!(
+                                        "Set execution_timeout failed: {}",
+                                        e
+                                    )),
+                                );
                             }
                         }
                     }
                     ChatAppMsg::SetContextBudget(budget) => {
-                        if self.is_acp_session() {
-                            params.app.add_notification(
-                                crucible_core::types::Notification::warning(
-                                    "Context budget setting not supported for ACP agents"
-                                        .to_string(),
-                                ),
-                            );
-                            return Ok(false);
-                        }
                         tracing::info!(context_budget = ?budget, "Setting context_budget");
                         match params.agent.set_context_budget(*budget).await {
                             Ok(()) => {
                                 tracing::info!(context_budget = ?budget, "Context budget set successfully");
                             }
                             Err(e) => {
-                                tracing::warn!(context_budget = ?budget, error = %e, "Context budget not supported by this agent");
+                                tracing::warn!(context_budget = ?budget, error = %e, "set_context_budget failed");
+                                params.app.add_notification(
+                                    crucible_core::types::Notification::warning(format!(
+                                        "Set context_budget failed: {}",
+                                        e
+                                    )),
+                                );
                             }
                         }
                     }
                     ChatAppMsg::SetContextStrategy(strategy_str) => {
-                        if self.is_acp_session() {
-                            params.app.add_notification(
-                                crucible_core::types::Notification::warning(
-                                    "Context strategy setting not supported for ACP agents"
-                                        .to_string(),
-                                ),
-                            );
-                            return Ok(false);
-                        }
                         tracing::info!(context_strategy = %strategy_str, "Setting context_strategy");
                         match strategy_str.parse::<crucible_core::session::ContextStrategy>() {
                             Ok(strategy) => {
@@ -389,45 +343,45 @@ impl OilChatRunner {
                                         tracing::info!(context_strategy = %strategy_str, "Context strategy set successfully");
                                     }
                                     Err(e) => {
-                                        tracing::warn!(context_strategy = %strategy_str, error = %e, "Context strategy not supported by this agent");
+                                        tracing::warn!(context_strategy = %strategy_str, error = %e, "set_context_strategy failed");
+                                        params.app.add_notification(
+                                            crucible_core::types::Notification::warning(format!(
+                                                "Set context_strategy failed: {}",
+                                                e
+                                            )),
+                                        );
                                     }
                                 }
                             }
                             Err(e) => {
                                 tracing::warn!(error = %e, "Invalid context strategy");
+                                params.app.add_notification(
+                                    crucible_core::types::Notification::warning(format!(
+                                        "Invalid context_strategy: {}",
+                                        e
+                                    )),
+                                );
                             }
                         }
                     }
                     ChatAppMsg::SetContextWindow(window) => {
-                        if self.is_acp_session() {
-                            params.app.add_notification(
-                                crucible_core::types::Notification::warning(
-                                    "Context window setting not supported for ACP agents"
-                                        .to_string(),
-                                ),
-                            );
-                            return Ok(false);
-                        }
                         tracing::info!(context_window = ?window, "Setting context_window");
                         match params.agent.set_context_window(*window).await {
                             Ok(()) => {
                                 tracing::info!(context_window = ?window, "Context window set successfully");
                             }
                             Err(e) => {
-                                tracing::warn!(context_window = ?window, error = %e, "Context window not supported by this agent");
+                                tracing::warn!(context_window = ?window, error = %e, "set_context_window failed");
+                                params.app.add_notification(
+                                    crucible_core::types::Notification::warning(format!(
+                                        "Set context_window failed: {}",
+                                        e
+                                    )),
+                                );
                             }
                         }
                     }
                     ChatAppMsg::SetOutputValidation(ref validation_str) => {
-                        if self.is_acp_session() {
-                            params.app.add_notification(
-                                crucible_core::types::Notification::warning(
-                                    "Output validation setting not supported for ACP agents"
-                                        .to_string(),
-                                ),
-                            );
-                            return Ok(false);
-                        }
                         tracing::info!(output_validation = %validation_str, "Setting output_validation");
                         match validation_str.parse::<crucible_core::session::OutputValidation>() {
                             Ok(validation) => {
@@ -436,25 +390,28 @@ impl OilChatRunner {
                                         tracing::info!(output_validation = %validation_str, "Output validation set successfully");
                                     }
                                     Err(e) => {
-                                        tracing::warn!(error = %e, "Output validation not supported by this agent");
+                                        tracing::warn!(error = %e, "set_output_validation failed");
+                                        params.app.add_notification(
+                                            crucible_core::types::Notification::warning(format!(
+                                                "Set output_validation failed: {}",
+                                                e
+                                            )),
+                                        );
                                     }
                                 }
                             }
                             Err(e) => {
                                 tracing::warn!(error = %e, "Invalid output validation");
+                                params.app.add_notification(
+                                    crucible_core::types::Notification::warning(format!(
+                                        "Invalid output_validation: {}",
+                                        e
+                                    )),
+                                );
                             }
                         }
                     }
                     ChatAppMsg::SetValidationRetries(retries) => {
-                        if self.is_acp_session() {
-                            params.app.add_notification(
-                                crucible_core::types::Notification::warning(
-                                    "Validation retries setting not supported for ACP agents"
-                                        .to_string(),
-                                ),
-                            );
-                            return Ok(false);
-                        }
                         tracing::info!(validation_retries = retries, "Setting validation_retries");
                         match params.agent.set_validation_retries(*retries).await {
                             Ok(()) => {
@@ -464,7 +421,13 @@ impl OilChatRunner {
                                 );
                             }
                             Err(e) => {
-                                tracing::warn!(validation_retries = retries, error = %e, "Validation retries not supported by this agent");
+                                tracing::warn!(validation_retries = retries, error = %e, "set_validation_retries failed");
+                                params.app.add_notification(
+                                    crucible_core::types::Notification::warning(format!(
+                                        "Set validation_retries failed: {}",
+                                        e
+                                    )),
+                                );
                             }
                         }
                     }

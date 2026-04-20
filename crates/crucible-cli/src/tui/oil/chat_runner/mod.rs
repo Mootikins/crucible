@@ -260,10 +260,6 @@ impl OilChatRunner {
         self
     }
 
-    pub(super) fn is_acp_session(&self) -> bool {
-        self.agent_name.is_some()
-    }
-
     /// Queue an initial `FetchModels` message so the `:model` popup has data
     /// without a user-triggered round-trip.
     ///
@@ -273,10 +269,6 @@ impl OilChatRunner {
     /// replay anyway, the guard on the `ChatAppMsg::FetchModels` arm
     /// swallows it — see the match-arm comment there.
     pub(super) fn queue_model_prefetch(&self, msg_tx: &mpsc::UnboundedSender<ChatAppMsg>) {
-        if self.is_acp_session() {
-            return;
-        }
-
         if msg_tx.send(ChatAppMsg::FetchModels).is_err() {
             tracing::warn!("UI channel closed, initial FetchModels dropped");
         }

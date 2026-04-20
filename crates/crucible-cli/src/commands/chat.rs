@@ -373,20 +373,13 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
     use crucible_core::traits::chat::is_read_only;
 
     let parsed_set_overrides = {
-        use crate::tui::oil::commands::{validate_set_for_cli, SetEffect};
+        use crate::tui::oil::commands::validate_set_for_cli;
 
         let mut parsed = Vec::with_capacity(set_overrides.len());
         for input in &set_overrides {
             match validate_set_for_cli(input) {
                 Err(e) => {
                     output::error(&format!("invalid --set '{}': {}", input, e));
-                    std::process::exit(1);
-                }
-                Ok(SetEffect::DaemonRpc(_)) if agent_name.is_some() => {
-                    output::error(&format!(
-                        "invalid --set '{}': cannot set daemon RPC keys on ACP agent sessions",
-                        input
-                    ));
                     std::process::exit(1);
                 }
                 Ok(effect) => parsed.push(effect),
@@ -639,8 +632,7 @@ async fn run_oneshot_chat(params: RunOneshotChatParams) -> Result<()> {
     let core = Arc::new(KilnContext::from_storage_handle(storage_handle, config));
     status.success("Ready");
 
-    let _autoconfirm_session =
-        apply_oneshot_set_overrides(&mut handle, &set_overrides, agent_name.is_some()).await;
+    let _autoconfirm_session = apply_oneshot_set_overrides(&mut handle, &set_overrides).await;
 
     let _live_progress = bg_progress.map(LiveProgress::start);
 
@@ -682,7 +674,6 @@ async fn run_oneshot_chat(params: RunOneshotChatParams) -> Result<()> {
 async fn apply_oneshot_set_overrides(
     handle: &mut Box<dyn crucible_core::traits::chat::AgentHandle + Send + Sync>,
     set_overrides: &[String],
-    is_acp: bool,
 ) -> bool {
     use crate::tui::oil::commands::{validate_set_for_cli, CliValue, SetEffect};
 
@@ -699,13 +690,6 @@ async fn apply_oneshot_set_overrides(
 
         match effect {
             SetEffect::DaemonRpc(action) => {
-                if is_acp {
-                    output::error(&format!(
-                        "--set '{}' cannot be used with ACP agents (daemon RPC not available)",
-                        input
-                    ));
-                    std::process::exit(1);
-                }
                 if let Err(e) = apply_rpc_action(handle, action).await {
                     output::error(&format!("--set '{}' failed: {}", input, e));
                     std::process::exit(1);
