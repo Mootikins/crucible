@@ -45,6 +45,7 @@ pub mod storage;
 pub mod storage_client;
 pub mod text_search;
 pub mod tools;
+pub mod undoable;
 
 // Re-export key traits
 pub use acp::SessionManager;
@@ -83,3 +84,4 @@ pub use mcp::{
 };
 pub use permission_gate::PermissionGate;
 pub use text_search::TextSearchMatch;
+pub use undoable::Undoable;

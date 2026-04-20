@@ -909,29 +909,12 @@ impl AgentHandle for GenaiAgentHandle {
         wrap_stream_with_guards(stream)
     }
 
-    async fn undo(&mut self, count: usize) -> ChatResult<Vec<crucible_core::types::UndoSummary>> {
-        let mut summaries = Vec::new();
-        for _ in 0..count {
-            if let Some(entry) = self.undo_stack.pop() {
-                let messages_removed = self.history.len().saturating_sub(entry.message_index);
-                self.history.truncate(entry.message_index);
-                summaries.push(crucible_core::types::UndoSummary {
-                    messages_removed,
-                    description: entry.description,
-                });
-            } else {
-                break;
-            }
-        }
-        Ok(summaries)
+    fn as_undoable(&self) -> Option<&dyn crucible_core::traits::Undoable> {
+        Some(self)
     }
 
-    fn can_undo(&self) -> bool {
-        !self.undo_stack.is_empty()
-    }
-
-    fn undo_depth(&self) -> usize {
-        self.undo_stack.len()
+    fn as_undoable_mut(&mut self) -> Option<&mut dyn crucible_core::traits::Undoable> {
+        Some(self)
     }
 
     fn is_connected(&self) -> bool {
@@ -1029,9 +1012,38 @@ impl AgentHandle for GenaiAgentHandle {
     }
 }
 
+#[async_trait]
+impl crucible_core::traits::Undoable for GenaiAgentHandle {
+    async fn undo(&mut self, count: usize) -> ChatResult<Vec<crucible_core::types::UndoSummary>> {
+        let mut summaries = Vec::new();
+        for _ in 0..count {
+            if let Some(entry) = self.undo_stack.pop() {
+                let messages_removed = self.history.len().saturating_sub(entry.message_index);
+                self.history.truncate(entry.message_index);
+                summaries.push(crucible_core::types::UndoSummary {
+                    messages_removed,
+                    description: entry.description,
+                });
+            } else {
+                break;
+            }
+        }
+        Ok(summaries)
+    }
+
+    fn can_undo(&self) -> bool {
+        !self.undo_stack.is_empty()
+    }
+
+    fn undo_depth(&self) -> usize {
+        self.undo_stack.len()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_core::traits::Undoable;
     use futures::StreamExt;
 
     #[derive(Clone)]

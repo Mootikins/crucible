@@ -121,7 +121,15 @@ impl OilChatRunner {
                             return Ok(false);
                         }
                         let count = *count;
-                        match params.agent.undo(count).await {
+                        let Some(undoable) = params.agent.as_undoable_mut() else {
+                            params.app.add_notification(
+                                crucible_core::types::Notification::warning(
+                                    "Undo not supported by this agent".to_string(),
+                                ),
+                            );
+                            return Ok(false);
+                        };
+                        match undoable.undo(count).await {
                             Ok(summaries) if !summaries.is_empty() => {
                                 let total_removed: usize =
                                     summaries.iter().map(|s| s.messages_removed).sum();

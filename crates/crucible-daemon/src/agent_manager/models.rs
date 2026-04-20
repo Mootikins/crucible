@@ -843,6 +843,10 @@ impl AgentManager {
 
         let mut guard = agent.lock().await;
         let summaries = guard
+            .as_undoable_mut()
+            .ok_or_else(|| {
+                AgentError::InvalidConfig("undo not supported for this agent type".into())
+            })?
             .undo(count)
             .await
             .map_err(|e| AgentError::InvalidConfig(format!("undo failed: {e}")))?;
@@ -879,7 +883,7 @@ impl AgentManager {
             // We need to block on the lock, but since this is a sync method and
             // we only read a flag, use try_lock to avoid deadlocks.
             match agent.try_lock() {
-                Ok(guard) => Ok(guard.can_undo()),
+                Ok(guard) => Ok(guard.as_undoable().is_some_and(|u| u.can_undo())),
                 Err(_) => Ok(false), // agent is busy, report as not undoable
             }
         } else {
@@ -892,7 +896,7 @@ impl AgentManager {
         let _ = self.get_session_with_agent(session_id)?;
         if let Some(agent) = self.agent_cache.get(session_id) {
             match agent.try_lock() {
-                Ok(guard) => Ok(guard.undo_depth()),
+                Ok(guard) => Ok(guard.as_undoable().map_or(0, |u| u.undo_depth())),
                 Err(_) => Ok(0),
             }
         } else {

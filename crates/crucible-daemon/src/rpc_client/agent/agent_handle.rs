@@ -111,26 +111,12 @@ impl AgentHandle for DaemonAgentHandle {
         Some(&self.session_id)
     }
 
-    async fn undo(
-        &mut self,
-        count: usize,
-    ) -> crucible_core::traits::chat::ChatResult<Vec<crucible_core::types::UndoSummary>> {
-        tracing::info!(session_id = %self.session_id, count = count, "Undoing agent turns via daemon");
-        self.client
-            .session_undo(&self.session_id, count)
-            .await
-            .map_err(|e| ChatError::Communication(format!("Failed to undo: {}", e)))
+    fn as_undoable(&self) -> Option<&dyn crucible_core::traits::Undoable> {
+        Some(self)
     }
 
-    fn can_undo(&self) -> bool {
-        // Sync method — we can't call async RPC here, so conservatively return true
-        // when we have a connected session. The actual check happens daemon-side.
-        self.connected
-    }
-
-    fn undo_depth(&self) -> usize {
-        // No cached value; caller should use the RPC directly for authoritative depth.
-        0
+    fn as_undoable_mut(&mut self) -> Option<&mut dyn crucible_core::traits::Undoable> {
+        Some(self)
     }
 
     fn is_connected(&self) -> bool {
@@ -468,5 +454,27 @@ impl AgentHandle for DaemonAgentHandle {
             .map_err(|e| {
                 ChatError::Communication(format!("Failed to send interaction response: {}", e))
             })
+    }
+}
+
+#[async_trait]
+impl crucible_core::traits::Undoable for DaemonAgentHandle {
+    async fn undo(&mut self, count: usize) -> ChatResult<Vec<crucible_core::types::UndoSummary>> {
+        tracing::info!(session_id = %self.session_id, count = count, "Undoing agent turns via daemon");
+        self.client
+            .session_undo(&self.session_id, count)
+            .await
+            .map_err(|e| ChatError::Communication(format!("Failed to undo: {}", e)))
+    }
+
+    fn can_undo(&self) -> bool {
+        // Sync method — can't call async RPC here, so conservatively return
+        // true whenever connected. The authoritative check is daemon-side.
+        self.connected
+    }
+
+    fn undo_depth(&self) -> usize {
+        // No cached value; callers querying depth should hit RPC directly.
+        0
     }
 }

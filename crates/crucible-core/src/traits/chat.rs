@@ -282,22 +282,16 @@ pub trait AgentHandle: Send + Sync {
         None
     }
 
-    /// Undo the last N agent turns, reverting conversation history.
-    ///
-    /// Returns a summary for each reverted turn. The implementation truncates
-    /// the conversation history to the state before each turn started.
-    async fn undo(&mut self, _count: usize) -> ChatResult<Vec<crate::types::UndoSummary>> {
-        Err(ChatError::NotSupported("undo".into()))
+    /// Downcast to [`Undoable`] for agents that support undoing turns.
+    /// Default: not supported.
+    fn as_undoable(&self) -> Option<&dyn super::Undoable> {
+        None
     }
 
-    /// Whether there are any turns that can be undone.
-    fn can_undo(&self) -> bool {
-        false
-    }
-
-    /// Number of turns available to undo.
-    fn undo_depth(&self) -> usize {
-        0
+    /// Mutable counterpart to [`Self::as_undoable`]. Returns `None` for
+    /// agents that don't implement [`Undoable`].
+    fn as_undoable_mut(&mut self) -> Option<&mut dyn super::Undoable> {
+        None
     }
 
     /// Cancel the current agent operation
@@ -554,16 +548,12 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
         (**self).get_system_prompt()
     }
 
-    async fn undo(&mut self, count: usize) -> ChatResult<Vec<crate::types::UndoSummary>> {
-        (**self).undo(count).await
+    fn as_undoable(&self) -> Option<&dyn super::Undoable> {
+        (**self).as_undoable()
     }
 
-    fn can_undo(&self) -> bool {
-        (**self).can_undo()
-    }
-
-    fn undo_depth(&self) -> usize {
-        (**self).undo_depth()
+    fn as_undoable_mut(&mut self) -> Option<&mut dyn super::Undoable> {
+        (**self).as_undoable_mut()
     }
 
     async fn cancel(&self) -> ChatResult<()> {
