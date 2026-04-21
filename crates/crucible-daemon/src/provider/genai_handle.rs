@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use crucible_core::config::{BackendType, LlmProviderConfig};
 use crucible_core::session::{ContextStrategy, OutputValidation};
 use crucible_core::traits::chat::{
     AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall, ChatToolResult,
@@ -15,8 +14,6 @@ use genai::chat::{
     ReasoningEffort, Tool, ToolCall, ToolResponse,
 };
 use genai::ModelIden;
-
-use super::adapter_mapping::ChatClient;
 
 pub(crate) const EMPTY_RESPONSE_ERROR: &str =
     "LLM returned empty response — no content received from provider";
@@ -283,46 +280,6 @@ impl GenaiAgentHandle {
         }
     }
 
-    pub fn new_for_contract_tests(
-        provider: &str,
-        model: &str,
-        system: &str,
-        tools: Vec<LlmToolDefinition>,
-    ) -> Self {
-        let backend = provider
-            .parse::<BackendType>()
-            .unwrap_or(BackendType::OpenAI);
-
-        let config = LlmProviderConfig::builder(backend).model(model).build();
-        let chat_client = ChatClient::new(&config);
-        let client = chat_client.inner().clone();
-        let model_iden = chat_client
-            .model_iden(model)
-            .unwrap_or_else(|| ModelIden::new(genai::adapter::AdapterKind::OpenAI, model));
-
-        let mode_state = default_internal_modes();
-        let current_mode_id = mode_state.current_mode_id.0.to_string();
-
-        Self {
-            client,
-            model: model_iden,
-            system_prompt: system.to_string(),
-            tools,
-            history: Vec::new(),
-            mode_state,
-            current_mode_id,
-            mode_context_sent: false,
-            max_tool_depth: usize::MAX,
-            thinking_budget: None,
-            context_budget: None,
-            context_strategy: ContextStrategy::default(),
-            context_window: None,
-            output_validation: OutputValidation::default(),
-            validation_retries: 3,
-            undo_stack: Vec::new(),
-        }
-    }
-
     /// Record the current history length before an agent turn starts.
     /// Called at the beginning of `send_message_stream`.
     pub fn snapshot_before_turn(&mut self) {
@@ -330,15 +287,6 @@ impl GenaiAgentHandle {
             message_index: self.history.len(),
             description: String::new(),
         });
-    }
-
-    /// Set a description on the most recent undo entry (e.g. first ~80 chars of response).
-    pub fn set_turn_description(&mut self, description: String) {
-        if let Some(entry) = self.undo_stack.last_mut() {
-            if entry.description.is_empty() {
-                entry.description = description;
-            }
-        }
     }
 
     fn send_mock_contract_stream(
@@ -532,16 +480,6 @@ impl GenaiAgentHandle {
         }
     }
 
-    pub fn debug_visible_tool_names(&self) -> Vec<String> {
-        self.visible_tools()
-            .into_iter()
-            .map(|t| t.function.name)
-            .collect()
-    }
-
-    pub fn current_model(&self) -> Option<&str> {
-        Some(&self.model.model_name)
-    }
 }
 
 #[async_trait]
@@ -983,6 +921,8 @@ impl crucible_core::traits::Undoable for GenaiAgentHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::provider::ChatClient;
+    use crucible_core::config::{BackendType, LlmProviderConfig};
     use crucible_core::traits::Undoable;
     use futures::StreamExt;
 
@@ -1357,14 +1297,4 @@ mod tests {
         assert!(summaries.is_empty());
     }
 
-    #[test]
-    fn set_turn_description_updates_last_entry() {
-        let mut handle = make_test_handle();
-        handle.snapshot_before_turn();
-        handle.set_turn_description("Analyzed the auth module".to_string());
-        assert_eq!(
-            handle.undo_stack.last().unwrap().description,
-            "Analyzed the auth module"
-        );
-    }
 }
