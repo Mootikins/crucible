@@ -2,8 +2,6 @@ use super::*;
 use crucible_core::types::ToolSource;
 
 const DEFAULT_MAX_TOOL_DEPTH: usize = 10;
-const TOOL_DEPTH_LIMIT_FINAL_PROMPT: &str =
-    "You have reached the tool call limit. Please provide your final answer based on the information gathered so far.";
 
 mod permission;
 mod send;

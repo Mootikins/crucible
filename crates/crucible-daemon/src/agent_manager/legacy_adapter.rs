@@ -285,9 +285,14 @@ impl Agent for LegacyAgentAdapter {
                     return;
                 };
 
-                // Collect one ToolResult per outstanding tool call.
-                // HandlerInjection / DepthCapHit short-circuit the
-                // collection and restart the inner stream.
+                // Collect one ToolResult per outstanding tool call,
+                // matched by call id. HandlerInjection / DepthCapHit
+                // short-circuit the collection and restart the inner
+                // stream.
+                let expected_ids: std::collections::HashSet<String> = tool_calls
+                    .iter()
+                    .filter_map(|c| c.id.clone())
+                    .collect();
                 let mut collected: Vec<ChatToolResult> = Vec::with_capacity(tool_calls.len());
                 while collected.len() < tool_calls.len() {
                     let Some(event) = rx.recv().await else {
@@ -298,7 +303,13 @@ impl Agent for LegacyAgentAdapter {
                     };
 
                     match event {
-                        TurnEvent::ToolResult { .. } => {
+                        TurnEvent::ToolResult { ref id, .. } => {
+                            if !expected_ids.is_empty() && !expected_ids.contains(id) {
+                                // Stale result from a prior batch —
+                                // silently drop so it doesn't displace
+                                // an expected one.
+                                continue;
+                            }
                             if let Some(result) = tool_result_from_event(&event) {
                                 collected.push(result);
                             }

@@ -34,7 +34,6 @@ use crucible_lua::{
     LuaScriptHandlerRegistry, PermissionHook, PermissionHookResult, PermissionRequest,
 };
 use dashmap::DashMap;
-use futures::StreamExt;
 use mlua::Lua;
 use std::collections::HashMap;
 use std::path::PathBuf;
