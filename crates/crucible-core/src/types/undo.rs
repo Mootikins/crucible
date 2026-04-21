@@ -14,8 +14,6 @@ use serde::{Deserialize, Serialize};
 pub struct UndoEntry {
     /// Number of messages in history before this turn started.
     pub message_index: usize,
-    /// Human-readable description of what the turn did (first ~80 chars of response).
-    pub description: String,
 }
 
 /// Result of a single undo operation, returned to the caller.
@@ -23,6 +21,4 @@ pub struct UndoEntry {
 pub struct UndoSummary {
     /// How many messages were removed from history.
     pub messages_removed: usize,
-    /// Description of the reverted turn.
-    pub description: String,
 }

@@ -285,7 +285,6 @@ impl GenaiAgentHandle {
     pub fn snapshot_before_turn(&mut self) {
         self.undo_stack.push(crucible_core::types::UndoEntry {
             message_index: self.history.len(),
-            description: String::new(),
         });
     }
 
@@ -898,10 +897,7 @@ impl crucible_core::traits::Undoable for GenaiAgentHandle {
             if let Some(entry) = self.undo_stack.pop() {
                 let messages_removed = self.history.len().saturating_sub(entry.message_index);
                 self.history.truncate(entry.message_index);
-                summaries.push(crucible_core::types::UndoSummary {
-                    messages_removed,
-                    description: entry.description,
-                });
+                summaries.push(crucible_core::types::UndoSummary { messages_removed });
             } else {
                 break;
             }
