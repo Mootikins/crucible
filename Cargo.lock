@@ -1801,13 +1801,13 @@ dependencies = [
  "axum",
  "blake3",
  "chrono",
+ "chumsky",
  "crucible-acp",
  "crucible-config",
  "crucible-core",
  "crucible-lance",
  "crucible-llm",
  "crucible-lua",
- "crucible-sqlite",
  "dashmap",
  "dirs",
  "encoding_rs",
@@ -1820,6 +1820,7 @@ dependencies = [
  "grep",
  "hex",
  "ignore",
+ "insta",
  "lazy_static",
  "libc",
  "mlua",
@@ -1829,6 +1830,7 @@ dependencies = [
  "num_cpus",
  "once_cell",
  "oq",
+ "parking_lot",
  "pathdiff",
  "rand 0.10.1",
  "regex",
@@ -1962,30 +1964,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "unicode-width 0.2.0",
-]
-
-[[package]]
-name = "crucible-sqlite"
-version = "0.6.3"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "chumsky",
- "crucible-core",
- "hex",
- "insta",
- "once_cell",
- "parking_lot",
- "regex",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "uuid",
 ]
 
 [[package]]

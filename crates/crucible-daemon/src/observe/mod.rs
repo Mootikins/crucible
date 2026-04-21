@@ -50,7 +50,7 @@ pub mod indexer;
 pub mod markdown;
 pub mod serde_md;
 pub mod session;
-pub mod storage;
+pub mod session_index;
 pub mod truncate;
 
 // Re-exports for convenience
@@ -61,4 +61,4 @@ pub use markdown::{render_to_markdown, RenderOptions};
 pub use session::{list_sessions, load_events, SessionError, SessionMetadata, SessionWriter};
 pub use truncate::{truncate_for_log, TruncateResult, DEFAULT_TRUNCATE_THRESHOLD};
 
-pub use storage::SessionIndex;
+pub use session_index::SessionIndex;

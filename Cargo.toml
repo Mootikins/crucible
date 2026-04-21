@@ -6,7 +6,6 @@ members = [
 
     "crates/crucible-cli",
 
-    "crates/crucible-sqlite",
     "crates/crucible-config",
     "crates/crucible-acp",
     "crates/crucible-llm",

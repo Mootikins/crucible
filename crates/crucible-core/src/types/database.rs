@@ -1,7 +1,7 @@
 //! Database domain types consumed across the Crucible workspace.
 //!
 //! These types originated in the `database` module and are consumed by multiple
-//! crates (crucible-cli, crucible-rpc, crucible-sqlite, crucible-daemon).
+//! crates (crucible-cli, crucible-rpc, crucible-daemon).
 //! They live here as the canonical definitions.
 
 use serde::{Deserialize, Serialize};

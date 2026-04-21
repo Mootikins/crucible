@@ -14,7 +14,7 @@
 //!               ▲
 //!               │ implements
 //! ┌─────────────────────────────────┐
-//! │ crucible-sqlite / crucible-lance │
+//! │ crucible-daemon / crucible-lance │
 //! │   GraphExecutor implementations  │  ← Concrete implementations
 //! └─────────────────────────────────┘
 //!               ▲

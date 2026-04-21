@@ -203,7 +203,7 @@ async fn test_search_vectors_via_knowledge_repository() {
 async fn create_seeded_kiln() -> TempDir {
     use crucible_core::parser::BlockHash;
     use crucible_core::storage::NoteRecord;
-    use crucible_sqlite::{create_sqlite_client, SqliteConfig};
+    use crucible_daemon::storage::sqlite::{create_sqlite_client, SqliteConfig};
 
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
     let db_dir = kiln_dir.path().join(".crucible");

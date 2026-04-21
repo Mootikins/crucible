@@ -6,9 +6,9 @@
 use anyhow::Result;
 use crucible_core::parser::BlockHash;
 use crucible_core::storage::NoteRecord;
+use crucible_daemon::storage::sqlite::{create_sqlite_client, SqliteConfig};
 use crucible_daemon::DaemonClient;
 use crucible_daemon::Server;
-use crucible_sqlite::{create_sqlite_client, SqliteConfig};
 use std::path::PathBuf;
 use std::time::Duration;
 use tempfile::TempDir;

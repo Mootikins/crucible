@@ -54,6 +54,7 @@ pub mod session_bridge;
 pub mod session_manager;
 pub mod session_storage;
 pub mod skills;
+pub mod storage;
 pub mod subscription;
 pub mod test_support;
 pub mod tool_dispatch;
@@ -76,7 +77,7 @@ pub use lifecycle::{remove_socket, socket_path, wait_for_shutdown};
 pub use mcp_host::InProcessMcpHost;
 pub use mcp_server::McpServerManager;
 pub use observe::SessionIndex;
-pub use observe::{events, id, indexer, markdown, serde_md, session, storage, truncate};
+pub use observe::{events, id, indexer, markdown, serde_md, session, truncate};
 pub use observe::{
     extract_session_content, list_sessions, load_events, render_to_markdown, truncate_for_log,
     LogEvent, PermissionDecision, RenderOptions, SessionContent, SessionId, SessionIdError,
