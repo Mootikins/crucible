@@ -175,9 +175,6 @@ impl AgentManager {
         while let Some(event) = event_stream.next().await {
             match event {
                 TurnEvent::TextDelta(delta) => {
-                    in_tool_batch = false;
-                    capped_this_batch = false;
-
                     if delta.is_empty() {
                         continue;
                     }
@@ -210,9 +207,6 @@ impl AgentManager {
                     }
                 }
                 TurnEvent::Thinking(reasoning) => {
-                    in_tool_batch = false;
-                    capped_this_batch = false;
-
                     debug!(session_id = %stream_ctx.session_id, "Sending thinking event");
                     if !emit_event(
                         &stream_ctx.event_tx,
@@ -227,6 +221,30 @@ impl AgentManager {
                 TurnEvent::ToolCall { id, name, args } => {
                     // New batch? increment depth, possibly cap.
                     if !in_tool_batch {
+                        // If the depth cap already fired once and the
+                        // model is *still* calling tools, hard-stop.
+                        // Otherwise we'd ping-pong DepthCapHit → restart
+                        // → ToolCall → DepthCapHit forever.
+                        if depth_cap_triggered {
+                            warn!(
+                                session_id = %stream_ctx.session_id,
+                                "tool call emitted after depth-cap response; hard-stopping"
+                            );
+                            if !emit_event(
+                                &stream_ctx.event_tx,
+                                SessionEventMessage::ended(
+                                    &stream_ctx.session_id,
+                                    "error: max_tool_depth exceeded".to_string(),
+                                ),
+                            ) {
+                                warn!(
+                                    session_id = %stream_ctx.session_id,
+                                    "No subscribers for hard-stop ended event"
+                                );
+                            }
+                            return;
+                        }
+
                         in_tool_batch = true;
                         if tool_depth >= max_tool_depth {
                             warn!(
@@ -374,8 +392,6 @@ impl AgentManager {
                 } => {
                     // The agent observed an external tool result
                     // (ACP-style). Pass through to subscribers.
-                    in_tool_batch = false;
-                    capped_this_batch = false;
                     let event_result = if let Some(err) = error {
                         serde_json::json!({ "error": err })
                     } else {
@@ -396,6 +412,14 @@ impl AgentManager {
                             "No subscribers for pass-through tool_result event"
                         );
                     }
+                }
+                TurnEvent::ToolBatchEnd => {
+                    // Adapter has finished emitting all tool calls for
+                    // this batch and is about to wait for ToolResults.
+                    // Reset batch tracking so the next ToolCall counts
+                    // as a new batch and re-checks the depth cap.
+                    in_tool_batch = false;
+                    capped_this_batch = false;
                 }
                 TurnEvent::Usage(usage) => {
                     last_usage = Some(usage);

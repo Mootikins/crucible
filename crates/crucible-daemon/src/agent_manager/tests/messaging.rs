@@ -643,6 +643,202 @@ impl crate::tool_dispatch::ToolDispatcher for HangingToolDispatcher {
     }
 }
 
+/// Mock handle that returns a scripted sequence of stream responses,
+/// one per top-level call to `send_message_stream` /
+/// `continue_with_tool_results`. Captures the prompt passed to each
+/// `send_message_stream` invocation so tests can assert the depth-cap
+/// prompt was replayed.
+struct ScriptedHandle {
+    scripts: std::sync::Mutex<Vec<Vec<ChatResult<ChatChunk>>>>,
+    captured_prompts: Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl ScriptedHandle {
+    fn new(scripts: Vec<Vec<ChatChunk>>, captured: Arc<std::sync::Mutex<Vec<String>>>) -> Self {
+        Self {
+            scripts: std::sync::Mutex::new(
+                scripts
+                    .into_iter()
+                    .map(|s| s.into_iter().map(Ok).collect())
+                    .collect(),
+            ),
+            captured_prompts: captured,
+        }
+    }
+
+    fn pop_script(&self) -> Vec<ChatResult<ChatChunk>> {
+        let mut guard = self.scripts.lock().unwrap();
+        if guard.is_empty() {
+            Vec::new()
+        } else {
+            guard.remove(0)
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl AgentHandle for ScriptedHandle {
+    fn send_message_stream(&mut self, prompt: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
+        self.captured_prompts.lock().unwrap().push(prompt);
+        let chunks = self.pop_script();
+        Box::pin(futures::stream::iter(chunks))
+    }
+
+    fn continue_with_tool_results(
+        &mut self,
+        _tool_calls: Vec<ChatToolCall>,
+        _tool_results: Vec<ChatToolResult>,
+    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
+        let chunks = self.pop_script();
+        Box::pin(futures::stream::iter(chunks))
+    }
+
+    fn is_connected(&self) -> bool {
+        true
+    }
+
+    async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
+        Ok(())
+    }
+}
+
+fn terminal_tool_chunk(name: &str, id: &str) -> ChatChunk {
+    ChatChunk {
+        delta: String::new(),
+        done: true,
+        tool_calls: Some(vec![ChatToolCall {
+            name: name.to_string(),
+            arguments: Some(serde_json::json!({ "path": "fixtures/test.md" })),
+            id: Some(id.to_string()),
+        }]),
+        tool_results: None,
+        reasoning: None,
+        usage: None,
+        subagent_events: None,
+        precognition_notes_count: None,
+        precognition_notes: None,
+    }
+}
+
+fn terminal_text_chunk(text: &str) -> ChatChunk {
+    ChatChunk {
+        delta: text.to_string(),
+        done: true,
+        tool_calls: None,
+        tool_results: None,
+        reasoning: None,
+        usage: None,
+        subagent_events: None,
+        precognition_notes_count: None,
+        precognition_notes: None,
+    }
+}
+
+#[tokio::test]
+async fn depth_cap_triggers_depth_prompt_and_completes_with_text() {
+    // Scenario: the model keeps emitting tool calls until we exceed
+    // max_iterations. The runtime should send DepthCapHit on the inbound
+    // channel, the adapter restarts the inner stream with the depth-cap
+    // prompt, the mock replies with final text, and the turn finishes
+    // normally — no "error: max_tool_depth exceeded" ended event.
+
+    let tmp = TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let agent_manager = create_test_agent_manager(session_manager.clone());
+    let mut agent_cfg = test_agent();
+    agent_cfg.max_iterations = Some(2); // cap after 2 tool rounds
+    agent_manager
+        .configure_agent(&session.id, agent_cfg)
+        .await
+        .unwrap();
+
+    let captured = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    // Script:
+    //   1. initial send_message_stream("test") → tool_call id=call-1
+    //   2. continue_with_tool_results      → tool_call id=call-2
+    //   3. continue_with_tool_results      → tool_call id=call-3 (would be depth=3, capped)
+    //   4. send_message_stream(DEPTH_CAP_PROMPT) → terminal text "final"
+    let handle: BoxedAgentHandle = Box::new(ScriptedHandle::new(
+        vec![
+            vec![terminal_tool_chunk("read_file", "call-1")],
+            vec![terminal_tool_chunk("read_file", "call-2")],
+            vec![terminal_tool_chunk("read_file", "call-3")],
+            vec![terminal_text_chunk("final answer")],
+        ],
+        captured.clone(),
+    ));
+    agent_manager
+        .agent_cache
+        .insert(session.id.clone(), Arc::new(Mutex::new(handle)));
+
+    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    agent_manager
+        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
+        .await
+        .unwrap();
+
+    let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+
+    // Drain until message_complete; the response should contain the
+    // depth-prompt reply "final answer". No "error: max_tool_depth" ended.
+    let mut saw_error_ended = false;
+    let complete = timeout(Duration::from_secs(5), async {
+        loop {
+            match event_rx.recv().await {
+                Ok(event) if event.event == "ended" => {
+                    let reason = event.data["reason"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_string();
+                    if reason.starts_with("error:") {
+                        saw_error_ended = true;
+                    }
+                }
+                Ok(event) if event.event == "message_complete" => return event,
+                Ok(_) => continue,
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(err) => panic!("event channel closed: {err}"),
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for message_complete");
+
+    assert!(
+        !saw_error_ended,
+        "depth-cap flow must complete normally, not as error"
+    );
+    assert!(
+        complete.data["full_response"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("final answer"),
+        "final response missing depth-prompt reply: {:?}",
+        complete.data["full_response"]
+    );
+
+    // The runtime must have replayed the depth-cap prompt to the model.
+    let prompts = captured.lock().unwrap();
+    assert!(
+        prompts.iter().any(|p| p.contains("tool call limit")),
+        "depth-cap prompt was not replayed: captured = {:?}",
+        *prompts
+    );
+}
+
 #[tokio::test(start_paused = true)]
 async fn tool_dispatch_has_timeout() {
     // GREEN: verifies that a 30s timeout on dispatch_tool works correctly.

@@ -55,6 +55,15 @@ pub enum TurnEvent {
         error: Option<String>,
     },
 
+    /// Marker that all `ToolCall`s from the current chat completion
+    /// have been emitted. The runtime uses this to tick tool-depth
+    /// per batch rather than per individual call — models that emit
+    /// parallel tool calls in one batch count as one depth tick.
+    ///
+    /// Outbound only (agent → runtime). Emitted by the adapter (or a
+    /// native `Agent` impl) right before it waits for `ToolResult`s.
+    ToolBatchEnd,
+
     /// Inbound only. The runtime's post-turn handler returned an
     /// injection; the agent should treat `content` as the next turn's
     /// user message.

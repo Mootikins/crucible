@@ -276,6 +276,10 @@ impl Agent for LegacyAgentAdapter {
                     return;
                 };
 
+                // Signal the batch boundary so the runtime can tick
+                // tool-depth once per batch regardless of fan-out.
+                yield TurnEvent::ToolBatchEnd;
+
                 let Some(rx) = inbound.as_mut() else {
                     // Caller opted out of tool continuation; honour the
                     // call's visibility but stop there.
