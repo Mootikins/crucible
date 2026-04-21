@@ -96,9 +96,6 @@ pub struct ChatChunk {
     /// Token usage (typically only present in final chunk when done=true)
     #[serde(default)]
     pub usage: Option<TokenUsage>,
-    /// Subagent lifecycle events (spawned, completed, failed)
-    #[serde(default)]
-    pub subagent_events: Option<Vec<ChatSubagentEvent>>,
     /// Notes count from daemon-side Precognition enrichment
     #[serde(default)]
     pub precognition_notes_count: Option<usize>,
@@ -119,25 +116,6 @@ pub struct ChatToolResult {
     /// LLM-assigned call ID for matching results to the correct tool call
     #[serde(default)]
     pub call_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SubagentEventType {
-    Spawned,
-    Completed,
-    Failed,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatSubagentEvent {
-    pub id: String,
-    pub event_type: SubagentEventType,
-    #[serde(default)]
-    pub prompt: Option<String>,
-    #[serde(default)]
-    pub summary: Option<String>,
-    #[serde(default)]
-    pub error: Option<String>,
 }
 
 /// Runtime handle to an active agent
@@ -884,7 +862,6 @@ mod tests {
                         tool_results: None,
                         reasoning: None,
                         usage: None,
-                        subagent_events: None,
                         precognition_notes_count: None,
                         precognition_notes: None,
                     })

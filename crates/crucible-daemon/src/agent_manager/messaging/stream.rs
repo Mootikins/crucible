@@ -424,9 +424,7 @@ impl AgentManager {
                 TurnEvent::Usage(usage) => {
                     last_usage = Some(usage);
                 }
-                TurnEvent::PrecognitionNotes { .. }
-                | TurnEvent::SubagentEvent { .. }
-                | TurnEvent::ModelSwitched(_) => {
+                TurnEvent::PrecognitionNotes { .. } | TurnEvent::ModelSwitched(_) => {
                     // Informational pass-through: old code never emitted
                     // session events for these either.
                 }

@@ -5,9 +5,7 @@
 
 use async_trait::async_trait;
 use crucible_core::session::SessionType;
-use crucible_core::traits::chat::{
-    AgentHandle, ChatChunk, ChatSubagentEvent, ChatToolCall, ChatToolResult, SubagentEventType,
-};
+use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatToolCall, ChatToolResult};
 use crucible_core::traits::ChatResult;
 use crucible_daemon::background_manager::BackgroundJobManager;
 use crucible_daemon::protocol::SessionEventMessage;
@@ -44,7 +42,6 @@ impl StreamingMockAgent {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             })
@@ -68,7 +65,6 @@ impl StreamingMockAgent {
                 tool_results: None,
                 reasoning: Some(thinking.to_string()),
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             },
@@ -79,7 +75,6 @@ impl StreamingMockAgent {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             },
@@ -114,7 +109,6 @@ impl StreamingMockAgent {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             },
@@ -130,7 +124,6 @@ impl StreamingMockAgent {
                 }]),
                 reasoning: None,
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             },
@@ -141,42 +134,6 @@ impl StreamingMockAgent {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                subagent_events: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
-            },
-        ];
-
-        Self {
-            chunks,
-            hanging: false,
-        }
-    }
-
-    /// Create a mock agent with subagent lifecycle events
-    ///
-    /// Yields chunks with `subagent_events` containing spawned/completed/failed events.
-    pub fn with_subagent_events(events: Vec<ChatSubagentEvent>, final_text: &str) -> Self {
-        let chunks = vec![
-            ChatChunk {
-                delta: String::new(),
-                done: false,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-                subagent_events: Some(events),
-                precognition_notes_count: None,
-                precognition_notes: None,
-            },
-            ChatChunk {
-                delta: final_text.to_string(),
-                done: true,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             },
@@ -197,7 +154,6 @@ impl StreamingMockAgent {
             tool_results: None,
             reasoning: None,
             usage: None,
-            subagent_events: None,
             precognition_notes_count: None,
             precognition_notes: None,
         }];
@@ -233,7 +189,6 @@ impl StreamingMockAgent {
             tool_results: None,
             reasoning: None,
             usage: None,
-            subagent_events: None,
             precognition_notes_count: None,
             precognition_notes: None,
         }];
@@ -451,51 +406,6 @@ mod tests {
             .expect("chunk 3 error");
         assert_eq!(chunk3.delta, "Done!");
         assert!(chunk3.done);
-
-        assert!(stream.next().await.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_with_subagent_events() {
-        let events = vec![
-            ChatSubagentEvent {
-                id: "subagent-1".to_string(),
-                event_type: SubagentEventType::Spawned,
-                prompt: Some("Do something".to_string()),
-                summary: None,
-                error: None,
-            },
-            ChatSubagentEvent {
-                id: "subagent-1".to_string(),
-                event_type: SubagentEventType::Completed,
-                prompt: None,
-                summary: Some("Completed successfully".to_string()),
-                error: None,
-            },
-        ];
-
-        let mut agent = StreamingMockAgent::with_subagent_events(events.clone(), "All done");
-        let mut stream = agent.send_message_stream("test".to_string());
-
-        let chunk1 = stream
-            .next()
-            .await
-            .expect("chunk 1 missing")
-            .expect("chunk 1 error");
-        assert!(chunk1.subagent_events.is_some());
-        let subagent_events = chunk1.subagent_events.unwrap();
-        assert_eq!(subagent_events.len(), 2);
-        assert_eq!(subagent_events[0].event_type, SubagentEventType::Spawned);
-        assert_eq!(subagent_events[1].event_type, SubagentEventType::Completed);
-        assert!(!chunk1.done);
-
-        let chunk2 = stream
-            .next()
-            .await
-            .expect("chunk 2 missing")
-            .expect("chunk 2 error");
-        assert_eq!(chunk2.delta, "All done");
-        assert!(chunk2.done);
 
         assert!(stream.next().await.is_none());
     }

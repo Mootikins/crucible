@@ -32,11 +32,11 @@ use std::sync::Arc;
 use async_stream::stream;
 use async_trait::async_trait;
 use crucible_core::traits::chat::{
-    AgentHandle, ChatChunk, ChatError, ChatToolCall, ChatToolResult, SubagentEventType,
+    AgentHandle, ChatChunk, ChatError, ChatToolCall, ChatToolResult,
 };
 use crucible_core::turn::{
-    Agent, AgentCapabilities, AgentError, NotSupported, StopReason, SubagentEventKind, TurnContext,
-    TurnError, TurnEvent,
+    Agent, AgentCapabilities, AgentError, NotSupported, StopReason, TurnContext, TurnError,
+    TurnEvent,
 };
 use futures::stream::BoxStream;
 use futures::StreamExt;
@@ -160,22 +160,6 @@ fn chat_chunk_to_events(
     }
     if let Some(usage) = chunk.usage {
         events.push(TurnEvent::Usage(usage));
-    }
-    if let Some(subagents) = chunk.subagent_events {
-        for e in subagents {
-            let kind = match e.event_type {
-                SubagentEventType::Spawned => SubagentEventKind::Spawned,
-                SubagentEventType::Completed => SubagentEventKind::Completed,
-                SubagentEventType::Failed => SubagentEventKind::Failed,
-            };
-            events.push(TurnEvent::SubagentEvent {
-                id: e.id,
-                kind,
-                prompt: e.prompt,
-                summary: e.summary,
-                error: e.error,
-            });
-        }
     }
     carried_tool_calls
 }

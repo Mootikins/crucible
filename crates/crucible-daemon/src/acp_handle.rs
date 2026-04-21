@@ -349,7 +349,6 @@ impl AgentHandle for AcpAgentHandle {
                                     tool_results: None,
                                     reasoning: None,
                                     usage: None,
-                                    subagent_events: None,
                                     precognition_notes_count: None,
                                     precognition_notes: None,
                                 }
@@ -367,7 +366,6 @@ impl AgentHandle for AcpAgentHandle {
                                     tool_results: None,
                                     reasoning: Some(text),
                                     usage: None,
-                                    subagent_events: None,
                                     precognition_notes_count: None,
                                     precognition_notes: None,
                                 }
@@ -395,7 +393,6 @@ impl AgentHandle for AcpAgentHandle {
                                     tool_results: None,
                                     reasoning: None,
                                     usage: None,
-                                    subagent_events: None,
                                     precognition_notes_count: None,
                                     precognition_notes: None,
                                 }
@@ -417,7 +414,6 @@ impl AgentHandle for AcpAgentHandle {
                                     }]),
                                     reasoning: None,
                                     usage: None,
-                                    subagent_events: None,
                                     precognition_notes_count: None,
                                     precognition_notes: None,
                                 }
@@ -458,7 +454,6 @@ impl AgentHandle for AcpAgentHandle {
                                     tool_results: None,
                                     reasoning: None,
                                     usage,
-                                    subagent_events: None,
                                     precognition_notes_count: None,
                                     precognition_notes: None,
                                 }),

@@ -173,7 +173,6 @@ fn event_to_chunk(event: &SessionEvent) -> Option<crucible_core::traits::chat::C
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             })
@@ -187,7 +186,6 @@ fn event_to_chunk(event: &SessionEvent) -> Option<crucible_core::traits::chat::C
                 tool_results: None,
                 reasoning: Some(content.to_string()),
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             })
@@ -207,7 +205,6 @@ fn event_to_chunk(event: &SessionEvent) -> Option<crucible_core::traits::chat::C
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             })
@@ -232,7 +229,6 @@ fn event_to_chunk(event: &SessionEvent) -> Option<crucible_core::traits::chat::C
                 }]),
                 reasoning: None,
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             })
@@ -244,7 +240,6 @@ fn event_to_chunk(event: &SessionEvent) -> Option<crucible_core::traits::chat::C
             tool_results: None,
             reasoning: None,
             usage: None,
-            subagent_events: None,
             precognition_notes_count: None,
             precognition_notes: None,
         }),

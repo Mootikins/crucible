@@ -361,7 +361,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             }));
@@ -372,7 +371,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             }));
@@ -387,7 +385,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: Some("I will reason internally before final output.".to_string()),
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             }));
@@ -398,7 +395,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             }));
@@ -409,7 +405,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             }));
@@ -424,7 +419,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             }));
@@ -435,7 +429,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             }));
@@ -467,7 +460,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             }));
@@ -478,7 +470,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             }));
@@ -493,7 +484,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             }));
@@ -504,7 +494,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             }));
@@ -515,7 +504,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             }));
@@ -529,7 +517,6 @@ impl GenaiAgentHandle {
             tool_results: None,
             reasoning: None,
             usage: None,
-            subagent_events: None,
             precognition_notes_count: None,
             precognition_notes: None,
         }));
@@ -540,7 +527,6 @@ impl GenaiAgentHandle {
             tool_results: None,
             reasoning: None,
             usage: None,
-            subagent_events: None,
             precognition_notes_count: None,
             precognition_notes: None,
         }));
@@ -683,7 +669,6 @@ impl AgentHandle for GenaiAgentHandle {
                             tool_results: None,
                             reasoning: None,
                             usage: None,
-                            subagent_events: None,
                             precognition_notes_count: None,
                             precognition_notes: None,
                         });
@@ -696,7 +681,6 @@ impl AgentHandle for GenaiAgentHandle {
                             tool_results: None,
                             reasoning: Some(chunk.content),
                             usage: None,
-                            subagent_events: None,
                             precognition_notes_count: None,
                             precognition_notes: None,
                         });
@@ -734,7 +718,6 @@ impl AgentHandle for GenaiAgentHandle {
                             tool_results: None,
                             reasoning: end.captured_reasoning_content,
                             usage,
-                            subagent_events: None,
                             precognition_notes_count: None,
                             precognition_notes: None,
                         });
@@ -845,7 +828,6 @@ impl AgentHandle for GenaiAgentHandle {
                             tool_results: None,
                             reasoning: None,
                             usage: None,
-                            subagent_events: None,
                             precognition_notes_count: None,
                             precognition_notes: None,
                         });
@@ -858,7 +840,6 @@ impl AgentHandle for GenaiAgentHandle {
                             tool_results: None,
                             reasoning: Some(chunk.content),
                             usage: None,
-                            subagent_events: None,
                             precognition_notes_count: None,
                             precognition_notes: None,
                         });
@@ -896,7 +877,6 @@ impl AgentHandle for GenaiAgentHandle {
                             tool_results: None,
                             reasoning: end.captured_reasoning_content,
                             usage,
-                            subagent_events: None,
                             precognition_notes_count: None,
                             precognition_notes: None,
                         });
@@ -1062,7 +1042,6 @@ mod tests {
                     tool_results: None,
                     reasoning: None,
                     usage: None,
-                    subagent_events: None,
                     precognition_notes_count: None,
                     precognition_notes: None,
                 }],
@@ -1229,7 +1208,6 @@ mod tests {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             }],
@@ -1259,7 +1237,6 @@ mod tests {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             }],
@@ -1285,7 +1262,6 @@ mod tests {
                 tool_results: None,
                 reasoning: Some("Let me think about this...".to_string()),
                 usage: None,
-                subagent_events: None,
                 precognition_notes_count: None,
                 precognition_notes: None,
             }],
@@ -1312,7 +1288,6 @@ mod tests {
                     tool_results: None,
                     reasoning: None,
                     usage: None,
-                    subagent_events: None,
                     precognition_notes_count: None,
                     precognition_notes: None,
                 },
@@ -1327,7 +1302,6 @@ mod tests {
                     tool_results: None,
                     reasoning: None,
                     usage: None,
-                    subagent_events: None,
                     precognition_notes_count: None,
                     precognition_notes: None,
                 },

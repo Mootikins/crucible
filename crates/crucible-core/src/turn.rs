@@ -85,28 +85,11 @@ pub enum TurnEvent {
         notes: Vec<PrecognitionNoteInfo>,
     },
 
-    /// Subagent lifecycle (spawned/completed/failed).
-    SubagentEvent {
-        id: String,
-        kind: SubagentEventKind,
-        prompt: Option<String>,
-        summary: Option<String>,
-        error: Option<String>,
-    },
-
     /// Turn finished normally. Terminal.
     Done { stop_reason: StopReason },
 
     /// Turn failed. Terminal.
     Error(TurnError),
-}
-
-/// Subagent lifecycle kinds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SubagentEventKind {
-    Spawned,
-    Completed,
-    Failed,
 }
 
 /// Reason a turn ended, carried on `TurnEvent::Done`.
