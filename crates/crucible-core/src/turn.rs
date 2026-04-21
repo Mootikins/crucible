@@ -75,9 +75,6 @@ pub enum TurnEvent {
     /// Token usage. Typically one event per turn, near `Done`.
     Usage(TokenUsage),
 
-    /// Model was switched mid-turn.
-    ModelSwitched(String),
-
     /// Turn finished normally. Terminal.
     Done { stop_reason: StopReason },
 
