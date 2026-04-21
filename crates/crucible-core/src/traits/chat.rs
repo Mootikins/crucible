@@ -575,157 +575,10 @@ pub struct ChatToolCall {
     pub id: Option<String>,
 }
 
-/// Command invocation style
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum CommandKind {
-    #[default]
-    Slash,
-    Repl,
-}
-
-impl CommandKind {
-    pub fn prefix(&self) -> char {
-        match self {
-            CommandKind::Slash => '/',
-            CommandKind::Repl => ':',
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CommandDescriptor {
-    pub name: String,
-    pub description: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub input_hint: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub secondary_options: Vec<CommandOption>,
-    #[serde(default)]
-    pub kind: CommandKind,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub module: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub args: Vec<ArgumentSpec>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CommandOption {
-    pub label: String,
-    pub value: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub enum CompletionSource {
-    #[default]
-    None,
-    Static(Vec<String>),
-    FilePath,
-    Directory,
-    Note,
-    Model,
-    McpServer,
-    McpTool,
-    Agent,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ArgumentSpec {
-    pub name: String,
-    #[serde(default)]
-    pub hint: Option<String>,
-    #[serde(default)]
-    pub source: CompletionSource,
-    #[serde(default)]
-    pub required: bool,
-    #[serde(default)]
-    pub variadic: bool,
-}
-
-impl ArgumentSpec {
-    pub fn new(name: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            hint: None,
-            source: CompletionSource::None,
-            required: false,
-            variadic: false,
-        }
-    }
-
-    pub fn required(mut self) -> Self {
-        self.required = true;
-        self
-    }
-
-    pub fn hint(mut self, hint: impl Into<String>) -> Self {
-        self.hint = Some(hint.into());
-        self
-    }
-
-    pub fn source(mut self, source: CompletionSource) -> Self {
-        self.source = source;
-        self
-    }
-
-    pub fn variadic(mut self) -> Self {
-        self.variadic = true;
-        self
-    }
-}
-
-#[async_trait]
-pub trait CommandHandler: Send + Sync {
-    async fn execute(&self, args: &str, ctx: &mut dyn ChatContext) -> ChatResult<()>;
-}
-
-#[async_trait]
-pub trait ChatContext: Send {
-    fn get_mode_id(&self) -> &str;
-    fn request_exit(&mut self);
-    fn exit_requested(&self) -> bool;
-    async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()>;
-    async fn semantic_search(&self, query: &str, limit: usize) -> ChatResult<Vec<SearchResult>>;
-    async fn send_command_to_agent(&mut self, name: &str, args: &str) -> ChatResult<()>;
-    fn display_search_results(&self, query: &str, results: &[SearchResult]);
-    fn display_help(&self);
-    fn display_error(&self, message: &str);
-    fn display_info(&self, message: &str);
-
-    /// Switch the agent to a different model (triggers reconnection for ACP agents)
-    async fn switch_model(&mut self, _model_id: &str) -> ChatResult<()> {
-        Err(ChatError::NotSupported("switch_model".into()))
-    }
-
-    /// Get the currently active model (if known)
-    fn current_model(&self) -> Option<&str> {
-        None
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SearchResult {
-    pub title: String,
-    pub snippet: String,
-    pub similarity: f32,
-}
-
 // Mode ID Helper Functions
 
 pub fn is_read_only(mode_id: &str) -> bool {
     mode_id == "plan"
-}
-
-pub fn is_auto_approve(mode_id: &str) -> bool {
-    mode_id == "auto"
-}
-
-pub fn cycle_mode_id(current: &str) -> &'static str {
-    match current {
-        "normal" => "plan",
-        "plan" => "auto",
-        "auto" => "normal",
-        _ => "normal",
-    }
 }
 
 pub fn mode_display_name(mode_id: &str) -> &'static str {
@@ -734,24 +587,6 @@ pub fn mode_display_name(mode_id: &str) -> &'static str {
         "plan" => "Plan",
         "auto" => "Auto",
         _ => "Unknown",
-    }
-}
-
-pub fn mode_icon(mode_id: &str) -> &'static str {
-    match mode_id {
-        "plan" => "📖",
-        "act" => "✏️",
-        "auto" => "⚡",
-        _ => "●",
-    }
-}
-
-pub fn mode_description(mode_id: &str) -> &'static str {
-    match mode_id {
-        "plan" => "read-only",
-        "act" => "write-enabled",
-        "auto" => "auto-approve",
-        _ => "unknown",
     }
 }
 
@@ -805,12 +640,5 @@ mod tests {
     fn test_is_read_only() {
         assert!(is_read_only("plan"));
         assert!(!is_read_only("normal"));
-    }
-
-    #[test]
-    fn test_cycle_mode_id() {
-        assert_eq!(cycle_mode_id("normal"), "plan");
-        assert_eq!(cycle_mode_id("plan"), "auto");
-        assert_eq!(cycle_mode_id("auto"), "normal");
     }
 }

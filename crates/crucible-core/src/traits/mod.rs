@@ -40,7 +40,6 @@ pub mod mcp;
 pub mod parser;
 pub mod permission_gate;
 pub mod provider;
-pub mod registry;
 pub mod storage;
 pub mod storage_client;
 pub mod text_search;
@@ -52,10 +51,7 @@ pub use acp::SessionManager;
 pub use change_detection::{CacheEntry, ChangeDetector, ContentHasher, HashLookupStorage};
 pub use graph_query::{GraphQueryError, GraphQueryExecutor, GraphQueryResult};
 
-pub use chat::{
-    AgentHandle, ArgumentSpec, ChatChunk, ChatContext, ChatError, ChatResult, ChatToolCall,
-    CommandDescriptor, CommandHandler, CommandKind, CompletionSource, SearchResult,
-};
+pub use chat::{AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall};
 pub use completion_backend::{
     BackendCompletionChunk, BackendCompletionRequest, BackendCompletionResponse, BackendError,
     BackendResult, CompletionBackend,
@@ -71,7 +67,6 @@ pub use llm::{
 };
 pub use parser::MarkdownParser;
 pub use provider::EmbeddingResponse;
-pub use registry::{Registry, RegistryBuilder};
 pub use storage::Storage;
 pub use storage_client::StorageClient;
 pub use tools::{ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult};

@@ -65,8 +65,8 @@ pub use processing::{
 
 // Re-export core traits (abstractions for Dependency Inversion)
 pub use traits::{
-    ChangeDetector, ContentHasher, ContextMessage, HashLookupStorage, MarkdownParser, Registry,
-    RegistryBuilder, SessionManager, Storage, ToolExecutor,
+    ChangeDetector, ContentHasher, ContextMessage, HashLookupStorage, MarkdownParser,
+    SessionManager, Storage, ToolExecutor,
 };
 
 // Re-export key types used across module boundaries
