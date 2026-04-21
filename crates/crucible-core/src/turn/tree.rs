@@ -1,0 +1,414 @@
+//! Append-only conversation tree.
+//!
+//! Conversations naturally branch: a user may fork from a prior turn,
+//! a workflow may fan out parallel sub-tasks and collect their results,
+//! a plan may be re-tried from an earlier decision point. Modelling
+//! this as a tree (rather than a linear `Vec<Message>`) makes those
+//! operations primitive instead of bolted-on.
+//!
+//! Ownership: the scheduler (e.g. daemon's `SessionManager`) owns the
+//! tree. Agent handles are stateless between turns — they receive the
+//! linearised path from the scheduler and emit `TurnEvent`s the
+//! scheduler folds back into the tree.
+//!
+//! Invariants:
+//!
+//! * Append-only: nodes and their parent link are immutable after
+//!   creation. Text deltas land on the *current leaf* via
+//!   `append_delta`; completing the text moves the current node onto
+//!   a fresh child.
+//! * `path_to_here` walks `parent` links only. Fanout/collect live in
+//!   [`NodeMeta`] as side-channel metadata; they do not affect the
+//!   linear path delivered to an agent.
+//! * Collect merges never target a leaf as their parent: the merge
+//!   node attaches to the common ancestor of the branches it joins, so
+//!   the linear path downstream of the merge does not traverse any one
+//!   branch arbitrarily.
+
+use std::num::NonZeroU32;
+
+use serde::{Deserialize, Serialize};
+
+/// Stable handle to a node in a [`ConversationTree`].
+///
+/// Copy-cheap (wraps a `NonZeroU32`), serialisable, stable across the
+/// life of a tree. Not portable across trees — a `NodeId` from one
+/// tree is meaningless in another.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct NodeId(NonZeroU32);
+
+impl NodeId {
+    fn new(raw: u32) -> Self {
+        NodeId(NonZeroU32::new(raw).expect("NodeId is 1-based"))
+    }
+
+    /// Numeric index for debugging/telemetry. Not stable across
+    /// serialisation formats that rewrite ids.
+    pub fn index(self) -> u32 {
+        self.0.get()
+    }
+}
+
+/// Content carried by a conversation node.
+///
+/// One variant per logical role. `Agent` holds the LLM's textual reply,
+/// built up across many `append_delta` calls. `ToolCall`/`ToolResult`
+/// attach to the agent turn they belong to by parent link; they live
+/// as siblings or children, never inside the agent node's text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NodeContent {
+    /// Root of the tree. Contains no content; exists so every real
+    /// node has a parent.
+    Root,
+    /// User-authored message.
+    User { text: String },
+    /// Agent response (model output). Text accumulates via
+    /// `append_delta`; finalised on the next non-delta event.
+    Agent { text: String },
+    /// System / developer instruction injected into context.
+    System { text: String },
+    /// Agent-authored reasoning trace ("thinking" / reflection).
+    Thinking { text: String },
+    /// Tool invocation request from the agent.
+    ToolCall {
+        id: String,
+        name: String,
+        args: serde_json::Value,
+    },
+    /// Tool execution result.
+    ToolResult {
+        id: String,
+        name: String,
+        result: serde_json::Value,
+        error: Option<String>,
+    },
+    /// Marker node introduced by `fanout` or `collect`. Holds no text.
+    /// The tree-walker treats it transparently; UIs may render it as
+    /// a branch / merge annotation.
+    Marker { label: String },
+}
+
+/// Side-channel metadata on a node.
+///
+/// `merged_from` is how `collect` records the branches it unified
+/// without violating the "parent link is the one true link" invariant.
+/// The merge node's `parent` is the common ancestor; `merged_from`
+/// lists the leaves (or sub-roots) whose contents contributed.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NodeMeta {
+    /// Non-empty iff this node was produced by `collect`.
+    pub merged_from: Vec<NodeId>,
+    /// Non-empty iff this node was produced by `fanout`. The children
+    /// are the parallel branches about to run.
+    pub fanout_children: Vec<NodeId>,
+    /// Arbitrary tags (e.g. "plan", "tool-batch") used by handlers /
+    /// workflow scripts to recognise structural intent.
+    pub tags: Vec<String>,
+}
+
+/// A single node in the conversation tree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TurnNode {
+    /// `None` only for the root node.
+    pub parent: Option<NodeId>,
+    pub content: NodeContent,
+    pub meta: NodeMeta,
+}
+
+/// Append-only conversation tree.
+///
+/// Storage is a `Vec<TurnNode>` indexed by `NodeId - 1`. The root is
+/// always `NodeId(1)`. Deletion is not supported — every append gets a
+/// fresh id.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationTree {
+    nodes: Vec<TurnNode>,
+    /// The node the next `append_delta` will land on. Scheduler moves
+    /// this by calling `finalize_current` after a turn's text is
+    /// complete (or after a user message is added).
+    current: NodeId,
+}
+
+impl ConversationTree {
+    /// Build an empty tree with just the root.
+    pub fn new() -> Self {
+        let root = TurnNode {
+            parent: None,
+            content: NodeContent::Root,
+            meta: NodeMeta::default(),
+        };
+        Self {
+            nodes: vec![root],
+            current: NodeId::new(1),
+        }
+    }
+
+    /// Root node id. Always `NodeId(1)`.
+    pub fn root(&self) -> NodeId {
+        NodeId::new(1)
+    }
+
+    /// The node most recent ops will append into.
+    pub fn current(&self) -> NodeId {
+        self.current
+    }
+
+    /// Read-only access to a node.
+    pub fn get(&self, id: NodeId) -> &TurnNode {
+        &self.nodes[(id.index() - 1) as usize]
+    }
+
+    /// Number of nodes in the tree (incl. root).
+    pub fn len(&self) -> usize {
+        self.nodes.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.nodes.len() <= 1
+    }
+
+    /// Append a new child under `parent` and return its id. Does not
+    /// move `current`. Callers use [`Self::add_child_and_advance`] when
+    /// they want the new node to become `current`.
+    pub fn add_child(&mut self, parent: NodeId, content: NodeContent) -> NodeId {
+        self.add_child_with_meta(parent, content, NodeMeta::default())
+    }
+
+    /// As [`Self::add_child`] but with explicit metadata.
+    pub fn add_child_with_meta(
+        &mut self,
+        parent: NodeId,
+        content: NodeContent,
+        meta: NodeMeta,
+    ) -> NodeId {
+        let id = NodeId::new((self.nodes.len() + 1) as u32);
+        self.nodes.push(TurnNode {
+            parent: Some(parent),
+            content,
+            meta,
+        });
+        id
+    }
+
+    /// Convenience: append + advance `current` to the new node.
+    pub fn add_child_and_advance(&mut self, parent: NodeId, content: NodeContent) -> NodeId {
+        let id = self.add_child(parent, content);
+        self.current = id;
+        id
+    }
+
+    /// Append text to the current node, provided its content is a
+    /// text-carrying variant (`Agent` / `Thinking`). No-op otherwise.
+    ///
+    /// Returns `true` if the delta landed, `false` if the current
+    /// node's content kind does not accept deltas.
+    pub fn append_delta(&mut self, delta: &str) -> bool {
+        let cur = self.current;
+        let node = &mut self.nodes[(cur.index() - 1) as usize];
+        match &mut node.content {
+            NodeContent::Agent { text } | NodeContent::Thinking { text } => {
+                text.push_str(delta);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Move `current` explicitly (e.g. the scheduler just created a
+    /// fresh `Agent` node to accumulate a new turn).
+    pub fn set_current(&mut self, id: NodeId) {
+        debug_assert!((id.index() as usize) <= self.nodes.len());
+        self.current = id;
+    }
+
+    /// Walk `parent` links from `id` up to the root, returning the path
+    /// in root-to-`id` order. Does **not** traverse `merged_from`; that
+    /// is structural metadata a renderer may consult separately.
+    pub fn path_to_here(&self, id: NodeId) -> Vec<NodeId> {
+        let mut out = Vec::new();
+        let mut cur = Some(id);
+        while let Some(n) = cur {
+            out.push(n);
+            cur = self.nodes[(n.index() - 1) as usize].parent;
+        }
+        out.reverse();
+        out
+    }
+
+    /// Branch `parent` into `n` parallel child markers. Returns their
+    /// ids. The `parent` node gains `fanout_children` metadata listing
+    /// them. Useful for workflow scripts that want to run several
+    /// agents concurrently and later merge.
+    pub fn fanout(&mut self, parent: NodeId, labels: Vec<String>) -> Vec<NodeId> {
+        let ids: Vec<NodeId> = labels
+            .into_iter()
+            .map(|label| self.add_child(parent, NodeContent::Marker { label }))
+            .collect();
+        let parent_meta =
+            &mut self.nodes[(parent.index() - 1) as usize].meta.fanout_children;
+        parent_meta.extend(ids.iter().copied());
+        ids
+    }
+
+    /// Merge a set of branch nodes into a single marker whose parent
+    /// is their common ancestor. `branches` must be non-empty; every
+    /// branch id must exist in this tree; they must share an ancestor
+    /// strictly above every branch (this is always true for branches
+    /// produced by `fanout`).
+    ///
+    /// Returns the new merge node's id. Its parent is the common
+    /// ancestor (never any of the branches themselves), and its
+    /// `merged_from` metadata records the branches it unified.
+    pub fn collect(&mut self, branches: &[NodeId], label: impl Into<String>) -> NodeId {
+        assert!(!branches.is_empty(), "collect requires ≥1 branch");
+        let ancestor = self
+            .common_ancestor(branches)
+            .expect("collect: branches share no ancestor");
+        for b in branches {
+            debug_assert_ne!(*b, ancestor, "collect: ancestor must not equal a branch");
+        }
+        let meta = NodeMeta {
+            merged_from: branches.to_vec(),
+            ..Default::default()
+        };
+        self.add_child_with_meta(
+            ancestor,
+            NodeContent::Marker {
+                label: label.into(),
+            },
+            meta,
+        )
+    }
+
+    /// Lowest common ancestor of the supplied nodes. `None` only if the
+    /// slice is empty.
+    pub fn common_ancestor(&self, nodes: &[NodeId]) -> Option<NodeId> {
+        let mut iter = nodes.iter().copied();
+        let first = iter.next()?;
+        let mut ancestors: Vec<NodeId> = self.path_to_here(first);
+        for n in iter {
+            let path = self.path_to_here(n);
+            ancestors.retain(|a| path.contains(a));
+            if ancestors.is_empty() {
+                return None;
+            }
+        }
+        ancestors.last().copied()
+    }
+}
+
+impl Default for ConversationTree {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn text(t: &str) -> NodeContent {
+        NodeContent::User { text: t.into() }
+    }
+
+    #[test]
+    fn root_is_node_one() {
+        let t = ConversationTree::new();
+        assert_eq!(t.root().index(), 1);
+        assert_eq!(t.current(), t.root());
+        assert!(matches!(t.get(t.root()).content, NodeContent::Root));
+    }
+
+    #[test]
+    fn add_child_extends_tree_and_preserves_parent_link() {
+        let mut t = ConversationTree::new();
+        let a = t.add_child(t.root(), text("hi"));
+        assert_eq!(t.get(a).parent, Some(t.root()));
+        assert_eq!(t.len(), 2);
+    }
+
+    #[test]
+    fn add_child_and_advance_moves_current() {
+        let mut t = ConversationTree::new();
+        let a = t.add_child_and_advance(
+            t.root(),
+            NodeContent::Agent { text: String::new() },
+        );
+        assert_eq!(t.current(), a);
+    }
+
+    #[test]
+    fn append_delta_accumulates_on_agent_node() {
+        let mut t = ConversationTree::new();
+        let a = t.add_child_and_advance(
+            t.root(),
+            NodeContent::Agent { text: String::new() },
+        );
+        assert!(t.append_delta("hel"));
+        assert!(t.append_delta("lo"));
+        match &t.get(a).content {
+            NodeContent::Agent { text } => assert_eq!(text, "hello"),
+            _ => panic!("expected Agent"),
+        }
+    }
+
+    #[test]
+    fn append_delta_no_op_on_non_text_node() {
+        let mut t = ConversationTree::new();
+        let u = t.add_child_and_advance(t.root(), text("who"));
+        assert!(!t.append_delta("ignored"));
+        assert!(matches!(&t.get(u).content, NodeContent::User { text } if text == "who"));
+    }
+
+    #[test]
+    fn path_to_here_walks_parent_links_only() {
+        let mut t = ConversationTree::new();
+        let a = t.add_child(t.root(), text("a"));
+        let b = t.add_child(a, text("b"));
+        let c = t.add_child(b, text("c"));
+        assert_eq!(t.path_to_here(c), vec![t.root(), a, b, c]);
+    }
+
+    #[test]
+    fn fanout_records_children_metadata() {
+        let mut t = ConversationTree::new();
+        let kids = t.fanout(t.root(), vec!["l".into(), "r".into()]);
+        assert_eq!(kids.len(), 2);
+        assert_eq!(t.get(t.root()).meta.fanout_children, kids);
+        for k in kids {
+            assert_eq!(t.get(k).parent, Some(t.root()));
+        }
+    }
+
+    #[test]
+    fn collect_attaches_to_common_ancestor_not_to_a_branch() {
+        let mut t = ConversationTree::new();
+        let a = t.add_child(t.root(), text("ctx"));
+        let kids = t.fanout(a, vec!["l".into(), "r".into()]);
+        let merge = t.collect(&kids, "joined");
+        // Merge parent is the fanout parent, not a branch.
+        assert_eq!(t.get(merge).parent, Some(a));
+        assert_eq!(t.get(merge).meta.merged_from, kids);
+        // path_to_here for merge does not traverse any branch.
+        let path = t.path_to_here(merge);
+        assert_eq!(path, vec![t.root(), a, merge]);
+    }
+
+    #[test]
+    fn common_ancestor_handles_siblings() {
+        let mut t = ConversationTree::new();
+        let a = t.add_child(t.root(), text("a"));
+        let b = t.add_child(a, text("b"));
+        let c = t.add_child(a, text("c"));
+        assert_eq!(t.common_ancestor(&[b, c]), Some(a));
+    }
+
+    #[test]
+    fn node_id_is_copy_and_serialisable() {
+        let mut t = ConversationTree::new();
+        let a = t.add_child(t.root(), text("a"));
+        let s = serde_json::to_string(&a).unwrap();
+        let r: NodeId = serde_json::from_str(&s).unwrap();
+        assert_eq!(a, r);
+    }
+}

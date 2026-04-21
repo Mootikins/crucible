@@ -10,6 +10,15 @@
 //! runtime uses the same inbound channel to inject handler output
 //! (`HandlerInjection`) and to signal depth-cap exhaustion
 //! (`DepthCapHit`). There is one channel topology, not three.
+//!
+//! Conversation state lives in [`tree::ConversationTree`]: scheduler-
+//! owned, append-only, fanout/collect preserved as first-class ops so
+//! later branching features (markdown-driven workflows, session forks)
+//! do not require a separate data model.
+
+pub mod tree;
+
+pub use tree::{ConversationTree, NodeContent, NodeId, NodeMeta, TurnNode};
 
 use std::sync::Arc;
 
