@@ -17,6 +17,7 @@ use crate::{DaemonClient, SessionEvent};
 
 mod agent_handle;
 mod convert;
+mod native_agent;
 
 #[cfg(test)]
 mod tests;
