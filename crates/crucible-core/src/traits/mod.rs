@@ -53,8 +53,8 @@ pub use change_detection::{CacheEntry, ChangeDetector, ContentHasher, HashLookup
 pub use graph_query::{GraphQueryError, GraphQueryExecutor, GraphQueryResult};
 
 pub use chat::{
-    AgentHandle, ArgumentSpec, ChatChunk, ChatContext, ChatError, ChatResponse, ChatResult,
-    ChatToolCall, CommandDescriptor, CommandHandler, CommandKind, CompletionSource, SearchResult,
+    AgentHandle, ArgumentSpec, ChatChunk, ChatContext, ChatError, ChatResult, ChatToolCall,
+    CommandDescriptor, CommandHandler, CommandKind, CompletionSource, SearchResult,
 };
 pub use completion_backend::{
     BackendCompletionChunk, BackendCompletionRequest, BackendCompletionResponse, BackendError,

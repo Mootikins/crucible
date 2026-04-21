@@ -149,27 +149,6 @@ pub trait AgentHandle: Send + Sync {
         }))
     }
 
-    async fn send_message(&mut self, message: &str) -> ChatResult<ChatResponse> {
-        use futures::StreamExt;
-
-        let mut content = String::new();
-        let mut tool_calls = Vec::new();
-        let mut stream = self.send_message_stream(message.to_string());
-
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk?;
-            content.push_str(&chunk.delta);
-            if let Some(calls) = chunk.tool_calls {
-                tool_calls.extend(calls);
-            }
-        }
-
-        Ok(ChatResponse {
-            content,
-            tool_calls,
-        })
-    }
-
     fn is_connected(&self) -> bool;
 
     fn get_modes(&self) -> Option<&SessionModeState> {
@@ -605,12 +584,6 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
     fn session_id(&self) -> Option<&str> {
         (**self).session_id()
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatResponse {
-    pub content: String,
-    pub tool_calls: Vec<ChatToolCall>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

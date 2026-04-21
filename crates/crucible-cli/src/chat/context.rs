@@ -109,34 +109,11 @@ impl<'a> ChatContext for CliChatContext<'a> {
             .collect())
     }
 
-    async fn send_command_to_agent(&mut self, name: &str, args: &str) -> ChatResult<()> {
-        // Format command as user message
-        let command_message = if args.is_empty() {
-            format!("/{}", name)
-        } else {
-            format!("/{} {}", name, args)
-        };
-
-        // Send to agent and display response
-        let response = self
-            .agent
-            .send_message(&command_message)
-            .await
-            .map_err(|e| ChatError::CommandFailed(format!("Agent error: {}", e)))?;
-
-        // Display agent response using Display utilities
-        let tool_calls: Vec<_> = response
-            .tool_calls
-            .iter()
-            .map(|tc| crate::chat::display::ToolCallDisplay {
-                title: tc.name.clone(),
-                arguments: tc.arguments.clone(),
-            })
-            .collect();
-
-        Display::agent_response(&response.content, &tool_calls);
-
-        Ok(())
+    async fn send_command_to_agent(&mut self, _name: &str, _args: &str) -> ChatResult<()> {
+        // Slash commands don't route through the daemon-RPC agent;
+        // the TUI dispatches them locally. This method stays on the
+        // ChatContext trait as a compatibility stub.
+        Err(ChatError::NotSupported("send_command_to_agent".into()))
     }
 
     fn display_search_results(&self, query: &str, results: &[SearchResult]) {
