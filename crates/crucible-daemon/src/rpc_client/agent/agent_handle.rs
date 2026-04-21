@@ -119,10 +119,6 @@ impl AgentHandle for DaemonAgentHandle {
         Some(self)
     }
 
-    fn is_connected(&self) -> bool {
-        self.connected
-    }
-
     fn get_mode_id(&self) -> &str {
         &self.mode_id
     }

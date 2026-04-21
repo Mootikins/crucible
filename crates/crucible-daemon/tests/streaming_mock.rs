@@ -198,10 +198,6 @@ impl AgentHandle for StreamingMockAgent {
         }
     }
 
-    fn is_connected(&self) -> bool {
-        true
-    }
-
     async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
         Ok(())
     }

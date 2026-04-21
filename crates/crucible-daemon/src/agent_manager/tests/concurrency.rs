@@ -9,10 +9,6 @@ impl AgentHandle for PendingMockAgent {
         Box::pin(futures::stream::pending())
     }
 
-    fn is_connected(&self) -> bool {
-        true
-    }
-
     async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
         Ok(())
     }

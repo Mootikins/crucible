@@ -81,9 +81,6 @@ impl AgentHandle for MockSubagentHandle {
         Ok(())
     }
 
-    fn is_connected(&self) -> bool {
-        true
-    }
 }
 
 pub(super) fn test_session_agent(delegation_config: Option<DelegationConfig>) -> SessionAgent {

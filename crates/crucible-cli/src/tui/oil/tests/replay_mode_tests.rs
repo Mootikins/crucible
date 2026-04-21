@@ -50,9 +50,6 @@ impl AgentHandle for CountingAgent {
         Ok(())
     }
 
-    fn is_connected(&self) -> bool {
-        true
-    }
 }
 
 #[tokio::test]

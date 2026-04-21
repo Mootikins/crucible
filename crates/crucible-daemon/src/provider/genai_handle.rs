@@ -794,10 +794,6 @@ impl AgentHandle for GenaiAgentHandle {
         Some(self)
     }
 
-    fn is_connected(&self) -> bool {
-        true
-    }
-
     fn get_modes(&self) -> Option<&SessionModeState> {
         Some(&self.mode_state)
     }
@@ -978,10 +974,6 @@ mod tests {
             } else {
                 futures::stream::iter(self.chunks.clone().into_iter().map(Ok)).boxed()
             }
-        }
-
-        fn is_connected(&self) -> bool {
-            true
         }
 
         async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {

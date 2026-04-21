@@ -98,7 +98,6 @@ async fn test_session_subscribe_and_unsubscribe() {
 
 #[tokio::test]
 async fn test_daemon_agent_handle_creation() {
-    use crucible_core::traits::chat::AgentHandle;
     use crucible_daemon::DaemonAgentHandle;
 
     let server = TestServer::start().await.expect("Failed to start server");
@@ -132,7 +131,6 @@ async fn test_daemon_agent_handle_creation() {
         .expect("Failed to create agent handle");
 
     assert_eq!(handle.session_id(), session_id);
-    assert!(handle.is_connected());
 
     server.shutdown().await;
 }

@@ -509,10 +509,6 @@ impl AgentHandle for AcpAgentHandle {
         ))
     }
 
-    fn is_connected(&self) -> bool {
-        self.session_id.is_some()
-    }
-
     fn get_mode_id(&self) -> &str {
         &self.mode_id
     }

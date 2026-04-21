@@ -632,10 +632,6 @@ mod tests {
                 Ok(())
             }
 
-            fn is_connected(&self) -> bool {
-                true
-            }
-
             fn get_modes(&self) -> Option<&SessionModeState> {
                 Some(&self.mode_state)
             }
@@ -718,9 +714,6 @@ mod tests {
                 Ok(())
             }
 
-            fn is_connected(&self) -> bool {
-                true
-            }
         }
 
         let mut agent = MockAgent {
@@ -778,9 +771,6 @@ mod tests {
                 Ok(())
             }
 
-            fn is_connected(&self) -> bool {
-                true
-            }
         }
 
         let counter = Arc::new(AtomicUsize::new(0));

@@ -651,10 +651,6 @@ impl AgentHandle for ScriptedHandle {
         Box::pin(futures::stream::iter(chunks))
     }
 
-    fn is_connected(&self) -> bool {
-        true
-    }
-
     async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
         Ok(())
     }

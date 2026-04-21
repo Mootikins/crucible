@@ -137,8 +137,6 @@ pub trait AgentHandle: Send + Sync {
         }))
     }
 
-    fn is_connected(&self) -> bool;
-
     fn get_modes(&self) -> Option<&SessionModeState> {
         None
     }
@@ -407,10 +405,6 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
         tool_results: Vec<ChatToolResult>,
     ) -> BoxStream<'static, ChatResult<ChatChunk>> {
         (**self).continue_with_tool_results(tool_calls, tool_results)
-    }
-
-    fn is_connected(&self) -> bool {
-        (**self).is_connected()
     }
 
     fn get_modes(&self) -> Option<&SessionModeState> {
@@ -794,10 +788,6 @@ mod tests {
 
         async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
             Ok(())
-        }
-
-        fn is_connected(&self) -> bool {
-            true
         }
     }
 

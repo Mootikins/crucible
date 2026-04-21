@@ -44,10 +44,6 @@ impl AgentHandle for NoopAgentHandle {
         stream::empty().boxed()
     }
 
-    fn is_connected(&self) -> bool {
-        true
-    }
-
     async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
         Ok(())
     }
@@ -101,10 +97,6 @@ mod tests {
             let mut s = agent.send_message_stream("hi".into());
             assert!(s.next().await.is_none());
         }
-
-        // Declared connected so the UI doesn't render a disconnected /
-        // degraded state during replay.
-        assert!(agent.is_connected());
 
         // set_mode_str must succeed — it has no default impl.
         assert!(agent.set_mode_str("plan").await.is_ok());

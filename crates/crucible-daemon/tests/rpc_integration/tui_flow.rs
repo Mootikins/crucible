@@ -1,7 +1,6 @@
 //! TUI flow tests: sessions command, resume command, full daemon-agent flow.
 
 use crucible_core::config::BackendType;
-use crucible_core::traits::chat::AgentHandle;
 use crucible_daemon::DaemonClient;
 
 use super::server::TestServer;
@@ -187,7 +186,6 @@ async fn test_tui_daemon_agent_full_flow() {
         crucible_daemon::DaemonAgentHandle::new(client.clone(), session_id.clone(), event_rx);
 
     assert_eq!(handle.session_id(), session_id);
-    assert!(handle.is_connected());
 
     client
         .session_unsubscribe(&[&session_id])

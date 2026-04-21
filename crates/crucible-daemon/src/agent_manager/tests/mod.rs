@@ -118,10 +118,6 @@ impl AgentHandle for PromptCapturingAgent {
         futures::stream::iter(chunks.into_iter().map(Ok)).boxed()
     }
 
-    fn is_connected(&self) -> bool {
-        true
-    }
-
     async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
         Ok(())
     }
@@ -189,10 +185,6 @@ impl AgentHandle for MockAgent {
         Box::pin(futures::stream::empty())
     }
 
-    fn is_connected(&self) -> bool {
-        true
-    }
-
     async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
         Ok(())
     }
@@ -203,10 +195,6 @@ impl AgentHandle for StreamingMockAgent {
     fn send_message_stream(&mut self, _: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
         let chunks = self.chunks.clone();
         futures::stream::iter(chunks.into_iter().map(Ok)).boxed()
-    }
-
-    fn is_connected(&self) -> bool {
-        true
     }
 
     async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {

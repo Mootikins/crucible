@@ -43,7 +43,6 @@ pub struct DaemonAgentHandle {
     /// `streaming_tx`.
     pub(super) raw_event_rx: Option<mpsc::UnboundedReceiver<SessionEvent>>,
     pub(super) mode_id: String,
-    pub(super) connected: bool,
     pub(super) cached_model: Option<String>,
     pub(super) cached_temperature: Option<f64>,
     pub(super) cached_max_tokens: Option<u32>,
@@ -83,7 +82,6 @@ impl DaemonAgentHandle {
             interaction_rx: Some(interaction_rx),
             raw_event_rx: None,
             mode_id: "normal".to_string(),
-            connected: true,
             cached_model: None,
             cached_temperature: None,
             cached_max_tokens: None,

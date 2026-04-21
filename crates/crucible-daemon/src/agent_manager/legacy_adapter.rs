@@ -392,10 +392,6 @@ mod tests {
             Box::pin(stream::iter(next))
         }
 
-        fn is_connected(&self) -> bool {
-            true
-        }
-
         async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
             Ok(())
         }
@@ -533,10 +529,6 @@ mod tests {
                 Box::pin(stream::iter(chunks))
             }
 
-            fn is_connected(&self) -> bool {
-                true
-            }
-
             async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
                 Ok(())
             }
@@ -597,10 +589,6 @@ mod tests {
                 *self.captured_prompt.lock().unwrap() = Some(message);
                 let chunks = std::mem::take(&mut *self.second.lock().unwrap());
                 Box::pin(stream::iter(chunks))
-            }
-
-            fn is_connected(&self) -> bool {
-                true
             }
 
             async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
