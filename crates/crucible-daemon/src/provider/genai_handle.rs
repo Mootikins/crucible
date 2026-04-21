@@ -910,6 +910,166 @@ impl crucible_core::traits::Undoable for GenaiAgentHandle {
     }
 }
 
+#[async_trait]
+impl crucible_core::turn::Agent for GenaiAgentHandle {
+    fn capabilities(&self) -> crucible_core::turn::AgentCapabilities {
+        crucible_core::turn::AgentCapabilities {
+            streaming: true,
+            tool_calls: true,
+            thinking: true,
+            model_switching: true,
+            usage_reporting: true,
+            cancellation: true,
+            temperature_control: true,
+            max_tokens_control: true,
+            owns_history: false,
+            modes: true,
+        }
+    }
+
+    async fn turn<'a>(
+        &'a mut self,
+        ctx: crucible_core::turn::TurnContext,
+    ) -> Result<
+        futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
+        crucible_core::turn::AgentError,
+    > {
+        use crate::agent_manager::internal_agent::{chat_chunk_to_events, DEPTH_CAP_PROMPT};
+        use crucible_core::turn::{StopReason, TurnError, TurnEvent};
+
+        let initial = ctx.content;
+        let mut inbound = ctx.inbound;
+
+        let body = async_stream::stream! {
+            let mut chat_stream = self.send_message_stream(initial);
+
+            'turn: loop {
+                let mut done = false;
+                let mut pending_calls: Option<Vec<ChatToolCall>> = None;
+
+                while let Some(result) = chat_stream.next().await {
+                    match result {
+                        Ok(chunk) => {
+                            let terminal = chunk.done;
+                            let mut events = Vec::new();
+                            let carried_calls = chat_chunk_to_events(chunk, &mut events);
+                            for event in events {
+                                yield event;
+                            }
+                            if terminal {
+                                pending_calls = carried_calls;
+                                done = true;
+                                break;
+                            }
+                        }
+                        Err(ChatError::NotSupported(_)) => {
+                            yield TurnEvent::Done {
+                                stop_reason: StopReason::EndTurn,
+                            };
+                            return;
+                        }
+                        Err(e) => {
+                            yield TurnEvent::Error(TurnError::Communication(e.to_string()));
+                            return;
+                        }
+                    }
+                }
+
+                if !done {
+                    yield TurnEvent::Done {
+                        stop_reason: StopReason::Empty,
+                    };
+                    return;
+                }
+
+                let Some(tool_calls) = pending_calls else {
+                    yield TurnEvent::Done {
+                        stop_reason: StopReason::EndTurn,
+                    };
+                    return;
+                };
+
+                yield TurnEvent::ToolBatchEnd;
+
+                let Some(rx) = inbound.as_mut() else {
+                    yield TurnEvent::Done {
+                        stop_reason: StopReason::EndTurn,
+                    };
+                    return;
+                };
+
+                let expected_ids: std::collections::HashSet<String> = tool_calls
+                    .iter()
+                    .filter_map(|c| c.id.clone())
+                    .collect();
+                let mut collected: Vec<ChatToolResult> = Vec::with_capacity(tool_calls.len());
+                while collected.len() < tool_calls.len() {
+                    let Some(event) = rx.recv().await else {
+                        yield TurnEvent::Done {
+                            stop_reason: StopReason::Cancelled,
+                        };
+                        return;
+                    };
+
+                    match event {
+                        TurnEvent::ToolResult {
+                            ref id,
+                            ref name,
+                            ref result,
+                            ref error,
+                        } => {
+                            if !expected_ids.is_empty() && !expected_ids.contains(id) {
+                                continue;
+                            }
+                            let result_str = match result {
+                                serde_json::Value::String(s) => s.clone(),
+                                other => other.to_string(),
+                            };
+                            collected.push(ChatToolResult {
+                                name: name.clone(),
+                                result: result_str,
+                                error: error.clone(),
+                                call_id: Some(id.clone()),
+                            });
+                        }
+                        TurnEvent::HandlerInjection { content, .. } => {
+                            drop(chat_stream);
+                            chat_stream = self.send_message_stream(content);
+                            continue 'turn;
+                        }
+                        TurnEvent::DepthCapHit { .. } => {
+                            drop(chat_stream);
+                            chat_stream = self.send_message_stream(DEPTH_CAP_PROMPT.to_string());
+                            continue 'turn;
+                        }
+                        _ => {}
+                    }
+                }
+
+                drop(chat_stream);
+                chat_stream = self.continue_with_tool_results(tool_calls, collected);
+            }
+        };
+
+        Ok(Box::pin(body))
+    }
+
+    async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
+        AgentHandle::cancel(self)
+            .await
+            .map_err(|e| crucible_core::turn::AgentError::Communication(e.to_string()))
+    }
+
+    async fn switch_model(
+        &mut self,
+        model_id: &str,
+    ) -> Result<(), crucible_core::turn::NotSupported> {
+        AgentHandle::switch_model(self, model_id)
+            .await
+            .map_err(|_| crucible_core::turn::NotSupported::new("switch_model"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
