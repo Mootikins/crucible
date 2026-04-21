@@ -21,6 +21,7 @@
 //! # Or: /tmp/crucible.sock
 //! ```
 //!
+pub mod acp;
 pub mod acp_handle;
 pub mod agent_factory;
 pub mod agent_manager;

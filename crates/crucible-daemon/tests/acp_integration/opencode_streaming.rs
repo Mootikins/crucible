@@ -1,0 +1,890 @@
+//! Integration tests for OpenCode ACP streaming behavior.
+//!
+//! These tests require the `opencode` binary to be installed and available in PATH.
+//! They are ignored by default and can be run with:
+//!
+//! ```bash
+//! cargo test -p crucible-daemon --test acp_integration -- --ignored opencode
+//! ```
+//!
+//! To run with output visible:
+//! ```bash
+//! cargo test -p crucible-daemon --test acp_integration -- --ignored --nocapture opencode
+//! ```
+
+#![allow(clippy::zombie_processes)]
+
+use agent_client_protocol::PromptRequest;
+use crucible_daemon::acp::client::{ClientConfig, CrucibleAcpClient};
+use std::path::PathBuf;
+use std::process::Command;
+
+/// Cross-platform test path helper
+fn test_path(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("crucible_test_{}", name))
+}
+
+/// Helper to check if opencode binary is available
+fn opencode_available() -> Option<PathBuf> {
+    which::which("opencode").ok()
+}
+
+/// Test that OpenCode ACP returns content for a simple prompt.
+///
+/// This test reproduces an issue where:
+/// - Python client receives: available_commands_update, agent_message_chunk, final_response
+/// - Rust client receives: available_commands_update, final_response (missing chunk!)
+///
+/// Run with: `cargo test -p crucible-daemon -- --ignored test_opencode_streaming_returns_content`
+#[tokio::test]
+#[ignore = "requires opencode binary - run with --ignored"]
+async fn test_opencode_streaming_returns_content() {
+    // Skip gracefully if opencode not installed
+    let opencode_path = match opencode_available() {
+        Some(path) => {
+            eprintln!("Found opencode at: {:?}", path);
+            path
+        }
+        None => {
+            eprintln!("SKIP: 'opencode' binary not found in PATH");
+            eprintln!("Install opencode or ensure it's in your PATH to run this test");
+            return;
+        }
+    };
+
+    // Verify opencode can run
+    let version_check = Command::new(&opencode_path)
+        .arg("--version")
+        .output()
+        .expect("Failed to run opencode --version");
+
+    if !version_check.status.success() {
+        eprintln!(
+            "SKIP: opencode --version failed: {}",
+            String::from_utf8_lossy(&version_check.stderr)
+        );
+        return;
+    }
+    eprintln!(
+        "OpenCode version: {}",
+        String::from_utf8_lossy(&version_check.stdout).trim()
+    );
+
+    // Create ACP client
+    let config = ClientConfig {
+        agent_path: opencode_path,
+        agent_args: Some(vec!["acp".to_string()]),
+        working_dir: Some(test_path("opencode_work")),
+        env_vars: None,
+        timeout_ms: Some(30_000),
+        max_retries: Some(1),
+    };
+
+    let mut client = CrucibleAcpClient::new(config);
+
+    // Connect with handshake
+    eprintln!("Connecting to OpenCode...");
+    let session = match client.connect_with_best_mcp(None).await {
+        Ok(s) => s,
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("No such file") || msg.contains("spawn") || msg.contains("BrokenPipe") {
+                eprintln!(
+                    "SKIP: opencode binary found but cannot start ACP session: {}",
+                    msg
+                );
+                return;
+            }
+            panic!("Failed to connect to opencode: {}", e);
+        }
+    };
+
+    eprintln!("Session established: {}", session.id());
+
+    // Send a simple prompt
+    let prompt_request: PromptRequest = serde_json::from_value(serde_json::json!({
+        "sessionId": session.id().to_string(),
+        "prompt": [{"type": "text", "text": "say hello"}],
+        "_meta": null
+    }))
+    .expect("Failed to create PromptRequest");
+
+    eprintln!("Sending prompt: 'say hello'");
+
+    // This is where the bug manifests - we should get content back
+    let result = client.send_prompt_with_streaming(prompt_request).await;
+
+    match result {
+        Ok((content, tool_calls, response)) => {
+            eprintln!("--- RESULT ---");
+            eprintln!("Content length: {} chars", content.len());
+            eprintln!("Content: '{}'", content);
+            eprintln!("Tool calls: {}", tool_calls.len());
+            eprintln!("Stop reason: {:?}", response.stop_reason);
+
+            // THE BUG: content is empty when it should contain "hello" or similar
+            assert!(
+                !content.is_empty(),
+                "BUG: OpenCode returned empty content. \
+                 Expected agent_message_chunk with text content. \
+                 This indicates the streaming loop is missing the chunk notification."
+            );
+        }
+        Err(e) => {
+            panic!("Failed to get streaming response: {}", e);
+        }
+    }
+}
+
+/// Test that verifies the exact line sequence from OpenCode.
+///
+/// Expected sequence after session/prompt:
+/// 1. available_commands_update notification
+/// 2. agent_message_chunk notification (with content!)
+/// 3. Final response with stopReason
+///
+/// Run with: `cargo test -p crucible-daemon -- --ignored test_opencode_line_sequence`
+#[tokio::test]
+#[ignore = "requires opencode binary - run with --ignored"]
+async fn test_opencode_line_sequence() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::process::{Command, Stdio};
+
+    let opencode_path = match opencode_available() {
+        Some(path) => path,
+        None => {
+            eprintln!("SKIP: 'opencode' binary not found");
+            return;
+        }
+    };
+
+    // Spawn opencode in ACP mode
+    let mut child = Command::new(&opencode_path)
+        .arg("acp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn opencode");
+
+    let mut stdin = child.stdin.take().unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let mut reader = BufReader::new(stdout);
+
+    // Helper to send JSON-RPC (returns error instead of panicking on broken pipe)
+    let send =
+        |stdin: &mut std::process::ChildStdin, msg: &serde_json::Value| -> std::io::Result<()> {
+            let data = serde_json::to_string(msg).unwrap() + "\n";
+            stdin.write_all(data.as_bytes())?;
+            stdin.flush()
+        };
+
+    // Helper to read line (returns error instead of panicking)
+    let read_line = |reader: &mut BufReader<std::process::ChildStdout>| -> std::io::Result<String> {
+        let mut line = String::new();
+        reader.read_line(&mut line)?;
+        Ok(line.trim().to_string())
+    };
+
+    // 1. Initialize
+    if send(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocolVersion": 1, "clientCapabilities": {}}
+        }),
+    )
+    .is_err()
+    {
+        eprintln!("SKIP: opencode process exited before initialization (missing config/API keys?)");
+        let _ = child.kill();
+        return;
+    }
+    let _init_response = match read_line(&mut reader) {
+        Ok(line) => line,
+        Err(_) => {
+            eprintln!("SKIP: opencode process did not respond to initialize");
+            let _ = child.kill();
+            return;
+        }
+    };
+    eprintln!("Initialize: OK");
+
+    // 2. Create session
+    let cwd = test_path("opencode_work").to_string_lossy().into_owned();
+    if send(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "session/new",
+            "params": {"cwd": cwd, "mcpServers": []}
+        }),
+    )
+    .is_err()
+    {
+        eprintln!("SKIP: opencode process exited after initialization (missing config/API keys?)");
+        let _ = child.kill();
+        return;
+    }
+    let session_response = match read_line(&mut reader) {
+        Ok(line) if !line.is_empty() => line,
+        _ => {
+            eprintln!("SKIP: opencode did not respond to session/new");
+            let _ = child.kill();
+            return;
+        }
+    };
+    let session_json: serde_json::Value = match serde_json::from_str(&session_response) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!(
+                "SKIP: opencode returned invalid JSON for session/new: {e}\nResponse: {session_response}"
+            );
+            let _ = child.kill();
+            return;
+        }
+    };
+    let session_id = match session_json["result"]["sessionId"].as_str() {
+        Some(id) => id.to_string(),
+        None => {
+            eprintln!("SKIP: opencode session/new response missing sessionId: {session_json}");
+            let _ = child.kill();
+            return;
+        }
+    };
+    eprintln!("Session created: {}", session_id);
+
+    // 3. Send prompt
+    if send(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "session/prompt",
+            "params": {
+                "sessionId": session_id,
+                "prompt": [{"type": "text", "text": "say hello"}]
+            }
+        }),
+    )
+    .is_err()
+    {
+        eprintln!("SKIP: opencode process exited before prompt could be sent");
+        let _ = child.kill();
+        return;
+    };
+
+    // 4. Read ALL lines from response
+    eprintln!("\n--- Lines after session/prompt ---");
+    let mut lines = Vec::new();
+    let mut found_final = false;
+    let mut found_chunk = false;
+
+    // Read with timeout
+    let start = std::time::Instant::now();
+    while start.elapsed() < std::time::Duration::from_secs(30) && !found_final {
+        let line = match read_line(&mut reader) {
+            Ok(l) => l,
+            Err(_) => break, // Process exited
+        };
+        if line.is_empty() {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            continue;
+        }
+
+        eprintln!("Line {}: {} bytes", lines.len(), line.len());
+
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+            if json.get("method").is_some() {
+                let update_type = json["params"]["update"]["sessionUpdate"]
+                    .as_str()
+                    .unwrap_or("?");
+                eprintln!("  Type: notification, sessionUpdate={}", update_type);
+
+                if update_type == "agent_message_chunk" {
+                    found_chunk = true;
+                    let content = &json["params"]["update"]["content"];
+                    eprintln!("  Content: {:?}", content);
+                }
+            } else if json.get("result").is_some() {
+                let stop = json["result"]["stopReason"].as_str().unwrap_or("?");
+                eprintln!("  Type: response, stopReason={}", stop);
+                found_final = true;
+            }
+        }
+
+        lines.push(line);
+    }
+
+    // Cleanup
+    let _ = child.kill();
+
+    // Assertions
+    eprintln!("\n--- Summary ---");
+    eprintln!("Total lines: {}", lines.len());
+    eprintln!("Found agent_message_chunk: {}", found_chunk);
+    eprintln!("Found final response: {}", found_final);
+
+    assert!(
+        found_chunk,
+        "BUG: No agent_message_chunk received. \
+         OpenCode should send content before the final response."
+    );
+}
+
+/// Test using SSE MCP path (same as cru chat uses)
+///
+/// This test verifies if the SSE MCP connection path has different behavior
+/// compared to the stdio MCP path used in the direct handshake test.
+///
+/// Run with: `cargo test -p crucible-daemon -- --ignored test_opencode_with_sse_mcp`
+#[tokio::test]
+#[ignore = "requires opencode binary - run with --ignored"]
+async fn test_opencode_with_sse_mcp() {
+    use crucible_core::enrichment::EmbeddingProvider;
+    use crucible_core::traits::KnowledgeRepository;
+    use crucible_daemon::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
+    use crucible_daemon::InProcessMcpHost;
+    use std::sync::Arc;
+    use tempfile::TempDir;
+
+    // Skip if opencode not installed
+    let opencode_path = match opencode_available() {
+        Some(path) => {
+            eprintln!("Found opencode at: {:?}", path);
+            path
+        }
+        None => {
+            eprintln!("SKIP: 'opencode' binary not found in PATH");
+            return;
+        }
+    };
+
+    // Create temp directory for MCP host
+    let temp = TempDir::new().expect("Failed to create temp dir");
+
+    // Start in-process MCP host (like cru chat does)
+    eprintln!("Starting in-process MCP host...");
+    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+
+    let mcp_host = match InProcessMcpHost::start(
+        temp.path().to_path_buf(),
+        knowledge_repo,
+        embedding_provider,
+        None,
+    )
+    .await
+    {
+        Ok(host) => host,
+        Err(e) => {
+            eprintln!("SKIP: Failed to start MCP host (permission denied?): {}", e);
+            return;
+        }
+    };
+
+    let mcp_url = mcp_host.mcp_url();
+    eprintln!("MCP host running at: {}", mcp_url);
+
+    let config = ClientConfig {
+        agent_path: opencode_path,
+        agent_args: Some(vec!["acp".to_string()]),
+        working_dir: Some(test_path("opencode_work")),
+        env_vars: None,
+        timeout_ms: Some(30_000),
+        max_retries: Some(1),
+    };
+
+    let mut client = CrucibleAcpClient::new(config);
+
+    eprintln!("Connecting to OpenCode with Streamable HTTP MCP...");
+    let session = match client.connect_with_best_mcp(Some(&mcp_url)).await {
+        Ok(s) => s,
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("No such file") || msg.contains("spawn") || msg.contains("BrokenPipe") {
+                eprintln!(
+                    "SKIP: opencode binary found but cannot start ACP session: {}",
+                    msg
+                );
+                mcp_host.shutdown();
+                return;
+            }
+            panic!("Failed to connect to opencode with MCP: {}", e);
+        }
+    };
+
+    eprintln!("Session established: {}", session.id());
+
+    let prompt_request: PromptRequest = serde_json::from_value(serde_json::json!({
+        "sessionId": session.id().to_string(),
+        "prompt": [{"type": "text", "text": "say hello"}],
+        "_meta": null
+    }))
+    .expect("Failed to create PromptRequest");
+
+    eprintln!("Sending prompt: 'say hello'");
+
+    let result = client.send_prompt_with_streaming(prompt_request).await;
+
+    match result {
+        Ok((content, tool_calls, response)) => {
+            eprintln!("--- MCP RESULT ---");
+            eprintln!("Content length: {} chars", content.len());
+            eprintln!("Content: '{}'", content);
+            eprintln!("Tool calls: {}", tool_calls.len());
+            eprintln!("Stop reason: {:?}", response.stop_reason);
+
+            assert!(
+                !content.is_empty(),
+                "MCP path returned empty content — tool discovery may have failed."
+            );
+        }
+        Err(e) => {
+            panic!("Failed to get streaming response via MCP: {}", e);
+        }
+    }
+
+    mcp_host.shutdown();
+}
+
+/// Test with NO MCP servers configured
+///
+/// This tests if the issue is specifically with SSE MCP configuration
+/// or if it's something else about how we create sessions.
+///
+/// Run with: `cargo test -p crucible-daemon -- --ignored test_opencode_no_mcp`
+#[tokio::test]
+#[ignore = "requires opencode binary - run with --ignored"]
+async fn test_opencode_no_mcp() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::process::{Command, Stdio};
+
+    let opencode_path = match opencode_available() {
+        Some(path) => {
+            eprintln!("Found opencode at: {:?}", path);
+            path
+        }
+        None => {
+            eprintln!("SKIP: 'opencode' binary not found");
+            return;
+        }
+    };
+
+    // Spawn opencode in ACP mode
+    let mut child = Command::new(&opencode_path)
+        .arg("acp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn opencode");
+
+    let mut stdin = child.stdin.take().unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let mut reader = BufReader::new(stdout);
+
+    // Helper functions (return errors instead of panicking on broken pipe)
+    let send =
+        |stdin: &mut std::process::ChildStdin, msg: &serde_json::Value| -> std::io::Result<()> {
+            let data = serde_json::to_string(msg).unwrap() + "\n";
+            stdin.write_all(data.as_bytes())?;
+            stdin.flush()
+        };
+
+    let read_line = |reader: &mut BufReader<std::process::ChildStdout>| -> std::io::Result<String> {
+        let mut line = String::new();
+        reader.read_line(&mut line)?;
+        Ok(line.trim().to_string())
+    };
+
+    // 1. Initialize
+    if send(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocolVersion": 1, "clientCapabilities": {}}
+        }),
+    )
+    .is_err()
+    {
+        eprintln!("SKIP: opencode process exited before initialization (missing config/API keys?)");
+        let _ = child.kill();
+        return;
+    }
+    let _init_response = match read_line(&mut reader) {
+        Ok(line) => line,
+        Err(_) => {
+            eprintln!("SKIP: opencode process did not respond to initialize");
+            let _ = child.kill();
+            return;
+        }
+    };
+    eprintln!("Initialize: OK");
+
+    // 2. Create session with NO MCP servers (should work!)
+    let cwd = test_path("opencode_work").to_string_lossy().into_owned();
+    if send(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "session/new",
+            "params": {"cwd": cwd, "mcpServers": []}
+        }),
+    )
+    .is_err()
+    {
+        eprintln!("SKIP: opencode process exited after initialization (missing config/API keys?)");
+        let _ = child.kill();
+        return;
+    }
+    let session_response = match read_line(&mut reader) {
+        Ok(line) if !line.is_empty() => line,
+        _ => {
+            eprintln!("SKIP: opencode did not respond to session/new");
+            let _ = child.kill();
+            return;
+        }
+    };
+    let session_json: serde_json::Value = match serde_json::from_str(&session_response) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!(
+                "SKIP: opencode returned invalid JSON for session/new: {e}\nResponse: {session_response}"
+            );
+            let _ = child.kill();
+            return;
+        }
+    };
+    let session_id = match session_json["result"]["sessionId"].as_str() {
+        Some(id) => id.to_string(),
+        None => {
+            eprintln!("SKIP: opencode session/new response missing sessionId: {session_json}");
+            let _ = child.kill();
+            return;
+        }
+    };
+    eprintln!("Session (no MCP): {}", session_id);
+
+    // 3. Send prompt
+    if send(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "session/prompt",
+            "params": {
+                "sessionId": session_id,
+                "prompt": [{"type": "text", "text": "say hello"}]
+            }
+        }),
+    )
+    .is_err()
+    {
+        eprintln!("SKIP: opencode process exited before prompt could be sent");
+        let _ = child.kill();
+        return;
+    }
+
+    // 4. Read response
+    eprintln!("\n--- NO MCP Response ---");
+    let mut found_chunk = false;
+    let mut content = String::new();
+    let start = std::time::Instant::now();
+
+    while start.elapsed() < std::time::Duration::from_secs(30) {
+        let line = match read_line(&mut reader) {
+            Ok(l) => l,
+            Err(_) => break, // Process exited
+        };
+        if line.is_empty() {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            continue;
+        }
+
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+            let update_type = json["params"]["update"]["sessionUpdate"].as_str();
+
+            if update_type == Some("agent_message_chunk") {
+                found_chunk = true;
+                if let Some(text) = json["params"]["update"]["content"]["text"].as_str() {
+                    content.push_str(text);
+                    eprintln!("Chunk content: '{}'", text);
+                }
+            } else if json.get("result").is_some() {
+                eprintln!("Final response at +{:.3}s", start.elapsed().as_secs_f64());
+                break;
+            }
+        }
+    }
+
+    let _ = child.kill();
+
+    eprintln!("Found chunk: {}", found_chunk);
+    eprintln!("Content: '{}'", content);
+
+    // This should pass if no MCP = works
+    assert!(found_chunk, "No MCP should work and return content");
+    assert!(!content.is_empty(), "Should have received content");
+}
+
+/// Test with SSE MCP configured via raw JSON-RPC
+///
+/// This tests if OpenCode itself has issues with SSE MCP configuration
+/// independent of our client library.
+///
+/// Run with: `cargo test -p crucible-daemon -- --ignored test_opencode_raw_sse_mcp`
+#[tokio::test]
+#[ignore = "requires opencode binary - run with --ignored"]
+async fn test_opencode_raw_sse_mcp() {
+    use crucible_core::enrichment::EmbeddingProvider;
+    use crucible_core::traits::KnowledgeRepository;
+    use crucible_daemon::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
+    use crucible_daemon::InProcessMcpHost;
+    use std::io::{BufRead, BufReader, Write};
+    use std::process::{Command, Stdio};
+    use std::sync::Arc;
+    use tempfile::TempDir;
+
+    let opencode_path = match opencode_available() {
+        Some(path) => {
+            eprintln!("Found opencode at: {:?}", path);
+            path
+        }
+        None => {
+            eprintln!("SKIP: 'opencode' binary not found");
+            return;
+        }
+    };
+
+    // Start SSE MCP host
+    let temp = TempDir::new().expect("Failed to create temp dir");
+    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+
+    let mcp_host = match InProcessMcpHost::start(
+        temp.path().to_path_buf(),
+        knowledge_repo,
+        embedding_provider,
+        None,
+    )
+    .await
+    {
+        Ok(host) => host,
+        Err(e) => {
+            eprintln!("SKIP: Failed to start MCP host: {}", e);
+            return;
+        }
+    };
+
+    let mcp_url = mcp_host.mcp_url();
+    eprintln!("MCP host at: {}", mcp_url);
+
+    // Spawn opencode
+    let mut child = Command::new(&opencode_path)
+        .arg("acp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn opencode");
+
+    let mut stdin = child.stdin.take().unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let mut reader = BufReader::new(stdout);
+
+    // Helper functions (return errors instead of panicking on broken pipe)
+    let send =
+        |stdin: &mut std::process::ChildStdin, msg: &serde_json::Value| -> std::io::Result<()> {
+            let data = serde_json::to_string(msg).unwrap() + "\n";
+            stdin.write_all(data.as_bytes())?;
+            stdin.flush()
+        };
+
+    let read_line = |reader: &mut BufReader<std::process::ChildStdout>| -> std::io::Result<String> {
+        let mut line = String::new();
+        reader.read_line(&mut line)?;
+        Ok(line.trim().to_string())
+    };
+
+    // Initialize
+    if send(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocolVersion": 1, "clientCapabilities": {}}
+        }),
+    )
+    .is_err()
+    {
+        eprintln!("SKIP: opencode process exited before initialization (missing config/API keys?)");
+        let _ = child.kill();
+        mcp_host.shutdown();
+        return;
+    }
+    let _init = match read_line(&mut reader) {
+        Ok(line) => line,
+        Err(_) => {
+            eprintln!("SKIP: opencode process did not respond to initialize");
+            let _ = child.kill();
+            mcp_host.shutdown();
+            return;
+        }
+    };
+    eprintln!("Initialize: OK");
+
+    // Try different SSE MCP formats to find what OpenCode expects
+
+    // Format 3: headers as empty array (ACP spec)
+    let format3 = serde_json::json!({
+        "type": "sse",
+        "name": "crucible",
+        "url": mcp_url,
+        "headers": []
+    });
+
+    // Try format 3 first (empty array - ACP spec)
+    let cwd = test_path("opencode_work").to_string_lossy().into_owned();
+    let session_params = serde_json::json!({
+        "cwd": cwd,
+        "mcpServers": [format3.clone()]
+    });
+    eprintln!(
+        "Format 3 (empty array): {}",
+        serde_json::to_string(&session_params).unwrap()
+    );
+
+    if send(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "session/new",
+            "params": session_params
+        }),
+    )
+    .is_err()
+    {
+        eprintln!("SKIP: opencode process exited after initialization (missing config/API keys?)");
+        let _ = child.kill();
+        mcp_host.shutdown();
+        return;
+    }
+
+    let session_response = match read_line(&mut reader) {
+        Ok(line) if !line.is_empty() => line,
+        _ => {
+            eprintln!("SKIP: opencode did not respond to session/new");
+            let _ = child.kill();
+            mcp_host.shutdown();
+            return;
+        }
+    };
+    eprintln!(
+        "Session response: {}",
+        &session_response[..session_response.len().min(200)]
+    );
+
+    let session_json: serde_json::Value = match serde_json::from_str(&session_response) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!(
+                "SKIP: opencode returned invalid JSON for session/new: {e}\nResponse: {session_response}"
+            );
+            let _ = child.kill();
+            mcp_host.shutdown();
+            return;
+        }
+    };
+    let session_id = match session_json["result"]["sessionId"].as_str() {
+        Some(id) => id.to_string(),
+        None => {
+            eprintln!("SKIP: opencode session/new response missing sessionId: {session_json}");
+            let _ = child.kill();
+            mcp_host.shutdown();
+            return;
+        }
+    };
+    eprintln!("Session (SSE MCP): {}", session_id);
+
+    // Send prompt
+    if send(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "session/prompt",
+            "params": {
+                "sessionId": session_id,
+                "prompt": [{"type": "text", "text": "say hello"}]
+            }
+        }),
+    )
+    .is_err()
+    {
+        eprintln!("SKIP: opencode process exited before prompt could be sent");
+        let _ = child.kill();
+        mcp_host.shutdown();
+        return;
+    }
+
+    // Read response
+    eprintln!("\n--- RAW SSE MCP Response ---");
+    let mut found_chunk = false;
+    let mut content = String::new();
+    let start = std::time::Instant::now();
+
+    while start.elapsed() < std::time::Duration::from_secs(30) {
+        let line = match read_line(&mut reader) {
+            Ok(l) => l,
+            Err(_) => break, // Process exited
+        };
+        if line.is_empty() {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            continue;
+        }
+
+        eprintln!(
+            "[+{:.3}s] Line: {} bytes",
+            start.elapsed().as_secs_f64(),
+            line.len()
+        );
+
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+            let update_type = json["params"]["update"]["sessionUpdate"].as_str();
+
+            if update_type == Some("agent_message_chunk") {
+                found_chunk = true;
+                if let Some(text) = json["params"]["update"]["content"]["text"].as_str() {
+                    content.push_str(text);
+                    eprintln!("  Chunk: '{}'", text);
+                }
+            } else if json.get("result").is_some() {
+                eprintln!("  Final response");
+                break;
+            } else if let Some(ut) = update_type {
+                eprintln!("  Update: {}", ut);
+            }
+        }
+    }
+
+    let _ = child.kill();
+    mcp_host.shutdown();
+
+    eprintln!("\nFound chunk: {}", found_chunk);
+    eprintln!("Content: '{}'", content);
+
+    // If SSE MCP is the problem in OpenCode itself, this will fail
+    assert!(
+        found_chunk,
+        "RAW SSE MCP test failed - OpenCode doesn't return content with SSE MCP"
+    );
+}

@@ -164,7 +164,7 @@ pub(crate) async fn handle_agents_list_profiles(
     agent_manager: &Arc<AgentManager>,
 ) -> Response {
     let profiles = agent_manager.build_available_agents();
-    let builtins = crucible_acp::discovery::default_agent_profiles();
+    let builtins = crate::acp::discovery::default_agent_profiles();
 
     let mut entries: Vec<serde_json::Value> = profiles
         .iter()
@@ -192,7 +192,7 @@ pub(crate) async fn handle_agents_resolve_profile(
 ) -> Response {
     let name = require_param!(req, "name", as_str).to_string();
     let profiles = agent_manager.build_available_agents();
-    let builtins = crucible_acp::discovery::default_agent_profiles();
+    let builtins = crate::acp::discovery::default_agent_profiles();
 
     match profiles.get(&name) {
         Some(profile) => Response::success(

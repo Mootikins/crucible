@@ -27,10 +27,10 @@ async fn test_acp_agent_with_real_providers_semantic_search_succeeds() {
     );
 }
 
-fn is_permission_denied(err: &crucible_acp::ClientError) -> bool {
+fn is_permission_denied(err: &crucible_daemon::acp::ClientError) -> bool {
     matches!(
         err,
-        crucible_acp::ClientError::Connection(message) if message.contains("Operation not permitted")
+        crucible_daemon::acp::ClientError::Connection(message) if message.contains("Operation not permitted")
     )
 }
 

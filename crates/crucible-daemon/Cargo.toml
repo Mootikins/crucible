@@ -24,14 +24,13 @@ glob = { workspace = true }
 dashmap = { workspace = true }
 uuid = { workspace = true }
 futures = { workspace = true }
-tokio-util = { version = "0.7", features = ["rt"] }
+tokio-util = { version = "0.7", features = ["rt", "compat"] }
 crucible-core = { path = "../crucible-core" }
 crucible-config = { path = "../crucible-config" }
 
 crucible-lance = { path = "../crucible-lance" }
 
 crucible-lua = { path = "../crucible-lua", features = ["send"] }
-crucible-acp = { path = "../crucible-acp" }
 crucible-llm = { path = "../crucible-llm", default-features = false }
 genai = "0.5"
 async-stream = "0.3"
@@ -58,6 +57,9 @@ rand = { workspace = true }
 # Absorbed from crucible-sqlite
 parking_lot = "0.12"
 chumsky = "0.12"
+
+# Absorbed from crucible-acp
+similar = "3"
 
 # Tools dependencies (absorbed from crucible-tools)
 rmcp = { version = "1.4", features = ["macros", "server", "client", "transport-io", "transport-streamable-http-server", "transport-child-process", "transport-streamable-http-client-reqwest"] }
@@ -92,6 +94,22 @@ tracing-subscriber = { workspace = true }
 encoding_rs = "0.8"
 wiremock = { workspace = true }
 insta = { version = "1", features = ["json"] }
+# Absorbed from crucible-acp
+which = "8.0"
+proptest = { workspace = true }
+
+# ACP integration harness (multiple sub-tests under one binary)
+[[test]]
+name = "acp_integration"
+path = "tests/acp_integration/mod.rs"
+harness = true
+
+# Mock agent binary used by ACP integration tests
+[[bin]]
+name = "mock-acp-agent"
+path = "tests/bin/mock-acp-agent.rs"
+required-features = ["test-utils"]
+test = false
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

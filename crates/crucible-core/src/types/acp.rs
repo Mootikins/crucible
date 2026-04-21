@@ -2,7 +2,7 @@
 //!
 //! This module contains concrete data structures used across the ACP integration.
 //! These types are implementation-independent and serve as the "lingua franca"
-//! between crucible-core, crucible-acp, and crucible-cli.
+//! between crucible-core, crucible-daemon (acp module), and crucible-cli.
 //!
 //! ## Design Principles
 //!
@@ -113,7 +113,7 @@ impl From<SessionId> for Uuid {
 ///
 /// Note: Other crates define different session configurations:
 ///
-/// - `crucible_acp::TransportConfig` - transport layer config (timeouts)
+/// - `crucible_daemon::acp::TransportConfig` - transport layer config (timeouts)
 /// - `crucible_cli::chat::ChatSessionConfig` - CLI user interface config
 ///
 /// # Example

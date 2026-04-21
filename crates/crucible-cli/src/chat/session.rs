@@ -34,7 +34,7 @@ pub const DEFAULT_SEARCH_LIMIT: usize = 10;
 /// context settings). This is distinct from:
 /// - `crucible_core::SessionConfig` - ACP protocol session parameters
 /// - `crucible_core::SessionEventConfig` - session event configuration
-/// - `crucible_acp::TransportConfig` - transport layer settings
+/// - `crucible_daemon::acp::TransportConfig` - transport layer settings
 ///
 /// # TODO: Scratch Workspace
 ///

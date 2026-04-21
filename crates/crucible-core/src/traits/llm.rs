@@ -36,7 +36,7 @@ use std::collections::HashMap;
 /// - Session persistence (Rig sessions, TUI state)
 /// - Any code that needs standard assistant/user/system roles
 ///
-/// Note: `crucible_acp::MessageRole` uses `Agent` instead of `Assistant`
+/// Note: `crucible_daemon::acp::MessageRole` uses `Agent` instead of `Assistant`
 /// for ACP protocol terminology - convert using `From`/`Into` when bridging.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]

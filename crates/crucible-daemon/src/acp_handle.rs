@@ -1,6 +1,6 @@
 //! ACP agent handle for daemon-managed external agents.
 //!
-//! Implements `AgentHandle` by wrapping `crucible-acp`'s protocol layer,
+//! Implements `AgentHandle` by wrapping `crucible-daemon (acp module)`'s protocol layer,
 //! allowing the daemon to spawn and manage ACP agents (claude-code, opencode,
 //! codex, etc.) with the same lifecycle as internal Rig agents.
 //!
@@ -20,10 +20,10 @@ use tracing::{debug, info, warn};
 
 use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
 
+use crate::acp::client::{ClientConfig, CrucibleAcpClient, PermissionRequestHandler};
+use crate::acp::streaming::{channel_callback, StreamingChunk};
 use crate::mcp_host::InProcessMcpHost;
 use crate::tools::DelegationContext;
-use crucible_acp::client::{ClientConfig, CrucibleAcpClient, PermissionRequestHandler};
-use crucible_acp::streaming::{channel_callback, StreamingChunk};
 use crucible_config::{AcpConfig, DataClassification, DelegationConfig};
 use crucible_core::background::BackgroundSpawner;
 use crucible_core::enrichment::EmbeddingProvider;
@@ -312,11 +312,11 @@ impl AgentHandle for AcpAgentHandle {
                 Result<
                     (
                         String,
-                        Vec<crucible_acp::ToolCallInfo>,
+                        Vec<crate::acp::ToolCallInfo>,
                         agent_client_protocol::PromptResponse,
                         Option<crucible_core::traits::llm::TokenUsage>,
                     ),
-                    crucible_acp::ClientError,
+                    crate::acp::ClientError,
                 >,
             >,
             Vec<ChatToolCall>,
@@ -430,7 +430,7 @@ impl AgentHandle for AcpAgentHandle {
                     }
                     None => match result_rx.await {
                         Ok(Ok((_content, acp_tool_calls, _response, usage))) => {
-                            let acp_tool_calls: Vec<crucible_acp::ToolCallInfo> = acp_tool_calls;
+                            let acp_tool_calls: Vec<crate::acp::ToolCallInfo> = acp_tool_calls;
                             debug!(
                                 tool_count = acp_tool_calls.len(),
                                 has_usage = usage.is_some(),
@@ -468,48 +468,46 @@ impl AgentHandle for AcpAgentHandle {
                         Ok(Err(e)) => {
                             warn!(error = %e, "ACP stream error");
                             let chat_err = match e {
-                                crucible_acp::ClientError::Connection(msg) => {
-                                    ChatError::Connection(format!(
-                                        "ACP agent connection lost: {msg}"
-                                    ))
-                                }
-                                crucible_acp::ClientError::Timeout(msg) => {
+                                crate::acp::ClientError::Connection(msg) => ChatError::Connection(
+                                    format!("ACP agent connection lost: {msg}"),
+                                ),
+                                crate::acp::ClientError::Timeout(msg) => {
                                     ChatError::Communication(format!("ACP agent timed out: {msg}"))
                                 }
-                                crucible_acp::ClientError::Session(msg) => {
+                                crate::acp::ClientError::Session(msg) => {
                                     ChatError::AgentUnavailable(format!("ACP session error: {msg}"))
                                 }
-                                crucible_acp::ClientError::Protocol(e) => {
+                                crate::acp::ClientError::Protocol(e) => {
                                     ChatError::Communication(format!("ACP protocol error: {e}"))
                                 }
-                                crucible_acp::ClientError::PermissionDenied(msg) => {
+                                crate::acp::ClientError::PermissionDenied(msg) => {
                                     ChatError::Communication(format!(
                                         "ACP permission denied: {msg}"
                                     ))
                                 }
-                                crucible_acp::ClientError::InvalidConfig(msg) => {
+                                crate::acp::ClientError::InvalidConfig(msg) => {
                                     ChatError::InvalidInput(format!(
                                         "ACP configuration error: {msg}"
                                     ))
                                 }
-                                crucible_acp::ClientError::Validation(msg) => {
+                                crate::acp::ClientError::Validation(msg) => {
                                     ChatError::InvalidInput(format!("ACP validation error: {msg}"))
                                 }
-                                crucible_acp::ClientError::NotFound(msg) => {
+                                crate::acp::ClientError::NotFound(msg) => {
                                     ChatError::AgentUnavailable(format!(
                                         "ACP resource not found: {msg}"
                                     ))
                                 }
-                                crucible_acp::ClientError::Io(e) => {
+                                crate::acp::ClientError::Io(e) => {
                                     ChatError::Internal(format!("ACP error: {e}"))
                                 }
-                                crucible_acp::ClientError::Serialization(e) => {
+                                crate::acp::ClientError::Serialization(e) => {
                                     ChatError::Internal(format!("ACP error: {e}"))
                                 }
-                                crucible_acp::ClientError::FileSystem(msg) => {
+                                crate::acp::ClientError::FileSystem(msg) => {
                                     ChatError::Internal(format!("ACP error: {msg}"))
                                 }
-                                crucible_acp::ClientError::Other(e) => {
+                                crate::acp::ClientError::Other(e) => {
                                     ChatError::Internal(format!("ACP error: {e}"))
                                 }
                             };

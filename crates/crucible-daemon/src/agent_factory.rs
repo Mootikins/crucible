@@ -4,13 +4,13 @@
 //! This is a simplified version of the CLI's agent factory since
 //! `SessionAgent` contains fully-resolved configuration.
 
+use crate::acp::client::PermissionRequestHandler;
 use crate::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
 use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
 use crate::provider::adapter_mapping::ChatClient;
 use crate::provider::genai_handle::GenaiAgentHandle;
 use crate::tools::mcp_server::CrucibleMcpServer;
 use crate::tools::DelegationContext;
-use crucible_acp::client::PermissionRequestHandler;
 use crucible_config::credentials::resolve_copilot_oauth_token;
 use crucible_config::{BackendType, DataClassification, LlmProviderConfig};
 use crucible_core::background::BackgroundSpawner;

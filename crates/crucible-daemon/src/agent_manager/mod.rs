@@ -1,5 +1,6 @@
 //! Agent lifecycle management for the daemon.
 
+use crate::acp::discovery::default_agent_profiles;
 use crate::agent_factory::{
     create_agent_from_session_config, AgentFactoryError, CreateAgentFromSessionConfigParams,
 };
@@ -15,7 +16,6 @@ use crate::session_manager::{SessionError, SessionManager};
 use crate::tool_dispatch::{DaemonToolDispatcher, ToolDispatcher};
 use crate::tools::workspace::WorkspaceTools;
 use crate::trust_resolution::resolve_provider_trust;
-use crucible_acp::discovery::default_agent_profiles;
 use crucible_config::components::permissions::{PermissionConfig, PermissionMode};
 use crucible_config::{
     AcpConfig, AgentProfile, BackendType, DataClassification, LlmProviderConfig, PatternStore,

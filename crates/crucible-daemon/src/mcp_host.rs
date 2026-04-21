@@ -22,8 +22,8 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
+use crate::acp::{ClientError, Result as AcpResult};
 use crate::tools::{CrucibleMcpServer, DelegationContext};
-use crucible_acp::{ClientError, Result as AcpResult};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
 
@@ -169,7 +169,7 @@ impl Drop for InProcessMcpHost {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_acp::ClientError;
+    use crate::acp::ClientError;
     use tempfile::TempDir;
 
     use crate::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};

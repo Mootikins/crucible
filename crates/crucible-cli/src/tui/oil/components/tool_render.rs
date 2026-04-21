@@ -55,7 +55,7 @@ impl CachedToolCall {
     }
 
     fn display_name(&self) -> String {
-        crucible_acp::streaming::humanize_tool_title(&self.name)
+        crucible_daemon::acp::streaming::humanize_tool_title(&self.name)
     }
 
     fn render_description(&self) -> Node {

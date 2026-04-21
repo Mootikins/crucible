@@ -1630,39 +1630,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crucible-acp"
-version = "0.6.3"
-dependencies = [
- "agent-client-protocol",
- "anyhow",
- "async-trait",
- "axum",
- "crucible-config",
- "crucible-core",
- "crucible-daemon",
- "futures",
- "once_cell",
- "oq",
- "proptest",
- "rand 0.10.1",
- "regex",
- "reqwest 0.12.28",
- "rmcp",
- "serde",
- "serde_json",
- "similar 3.1.0",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tokio-test",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "which",
-]
-
-[[package]]
 name = "crucible-cli"
 version = "0.6.3"
 dependencies = [
@@ -1676,7 +1643,6 @@ dependencies = [
  "colored",
  "comfy-table",
  "crossterm 0.29.0",
- "crucible-acp",
  "crucible-cli",
  "crucible-config",
  "crucible-core",
@@ -1802,7 +1768,6 @@ dependencies = [
  "blake3",
  "chrono",
  "chumsky",
- "crucible-acp",
  "crucible-config",
  "crucible-core",
  "crucible-lance",
@@ -1832,6 +1797,7 @@ dependencies = [
  "oq",
  "parking_lot",
  "pathdiff",
+ "proptest",
  "rand 0.10.1",
  "regex",
  "reqwest 0.12.28",
@@ -1844,6 +1810,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2 0.11.0",
+ "similar 3.1.0",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
@@ -1857,6 +1824,7 @@ dependencies = [
  "uuid",
  "validator",
  "walkdir",
+ "which",
  "wiremock",
 ]
 

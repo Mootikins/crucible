@@ -265,7 +265,7 @@ impl AgentManager {
 
         let agent_permissions = resolved_config.agent_name.as_deref().and_then(|name| {
             self.acp_config.as_ref().and_then(|acp| {
-                let available = crucible_acp::discovery::default_agent_profiles();
+                let available = crate::acp::discovery::default_agent_profiles();
                 resolve_agent_profile(name, &acp.agents, &available).and_then(|p| p.permissions)
             })
         });

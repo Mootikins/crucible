@@ -7,7 +7,7 @@
 //! # Prerequisites
 //! Build the mock agent first:
 //! ```
-//! cargo build -p crucible-acp --features test-utils --bin mock-acp-agent
+//! cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent
 //! ```
 
 use crucible_config::{AcpConfig, AgentProfile, BackendType, DelegationConfig};
@@ -40,7 +40,7 @@ pub fn mock_agent_path() -> PathBuf {
         .canonicalize()
         .expect(
             "mock-acp-agent binary not found. Build it with:\n\
-             cargo build -p crucible-acp --features test-utils --bin mock-acp-agent",
+             cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent",
         )
 }
 

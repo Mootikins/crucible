@@ -7,7 +7,7 @@
 //!
 //! Following SOLID principles (Interface Segregation & Dependency Inversion):
 //! - **crucible-core** defines traits and associated types (this module)
-//! - **crucible-acp** implements ACP-specific protocol logic
+//! - **crucible-daemon (acp module)** implements ACP-specific protocol logic
 //! - **crucible-cli** provides concrete implementations and glue code
 //!
 //! ## Design Principles

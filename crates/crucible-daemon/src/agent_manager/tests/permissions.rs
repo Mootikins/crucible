@@ -792,7 +792,7 @@ mod permission_channel_tests {
 }
 
 mod resolve_agent_profile_tests {
-    use crucible_acp::discovery::default_agent_profiles;
+    use crate::acp::discovery::default_agent_profiles;
     use crucible_config::components::{
         acp::AgentProfile,
         permissions::{PermissionConfig, PermissionMode},

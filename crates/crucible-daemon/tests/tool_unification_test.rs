@@ -52,10 +52,10 @@ async fn test_acp_mcp_server_tool_names() {
     assert_eq!(tool_names, to_set(EXPECTED_TOOL_NAMES));
 }
 
-fn is_permission_denied(err: &crucible_acp::ClientError) -> bool {
+fn is_permission_denied(err: &crucible_daemon::acp::ClientError) -> bool {
     matches!(
         err,
-        crucible_acp::ClientError::Connection(message) if message.contains("Operation not permitted")
+        crucible_daemon::acp::ClientError::Connection(message) if message.contains("Operation not permitted")
     )
 }
 

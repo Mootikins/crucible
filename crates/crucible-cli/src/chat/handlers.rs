@@ -626,7 +626,7 @@ impl CommandHandler for AgentHandler {
         let current_name = current.as_deref().unwrap_or("unknown");
 
         // Get known ACP agents
-        let acp_agents = crucible_acp::get_known_agents();
+        let acp_agents = crucible_daemon::acp::get_known_agents();
         let acp_names: Vec<&str> = acp_agents.iter().map(|a| a.name.as_str()).collect();
 
         if args.is_empty() {

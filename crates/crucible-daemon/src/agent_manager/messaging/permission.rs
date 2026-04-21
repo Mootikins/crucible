@@ -43,7 +43,7 @@ impl AgentManager {
         is_interactive: bool,
         permission_override: Option<PermissionMode>,
         agent_permissions: Option<PermissionConfig>,
-    ) -> crucible_acp::client::PermissionRequestHandler {
+    ) -> crate::acp::client::PermissionRequestHandler {
         let pending_permissions = self.pending_permissions.clone();
         let session_id_owned = session_id.to_string();
         let event_tx_owned = event_tx.clone();

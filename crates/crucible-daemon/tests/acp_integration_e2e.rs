@@ -1,15 +1,15 @@
 //! ACP integration E2E tests
 //!
 //! Verifies that ACP plumbing remains intact after crate absorptions:
-//! - Tool discovery via crucible-acp ToolRegistry
+//! - Tool discovery via crucible-daemon (acp module) ToolRegistry
 //! - Tool dispatch routing via DaemonToolDispatcher
 //! - Delegation context construction
 //! - MCP host initialization
 //! - DaemonToolsBridge wiring to DaemonToolsApi
 
-use crucible_acp::tools::{discover_tools, ToolRegistry};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
+use crucible_daemon::acp::tools::{discover_tools, ToolRegistry};
 use crucible_daemon::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
 use crucible_daemon::tool_dispatch::{DaemonToolDispatcher, ToolDispatcher};
 use crucible_daemon::tools::workspace::WorkspaceTools;
@@ -22,7 +22,7 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 // ============================================================================
-// Test 1: Tool discovery via crucible-acp ToolRegistry
+// Test 1: Tool discovery via crucible-daemon (acp module) ToolRegistry
 // ============================================================================
 
 #[test]
