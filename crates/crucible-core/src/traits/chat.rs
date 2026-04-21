@@ -29,7 +29,7 @@ use futures::stream::BoxStream;
 use serde::{Deserialize, Serialize};
 
 use super::llm::TokenUsage;
-use crate::types::acp::schema::{AvailableCommand, SessionModeState};
+use crate::types::acp::schema::SessionModeState;
 
 /// Result type for chat operations
 pub type ChatResult<T> = Result<T, ChatError>;
@@ -172,14 +172,6 @@ pub trait AgentHandle: Send + Sync {
 
     fn is_connected(&self) -> bool;
 
-    fn supports_streaming(&self) -> bool {
-        true
-    }
-
-    async fn on_commands_update(&mut self, _commands: Vec<CommandDescriptor>) -> ChatResult<()> {
-        Ok(())
-    }
-
     fn get_modes(&self) -> Option<&SessionModeState> {
         None
     }
@@ -189,10 +181,6 @@ pub trait AgentHandle: Send + Sync {
     }
 
     async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()>;
-
-    fn get_commands(&self) -> &[AvailableCommand] {
-        &[]
-    }
 
     /// Clear conversation history
     ///
@@ -466,14 +454,6 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
         (**self).is_connected()
     }
 
-    fn supports_streaming(&self) -> bool {
-        (**self).supports_streaming()
-    }
-
-    async fn on_commands_update(&mut self, commands: Vec<CommandDescriptor>) -> ChatResult<()> {
-        (**self).on_commands_update(commands).await
-    }
-
     fn get_modes(&self) -> Option<&SessionModeState> {
         (**self).get_modes()
     }
@@ -484,10 +464,6 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
 
     async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()> {
         (**self).set_mode_str(mode_id).await
-    }
-
-    fn get_commands(&self) -> &[AvailableCommand] {
-        (**self).get_commands()
     }
 
     async fn clear_history(&mut self) -> ChatResult<()> {

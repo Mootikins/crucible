@@ -32,7 +32,7 @@ use crucible_core::traits::chat::{
     AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall, ChatToolResult,
 };
 use crucible_core::traits::KnowledgeRepository;
-use crucible_core::types::acp::schema::{AvailableCommand, SessionModeState};
+use crucible_core::types::acp::schema::SessionModeState;
 use crucible_core::types::mode::default_internal_modes;
 
 /// Errors specific to ACP agent handle creation and management.
@@ -67,7 +67,6 @@ pub struct AcpAgentHandle {
     agent_name: String,
     mode_id: String,
     mode_state: SessionModeState,
-    commands: Vec<AvailableCommand>,
     session_id: Option<String>,
     cached_temperature: Option<f64>,
     cached_max_tokens: Option<u32>,
@@ -212,15 +211,12 @@ impl AcpAgentHandle {
 
         let mode_id = "normal".to_string();
 
-        let commands = client.available_commands().to_vec();
-
         Ok(Self {
             client: Arc::new(Mutex::new(Some(client))),
             _mcp_host: mcp_host,
             agent_name,
             mode_id,
             mode_state: default_internal_modes(),
-            commands,
             session_id: Some(session_id),
             cached_temperature: agent_config.temperature,
             cached_max_tokens: agent_config.max_tokens,
@@ -552,10 +548,6 @@ impl AgentHandle for AcpAgentHandle {
 
         self.mode_id = mode_id.to_string();
         Ok(())
-    }
-
-    fn get_commands(&self) -> &[AvailableCommand] {
-        &self.commands
     }
 
     async fn clear_history(&mut self) -> ChatResult<()> {

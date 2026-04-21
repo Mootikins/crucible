@@ -133,7 +133,6 @@ async fn test_daemon_agent_handle_creation() {
 
     assert_eq!(handle.session_id(), session_id);
     assert!(handle.is_connected());
-    assert!(handle.supports_streaming());
 
     server.shutdown().await;
 }

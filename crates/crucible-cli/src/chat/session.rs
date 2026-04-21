@@ -606,7 +606,7 @@ mod tests {
     async fn test_initialization_queries_agent_modes() {
         use async_trait::async_trait;
         use crucible_core::traits::chat::{ChatChunk, ChatResult as CoreChatResult};
-        use crucible_core::types::acp::schema::{AvailableCommand, SessionModeState};
+        use crucible_core::types::acp::schema::SessionModeState;
         use futures::stream::BoxStream;
 
         struct MockAgentWithModes {
@@ -638,10 +638,6 @@ mod tests {
 
             fn get_modes(&self) -> Option<&SessionModeState> {
                 Some(&self.mode_state)
-            }
-
-            fn get_commands(&self) -> &[AvailableCommand] {
-                &[]
             }
         }
 

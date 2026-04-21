@@ -48,10 +48,6 @@ impl AgentHandle for NoopAgentHandle {
         true
     }
 
-    fn supports_streaming(&self) -> bool {
-        true
-    }
-
     async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
         Ok(())
     }
@@ -106,10 +102,9 @@ mod tests {
             assert!(s.next().await.is_none());
         }
 
-        // Declared connected and streaming-capable so the UI doesn't render
-        // a disconnected / degraded state during replay.
+        // Declared connected so the UI doesn't render a disconnected /
+        // degraded state during replay.
         assert!(agent.is_connected());
-        assert!(agent.supports_streaming());
 
         // set_mode_str must succeed — it has no default impl.
         assert!(agent.set_mode_str("plan").await.is_ok());

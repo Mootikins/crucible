@@ -188,7 +188,6 @@ async fn test_tui_daemon_agent_full_flow() {
 
     assert_eq!(handle.session_id(), session_id);
     assert!(handle.is_connected());
-    assert!(handle.supports_streaming());
 
     client
         .session_unsubscribe(&[&session_id])
