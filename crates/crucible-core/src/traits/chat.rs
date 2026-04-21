@@ -212,20 +212,12 @@ pub trait AgentHandle: Send + Sync {
         None
     }
 
-    /// Get available models for this agent (cached)
+    /// Fetch available models from the provider.
     ///
-    /// Returns a list of model identifiers that can be used with `switch_model`.
-    /// Returns empty if model listing is not supported or models haven't been fetched.
-    fn available_models(&self) -> Vec<String> {
-        Vec::new()
-    }
-
-    /// Fetch available models from the provider
-    ///
-    /// This is an async method that queries the provider for available models.
-    /// Use this for lazy loading when models are needed.
+    /// Async so the daemon proxy can query its models API. Default:
+    /// empty list (agent doesn't expose model discovery).
     async fn fetch_available_models(&mut self) -> Vec<String> {
-        self.available_models()
+        Vec::new()
     }
 
     /// Set the thinking budget for reasoning models.
@@ -476,10 +468,6 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
 
     fn current_model(&self) -> Option<&str> {
         (**self).current_model()
-    }
-
-    fn available_models(&self) -> Vec<String> {
-        (**self).available_models()
     }
 
     async fn fetch_available_models(&mut self) -> Vec<String> {
