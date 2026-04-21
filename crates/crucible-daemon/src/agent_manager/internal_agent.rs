@@ -1,31 +1,29 @@
-//! Single-session migration shim: expose a legacy `AgentHandle` as an `Agent`.
+//! `InternalAgent` — the `Agent` trait implementation used by the daemon's
+//! internal (genai-backed) agents.
 //!
-//! The Phase 1 simplification plan replaces the 47-method `AgentHandle`
-//! trait + `ChatChunk` decomposition with a 4-method `Agent` trait +
-//! `TurnEvent` stream. Rewriting each of the three existing handle
-//! implementations inside one session is impractical; this adapter
-//! bridges the gap so the tool loop and event plumbing can migrate to
-//! `Agent` / `TurnEvent` while the underlying impls stay untouched.
-//!
-//! The adapter is deliberately *internal to the session* — once each
-//! handle has been rewritten natively, this module is deleted along
-//! with `AgentHandle` and `ChatChunk`.
+//! Wraps an `Arc<Mutex<BoxedAgentHandle>>` (typically a `GenaiAgentHandle`)
+//! and drives the tool loop on the handle's `send_message_stream` /
+//! `continue_with_tool_results` interface, translating its `ChatChunk`
+//! output into `TurnEvent`s. ACP and daemon-proxy backends now have native
+//! `Agent` impls on their concrete types; this bridge exists for backends
+//! whose tool loop requires explicit continuation calls (currently just
+//! the genai provider).
 //!
 //! ## Channel topology
 //!
-//! The adapter realises the plan's "one channel topology, not three"
+//! `InternalAgent` realises the plan's "one channel topology, not three"
 //! rule: all three tool-loop re-entry points arrive on the same
 //! inbound `mpsc<TurnEvent>`:
 //!
 //! - `ToolResult` — runtime dispatched the agent's tool call and is
-//!   feeding the result back. Adapter calls the underlying handle's
-//!   `continue_with_tool_results`.
+//!   feeding the result back. `InternalAgent` calls the underlying
+//!   handle's `continue_with_tool_results`.
 //! - `HandlerInjection` — runtime's post-turn handler returned injection
-//!   content. Adapter restarts the inner stream with the injected
-//!   content as the next user message.
-//! - `DepthCapHit` — runtime reached `max_tool_depth`. Adapter restarts
-//!   the inner stream with the depth-cap prompt so the model produces
-//!   a final response without further tool calls.
+//!   content. Restarts the inner stream with the injected content as
+//!   the next user message.
+//! - `DepthCapHit` — runtime reached `max_tool_depth`. Restarts the
+//!   inner stream with the depth-cap prompt so the model produces a
+//!   final response without further tool calls.
 
 use std::sync::Arc;
 
@@ -52,12 +50,12 @@ pub(crate) use super::BoxedAgentHandle;
 /// Wraps an existing `AgentHandle` and exposes it through the `Agent`
 /// trait. Capabilities are supplied at construction because
 /// `AgentHandle` has no first-class capability discovery.
-pub struct LegacyAgentAdapter {
+pub struct InternalAgent {
     inner: Arc<Mutex<BoxedAgentHandle>>,
     capabilities: AgentCapabilities,
 }
 
-impl LegacyAgentAdapter {
+impl InternalAgent {
     pub fn new(inner: Arc<Mutex<BoxedAgentHandle>>, capabilities: AgentCapabilities) -> Self {
         Self {
             inner,
@@ -122,7 +120,7 @@ impl LegacyAgentAdapter {
 /// tool calls the chunk carried — the caller needs them verbatim to
 /// feed back through `continue_with_tool_results` once the runtime has
 /// dispatched the tools.
-fn chat_chunk_to_events(
+pub(crate) fn chat_chunk_to_events(
     chunk: ChatChunk,
     events: &mut Vec<TurnEvent>,
 ) -> Option<Vec<ChatToolCall>> {
@@ -185,7 +183,7 @@ fn tool_result_from_event(event: &TurnEvent) -> Option<ChatToolResult> {
 }
 
 #[async_trait]
-impl Agent for LegacyAgentAdapter {
+impl Agent for InternalAgent {
     fn capabilities(&self) -> AgentCapabilities {
         self.capabilities
     }
@@ -431,7 +429,7 @@ mod tests {
         let handle: BoxedAgentHandle = Box::new(MockHandle::new(vec![terminal_text("hello")]));
         let inner = Arc::new(Mutex::new(handle));
         let mut adapter =
-            LegacyAgentAdapter::new(inner, LegacyAgentAdapter::internal_capabilities());
+            InternalAgent::new(inner, InternalAgent::internal_capabilities());
 
         let stream = adapter
             .turn(TurnContext::new("hi"))
@@ -455,7 +453,7 @@ mod tests {
         );
         let inner = Arc::new(Mutex::new(handle));
         let mut adapter =
-            LegacyAgentAdapter::new(inner, LegacyAgentAdapter::internal_capabilities());
+            InternalAgent::new(inner, InternalAgent::internal_capabilities());
 
         let (tx, rx) = mpsc::channel(4);
         let ctx = TurnContext::new("query").with_inbound(rx);
@@ -542,7 +540,7 @@ mod tests {
 
         let inner: Arc<Mutex<BoxedAgentHandle>> = Arc::new(Mutex::new(Box::new(restartable)));
         let mut adapter =
-            LegacyAgentAdapter::new(inner.clone(), LegacyAgentAdapter::internal_capabilities());
+            InternalAgent::new(inner.clone(), InternalAgent::internal_capabilities());
 
         let (tx, rx) = mpsc::channel(4);
         let ctx = TurnContext::new("ask").with_inbound(rx);
@@ -604,7 +602,7 @@ mod tests {
         };
         let inner: Arc<Mutex<BoxedAgentHandle>> = Arc::new(Mutex::new(Box::new(mock)));
         let mut adapter =
-            LegacyAgentAdapter::new(inner, LegacyAgentAdapter::internal_capabilities());
+            InternalAgent::new(inner, InternalAgent::internal_capabilities());
 
         let (tx, rx) = mpsc::channel(4);
         let ctx = TurnContext::new("ask").with_inbound(rx);

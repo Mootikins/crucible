@@ -599,6 +599,88 @@ impl AgentHandle for AcpAgentHandle {
     }
 }
 
+// -- Native `Agent` impl ----------------------------------------------------
+//
+// ACP agents run their own tool loop server-side — this impl only translates
+// the outbound `ChatChunk` stream into `TurnEvent`s. No inbound channel is
+// consumed (ACP observes, doesn't re-enter).
+
+#[async_trait]
+impl crucible_core::turn::Agent for AcpAgentHandle {
+    fn capabilities(&self) -> crucible_core::turn::AgentCapabilities {
+        crucible_core::turn::AgentCapabilities {
+            streaming: true,
+            tool_calls: true,
+            thinking: true,
+            model_switching: false,
+            usage_reporting: true,
+            cancellation: false,
+            temperature_control: false,
+            max_tokens_control: false,
+            owns_history: true,
+            modes: true,
+        }
+    }
+
+    async fn turn(
+        &mut self,
+        ctx: crucible_core::turn::TurnContext,
+    ) -> Result<
+        futures::stream::BoxStream<'static, crucible_core::turn::TurnEvent>,
+        crucible_core::turn::AgentError,
+    > {
+        use crate::agent_manager::internal_agent::chat_chunk_to_events;
+        use async_stream::stream;
+        use crucible_core::traits::chat::AgentHandle as _;
+        use crucible_core::turn::{StopReason, TurnError, TurnEvent};
+        use futures::StreamExt;
+
+        let mut chat_stream = self.send_message_stream(ctx.content);
+
+        let body = stream! {
+            while let Some(result) = chat_stream.next().await {
+                match result {
+                    Ok(chunk) => {
+                        let terminal = chunk.done;
+                        let mut events = Vec::new();
+                        chat_chunk_to_events(chunk, &mut events);
+                        for event in events {
+                            yield event;
+                        }
+                        if terminal {
+                            yield TurnEvent::Done {
+                                stop_reason: StopReason::EndTurn,
+                            };
+                            return;
+                        }
+                    }
+                    Err(e) => {
+                        yield TurnEvent::Error(TurnError::Communication(e.to_string()));
+                        return;
+                    }
+                }
+            }
+            yield TurnEvent::Done {
+                stop_reason: StopReason::EndTurn,
+            };
+        };
+
+        Ok(Box::pin(body))
+    }
+
+    async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
+        // Graceful cancel — matches the AgentHandle impl.
+        Ok(())
+    }
+
+    async fn switch_model(
+        &mut self,
+        _model_id: &str,
+    ) -> Result<(), crucible_core::turn::NotSupported> {
+        Err(crucible_core::turn::NotSupported::new("switch_model"))
+    }
+}
+
 impl Drop for AcpAgentHandle {
     fn drop(&mut self) {
         let client_arc = Arc::clone(&self.client);

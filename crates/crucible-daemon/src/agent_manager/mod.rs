@@ -798,7 +798,7 @@ impl AgentManager {
 
 pub mod context_length;
 mod iter;
-pub mod legacy_adapter;
+pub mod internal_agent;
 mod messaging;
 mod models;
 mod precognition;

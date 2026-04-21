@@ -21,7 +21,7 @@
 //!    message_id + user_message visibility.)
 
 use super::super::*;
-use crate::agent_manager::legacy_adapter::LegacyAgentAdapter;
+use crate::agent_manager::internal_agent::InternalAgent;
 use crate::agent_manager::tool_tracking::ToolCallTracker;
 use crucible_core::events::InternalSessionEvent;
 use crucible_core::traits::chat::{ChatToolCall, ChatToolResult};
@@ -121,8 +121,8 @@ impl AgentManager {
         // Wrap the legacy handle in the Agent-trait adapter. Capabilities
         // are determined conservatively; the tool loop itself does not
         // query them — they exist for the TUI.
-        let capabilities = LegacyAgentAdapter::internal_capabilities();
-        let mut adapter = LegacyAgentAdapter::new(agent.clone(), capabilities);
+        let capabilities = InternalAgent::internal_capabilities();
+        let mut adapter = InternalAgent::new(agent.clone(), capabilities);
         let (inbound_tx, inbound_rx) = mpsc::channel::<TurnEvent>(32);
         let mut turn_ctx = TurnContext::new(content).with_inbound(inbound_rx);
         if is_continuation {
