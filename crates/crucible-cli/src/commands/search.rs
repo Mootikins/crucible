@@ -104,7 +104,7 @@ pub async fn execute(
     // --- Semantic search: embed query → vector search ---
     if mode.includes_semantic() {
         for kiln in &all_kilns {
-            match run_semantic_search(&config, &client, kiln, query, limit).await {
+            match run_semantic_search(&client, kiln, query, limit).await {
                 Ok(semantic_hits) => {
                     for (doc_id, score) in semantic_hits {
                         // De-duplicate against text results
@@ -218,20 +218,15 @@ fn extract_snippet(kiln_path: &Path, note_path: &str, max_chars: usize) -> Strin
 
 /// Generate query embedding and call `search_vectors` on the daemon.
 async fn run_semantic_search(
-    config: &CliConfig,
     client: &crucible_daemon::DaemonClient,
     kiln_path: &std::path::Path,
     query: &str,
     limit: usize,
 ) -> Result<Vec<(String, f64)>> {
-    let embedding_config = crate::factories::embedding_provider_config_from_cli(config);
-    let provider = crucible_llm::embeddings::create_provider(embedding_config)
+    let query_embedding = client
+        .embed_query(kiln_path, query)
         .await
-        .context("Failed to create embedding provider")?;
-    let query_embedding = provider
-        .embed(query)
-        .await
-        .context("Failed to generate query embedding")?;
+        .context("Failed to generate query embedding via daemon")?;
     client
         .search_vectors(kiln_path, &query_embedding, limit)
         .await

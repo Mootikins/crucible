@@ -72,24 +72,18 @@ impl KilnContext {
             limit
         );
 
-        // Get embedding config from composite config and convert to provider config
-        let embedding_config = crate::factories::embedding_provider_config_from_cli(&self.config);
-        tracing::debug!("embedding config: {:?}", embedding_config);
-
-        // Create embedding provider using factory function
-        let provider = crucible_llm::embeddings::create_provider(embedding_config)
+        // Offload embedding generation to the daemon via embed.query RPC.
+        // The daemon picks the provider from its configured enrichment
+        // settings so query vectors match what was used at index time.
+        let client = self.storage_handle.as_daemon_client();
+        let query_embedding = client
+            .daemon_client()
+            .embed_query(client.kiln_path(), query)
             .await
             .map_err(|e| {
-                tracing::error!("Failed to create embedding provider: {}", e);
+                tracing::error!("Failed to embed query via daemon: {}", e);
                 e
             })?;
-
-        // Generate embedding for query
-        tracing::debug!("Generating query embedding...");
-        let query_embedding = provider.embed(query).await.map_err(|e| {
-            tracing::error!("Failed to generate query embedding: {}", e);
-            e
-        })?;
         tracing::debug!(
             "Query embedding generated, dimensions={}",
             query_embedding.len()

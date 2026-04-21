@@ -34,7 +34,7 @@ fn config_cache_key(config: &EmbeddingProviderConfig) -> String {
 
 /// Get or create an embedding provider from config (cached).
 ///
-/// On first call for a given config, creates the provider via `crucible_llm`.
+/// On first call for a given config, creates the provider via `crate::llm`.
 /// Subsequent calls with the same provider type + endpoint + model return
 /// the cached `Arc`.
 ///
@@ -48,7 +48,7 @@ fn config_cache_key(config: &EmbeddingProviderConfig) -> String {
 /// - **Ollama** — local or remote Ollama server
 /// - **FastEmbed** — local ONNX inference (requires `fastembed` feature on `crucible-llm`)
 /// - **OpenAI** — OpenAI embedding API
-/// - Any other backend supported by `crucible_llm::embeddings::create_provider`
+/// - Any other backend supported by `crate::llm::embeddings::create_provider`
 pub async fn get_or_create_embedding_provider(
     config: &EmbeddingProviderConfig,
 ) -> Result<Arc<dyn EmbeddingProvider>> {
@@ -67,7 +67,7 @@ pub async fn get_or_create_embedding_provider(
 
     trace!(key = %cache_key, "Creating new embedding provider");
     let provider: Arc<dyn EmbeddingProvider> =
-        crucible_llm::embeddings::create_provider(config.clone()).await?;
+        crate::llm::embeddings::create_provider(config.clone()).await?;
 
     // Store in cache
     {

@@ -10,7 +10,7 @@
 //! cargo run --example discover_models
 //! ```
 
-use crucible_llm::model_discovery::{DiscoveryConfig, ModelDiscovery};
+use crucible_daemon::llm::model_discovery::{DiscoveryConfig, ModelDiscovery};
 use std::path::PathBuf;
 
 #[tokio::main]

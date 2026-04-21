@@ -6,7 +6,7 @@
 //!
 //! Run with:
 //! ```bash
-//! cargo test -p crucible-llm --test test_backend_comparison -- --ignored --nocapture
+//! cargo test -p crucible-daemon --test test_backend_comparison -- --ignored --nocapture
 //! ```
 
 /// Test texts for semantic similarity comparison
@@ -47,7 +47,7 @@ fn normalize(v: &[f32]) -> Vec<f32> {
 
 mod fastembed_tests {
     use super::*;
-    use crucible_llm::embeddings::{create_provider, EmbeddingConfig};
+    use crucible_daemon::llm::embeddings::{create_provider, EmbeddingConfig};
 
     #[tokio::test]
     #[ignore = "Downloads ONNX models (~100MB)"]
@@ -142,7 +142,7 @@ mod fastembed_tests {
 /// Ollama backend tests
 mod ollama_tests {
     use super::*;
-    use crucible_llm::embeddings::{create_provider, EmbeddingConfig};
+    use crucible_daemon::llm::embeddings::{create_provider, EmbeddingConfig};
 
     const OLLAMA_ENDPOINT: &str = "https://llm.example.com";
     const OLLAMA_MODEL: &str = "nomic-embed-text-v1.5-q8_0";

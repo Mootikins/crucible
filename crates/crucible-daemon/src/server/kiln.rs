@@ -237,6 +237,33 @@ pub(crate) async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -
     }
 }
 
+pub(crate) async fn handle_embed_query(req: Request, km: &Arc<KilnManager>) -> Response {
+    let kiln_path = require_param!(req, "kiln", as_str);
+    let text = require_param!(req, "text", as_str);
+
+    let Some(config) = km.enrichment_config().cloned() else {
+        return internal_error(
+            req.id,
+            anyhow::anyhow!(
+                "embedding provider not configured for this daemon; set it in crucible.toml under [embedding]"
+            ),
+        );
+    };
+
+    // Ensure the kiln is open so the daemon has loaded its config + caches.
+    if let Err(e) = km.get_or_open(Path::new(kiln_path)).await {
+        return internal_error(req.id, e);
+    }
+
+    match crate::embedding::get_or_create_embedding_provider(&config).await {
+        Ok(provider) => match provider.embed(text).await {
+            Ok(vector) => Response::success(req.id, serde_json::json!({ "vector": vector })),
+            Err(e) => internal_error(req.id, anyhow::anyhow!(e)),
+        },
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
 pub(crate) async fn handle_list_notes(req: Request, km: &Arc<KilnManager>) -> Response {
     let kiln_path = require_param!(req, "kiln", as_str);
     let path_filter = optional_param!(req, "path_filter", as_str);

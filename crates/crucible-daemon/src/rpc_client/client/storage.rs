@@ -87,6 +87,13 @@ pub struct SearchVectorsRequest {
     pub limit: usize,
 }
 
+/// Request for `embed.query`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct EmbedQueryRequest {
+    pub kiln: String,
+    pub text: String,
+}
+
 /// Request for `list_notes`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ListNotesRequest {
@@ -143,6 +150,32 @@ impl DaemonClient {
     // =========================================================================
     // Search RPC Methods
     // =========================================================================
+
+    /// Embed `text` using the daemon's configured embedding provider.
+    ///
+    /// Offloads embedding generation so the CLI doesn't need fastembed/ort
+    /// linked in. The daemon's per-kiln enrichment config determines which
+    /// provider is used so query-time vectors match index-time vectors.
+    pub async fn embed_query(&self, kiln_path: &Path, text: &str) -> Result<Vec<f32>> {
+        let result: serde_json::Value = self
+            .typed_call(
+                "embed.query",
+                EmbedQueryRequest {
+                    kiln: kiln_path.to_string_lossy().to_string(),
+                    text: text.to_string(),
+                },
+            )
+            .await?;
+
+        let vector = result
+            .get("vector")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| anyhow::anyhow!("embed.query response missing vector field"))?
+            .iter()
+            .filter_map(|v| v.as_f64().map(|f| f as f32))
+            .collect();
+        Ok(vector)
+    }
 
     pub async fn search_vectors(
         &self,

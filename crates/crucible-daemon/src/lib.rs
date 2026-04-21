@@ -35,6 +35,7 @@ pub mod file_watch_bridge;
 pub mod internal_events;
 pub mod kiln_manager;
 pub mod lifecycle;
+pub mod llm;
 pub mod mcp;
 pub mod mcp_host;
 pub mod mcp_server;

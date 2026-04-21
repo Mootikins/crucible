@@ -1,6 +1,6 @@
 //! Mock embedding provider for testing
 
-use crate::embeddings::{EmbeddingResponse, EmbeddingResult};
+use crate::llm::embeddings::{EmbeddingResponse, EmbeddingResult};
 use async_trait::async_trait;
 use crucible_core::enrichment::EmbeddingProvider;
 use std::collections::HashMap;
@@ -135,7 +135,7 @@ pub struct EmbeddingFixtures {
     pub embeddings: HashMap<String, Vec<f32>>,
 
     /// Model information fixtures
-    pub model_info: HashMap<String, crate::embeddings::provider::ModelInfo>,
+    pub model_info: HashMap<String, crate::llm::embeddings::provider::ModelInfo>,
 
     /// Expected dimensions for different models
     pub model_dimensions: HashMap<String, usize>,
@@ -229,12 +229,14 @@ impl EmbeddingFixtures {
         // Model information fixtures
         model_info.insert(
             "nomic-embed-text-v1.5".to_string(),
-            crate::embeddings::provider::ModelInfo::builder()
+            crate::llm::embeddings::provider::ModelInfo::builder()
                 .name("nomic-embed-text-v1.5")
                 .display_name("Nomic Embed Text v1.5")
                 .dimensions(768)
-                .family(crate::embeddings::provider::ModelFamily::Bert)
-                .parameter_size(crate::embeddings::provider::ParameterSize::new(137, true)) // 137M
+                .family(crate::llm::embeddings::provider::ModelFamily::Bert)
+                .parameter_size(crate::llm::embeddings::provider::ParameterSize::new(
+                    137, true,
+                )) // 137M
                 .recommended(true)
                 .max_tokens(8192)
                 .build(),
@@ -242,12 +244,14 @@ impl EmbeddingFixtures {
 
         model_info.insert(
             "text-embedding-3-small".to_string(),
-            crate::embeddings::provider::ModelInfo::builder()
+            crate::llm::embeddings::provider::ModelInfo::builder()
                 .name("text-embedding-3-small")
                 .display_name("Text Embedding 3 Small")
                 .dimensions(1536)
-                .family(crate::embeddings::provider::ModelFamily::Gpt)
-                .parameter_size(crate::embeddings::provider::ParameterSize::new(0, true)) // Unknown size
+                .family(crate::llm::embeddings::provider::ModelFamily::Gpt)
+                .parameter_size(crate::llm::embeddings::provider::ParameterSize::new(
+                    0, true,
+                )) // Unknown size
                 .max_tokens(8191)
                 .build(),
         );
@@ -272,7 +276,10 @@ impl EmbeddingFixtures {
     }
 
     /// Get model info or return None if not found
-    pub fn get_model_info(&self, model: &str) -> Option<&crate::embeddings::provider::ModelInfo> {
+    pub fn get_model_info(
+        &self,
+        model: &str,
+    ) -> Option<&crate::llm::embeddings::provider::ModelInfo> {
         self.model_info.get(model)
     }
 }

@@ -31,7 +31,8 @@ web = ["dep:crucible-web"]
 
 
 # Local embedding support (includes ONNX Runtime download)
-fastembed = ["crucible-llm/fastembed"]
+# Embedding lives in daemon now; CLI just forwards the feature so `cargo build -p crucible-cli --features fastembed` turns it on in daemon.
+fastembed = ["crucible-daemon/fastembed"]
 
 
 # Test tier flags (see justfile for usage)
@@ -44,7 +45,6 @@ crucible-core = { path = "../crucible-core" }
 
 
 crucible-config = { path = "../crucible-config", features = ["toml"] }
-crucible-llm = { path = "../crucible-llm", default-features = false }
 crucible-lua = { path = "../crucible-lua" }
 
 crucible-daemon = { path = "../crucible-daemon" }

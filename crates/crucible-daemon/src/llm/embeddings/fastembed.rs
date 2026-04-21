@@ -37,7 +37,7 @@
 //! ## Usage Example
 //!
 //! ```rust,no_run
-//! use crucible_llm::embeddings::{EmbeddingConfig, create_provider};
+//! use crate::llm::embeddings::{EmbeddingConfig, create_provider};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -133,7 +133,7 @@ impl FastEmbedProvider {
     /// # Example
     ///
     /// ```rust
-    /// use crucible_llm::embeddings::{EmbeddingConfig, FastEmbedProvider};
+    /// use crate::llm::embeddings::{EmbeddingConfig, FastEmbedProvider};
     ///
     /// let config = EmbeddingConfig::fastembed(None, None, None);
     /// let provider = FastEmbedProvider::new(config)?;

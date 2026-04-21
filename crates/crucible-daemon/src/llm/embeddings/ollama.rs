@@ -513,7 +513,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_models_response_deserialization() {
-        use crate::embeddings::provider::{ModelFamily, ModelInfo, ParameterSize};
+        use crate::llm::embeddings::provider::{ModelFamily, ModelInfo, ParameterSize};
 
         // Test Ollama /api/tags response parsing
         let json = r#"{
@@ -586,7 +586,7 @@ mod tests {
 
     #[test]
     fn test_parameter_size_parsing() {
-        use crate::embeddings::provider::ParameterSize;
+        use crate::llm::embeddings::provider::ParameterSize;
 
         let size_m = ParameterSize::from_str("137M").unwrap();
         assert_eq!(size_m.to_string(), "137M");
@@ -603,7 +603,7 @@ mod tests {
 
     #[test]
     fn test_model_family_parsing() {
-        use crate::embeddings::provider::ModelFamily;
+        use crate::llm::embeddings::provider::ModelFamily;
 
         assert_eq!(ModelFamily::from_str("bert"), ModelFamily::Bert);
         assert_eq!(ModelFamily::from_str("BERT"), ModelFamily::Bert);
@@ -618,7 +618,7 @@ mod tests {
 
     #[test]
     fn test_model_info_builder() {
-        use crate::embeddings::provider::{ModelFamily, ModelInfo};
+        use crate::llm::embeddings::provider::{ModelFamily, ModelInfo};
 
         let model = ModelInfo::builder()
             .name("test-model")
@@ -636,7 +636,7 @@ mod tests {
 
     #[test]
     fn test_model_info_compatibility() {
-        use crate::embeddings::provider::ModelInfo;
+        use crate::llm::embeddings::provider::ModelInfo;
 
         let model = ModelInfo::builder().name("test").dimensions(768).build();
 

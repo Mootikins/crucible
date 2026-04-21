@@ -31,7 +31,6 @@ crucible-config = { path = "../crucible-config" }
 crucible-lance = { path = "../crucible-lance" }
 
 crucible-lua = { path = "../crucible-lua", features = ["send"] }
-crucible-llm = { path = "../crucible-llm", default-features = false }
 genai = "0.5"
 async-stream = "0.3"
 agent-client-protocol = "0.10.4"
@@ -61,6 +60,14 @@ chumsky = "0.12"
 # Absorbed from crucible-acp
 similar = "3"
 
+# Absorbed from crucible-llm (async-stream already present above)
+tokenizers = { version = "0.22", default-features = false, features = ["progressbar", "onig"] }
+safetensors = "0.7"
+gguf = "0.1"
+shellexpand = "3.1"
+fastembed = { version = "5.13", optional = true, default-features = false, features = ["hf-hub-rustls-tls", "image-models"] }
+ort = { version = "=2.0.0-rc.11", default-features = false, features = ["std", "ndarray", "download-binaries", "tls-rustls", "copy-dylibs"], optional = true }
+
 # Tools dependencies (absorbed from crucible-tools)
 rmcp = { version = "1.4", features = ["macros", "server", "client", "transport-io", "transport-streamable-http-server", "transport-child-process", "transport-streamable-http-client-reqwest"] }
 axum = "0.8"
@@ -76,7 +83,8 @@ grep = "0.4"
 ignore = "0.4"
 
 [features]
-default = []
+# fastembed on by default so embedding works out-of-box (matches prior crucible-llm default)
+default = ["fastembed"]
 
 web = []
 
@@ -84,6 +92,12 @@ web = []
 test-fixtures = []       # Tests using docs/ kiln or examples/test-kiln
 test-slow = []           # Performance benchmarks and timing tests
 test-utils = []
+
+# Absorbed from crucible-llm: FastEmbed local ONNX embeddings (pulls ort)
+fastembed = ["dep:fastembed", "dep:ort"]
+# Guarded local-model e2e tests (require GGUF models in ~/models/)
+local-config = []
+local-config-embedding = []
 
 [dev-dependencies]
 tempfile = { workspace = true }
@@ -97,6 +111,16 @@ insta = { version = "1", features = ["json"] }
 # Absorbed from crucible-acp
 which = "8.0"
 proptest = { workspace = true }
+# Absorbed from crucible-llm dev-deps
+criterion = { workspace = true, features = ["html_reports"] }
+serial_test = "3.3"
+toon-format = "0.4"
+futures-util = { workspace = true }
+
+# LLM embedding benchmark absorbed from crucible-llm
+[[bench]]
+name = "llm_embedding_comparison"
+harness = false
 
 # ACP integration harness (multiple sub-tests under one binary)
 [[test]]

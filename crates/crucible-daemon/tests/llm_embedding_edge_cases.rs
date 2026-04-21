@@ -2,7 +2,7 @@
 //!
 //! Tests for error handling, edge cases, and batch processing in embedding generation.
 
-use crucible_llm::embeddings::{create_provider, EmbeddingConfig};
+use crucible_daemon::llm::embeddings::{create_provider, EmbeddingConfig};
 
 #[tokio::test]
 async fn test_empty_text_embedding() {

@@ -248,7 +248,7 @@ impl ModelInfo {
 
     /// Check if this model is compatible with a required dimension count
     pub fn is_compatible_dimensions(&self, required_dims: usize) -> bool {
-        self.dimensions.map_or(true, |dims| dims == required_dims)
+        self.dimensions.is_none_or(|dims| dims == required_dims)
     }
 
     /// Format the model size as a human-readable string
@@ -434,7 +434,7 @@ impl EmbeddingResponse {
     /// # Example
     ///
     /// ```rust
-    /// use crucible_llm::embeddings::EmbeddingResponse;
+    /// use crate::llm::embeddings::EmbeddingResponse;
     ///
     /// let embedding = vec![0.1, 0.2, 0.3, 0.4];
     /// let response = EmbeddingResponse::new(embedding, "test-model".to_string());
@@ -476,7 +476,7 @@ impl EmbeddingResponse {
     /// # Example
     ///
     /// ```rust
-    /// use crucible_llm::embeddings::EmbeddingResponse;
+    /// use crate::llm::embeddings::EmbeddingResponse;
     ///
     /// let response = EmbeddingResponse::new(vec![0.1; 768], "nomic-embed-text".to_string());
     /// assert!(response.validate_dimensions(768).is_ok());

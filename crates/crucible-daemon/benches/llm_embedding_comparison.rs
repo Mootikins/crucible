@@ -13,7 +13,7 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 use crucible_config::{
     BurnBackendConfig, BurnEmbedConfig, EmbeddingProviderConfig, FastEmbedConfig,
 };
-use crucible_llm::embeddings::create_provider;
+use crucible_daemon::llm::embeddings::create_provider;
 use std::time::Instant;
 
 /// Generate test texts for embedding
