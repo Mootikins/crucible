@@ -72,9 +72,9 @@ impl AgentHandle for DaemonAgentHandle {
                                         // Strip any ChatError variant Display prefix so TUI shows a single "Communication error: ..." prefix
                                         const CHAT_ERROR_PREFIXES: &[&str] = &[
                                             "Connection error: ", "Communication error: ", "Mode change error: ",
-                                            "Unknown command: ", "Command execution failed: ", "Invalid input: ",
+                                            "Command execution failed: ", "Invalid input: ",
                                             "Agent not available: ", "Internal error: ", "Invalid mode: ",
-                                            "Invalid command: ", "Operation not supported: ",
+                                            "Operation not supported: ",
                                         ];
                                         let inner = CHAT_ERROR_PREFIXES
                                             .iter()
