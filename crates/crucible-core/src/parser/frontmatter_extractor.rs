@@ -15,7 +15,7 @@
 //! ## Usage
 //!
 //! ```rust
-//! use crucible_core::parser::frontmatter_extractor::FrontmatterExtractor;
+//! use crate::parser::frontmatter_extractor::FrontmatterExtractor;
 //!
 //! let content = "---\ntitle: Test\n---\n# Content here";
 //! let extractor = FrontmatterExtractor::new();

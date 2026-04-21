@@ -70,8 +70,8 @@ impl<E> Default for MockEventEmitterState<E> {
 /// ## Basic Usage
 ///
 /// ```rust
-/// use crucible_core::test_support::mocks::MockEventEmitter;
-/// use crucible_core::events::EventEmitter;
+/// use crate::test_support::mocks::MockEventEmitter;
+/// use crate::events::EventEmitter;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let emitter: MockEventEmitter<String> = MockEventEmitter::new();
@@ -95,8 +95,8 @@ impl<E> Default for MockEventEmitterState<E> {
 /// ## Error Injection
 ///
 /// ```rust
-/// use crucible_core::test_support::mocks::MockEventEmitter;
-/// use crucible_core::events::{EventEmitter, EventError};
+/// use crate::test_support::mocks::MockEventEmitter;
+/// use crate::events::{EventEmitter, EventError};
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let emitter: MockEventEmitter<String> = MockEventEmitter::new();
@@ -113,8 +113,8 @@ impl<E> Default for MockEventEmitterState<E> {
 /// ## Cancellation Testing
 ///
 /// ```rust
-/// use crucible_core::test_support::mocks::MockEventEmitter;
-/// use crucible_core::events::EventEmitter;
+/// use crate::test_support::mocks::MockEventEmitter;
+/// use crate::events::EventEmitter;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let emitter: MockEventEmitter<String> = MockEventEmitter::new();
@@ -131,8 +131,8 @@ impl<E> Default for MockEventEmitterState<E> {
 /// ## Handler Error Simulation
 ///
 /// ```rust
-/// use crucible_core::test_support::mocks::MockEventEmitter;
-/// use crucible_core::events::{EventEmitter, HandlerErrorInfo};
+/// use crate::test_support::mocks::MockEventEmitter;
+/// use crate::events::{EventEmitter, HandlerErrorInfo};
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let emitter: MockEventEmitter<String> = MockEventEmitter::new();

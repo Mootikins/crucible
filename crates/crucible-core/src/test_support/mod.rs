@@ -13,8 +13,8 @@
 //! ## Usage in Tests
 //!
 //! ```rust
-//! use crucible_core::test_support::{create_basic_kiln, mocks::MockHashingAlgorithm};
-//! use crucible_core::hashing::algorithm::HashingAlgorithm;
+//! use crate::test_support::{create_basic_kiln, mocks::MockHashingAlgorithm};
+//! use crate::hashing::algorithm::HashingAlgorithm;
 //!
 //! # fn example() -> anyhow::Result<()> {
 //! // Create temporary test kiln
@@ -99,7 +99,7 @@ pub fn kiln_path_str(path: &Path) -> String {
 /// # Example
 ///
 /// ```rust
-/// use crucible_core::test_support::nonexistent_path;
+/// use crate::test_support::nonexistent_path;
 ///
 /// let path = nonexistent_path("missing_note.md");
 /// assert!(!path.exists());

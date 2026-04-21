@@ -4,7 +4,7 @@
 //! to create embedding providers (MCP server, semantic search).
 
 use crate::config::CliConfig;
-use crucible_config::{BackendType, EmbeddingProviderConfig, OllamaConfig, OpenAIConfig};
+use crucible_core::config::{BackendType, EmbeddingProviderConfig, OllamaConfig, OpenAIConfig};
 use tracing::warn;
 
 /// Derive embedding provider config from CLI config

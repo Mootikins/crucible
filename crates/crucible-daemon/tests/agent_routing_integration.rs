@@ -1,4 +1,4 @@
-use crucible_config::BackendType;
+use crucible_core::config::BackendType;
 use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
 use crucible_daemon::background_manager::BackgroundJobManager;
 use crucible_daemon::tools::workspace::WorkspaceTools;

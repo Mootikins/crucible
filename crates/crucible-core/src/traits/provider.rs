@@ -6,7 +6,7 @@
 //!
 //! Chat completions are handled by [`CompletionBackend`](super::CompletionBackend).
 
-use crucible_config::BackendType;
+use crate::config::BackendType;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

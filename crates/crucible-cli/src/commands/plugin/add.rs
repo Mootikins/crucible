@@ -21,11 +21,11 @@ pub async fn execute(args: AddArgs) -> Result<()> {
         .join("crucible")
         .join("plugins.toml");
 
-    let mut config: crucible_config::PluginsConfig = if plugins_toml.exists() {
+    let mut config: crucible_core::config::PluginsConfig = if plugins_toml.exists() {
         let content = std::fs::read_to_string(&plugins_toml)?;
         toml::from_str(&content)?
     } else {
-        crucible_config::PluginsConfig::default()
+        crucible_core::config::PluginsConfig::default()
     };
 
     let name = args
@@ -53,7 +53,7 @@ pub async fn execute(args: AddArgs) -> Result<()> {
         anyhow::bail!("Plugin '{}' already declared in plugins.toml", name);
     }
 
-    config.plugin.push(crucible_config::PluginEntry {
+    config.plugin.push(crucible_core::config::PluginEntry {
         url: args.url.clone(),
         branch: args.branch,
         pin: args.pin,

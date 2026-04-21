@@ -417,7 +417,7 @@ fn create_test_agent_manager(session_manager: Arc<SessionManager>) -> AgentManag
 
 fn create_test_agent_manager_with_providers(
     session_manager: Arc<SessionManager>,
-    llm_config: crucible_config::LlmConfig,
+    llm_config: crucible_core::config::LlmConfig,
 ) -> AgentManager {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
@@ -436,7 +436,7 @@ fn create_test_agent_manager_with_providers(
 
 fn create_test_agent_manager_with_enrichment(
     session_manager: Arc<SessionManager>,
-    enrichment_config: crucible_config::EmbeddingProviderConfig,
+    enrichment_config: crucible_core::config::EmbeddingProviderConfig,
 ) -> AgentManager {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
@@ -444,7 +444,7 @@ fn create_test_agent_manager_with_enrichment(
         kiln_manager: Arc::new(KilnManager::with_event_tx(
             event_tx,
             Some(enrichment_config),
-            crucible_config::default_max_precognition_chars(),
+            crucible_core::config::default_max_precognition_chars(),
         )),
         session_manager,
         background_manager,
@@ -459,7 +459,7 @@ fn create_test_agent_manager_with_enrichment(
 
 fn create_test_agent_manager_with_llm_config(
     session_manager: Arc<SessionManager>,
-    llm_config: crucible_config::LlmConfig,
+    llm_config: crucible_core::config::LlmConfig,
 ) -> AgentManager {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
@@ -559,7 +559,7 @@ async fn start_mock_openai_models_server(
 
 fn create_test_agent_manager_with_both(
     session_manager: Arc<SessionManager>,
-    llm_config: crucible_config::LlmConfig,
+    llm_config: crucible_core::config::LlmConfig,
 ) -> AgentManager {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));

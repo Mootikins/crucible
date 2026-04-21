@@ -8,7 +8,7 @@
 //! cargo nextest run -p crucible-daemon --test acp_real -- --run-ignored
 //! ```
 
-use crucible_config::{BackendType, DelegationConfig};
+use crucible_core::config::{BackendType, DelegationConfig};
 use crucible_core::session::{OutputValidation, SessionAgent};
 use crucible_core::traits::chat::AgentHandle;
 use crucible_daemon::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};

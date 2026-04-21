@@ -539,7 +539,7 @@ mod permission_channel_tests {
 
     #[tokio::test]
     async fn test_switch_model_cross_provider() {
-        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+        use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
         let tmp = TempDir::new().unwrap();
         let storage = Arc::new(FileSessionStorage::new());
@@ -613,7 +613,7 @@ mod permission_channel_tests {
 
     #[tokio::test]
     async fn test_switch_model_unprefixed_same_provider() {
-        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+        use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
         let tmp = TempDir::new().unwrap();
         let storage = Arc::new(FileSessionStorage::new());
@@ -676,7 +676,7 @@ mod permission_channel_tests {
 
     #[tokio::test]
     async fn test_switch_model_unknown_provider_prefix() {
-        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+        use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
         let tmp = TempDir::new().unwrap();
         let storage = Arc::new(FileSessionStorage::new());
@@ -736,7 +736,7 @@ mod permission_channel_tests {
 
     #[tokio::test]
     async fn test_switch_model_cross_provider_invalidates_cache() {
-        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+        use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
         let tmp = TempDir::new().unwrap();
         let storage = Arc::new(FileSessionStorage::new());
@@ -793,7 +793,7 @@ mod permission_channel_tests {
 
 mod resolve_agent_profile_tests {
     use crate::acp::discovery::default_agent_profiles;
-    use crucible_config::components::{
+    use crucible_core::config::components::{
         acp::AgentProfile,
         permissions::{PermissionConfig, PermissionMode},
     };

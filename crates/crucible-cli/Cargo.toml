@@ -44,7 +44,6 @@ test-utils = []          # Expose testing utilities for integration tests
 crucible-core = { path = "../crucible-core" }
 
 
-crucible-config = { path = "../crucible-config", features = ["toml"] }
 crucible-lua = { path = "../crucible-lua" }
 
 crucible-daemon = { path = "../crucible-daemon" }
@@ -137,7 +136,6 @@ toml = { workspace = true }
 
 [dev-dependencies]
 crucible-cli = { path = ".", features = ["test-utils"] }  # Enable test utilities
-crucible-config = { path = "../crucible-config", features = ["test-utils"] }
 # MCP client for testing examples
 rmcp = { version = "1.4", features = ["client", "transport-child-process"] }
 tempfile = { workspace = true }

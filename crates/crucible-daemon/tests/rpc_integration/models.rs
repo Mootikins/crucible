@@ -1,6 +1,6 @@
 //! Model switching tests.
 
-use crucible_config::BackendType;
+use crucible_core::config::BackendType;
 use crucible_daemon::DaemonClient;
 
 use super::server::TestServer;

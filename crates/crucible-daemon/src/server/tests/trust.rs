@@ -10,7 +10,7 @@ async fn cloud_provider_confidential_kiln_returns_insufficient_error() {
 
     let llm_config = Some(build_llm_config(
         "cloud",
-        crucible_config::BackendType::OpenAI,
+        crucible_core::config::BackendType::OpenAI,
     ));
     let request = create_session_request(&kiln, &workspace, "cloud");
 
@@ -42,7 +42,7 @@ async fn local_provider_confidential_kiln_allows_session_creation() {
 
     let llm_config = Some(build_llm_config(
         "local",
-        crucible_config::BackendType::Mock,
+        crucible_core::config::BackendType::Mock,
     ));
     let request = create_session_request(&kiln, &workspace, "local");
 
@@ -71,7 +71,7 @@ async fn cloud_provider_public_or_missing_classification_allows_session_creation
 
     let llm_config = Some(build_llm_config(
         "cloud",
-        crucible_config::BackendType::OpenAI,
+        crucible_core::config::BackendType::OpenAI,
     ));
     let request = create_session_request(&kiln, &workspace, "cloud");
 
@@ -100,8 +100,8 @@ async fn untrusted_provider_internal_kiln_returns_error() {
 
     let llm_config = Some(build_llm_config_with_trust(
         "untrusted",
-        crucible_config::BackendType::Custom,
-        Some(crucible_config::TrustLevel::Untrusted),
+        crucible_core::config::BackendType::Custom,
+        Some(crucible_core::config::TrustLevel::Untrusted),
     ));
     let request = create_session_request(&kiln, &workspace, "untrusted");
 
@@ -139,11 +139,11 @@ fn provider_trust_acp_agent_always_cloud() {
     // Even with a Local-trust provider in config, ACP always returns Cloud
     let llm_config = Some(build_llm_config_with_trust(
         "local-provider",
-        crucible_config::BackendType::Mock,
-        Some(crucible_config::TrustLevel::Local),
+        crucible_core::config::BackendType::Mock,
+        Some(crucible_core::config::TrustLevel::Local),
     ));
     let result = resolve_provider_trust_level_for_create(&req, &llm_config);
-    assert_eq!(result, crucible_config::TrustLevel::Cloud);
+    assert_eq!(result, crucible_core::config::TrustLevel::Cloud);
 }
 
 #[test]
@@ -159,7 +159,7 @@ fn provider_trust_bare_backend_name_cloud() {
     }))
     .unwrap();
     let result = resolve_provider_trust_level_for_create(&req, &None);
-    assert_eq!(result, crucible_config::TrustLevel::Cloud);
+    assert_eq!(result, crucible_core::config::TrustLevel::Cloud);
 }
 
 #[test]
@@ -175,7 +175,7 @@ fn provider_trust_bare_backend_name_local() {
     }))
     .unwrap();
     let result = resolve_provider_trust_level_for_create(&req, &None);
-    assert_eq!(result, crucible_config::TrustLevel::Local);
+    assert_eq!(result, crucible_core::config::TrustLevel::Local);
 }
 
 #[test]
@@ -193,11 +193,11 @@ fn provider_trust_default_provider_fallback() {
     // Build config where default provider is Local trust
     let llm_config = Some(build_llm_config_with_trust(
         "my-local",
-        crucible_config::BackendType::Mock,
-        Some(crucible_config::TrustLevel::Local),
+        crucible_core::config::BackendType::Mock,
+        Some(crucible_core::config::TrustLevel::Local),
     ));
     let result = resolve_provider_trust_level_for_create(&req, &llm_config);
-    assert_eq!(result, crucible_config::TrustLevel::Local);
+    assert_eq!(result, crucible_core::config::TrustLevel::Local);
 }
 
 // Tests for resolve_kiln_classification_for_create wrapper
@@ -219,5 +219,8 @@ fn kiln_classification_relative_path_matches() {
     std::fs::create_dir_all(&kiln).unwrap();
     write_workspace_config(&workspace, "./notes", Some("internal"));
     let result = resolve_kiln_classification_for_create(&kiln, Some(&workspace));
-    assert_eq!(result, Some(crucible_config::DataClassification::Internal));
+    assert_eq!(
+        result,
+        Some(crucible_core::config::DataClassification::Internal)
+    );
 }

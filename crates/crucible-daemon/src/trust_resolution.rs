@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use crucible_config::{read_project_config, DataClassification, LlmConfig, TrustLevel};
+use crucible_core::config::{read_project_config, DataClassification, LlmConfig, TrustLevel};
 use crucible_core::session::SessionAgent;
 
 /// Resolve the data classification for a kiln by reading the workspace config.
@@ -85,8 +85,8 @@ pub(crate) fn resolve_provider_trust(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_config::BackendType;
-    use crucible_config::LlmProviderConfig;
+    use crucible_core::config::BackendType;
+    use crucible_core::config::LlmProviderConfig;
     use std::collections::HashMap;
     use std::fs;
     use tempfile::TempDir;

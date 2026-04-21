@@ -22,7 +22,7 @@ use blake3;
 /// # Examples
 ///
 /// ```
-/// use crucible_core::hashing::compute_block_hash;
+/// use crate::hashing::compute_block_hash;
 ///
 /// let text = "  This is **bold** text  ";
 /// let hash = compute_block_hash(text);

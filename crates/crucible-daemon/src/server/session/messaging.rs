@@ -54,7 +54,7 @@ pub(crate) async fn handle_session_send_message(
         .get("permission_mode")
         .and_then(|v| v.as_str())
         .and_then(|s| {
-            s.parse::<crucible_config::components::permissions::PermissionMode>()
+            s.parse::<crucible_core::config::components::permissions::PermissionMode>()
                 .ok()
         });
 

@@ -4,7 +4,7 @@
 //! precognition, and session.configure_agent / session.list_models.
 
 use anyhow::Result;
-use crucible_config::BackendType;
+use crucible_core::config::BackendType;
 use crucible_core::session::{OutputValidation, SessionAgent};
 use crucible_daemon::DaemonClient;
 use crucible_daemon::Server;

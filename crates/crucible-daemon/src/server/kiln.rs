@@ -1,5 +1,5 @@
 use super::*;
-use crucible_config::{
+use crucible_core::config::{
     read_kiln_config, read_project_config, write_kiln_config, write_project_config,
     DataClassification, KilnConfig, KilnMeta, ProjectConfig,
 };
@@ -143,7 +143,7 @@ pub(crate) async fn handle_kiln_set_classification(
             // Create default ProjectConfig with a single kiln at "."
             ProjectConfig {
                 project: None,
-                kilns: vec![crucible_config::KilnAttachment {
+                kilns: vec![crucible_core::config::KilnAttachment {
                     path: ".".into(),
                     name: None,
                     data_classification: None,
@@ -162,7 +162,7 @@ pub(crate) async fn handle_kiln_set_classification(
 
     if !updated {
         // No kiln entries — add one
-        config.kilns.push(crucible_config::KilnAttachment {
+        config.kilns.push(crucible_core::config::KilnAttachment {
             path: ".".into(),
             name: None,
             data_classification: Some(classification),

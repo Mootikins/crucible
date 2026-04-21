@@ -2,7 +2,7 @@ use super::super::*;
 
 #[tokio::test]
 async fn test_parse_provider_model_llm_config_found() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));
@@ -35,7 +35,7 @@ async fn test_parse_provider_model_llm_config_found() {
 
 #[tokio::test]
 async fn test_parse_provider_model_llm_config_not_found() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));
@@ -67,7 +67,7 @@ async fn test_parse_provider_model_llm_config_not_found() {
 
 #[tokio::test]
 async fn test_parse_provider_model_legacy_takes_precedence() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));
@@ -114,7 +114,7 @@ async fn test_parse_provider_model_empty_string() {
 
 #[tokio::test]
 async fn test_parse_provider_model_trailing_slash() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));
@@ -148,7 +148,7 @@ async fn test_parse_provider_model_trailing_slash() {
 
 #[tokio::test]
 async fn test_parse_provider_model_whitespace() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));
@@ -181,7 +181,7 @@ async fn test_parse_provider_model_whitespace() {
 
 #[tokio::test]
 async fn test_parse_provider_model_case_sensitivity() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));

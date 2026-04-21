@@ -25,7 +25,7 @@
 //! ## Usage Example
 //!
 //! ```rust,ignore
-//! use crucible_core::traits::acp::{SessionManager, FilesystemHandler};
+//! use crate::traits::acp::{SessionManager, FilesystemHandler};
 //!
 //! async fn start_chat<S, F>(session_mgr: &mut S, fs: &F)
 //! where

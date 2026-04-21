@@ -2,7 +2,7 @@ use super::super::agent::SessionAgent;
 use super::super::config::{
     default_precognition_results, default_validation_retries, ContextStrategy, OutputValidation,
 };
-use crucible_config::BackendType;
+use crate::config::BackendType;
 use std::collections::HashMap;
 
 #[test]
@@ -233,7 +233,7 @@ fn test_session_agent_with_agent_description() {
 #[test]
 fn test_session_agent_with_delegation_config() {
     // SessionAgent should serialize/deserialize with delegation_config field
-    use crucible_config::DelegationConfig;
+    use crate::config::DelegationConfig;
 
     let delegation = DelegationConfig {
         enabled: true,
@@ -310,7 +310,7 @@ fn test_session_agent_backward_compat_without_new_fields() {
 #[test]
 fn test_session_agent_round_trip_with_all_fields() {
     // SessionAgent → JSON → SessionAgent should preserve all fields
-    use crucible_config::DelegationConfig;
+    use crate::config::DelegationConfig;
 
     let delegation = DelegationConfig {
         enabled: true,
@@ -374,7 +374,7 @@ fn test_session_agent_round_trip_with_all_fields() {
 #[test]
 fn test_session_agent_from_profile_basic() {
     // SessionAgent::from_profile() should construct ACP agent from AgentProfile
-    use crucible_config::AgentProfile;
+    use crate::config::AgentProfile;
 
     let profile = AgentProfile {
         extends: Some("claude".to_string()),
@@ -415,7 +415,7 @@ fn test_session_agent_from_profile_basic() {
 #[test]
 fn test_session_agent_from_profile_env_isolation() {
     // Profile env vars should go into SessionAgent.env_overrides, parent env NOT inherited
-    use crucible_config::AgentProfile;
+    use crate::config::AgentProfile;
 
     let profile = AgentProfile {
         extends: None,
@@ -450,7 +450,7 @@ fn test_session_agent_from_profile_env_isolation() {
 #[test]
 fn test_session_agent_from_profile_with_delegation() {
     // SessionAgent::from_profile() should include delegation config from profile
-    use crucible_config::{AgentProfile, DelegationConfig};
+    use crate::config::{AgentProfile, DelegationConfig};
 
     let delegation = DelegationConfig {
         enabled: true,

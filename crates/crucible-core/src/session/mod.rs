@@ -13,7 +13,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use crucible_core::session::{Session, SessionType, SessionState};
+//! use crate::session::{Session, SessionType, SessionState};
 //! use std::path::PathBuf;
 //!
 //! let session = Session::new(

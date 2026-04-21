@@ -1,7 +1,7 @@
 //! Mock daemon infrastructure shared across route contract tests.
 
 use axum::Router;
-use crucible_config::CliAppConfig;
+use crucible_core::config::CliAppConfig;
 use crucible_daemon::DaemonClient;
 use crucible_web::routes::{
     chat_routes, health_routes, project_routes, search_routes, session_routes,

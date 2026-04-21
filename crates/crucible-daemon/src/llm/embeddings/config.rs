@@ -62,9 +62,9 @@ impl ProviderType {
 }
 
 // Re-export canonical EmbeddingProviderConfig as EmbeddingConfig for compatibility
-pub use crucible_config::EmbeddingProviderConfig as EmbeddingConfig;
+pub use crucible_core::config::EmbeddingProviderConfig as EmbeddingConfig;
 
-pub use crucible_config::BackendType;
+pub use crucible_core::config::BackendType;
 
 /// Get expected embedding dimensions based on provider and model
 pub fn expected_dimensions_for_model(provider: &BackendType, model: &str) -> usize {
@@ -146,7 +146,7 @@ mod tests {
     #[test]
     fn test_config_validation_requires_api_key_for_openai() {
         // Create a config with empty API key (which should fail validation)
-        use crucible_config::OpenAIConfig;
+        use crucible_core::config::OpenAIConfig;
         let config = EmbeddingConfig::OpenAI(OpenAIConfig::default());
 
         let result = config.validate();
@@ -156,7 +156,7 @@ mod tests {
     #[test]
     fn test_config_validation_empty_model() {
         // Create a config with empty model name (which should fail validation)
-        use crucible_config::OllamaConfig;
+        use crucible_core::config::OllamaConfig;
         let config = EmbeddingConfig::Ollama(OllamaConfig {
             model: String::new(),
             ..Default::default()

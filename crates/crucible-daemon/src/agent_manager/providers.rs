@@ -199,7 +199,7 @@ mod tests {
     use crate::session_manager::SessionManager;
     use crate::session_storage::FileSessionStorage;
     use crate::tools::workspace::WorkspaceTools;
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::{HashMap, HashSet};
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -399,7 +399,7 @@ mod tests {
         // will re-normalize it.
         let _env_lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _env_guards = clear_provider_env();
-        use crucible_config::TrustLevel;
+        use crucible_core::config::TrustLevel;
 
         let config = LlmConfig {
             providers: HashMap::from([
@@ -440,7 +440,9 @@ mod tests {
 
         // With Confidential classification, only Local-trust providers should be returned
         let providers = manager
-            .list_providers(Some(crucible_config::DataClassification::Confidential))
+            .list_providers(Some(
+                crucible_core::config::DataClassification::Confidential,
+            ))
             .await;
 
         assert_eq!(providers.len(), 1);

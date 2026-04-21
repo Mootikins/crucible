@@ -1,5 +1,5 @@
 use super::super::*;
-use crucible_config::components::permissions::{PermissionConfig, PermissionMode};
+use crucible_core::config::components::permissions::{PermissionConfig, PermissionMode};
 use crucible_core::events::InternalSessionEvent;
 
 impl AgentManager {
@@ -576,7 +576,7 @@ impl AgentManager {
         tool_name: &str,
         pattern: &str,
         project_path: &str,
-    ) -> Result<(), crucible_config::PatternError> {
+    ) -> Result<(), crucible_core::config::PatternError> {
         let mut store = PatternStore::load_sync(project_path).unwrap_or_default();
 
         match tool_name {

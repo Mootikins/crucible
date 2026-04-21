@@ -1,6 +1,6 @@
 //! Session RPC tests: create/list/subscribe/configure/send/cancel.
 
-use crucible_config::BackendType;
+use crucible_core::config::BackendType;
 use crucible_daemon::DaemonClient;
 
 use super::server::TestServer;

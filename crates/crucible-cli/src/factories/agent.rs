@@ -10,7 +10,7 @@
 use anyhow::Result;
 use tracing::info;
 
-use crucible_config::{BackendType, CliAppConfig};
+use crucible_core::config::{BackendType, CliAppConfig};
 use crucible_core::session::{OutputValidation, SessionAgent};
 use crucible_core::traits::chat::AgentHandle;
 
@@ -197,7 +197,7 @@ fn build_internal_session_agent(config: &CliAppConfig) -> SessionAgent {
         .as_ref()
         .map(|p| p.model.clone())
         .or_else(|| config.chat.model.clone())
-        .unwrap_or_else(|| crucible_config::DEFAULT_CHAT_MODEL.to_string());
+        .unwrap_or_else(|| crucible_core::config::DEFAULT_CHAT_MODEL.to_string());
     let mcp_servers = config
         .mcp
         .as_ref()
@@ -206,7 +206,7 @@ fn build_internal_session_agent(config: &CliAppConfig) -> SessionAgent {
     let backend_type = effective_llm
         .as_ref()
         .map(|p| p.provider_type)
-        .unwrap_or(crucible_config::BackendType::Ollama);
+        .unwrap_or(crucible_core::config::BackendType::Ollama);
     let provider_key = effective_llm
         .as_ref()
         .map(|p| p.key.clone())
@@ -321,7 +321,9 @@ async fn create_daemon_agent_inner(
     let is_acp = params
         .agent_type
         .map(|t| t == AgentType::Acp)
-        .unwrap_or_else(|| config.chat.agent_preference == crucible_config::AgentPreference::Acp);
+        .unwrap_or_else(|| {
+            config.chat.agent_preference == crucible_core::config::AgentPreference::Acp
+        });
     let create_agent_type = if is_acp { "acp" } else { "internal" };
 
     let (session_id, is_new_session) = match &params.resume_session_id {
@@ -468,7 +470,7 @@ pub async fn create_agent(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_config::{AgentProfile, DelegationConfig};
+    use crucible_core::config::{AgentProfile, DelegationConfig};
 
     fn test_delegation_config() -> DelegationConfig {
         DelegationConfig {

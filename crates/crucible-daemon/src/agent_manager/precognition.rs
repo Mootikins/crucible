@@ -119,7 +119,7 @@ impl AgentManager {
         session_id: &str,
         session: &crucible_core::session::Session,
         primary_handle: &crate::kiln_manager::StorageHandle,
-        primary_config: &crucible_config::EmbeddingProviderConfig,
+        primary_config: &crucible_core::config::EmbeddingProviderConfig,
     ) -> Vec<KilnSearchSource> {
         let mut sources = vec![KilnSearchSource {
             kiln_path: session.kiln.clone(),

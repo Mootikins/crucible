@@ -4,7 +4,7 @@
 //! Uses parallel probing for fast agent discovery.
 
 use anyhow::{anyhow, Result};
-use crucible_config::{AcpConfig, AgentProfile};
+use crucible_core::config::{AcpConfig, AgentProfile};
 use futures::future::join_all;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -688,7 +688,7 @@ mod tests {
 
     #[test]
     fn test_resolve_agent_from_config_profile() {
-        use crucible_config::{AcpConfig, AgentProfile};
+        use crucible_core::config::{AcpConfig, AgentProfile};
         use std::collections::HashMap;
 
         // Create a config with a custom profile
@@ -732,7 +732,7 @@ mod tests {
 
     #[test]
     fn test_resolve_agent_custom_command_overrides_builtin() {
-        use crucible_config::{AcpConfig, AgentProfile};
+        use crucible_core::config::{AcpConfig, AgentProfile};
         use std::collections::HashMap;
 
         let mut agents = HashMap::new();
@@ -764,7 +764,7 @@ mod tests {
 
     #[test]
     fn test_resolve_agent_falls_back_to_builtin() {
-        use crucible_config::AcpConfig;
+        use crucible_core::config::AcpConfig;
 
         let config = AcpConfig::default();
 
@@ -779,7 +779,7 @@ mod tests {
 
     #[test]
     fn test_resolve_agent_unknown_returns_error() {
-        use crucible_config::AcpConfig;
+        use crucible_core::config::AcpConfig;
 
         let config = AcpConfig::default();
 

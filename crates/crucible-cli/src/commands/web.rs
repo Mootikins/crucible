@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args;
-use crucible_config::{CliAppConfig, WebConfig};
+use crucible_core::config::{CliAppConfig, WebConfig};
 
 #[derive(Args)]
 pub struct WebCommand {

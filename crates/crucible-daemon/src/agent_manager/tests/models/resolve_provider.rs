@@ -2,7 +2,7 @@ use super::super::*;
 
 #[tokio::test]
 async fn test_resolve_provider_config_from_llm_config() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));
@@ -38,7 +38,7 @@ async fn test_resolve_provider_config_from_llm_config() {
 
 #[tokio::test]
 async fn test_resolve_provider_config_from_providers_config() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));
@@ -70,7 +70,7 @@ async fn test_resolve_provider_config_from_providers_config() {
 
 #[tokio::test]
 async fn test_resolve_provider_config_does_not_use_legacy_providers_config() {
-    use crucible_config::LlmConfig;
+    use crucible_core::config::LlmConfig;
 
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));
@@ -100,7 +100,7 @@ async fn test_resolve_provider_config_not_found() {
 
 #[tokio::test]
 async fn test_resolve_provider_config_llm_config_wins_over_providers_config() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));

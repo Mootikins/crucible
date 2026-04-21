@@ -23,7 +23,7 @@ pub async fn execute(args: RemoveArgs) -> Result<()> {
     }
 
     let content = std::fs::read_to_string(&plugins_toml)?;
-    let mut config: crucible_config::PluginsConfig = toml::from_str(&content)?;
+    let mut config: crucible_core::config::PluginsConfig = toml::from_str(&content)?;
 
     let before = config.plugin.len();
     config.plugin.retain(|p| {

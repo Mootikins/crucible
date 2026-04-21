@@ -1,7 +1,7 @@
 //! Session agent configuration.
 
+use crate::config::{AgentProfile, BackendType, DelegationConfig};
 use chrono::Utc;
-use crucible_config::{AgentProfile, BackendType, DelegationConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

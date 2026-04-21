@@ -10,8 +10,8 @@
 //! cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent
 //! ```
 
-use crucible_config::{AcpConfig, AgentProfile, BackendType, DelegationConfig};
 use crucible_core::background::{JobResult, JobStatus};
+use crucible_core::config::{AcpConfig, AgentProfile, BackendType, DelegationConfig};
 use crucible_core::session::RecordingMode;
 use crucible_core::session::{OutputValidation, SessionAgent};
 use crucible_core::traits::chat::AgentHandle;

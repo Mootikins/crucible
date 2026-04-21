@@ -14,7 +14,7 @@
 //! ## Usage
 //!
 //! ```rust,ignore
-//! use crucible_core::events::{Reactor, Handler, SessionEvent};
+//! use crate::events::{Reactor, Handler, SessionEvent};
 //!
 //! let mut reactor = Reactor::new();
 //!
@@ -410,7 +410,7 @@ use tokio::sync::RwLock;
 /// # Example
 ///
 /// ```rust,ignore
-/// use crucible_core::events::{Reactor, ReactorEventEmitter, EventEmitter, SessionEvent};
+/// use crate::events::{Reactor, ReactorEventEmitter, EventEmitter, SessionEvent};
 /// use std::sync::Arc;
 /// use tokio::sync::RwLock;
 ///

@@ -1,6 +1,6 @@
 //! TUI flow tests: sessions command, resume command, full daemon-agent flow.
 
-use crucible_config::BackendType;
+use crucible_core::config::BackendType;
 use crucible_core::traits::chat::AgentHandle;
 use crucible_daemon::DaemonClient;
 

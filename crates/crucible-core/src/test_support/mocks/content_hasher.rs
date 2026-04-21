@@ -43,8 +43,8 @@ struct MockContentHasherState {
 /// # Examples
 ///
 /// ```rust
-/// use crucible_core::test_support::mocks::MockContentHasher;
-/// use crucible_core::traits::change_detection::ContentHasher;
+/// use crate::test_support::mocks::MockContentHasher;
+/// use crate::traits::change_detection::ContentHasher;
 /// use std::path::Path;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {

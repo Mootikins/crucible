@@ -15,7 +15,7 @@
 /// # Examples
 ///
 /// ```
-/// use crucible_core::error_utils::strip_tool_error_prefix;
+/// use crate::error_utils::strip_tool_error_prefix;
 ///
 /// // Single prefix
 /// assert_eq!(strip_tool_error_prefix("tool execution failed: bad path"), "bad path");

@@ -13,7 +13,7 @@
 /// # Examples
 ///
 /// ```
-/// use crucible_core::utils::glob_match;
+/// use crate::utils::glob_match;
 ///
 /// assert!(glob_match("just_*", "just_test"));
 /// assert!(glob_match("tool:*", "tool:grep"));

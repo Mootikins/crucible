@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use crucible_config::{BackendType, LlmProviderConfig};
+use crucible_core::config::{BackendType, LlmProviderConfig};
 use crucible_core::session::{ContextStrategy, OutputValidation};
 use crucible_core::traits::chat::{
     AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall, ChatToolResult,

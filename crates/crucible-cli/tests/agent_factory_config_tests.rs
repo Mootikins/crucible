@@ -8,7 +8,7 @@
 //! used to create internal agents with the correct settings.
 
 use crucible_cli::factories::AgentInitParams;
-use crucible_config::{BackendType, CliAppConfig, LlmConfig, LlmProviderConfig};
+use crucible_core::config::{BackendType, CliAppConfig, LlmConfig, LlmProviderConfig};
 use std::collections::HashMap;
 
 /// Helper to create a minimal CliAppConfig for testing

@@ -7,14 +7,14 @@
 //!
 //! ## Canonical Location
 //!
-//! - **Parser Types**: This module (`crucible_core::parser::types`)
+//! - **Parser Types**: This module (`crate::parser::types`)
 //! - **Hash Types**: This module (`BlockHash`)
 //! - **AST Types**: This module (parser implementation detail)
 //!
 //! ## Import Guidelines
 //!
-//! Import from the canonical location `crucible_core::parser` or
-//! `crucible_core::parser::types`.
+//! Import from the canonical location `crate::parser` or
+//! `crate::parser::types`.
 
 mod ast;
 mod block_hash;

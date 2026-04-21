@@ -5,7 +5,7 @@ use super::super::config::{
 use super::super::enums::{SessionState, SessionType};
 use super::super::session::Session;
 use super::super::summary::SessionSummary;
-use crucible_config::BackendType;
+use crate::config::BackendType;
 use std::collections::HashMap;
 use std::path::PathBuf;
 

@@ -1,6 +1,6 @@
 #![allow(clippy::field_reassign_with_default)]
 
-use crucible_config::{BackendType, CliAppConfig, LlmProviderConfig};
+use crucible_core::config::{BackendType, CliAppConfig, LlmProviderConfig};
 
 fn cache_key_from_llm(config: &CliAppConfig) -> String {
     if let Ok(provider) = config.effective_llm_provider() {

@@ -1,15 +1,15 @@
 use crate::config::CliConfig;
 use anyhow::{anyhow, Result};
-use crucible_config::BackendType;
+use crucible_core::config::BackendType;
 use crucible_core::session::{OutputValidation, SessionAgent};
 use crucible_daemon::DaemonClient;
 
 pub(super) async fn resolve_acp_profile(
     client: &DaemonClient,
     agent_name: &str,
-) -> Result<crucible_config::AgentProfile> {
+) -> Result<crucible_core::config::AgentProfile> {
     let profile_json = client.agents_resolve_profile(agent_name).await?;
-    let profile: crucible_config::AgentProfile = serde_json::from_value(profile_json)
+    let profile: crucible_core::config::AgentProfile = serde_json::from_value(profile_json)
         .map_err(|e| anyhow!("Failed to deserialize agent profile: {}", e))?;
     Ok(profile)
 }
@@ -101,7 +101,7 @@ pub(super) mod rpc {
             .as_ref()
             .map(|p| p.model.clone())
             .or_else(|| config.chat.model.clone())
-            .unwrap_or_else(|| crucible_config::DEFAULT_CHAT_MODEL.to_string());
+            .unwrap_or_else(|| crucible_core::config::DEFAULT_CHAT_MODEL.to_string());
         let backend_type = effective_llm
             .as_ref()
             .map(|p| p.provider_type)

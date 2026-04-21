@@ -1,5 +1,5 @@
 use super::*;
-use crucible_config::{AgentProfile, BackendType, DelegationConfig};
+use crucible_core::config::{AgentProfile, BackendType, DelegationConfig};
 use crucible_core::session::OutputValidation;
 use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatError, ChatResult};
 use futures::stream::{self, BoxStream};

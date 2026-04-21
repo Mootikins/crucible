@@ -26,7 +26,7 @@
 //! Handlers implement the async [`Handler`] trait:
 //!
 //! ```ignore
-//! use crucible_core::events::{Handler, HandlerContext, HandlerResult, SessionEvent};
+//! use crate::events::{Handler, HandlerContext, HandlerResult, SessionEvent};
 //! use async_trait::async_trait;
 //!
 //! struct LoggingHandler;

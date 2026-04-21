@@ -87,9 +87,9 @@ pub enum EmbeddingError {
 
 /// Convert configuration validation errors to embedding errors
 /// Preserves error structure instead of losing information
-impl From<crucible_config::ConfigValidationError> for EmbeddingError {
-    fn from(err: crucible_config::ConfigValidationError) -> Self {
-        use crucible_config::ConfigValidationError;
+impl From<crucible_core::config::ConfigValidationError> for EmbeddingError {
+    fn from(err: crucible_core::config::ConfigValidationError) -> Self {
+        use crucible_core::config::ConfigValidationError;
 
         match err {
             ConfigValidationError::MissingField { field } => {

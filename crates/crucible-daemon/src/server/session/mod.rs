@@ -1,6 +1,6 @@
 use super::*;
 
-use crucible_config::McpConfig;
+use crucible_core::config::McpConfig;
 use crucible_core::protocol::session_events::{
     ContextLimitResolvedPayload, ContextLimitSource, KilnNotesIndexedPayload,
     McpServersReadyPayload, PluginsDiscoveredPayload, ProvidersListedPayload,

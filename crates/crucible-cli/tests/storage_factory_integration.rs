@@ -8,7 +8,7 @@
 use anyhow::{bail, Result};
 use crucible_cli::config::CliConfig;
 use crucible_cli::factories::get_storage;
-use crucible_config::StorageConfig;
+use crucible_core::config::StorageConfig;
 use crucible_core::test_support::EnvVarGuard;
 use crucible_daemon::rpc_client::lifecycle;
 use crucible_daemon::Server;
@@ -188,7 +188,7 @@ async fn test_get_storage_fails_when_no_daemon() {
     };
 
     // Short timeout so test doesn't hang
-    config.storage = Some(crucible_config::StorageConfig {
+    config.storage = Some(crucible_core::config::StorageConfig {
         idle_timeout_secs: 1,
     });
 

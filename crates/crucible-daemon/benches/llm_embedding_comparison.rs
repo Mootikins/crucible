@@ -10,7 +10,7 @@
 #![allow(deprecated)] // criterion::black_box is deprecated
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use crucible_config::{
+use crucible_core::config::{
     BurnBackendConfig, BurnEmbedConfig, EmbeddingProviderConfig, FastEmbedConfig,
 };
 use crucible_daemon::llm::embeddings::create_provider;

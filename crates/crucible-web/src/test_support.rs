@@ -5,7 +5,7 @@ use crate::services::daemon::{AppState, EventBroker, ReconnectingDaemon};
 #[cfg(test)]
 use axum::Router;
 #[cfg(test)]
-use crucible_config::CliAppConfig;
+use crucible_core::config::CliAppConfig;
 #[cfg(test)]
 use crucible_daemon::DaemonClient;
 #[cfg(test)]

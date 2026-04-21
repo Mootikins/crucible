@@ -29,7 +29,7 @@
 use crate::event_emitter::emit_event;
 use crate::protocol::SessionEventMessage;
 use async_trait::async_trait;
-use crucible_config::AgentProfile;
+use crucible_core::config::AgentProfile;
 
 use crate::observe::events::LogEvent;
 use crate::observe::session::SessionWriter;

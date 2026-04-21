@@ -6,8 +6,8 @@
 // Re-export the canonical configuration types from crucible-config
 // Note: We re-export CliAppConfig as CliConfig for CLI backward compatibility
 // - CliAppConfig is the top-level composite config (kiln_path, embedding, acp, chat, cli, etc.)
-// - crucible_config::CliConfig is the small CLI-specific settings (show_progress, verbose, etc.)
-pub use crucible_config::{
+// - crucible_core::config::CliConfig is the small CLI-specific settings (show_progress, verbose, etc.)
+pub use crucible_core::config::{
     AcpConfig,
     BackendType,
     ChatConfig,
@@ -18,8 +18,8 @@ pub use crucible_config::{
 };
 
 // Legacy type aliases for backward compatibility
-pub type EmbeddingConfigSection = crucible_config::EmbeddingProviderConfig;
-pub type LlmConfig = crucible_config::AcpConfig;
+pub type EmbeddingConfigSection = crucible_core::config::EmbeddingProviderConfig;
+pub type LlmConfig = crucible_core::config::AcpConfig;
 
 /// Builder for programmatically constructing CliConfig (top-level CLI configuration)
 pub struct CliConfigBuilder {
@@ -41,7 +41,7 @@ impl CliConfigBuilder {
     /// Build the CliConfig (returns the top-level CLI configuration)
     pub fn build(self) -> anyhow::Result<CliConfig> {
         // Create default config and override kiln_path if provided
-        // Note: CliConfig here is crucible_config::CliAppConfig via the re-export alias
+        // Note: CliConfig here is crucible_core::config::CliAppConfig via the re-export alias
         let mut config = CliConfig::default();
         if let Some(path) = self.kiln_path {
             config.kiln_path = path;
@@ -133,7 +133,10 @@ verbose = false
         let config = CliConfig::load(Some(config_path), None, None).unwrap();
         assert_eq!(config.kiln_path, kiln_path);
         let provider = config.effective_llm_provider().unwrap();
-        assert_eq!(provider.provider_type, crucible_config::BackendType::OpenAI);
+        assert_eq!(
+            provider.provider_type,
+            crucible_core::config::BackendType::OpenAI
+        );
         assert_eq!(provider.model, "test-model");
         assert_eq!(provider.endpoint, "https://example.com");
     }
@@ -264,7 +267,10 @@ type = "openai"
         // Specified fields
         assert_eq!(config.kiln_path.to_str().unwrap(), "/partial/kiln");
         let provider = config.effective_llm_provider().unwrap();
-        assert_eq!(provider.provider_type, crucible_config::BackendType::OpenAI);
+        assert_eq!(
+            provider.provider_type,
+            crucible_core::config::BackendType::OpenAI
+        );
 
         // Default fields should still be present
         assert_eq!(config.chat_model(), "llama3.2");

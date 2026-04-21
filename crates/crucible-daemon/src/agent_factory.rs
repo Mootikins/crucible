@@ -11,9 +11,9 @@ use crate::provider::adapter_mapping::ChatClient;
 use crate::provider::genai_handle::GenaiAgentHandle;
 use crate::tools::mcp_server::CrucibleMcpServer;
 use crate::tools::DelegationContext;
-use crucible_config::credentials::resolve_copilot_oauth_token;
-use crucible_config::{BackendType, DataClassification, LlmProviderConfig};
 use crucible_core::background::BackgroundSpawner;
+use crucible_core::config::credentials::resolve_copilot_oauth_token;
+use crucible_core::config::{BackendType, DataClassification, LlmProviderConfig};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::auth::AuthHeaders;
@@ -52,7 +52,7 @@ pub struct CreateAgentFromSessionConfigParams<'a> {
     pub background_spawner: Option<Arc<dyn BackgroundSpawner>>,
     pub mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     pub acp_permission_handler: Option<PermissionRequestHandler>,
-    pub acp_config: Option<&'a crucible_config::components::acp::AcpConfig>,
+    pub acp_config: Option<&'a crucible_core::config::components::acp::AcpConfig>,
     pub knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
     pub embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
 }
@@ -257,7 +257,7 @@ fn build_enriched_prompt(
     // List knowledge bases by name
     let mut kb_names: Vec<String> = Vec::new();
     if let Some(primary) = kiln_path {
-        if let Some(cfg) = crucible_config::read_kiln_config(primary) {
+        if let Some(cfg) = crucible_core::config::read_kiln_config(primary) {
             kb_names.push(format!("{} (primary)", cfg.kiln.name));
         }
     }
@@ -266,7 +266,7 @@ fn build_enriched_prompt(
         if kiln_path.is_some_and(|p| p == kiln.as_path()) {
             continue;
         }
-        if let Some(cfg) = crucible_config::read_kiln_config(kiln) {
+        if let Some(cfg) = crucible_core::config::read_kiln_config(kiln) {
             kb_names.push(cfg.kiln.name.clone());
         }
     }

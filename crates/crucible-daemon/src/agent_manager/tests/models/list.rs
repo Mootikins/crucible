@@ -2,7 +2,7 @@ use super::super::*;
 
 #[tokio::test]
 async fn test_list_models_returns_all_providers() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
     let tmp = TempDir::new().unwrap();
@@ -80,7 +80,7 @@ async fn test_list_models_returns_all_providers() {
 
 #[tokio::test]
 async fn test_list_models_trust_excludes_cloud_for_confidential_kiln() {
-    use crucible_config::{
+    use crucible_core::config::{
         BackendType, DataClassification, LlmConfig, LlmProviderConfig, TrustLevel,
     };
     use std::collections::HashMap;
@@ -146,7 +146,7 @@ async fn test_list_models_trust_excludes_cloud_for_confidential_kiln() {
 
 #[tokio::test]
 async fn test_list_models_trust_returns_all_for_public_kiln() {
-    use crucible_config::{
+    use crucible_core::config::{
         BackendType, DataClassification, LlmConfig, LlmProviderConfig, TrustLevel,
     };
     use std::collections::HashMap;
@@ -212,7 +212,7 @@ async fn test_list_models_trust_returns_all_for_public_kiln() {
 
 #[tokio::test]
 async fn test_list_models_trust_returns_all_when_no_classification() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig, TrustLevel};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig, TrustLevel};
     use std::collections::HashMap;
 
     let tmp = TempDir::new().unwrap();
@@ -273,7 +273,7 @@ async fn test_list_models_trust_returns_all_when_no_classification() {
 
 #[tokio::test]
 async fn test_list_models_trust_includes_cloud_for_internal_kiln() {
-    use crucible_config::{
+    use crucible_core::config::{
         BackendType, DataClassification, LlmConfig, LlmProviderConfig, TrustLevel,
     };
     use std::collections::HashMap;
@@ -350,7 +350,7 @@ async fn test_list_models_trust_includes_cloud_for_internal_kiln() {
 
 #[tokio::test]
 async fn test_list_models_all_chat_backends_with_explicit_models() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
     let tmp = TempDir::new().unwrap();
@@ -468,7 +468,7 @@ async fn test_list_models_all_chat_backends_with_explicit_models() {
 
 #[tokio::test]
 async fn test_list_models_discovery_failure_returns_empty() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
     let tmp = TempDir::new().unwrap();
@@ -537,7 +537,7 @@ async fn test_list_models_discovery_failure_returns_empty() {
 
 #[tokio::test]
 async fn test_list_models_count_matches_sum() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
     let tmp = TempDir::new().unwrap();
@@ -654,7 +654,7 @@ async fn test_list_models_no_llm_config() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn test_list_models_includes_env_discovered_providers() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
@@ -708,7 +708,7 @@ async fn test_list_models_includes_env_discovered_providers() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn test_list_models_classification_filters_env_providers() {
-    use crucible_config::{
+    use crucible_core::config::{
         BackendType, DataClassification, LlmConfig, LlmProviderConfig, TrustLevel,
     };
     use std::collections::HashMap;
@@ -765,7 +765,7 @@ async fn test_list_models_classification_filters_env_providers() {
 
 #[tokio::test]
 async fn test_list_models_prefixes_with_provider_key() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
     let tmp = TempDir::new().unwrap();
@@ -826,7 +826,7 @@ async fn test_list_models_prefixes_with_provider_key() {
 
 #[tokio::test]
 async fn test_list_models_multi_provider_with_zai() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
     let tmp = TempDir::new().unwrap();
@@ -910,7 +910,7 @@ async fn test_list_models_multi_provider_with_zai() {
 
 #[tokio::test]
 async fn test_list_models_legacy_providers_config() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
     let tmp = TempDir::new().unwrap();
     let storage = Arc::new(FileSessionStorage::new());
@@ -976,7 +976,7 @@ async fn test_list_models_legacy_providers_config() {
 
 #[tokio::test]
 async fn test_list_models_both_configs() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
     let tmp = TempDir::new().unwrap();

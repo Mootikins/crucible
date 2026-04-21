@@ -23,20 +23,20 @@ mod trust;
 
 pub(super) fn build_llm_config(
     default_key: &str,
-    provider_type: crucible_config::BackendType,
+    provider_type: crucible_core::config::BackendType,
 ) -> LlmConfig {
     build_llm_config_with_trust(default_key, provider_type, None)
 }
 
 pub(super) fn build_llm_config_with_trust(
     default_key: &str,
-    provider_type: crucible_config::BackendType,
-    trust_level: Option<crucible_config::TrustLevel>,
+    provider_type: crucible_core::config::BackendType,
+    trust_level: Option<crucible_core::config::TrustLevel>,
 ) -> LlmConfig {
     let mut providers = HashMap::new();
     providers.insert(
         default_key.to_string(),
-        crucible_config::LlmProviderConfig {
+        crucible_core::config::LlmProviderConfig {
             provider_type,
             endpoint: None,
             default_model: None,

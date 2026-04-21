@@ -27,8 +27,8 @@ Simple, deterministic hashing algorithm for testing.
 **Usage:**
 
 ```rust
-use crucible_core::test_support::mocks::MockHashingAlgorithm;
-use crucible_core::hashing::algorithm::HashingAlgorithm;
+use crate::test_support::mocks::MockHashingAlgorithm;
+use crate::hashing::algorithm::HashingAlgorithm;
 
 let hasher = MockHashingAlgorithm::new();
 
@@ -64,8 +64,8 @@ In-memory storage with comprehensive operation tracking.
 **Usage:**
 
 ```rust
-use crucible_core::test_support::mocks::MockStorage;
-use crucible_core::storage::traits::BlockOperations;
+use crate::test_support::mocks::MockStorage;
+use crate::storage::traits::BlockOperations;
 
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 let storage = MockStorage::new();
@@ -118,8 +118,8 @@ Configurable content hasher with operation tracking.
 **Usage:**
 
 ```rust
-use crucible_core::test_support::mocks::MockContentHasher;
-use crucible_core::traits::change_detection::ContentHasher;
+use crate::test_support::mocks::MockContentHasher;
+use crate::traits::change_detection::ContentHasher;
 use std::path::Path;
 
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -169,9 +169,9 @@ In-memory hash storage with batch operations.
 **Usage:**
 
 ```rust
-use crucible_core::test_support::mocks::MockHashLookupStorage;
-use crucible_core::traits::change_detection::HashLookupStorage;
-use crucible_core::types::hashing::{FileHash, FileHashInfo, HashAlgorithm};
+use crate::test_support::mocks::MockHashLookupStorage;
+use crate::traits::change_detection::HashLookupStorage;
+use crate::types::hashing::{FileHash, FileHashInfo, HashAlgorithm};
 use std::time::SystemTime;
 
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -226,9 +226,9 @@ Complete change detection with performance metrics.
 **Usage:**
 
 ```rust
-use crucible_core::test_support::mocks::MockChangeDetector;
-use crucible_core::traits::change_detection::ChangeDetector;
-use crucible_core::types::hashing::{FileHash, FileHashInfo, HashAlgorithm};
+use crate::test_support::mocks::MockChangeDetector;
+use crate::traits::change_detection::ChangeDetector;
+use crate::types::hashing::{FileHash, FileHashInfo, HashAlgorithm};
 use std::time::SystemTime;
 
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {

@@ -7,7 +7,7 @@ pub(super) fn resolve_permission_mode(flag: Option<&str>) -> Result<Option<Strin
 
     match raw {
         Some(val) => {
-            let _validated: crucible_config::components::permissions::PermissionMode =
+            let _validated: crucible_core::config::components::permissions::PermissionMode =
                 val.parse().map_err(|e: String| anyhow::anyhow!("{e}"))?;
             Ok(Some(val))
         }

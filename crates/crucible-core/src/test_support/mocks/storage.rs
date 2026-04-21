@@ -51,7 +51,7 @@ struct MockStorageState {
 /// # Examples
 ///
 /// ```rust
-/// use crucible_core::test_support::mocks::MockStorage;
+/// use crate::test_support::mocks::MockStorage;
 ///
 /// let storage = MockStorage::new();
 ///

@@ -90,7 +90,7 @@ pub struct OilChatRunner {
     pub(super) resume_history: Option<Vec<serde_json::Value>>,
     pub(super) mcp_servers: Vec<McpServerDisplay>,
     pub(super) plugin_status: Vec<PluginStatusEntry>,
-    pub(super) mcp_config: Option<crucible_config::mcp::McpConfig>,
+    pub(super) mcp_config: Option<crucible_core::config::mcp::McpConfig>,
     pub(super) available_models: Vec<String>,
     pub(super) show_thinking: bool,
     pub(super) session_cmd_rx: Option<mpsc::UnboundedReceiver<SessionCommand>>,
@@ -220,7 +220,7 @@ impl OilChatRunner {
         self
     }
 
-    pub fn with_mcp_config(mut self, config: crucible_config::mcp::McpConfig) -> Self {
+    pub fn with_mcp_config(mut self, config: crucible_core::config::mcp::McpConfig) -> Self {
         self.mcp_config = Some(config);
         self
     }

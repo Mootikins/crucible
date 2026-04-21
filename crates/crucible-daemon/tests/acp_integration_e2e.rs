@@ -155,8 +155,8 @@ async fn test_tool_dispatch_executes_read_file() {
 
 #[test]
 fn test_delegation_context_construction() {
-    use crucible_config::DataClassification;
     use crucible_core::background::{BackgroundSpawner, JobError, JobId, JobInfo, JobResult};
+    use crucible_core::config::DataClassification;
     use std::path::PathBuf as StdPathBuf;
     use std::time::Duration;
 
@@ -282,8 +282,8 @@ async fn test_mcp_host_initializes() {
 
 #[tokio::test]
 async fn test_mcp_host_initializes_with_delegation_context() {
-    use crucible_config::DataClassification;
     use crucible_core::background::{BackgroundSpawner, JobError, JobId, JobInfo, JobResult};
+    use crucible_core::config::DataClassification;
     use std::path::PathBuf as StdPathBuf;
     use std::time::Duration;
 

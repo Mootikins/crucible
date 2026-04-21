@@ -52,7 +52,7 @@ pub(crate) async fn handle_session_list(
         }
 
         // Also load from crucible home if not already included
-        let home = crucible_config::crucible_home();
+        let home = crucible_core::config::crucible_home();
         if !kilns.iter().any(|(k, _, _)| k == &home) {
             let _ = km.open(&home).await;
             let home_sessions = sm

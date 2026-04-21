@@ -4,7 +4,7 @@
 //! Supports SQLite backend via feature flags.
 
 use anyhow::Result;
-use crucible_config::read_kiln_config;
+use crucible_core::config::read_kiln_config;
 use crucible_core::events::InternalSessionEvent;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -25,7 +25,7 @@ use crate::embedding::get_or_create_embedding_provider;
 use crate::file_watch_bridge::create_event_bridge;
 use crate::protocol::SessionEventMessage;
 
-use crucible_config::EmbeddingProviderConfig;
+use crucible_core::config::EmbeddingProviderConfig;
 
 /// Normalize a file path to be relative to the kiln root.
 ///
@@ -162,7 +162,7 @@ impl KilnManager {
             connections: RwLock::new(HashMap::new()),
             event_tx: None,
             enrichment_config: None,
-            max_precognition_chars: crucible_config::default_max_precognition_chars(),
+            max_precognition_chars: crucible_core::config::default_max_precognition_chars(),
         }
     }
 
@@ -512,7 +512,7 @@ impl KilnManager {
     /// Logs warnings for names not found in the registry or that fail to open.
     pub async fn open_named_kilns(
         &self,
-        registry: &HashMap<String, crucible_config::KilnEntry>,
+        registry: &HashMap<String, crucible_core::config::KilnEntry>,
         names: &[String],
     ) -> Vec<String> {
         let mut opened = Vec::new();
@@ -718,7 +718,7 @@ fn read_kiln_name(kiln_path: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_config::EmbeddingProviderConfig;
+    use crucible_core::config::EmbeddingProviderConfig;
     use tempfile::TempDir;
 
     /// Helper to get a path that doesn't exist and works cross-platform
@@ -764,7 +764,7 @@ mod tests {
         let km = KilnManager::with_event_tx(
             tx,
             Some(EmbeddingProviderConfig::mock(Some(384))),
-            crucible_config::default_max_precognition_chars(),
+            crucible_core::config::default_max_precognition_chars(),
         );
         assert!(km.enrichment_config().is_some());
     }
@@ -772,8 +772,11 @@ mod tests {
     #[tokio::test]
     async fn enrichment_config_none_skips_mismatch_check() {
         let (tx, mut rx) = broadcast::channel(16);
-        let km =
-            KilnManager::with_event_tx(tx, None, crucible_config::default_max_precognition_chars());
+        let km = KilnManager::with_event_tx(
+            tx,
+            None,
+            crucible_core::config::default_max_precognition_chars(),
+        );
         let tmp = TempDir::new().unwrap();
         let kiln_path = tmp.path().join("test_kiln");
 
@@ -1114,7 +1117,7 @@ mod tests {
 
     #[tokio::test]
     async fn open_named_kilns_opens_matching_kilns() {
-        use crucible_config::KilnEntry;
+        use crucible_core::config::KilnEntry;
 
         let tmp1 = TempDir::new().unwrap();
         let tmp2 = TempDir::new().unwrap();
@@ -1145,7 +1148,7 @@ mod tests {
 
     #[tokio::test]
     async fn open_named_kilns_skips_lazy_kilns() {
-        use crucible_config::KilnEntry;
+        use crucible_core::config::KilnEntry;
 
         let tmp = TempDir::new().unwrap();
         std::fs::create_dir_all(tmp.path().join(".crucible")).unwrap();

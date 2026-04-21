@@ -272,7 +272,7 @@ impl DiscoveryPaths {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use crucible_core::discovery::{DiscoveryPaths, DiscoveryConfig};
+    /// use crate::discovery::{DiscoveryPaths, DiscoveryConfig};
     ///
     /// let config = DiscoveryConfig {
     ///     additional_paths: vec!["~/.config/crucible/hooks".into()],

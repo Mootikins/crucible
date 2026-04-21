@@ -16,8 +16,8 @@ use crate::session_manager::{SessionError, SessionManager};
 use crate::tool_dispatch::{DaemonToolDispatcher, ToolDispatcher};
 use crate::tools::workspace::WorkspaceTools;
 use crate::trust_resolution::resolve_provider_trust;
-use crucible_config::components::permissions::{PermissionConfig, PermissionMode};
-use crucible_config::{
+use crucible_core::config::components::permissions::{PermissionConfig, PermissionMode};
+use crucible_core::config::{
     AcpConfig, AgentProfile, BackendType, DataClassification, LlmProviderConfig, PatternStore,
 };
 use crucible_core::discovery::DiscoveryPaths;
@@ -418,7 +418,7 @@ pub struct AgentManager {
     session_states: SessionStateCache,
     pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
-    llm_config: Option<crucible_config::LlmConfig>,
+    llm_config: Option<crucible_core::config::LlmConfig>,
     acp_config: Option<AcpConfig>,
     permission_config: Option<PermissionConfig>,
     plugin_loader: Option<Arc<Mutex<Option<DaemonPluginLoader>>>>,
@@ -431,7 +431,7 @@ pub struct AgentManagerParams {
     pub session_manager: Arc<SessionManager>,
     pub background_manager: Arc<BackgroundJobManager>,
     pub mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
-    pub llm_config: Option<crucible_config::LlmConfig>,
+    pub llm_config: Option<crucible_core::config::LlmConfig>,
     pub acp_config: Option<AcpConfig>,
     pub permission_config: Option<PermissionConfig>,
     pub plugin_loader: Option<Arc<Mutex<Option<DaemonPluginLoader>>>>,

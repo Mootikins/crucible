@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use crucible_config::DataClassification;
 use crucible_core::background::{BackgroundSpawner, JobError, JobId, JobInfo, JobResult};
+use crucible_core::config::DataClassification;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_daemon::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};

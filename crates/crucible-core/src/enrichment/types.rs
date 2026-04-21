@@ -168,7 +168,7 @@ impl BlockEmbedding {
 /// - Parser: Structural metrics (word count, element counts)
 /// - Enrichment: Computed metrics (complexity, reading time, analysis)
 ///
-/// For file-level metadata (name, path, tags), see `crucible_core::traits::NoteInfo`.
+/// For file-level metadata (name, path, tags), see `crate::traits::NoteInfo`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EnrichmentMetadata {
     /// Estimated reading time in minutes (computed from word count)

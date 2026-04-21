@@ -31,8 +31,8 @@ struct MockHashLookupStorageState {
 /// # Examples
 ///
 /// ```rust
-/// use crucible_core::test_support::mocks::MockHashLookupStorage;
-/// use crucible_core::traits::change_detection::HashLookupStorage;
+/// use crate::test_support::mocks::MockHashLookupStorage;
+/// use crate::traits::change_detection::HashLookupStorage;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let storage = MockHashLookupStorage::new();

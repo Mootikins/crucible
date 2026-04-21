@@ -4,7 +4,7 @@
 //! registered projects and provides CRUD operations. Projects are
 //! persisted to a JSON file in the crucible home directory.
 
-use crucible_config::{read_kiln_config, read_project_config};
+use crucible_core::config::{read_kiln_config, read_project_config};
 use crucible_core::{Project, ProjectKiln, RepositoryInfo};
 use dashmap::DashMap;
 use std::fs;

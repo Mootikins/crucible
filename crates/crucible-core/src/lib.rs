@@ -3,6 +3,7 @@ pub use uuid;
 
 pub mod agent;
 pub mod background;
+pub mod config;
 pub mod content_category;
 pub mod crucible_core;
 pub mod discovery;
@@ -34,12 +35,12 @@ pub mod traits;
 pub mod types;
 pub mod utils;
 
+pub use crate::crucible_core::CrucibleCore;
 pub use agent::{
     AgentCard, AgentCardFrontmatter, AgentCardLoader, AgentCardMatch, AgentCardMatcher,
     AgentCardQuery, AgentCardRegistry,
 };
 pub use content_category::{ContentCategory, ContentCategoryError};
-pub use crucible_core::CrucibleCore;
 pub use discovery::{DiscoveryConfig, DiscoveryPaths};
 pub use error_utils::strip_tool_error_prefix;
 pub use interaction_context::{EventPushCallback, InteractionContext};

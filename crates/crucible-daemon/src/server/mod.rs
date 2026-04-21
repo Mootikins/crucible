@@ -22,7 +22,7 @@ use crate::skills::discovery::{default_discovery_paths, FolderDiscovery};
 use crate::tools::workspace::WorkspaceTools;
 use anyhow::Result;
 use chrono::Utc;
-use crucible_config::{DataClassification, LlmConfig, TrustLevel};
+use crucible_core::config::{DataClassification, LlmConfig, TrustLevel};
 use crucible_core::events::SessionEvent;
 use crucible_core::session::{RecordingMode, SessionState};
 use crucible_lua::stubs::StubGenerator;
@@ -77,10 +77,10 @@ pub struct Server {
     plugin_watch: bool,
     auto_archive_hours: Option<u64>,
     llm_config: Option<LlmConfig>,
-    schedules: Vec<crucible_config::ScheduleEntry>,
+    schedules: Vec<crucible_core::config::ScheduleEntry>,
     #[cfg(feature = "web")]
     #[allow(dead_code)] // web server started externally by crucible-web crate
-    web_config: Option<crucible_config::WebConfig>,
+    web_config: Option<crucible_core::config::WebConfig>,
     mcp_server_manager: Arc<McpServerManager>,
 }
 
@@ -95,18 +95,18 @@ pub struct LuaSessionState {
 /// Parameters for binding the server to a Unix socket with plugin configuration.
 pub struct BindWithPluginConfigParams {
     pub path: std::path::PathBuf,
-    pub mcp_config: Option<crucible_config::McpConfig>,
+    pub mcp_config: Option<crucible_core::config::McpConfig>,
     pub plugin_config: std::collections::HashMap<String, serde_json::Value>,
     pub runtimepath: Vec<std::path::PathBuf>,
     pub plugin_watch: bool,
     pub auto_archive_hours: Option<u64>,
-    pub llm_config: Option<crucible_config::LlmConfig>,
-    pub enrichment_config: Option<crucible_config::EmbeddingProviderConfig>,
+    pub llm_config: Option<crucible_core::config::LlmConfig>,
+    pub enrichment_config: Option<crucible_core::config::EmbeddingProviderConfig>,
     pub max_precognition_chars: usize,
-    pub acp_config: Option<crucible_config::components::acp::AcpConfig>,
-    pub permission_config: Option<crucible_config::components::permissions::PermissionConfig>,
-    pub web_config: Option<crucible_config::WebConfig>,
-    pub schedules: Vec<crucible_config::ScheduleEntry>,
+    pub acp_config: Option<crucible_core::config::components::acp::AcpConfig>,
+    pub permission_config: Option<crucible_core::config::components::permissions::PermissionConfig>,
+    pub web_config: Option<crucible_core::config::WebConfig>,
+    pub schedules: Vec<crucible_core::config::ScheduleEntry>,
 }
 
 impl Server {
@@ -114,7 +114,7 @@ impl Server {
     #[allow(dead_code)] // convenience constructor used in integration tests
     pub async fn bind(
         path: &Path,
-        mcp_config: Option<&crucible_config::McpConfig>,
+        mcp_config: Option<&crucible_core::config::McpConfig>,
     ) -> Result<Self> {
         Self::bind_with_plugin_config(BindWithPluginConfigParams {
             path: path.to_path_buf(),
@@ -125,7 +125,7 @@ impl Server {
             auto_archive_hours: None,
             llm_config: None,
             enrichment_config: None,
-            max_precognition_chars: crucible_config::default_max_precognition_chars(),
+            max_precognition_chars: crucible_core::config::default_max_precognition_chars(),
             acp_config: None,
             permission_config: None,
             web_config: None,
@@ -191,7 +191,7 @@ impl Server {
         ));
         let session_manager = Arc::new(SessionManager::new());
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
-        let workspace_root = crucible_config::crucible_home();
+        let workspace_root = crucible_core::config::crucible_home();
         let workspace_tools = Arc::new(WorkspaceTools::new(&workspace_root));
         let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
             kiln_manager: kiln_manager.clone(),
@@ -206,7 +206,7 @@ impl Server {
         }));
         let subscription_manager = Arc::new(SubscriptionManager::new());
         let project_manager = Arc::new(ProjectManager::new(
-            crucible_config::crucible_home().join("projects.json"),
+            crucible_core::config::crucible_home().join("projects.json"),
         ));
         let lua_sessions = Arc::new(DashMap::new());
         let mcp_server_manager = Arc::new(McpServerManager::new());
@@ -299,7 +299,9 @@ impl Server {
                     if path.exists() {
                         match std::fs::read_to_string(path) {
                             Ok(content) => {
-                                match toml::from_str::<crucible_config::PluginsConfig>(&content) {
+                                match toml::from_str::<crucible_core::config::PluginsConfig>(
+                                    &content,
+                                ) {
                                     Ok(config) => {
                                         if let Err(e) =
                                             crate::daemon_plugins::bootstrap_plugins(&config.plugin)
@@ -360,7 +362,7 @@ impl Server {
                     if !schedule.enabled {
                         continue;
                     }
-                    let secs = match crucible_config::parse_duration_string(&schedule.every) {
+                    let secs = match crucible_core::config::parse_duration_string(&schedule.every) {
                         Some(d) if d.as_secs() > 0 => d.as_secs(),
                         Some(_) => {
                             warn!(

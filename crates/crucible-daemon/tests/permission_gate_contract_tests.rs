@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crucible_config::components::permissions::{PermissionConfig, PermissionMode};
+use crucible_core::config::components::permissions::{PermissionConfig, PermissionMode};
 use crucible_core::interaction::{PermRequest, PermissionScope};
 use crucible_core::traits::PermissionGate;
 use crucible_daemon::DaemonPermissionGate;

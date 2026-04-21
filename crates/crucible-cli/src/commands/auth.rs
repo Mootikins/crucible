@@ -5,7 +5,7 @@
 
 use anyhow::Result;
 use colored::Colorize;
-use crucible_config::credentials::{
+use crucible_core::config::credentials::{
     env_var_for_provider, CredentialSource, CredentialStore, SecretsFile,
 };
 use crucible_daemon::provider::copilot::{CopilotAuth, CopilotError};

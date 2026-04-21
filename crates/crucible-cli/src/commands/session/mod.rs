@@ -6,7 +6,7 @@ use crate::cli::SessionCommands;
 use crate::common::daemon_client;
 use crate::config::CliConfig;
 use anyhow::{anyhow, Result};
-use crucible_config::BackendType;
+use crucible_core::config::BackendType;
 use std::str::FromStr;
 
 mod acp;

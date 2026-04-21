@@ -100,7 +100,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
                     .enrichment
                     .as_ref()
                     .map(|e| e.pipeline.max_precognition_chars)
-                    .unwrap_or_else(crucible_config::default_max_precognition_chars),
+                    .unwrap_or_else(crucible_core::config::default_max_precognition_chars),
                 acp_config: Some(config.acp.clone()),
                 permission_config: None,
                 web_config: None,
@@ -380,7 +380,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
         None => {
             // First-run wizard: if no config exists and stdin is a terminal,
             // walk the user through initial setup before launching chat.
-            let config_path = crucible_config::CliAppConfig::default_config_path();
+            let config_path = crucible_core::config::CliAppConfig::default_config_path();
             if commands::wizard::is_first_run(&config_path) && std::io::stdin().is_terminal() {
                 commands::wizard::run_setup_wizard(&config_path)?;
             }

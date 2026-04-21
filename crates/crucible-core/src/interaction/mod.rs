@@ -14,7 +14,7 @@
 //! # Example
 //!
 //! ```
-//! use crucible_core::interaction::{AskRequest, AskResponse, PermRequest, PermissionScope};
+//! use crate::interaction::{AskRequest, AskResponse, PermRequest, PermissionScope};
 //!
 //! // Create a question with choices
 //! let ask = AskRequest::new("Which option?")

@@ -7,7 +7,7 @@
 //! This factory does NOT block daemon startup — providers are created on first use.
 
 use anyhow::Result;
-use crucible_config::EmbeddingProviderConfig;
+use crucible_core::config::EmbeddingProviderConfig;
 use crucible_core::enrichment::EmbeddingProvider;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;

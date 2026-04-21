@@ -10,7 +10,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use crucible_core::events::{EventSubscriber, SubscriptionId, HandlerFn};
+//! use crate::events::{EventSubscriber, SubscriptionId, HandlerFn};
 //!
 //! // Create a subscriber
 //! let mut subscriber = MySubscriber::new();
@@ -359,7 +359,7 @@ pub type SubscriptionResult<T> = Result<T, SubscriptionError>;
 /// # Example
 ///
 /// ```ignore
-/// use crucible_core::events::{EventSubscriber, EventFilter, box_handler, HandlerResult};
+/// use crate::events::{EventSubscriber, EventFilter, box_handler, HandlerResult};
 ///
 /// // Subscribe to all tool events
 /// let id = subscriber.subscribe(

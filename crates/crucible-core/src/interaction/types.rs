@@ -24,8 +24,8 @@ use super::permission::{PermRequest, PermResponse};
 /// # Example
 ///
 /// ```
-/// use crucible_core::interaction::PopupRequest;
-/// use crucible_core::types::PopupEntry;
+/// use crate::interaction::PopupRequest;
+/// use crate::types::PopupEntry;
 ///
 /// let popup = PopupRequest::new("Select a note")
 ///     .entries([
@@ -226,7 +226,7 @@ impl PanelHints {
 /// # Example
 ///
 /// ```
-/// use crucible_core::interaction::{InteractivePanel, PanelItem, PanelHints};
+/// use crate::interaction::{InteractivePanel, PanelItem, PanelHints};
 ///
 /// let panel = InteractivePanel::new("Select database")
 ///     .item(PanelItem::new("PostgreSQL").with_description("Full-featured RDBMS"))

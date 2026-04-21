@@ -26,8 +26,8 @@ use crate::hashing::algorithm::HashingAlgorithm;
 /// # Examples
 ///
 /// ```rust
-/// use crucible_core::test_support::mocks::MockHashingAlgorithm;
-/// use crucible_core::hashing::algorithm::HashingAlgorithm;
+/// use crate::test_support::mocks::MockHashingAlgorithm;
+/// use crate::hashing::algorithm::HashingAlgorithm;
 ///
 /// let hasher = MockHashingAlgorithm::new();
 ///

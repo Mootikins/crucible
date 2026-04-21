@@ -8,7 +8,7 @@ pub(crate) async fn handle_lua_init_session(
     let kiln_root = optional_param!(req, "kiln_path", as_str)
         .or_else(|| optional_param!(req, "kiln", as_str))
         .map(PathBuf::from)
-        .unwrap_or_else(crucible_config::crucible_home);
+        .unwrap_or_else(crucible_core::config::crucible_home);
 
     let mut executor = match LuaExecutor::new() {
         Ok(executor) => executor,

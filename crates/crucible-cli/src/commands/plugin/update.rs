@@ -20,7 +20,7 @@ pub async fn execute(args: UpdateArgs) -> Result<()> {
     }
 
     let content = std::fs::read_to_string(&plugins_toml)?;
-    let config: crucible_config::PluginsConfig = toml::from_str(&content)?;
+    let config: crucible_core::config::PluginsConfig = toml::from_str(&content)?;
 
     let plugins_dir = dirs::config_dir()
         .expect("already resolved config dir")

@@ -13,7 +13,7 @@
 //!
 //! In tests:
 //! ```rust,ignore
-//! use crucible_core::parser::test_utils::parse_note;
+//! use crate::parser::test_utils::parse_note;
 //!
 //! #[tokio::test]
 //! async fn test_parsing() {
@@ -42,7 +42,7 @@ use std::path::Path;
 /// # Example
 ///
 /// ```rust,ignore
-/// use crucible_core::parser::test_utils::parse_note;
+/// use crate::parser::test_utils::parse_note;
 ///
 /// #[tokio::test]
 /// async fn test_wikilinks() {

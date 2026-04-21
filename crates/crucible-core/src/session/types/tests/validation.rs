@@ -2,7 +2,7 @@ use super::super::agent::SessionAgent;
 use super::super::config::{
     default_precognition_results, validate_output, ContextStrategy, OutputValidation,
 };
-use crucible_config::BackendType;
+use crate::config::BackendType;
 use std::collections::HashMap;
 
 #[test]

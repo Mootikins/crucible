@@ -3,7 +3,7 @@ use super::*;
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn test_list_models_dynamic_discovery_openai_succeeds() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
@@ -87,7 +87,7 @@ async fn test_list_models_dynamic_discovery_openai_succeeds() {
 
 #[tokio::test]
 async fn test_list_models_dynamic_discovery_zai_succeeds() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
     let tmp = TempDir::new().unwrap();
@@ -163,7 +163,7 @@ async fn test_list_models_dynamic_discovery_zai_succeeds() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn test_list_models_dynamic_discovery_openrouter_succeeds() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
@@ -236,7 +236,7 @@ async fn test_list_models_dynamic_discovery_openrouter_succeeds() {
 
 #[tokio::test]
 async fn test_list_models_dynamic_discovery_failure_returns_empty() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
     let tmp = TempDir::new().unwrap();
@@ -308,7 +308,7 @@ async fn test_list_models_dynamic_discovery_failure_returns_empty() {
 
 #[tokio::test]
 async fn test_list_models_explicit_config_skips_dynamic_discovery() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
     let tmp = TempDir::new().unwrap();
@@ -388,7 +388,7 @@ async fn test_list_models_explicit_config_skips_dynamic_discovery() {
 
 #[tokio::test]
 async fn test_list_models_integration_multi_provider() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
     let tmp = TempDir::new().unwrap();
@@ -473,7 +473,7 @@ async fn test_list_models_integration_multi_provider() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn test_list_models_integration_dynamic_discovery() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
@@ -555,7 +555,7 @@ async fn test_list_models_integration_dynamic_discovery() {
 
 #[tokio::test]
 async fn test_list_models_integration_override_precedence() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
     let tmp = TempDir::new().unwrap();
@@ -646,7 +646,7 @@ async fn test_list_models_integration_override_precedence() {
 
 #[tokio::test]
 async fn test_list_models_integration_partial_failure() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
     let tmp = TempDir::new().unwrap();
@@ -737,7 +737,7 @@ async fn test_list_models_integration_partial_failure() {
 
 #[tokio::test]
 async fn test_openai_model_discovery_returns_all_models() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
     let tmp = TempDir::new().unwrap();
@@ -852,7 +852,7 @@ async fn test_openai_model_discovery_returns_all_models() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn test_list_models_ollama_failure() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
@@ -939,7 +939,7 @@ async fn test_list_models_ollama_failure() {
 
 #[tokio::test]
 async fn test_model_cache_hit() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
     let tmp = TempDir::new().unwrap();
     let storage = Arc::new(FileSessionStorage::new());
@@ -993,7 +993,7 @@ async fn test_model_cache_hit() {
 
 #[tokio::test]
 async fn test_model_cache_invalidation() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
     let tmp = TempDir::new().unwrap();
     let storage = Arc::new(FileSessionStorage::new());
@@ -1055,7 +1055,7 @@ async fn test_model_cache_invalidation() {
 #[tokio::test]
 
 async fn test_model_cache_does_not_cache_errors() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
     let tmp = TempDir::new().unwrap();
     let storage = Arc::new(FileSessionStorage::new());

@@ -29,7 +29,7 @@
 //! ## Example
 //!
 //! ```rust
-//! use crucible_core::hashing::normalize_block_text;
+//! use crate::hashing::normalize_block_text;
 //!
 //! let text = "  This is **bold** and ==highlighted==  ";
 //! let normalized = normalize_block_text(text);
@@ -52,7 +52,7 @@
 /// # Examples
 ///
 /// ```
-/// use crucible_core::hashing::normalize_block_text;
+/// use crate::hashing::normalize_block_text;
 ///
 /// // Whitespace normalization
 /// assert_eq!(normalize_block_text("  hello  "), "hello");

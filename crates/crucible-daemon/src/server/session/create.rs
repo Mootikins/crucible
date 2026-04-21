@@ -2,7 +2,7 @@ use super::super::*;
 use crate::optional_param;
 
 use super::spawn_setup_task;
-use crucible_config::McpConfig;
+use crucible_core::config::McpConfig;
 use crucible_core::session::SessionType;
 
 #[allow(clippy::too_many_arguments)]
@@ -30,7 +30,7 @@ pub(crate) async fn handle_session_create(
 
     let kiln = optional_param!(req, "kiln", as_str)
         .map(PathBuf::from)
-        .unwrap_or_else(crucible_config::crucible_home);
+        .unwrap_or_else(crucible_core::config::crucible_home);
 
     let workspace = optional_param!(req, "workspace", as_str).map(PathBuf::from);
 
@@ -165,7 +165,7 @@ pub(crate) fn resolve_provider_trust_level_for_create(
     }
 
     if let Some(provider_name) = optional_param!(req, "provider", as_str) {
-        if let Ok(backend) = provider_name.parse::<crucible_config::BackendType>() {
+        if let Ok(backend) = provider_name.parse::<crucible_core::config::BackendType>() {
             return backend.default_trust_level();
         }
     }

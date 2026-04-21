@@ -1,7 +1,7 @@
 //! Bridge from ACP permission requests to the daemon's permission system.
 
 use async_trait::async_trait;
-use crucible_config::components::permissions::{
+use crucible_core::config::components::permissions::{
     PermissionConfig, PermissionDecision, PermissionEngine,
 };
 use crucible_core::interaction::{PermAction, PermRequest, PermResponse};
@@ -156,7 +156,7 @@ mod tests {
 
     #[tokio::test]
     async fn permission_override_allow_approves_ask_tools() {
-        use crucible_config::components::permissions::{PermissionConfig, PermissionMode};
+        use crucible_core::config::components::permissions::{PermissionConfig, PermissionMode};
         let config = PermissionConfig {
             default: PermissionMode::Allow,
             ..Default::default()
@@ -172,7 +172,7 @@ mod tests {
 
     #[tokio::test]
     async fn permission_override_deny_blocks_all_tools() {
-        use crucible_config::components::permissions::{PermissionConfig, PermissionMode};
+        use crucible_core::config::components::permissions::{PermissionConfig, PermissionMode};
         let config = PermissionConfig {
             default: PermissionMode::Deny,
             ..Default::default()

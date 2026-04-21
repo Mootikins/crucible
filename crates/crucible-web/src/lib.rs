@@ -9,7 +9,7 @@ mod error;
 mod events;
 mod middleware;
 
-pub use crucible_config::WebConfig;
+pub use crucible_core::config::WebConfig;
 pub use error::{Result, WebError};
 pub use events::ChatEvent;
 pub use server::start_server;

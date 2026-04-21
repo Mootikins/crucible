@@ -667,7 +667,9 @@ pub fn default_daemon_plugin_paths() -> Vec<(PathBuf, PluginSource)> {
 /// Reads `PluginEntry` declarations (typically from `plugins.toml`) and
 /// shallow-clones repos into `~/.config/crucible/plugins/<name>/` when
 /// the target directory does not already exist.
-pub async fn bootstrap_plugins(entries: &[crucible_config::PluginEntry]) -> anyhow::Result<()> {
+pub async fn bootstrap_plugins(
+    entries: &[crucible_core::config::PluginEntry],
+) -> anyhow::Result<()> {
     let plugins_dir = dirs::config_dir()
         .ok_or_else(|| anyhow::anyhow!("could not determine config directory"))?
         .join("crucible")
@@ -961,7 +963,7 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         // Override config dir isn't feasible, but we can verify the function
         // doesn't attempt to clone when entry is disabled
-        let entries = vec![crucible_config::PluginEntry {
+        let entries = vec![crucible_core::config::PluginEntry {
             url: "user/disabled-plugin".to_string(),
             branch: None,
             pin: None,

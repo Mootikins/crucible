@@ -16,8 +16,8 @@
 //! # Example
 //!
 //! ```
-//! use crucible_core::storage::{InMemoryGraph, GraphView, NoteRecord};
-//! use crucible_core::parser::BlockHash;
+//! use crate::storage::{InMemoryGraph, GraphView, NoteRecord};
+//! use crate::parser::BlockHash;
 //!
 //! // Create notes with links
 //! let notes = vec![
@@ -76,8 +76,8 @@ impl InMemoryGraph {
     /// # Example
     ///
     /// ```
-    /// use crucible_core::storage::{InMemoryGraph, NoteRecord};
-    /// use crucible_core::parser::BlockHash;
+    /// use crate::storage::{InMemoryGraph, NoteRecord};
+    /// use crate::parser::BlockHash;
     ///
     /// let notes = vec![
     ///     NoteRecord::new("a.md", BlockHash::zero())

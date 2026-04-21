@@ -12,7 +12,7 @@
 //! # Examples
 //!
 //! ```rust
-//! use crucible_core::hashing::algorithm::{HashingAlgorithm, Blake3Algorithm, Sha256Algorithm};
+//! use crate::hashing::algorithm::{HashingAlgorithm, Blake3Algorithm, Sha256Algorithm};
 //!
 //! // Use BLAKE3 (recommended for performance)
 //! let hasher = Blake3Algorithm;

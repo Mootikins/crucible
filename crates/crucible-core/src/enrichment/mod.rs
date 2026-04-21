@@ -10,7 +10,7 @@ pub mod types;
 pub use embedding::{CachedEmbedding, EmbeddingProvider};
 pub use types::{BlockEmbedding, EnrichedNote, EnrichmentMetadata};
 
-pub use crucible_config::{
+pub use crate::config::{
     CohereConfig, CustomConfig, EmbeddingProviderConfig, EnrichmentConfig, FastEmbedConfig,
     MockConfig, OllamaConfig, OpenAIConfig, PipelineConfig, VertexAIConfig,
 };

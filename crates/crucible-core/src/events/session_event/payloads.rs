@@ -14,7 +14,7 @@ use std::path::PathBuf;
 /// # Example
 ///
 /// ```ignore
-/// use crucible_core::events::{SessionEvent, NotePayload};
+/// use crate::events::{SessionEvent, NotePayload};
 /// use std::path::PathBuf;
 ///
 /// let payload = NotePayload::new("notes/test.md", "Test Note")

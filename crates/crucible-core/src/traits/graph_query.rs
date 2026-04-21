@@ -38,7 +38,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use crucible_core::traits::GraphQueryExecutor;
+//! use crate::traits::GraphQueryExecutor;
 //!
 //! async fn search_graph(executor: &dyn GraphQueryExecutor) {
 //!     // Find all notes linked from Index

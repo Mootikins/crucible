@@ -69,7 +69,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
                 .map_err(|_| format!("Invalid session type: {}", session_type))?;
             let kiln_path = kiln
                 .map(PathBuf::from)
-                .unwrap_or_else(crucible_config::crucible_home);
+                .unwrap_or_else(crucible_core::config::crucible_home);
             let connected: Vec<PathBuf> = connected_kilns.into_iter().map(PathBuf::from).collect();
             let session = sm
                 .create_session(st, kiln_path, workspace.map(PathBuf::from), connected, None)

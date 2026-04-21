@@ -19,7 +19,7 @@
 //! ## Usage
 //!
 //! ```rust,ignore
-//! use crucible_core::events::EventRing;
+//! use crate::events::EventRing;
 //!
 //! let ring: EventRing<String> = EventRing::new(1024);
 //!

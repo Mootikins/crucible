@@ -64,7 +64,7 @@ impl std::fmt::Display for NoteChangeType {
 /// # Example
 ///
 /// ```ignore
-/// use crucible_core::events::{SessionEvent, FileChangeKind};
+/// use crate::events::{SessionEvent, FileChangeKind};
 /// use std::path::PathBuf;
 ///
 /// let event = SessionEvent::FileChanged {
@@ -100,7 +100,7 @@ impl std::fmt::Display for FileChangeKind {
 /// # Example
 ///
 /// ```ignore
-/// use crucible_core::events::{SessionEvent, InputType};
+/// use crate::events::{SessionEvent, InputType};
 ///
 /// let event = SessionEvent::AwaitingInput {
 ///     input_type: InputType::Approval,
@@ -139,7 +139,7 @@ impl std::fmt::Display for InputType {
 /// # Example
 ///
 /// ```ignore
-/// use crucible_core::events::{SessionEvent, EntityType};
+/// use crate::events::{SessionEvent, EntityType};
 ///
 /// let event = SessionEvent::EntityStored {
 ///     entity_id: "note:my-note".into(),
@@ -189,7 +189,7 @@ impl std::fmt::Display for EntityType {
 /// # Example
 ///
 /// ```
-/// use crucible_core::events::Priority;
+/// use crate::events::Priority;
 ///
 /// assert!(Priority::Critical > Priority::High);
 /// assert!(Priority::High > Priority::Normal);
@@ -225,7 +225,7 @@ impl std::fmt::Display for Priority {
 /// Provider of a discovered tool in session events.
 ///
 /// Identifies which system provided a tool (Lua script, MCP server,
-/// or built-in). This is distinct from `crucible_core::types::ToolSource` which
+/// or built-in). This is distinct from `crate::types::ToolSource` which
 /// is used for tool indexing and metadata categorization.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]

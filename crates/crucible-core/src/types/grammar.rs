@@ -6,7 +6,7 @@
 //! ## Usage
 //!
 //! ```rust
-//! use crucible_core::types::grammar::{Grammar, presets};
+//! use crate::types::grammar::{Grammar, presets};
 //!
 //! // Use a preset grammar for tool calling
 //! let grammar = presets::simple_tool_call();

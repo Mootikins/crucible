@@ -49,7 +49,7 @@ impl AgentManager {
 #[cfg(test)]
 mod permission_override_tests {
     use super::permission::resolve_effective_permission_config;
-    use crucible_config::components::permissions::{PermissionConfig, PermissionMode};
+    use crucible_core::config::components::permissions::{PermissionConfig, PermissionMode};
 
     fn base_config_with_ask_rule() -> PermissionConfig {
         PermissionConfig {

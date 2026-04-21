@@ -26,7 +26,7 @@
 //! ## Usage
 //!
 //! ```rust,ignore
-//! use crucible_core::events::SessionEvent;
+//! use crate::events::SessionEvent;
 //!
 //! let event = SessionEvent::MessageReceived {
 //!     content: "Hello!".into(),

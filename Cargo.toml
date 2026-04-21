@@ -6,7 +6,6 @@ members = [
 
     "crates/crucible-cli",
 
-    "crates/crucible-config",
     "crates/crucible-lua",
     "crates/crucible-web",
     "crates/crucible-daemon",
@@ -125,7 +124,6 @@ crossterm = { version = "0.29", features = ["event-stream"] }
 
 # Internal workspace crates
 crucible-core = { path = "crates/crucible-core" }
-crucible-config = { path = "crates/crucible-config" }
 
 crucible-lua = { path = "crates/crucible-lua" }
 crucible-web = { path = "crates/crucible-web" }

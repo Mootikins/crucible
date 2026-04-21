@@ -6,7 +6,7 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use crucible_core::test_support::EnvVarGuard;
+//! use crate::test_support::EnvVarGuard;
 //!
 //! #[test]
 //! fn test_with_env_var() {

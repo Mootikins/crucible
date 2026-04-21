@@ -21,8 +21,8 @@
 //! ## Mock Hashing Algorithm
 //!
 //! ```rust
-//! use crucible_core::test_support::mocks::MockHashingAlgorithm;
-//! use crucible_core::hashing::algorithm::HashingAlgorithm;
+//! use crate::test_support::mocks::MockHashingAlgorithm;
+//! use crate::hashing::algorithm::HashingAlgorithm;
 //!
 //! let hasher = MockHashingAlgorithm::new();
 //! let hash = hasher.hash(b"test data");
@@ -35,7 +35,7 @@
 //! ## Mock Storage
 //!
 //! ```rust
-//! use crucible_core::test_support::mocks::MockStorage;
+//! use crate::test_support::mocks::MockStorage;
 //!
 //! let storage = MockStorage::new();
 //!
@@ -50,8 +50,8 @@
 //! ## Mock Content Hasher
 //!
 //! ```rust
-//! use crucible_core::test_support::mocks::MockContentHasher;
-//! use crucible_core::traits::change_detection::ContentHasher;
+//! use crate::test_support::mocks::MockContentHasher;
+//! use crate::traits::change_detection::ContentHasher;
 //! use std::path::Path;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {

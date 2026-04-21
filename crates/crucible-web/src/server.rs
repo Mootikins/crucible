@@ -16,7 +16,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
-pub use crucible_config::{CliAppConfig, WebConfig};
+pub use crucible_core::config::{CliAppConfig, WebConfig};
 
 const MAX_BODY_SIZE_10MB: usize = 10 * 1024 * 1024;
 

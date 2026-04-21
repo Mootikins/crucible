@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use crucible_config::{AcpConfig, AgentProfile, BackendType, DelegationConfig};
 use crucible_core::background::{JobResult, JobStatus, SubagentBlockingConfig};
+use crucible_core::config::{AcpConfig, AgentProfile, BackendType, DelegationConfig};
 use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
 use crucible_core::traits::chat::{AgentHandle, ChatChunk};
 use crucible_core::traits::ChatResult;

@@ -12,7 +12,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use crucible_core::events::{Reactor, LoggingHandler, MetricsHandler};
+//! use crate::events::{Reactor, LoggingHandler, MetricsHandler};
 //!
 //! let mut reactor = Reactor::new();
 //!

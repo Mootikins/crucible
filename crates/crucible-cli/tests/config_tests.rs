@@ -3,7 +3,7 @@
 #![allow(clippy::field_reassign_with_default)]
 
 use crucible_cli::config::CliConfig;
-use crucible_config::BackendType;
+use crucible_core::config::BackendType;
 use crucible_core::test_support::EnvVarGuard;
 use serial_test::serial;
 use std::fs;

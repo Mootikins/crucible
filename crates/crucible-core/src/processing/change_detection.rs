@@ -13,7 +13,7 @@
 //! # Example
 //!
 //! ```rust
-//! use crucible_core::processing::{ChangeDetectionStore, FileState, InMemoryChangeDetectionStore};
+//! use crate::processing::{ChangeDetectionStore, FileState, InMemoryChangeDetectionStore};
 //! use std::path::Path;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -125,7 +125,7 @@ pub trait ChangeDetectionStore: Send + Sync {
     /// # Example
     ///
     /// ```rust
-    /// # use crucible_core::processing::{ChangeDetectionStore, InMemoryChangeDetectionStore};
+    /// # use crate::processing::{ChangeDetectionStore, InMemoryChangeDetectionStore};
     /// # use std::path::Path;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let store = InMemoryChangeDetectionStore::new();
@@ -157,7 +157,7 @@ pub trait ChangeDetectionStore: Send + Sync {
     /// # Example
     ///
     /// ```rust
-    /// # use crucible_core::processing::{ChangeDetectionStore, FileState, InMemoryChangeDetectionStore};
+    /// # use crate::processing::{ChangeDetectionStore, FileState, InMemoryChangeDetectionStore};
     /// # use std::path::Path;
     /// # use std::time::SystemTime;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -217,7 +217,7 @@ pub trait ChangeDetectionStore: Send + Sync {
 /// # Example
 ///
 /// ```rust
-/// use crucible_core::processing::{ChangeDetectionStore, FileState, InMemoryChangeDetectionStore};
+/// use crate::processing::{ChangeDetectionStore, FileState, InMemoryChangeDetectionStore};
 /// use std::path::Path;
 /// use std::time::SystemTime;
 ///

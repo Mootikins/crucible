@@ -5,7 +5,7 @@ use axum::{
     routing::{get, post, put},
     Json, Router,
 };
-use crucible_config::BackendType;
+use crucible_core::config::BackendType;
 use crucible_core::session::{OutputValidation, SessionAgent};
 use crucible_daemon::agent_manager::providers::ProviderInfo;
 use serde::{Deserialize, Serialize};
@@ -773,7 +773,7 @@ async fn export_session(
     let kiln = std::path::Path::new(kiln_str);
 
     // Build session directory path (mirrors FileSessionStorage::session_dir_by_id)
-    let session_dir = if crucible_config::is_crucible_home(kiln) {
+    let session_dir = if crucible_core::config::is_crucible_home(kiln) {
         kiln.join("sessions").join(&id)
     } else {
         kiln.join(".crucible").join("sessions").join(&id)

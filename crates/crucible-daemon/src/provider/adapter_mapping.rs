@@ -3,7 +3,7 @@
 //! This module provides explicit, exhaustive mappings from Crucible's backend
 //! configuration to genai's adapter types. All mappings are explicit (no auto-detection).
 
-use crucible_config::BackendType;
+use crucible_core::config::BackendType;
 use genai::adapter::AdapterKind;
 use genai::resolver::{AuthData, AuthResolver, Endpoint, ServiceTargetResolver};
 use genai::ModelIden;
@@ -95,7 +95,7 @@ impl ChatClient {
     /// # Panics
     ///
     /// Panics if the backend type is not supported for chat (e.g., FastEmbed, Burn, Mock).
-    pub fn new(config: &crucible_config::LlmProviderConfig) -> Self {
+    pub fn new(config: &crucible_core::config::LlmProviderConfig) -> Self {
         let _adapter =
             backend_to_adapter(&config.provider_type).expect("Backend does not support chat");
 
@@ -193,7 +193,7 @@ impl ChatClient {
 /// # Deprecated
 ///
 /// Use `ChatClient::new()` instead.
-pub fn build_genai_client(config: &crucible_config::LlmProviderConfig) -> genai::Client {
+pub fn build_genai_client(config: &crucible_core::config::LlmProviderConfig) -> genai::Client {
     ChatClient::new(config).client
 }
 
@@ -418,7 +418,7 @@ mod tests {
 
     #[test]
     fn test_build_genai_client_ollama() {
-        let config = crucible_config::LlmProviderConfig {
+        let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::Ollama,
             endpoint: Some("http://localhost:11434".to_string()),
             default_model: Some("llama3.2".to_string()),
@@ -437,7 +437,7 @@ mod tests {
 
     #[test]
     fn test_build_genai_client_openai_with_api_key() {
-        let config = crucible_config::LlmProviderConfig {
+        let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::OpenAI,
             endpoint: None,
             default_model: Some("gpt-4o".to_string()),
@@ -456,7 +456,7 @@ mod tests {
 
     #[test]
     fn test_build_genai_client_anthropic() {
-        let config = crucible_config::LlmProviderConfig {
+        let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::Anthropic,
             endpoint: None,
             default_model: Some("claude-3-5-sonnet-20241022".to_string()),
@@ -475,7 +475,7 @@ mod tests {
 
     #[test]
     fn test_build_genai_client_github_copilot_with_endpoint() {
-        let config = crucible_config::LlmProviderConfig {
+        let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::GitHubCopilot,
             endpoint: Some("https://api.githubcopilot.com".to_string()),
             default_model: Some("gpt-4o".to_string()),
@@ -494,7 +494,7 @@ mod tests {
 
     #[test]
     fn test_build_genai_client_openrouter_with_custom_endpoint() {
-        let config = crucible_config::LlmProviderConfig {
+        let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::OpenRouter,
             endpoint: Some("https://openrouter.ai/api/v1".to_string()),
             default_model: Some("openai/gpt-4o".to_string()),
@@ -513,7 +513,7 @@ mod tests {
 
     #[test]
     fn test_build_genai_client_zai_with_custom_endpoint() {
-        let config = crucible_config::LlmProviderConfig {
+        let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::ZAI,
             endpoint: Some("https://api.z.ai/api/coding/paas/v4".to_string()),
             default_model: Some("GLM-4.7".to_string()),
@@ -532,7 +532,7 @@ mod tests {
 
     #[test]
     fn test_build_genai_client_custom_with_endpoint() {
-        let config = crucible_config::LlmProviderConfig {
+        let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::Custom,
             endpoint: Some("http://custom-api.example.com/v1".to_string()),
             default_model: Some("my-custom-model".to_string()),
@@ -552,7 +552,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Backend does not support chat")]
     fn test_build_genai_client_fastembed_panics() {
-        let config = crucible_config::LlmProviderConfig {
+        let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::FastEmbed,
             endpoint: None,
             default_model: None,
@@ -571,7 +571,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Backend does not support chat")]
     fn test_build_genai_client_burn_panics() {
-        let config = crucible_config::LlmProviderConfig {
+        let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::Burn,
             endpoint: None,
             default_model: None,
@@ -590,7 +590,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Backend does not support chat")]
     fn test_build_genai_client_mock_panics() {
-        let config = crucible_config::LlmProviderConfig {
+        let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::Mock,
             endpoint: None,
             default_model: None,
@@ -731,7 +731,7 @@ mod tests {
     #[test]
     fn endpoint_auto_fix_appends_v1() {
         // Ollama-specific: auto-add /v1/ if missing
-        let config = crucible_config::LlmProviderConfig {
+        let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::Ollama,
             endpoint: Some("https://llm.example.com".to_string()),
             default_model: Some("llama3.2".to_string()),
@@ -771,7 +771,7 @@ mod tests {
     #[test]
     fn openai_endpoint_gets_trailing_slash() {
         // Reproduces the bug: type = "openai", endpoint without trailing slash
-        let config = crucible_config::LlmProviderConfig {
+        let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::OpenAI,
             endpoint: Some("https://llm.example.com/v1".to_string()),
             default_model: Some("glm-4.7-flash-iq4".to_string()),
@@ -790,7 +790,7 @@ mod tests {
 
     #[test]
     fn chat_client_model_iden_ollama() {
-        let config = crucible_config::LlmProviderConfig {
+        let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::Ollama,
             endpoint: Some("http://localhost:11434".to_string()),
             default_model: Some("llama3.2".to_string()),
@@ -813,7 +813,7 @@ mod tests {
 
     #[test]
     fn chat_client_model_iden_openai() {
-        let config = crucible_config::LlmProviderConfig {
+        let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::OpenAI,
             endpoint: None,
             default_model: Some("gpt-4o".to_string()),

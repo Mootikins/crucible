@@ -40,8 +40,11 @@ markdown-it = { workspace = true }
 # NOTE: crucible-merkle dependency REMOVED - Would create circular dependency
 # Core defines abstractions, merkle depends on core for parser types
 
-# Configuration management (for enrichment config types)
-crucible-config = { path = "../crucible-config" }
+# Absorbed from crucible-config (now core::config module)
+schemars = { workspace = true }
+globset = { workspace = true }
+num_cpus = "1.17"
+keyring = { version = "3.6", optional = true }
 
 # File watching (used by processing module)
 notify = { workspace = true }
@@ -65,10 +68,15 @@ shellexpand = "3.1"
 nucleo-matcher = "0.3"
 
 [features]
-default = ["core", "markdown-it-parser"]
+default = ["core", "markdown-it-parser", "yaml", "toml"]
 core = []
 test-utils = []
 markdown-it-parser = []
+
+# Absorbed from crucible-config: format toggles and optional keyring backend
+yaml = []
+toml = []
+keyring = ["dep:keyring"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "full"] }

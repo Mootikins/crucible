@@ -182,7 +182,7 @@ async fn test_precognition_complete_event_emitted_when_enrichment_runs() {
 
     let agent_manager = create_test_agent_manager_with_enrichment(
         session_manager.clone(),
-        crucible_config::EmbeddingProviderConfig::mock(Some(384)),
+        crucible_core::config::EmbeddingProviderConfig::mock(Some(384)),
     );
     let mut agent = test_agent();
     agent.precognition_enabled = true;
@@ -258,7 +258,7 @@ async fn test_precognition_enriched_content_reaches_agent() {
         .await
         .unwrap();
 
-    let enrichment_config = crucible_config::EmbeddingProviderConfig::mock(Some(384));
+    let enrichment_config = crucible_core::config::EmbeddingProviderConfig::mock(Some(384));
     let agent_manager =
         create_test_agent_manager_with_enrichment(session_manager.clone(), enrichment_config);
 
@@ -389,7 +389,7 @@ async fn test_precognition_emits_note_info_in_event() {
         .await
         .unwrap();
 
-    let enrichment_config = crucible_config::EmbeddingProviderConfig::mock(Some(384));
+    let enrichment_config = crucible_core::config::EmbeddingProviderConfig::mock(Some(384));
     let agent_manager =
         create_test_agent_manager_with_enrichment(session_manager.clone(), enrichment_config);
 

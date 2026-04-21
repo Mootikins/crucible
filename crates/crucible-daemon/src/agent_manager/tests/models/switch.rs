@@ -2,7 +2,7 @@ use super::super::*;
 
 #[tokio::test]
 async fn test_switch_model_zai_llm_config() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
     let tmp = TempDir::new().unwrap();
     let storage = Arc::new(FileSessionStorage::new());
@@ -70,7 +70,7 @@ async fn test_switch_model_zai_llm_config() {
 
 #[tokio::test]
 async fn test_switch_model_legacy_still_works() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
     let tmp = TempDir::new().unwrap();
     let storage = Arc::new(FileSessionStorage::new());
@@ -141,7 +141,7 @@ async fn test_switch_model_legacy_still_works() {
 
 #[tokio::test]
 async fn test_switch_model_llm_config_invalidates_cache() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
     let tmp = TempDir::new().unwrap();
     let storage = Arc::new(FileSessionStorage::new());
@@ -283,7 +283,7 @@ async fn test_switch_model_org_slash_model_format() {
 
 #[tokio::test]
 async fn test_switch_model_to_zai_provider() {
-    use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
     let tmp = TempDir::new().unwrap();

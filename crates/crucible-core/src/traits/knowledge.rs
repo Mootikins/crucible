@@ -62,7 +62,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Contains basic file metadata like name, path, and timestamps.
 /// For computed enrichment metadata (reading time, complexity), see
-/// `crucible_core::enrichment::types::EnrichmentMetadata`.
+/// `crate::enrichment::types::EnrichmentMetadata`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NoteInfo {
     pub name: String,

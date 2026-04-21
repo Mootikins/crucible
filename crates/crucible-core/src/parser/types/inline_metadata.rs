@@ -63,10 +63,10 @@ impl InlineMetadata {
 /// # Examples
 ///
 /// ```
-/// use crucible_core::parser::types::InlineMetadata;
+/// use crate::parser::types::InlineMetadata;
 ///
 /// let text = "task [id:: 1.1] [status:: done]";
-/// let fields = crucible_core::parser::types::extract_inline_metadata(text);
+/// let fields = crate::parser::types::extract_inline_metadata(text);
 /// assert_eq!(fields.len(), 2);
 /// assert_eq!(fields[0].key, "id");
 /// assert_eq!(fields[1].key, "status");

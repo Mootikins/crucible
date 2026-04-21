@@ -11,7 +11,7 @@
 use crate::session_manager::SessionError;
 use async_trait::async_trait;
 use chrono::Utc;
-use crucible_config::is_crucible_home;
+use crucible_core::config::is_crucible_home;
 use crucible_core::session::{Session, SessionSummary};
 use std::path::Path;
 use tokio::fs;
@@ -720,7 +720,7 @@ not json at all
     #[tokio::test]
     async fn test_crucible_home_avoids_double_nesting() {
         // When kiln IS crucible_home, sessions go to {kiln}/sessions/ (no .crucible prefix)
-        let home = crucible_config::crucible_home();
+        let home = crucible_core::config::crucible_home();
         let base = FileSessionStorage::sessions_base(&home);
         // Should be {home}/sessions, NOT {home}/.crucible/sessions
         assert_eq!(base, home.join("sessions"));
@@ -745,7 +745,7 @@ not json at all
     #[tokio::test]
     async fn test_session_storage_save_load_with_crucible_home() {
         // Use the real crucible_home path for this test
-        let home = crucible_config::crucible_home();
+        let home = crucible_core::config::crucible_home();
         let storage = FileSessionStorage::new();
 
         let session = Session::new(SessionType::Chat, home.clone());

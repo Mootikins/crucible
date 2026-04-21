@@ -65,8 +65,8 @@ impl<A: HashingAlgorithm> FileHasher<A> {
     /// # Examples
     ///
     /// ```rust
-    /// use crucible_core::hashing::file_hasher::FileHasher;
-    /// use crucible_core::hashing::algorithm::Blake3Algorithm;
+    /// use crate::hashing::file_hasher::FileHasher;
+    /// use crate::hashing::algorithm::Blake3Algorithm;
     ///
     /// let hasher = FileHasher::new(Blake3Algorithm);
     /// ```
@@ -94,8 +94,8 @@ impl<A: HashingAlgorithm> FileHasher<A> {
     /// # Examples
     ///
     /// ```rust
-    /// use crucible_core::hashing::file_hasher::FileHasher;
-    /// use crucible_core::hashing::algorithm::Blake3Algorithm;
+    /// use crate::hashing::file_hasher::FileHasher;
+    /// use crate::hashing::algorithm::Blake3Algorithm;
     ///
     /// let hasher = FileHasher::with_buffer_size(Blake3Algorithm, 128 * 1024);
     /// ```

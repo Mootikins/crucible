@@ -9,7 +9,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use colored::Colorize;
-use crucible_config::credentials::{CredentialStore, SecretsFile};
+use crucible_core::config::credentials::{CredentialStore, SecretsFile};
 
 /// Returns `true` when the global config file does not yet exist.
 pub fn is_first_run(config_path: &Path) -> bool {
@@ -195,7 +195,7 @@ mod tests {
     #[test]
     fn generate_initial_config_deserializes_as_cli_app_config() {
         let config = generate_initial_config("anthropic", "fastembed", "~/vault");
-        let parsed: crucible_config::CliAppConfig = toml::from_str(&config).unwrap();
+        let parsed: crucible_core::config::CliAppConfig = toml::from_str(&config).unwrap();
         assert_eq!(parsed.default_kiln.as_deref(), Some("default"));
         assert_eq!(parsed.kilns.len(), 1);
     }

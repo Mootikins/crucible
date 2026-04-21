@@ -20,7 +20,7 @@
 //! `tool_count: usize`); the daemon is the authoritative source so it
 //! publishes the richer event-stream shape.
 
-use crucible_config::McpConfig;
+use crucible_core::config::McpConfig;
 use crucible_core::types::mcp_status::McpServerInfo;
 
 /// Project an [`McpConfig`] into a list of [`McpServerInfo`] entries.
@@ -47,7 +47,7 @@ pub fn read_mcp_servers(config: Option<&McpConfig>) -> Vec<McpServerInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_config::mcp::{TransportType, UpstreamServerConfig};
+    use crucible_core::config::mcp::{TransportType, UpstreamServerConfig};
 
     fn stdio_server(name: &str, prefix: &str) -> UpstreamServerConfig {
         UpstreamServerConfig {

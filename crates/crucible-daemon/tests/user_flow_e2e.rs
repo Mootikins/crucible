@@ -9,7 +9,7 @@
 //! the daemon returns a provider error which is expected and explicitly asserted.
 
 use anyhow::Result;
-use crucible_config::BackendType;
+use crucible_core::config::BackendType;
 use crucible_core::session::{OutputValidation, SessionAgent};
 use crucible_daemon::{DaemonClient, Server};
 use std::path::PathBuf;

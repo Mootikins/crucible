@@ -1,6 +1,6 @@
 use super::super::*;
 use super::DEFAULT_MAX_TOOL_DEPTH;
-use crucible_config::components::permissions::PermissionMode;
+use crucible_core::config::components::permissions::PermissionMode;
 
 impl AgentManager {
     pub async fn send_message(

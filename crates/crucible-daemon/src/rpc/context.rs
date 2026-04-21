@@ -7,7 +7,7 @@ use crate::mcp_server::McpServerManager;
 use crate::protocol::SessionEventMessage;
 use crate::session_manager::SessionManager;
 use crate::subscription::SubscriptionManager;
-use crucible_config::{LlmConfig, McpConfig};
+use crucible_core::config::{LlmConfig, McpConfig};
 use dashmap::DashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};

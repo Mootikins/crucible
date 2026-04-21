@@ -24,8 +24,8 @@ use crate::acp::client::{ClientConfig, CrucibleAcpClient, PermissionRequestHandl
 use crate::acp::streaming::{channel_callback, StreamingChunk};
 use crate::mcp_host::InProcessMcpHost;
 use crate::tools::DelegationContext;
-use crucible_config::{AcpConfig, DataClassification, DelegationConfig};
 use crucible_core::background::BackgroundSpawner;
+use crucible_core::config::{AcpConfig, DataClassification, DelegationConfig};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::{
@@ -736,7 +736,7 @@ fn resolve_agent_command(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_config::BackendType;
+    use crucible_core::config::BackendType;
     use std::collections::HashMap;
 
     fn test_session_agent(agent_name: &str) -> SessionAgent {
@@ -815,7 +815,7 @@ mod tests {
         let config = test_session_agent("opencode");
         let mut acp_config = AcpConfig::default();
 
-        let profile = crucible_config::AgentProfile {
+        let profile = crucible_core::config::AgentProfile {
             command: Some("/usr/local/bin/opencode".to_string()),
             ..Default::default()
         };

@@ -1,6 +1,6 @@
 use crate::support::{MockStdioAgentConfig, ThreadedMockAgent};
 use agent_client_protocol::PromptRequest;
-use crucible_config::AcpConfig;
+use crucible_core::config::AcpConfig;
 use crucible_core::test_support::EnvVarGuard;
 use crucible_daemon::acp::client::{ClientConfig, CrucibleAcpClient};
 use crucible_daemon::acp::discovery::{discover_agent, reset_agent_cache};

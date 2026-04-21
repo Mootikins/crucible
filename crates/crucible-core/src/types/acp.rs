@@ -52,7 +52,7 @@ pub mod schema {
 /// # Example
 ///
 /// ```rust
-/// use crucible_core::types::acp::SessionId;
+/// use crate::types::acp::SessionId;
 ///
 /// let session = SessionId::new();
 /// println!("Session: {}", session);
@@ -120,7 +120,7 @@ impl From<SessionId> for Uuid {
 ///
 /// ```rust
 /// use std::path::PathBuf;
-/// use crucible_core::SessionConfig;
+/// use crate::SessionConfig;
 ///
 /// let config = SessionConfig::new(PathBuf::from("/workspace"))
 ///     .with_mode_id("plan")
@@ -259,7 +259,7 @@ impl ToolInvocation {
 /// # Example
 ///
 /// ```rust
-/// use crucible_core::types::acp::ToolCallInfo;
+/// use crate::types::acp::ToolCallInfo;
 ///
 /// let tool = ToolCallInfo::new("semantic_search")
 ///     .with_id("call-123")
@@ -325,7 +325,7 @@ impl ToolCallInfo {
 /// # Example
 ///
 /// ```rust
-/// use crucible_core::types::acp::FileDiff;
+/// use crate::types::acp::FileDiff;
 ///
 /// let diff = FileDiff::new("/path/to/file.rs", "fn new() {}")
 ///     .with_old_content("fn old() {}");

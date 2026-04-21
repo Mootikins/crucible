@@ -58,8 +58,8 @@ impl Default for MockCompletionBackendBehavior {
 /// # Example
 ///
 /// ```rust
-/// use crucible_core::test_support::mocks::MockCompletionBackend;
-/// use crucible_core::traits::{BackendCompletionChunk, BackendError};
+/// use crate::test_support::mocks::MockCompletionBackend;
+/// use crate::traits::{BackendCompletionChunk, BackendError};
 ///
 /// // Create mock with default "Hello, world!" response
 /// let backend = MockCompletionBackend::new();

@@ -28,8 +28,8 @@
 
 use super::helpers::{make_server_info, McpResultExt};
 use super::{KilnTools, NoteTools, SearchTools, WorkspaceTools};
-use crucible_config::{DataClassification, TrustLevel};
 use crucible_core::background::{BackgroundSpawner, JobStatus, SubagentBlockingConfig};
+use crucible_core::config::{DataClassification, TrustLevel};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::storage::NoteStore;
 use crucible_core::traits::KnowledgeRepository;

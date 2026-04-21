@@ -167,7 +167,7 @@ pub mod openai_compat {
 }
 
 use crate::provider::copilot::CopilotClient;
-use crucible_config::BackendType;
+use crucible_core::config::BackendType;
 use thiserror::Error;
 
 #[derive(Debug, Error)]

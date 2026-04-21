@@ -47,7 +47,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use crucible_core::events::{Handler, HandlerContext, HandlerResult, Reactor, SessionEvent};
+//! use crate::events::{Handler, HandlerContext, HandlerResult, Reactor, SessionEvent};
 //! use async_trait::async_trait;
 //!
 //! struct LoggingHandler;
@@ -80,7 +80,7 @@
 //! If you have code that expects an `EventEmitter`, use `ReactorEventEmitter`:
 //!
 //! ```rust,ignore
-//! use crucible_core::events::{Reactor, ReactorEventEmitter, EventEmitter};
+//! use crate::events::{Reactor, ReactorEventEmitter, EventEmitter};
 //! use std::sync::Arc;
 //! use tokio::sync::RwLock;
 //!

@@ -6,8 +6,8 @@ use tokio::task;
 
 use crate::kiln_validate::{expand_tilde, validate_kiln_path, ValidationSeverity};
 use crate::provider_detect::{detect_providers, DetectedProvider};
-use crucible_config::components::DataClassification;
-use crucible_config::{
+use crucible_core::config::components::DataClassification;
+use crucible_core::config::{
     read_kiln_config, read_project_config, register_project_in_config, write_kiln_config,
     write_project_config, CliAppConfig, KilnAttachment, KilnConfig, KilnMeta, ProjectConfig,
     SecurityConfig,
@@ -107,7 +107,7 @@ async fn run_kiln_init(
 ) -> Result<()> {
     let crucible_dir = target_path.join(".crucible");
 
-    let providers = detect_providers(&crucible_config::ChatConfig::default());
+    let providers = detect_providers(&crucible_core::config::ChatConfig::default());
 
     let (provider, model) = if !yes && !providers.is_empty() {
         prompt_provider_selection(&providers)?
@@ -182,7 +182,7 @@ async fn run_project_init(target_path: &Path, force: bool, yes: bool) -> Result<
         fs::create_dir_all(&crucible_dir)?;
 
         let project_config = ProjectConfig {
-            project: Some(crucible_config::ProjectMeta {
+            project: Some(crucible_core::config::ProjectMeta {
                 name: Some(name_clone),
             }),
             kilns: kilns_clone

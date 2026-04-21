@@ -189,7 +189,7 @@ impl AgentManager {
 
             let endpoint = agent_config
                 .endpoint
-                .unwrap_or_else(|| crucible_config::DEFAULT_OLLAMA_ENDPOINT.to_string());
+                .unwrap_or_else(|| crucible_core::config::DEFAULT_OLLAMA_ENDPOINT.to_string());
             let backend = agent_config.provider;
 
             match model_listing::list_models(backend, &endpoint, None).await {

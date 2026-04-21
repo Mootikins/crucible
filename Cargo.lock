@@ -1644,7 +1644,6 @@ dependencies = [
  "comfy-table",
  "crossterm 0.29.0",
  "crucible-cli",
- "crucible-config",
  "crucible-core",
  "crucible-daemon",
  "crucible-lua",
@@ -1694,29 +1693,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crucible-config"
-version = "0.6.3"
-dependencies = [
- "anyhow",
- "crucible-core",
- "dirs",
- "futures",
- "globset",
- "keyring",
- "num_cpus",
- "schemars 1.2.1",
- "serde",
- "serde_json",
- "serde_yaml",
- "serial_test",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "toml 1.0.6+spec-1.1.0",
- "tracing",
-]
-
-[[package]]
 name = "crucible-core"
 version = "0.6.3"
 dependencies = [
@@ -1726,19 +1702,22 @@ dependencies = [
  "bitflags 2.11.0",
  "blake3",
  "chrono",
- "crucible-config",
  "dirs",
  "futures",
  "glob-match",
+ "globset",
  "hex",
+ "keyring",
  "markdown-it",
  "notify",
  "nucleo-matcher",
+ "num_cpus",
  "parking_lot",
  "rand 0.10.1",
  "regex",
  "reqwest 0.12.28",
  "rmcp",
+ "schemars 1.2.1",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -1768,7 +1747,6 @@ dependencies = [
  "chrono",
  "chumsky",
  "criterion",
- "crucible-config",
  "crucible-core",
  "crucible-lance",
  "crucible-lua",
@@ -1910,7 +1888,6 @@ dependencies = [
  "anyhow",
  "axum",
  "chrono",
- "crucible-config",
  "crucible-core",
  "crucible-daemon",
  "dirs",

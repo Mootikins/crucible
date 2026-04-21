@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use crate::config::CliConfig;
 use crate::output;
-use crucible_config::BackendType;
+use crucible_core::config::BackendType;
 use crucible_daemon::rpc_client::DaemonClient;
 
 const PROVIDER_TIMEOUT_SECS: u64 = 2;
@@ -430,7 +430,7 @@ mod tests {
 
     #[test]
     fn doctor_reports_missing_kiln_references() {
-        use crucible_config::ProjectEntry;
+        use crucible_core::config::ProjectEntry;
 
         let mut config = CliConfig::default();
         config.projects.insert(
@@ -449,7 +449,7 @@ mod tests {
 
     #[test]
     fn doctor_no_warnings_when_kiln_references_are_valid() {
-        use crucible_config::{KilnEntry, ProjectEntry};
+        use crucible_core::config::{KilnEntry, ProjectEntry};
 
         let mut config = CliConfig::default();
         config

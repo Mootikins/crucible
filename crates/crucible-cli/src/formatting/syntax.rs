@@ -1,5 +1,5 @@
 use crate::tui::oil::{Color, Style};
-use crucible_config::HighlightingConfig;
+use crucible_core::config::HighlightingConfig;
 use once_cell::sync::Lazy;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{FontStyle, Style as SyntectStyle, ThemeSet};

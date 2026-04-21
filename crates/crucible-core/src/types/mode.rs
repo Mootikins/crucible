@@ -24,7 +24,7 @@ use crate::types::acp::schema::{SessionMode, SessionModeId, SessionModeState};
 /// # Example
 ///
 /// ```rust
-/// use crucible_core::types::mode::ModeDescriptor;
+/// use crate::types::mode::ModeDescriptor;
 ///
 /// let mode = ModeDescriptor::new("plan", "Plan Mode")
 ///     .with_description("Read-only exploration mode")
@@ -111,7 +111,7 @@ impl From<&SessionMode> for ModeDescriptor {
 /// # Example
 ///
 /// ```rust
-/// use crucible_core::types::mode::default_internal_modes;
+/// use crate::types::mode::default_internal_modes;
 ///
 /// let modes = default_internal_modes();
 /// assert_eq!(modes.current_mode_id.0.as_ref(), "normal");
