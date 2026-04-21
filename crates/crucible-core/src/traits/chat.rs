@@ -46,9 +46,6 @@ pub enum ChatError {
     #[error("Mode change error: {0}")]
     ModeChange(String),
 
-    #[error("Unknown command: {0}")]
-    UnknownCommand(String),
-
     #[error("Command execution failed: {0}")]
     CommandFailed(String),
 
@@ -63,9 +60,6 @@ pub enum ChatError {
 
     #[error("Invalid mode: {0}")]
     InvalidMode(String),
-
-    #[error("Invalid command: {0}")]
-    InvalidCommand(String),
 
     #[error("Operation not supported: {0}")]
     NotSupported(String),
