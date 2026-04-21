@@ -42,8 +42,6 @@ async fn reactor_pre_llm_cancel_aborts() {
         tool_results: None,
         reasoning: None,
         usage: None,
-        precognition_notes_count: None,
-        precognition_notes: None,
     }]);
 
     h.send("hello").await;
@@ -139,8 +137,6 @@ async fn reactor_pre_tool_cancel_denies() {
             tool_results: None,
             reasoning: None,
             usage: None,
-            precognition_notes_count: None,
-            precognition_notes: None,
         },
         ChatChunk {
             delta: "done".to_string(),
@@ -149,8 +145,6 @@ async fn reactor_pre_tool_cancel_denies() {
             tool_results: None,
             reasoning: None,
             usage: None,
-            precognition_notes_count: None,
-            precognition_notes: None,
         },
     ]);
 
@@ -228,8 +222,6 @@ async fn runtime_dispatch_pre_tool_call_cancels_execution() {
             tool_results: None,
             reasoning: None,
             usage: None,
-            precognition_notes_count: None,
-            precognition_notes: None,
         },
         ChatChunk {
             delta: "done".to_string(),
@@ -238,8 +230,6 @@ async fn runtime_dispatch_pre_tool_call_cancels_execution() {
             tool_results: None,
             reasoning: None,
             usage: None,
-            precognition_notes_count: None,
-            precognition_notes: None,
         },
     ]);
 

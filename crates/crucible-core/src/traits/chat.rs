@@ -96,12 +96,6 @@ pub struct ChatChunk {
     /// Token usage (typically only present in final chunk when done=true)
     #[serde(default)]
     pub usage: Option<TokenUsage>,
-    /// Notes count from daemon-side Precognition enrichment
-    #[serde(default)]
-    pub precognition_notes_count: Option<usize>,
-    /// Detailed note metadata from daemon-side Precognition enrichment
-    #[serde(default)]
-    pub precognition_notes: Option<Vec<PrecognitionNoteInfo>>,
 }
 
 /// Result from a completed tool execution
@@ -799,8 +793,6 @@ mod tests {
                         tool_results: None,
                         reasoning: None,
                         usage: None,
-                        precognition_notes_count: None,
-                        precognition_notes: None,
                     })
                 },
             )))

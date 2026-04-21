@@ -18,7 +18,6 @@ use futures::stream::BoxStream;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
-use crate::traits::chat::PrecognitionNoteInfo;
 use crate::traits::llm::TokenUsage;
 
 /// Event flowing from an `Agent` to the runtime, or (for a subset of
@@ -78,12 +77,6 @@ pub enum TurnEvent {
 
     /// Model was switched mid-turn.
     ModelSwitched(String),
-
-    /// Precognition-enriched context notes surfaced to the UI.
-    PrecognitionNotes {
-        count: usize,
-        notes: Vec<PrecognitionNoteInfo>,
-    },
 
     /// Turn finished normally. Terminal.
     Done { stop_reason: StopReason },

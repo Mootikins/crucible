@@ -35,8 +35,6 @@ async fn test_precognition_skipped_when_disabled() {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             }],
         }))),
     );
@@ -86,8 +84,6 @@ async fn test_precognition_skipped_for_search_command() {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             }],
         }))),
     );
@@ -142,8 +138,6 @@ async fn test_precognition_skipped_when_no_kiln() {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             }],
         }))),
     );
@@ -198,8 +192,6 @@ async fn test_precognition_complete_event_emitted_when_enrichment_runs() {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             }],
         }))),
     );
@@ -297,8 +289,6 @@ async fn test_precognition_enriched_content_reaches_agent() {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             }],
         }) as BoxedAgentHandle)),
     );
@@ -431,8 +421,6 @@ async fn test_precognition_emits_note_info_in_event() {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             }],
         }))),
     );

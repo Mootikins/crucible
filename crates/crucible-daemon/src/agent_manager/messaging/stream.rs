@@ -424,9 +424,9 @@ impl AgentManager {
                 TurnEvent::Usage(usage) => {
                     last_usage = Some(usage);
                 }
-                TurnEvent::PrecognitionNotes { .. } | TurnEvent::ModelSwitched(_) => {
+                TurnEvent::ModelSwitched(_) => {
                     // Informational pass-through: old code never emitted
-                    // session events for these either.
+                    // a session event for this either.
                 }
                 TurnEvent::HandlerInjection { .. } | TurnEvent::DepthCapHit { .. } => {
                     // Inbound-only variants. Adapter should not echo

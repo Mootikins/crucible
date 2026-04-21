@@ -173,8 +173,6 @@ fn event_to_chunk(event: &SessionEvent) -> Option<crucible_core::traits::chat::C
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             })
         }
         "thinking" => {
@@ -186,8 +184,6 @@ fn event_to_chunk(event: &SessionEvent) -> Option<crucible_core::traits::chat::C
                 tool_results: None,
                 reasoning: Some(content.to_string()),
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             })
         }
         "tool_call" => {
@@ -205,8 +201,6 @@ fn event_to_chunk(event: &SessionEvent) -> Option<crucible_core::traits::chat::C
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             })
         }
         "tool_result" => {
@@ -229,8 +223,6 @@ fn event_to_chunk(event: &SessionEvent) -> Option<crucible_core::traits::chat::C
                 }]),
                 reasoning: None,
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             })
         }
         "message_complete" | "ended" => Some(crucible_core::traits::chat::ChatChunk {
@@ -240,8 +232,6 @@ fn event_to_chunk(event: &SessionEvent) -> Option<crucible_core::traits::chat::C
             tool_results: None,
             reasoning: None,
             usage: None,
-            precognition_notes_count: None,
-            precognition_notes: None,
         }),
         _ => None,
     }

@@ -5,7 +5,7 @@
 //! TUI event loop.
 
 use crucible_core::interaction::InteractionEvent;
-use crucible_core::traits::chat::{ChatChunk, ChatToolCall, ChatToolResult, PrecognitionNoteInfo};
+use crucible_core::traits::chat::{ChatChunk, ChatToolCall, ChatToolResult};
 use tokio::sync::mpsc;
 
 use crate::SessionEvent;
@@ -195,27 +195,7 @@ fn convert_ended() -> ChatChunk {
         tool_results: None,
         reasoning: None,
         usage: None,
-        precognition_notes_count: None,
-        precognition_notes: None,
     }
-}
-
-/// Convert a `precognition_complete` event to a ChatChunk.
-fn convert_precognition_complete(event: &SessionEvent) -> Option<ChatChunk> {
-    let notes_count = event
-        .data
-        .get("notes_count")
-        .and_then(|v| v.as_u64())
-        .map(|n| n as usize);
-    let precognition_notes = event
-        .data
-        .get("notes")
-        .and_then(|v| serde_json::from_value::<Vec<PrecognitionNoteInfo>>(v.clone()).ok());
-    Some(ChatChunk {
-        precognition_notes_count: notes_count,
-        precognition_notes,
-        ..Default::default()
-    })
 }
 
 /// Convert a SessionEvent to a ChatChunk
@@ -224,7 +204,9 @@ fn convert_precognition_complete(event: &SessionEvent) -> Option<ChatChunk> {
 /// - `text_delta` / `thinking` → streaming content
 /// - `tool_call` / `tool_result` → tool events
 /// - `message_complete` / `ended` → completion signals
-/// - `precognition_complete` → knowledge graph events
+///
+/// `precognition_complete` is consumed directly by the TUI from the raw
+/// SessionEvent stream; it does not ride on the ChatChunk path.
 pub(super) fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
     match event.event_type.as_str() {
         "text_delta" => convert_text_delta(event),
@@ -233,7 +215,6 @@ pub(super) fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatCh
         "tool_result" => convert_tool_result(event),
         "message_complete" => convert_message_complete(event),
         "ended" => Some(convert_ended()),
-        "precognition_complete" => convert_precognition_complete(event),
         _ => {
             tracing::debug!("Unknown session event type: {}", event.event_type);
             None

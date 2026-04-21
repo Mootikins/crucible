@@ -34,8 +34,6 @@ async fn send_message_emits_text_delta_events_in_order() {
                     tool_results: None,
                     reasoning: None,
                     usage: None,
-                    precognition_notes_count: None,
-                    precognition_notes: None,
                 },
                 ChatChunk {
                     delta: " world".to_string(),
@@ -44,8 +42,6 @@ async fn send_message_emits_text_delta_events_in_order() {
                     tool_results: None,
                     reasoning: None,
                     usage: None,
-                    precognition_notes_count: None,
-                    precognition_notes: None,
                 },
             ],
         }))),
@@ -106,8 +102,6 @@ async fn send_message_emits_thinking_before_text_delta() {
                     tool_results: None,
                     reasoning: Some("thinking...".to_string()),
                     usage: None,
-                    precognition_notes_count: None,
-                    precognition_notes: None,
                 },
                 ChatChunk {
                     delta: "response".to_string(),
@@ -116,8 +110,6 @@ async fn send_message_emits_thinking_before_text_delta() {
                     tool_results: None,
                     reasoning: None,
                     usage: None,
-                    precognition_notes_count: None,
-                    precognition_notes: None,
                 },
             ],
         }))),
@@ -186,8 +178,6 @@ async fn same_chunk_thinking_emitted_before_text_delta() {
                 tool_results: None,
                 reasoning: Some("let me think".to_string()),
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             }],
         }))),
     );
@@ -264,8 +254,6 @@ async fn send_message_emits_tool_call_and_tool_result_events() {
                     tool_results: None,
                     reasoning: None,
                     usage: None,
-                    precognition_notes_count: None,
-                    precognition_notes: None,
                 },
                 ChatChunk {
                     delta: String::new(),
@@ -279,8 +267,6 @@ async fn send_message_emits_tool_call_and_tool_result_events() {
                     }]),
                     reasoning: None,
                     usage: None,
-                    precognition_notes_count: None,
-                    precognition_notes: None,
                 },
                 ChatChunk {
                     delta: "Done.".to_string(),
@@ -289,8 +275,6 @@ async fn send_message_emits_tool_call_and_tool_result_events() {
                     tool_results: None,
                     reasoning: None,
                     usage: None,
-                    precognition_notes_count: None,
-                    precognition_notes: None,
                 },
             ],
         }))),
@@ -386,8 +370,6 @@ async fn display_hook_lua_tool_enriches_tool_call_metadata() {
                     tool_results: None,
                     reasoning: None,
                     usage: None,
-                    precognition_notes_count: None,
-                    precognition_notes: None,
                 },
                 ChatChunk {
                     delta: "Done.".to_string(),
@@ -396,8 +378,6 @@ async fn display_hook_lua_tool_enriches_tool_call_metadata() {
                     tool_results: None,
                     reasoning: None,
                     usage: None,
-                    precognition_notes_count: None,
-                    precognition_notes: None,
                 },
             ],
         }))),
@@ -454,8 +434,6 @@ async fn test_execute_agent_stream_empty_response_emits_error_event() {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             }],
         }))),
     );
@@ -532,8 +510,6 @@ async fn test_execute_agent_stream_tool_call_only_is_not_error() {
                     tool_results: None,
                     reasoning: None,
                     usage: None,
-                    precognition_notes_count: None,
-                    precognition_notes: None,
                 },
                 ChatChunk {
                     delta: String::new(),
@@ -547,8 +523,6 @@ async fn test_execute_agent_stream_tool_call_only_is_not_error() {
                     }]),
                     reasoning: None,
                     usage: None,
-                    precognition_notes_count: None,
-                    precognition_notes: None,
                 },
                 ChatChunk {
                     delta: String::new(),
@@ -557,8 +531,6 @@ async fn test_execute_agent_stream_tool_call_only_is_not_error() {
                     tool_results: None,
                     reasoning: None,
                     usage: None,
-                    precognition_notes_count: None,
-                    precognition_notes: None,
                 },
             ],
         }))),
@@ -700,8 +672,6 @@ fn terminal_tool_chunk(name: &str, id: &str) -> ChatChunk {
         tool_results: None,
         reasoning: None,
         usage: None,
-        precognition_notes_count: None,
-        precognition_notes: None,
     }
 }
 
@@ -713,8 +683,6 @@ fn terminal_text_chunk(text: &str) -> ChatChunk {
         tool_results: None,
         reasoning: None,
         usage: None,
-        precognition_notes_count: None,
-        precognition_notes: None,
     }
 }
 

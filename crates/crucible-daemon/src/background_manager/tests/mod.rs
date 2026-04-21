@@ -45,8 +45,6 @@ pub(super) fn chunk(delta: String, done: bool) -> ChatChunk {
         tool_results: None,
         reasoning: None,
         usage: None,
-        precognition_notes_count: None,
-        precognition_notes: None,
     }
 }
 

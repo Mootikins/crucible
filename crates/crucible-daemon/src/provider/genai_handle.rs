@@ -361,8 +361,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             }));
             chunks.push(Ok(ChatChunk {
                 delta: String::new(),
@@ -371,8 +369,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             }));
             return Box::pin(futures::stream::iter(chunks));
         }
@@ -385,8 +381,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: Some("I will reason internally before final output.".to_string()),
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             }));
             chunks.push(Ok(ChatChunk {
                 delta: "42".to_string(),
@@ -395,8 +389,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             }));
             chunks.push(Ok(ChatChunk {
                 delta: String::new(),
@@ -405,8 +397,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             }));
             return Box::pin(futures::stream::iter(chunks));
         }
@@ -419,8 +409,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             }));
             chunks.push(Ok(ChatChunk {
                 delta: String::new(),
@@ -429,8 +417,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             }));
             return Box::pin(futures::stream::iter(chunks));
         }
@@ -460,8 +446,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             }));
             chunks.push(Ok(ChatChunk {
                 delta: String::new(),
@@ -470,8 +454,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             }));
             return Box::pin(futures::stream::iter(chunks));
         }
@@ -484,8 +466,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             }));
             chunks.push(Ok(ChatChunk {
                 delta: " there".to_string(),
@@ -494,8 +474,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             }));
             chunks.push(Ok(ChatChunk {
                 delta: String::new(),
@@ -504,8 +482,6 @@ impl GenaiAgentHandle {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             }));
             return Box::pin(futures::stream::iter(chunks));
         }
@@ -517,8 +493,6 @@ impl GenaiAgentHandle {
             tool_results: None,
             reasoning: None,
             usage: None,
-            precognition_notes_count: None,
-            precognition_notes: None,
         }));
         chunks.push(Ok(ChatChunk {
             delta: String::new(),
@@ -527,8 +501,6 @@ impl GenaiAgentHandle {
             tool_results: None,
             reasoning: None,
             usage: None,
-            precognition_notes_count: None,
-            precognition_notes: None,
         }));
 
         Box::pin(futures::stream::iter(chunks))
@@ -669,8 +641,6 @@ impl AgentHandle for GenaiAgentHandle {
                             tool_results: None,
                             reasoning: None,
                             usage: None,
-                            precognition_notes_count: None,
-                            precognition_notes: None,
                         });
                     }
                     ChatStreamEvent::ReasoningChunk(chunk) => {
@@ -681,8 +651,6 @@ impl AgentHandle for GenaiAgentHandle {
                             tool_results: None,
                             reasoning: Some(chunk.content),
                             usage: None,
-                            precognition_notes_count: None,
-                            precognition_notes: None,
                         });
                     }
                     ChatStreamEvent::ThoughtSignatureChunk(_) => {}
@@ -718,8 +686,6 @@ impl AgentHandle for GenaiAgentHandle {
                             tool_results: None,
                             reasoning: end.captured_reasoning_content,
                             usage,
-                            precognition_notes_count: None,
-                            precognition_notes: None,
                         });
                         break;
                     }
@@ -828,8 +794,6 @@ impl AgentHandle for GenaiAgentHandle {
                             tool_results: None,
                             reasoning: None,
                             usage: None,
-                            precognition_notes_count: None,
-                            precognition_notes: None,
                         });
                     }
                     ChatStreamEvent::ReasoningChunk(chunk) => {
@@ -840,8 +804,6 @@ impl AgentHandle for GenaiAgentHandle {
                             tool_results: None,
                             reasoning: Some(chunk.content),
                             usage: None,
-                            precognition_notes_count: None,
-                            precognition_notes: None,
                         });
                     }
                     ChatStreamEvent::ThoughtSignatureChunk(_) => {}
@@ -877,8 +839,6 @@ impl AgentHandle for GenaiAgentHandle {
                             tool_results: None,
                             reasoning: end.captured_reasoning_content,
                             usage,
-                            precognition_notes_count: None,
-                            precognition_notes: None,
                         });
                         break;
                     }
@@ -1042,8 +1002,6 @@ mod tests {
                     tool_results: None,
                     reasoning: None,
                     usage: None,
-                    precognition_notes_count: None,
-                    precognition_notes: None,
                 }],
                 hanging: false,
             }
@@ -1208,8 +1166,6 @@ mod tests {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             }],
             hanging: false,
         };
@@ -1237,8 +1193,6 @@ mod tests {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             }],
             hanging: false,
         };
@@ -1262,8 +1216,6 @@ mod tests {
                 tool_results: None,
                 reasoning: Some("Let me think about this...".to_string()),
                 usage: None,
-                precognition_notes_count: None,
-                precognition_notes: None,
             }],
             hanging: false,
         };
@@ -1288,8 +1240,6 @@ mod tests {
                     tool_results: None,
                     reasoning: None,
                     usage: None,
-                    precognition_notes_count: None,
-                    precognition_notes: None,
                 },
                 ChatChunk {
                     delta: String::new(),
@@ -1302,8 +1252,6 @@ mod tests {
                     tool_results: None,
                     reasoning: None,
                     usage: None,
-                    precognition_notes_count: None,
-                    precognition_notes: None,
                 },
             ],
             hanging: false,

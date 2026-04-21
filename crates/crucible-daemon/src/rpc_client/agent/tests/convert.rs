@@ -564,46 +564,20 @@ fn test_message_complete_usage_with_cache_tokens() {
 }
 
 #[test]
-fn test_precognition_complete_with_notes() {
+fn precognition_complete_is_not_converted_to_chat_chunk() {
+    // precognition_complete rides on the raw SessionEvent stream to the
+    // TUI; it must NOT be surfaced through the ChatChunk path.
     let event = SessionEvent {
         session_id: "test".to_string(),
         event_type: "precognition_complete".to_string(),
         data: json!({
             "notes_count": 2,
-            "query_summary": "how to use async",
-            "notes": [
-                { "title": "Async Patterns", "kiln_label": null },
-                { "title": "Tokio Guide", "kiln_label": "docs" }
-            ]
+            "notes": [{ "title": "Async Patterns" }]
         }),
     };
 
-    let chunk = session_event_to_chat_chunk(&event).unwrap();
-    assert_eq!(chunk.precognition_notes_count, Some(2));
-    let notes = chunk.precognition_notes.expect("notes should be populated");
-    assert_eq!(notes.len(), 2);
-    assert_eq!(notes[0].title, "Async Patterns");
-    assert!(notes[0].kiln_label.is_none());
-    assert_eq!(notes[1].title, "Tokio Guide");
-    assert_eq!(notes[1].kiln_label.as_deref(), Some("docs"));
-}
-
-#[test]
-fn test_precognition_complete_without_notes_backward_compat() {
-    // Old daemon events without "notes" field should still work
-    let event = SessionEvent {
-        session_id: "test".to_string(),
-        event_type: "precognition_complete".to_string(),
-        data: json!({
-            "notes_count": 3,
-            "query_summary": "search query"
-        }),
-    };
-
-    let chunk = session_event_to_chat_chunk(&event).unwrap();
-    assert_eq!(chunk.precognition_notes_count, Some(3));
     assert!(
-        chunk.precognition_notes.is_none(),
-        "Missing notes field should result in None for backward compatibility"
+        session_event_to_chat_chunk(&event).is_none(),
+        "precognition_complete must not produce a ChatChunk"
     );
 }

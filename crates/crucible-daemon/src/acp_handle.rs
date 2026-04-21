@@ -345,8 +345,6 @@ impl AgentHandle for AcpAgentHandle {
                                     tool_results: None,
                                     reasoning: None,
                                     usage: None,
-                                    precognition_notes_count: None,
-                                    precognition_notes: None,
                                 }
                             }
                             StreamingChunk::Thinking(text) => {
@@ -362,8 +360,6 @@ impl AgentHandle for AcpAgentHandle {
                                     tool_results: None,
                                     reasoning: Some(text),
                                     usage: None,
-                                    precognition_notes_count: None,
-                                    precognition_notes: None,
                                 }
                             }
                             StreamingChunk::ToolStart {
@@ -389,8 +385,6 @@ impl AgentHandle for AcpAgentHandle {
                                     tool_results: None,
                                     reasoning: None,
                                     usage: None,
-                                    precognition_notes_count: None,
-                                    precognition_notes: None,
                                 }
                             }
                             StreamingChunk::ToolEnd { id, result, error } => {
@@ -410,8 +404,6 @@ impl AgentHandle for AcpAgentHandle {
                                     }]),
                                     reasoning: None,
                                     usage: None,
-                                    precognition_notes_count: None,
-                                    precognition_notes: None,
                                 }
                             }
                         };
@@ -450,8 +442,6 @@ impl AgentHandle for AcpAgentHandle {
                                     tool_results: None,
                                     reasoning: None,
                                     usage,
-                                    precognition_notes_count: None,
-                                    precognition_notes: None,
                                 }),
                                 None,
                             ))

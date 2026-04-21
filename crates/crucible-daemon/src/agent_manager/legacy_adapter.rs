@@ -152,12 +152,6 @@ fn chat_chunk_to_events(
             });
         }
     }
-    if let (Some(count), notes) = (chunk.precognition_notes_count, chunk.precognition_notes) {
-        events.push(TurnEvent::PrecognitionNotes {
-            count,
-            notes: notes.unwrap_or_default(),
-        });
-    }
     if let Some(usage) = chunk.usage {
         events.push(TurnEvent::Usage(usage));
     }
