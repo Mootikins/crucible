@@ -182,7 +182,7 @@ struct RequestState {
     started_at: Instant,
 }
 
-type BoxedAgentHandle = Box<dyn AgentHandle + Send + Sync>;
+pub(crate) type BoxedAgentHandle = Box<dyn AgentHandle + Send + Sync>;
 
 use mlua::RegistryKey;
 use std::sync::Mutex as StdMutex;
@@ -799,6 +799,7 @@ impl AgentManager {
 
 pub mod context_length;
 mod iter;
+pub mod legacy_adapter;
 mod messaging;
 mod models;
 mod precognition;
