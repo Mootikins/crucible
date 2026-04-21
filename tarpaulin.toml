@@ -24,10 +24,7 @@ output-dir = "target/tarpaulin"
 [quick]
 packages = [
     "crucible-core",
-    "crucible-config",
-    "crucible-enrichment",
-    "crucible-watch",
-    "crucible-pipeline",
+    "crucible-daemon",
 ]
 exclude-files = [
     "vendor/",

@@ -12,7 +12,7 @@
 # Native dependencies using the `cc` crate may have hardcoded settings that
 # override this. For example, esaxx-rs has `.static_crt(true)` hardcoded in
 # its build.rs, which we work around by disabling the `esaxx_fast` feature
-# in tokenizers (see crucible-llm/Cargo.toml).
+# in tokenizers (see crates/crucible-daemon/Cargo.toml under the tokenizers dep).
 #
 # If you encounter runtime mismatch errors:
 # 1. Clean and rebuild: `cargo clean && cargo build`

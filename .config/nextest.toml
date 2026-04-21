@@ -41,7 +41,7 @@ slow-timeout = { period = "30s", terminate-after = 1 }
 
 # Setup scripts — build test fixtures before test runs
 [scripts.setup.build-test-fixtures]
-command = 'cargo build -p crucible-acp --features test-utils --bin mock-acp-agent'
+command = 'cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent'
 
 [[profile.default.scripts]]
 filter = 'package(crucible-daemon)'

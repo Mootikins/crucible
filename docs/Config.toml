@@ -540,7 +540,7 @@ verbose = false
 # - Multiple embedding providers
 # - Advanced pipeline configuration
 #
-# See crates/crucible-config/src/enrichment.rs for full schema
+# See crates/crucible-core/src/config/enrichment.rs for full schema
 
 # [enrichment]
 # # Provider configuration (detailed format)

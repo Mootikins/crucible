@@ -46,7 +46,7 @@ fn config_cache_key(config: &EmbeddingProviderConfig) -> String {
 /// # Supported Backends
 ///
 /// - **Ollama** — local or remote Ollama server
-/// - **FastEmbed** — local ONNX inference (requires `fastembed` feature on `crucible-llm`)
+/// - **FastEmbed** — local ONNX inference (requires `fastembed` feature on `crucible-daemon`)
 /// - **OpenAI** — OpenAI embedding API
 /// - Any other backend supported by `crate::llm::embeddings::create_provider`
 pub async fn get_or_create_embedding_provider(

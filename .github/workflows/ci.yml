@@ -54,7 +54,7 @@ jobs:
       - name: Create web asset placeholder
         run: mkdir -p crates/crucible-web/web/dist && echo "<html></html>" > crates/crucible-web/web/dist/index.html
       - name: Build mock ACP agent for smoke tests
-        run: cargo build -p crucible-acp --features test-utils --bin mock-acp-agent
+        run: cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent
       - name: Run tests with nextest
         run: cargo nextest run --profile ci --workspace
       - name: Verify Lua stubs are not stale
@@ -75,11 +75,9 @@ jobs:
       - name: Build cru binary for e2e tests
         run: cargo build -p crucible-cli --bin cru
       - name: Build mock ACP agent for smoke tests
-        run: cargo build -p crucible-acp --features test-utils --bin mock-acp-agent
-      - name: Run SQLite-specific tests
-        run: |
-          cargo nextest run -p crucible-sqlite
-          cargo nextest run -p crucible-daemon --features storage-sqlite
+        run: cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent
+      - name: Run SQLite-backed tests (merged into crucible-daemon)
+        run: cargo nextest run -p crucible-daemon --test sqlite_graph_query_integration
 
   test-web:
     name: Web E2E Tests

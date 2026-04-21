@@ -1390,7 +1390,7 @@ mod tests {
 
     #[test]
     fn methods_count() {
-        assert_eq!(METHODS.len(), 112, "Update when adding RPC methods");
+        assert_eq!(METHODS.len(), 113, "Update when adding RPC methods");
     }
 
     #[tokio::test]

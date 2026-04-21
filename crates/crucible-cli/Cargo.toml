@@ -30,8 +30,11 @@ default = ["fastembed", "web"]
 web = ["dep:crucible-web"]
 
 
-# Local embedding support (includes ONNX Runtime download)
-# Embedding lives in daemon now; CLI just forwards the feature so `cargo build -p crucible-cli --features fastembed` turns it on in daemon.
+# Local embedding support (pulls ONNX Runtime / fastembed via daemon).
+# The passthrough here only works because we turn off daemon's defaults on
+# the `crucible-daemon` dep below; toggling `--features fastembed` on the
+# CLI deterministically toggles fastembed in the daemon half of the `cru`
+# binary.
 fastembed = ["crucible-daemon/fastembed"]
 
 
@@ -46,7 +49,7 @@ crucible-core = { path = "../crucible-core" }
 
 crucible-lua = { path = "../crucible-lua" }
 
-crucible-daemon = { path = "../crucible-daemon" }
+crucible-daemon = { path = "../crucible-daemon", default-features = false }
 
 
 crucible-oil = { path = "../crucible-oil", default-features = false }

@@ -153,9 +153,12 @@ impl DaemonClient {
 
     /// Embed `text` using the daemon's configured embedding provider.
     ///
-    /// Offloads embedding generation so the CLI doesn't need fastembed/ort
-    /// linked in. The daemon's per-kiln enrichment config determines which
-    /// provider is used so query-time vectors match index-time vectors.
+    /// Offloads embedding generation so a non-daemon CLI consumer doesn't
+    /// need fastembed/ort linked in. The daemon applies its global
+    /// enrichment config (the same one every open kiln indexes with) so
+    /// query-time vectors match index-time vectors. `kiln_path` is used
+    /// to ensure the kiln is open before the call, not to pick the
+    /// provider.
     pub async fn embed_query(&self, kiln_path: &Path, text: &str) -> Result<Vec<f32>> {
         let result: serde_json::Value = self
             .typed_call(

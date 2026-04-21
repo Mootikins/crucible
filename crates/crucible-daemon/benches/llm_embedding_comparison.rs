@@ -1,18 +1,12 @@
-//! Benchmark comparing FastEmbed vs Burn embedding providers
+//! Benchmarks for the FastEmbed embedding provider.
 //!
-//! This benchmark measures the performance difference between:
-//! - FastEmbed (CPU-based)
-//! - Burn (GPU-capable, though mocked here)
-//!
-//! When actual Burn integration is complete, we can see real performance
-//! improvements from GPU acceleration.
+//! (Historical note: originally compared against a mocked Burn backend, which
+//! was removed when Burn support was dropped from the embedding layer.)
 
 #![allow(deprecated)] // criterion::black_box is deprecated
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use crucible_core::config::{
-    BurnBackendConfig, BurnEmbedConfig, EmbeddingProviderConfig, FastEmbedConfig,
-};
+use crucible_core::config::{EmbeddingProviderConfig, FastEmbedConfig};
 use crucible_daemon::llm::embeddings::create_provider;
 use std::time::Instant;
 
@@ -45,32 +39,6 @@ fn bench_embedding_providers(c: &mut Criterion) {
                     let config = EmbeddingProviderConfig::FastEmbed(FastEmbedConfig {
                         model: "BAAI/bge-small-en-v1.5".to_string(),
                         batch_size: batch_size as u32,
-                        ..Default::default()
-                    });
-
-                    let provider = rt.block_on(create_provider(config)).unwrap();
-
-                    let batch: Vec<&str> = batch_owned.iter().map(|s| s.as_str()).collect();
-                    let start = Instant::now();
-                    rt.block_on(provider.embed_batch(&batch)).unwrap();
-                    start.elapsed()
-                });
-            },
-        );
-
-        // Burn benchmark (mocked - will show similar performance until real integration)
-        group.bench_with_input(
-            BenchmarkId::new("burn", batch_size),
-            &batch_size,
-            |b, &batch_size| {
-                let rt = tokio::runtime::Runtime::new().unwrap();
-
-                b.iter(|| {
-                    let batch_owned = black_box(generate_test_texts(batch_size));
-                    let config = EmbeddingProviderConfig::Burn(BurnEmbedConfig {
-                        model: "test-model".to_string(),
-                        backend: BurnBackendConfig::Cpu { num_threads: 4 },
-                        dimensions: 384,
                         ..Default::default()
                     });
 
