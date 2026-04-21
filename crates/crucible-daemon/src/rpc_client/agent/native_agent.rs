@@ -48,10 +48,10 @@ impl Agent for DaemonAgentHandle {
         Self::capabilities_static()
     }
 
-    async fn turn(
-        &mut self,
+    async fn turn<'a>(
+        &'a mut self,
         ctx: TurnContext,
-    ) -> Result<BoxStream<'static, TurnEvent>, AgentError> {
+    ) -> Result<BoxStream<'a, TurnEvent>, AgentError> {
         let client = Arc::clone(&self.client);
         let session_id = self.session_id.clone();
         let streaming_rx = Arc::clone(&self.streaming_rx);

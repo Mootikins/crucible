@@ -622,11 +622,11 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
         }
     }
 
-    async fn turn(
-        &mut self,
+    async fn turn<'a>(
+        &'a mut self,
         ctx: crucible_core::turn::TurnContext,
     ) -> Result<
-        futures::stream::BoxStream<'static, crucible_core::turn::TurnEvent>,
+        futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
         crucible_core::turn::AgentError,
     > {
         use crate::agent_manager::internal_agent::chat_chunk_to_events;

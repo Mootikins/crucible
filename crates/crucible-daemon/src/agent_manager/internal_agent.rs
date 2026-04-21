@@ -188,10 +188,10 @@ impl Agent for InternalAgent {
         self.capabilities
     }
 
-    async fn turn(
-        &mut self,
+    async fn turn<'a>(
+        &'a mut self,
         ctx: TurnContext,
-    ) -> Result<BoxStream<'static, TurnEvent>, AgentError> {
+    ) -> Result<BoxStream<'a, TurnEvent>, AgentError> {
         let handle = self.inner.clone();
         let initial = ctx.content;
         let mut inbound: Option<mpsc::Receiver<TurnEvent>> = ctx.inbound;
@@ -416,7 +416,7 @@ mod tests {
         }
     }
 
-    async fn collect_events(mut s: BoxStream<'static, TurnEvent>) -> Vec<TurnEvent> {
+    async fn collect_events<'a>(mut s: BoxStream<'a, TurnEvent>) -> Vec<TurnEvent> {
         let mut out = Vec::new();
         while let Some(e) = s.next().await {
             out.push(e);
@@ -458,24 +458,23 @@ mod tests {
         let (tx, rx) = mpsc::channel(4);
         let ctx = TurnContext::new("query").with_inbound(rx);
 
-        // Drive the turn: collect the first two events, then feed back a
-        // tool result on the inbound channel, then collect the rest.
+        // Drive the turn: spawn a sender that replies with a ToolResult,
+        // drain the stream inline (stream borrows adapter).
+        let sender = tokio::spawn(async move {
+            tokio::task::yield_now().await;
+            tx.send(TurnEvent::ToolResult {
+                id: "call-1".into(),
+                name: "fetch".into(),
+                result: serde_json::json!("ok"),
+                error: None,
+            })
+            .await
+            .unwrap();
+            drop(tx);
+        });
         let stream = adapter.turn(ctx).await.expect("turn started");
-        let handle = tokio::spawn(collect_events(stream));
-
-        // Give the stream a chance to emit the ToolCall before we reply.
-        tokio::task::yield_now().await;
-        tx.send(TurnEvent::ToolResult {
-            id: "call-1".into(),
-            name: "fetch".into(),
-            result: serde_json::json!("ok"),
-            error: None,
-        })
-        .await
-        .unwrap();
-        drop(tx);
-
-        let events = handle.await.unwrap();
+        let events = collect_events(stream).await;
+        sender.await.unwrap();
         // Expect: ToolCall, then TextDelta("42"), then Done.
         assert!(
             matches!(events.first(), Some(TurnEvent::ToolCall { name, .. }) if name == "fetch"),
@@ -544,19 +543,19 @@ mod tests {
 
         let (tx, rx) = mpsc::channel(4);
         let ctx = TurnContext::new("ask").with_inbound(rx);
+        let sender = tokio::spawn(async move {
+            tokio::task::yield_now().await;
+            tx.send(TurnEvent::HandlerInjection {
+                content: "follow up".into(),
+                position: "after".into(),
+            })
+            .await
+            .unwrap();
+            drop(tx);
+        });
         let stream = adapter.turn(ctx).await.unwrap();
-        let handle = tokio::spawn(collect_events(stream));
-
-        tokio::task::yield_now().await;
-        tx.send(TurnEvent::HandlerInjection {
-            content: "follow up".into(),
-            position: "after".into(),
-        })
-        .await
-        .unwrap();
-        drop(tx);
-
-        let events = handle.await.unwrap();
+        let events = collect_events(stream).await;
+        sender.await.unwrap();
         assert!(
             events
                 .iter()
@@ -606,16 +605,16 @@ mod tests {
 
         let (tx, rx) = mpsc::channel(4);
         let ctx = TurnContext::new("ask").with_inbound(rx);
+        let sender = tokio::spawn(async move {
+            tokio::task::yield_now().await;
+            tx.send(TurnEvent::DepthCapHit { max_depth: 10 })
+                .await
+                .unwrap();
+            drop(tx);
+        });
         let stream = adapter.turn(ctx).await.unwrap();
-        let handle = tokio::spawn(collect_events(stream));
-
-        tokio::task::yield_now().await;
-        tx.send(TurnEvent::DepthCapHit { max_depth: 10 })
-            .await
-            .unwrap();
-        drop(tx);
-
-        let events = handle.await.unwrap();
+        let events = collect_events(stream).await;
+        sender.await.unwrap();
         assert!(
             events
                 .iter()

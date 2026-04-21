@@ -241,8 +241,15 @@ pub trait Agent: Send + Sync {
     /// `Done` or `Error`. The runtime may steer the agent's
     /// continuation by sending events on the inbound channel carried
     /// in `ctx`.
-    async fn turn(&mut self, ctx: TurnContext)
-        -> Result<BoxStream<'static, TurnEvent>, AgentError>;
+    ///
+    /// The stream borrows `&mut self` so the stream body can mutate
+    /// agent state in-place (append to history, update indices, etc.)
+    /// without needing interior mutability. Callers must keep the
+    /// mutex guard / `&mut` alive for the duration of the stream.
+    async fn turn<'a>(
+        &'a mut self,
+        ctx: TurnContext,
+    ) -> Result<BoxStream<'a, TurnEvent>, AgentError>;
 
     /// Cancel an in-flight turn.
     async fn cancel(&self) -> Result<(), AgentError>;
