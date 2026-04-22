@@ -21,7 +21,6 @@
 //!    message_id + user_message visibility.)
 
 use super::super::*;
-use crate::agent_manager::internal_agent::InternalAgent;
 use crate::agent_manager::tool_tracking::ToolCallTracker;
 use crucible_core::events::InternalSessionEvent;
 use crucible_core::traits::chat::{ChatToolCall, ChatToolResult};
@@ -118,18 +117,16 @@ impl AgentManager {
 
         let stream_start = Instant::now();
 
-        // Wrap the legacy handle in the Agent-trait adapter. Capabilities
-        // are determined conservatively; the tool loop itself does not
-        // query them — they exist for the TUI.
-        let capabilities = InternalAgent::internal_capabilities();
-        let mut adapter = InternalAgent::new(agent.clone(), capabilities);
         let (inbound_tx, inbound_rx) = mpsc::channel::<TurnEvent>(32);
         let mut turn_ctx = TurnContext::new(content).with_inbound(inbound_rx);
         if is_continuation {
             turn_ctx = turn_ctx.continuation();
         }
 
-        let mut event_stream = match adapter.turn(turn_ctx).await {
+        // Hold the handle guard for the entire turn; Agent::turn returns
+        // a stream that borrows `&mut *guard`.
+        let mut guard = agent.lock().await;
+        let mut event_stream = match guard.turn(turn_ctx).await {
             Ok(s) => s,
             Err(e) => {
                 error!(
@@ -504,6 +501,9 @@ impl AgentManager {
 
         if let Some((injected_content, _)) = injection {
             drop(event_stream);
+            // Release the handle lock before recursing so the inner
+            // invocation can re-acquire it.
+            drop(guard);
 
             accumulated_response.clear();
             let continuation_ctx = StreamContext {

@@ -46,7 +46,32 @@ struct StreamingMockAgent {
     chunks: Vec<ChatChunk>,
 }
 
-crucible_core::impl_noop_agent!(StreamingMockAgent);
+// Real Agent impl: delegate through the legacy tool-loop helper so
+// AgentManager tests exercise the same plumbing as production.
+#[async_trait::async_trait]
+impl crucible_core::turn::Agent for StreamingMockAgent {
+    fn capabilities(&self) -> crucible_core::turn::AgentCapabilities {
+        crucible_core::turn::AgentCapabilities::default()
+    }
+    async fn turn<'a>(
+        &'a mut self,
+        ctx: crucible_core::turn::TurnContext,
+    ) -> Result<
+        futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
+        crucible_core::turn::AgentError,
+    > {
+        Ok(crate::agent_manager::chat_chunk_bridge::legacy_tool_loop_stream(self, ctx))
+    }
+    async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
+        Ok(())
+    }
+    async fn switch_model(
+        &mut self,
+        _: &str,
+    ) -> Result<(), crucible_core::turn::NotSupported> {
+        Err(crucible_core::turn::NotSupported::new("switch_model"))
+    }
+}
 
 struct MockHandler {
     name: String,
@@ -111,7 +136,30 @@ struct PromptCapturingAgent {
     chunks: Vec<ChatChunk>,
 }
 
-crucible_core::impl_noop_agent!(PromptCapturingAgent);
+#[async_trait::async_trait]
+impl crucible_core::turn::Agent for PromptCapturingAgent {
+    fn capabilities(&self) -> crucible_core::turn::AgentCapabilities {
+        crucible_core::turn::AgentCapabilities::default()
+    }
+    async fn turn<'a>(
+        &'a mut self,
+        ctx: crucible_core::turn::TurnContext,
+    ) -> Result<
+        futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
+        crucible_core::turn::AgentError,
+    > {
+        Ok(crate::agent_manager::chat_chunk_bridge::legacy_tool_loop_stream(self, ctx))
+    }
+    async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
+        Ok(())
+    }
+    async fn switch_model(
+        &mut self,
+        _: &str,
+    ) -> Result<(), crucible_core::turn::NotSupported> {
+        Err(crucible_core::turn::NotSupported::new("switch_model"))
+    }
+}
 
 #[async_trait::async_trait]
 impl AgentHandle for PromptCapturingAgent {

@@ -3,7 +3,30 @@ use super::*;
 /// A mock agent whose stream never yields — blocks forever until cancelled.
 struct PendingMockAgent;
 
-crucible_core::impl_noop_agent!(PendingMockAgent);
+#[async_trait::async_trait]
+impl crucible_core::turn::Agent for PendingMockAgent {
+    fn capabilities(&self) -> crucible_core::turn::AgentCapabilities {
+        crucible_core::turn::AgentCapabilities::default()
+    }
+    async fn turn<'a>(
+        &'a mut self,
+        ctx: crucible_core::turn::TurnContext,
+    ) -> Result<
+        futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
+        crucible_core::turn::AgentError,
+    > {
+        Ok(crate::agent_manager::chat_chunk_bridge::legacy_tool_loop_stream(self, ctx))
+    }
+    async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
+        Ok(())
+    }
+    async fn switch_model(
+        &mut self,
+        _: &str,
+    ) -> Result<(), crucible_core::turn::NotSupported> {
+        Err(crucible_core::turn::NotSupported::new("switch_model"))
+    }
+}
 
 #[async_trait::async_trait]
 impl AgentHandle for PendingMockAgent {

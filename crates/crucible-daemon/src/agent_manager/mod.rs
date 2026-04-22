@@ -796,9 +796,9 @@ impl AgentManager {
     }
 }
 
+pub(crate) mod chat_chunk_bridge;
 pub mod context_length;
 mod iter;
-pub mod internal_agent;
 mod messaging;
 mod models;
 mod precognition;

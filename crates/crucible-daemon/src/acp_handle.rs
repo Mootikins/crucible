@@ -629,7 +629,7 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
         futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
         crucible_core::turn::AgentError,
     > {
-        use crate::agent_manager::internal_agent::chat_chunk_to_events;
+        use crate::agent_manager::chat_chunk_bridge::chat_chunk_to_events;
         use async_stream::stream;
         use crucible_core::traits::chat::AgentHandle as _;
         use crucible_core::turn::{StopReason, TurnError, TurnEvent};

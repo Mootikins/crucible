@@ -611,7 +611,30 @@ struct ScriptedHandle {
     captured_prompts: Arc<std::sync::Mutex<Vec<String>>>,
 }
 
-crucible_core::impl_noop_agent!(ScriptedHandle);
+#[async_trait::async_trait]
+impl crucible_core::turn::Agent for ScriptedHandle {
+    fn capabilities(&self) -> crucible_core::turn::AgentCapabilities {
+        crucible_core::turn::AgentCapabilities::default()
+    }
+    async fn turn<'a>(
+        &'a mut self,
+        ctx: crucible_core::turn::TurnContext,
+    ) -> Result<
+        futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
+        crucible_core::turn::AgentError,
+    > {
+        Ok(crate::agent_manager::chat_chunk_bridge::legacy_tool_loop_stream(self, ctx))
+    }
+    async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
+        Ok(())
+    }
+    async fn switch_model(
+        &mut self,
+        _: &str,
+    ) -> Result<(), crucible_core::turn::NotSupported> {
+        Err(crucible_core::turn::NotSupported::new("switch_model"))
+    }
+}
 
 impl ScriptedHandle {
     fn new(scripts: Vec<Vec<ChatChunk>>, captured: Arc<std::sync::Mutex<Vec<String>>>) -> Self {
