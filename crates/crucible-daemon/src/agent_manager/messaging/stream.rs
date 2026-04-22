@@ -289,6 +289,21 @@ impl AgentManager {
 
                     tool_calls_dispatched = true;
 
+                    // Commit to scheduler-owned conversation tree
+                    // (shadow state until handle.history retires).
+                    {
+                        let mut tree = stream_ctx.conversation_tree.lock().await;
+                        let parent = tree.current();
+                        tree.add_child(
+                            parent,
+                            crucible_core::turn::NodeContent::ToolCall {
+                                id: id.clone(),
+                                name: name.clone(),
+                                args: args.clone(),
+                            },
+                        );
+                    }
+
                     let tool_call = ChatToolCall {
                         name: name.clone(),
                         arguments: Some(args.clone()),
@@ -382,6 +397,27 @@ impl AgentManager {
                         error: Some("tool dispatcher returned no result".to_string()),
                         call_id: Some(id.clone()),
                     });
+
+                    // Commit ToolResult to scheduler-owned tree before
+                    // feeding it back to the adapter.
+                    {
+                        let mut tree = stream_ctx.conversation_tree.lock().await;
+                        let parent = tree.current();
+                        let result_value =
+                            serde_json::Value::String(tool_result.result.clone());
+                        tree.add_child(
+                            parent,
+                            crucible_core::turn::NodeContent::ToolResult {
+                                id: tool_result
+                                    .call_id
+                                    .clone()
+                                    .unwrap_or_else(|| id.clone()),
+                                name: tool_result.name.clone(),
+                                result: result_value,
+                                error: tool_result.error.clone(),
+                            },
+                        );
+                    }
 
                     // Feed back to the adapter so it can continue the turn.
                     let reply = TurnEvent::ToolResult {

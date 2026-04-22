@@ -66,6 +66,31 @@ async fn send_message_emits_text_delta_events_in_order() {
     let complete = next_event_or_skip(&mut event_rx, "message_complete").await;
     assert_eq!(complete.data["message_id"], message_id);
     assert_eq!(complete.data["full_response"], "hello world");
+
+    // Scheduler-owned tree should carry the turn shape: root → User → Agent.
+    let tree_arc = agent_manager
+        .get_session_tree(&session.id)
+        .expect("session tree should exist after a turn");
+    let tree = tree_arc.lock().await;
+    let path = tree.path_to_here(tree.current());
+    assert_eq!(
+        path.len(),
+        3,
+        "expected root → user → agent, got {} nodes",
+        path.len()
+    );
+    let user = tree.get(path[1]);
+    match &user.content {
+        crucible_core::turn::NodeContent::User { text } => assert_eq!(text, "test"),
+        other => panic!("expected User node, got {other:?}"),
+    }
+    let agent = tree.get(path[2]);
+    match &agent.content {
+        crucible_core::turn::NodeContent::Agent { text } => {
+            assert_eq!(text, "hello world")
+        }
+        other => panic!("expected Agent node, got {other:?}"),
+    }
 }
 
 #[tokio::test]
