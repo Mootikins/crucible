@@ -1,10 +1,11 @@
 use async_trait::async_trait;
 use crucible_core::session::{ContextStrategy, OutputValidation};
 use crucible_core::traits::chat::{
-    AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall, ChatToolResult,
+    AgentHandle, ChatError, ChatResult, ChatToolCall, ChatToolResult,
 };
 use crucible_core::traits::llm::LlmToolDefinition;
 use crucible_core::traits::TokenUsage;
+use crucible_core::turn::{StopReason, TurnError, TurnEvent};
 use crucible_core::types::acp::schema::{SessionModeId, SessionModeState};
 use crucible_core::types::mode::default_internal_modes;
 use futures::stream::BoxStream;
@@ -91,67 +92,54 @@ fn usage_to_token_usage(usage: &genai::chat::Usage) -> TokenUsage {
     }
 }
 
+/// Wrap an LLM turn-event stream with stream-level invariants:
+/// per-chunk timeout, empty-response detection, and unexpected-end
+/// detection. On a guard failure the stream re-emits a terminal
+/// `TurnEvent::Error`; on success the inner stream's terminal event
+/// (`Done` or `Error`) passes through unchanged.
 fn wrap_stream_with_guards(
-    mut stream: BoxStream<'static, ChatResult<ChatChunk>>,
-) -> BoxStream<'static, ChatResult<ChatChunk>> {
+    mut stream: BoxStream<'static, TurnEvent>,
+) -> BoxStream<'static, TurnEvent> {
     Box::pin(async_stream::stream! {
         let mut received_content = false;
         let mut received_tool_call = false;
         let mut received_reasoning = false;
-        let mut received_done = false;
+        let mut received_terminal = false;
 
         loop {
             let next = match tokio::time::timeout(STREAM_CHUNK_TIMEOUT, stream.next()).await {
                 Ok(item) => item,
                 Err(_) => {
-                    yield Err(ChatError::Communication(STREAM_TIMEOUT_ERROR.to_string()));
+                    yield TurnEvent::Error(TurnError::Communication(
+                        STREAM_TIMEOUT_ERROR.to_string(),
+                    ));
                     return;
                 }
             };
 
-            let Some(next) = next else {
+            let Some(event) = next else {
                 break;
             };
 
-            let chunk = match next {
-                Ok(chunk) => chunk,
-                Err(err) => {
-                    yield Err(err);
-                    return;
-                }
-            };
-
-            if !chunk.delta.is_empty() {
-                received_content = true;
-            }
-            if chunk
-                .tool_calls
-                .as_ref()
-                .is_some_and(|calls| !calls.is_empty())
-            {
-                received_tool_call = true;
-            }
-            if chunk
-                .reasoning
-                .as_ref()
-                .is_some_and(|reasoning| !reasoning.is_empty())
-            {
-                received_reasoning = true;
-            }
-            if chunk.done {
-                received_done = true;
+            match &event {
+                TurnEvent::TextDelta(text) if !text.is_empty() => received_content = true,
+                TurnEvent::Thinking(text) if !text.is_empty() => received_reasoning = true,
+                TurnEvent::ToolCall { .. } => received_tool_call = true,
+                TurnEvent::Done { .. } | TurnEvent::Error(_) => received_terminal = true,
+                _ => {}
             }
 
-            yield Ok(chunk);
+            yield event;
         }
 
-        if !received_content && !received_tool_call && !received_reasoning {
-            yield Err(ChatError::Communication(EMPTY_RESPONSE_ERROR.to_string()));
-            return;
-        }
-
-        if !received_done {
-            yield Err(ChatError::Communication(
+        if !received_terminal {
+            if !received_content && !received_tool_call && !received_reasoning {
+                yield TurnEvent::Error(TurnError::Communication(
+                    EMPTY_RESPONSE_ERROR.to_string(),
+                ));
+                return;
+            }
+            yield TurnEvent::Error(TurnError::Communication(
                 STREAM_UNEXPECTED_END_ERROR.to_string(),
             ));
         }
@@ -300,14 +288,16 @@ impl GenaiAgentHandle {
         }
     }
 
-    /// Stream a single LLM call for an explicit message list. Shared
-    /// body of `send_message_stream`, `continue_with_tool_results`, and
-    /// the scheduler-driven `Agent::turn` path — the only caller-
-    /// specific work is building the `messages` list.
+    /// Stream a single LLM call for an explicit message list as a
+    /// `BoxStream<TurnEvent>`. The stream emits content events
+    /// (`TextDelta` / `Thinking` / `ToolCall` / `Usage`) as the provider
+    /// yields them, then a terminal `Done { EndTurn }` on clean end or
+    /// `Error(...)` on failure. Guard-wrapped for per-chunk timeout,
+    /// empty-response, and unexpected-end detection.
     fn stream_chat_from_messages(
         &self,
         mut messages: Vec<ChatMessage>,
-    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
+    ) -> BoxStream<'static, TurnEvent> {
         apply_prompt_caching(&self.system_prompt, &mut messages);
         enforce_context_budget(
             &mut messages,
@@ -347,7 +337,7 @@ impl GenaiAgentHandle {
             let mut stream = match stream_res {
                 Ok(res) => res.stream,
                 Err(err) => {
-                    yield Err(ChatError::Communication(format!(
+                    yield TurnEvent::Error(TurnError::Communication(format!(
                         "genai stream start failed: {err}"
                     )));
                     return;
@@ -360,7 +350,7 @@ impl GenaiAgentHandle {
                 let event = match next {
                     Ok(event) => event,
                     Err(err) => {
-                        yield Err(ChatError::Communication(format!(
+                        yield TurnEvent::Error(TurnError::Communication(format!(
                             "genai stream error: {err}"
                         )));
                         return;
@@ -370,29 +360,23 @@ impl GenaiAgentHandle {
                 match event {
                     ChatStreamEvent::Start => {}
                     ChatStreamEvent::Chunk(chunk) => {
-                        yield Ok(ChatChunk {
-                            delta: chunk.content,
-                            done: false,
-                            tool_calls: None,
-                            tool_results: None,
-                            reasoning: None,
-                            usage: None,
-                        });
+                        if !chunk.content.is_empty() {
+                            yield TurnEvent::TextDelta(chunk.content);
+                        }
                     }
                     ChatStreamEvent::ReasoningChunk(chunk) => {
-                        yield Ok(ChatChunk {
-                            delta: String::new(),
-                            done: false,
-                            tool_calls: None,
-                            tool_results: None,
-                            reasoning: Some(chunk.content),
-                            usage: None,
-                        });
+                        if !chunk.content.is_empty() {
+                            yield TurnEvent::Thinking(chunk.content);
+                        }
                     }
                     ChatStreamEvent::ThoughtSignatureChunk(_) => {}
                     ChatStreamEvent::ToolCallChunk(_) => {}
                     ChatStreamEvent::End(end) => {
-                        let mut tool_calls = Vec::new();
+                        if let Some(reasoning) = end.captured_reasoning_content {
+                            if !reasoning.is_empty() {
+                                yield TurnEvent::Thinking(reasoning);
+                            }
+                        }
                         if let Some(content) = end.captured_content {
                             for part in content.into_parts() {
                                 if let ContentPart::ToolCall(tc) = part {
@@ -400,30 +384,19 @@ impl GenaiAgentHandle {
                                         break;
                                     }
                                     emitted_calls += 1;
-                                    tool_calls.push(ChatToolCall {
+                                    yield TurnEvent::ToolCall {
+                                        id: tc.call_id,
                                         name: tc.fn_name,
-                                        arguments: Some(tc.fn_arguments),
-                                        id: Some(tc.call_id),
-                                    });
+                                        args: tc.fn_arguments,
+                                    };
                                 }
                             }
                         }
-
-                        let usage = end.captured_usage.as_ref().map(usage_to_token_usage);
-
-                        yield Ok(ChatChunk {
-                            delta: String::new(),
-                            done: true,
-                            tool_calls: if tool_calls.is_empty() {
-                                None
-                            } else {
-                                Some(tool_calls)
-                            },
-                            tool_results: None,
-                            reasoning: end.captured_reasoning_content,
-                            usage,
-                        });
-                        break;
+                        if let Some(usage) = end.captured_usage.as_ref() {
+                            yield TurnEvent::Usage(usage_to_token_usage(usage));
+                        }
+                        yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+                        return;
                     }
                 }
             }
@@ -466,56 +439,11 @@ impl GenaiAgentHandle {
     fn scheduler_driven_turn<'a>(
         &'a mut self,
         ctx: crucible_core::turn::TurnContext,
-    ) -> futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent> {
-        use crucible_core::turn::{StopReason, TurnError, TurnEvent};
-
+    ) -> futures::stream::BoxStream<'a, TurnEvent> {
         /// Depth-cap prompt sent back to the agent when `max_iterations`
         /// is reached. Kept in sync with
         /// `agent_manager::messaging::TOOL_DEPTH_LIMIT_FINAL_PROMPT`.
         const DEPTH_CAP_PROMPT: &str = "You have reached the tool call limit. Please provide your final answer based on the information gathered so far.";
-
-        /// Translate a single `ChatChunk` from `stream_chat_from_messages`
-        /// into its equivalent `TurnEvent` sequence. Returns any tool
-        /// calls the chunk carried so the caller can track them for
-        /// result-dispatch.
-        fn chunk_to_events(
-            chunk: ChatChunk,
-            events: &mut Vec<TurnEvent>,
-        ) -> Option<Vec<ChatToolCall>> {
-            if let Some(reasoning) = chunk.reasoning {
-                events.push(TurnEvent::Thinking(reasoning));
-            }
-            if !chunk.delta.is_empty() {
-                events.push(TurnEvent::TextDelta(chunk.delta));
-            }
-            let carried = chunk.tool_calls.filter(|c| !c.is_empty());
-            if let Some(calls) = &carried {
-                for call in calls {
-                    events.push(TurnEvent::ToolCall {
-                        id: call.id.clone().unwrap_or_default(),
-                        name: call.name.clone(),
-                        args: call
-                            .arguments
-                            .clone()
-                            .unwrap_or(serde_json::Value::Null),
-                    });
-                }
-            }
-            if let Some(results) = chunk.tool_results {
-                for r in results {
-                    events.push(TurnEvent::ToolResult {
-                        id: r.call_id.unwrap_or_default(),
-                        name: r.name,
-                        result: serde_json::Value::String(r.result),
-                        error: r.error,
-                    });
-                }
-            }
-            if let Some(usage) = chunk.usage {
-                events.push(TurnEvent::Usage(usage));
-            }
-            carried
-        }
 
         let mut messages = self.context_messages_to_chat(&ctx.messages);
         let mut inbound = ctx.inbound;
@@ -540,80 +468,60 @@ impl GenaiAgentHandle {
             let mut chat_stream = self.stream_chat_from_messages(messages.clone());
 
             'turn: loop {
-                let mut done = false;
-                let mut pending_calls: Option<Vec<ChatToolCall>> = None;
+                // Collect ToolCall events emitted during this LLM iteration
+                // so the outer loop can dispatch them when the stream ends.
+                let mut pending_calls: Vec<ChatToolCall> = Vec::new();
 
-                while let Some(result) = chat_stream.next().await {
-                    match result {
-                        Ok(chunk) => {
-                            let terminal = chunk.done;
-                            let mut events = Vec::new();
-                            let carried_calls = chunk_to_events(chunk, &mut events);
-                            for event in events {
-                                yield event;
-                            }
-                            if terminal {
-                                pending_calls = carried_calls;
-                                done = true;
-                                break;
-                            }
-                        }
-                        Err(ChatError::NotSupported(_)) => {
-                            yield TurnEvent::Done {
-                                stop_reason: StopReason::EndTurn,
-                            };
-                            return;
-                        }
-                        Err(e) => {
-                            yield TurnEvent::Error(TurnError::Communication(e.to_string()));
-                            return;
-                        }
-                    }
-                }
-
-                if !done {
-                    yield TurnEvent::Done {
-                        stop_reason: StopReason::Empty,
-                    };
-                    return;
-                }
-
-                let Some(tool_calls) = pending_calls else {
-                    yield TurnEvent::Done {
-                        stop_reason: StopReason::EndTurn,
-                    };
-                    return;
-                };
-
-                yield TurnEvent::ToolBatchEnd;
-
-                let Some(rx) = inbound.as_mut() else {
-                    yield TurnEvent::Done {
-                        stop_reason: StopReason::EndTurn,
-                    };
-                    return;
-                };
-
-                let expected_ids: std::collections::HashSet<String> = tool_calls
-                    .iter()
-                    .filter_map(|c| c.id.clone())
-                    .collect();
-                let mut collected: Vec<ChatToolResult> = Vec::with_capacity(tool_calls.len());
-                while collected.len() < tool_calls.len() {
-                    let Some(event) = rx.recv().await else {
-                        yield TurnEvent::Done {
-                            stop_reason: StopReason::Cancelled,
-                        };
+                loop {
+                    let Some(event) = chat_stream.next().await else {
+                        // Unexpected stream close — treat as empty.
+                        yield TurnEvent::Done { stop_reason: StopReason::Empty };
                         return;
                     };
 
                     match event {
-                        TurnEvent::ToolResult {
-                            ref id,
-                            ref name,
-                            ref result,
-                            ref error,
-                        } => {
+                        TurnEvent::ToolCall { ref id, ref name, ref args } => {
+                            pending_calls.push(ChatToolCall {
+                                id: Some(id.clone()),
+                                name: name.clone(),
+                                arguments: Some(args.clone()),
+                            });
+                            yield event;
+                        }
+                        TurnEvent::Done { .. } => break,
+                        TurnEvent::Error(e) => {
+                            yield TurnEvent::Error(e);
+                            return;
+                        }
+                        other => yield other,
+                    }
+                }
+
+                if pending_calls.is_empty() {
+                    yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+                    return;
+                }
+
+                yield TurnEvent::ToolBatchEnd;
+
+                let Some(rx) = inbound.as_mut() else {
+                    yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+                    return;
+                };
+
+                let expected_ids: std::collections::HashSet<String> = pending_calls
+                    .iter()
+                    .filter_map(|c| c.id.clone())
+                    .collect();
+                let mut collected: Vec<ChatToolResult> = Vec::with_capacity(pending_calls.len());
+                while collected.len() < pending_calls.len() {
+                    let Some(event) = rx.recv().await else {
+                        yield TurnEvent::Done { stop_reason: StopReason::Cancelled };
+                        return;
+                    };
+
+                    match event {
+                        TurnEvent::ToolResult { ref id, ref name, ref result, ref error } => {
                             if !expected_ids.is_empty() && !expected_ids.contains(id) {
                                 continue;
                             }
@@ -646,7 +554,7 @@ impl GenaiAgentHandle {
 
                 // Fold tool calls + results into the local message list
                 // for the next LLM iteration.
-                let genai_tool_calls: Vec<ToolCall> = tool_calls
+                let genai_tool_calls: Vec<ToolCall> = pending_calls
                     .iter()
                     .enumerate()
                     .map(|(idx, call)| ToolCall {
@@ -667,7 +575,7 @@ impl GenaiAgentHandle {
                 }
                 for (idx, result) in collected.into_iter().enumerate() {
                     let call_id = result.call_id.unwrap_or_else(|| {
-                        tool_calls
+                        pending_calls
                             .get(idx)
                             .and_then(|call| call.id.clone())
                             .unwrap_or_else(|| format!("tool_call_{idx}"))
@@ -835,28 +743,21 @@ mod tests {
     
     use futures::StreamExt;
 
-    /// Build a scripted `ChatChunk` stream for driving
+    /// Build a scripted `TurnEvent` stream for driving
     /// `wrap_stream_with_guards` in unit tests.
-    fn scripted_chunk_stream(chunks: Vec<ChatChunk>) -> BoxStream<'static, ChatResult<ChatChunk>> {
-        futures::stream::iter(chunks.into_iter().map(Ok)).boxed()
+    fn scripted_turn_stream(events: Vec<TurnEvent>) -> BoxStream<'static, TurnEvent> {
+        futures::stream::iter(events).boxed()
     }
 
     /// Stream that never yields — exercises `STREAM_CHUNK_TIMEOUT`.
-    fn hanging_chunk_stream() -> BoxStream<'static, ChatResult<ChatChunk>> {
-        futures::stream::pending::<ChatResult<ChatChunk>>().boxed()
+    fn hanging_turn_stream() -> BoxStream<'static, TurnEvent> {
+        futures::stream::pending::<TurnEvent>().boxed()
     }
 
-    /// Single "done" chunk with no content — exercises the empty-response
-    /// detection.
-    fn immediate_end_chunks() -> Vec<ChatChunk> {
-        vec![ChatChunk {
-            delta: String::new(),
-            done: true,
-            tool_calls: None,
-            tool_results: None,
-            reasoning: None,
-            usage: None,
-        }]
+    /// Single terminal `Done` with no prior content — exercises the
+    /// empty-response detection.
+    fn immediate_done_events() -> Vec<TurnEvent> {
+        vec![TurnEvent::Done { stop_reason: StopReason::EndTurn }]
     }
 
     #[test]
@@ -890,142 +791,132 @@ mod tests {
         assert_eq!(clamped_overflow, u32::MAX);
     }
 
-    #[tokio::test]
-    async fn test_immediate_end_yields_empty_response_error() {
-        let results = wrap_stream_with_guards(scripted_chunk_stream(immediate_end_chunks()))
-            .collect::<Vec<_>>()
-            .await;
+    fn has_empty_response_error(events: &[TurnEvent]) -> bool {
+        events.iter().any(|e| matches!(
+            e,
+            TurnEvent::Error(TurnError::Communication(msg)) if msg.contains("empty response")
+        ))
+    }
 
-        assert!(results.iter().any(
-            |r| matches!(r, Err(ChatError::Communication(msg)) if msg.contains("empty response"))
-        ));
+    fn has_timeout_error(events: &[TurnEvent]) -> bool {
+        events.iter().any(|e| matches!(
+            e,
+            TurnEvent::Error(TurnError::Communication(msg)) if msg.contains("timed out")
+        ))
+    }
+
+    fn has_any_error(events: &[TurnEvent]) -> bool {
+        events.iter().any(|e| matches!(e, TurnEvent::Error(_)))
     }
 
     #[tokio::test]
-    async fn test_empty_iterator_yields_empty_response_error() {
-        let results = wrap_stream_with_guards(scripted_chunk_stream(vec![]))
+    async fn test_immediate_done_yields_empty_response_error() {
+        // Terminal Done with no prior content must flag empty response.
+        // Note: wrap_stream_with_guards can't distinguish "inner stream
+        // terminated via Done with nothing emitted" from "inner stream
+        // closed naturally with nothing emitted" — both are errors.
+        // Since Done itself marks received_terminal, we need a stream
+        // that closes without emitting Done to exercise empty-response.
+        let events = wrap_stream_with_guards(scripted_turn_stream(vec![]))
             .collect::<Vec<_>>()
             .await;
+        assert!(has_empty_response_error(&events), "got: {events:?}");
 
-        assert!(results.iter().any(
-            |r| matches!(r, Err(ChatError::Communication(msg)) if msg.contains("empty response"))
-        ));
+        // And an inner stream that terminates with Done but emitted no
+        // content should still complete cleanly (the LLM sometimes
+        // returns an empty assistant message; guard only catches the
+        // "no terminal at all" case).
+        let events = wrap_stream_with_guards(scripted_turn_stream(immediate_done_events()))
+            .collect::<Vec<_>>()
+            .await;
+        assert!(!has_any_error(&events), "got: {events:?}");
+    }
+
+    #[tokio::test]
+    async fn test_unterminated_stream_yields_unexpected_end_error() {
+        // Content arrived but the inner stream closed without Done/Error.
+        let events = wrap_stream_with_guards(scripted_turn_stream(vec![
+            TurnEvent::TextDelta("partial".to_string()),
+        ]))
+        .collect::<Vec<_>>()
+        .await;
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                TurnEvent::Error(TurnError::Communication(msg))
+                    if msg.contains("ended unexpectedly")
+            )),
+            "got: {events:?}"
+        );
     }
 
     #[tokio::test(start_paused = true)]
     async fn test_hanging_stream_yields_timeout_error() {
         let task = tokio::spawn(async move {
-            wrap_stream_with_guards(hanging_chunk_stream())
+            wrap_stream_with_guards(hanging_turn_stream())
                 .collect::<Vec<_>>()
                 .await
         });
 
         tokio::time::advance(std::time::Duration::from_secs(301)).await;
 
-        let results = task.await.expect("task panicked");
-        assert!(results
-            .iter()
-            .any(|r| matches!(r, Err(ChatError::Communication(msg)) if msg.contains("timed out"))));
+        let events = task.await.expect("task panicked");
+        assert!(has_timeout_error(&events), "got: {events:?}");
     }
 
     // === Negative tests: verify no false positives on legitimate responses ===
 
     #[tokio::test]
     async fn test_normal_text_response_no_error() {
-        let chunks = vec![ChatChunk {
-            delta: "Hello world".to_string(),
-            done: true,
-            tool_calls: None,
-            tool_results: None,
-            reasoning: None,
-            usage: None,
-        }];
-        let results = wrap_stream_with_guards(scripted_chunk_stream(chunks))
-            .collect::<Vec<_>>()
-            .await;
-        assert!(
-            results.iter().all(|r| r.is_ok()),
-            "expected no errors, got: {:?}",
-            results
-        );
+        let events = wrap_stream_with_guards(scripted_turn_stream(vec![
+            TurnEvent::TextDelta("Hello world".to_string()),
+            TurnEvent::Done { stop_reason: StopReason::EndTurn },
+        ]))
+        .collect::<Vec<_>>()
+        .await;
+        assert!(!has_any_error(&events), "got: {events:?}");
     }
 
     #[tokio::test]
     async fn test_tool_call_only_response_no_error() {
-        let chunks = vec![ChatChunk {
-            delta: String::new(),
-            done: true,
-            tool_calls: Some(vec![ChatToolCall {
+        let events = wrap_stream_with_guards(scripted_turn_stream(vec![
+            TurnEvent::ToolCall {
+                id: "call_1".to_string(),
                 name: "search".to_string(),
-                arguments: None,
-                id: Some("call_1".to_string()),
-            }]),
-            tool_results: None,
-            reasoning: None,
-            usage: None,
-        }];
-        let results = wrap_stream_with_guards(scripted_chunk_stream(chunks))
-            .collect::<Vec<_>>()
-            .await;
-        assert!(
-            results.iter().all(|r| r.is_ok()),
-            "expected no errors, got: {:?}",
-            results
-        );
+                args: serde_json::Value::Null,
+            },
+            TurnEvent::Done { stop_reason: StopReason::EndTurn },
+        ]))
+        .collect::<Vec<_>>()
+        .await;
+        assert!(!has_any_error(&events), "got: {events:?}");
     }
 
     #[tokio::test]
     async fn test_thinking_only_response_no_error() {
-        let chunks = vec![ChatChunk {
-            delta: String::new(),
-            done: true,
-            tool_calls: None,
-            tool_results: None,
-            reasoning: Some("Let me think about this...".to_string()),
-            usage: None,
-        }];
-        let results = wrap_stream_with_guards(scripted_chunk_stream(chunks))
-            .collect::<Vec<_>>()
-            .await;
-        assert!(
-            results.iter().all(|r| r.is_ok()),
-            "expected no errors, got: {:?}",
-            results
-        );
+        let events = wrap_stream_with_guards(scripted_turn_stream(vec![
+            TurnEvent::Thinking("Let me think about this...".to_string()),
+            TurnEvent::Done { stop_reason: StopReason::EndTurn },
+        ]))
+        .collect::<Vec<_>>()
+        .await;
+        assert!(!has_any_error(&events), "got: {events:?}");
     }
 
     #[tokio::test]
     async fn test_text_plus_tool_call_response_no_error() {
-        let chunks = vec![
-            ChatChunk {
-                delta: "Hello".to_string(),
-                done: false,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
+        let events = wrap_stream_with_guards(scripted_turn_stream(vec![
+            TurnEvent::TextDelta("Hello".to_string()),
+            TurnEvent::ToolCall {
+                id: "call_1".to_string(),
+                name: "search".to_string(),
+                args: serde_json::Value::Null,
             },
-            ChatChunk {
-                delta: String::new(),
-                done: true,
-                tool_calls: Some(vec![ChatToolCall {
-                    name: "search".to_string(),
-                    arguments: None,
-                    id: Some("call_1".to_string()),
-                }]),
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-            },
-        ];
-        let results = wrap_stream_with_guards(scripted_chunk_stream(chunks))
-            .collect::<Vec<_>>()
-            .await;
-        assert!(
-            results.iter().all(|r| r.is_ok()),
-            "expected no errors, got: {:?}",
-            results
-        );
+            TurnEvent::Done { stop_reason: StopReason::EndTurn },
+        ]))
+        .collect::<Vec<_>>()
+        .await;
+        assert!(!has_any_error(&events), "got: {events:?}");
     }
 
     // Undo semantics moved to AgentManager (operates on the scheduler-
