@@ -297,6 +297,10 @@ struct StreamContext {
     /// handler short-circuits without invoking Lua hooks or the default
     /// prompt. `Some(Ask)` and `None` fall through to the standard flow.
     permission_override: Option<PermissionMode>,
+    /// Scheduler-owned conversation tree. Populated as a shadow of
+    /// events; see `AgentManager::session_trees`.
+    conversation_tree:
+        Arc<tokio::sync::Mutex<crucible_core::turn::ConversationTree>>,
 }
 
 #[allow(dead_code)] // fields capture config snapshot; model used in events, others reserved for stream configuration
@@ -410,6 +414,14 @@ pub struct AgentManager {
     agent_cache: AgentCache,
     // TODO: invalidate session_dispatchers on kiln hot-swap (multi-kiln support)
     session_dispatchers: Arc<DashMap<String, Arc<dyn ToolDispatcher>>>,
+    /// Scheduler-owned conversation tree per session. Populated as a
+    /// shadow of the agent's conversation state — the source of truth
+    /// remains the agent's internal history today, but this tree is
+    /// the target for future reads (workflow fan/collect, branching,
+    /// O(1) undo). See `plans/2026-04-19-crucible-simplification.md`
+    /// Phase 1 Step 3.
+    session_trees:
+        Arc<DashMap<String, Arc<tokio::sync::Mutex<crucible_core::turn::ConversationTree>>>>,
     pub(crate) model_cache: Arc<DashMap<String, (Vec<String>, Instant)>>,
     kiln_manager: Arc<KilnManager>,
     session_manager: Arc<SessionManager>,
@@ -458,7 +470,35 @@ impl AgentManager {
             permission_config: params.permission_config,
             plugin_loader: params.plugin_loader,
             tool_dispatcher,
+            session_trees: Arc::new(DashMap::new()),
         }
+    }
+
+    /// Look up or create the scheduler-owned `ConversationTree` for a
+    /// session. The tree is initialised with just the root; callers
+    /// append user/agent/tool nodes as events arrive.
+    pub(crate) fn get_or_create_session_tree(
+        &self,
+        session_id: &str,
+    ) -> Arc<tokio::sync::Mutex<crucible_core::turn::ConversationTree>> {
+        self.session_trees
+            .entry(session_id.to_string())
+            .or_insert_with(|| {
+                Arc::new(tokio::sync::Mutex::new(
+                    crucible_core::turn::ConversationTree::new(),
+                ))
+            })
+            .clone()
+    }
+
+    /// Look up an existing session tree. Returns `None` if no session
+    /// has produced turn events yet.
+    #[allow(dead_code)] // exposed for future RPC/test inspection of the shadow tree
+    pub(crate) fn get_session_tree(
+        &self,
+        session_id: &str,
+    ) -> Option<Arc<tokio::sync::Mutex<crucible_core::turn::ConversationTree>>> {
+        self.session_trees.get(session_id).map(|t| t.clone())
     }
 
     /// Access the background job manager for direct job queries.

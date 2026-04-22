@@ -38,6 +38,20 @@ impl AgentManager {
         accumulated_response: &mut String,
         is_continuation: bool,
     ) -> Option<(String, String)> {
+        // Scheduler-owned conversation tree: commit the assistant
+        // response text as an Agent node. Today this is shadow state;
+        // later phases flip the handle to read from the tree.
+        if !accumulated_response.is_empty() {
+            let mut tree = stream_ctx.conversation_tree.lock().await;
+            let parent = tree.current();
+            let _agent = tree.add_child_and_advance(
+                parent,
+                crucible_core::turn::NodeContent::Agent {
+                    text: accumulated_response.clone(),
+                },
+            );
+        }
+
         debug!(
             session_id = %stream_ctx.session_id,
             message_id = %stream_ctx.message_id,
@@ -517,6 +531,7 @@ impl AgentManager {
                 agent_stream_config: stream_ctx.agent_stream_config.clone(),
                 tool_dispatcher: stream_ctx.tool_dispatcher.clone(),
                 permission_override: stream_ctx.permission_override,
+                conversation_tree: stream_ctx.conversation_tree.clone(),
             };
 
             Box::pin(Self::execute_agent_stream(

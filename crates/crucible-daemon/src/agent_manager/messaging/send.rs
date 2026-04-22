@@ -66,6 +66,22 @@ impl AgentManager {
             warn!(session_id = %session_id, "No subscribers for user_message event");
         }
 
+        // Scheduler-owned conversation tree: commit the user message
+        // node before the agent turn starts. The tree is a shadow of
+        // the handle's internal history today; later phases flip reads
+        // to the tree and retire the handle-side Vec.
+        let conversation_tree = self.get_or_create_session_tree(session_id);
+        {
+            let mut t = conversation_tree.lock().await;
+            let parent = t.current();
+            let _user_node = t.add_child_and_advance(
+                parent,
+                crucible_core::turn::NodeContent::User {
+                    text: original_content.clone(),
+                },
+            );
+        }
+
         let content = if agent_config.precognition_enabled
             && !original_content.starts_with("/search")
             && !session.kiln.as_os_str().is_empty()
@@ -95,6 +111,7 @@ impl AgentManager {
             agent_stream_config: AgentStreamConfig::from_session_agent(&agent_config),
             tool_dispatcher: self.get_or_create_session_dispatcher(&session).await,
             permission_override,
+            conversation_tree,
         };
 
         let task = tokio::spawn(async move {

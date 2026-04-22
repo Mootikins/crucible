@@ -27,6 +27,7 @@ use futures::stream::BoxStream;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
+use crate::traits::context_ops::ContextMessage;
 use crate::traits::llm::TokenUsage;
 
 /// Event flowing from an `Agent` to the runtime, or (for a subset of
@@ -197,13 +198,24 @@ pub struct AgentCapabilities {
 
 /// Inputs to one turn.
 ///
-/// The runtime passes `content` (user message text) and holds the
-/// inbound channel; the agent's `turn()` stream drains `inbound` at
-/// whatever cadence its protocol requires (typically: wait for
-/// `ToolResult` after emitting a `ToolCall`).
+/// The runtime passes `content` (user message text) plus the full
+/// conversation `messages` the agent should see, and holds the inbound
+/// channel; the agent's `turn()` stream drains `inbound` at whatever
+/// cadence its protocol requires (typically: wait for `ToolResult`
+/// after emitting a `ToolCall`).
+///
+/// Ownership: the scheduler (e.g. daemon's `AgentManager`) owns the
+/// conversation state — today as a [`ConversationTree`], flattened to
+/// `messages` per turn. Agents are stateless between turns WRT
+/// conversation content; any per-turn scratch (accumulated tool
+/// results mid-loop) lives locally inside `turn()`'s stream body.
 pub struct TurnContext {
     /// User message content for this turn.
     pub content: String,
+    /// Full flattened conversation history provided by the scheduler.
+    /// Includes the user's new message at the end when applicable.
+    /// Empty for legacy callers that rely on agent-side state.
+    pub messages: Vec<ContextMessage>,
     /// Inbound event channel. Runtime sends `ToolResult`,
     /// `HandlerInjection`, `DepthCapHit`. May be `None` for
     /// fire-and-forget turns that need no continuation.
@@ -214,10 +226,12 @@ pub struct TurnContext {
 }
 
 impl TurnContext {
-    /// Build a simple turn context with no inbound channel.
+    /// Build a simple turn context with no inbound channel and no
+    /// scheduler-provided messages.
     pub fn new(content: impl Into<String>) -> Self {
         Self {
             content: content.into(),
+            messages: Vec::new(),
             inbound: None,
             is_continuation: false,
         }
@@ -232,6 +246,12 @@ impl TurnContext {
     /// Mark this turn as a continuation.
     pub fn continuation(mut self) -> Self {
         self.is_continuation = true;
+        self
+    }
+
+    /// Attach scheduler-flattened conversation history.
+    pub fn with_messages(mut self, messages: Vec<ContextMessage>) -> Self {
+        self.messages = messages;
         self
     }
 }
