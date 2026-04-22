@@ -167,6 +167,15 @@ impl ConversationTree {
         self.nodes.len() <= 1
     }
 
+    /// Iterate over every node in the tree in insertion order, paired
+    /// with its `NodeId`. Includes the root.
+    pub fn iter(&self) -> impl Iterator<Item = (NodeId, &TurnNode)> {
+        self.nodes
+            .iter()
+            .enumerate()
+            .map(|(idx, node)| (NodeId::new((idx + 1) as u32), node))
+    }
+
     /// Append a new child under `parent` and return its id. Does not
     /// move `current`. Callers use [`Self::add_child_and_advance`] when
     /// they want the new node to become `current`.

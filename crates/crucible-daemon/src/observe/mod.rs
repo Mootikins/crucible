@@ -48,6 +48,7 @@ pub mod events;
 pub mod id;
 pub mod indexer;
 pub mod markdown;
+pub mod rebuild;
 pub mod serde_md;
 pub mod session;
 pub mod session_index;
