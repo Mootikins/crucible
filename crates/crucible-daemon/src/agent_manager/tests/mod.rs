@@ -14,8 +14,6 @@ use crucible_core::traits::chat::{
 use crucible_core::traits::knowledge::NoteInfo;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_core::types::SearchResult;
-use futures::stream::BoxStream;
-use futures::StreamExt;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex as StdMutex};
 use tempfile::TempDir;

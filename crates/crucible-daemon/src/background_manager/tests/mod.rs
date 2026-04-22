@@ -1,9 +1,8 @@
 use super::*;
 use crucible_core::config::{AgentProfile, BackendType, DelegationConfig};
 use crucible_core::session::OutputValidation;
-use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatError, ChatResult};
+use crucible_core::traits::chat::{AgentHandle, ChatResult};
 use crucible_core::turn::{StopReason, TurnError, TurnEvent};
-use futures::stream::{self, BoxStream};
 use std::collections::HashMap;
 use std::sync::Mutex as StdMutex;
 use tokio::sync::broadcast;
@@ -84,17 +83,6 @@ impl crucible_core::turn::Agent for MockSubagentHandle {
 impl MockSubagentHandle {
     pub(super) fn new(behavior: MockSubagentBehavior) -> Self {
         Self { behavior }
-    }
-}
-
-pub(super) fn chunk(delta: String, done: bool) -> ChatChunk {
-    ChatChunk {
-        delta,
-        done,
-        tool_calls: None,
-        tool_results: None,
-        reasoning: None,
-        usage: None,
     }
 }
 

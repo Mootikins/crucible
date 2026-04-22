@@ -13,7 +13,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use futures::stream::BoxStream;
 use thiserror::Error;
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};

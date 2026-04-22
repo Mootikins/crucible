@@ -11,8 +11,6 @@ use crucible_daemon::tools::workspace::WorkspaceTools;
 use crucible_daemon::{
     AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager,
 };
-use futures::stream::{self, BoxStream};
-use futures::StreamExt;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;

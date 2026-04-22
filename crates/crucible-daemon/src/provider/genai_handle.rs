@@ -832,7 +832,7 @@ mod tests {
     use super::*;
     use crate::provider::ChatClient;
     use crucible_core::config::{BackendType, LlmProviderConfig};
-    use crucible_core::traits::Undoable;
+    
     use futures::StreamExt;
 
     /// Build a scripted `ChatChunk` stream for driving
@@ -1026,22 +1026,6 @@ mod tests {
             "expected no errors, got: {:?}",
             results
         );
-    }
-
-    // ── Undo tests ──────────────────────────────────────────────────────────
-
-    fn make_test_handle() -> GenaiAgentHandle {
-        let backend = BackendType::OpenAI;
-        let config = LlmProviderConfig::builder(backend)
-            .model("test-model")
-            .build();
-        let chat_client = ChatClient::new(&config);
-        let client = chat_client.inner().clone();
-        let model_iden = chat_client
-            .model_iden("test-model")
-            .unwrap_or_else(|| ModelIden::new(genai::adapter::AdapterKind::OpenAI, "test-model"));
-
-        GenaiAgentHandle::new(client, model_iden, "system", Vec::new(), None)
     }
 
     // Undo semantics moved to AgentManager (operates on the scheduler-
