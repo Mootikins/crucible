@@ -163,6 +163,13 @@ pub struct GenaiAgentHandle {
     model: ModelIden,
     system_prompt: String,
     tools: Vec<LlmToolDefinition>,
+    /// Legacy conversation history. Used only by the mock-contract
+    /// test path and `AgentHandle::send_message_stream` /
+    /// `::continue_with_tool_results` (test-only callers). The
+    /// scheduler-driven `Agent::turn` path does **not** read or write
+    /// this field — `TurnContext.messages` is authoritative. Retained
+    /// as a narrow legacy slot until the mock-contract path is
+    /// migrated off it.
     history: Vec<genai::chat::ChatMessage>,
     mode_state: SessionModeState,
     current_mode_id: String,
@@ -174,9 +181,6 @@ pub struct GenaiAgentHandle {
     context_window: Option<usize>,
     output_validation: OutputValidation,
     validation_retries: u32,
-    /// Stack of undo entries, one per agent turn. Each records the history
-    /// length before the turn so we can truncate back on undo.
-    undo_stack: Vec<crucible_core::types::UndoEntry>,
 }
 
 /// Estimate token count from message content using a chars/4 heuristic.
@@ -276,16 +280,7 @@ impl GenaiAgentHandle {
             context_window: None,
             output_validation: OutputValidation::default(),
             validation_retries: 3,
-            undo_stack: Vec::new(),
         }
-    }
-
-    /// Record the current history length before an agent turn starts.
-    /// Called at the beginning of `send_message_stream`.
-    pub fn snapshot_before_turn(&mut self) {
-        self.undo_stack.push(crucible_core::types::UndoEntry {
-            message_index: self.history.len(),
-        });
     }
 
     fn send_mock_contract_stream(
@@ -479,6 +474,344 @@ impl GenaiAgentHandle {
         }
     }
 
+    /// Stream a single LLM call for an explicit message list. Shared
+    /// body of `send_message_stream`, `continue_with_tool_results`, and
+    /// the scheduler-driven `Agent::turn` path — the only caller-
+    /// specific work is building the `messages` list.
+    fn stream_chat_from_messages(
+        &self,
+        mut messages: Vec<ChatMessage>,
+    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
+        apply_prompt_caching(&self.system_prompt, &mut messages);
+        enforce_context_budget(
+            &mut messages,
+            self.context_budget,
+            &self.context_strategy,
+            self.context_window,
+        );
+
+        let req_tools: Vec<Tool> = self
+            .visible_tools()
+            .iter()
+            .map(super::tool_bridge::llm_tool_to_genai)
+            .collect();
+        let request = ChatRequest::new(messages).with_tools(req_tools);
+
+        let options = ChatOptions::default()
+            .with_capture_tool_calls(true)
+            .with_capture_content(true)
+            .with_capture_usage(true)
+            .with_capture_reasoning_content(true);
+        let options = if let Some(budget) = self.thinking_budget {
+            options.with_reasoning_effort(ReasoningEffort::Budget(
+                budget.clamp(0, u32::MAX as i64) as u32,
+            ))
+        } else {
+            options
+        };
+
+        let client = self.client.clone();
+        let model_name = self.explicit_model_name();
+        let max_tool_depth = self.max_tool_depth;
+
+        let stream = Box::pin(async_stream::stream! {
+            let stream_res = client
+                .exec_chat_stream(&model_name, request, Some(&options))
+                .await;
+            let mut stream = match stream_res {
+                Ok(res) => res.stream,
+                Err(err) => {
+                    yield Err(ChatError::Communication(format!(
+                        "genai stream start failed: {err}"
+                    )));
+                    return;
+                }
+            };
+
+            let mut emitted_calls = 0usize;
+
+            while let Some(next) = stream.next().await {
+                let event = match next {
+                    Ok(event) => event,
+                    Err(err) => {
+                        yield Err(ChatError::Communication(format!(
+                            "genai stream error: {err}"
+                        )));
+                        return;
+                    }
+                };
+
+                match event {
+                    ChatStreamEvent::Start => {}
+                    ChatStreamEvent::Chunk(chunk) => {
+                        yield Ok(ChatChunk {
+                            delta: chunk.content,
+                            done: false,
+                            tool_calls: None,
+                            tool_results: None,
+                            reasoning: None,
+                            usage: None,
+                        });
+                    }
+                    ChatStreamEvent::ReasoningChunk(chunk) => {
+                        yield Ok(ChatChunk {
+                            delta: String::new(),
+                            done: false,
+                            tool_calls: None,
+                            tool_results: None,
+                            reasoning: Some(chunk.content),
+                            usage: None,
+                        });
+                    }
+                    ChatStreamEvent::ThoughtSignatureChunk(_) => {}
+                    ChatStreamEvent::ToolCallChunk(_) => {}
+                    ChatStreamEvent::End(end) => {
+                        let mut tool_calls = Vec::new();
+                        if let Some(content) = end.captured_content {
+                            for part in content.into_parts() {
+                                if let ContentPart::ToolCall(tc) = part {
+                                    if emitted_calls >= max_tool_depth {
+                                        break;
+                                    }
+                                    emitted_calls += 1;
+                                    tool_calls.push(ChatToolCall {
+                                        name: tc.fn_name,
+                                        arguments: Some(tc.fn_arguments),
+                                        id: Some(tc.call_id),
+                                    });
+                                }
+                            }
+                        }
+
+                        let usage = end.captured_usage.as_ref().map(usage_to_token_usage);
+
+                        yield Ok(ChatChunk {
+                            delta: String::new(),
+                            done: true,
+                            tool_calls: if tool_calls.is_empty() {
+                                None
+                            } else {
+                                Some(tool_calls)
+                            },
+                            tool_results: None,
+                            reasoning: end.captured_reasoning_content,
+                            usage,
+                        });
+                        break;
+                    }
+                }
+            }
+        });
+
+        wrap_stream_with_guards(stream)
+    }
+
+    /// Convert a flattened `ContextMessage` list into genai's
+    /// `ChatMessage` form, dropping the trailing user message if it
+    /// matches the turn's `content` (the scheduler pushes it to both
+    /// the tree and `ctx.content`; we'd rather re-emit it fresh from
+    /// `ctx.content` to keep mode-prefix injection logic in one place).
+    fn context_messages_to_chat(
+        &self,
+        messages: &[crucible_core::traits::context_ops::ContextMessage],
+    ) -> Vec<ChatMessage> {
+        use crucible_core::traits::llm::MessageRole;
+        messages
+            .iter()
+            .map(|m| match m.role {
+                MessageRole::User => ChatMessage::user(&m.content),
+                MessageRole::Assistant => ChatMessage::assistant(&m.content),
+                MessageRole::System => ChatMessage::system(&m.content),
+                MessageRole::Tool | MessageRole::Function => {
+                    // Minimal fallback; tool-role messages come back
+                    // in-turn via the inbound channel, not the flattened
+                    // context — but be forgiving on input.
+                    ChatMessage::user(&m.content)
+                }
+            })
+            .collect()
+    }
+
+    /// Scheduler-driven tool loop: the caller provides the full turn
+    /// messages via `ctx.messages`; the handle does not read or write
+    /// `self.history`. `ctx.content` is used only for backwards-
+    /// compatible logging (the scheduler has already pushed the user
+    /// message into `ctx.messages`).
+    fn scheduler_driven_turn<'a>(
+        &'a mut self,
+        ctx: crucible_core::turn::TurnContext,
+    ) -> futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent> {
+        use crate::agent_manager::chat_chunk_bridge::{
+            chat_chunk_to_events, DEPTH_CAP_PROMPT,
+        };
+        use crucible_core::turn::{StopReason, TurnError, TurnEvent};
+
+        let mut messages = self.context_messages_to_chat(&ctx.messages);
+        let mut inbound = ctx.inbound;
+
+        // Mode prefix injection. Mirrors the legacy path's one-shot
+        // behaviour: first turn in plan mode prepends a synthetic
+        // instruction to the last user message.
+        if self.current_mode_id == "plan" && !self.mode_context_sent {
+            if let Some(last) = messages.last() {
+                if last.role == genai::chat::ChatRole::User {
+                    let prefix = "[MODE: Plan mode - write tools are disabled. Use read-only tools only.]\n\n";
+                    let text = last.content.first_text().unwrap_or_default();
+                    let combined = format!("{prefix}{text}");
+                    let idx = messages.len() - 1;
+                    messages[idx] = ChatMessage::user(combined);
+                    self.mode_context_sent = true;
+                }
+            }
+        }
+
+        let body = async_stream::stream! {
+            let mut chat_stream = self.stream_chat_from_messages(messages.clone());
+
+            'turn: loop {
+                let mut done = false;
+                let mut pending_calls: Option<Vec<ChatToolCall>> = None;
+
+                while let Some(result) = chat_stream.next().await {
+                    match result {
+                        Ok(chunk) => {
+                            let terminal = chunk.done;
+                            let mut events = Vec::new();
+                            let carried_calls = chat_chunk_to_events(chunk, &mut events);
+                            for event in events {
+                                yield event;
+                            }
+                            if terminal {
+                                pending_calls = carried_calls;
+                                done = true;
+                                break;
+                            }
+                        }
+                        Err(ChatError::NotSupported(_)) => {
+                            yield TurnEvent::Done {
+                                stop_reason: StopReason::EndTurn,
+                            };
+                            return;
+                        }
+                        Err(e) => {
+                            yield TurnEvent::Error(TurnError::Communication(e.to_string()));
+                            return;
+                        }
+                    }
+                }
+
+                if !done {
+                    yield TurnEvent::Done {
+                        stop_reason: StopReason::Empty,
+                    };
+                    return;
+                }
+
+                let Some(tool_calls) = pending_calls else {
+                    yield TurnEvent::Done {
+                        stop_reason: StopReason::EndTurn,
+                    };
+                    return;
+                };
+
+                yield TurnEvent::ToolBatchEnd;
+
+                let Some(rx) = inbound.as_mut() else {
+                    yield TurnEvent::Done {
+                        stop_reason: StopReason::EndTurn,
+                    };
+                    return;
+                };
+
+                let expected_ids: std::collections::HashSet<String> = tool_calls
+                    .iter()
+                    .filter_map(|c| c.id.clone())
+                    .collect();
+                let mut collected: Vec<ChatToolResult> = Vec::with_capacity(tool_calls.len());
+                while collected.len() < tool_calls.len() {
+                    let Some(event) = rx.recv().await else {
+                        yield TurnEvent::Done {
+                            stop_reason: StopReason::Cancelled,
+                        };
+                        return;
+                    };
+
+                    match event {
+                        TurnEvent::ToolResult {
+                            ref id,
+                            ref name,
+                            ref result,
+                            ref error,
+                        } => {
+                            if !expected_ids.is_empty() && !expected_ids.contains(id) {
+                                continue;
+                            }
+                            let result_str = match result {
+                                serde_json::Value::String(s) => s.clone(),
+                                other => other.to_string(),
+                            };
+                            collected.push(ChatToolResult {
+                                name: name.clone(),
+                                result: result_str,
+                                error: error.clone(),
+                                call_id: Some(id.clone()),
+                            });
+                        }
+                        TurnEvent::HandlerInjection { content, .. } => {
+                            drop(chat_stream);
+                            messages.push(ChatMessage::user(&content));
+                            chat_stream = self.stream_chat_from_messages(messages.clone());
+                            continue 'turn;
+                        }
+                        TurnEvent::DepthCapHit { .. } => {
+                            drop(chat_stream);
+                            messages.push(ChatMessage::user(DEPTH_CAP_PROMPT));
+                            chat_stream = self.stream_chat_from_messages(messages.clone());
+                            continue 'turn;
+                        }
+                        _ => {}
+                    }
+                }
+
+                // Fold tool calls + results into the local message list
+                // for the next LLM iteration.
+                let genai_tool_calls: Vec<ToolCall> = tool_calls
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, call)| ToolCall {
+                        call_id: call
+                            .id
+                            .clone()
+                            .unwrap_or_else(|| format!("tool_call_{idx}")),
+                        fn_name: call.name.clone(),
+                        fn_arguments: call
+                            .arguments
+                            .clone()
+                            .unwrap_or(serde_json::Value::Null),
+                        thought_signatures: None,
+                    })
+                    .collect();
+                if !genai_tool_calls.is_empty() {
+                    messages.push(ChatMessage::from(genai_tool_calls));
+                }
+                for (idx, result) in collected.into_iter().enumerate() {
+                    let call_id = result.call_id.unwrap_or_else(|| {
+                        tool_calls
+                            .get(idx)
+                            .and_then(|call| call.id.clone())
+                            .unwrap_or_else(|| format!("tool_call_{idx}"))
+                    });
+                    messages.push(ChatMessage::from(ToolResponse::new(call_id, result.result)));
+                }
+
+                drop(chat_stream);
+                chat_stream = self.stream_chat_from_messages(messages.clone());
+            }
+        };
+
+        Box::pin(body)
+    }
+
 }
 
 #[async_trait]
@@ -490,9 +823,6 @@ impl AgentHandle for GenaiAgentHandle {
         if self.max_tool_depth == 0 {
             return wrap_stream_with_guards(self.send_mock_contract_stream(message));
         }
-
-        // Record undo snapshot before this turn modifies history
-        self.snapshot_before_turn();
 
         let mode_prefix = if self.current_mode_id == "plan" && !self.mode_context_sent {
             self.mode_context_sent = true;
@@ -786,14 +1116,6 @@ impl AgentHandle for GenaiAgentHandle {
         wrap_stream_with_guards(stream)
     }
 
-    fn as_undoable(&self) -> Option<&dyn crucible_core::traits::Undoable> {
-        Some(self)
-    }
-
-    fn as_undoable_mut(&mut self) -> Option<&mut dyn crucible_core::traits::Undoable> {
-        Some(self)
-    }
-
     fn get_modes(&self) -> Option<&SessionModeState> {
         Some(&self.mode_state)
     }
@@ -886,31 +1208,6 @@ impl AgentHandle for GenaiAgentHandle {
 }
 
 #[async_trait]
-impl crucible_core::traits::Undoable for GenaiAgentHandle {
-    async fn undo(&mut self, count: usize) -> ChatResult<Vec<crucible_core::types::UndoSummary>> {
-        let mut summaries = Vec::new();
-        for _ in 0..count {
-            if let Some(entry) = self.undo_stack.pop() {
-                let messages_removed = self.history.len().saturating_sub(entry.message_index);
-                self.history.truncate(entry.message_index);
-                summaries.push(crucible_core::types::UndoSummary { messages_removed });
-            } else {
-                break;
-            }
-        }
-        Ok(summaries)
-    }
-
-    fn can_undo(&self) -> bool {
-        !self.undo_stack.is_empty()
-    }
-
-    fn undo_depth(&self) -> usize {
-        self.undo_stack.len()
-    }
-}
-
-#[async_trait]
 impl crucible_core::turn::Agent for GenaiAgentHandle {
     fn capabilities(&self) -> crucible_core::turn::AgentCapabilities {
         crucible_core::turn::AgentCapabilities {
@@ -934,7 +1231,17 @@ impl crucible_core::turn::Agent for GenaiAgentHandle {
         futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
         crucible_core::turn::AgentError,
     > {
-        Ok(crate::agent_manager::chat_chunk_bridge::legacy_tool_loop_stream(self, ctx))
+        // If the scheduler provided a flattened conversation via
+        // `ctx.messages`, drive the tool loop from that authoritative
+        // list — `self.history` becomes irrelevant for that turn.
+        // Otherwise fall back to the legacy path that uses
+        // `self.history`.
+        if ctx.messages.is_empty() {
+            return Ok(crate::agent_manager::chat_chunk_bridge::legacy_tool_loop_stream(
+                self, ctx,
+            ));
+        }
+        Ok(Self::scheduler_driven_turn(self, ctx))
     }
 
     async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
@@ -1255,79 +1562,7 @@ mod tests {
         GenaiAgentHandle::new(client, model_iden, "system", Vec::new(), None)
     }
 
-    #[test]
-    fn undo_stack_empty_initially() {
-        let handle = make_test_handle();
-        assert!(!handle.can_undo());
-        assert_eq!(handle.undo_depth(), 0);
-    }
-
-    #[test]
-    fn snapshot_before_turn_pushes_entry() {
-        let mut handle = make_test_handle();
-        handle.snapshot_before_turn();
-        assert!(handle.can_undo());
-        assert_eq!(handle.undo_depth(), 1);
-    }
-
-    #[tokio::test]
-    async fn undo_truncates_history_to_snapshot() {
-        let mut handle = make_test_handle();
-
-        // Simulate a turn: snapshot, add user message, add tool response
-        handle.snapshot_before_turn();
-        handle.history.push(ChatMessage::user("hello"));
-        handle
-            .history
-            .push(ChatMessage::user("simulated assistant response"));
-        assert_eq!(handle.history.len(), 2);
-
-        let summaries = handle.undo(1).await.unwrap();
-        assert_eq!(summaries.len(), 1);
-        assert_eq!(summaries[0].messages_removed, 2);
-        assert!(handle.history.is_empty());
-        assert!(!handle.can_undo());
-    }
-
-    #[tokio::test]
-    async fn undo_multiple_turns() {
-        let mut handle = make_test_handle();
-
-        // Turn 1
-        handle.snapshot_before_turn();
-        handle.history.push(ChatMessage::user("turn 1"));
-
-        // Turn 2
-        handle.snapshot_before_turn();
-        handle.history.push(ChatMessage::user("turn 2"));
-
-        assert_eq!(handle.undo_depth(), 2);
-        assert_eq!(handle.history.len(), 2);
-
-        // Undo both turns
-        let summaries = handle.undo(2).await.unwrap();
-        assert_eq!(summaries.len(), 2);
-        assert!(handle.history.is_empty());
-        assert_eq!(handle.undo_depth(), 0);
-    }
-
-    #[tokio::test]
-    async fn undo_more_than_available_stops_at_zero() {
-        let mut handle = make_test_handle();
-
-        handle.snapshot_before_turn();
-        handle.history.push(ChatMessage::user("only turn"));
-
-        let summaries = handle.undo(5).await.unwrap();
-        assert_eq!(summaries.len(), 1); // only 1 was available
-        assert!(handle.history.is_empty());
-    }
-
-    #[tokio::test]
-    async fn undo_nothing_returns_empty() {
-        let mut handle = make_test_handle();
-        let summaries = handle.undo(1).await.unwrap();
-        assert!(summaries.is_empty());
-    }
-
+    // Undo semantics moved to AgentManager (operates on the scheduler-
+    // owned ConversationTree). See agent_manager::models::undo + the
+    // integration test `agent_manager::tests::messaging::*`.
 }

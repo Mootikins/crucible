@@ -67,9 +67,10 @@ impl AgentManager {
         }
 
         // Scheduler-owned conversation tree: commit the user message
-        // node before the agent turn starts. The tree is a shadow of
-        // the handle's internal history today; later phases flip reads
-        // to the tree and retire the handle-side Vec.
+        // node before the agent turn starts. The tree is the
+        // authoritative source of conversation state; the agent handle
+        // receives the flattened path via `TurnContext.messages` and
+        // does not hold history between turns.
         let conversation_tree = self.get_or_create_session_tree(session_id);
         {
             let mut t = conversation_tree.lock().await;

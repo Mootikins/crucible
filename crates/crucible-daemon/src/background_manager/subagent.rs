@@ -411,6 +411,9 @@ impl BackgroundJobManager {
         session_writer: Option<Arc<Mutex<SessionWriter>>>,
         options: SubagentExecutionOptions,
     ) -> Result<String, SubagentError> {
+        use crucible_core::traits::context_ops::ContextMessage;
+        use crucible_core::turn::{Agent as _, TurnContext, TurnEvent};
+
         let SubagentExecutionOptions {
             max_turns,
             max_output_bytes,
@@ -430,6 +433,10 @@ impl BackgroundJobManager {
             }
 
             let mut accumulated_output = String::new();
+            // Subagent-local conversation state: each turn's messages
+            // are passed to the agent via TurnContext.messages, so the
+            // agent handle does not need to hold its own history.
+            let mut messages: Vec<ContextMessage> = Vec::new();
             let mut turns = 0;
 
             while turns < max_turns {
@@ -439,8 +446,14 @@ impl BackgroundJobManager {
                 } else {
                     "Continue with the task.".to_string()
                 };
+                messages.push(ContextMessage::user(&input));
 
-                let mut stream = agent.send_message_stream(input);
+                let ctx = TurnContext::new(input.clone())
+                    .with_messages(messages.clone());
+                let mut stream = match agent.turn(ctx).await {
+                    Ok(s) => s,
+                    Err(e) => return Err(SubagentError::Failed(e.to_string())),
+                };
                 let mut turn_output = String::new();
                 let mut has_tool_calls = false;
 
@@ -449,25 +462,27 @@ impl BackgroundJobManager {
                         _ = &mut cancel_rx => {
                             return Err(SubagentError::Cancelled);
                         }
-                        chunk = stream.next() => {
-                            match chunk {
-                                Some(Ok(c)) => {
-                                    turn_output.push_str(&c.delta);
-                                    if c.tool_calls.is_some() {
-                                        has_tool_calls = true;
-                                    }
-                                    if c.done {
-                                        break;
-                                    }
+                        event = stream.next() => {
+                            match event {
+                                Some(TurnEvent::TextDelta(delta)) => {
+                                    turn_output.push_str(&delta);
                                 }
-                                Some(Err(e)) => {
+                                Some(TurnEvent::ToolCall { .. }) => {
+                                    has_tool_calls = true;
+                                }
+                                Some(TurnEvent::Error(e)) => {
                                     return Err(SubagentError::Failed(e.to_string()));
                                 }
-                                None => break,
+                                Some(TurnEvent::Done { .. }) | None => break,
+                                Some(_) => {}
                             }
                         }
                     }
                 }
+                // Release the borrow on `agent` before the next loop
+                // iteration mutably borrows it again.
+                drop(stream);
+                messages.push(ContextMessage::assistant(&turn_output));
 
                 if let Some(ref writer) = session_writer {
                     let mut w = writer.lock().await;

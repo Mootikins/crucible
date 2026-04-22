@@ -31,7 +31,30 @@ pub(super) struct MockSubagentHandle {
     behavior: MockSubagentBehavior,
 }
 
-crucible_core::impl_noop_agent!(MockSubagentHandle);
+#[async_trait]
+impl crucible_core::turn::Agent for MockSubagentHandle {
+    fn capabilities(&self) -> crucible_core::turn::AgentCapabilities {
+        crucible_core::turn::AgentCapabilities::default()
+    }
+    async fn turn<'a>(
+        &'a mut self,
+        ctx: crucible_core::turn::TurnContext,
+    ) -> Result<
+        futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
+        crucible_core::turn::AgentError,
+    > {
+        Ok(crate::agent_manager::chat_chunk_bridge::legacy_tool_loop_stream(self, ctx))
+    }
+    async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
+        Ok(())
+    }
+    async fn switch_model(
+        &mut self,
+        _: &str,
+    ) -> Result<(), crucible_core::turn::NotSupported> {
+        Err(crucible_core::turn::NotSupported::new("switch_model"))
+    }
+}
 
 impl MockSubagentHandle {
     pub(super) fn new(behavior: MockSubagentBehavior) -> Self {

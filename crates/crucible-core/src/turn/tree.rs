@@ -280,6 +280,95 @@ impl ConversationTree {
         )
     }
 
+    /// Count the `User` nodes on the current path — the number of
+    /// turns that could be undone.
+    pub fn undo_depth(&self) -> usize {
+        self.path_to_here(self.current)
+            .iter()
+            .filter(|id| matches!(self.get(**id).content, NodeContent::User { .. }))
+            .count()
+    }
+
+    /// True iff there is at least one turn on the current path.
+    pub fn can_undo(&self) -> bool {
+        self.undo_depth() > 0
+    }
+
+    /// Undo `n` turns: move `current` back to the parent of the
+    /// `n`-th most-recent `User` node on the current path. Returns one
+    /// entry per turn undone, recording how many non-root nodes were
+    /// abandoned (for UI / telemetry). Caps at available turns.
+    pub fn undo_turns(&mut self, n: usize) -> Vec<crate::types::UndoSummary> {
+        if n == 0 {
+            return Vec::new();
+        }
+        let path = self.path_to_here(self.current);
+        let user_indices: Vec<usize> = path
+            .iter()
+            .enumerate()
+            .filter(|(_, id)| matches!(self.get(**id).content, NodeContent::User { .. }))
+            .map(|(idx, _)| idx)
+            .collect();
+        if user_indices.is_empty() {
+            return Vec::new();
+        }
+        let n = n.min(user_indices.len());
+        let target_user = user_indices[user_indices.len() - n];
+        let new_current = if target_user == 0 {
+            self.root()
+        } else {
+            path[target_user - 1]
+        };
+        let mut summaries = Vec::with_capacity(n);
+        let mut remaining = path.len() - target_user;
+        for i in 0..n {
+            let turn_span = if i + 1 < n {
+                let next = user_indices[user_indices.len() - n + i + 1];
+                next - user_indices[user_indices.len() - n + i]
+            } else {
+                remaining
+            };
+            summaries.push(crate::types::UndoSummary {
+                messages_removed: turn_span,
+            });
+            remaining = remaining.saturating_sub(turn_span);
+        }
+        self.current = new_current;
+        summaries
+    }
+
+    /// Flatten the current path (root → current leaf) into the unified
+    /// [`ContextMessage`] representation agents consume via
+    /// `TurnContext.messages`. Root / marker / thinking nodes skip; the
+    /// others project to their natural role.
+    pub fn flatten_current_path_to_context(
+        &self,
+    ) -> Vec<crate::traits::context_ops::ContextMessage> {
+        use crate::traits::context_ops::ContextMessage;
+        let path = self.path_to_here(self.current);
+        let mut out = Vec::with_capacity(path.len());
+        for id in path {
+            let node = self.get(id);
+            match &node.content {
+                NodeContent::Root | NodeContent::Marker { .. } => continue,
+                NodeContent::User { text } => out.push(ContextMessage::user(text)),
+                NodeContent::Agent { text } if !text.is_empty() => {
+                    out.push(ContextMessage::assistant(text));
+                }
+                NodeContent::Agent { .. } => continue,
+                NodeContent::System { text } => out.push(ContextMessage::system(text)),
+                NodeContent::Thinking { .. } => continue,
+                NodeContent::ToolCall { .. } | NodeContent::ToolResult { .. } => {
+                    // Tool exchanges are folded into the turn by the
+                    // agent's in-loop bookkeeping; they do not
+                    // participate in the scheduler-flattened context.
+                    continue;
+                }
+            }
+        }
+        out
+    }
+
     /// Lowest common ancestor of the supplied nodes. `None` only if the
     /// slice is empty.
     pub fn common_ancestor(&self, nodes: &[NodeId]) -> Option<NodeId> {
@@ -401,6 +490,74 @@ mod tests {
         let b = t.add_child(a, text("b"));
         let c = t.add_child(a, text("c"));
         assert_eq!(t.common_ancestor(&[b, c]), Some(a));
+    }
+
+    #[test]
+    fn undo_depth_counts_user_nodes() {
+        let mut t = ConversationTree::new();
+        let u1 = t.add_child_and_advance(t.root(), text("u1"));
+        t.add_child_and_advance(
+            u1,
+            NodeContent::Agent {
+                text: "a1".into(),
+            },
+        );
+        let u2 = t.add_child_and_advance(t.current(), text("u2"));
+        t.add_child_and_advance(
+            u2,
+            NodeContent::Agent {
+                text: "a2".into(),
+            },
+        );
+        assert_eq!(t.undo_depth(), 2);
+        assert!(t.can_undo());
+    }
+
+    #[test]
+    fn undo_turns_rewinds_cursor_to_parent_of_user() {
+        let mut t = ConversationTree::new();
+        let u1 = t.add_child_and_advance(t.root(), text("u1"));
+        let a1 = t.add_child_and_advance(
+            u1,
+            NodeContent::Agent {
+                text: "a1".into(),
+            },
+        );
+        let u2 = t.add_child_and_advance(t.current(), text("u2"));
+        let _a2 = t.add_child_and_advance(
+            u2,
+            NodeContent::Agent {
+                text: "a2".into(),
+            },
+        );
+
+        let summaries = t.undo_turns(1);
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(t.current(), a1); // cursor sits at the parent of u2
+        assert_eq!(t.undo_depth(), 1);
+    }
+
+    #[test]
+    fn undo_turns_more_than_available_caps() {
+        let mut t = ConversationTree::new();
+        let u1 = t.add_child_and_advance(t.root(), text("u1"));
+        t.add_child_and_advance(
+            u1,
+            NodeContent::Agent {
+                text: "a1".into(),
+            },
+        );
+        let summaries = t.undo_turns(5);
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(t.current(), t.root());
+    }
+
+    #[test]
+    fn undo_turns_zero_is_noop() {
+        let mut t = ConversationTree::new();
+        let u1 = t.add_child_and_advance(t.root(), text("u1"));
+        assert!(t.undo_turns(0).is_empty());
+        assert_eq!(t.current(), u1);
     }
 
     #[test]

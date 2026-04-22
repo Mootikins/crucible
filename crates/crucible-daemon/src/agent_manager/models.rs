@@ -821,34 +821,29 @@ impl AgentManager {
         Ok(agent_config.validation_retries)
     }
 
-    /// Undo the last N agent turns for a session, truncating conversation history.
+    /// Undo the last N agent turns for a session by rewinding the
+    /// scheduler-owned `ConversationTree` cursor. The agent handle
+    /// holds no history between turns — the tree is the authoritative
+    /// source — so this is a pure scheduler-side operation.
     pub async fn undo(
         &self,
         session_id: &str,
         count: usize,
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
     ) -> Result<Vec<crucible_core::types::UndoSummary>, AgentError> {
-        // Ensure session exists
         let _ = self.get_session_with_agent(session_id)?;
 
         if self.request_state.contains_key(session_id) {
             return Err(AgentError::ConcurrentRequest(session_id.to_string()));
         }
 
-        let agent = self
-            .agent_cache
-            .get(session_id)
-            .ok_or_else(|| AgentError::NoAgentConfigured(session_id.to_string()))?
-            .clone();
-
-        let mut guard = agent.lock().await;
-        let summaries = guard
-            .as_undoable_mut()
-            .ok_or_else(|| {
-                AgentError::NotSupported("undo not supported for this agent type".into())
-            })?
-            .undo(count)
-            .await?;
+        let summaries = match self.get_session_tree(session_id) {
+            Some(tree) => {
+                let mut t = tree.lock().await;
+                t.undo_turns(count)
+            }
+            None => Vec::new(),
+        };
 
         if !summaries.is_empty() {
             if let Some(tx) = event_tx {
@@ -878,28 +873,26 @@ impl AgentManager {
     /// Check whether a session has any turns that can be undone.
     pub fn can_undo(&self, session_id: &str) -> Result<bool, AgentError> {
         let _ = self.get_session_with_agent(session_id)?;
-        if let Some(agent) = self.agent_cache.get(session_id) {
-            // We need to block on the lock, but since this is a sync method and
-            // we only read a flag, use try_lock to avoid deadlocks.
-            match agent.try_lock() {
-                Ok(guard) => Ok(guard.as_undoable().is_some_and(|u| u.can_undo())),
-                Err(_) => Ok(false), // agent is busy, report as not undoable
-            }
-        } else {
-            Ok(false) // no agent created yet, nothing to undo
-        }
+        let Some(tree) = self.get_session_tree(session_id) else {
+            return Ok(false);
+        };
+        let result = match tree.try_lock() {
+            Ok(t) => t.can_undo(),
+            Err(_) => false,
+        };
+        Ok(result)
     }
 
     /// Return the number of turns that can be undone.
     pub fn undo_depth(&self, session_id: &str) -> Result<usize, AgentError> {
         let _ = self.get_session_with_agent(session_id)?;
-        if let Some(agent) = self.agent_cache.get(session_id) {
-            match agent.try_lock() {
-                Ok(guard) => Ok(guard.as_undoable().map_or(0, |u| u.undo_depth())),
-                Err(_) => Ok(0),
-            }
-        } else {
-            Ok(0)
-        }
+        let Some(tree) = self.get_session_tree(session_id) else {
+            return Ok(0);
+        };
+        let result = match tree.try_lock() {
+            Ok(t) => t.undo_depth(),
+            Err(_) => 0,
+        };
+        Ok(result)
     }
 }

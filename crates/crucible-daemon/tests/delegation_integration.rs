@@ -39,7 +39,55 @@ impl MockSubagentHandle {
     }
 }
 
-crucible_core::impl_noop_agent!(MockSubagentHandle);
+#[async_trait]
+impl crucible_core::turn::Agent for MockSubagentHandle {
+    fn capabilities(&self) -> crucible_core::turn::AgentCapabilities {
+        crucible_core::turn::AgentCapabilities::default()
+    }
+    async fn turn<'a>(
+        &'a mut self,
+        ctx: crucible_core::turn::TurnContext,
+    ) -> Result<
+        futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
+        crucible_core::turn::AgentError,
+    > {
+        // Integration test fixture; drive the real tool-loop helper so
+        // subagents exercise the same plumbing as production.
+        use crucible_core::turn::{StopReason, TurnEvent};
+        use futures::stream::StreamExt;
+        let mut inner = self.send_message_stream(ctx.content);
+        let body = async_stream::stream! {
+            while let Some(r) = inner.next().await {
+                match r {
+                    Ok(c) => {
+                        if !c.delta.is_empty() {
+                            yield TurnEvent::TextDelta(c.delta);
+                        }
+                        if c.done {
+                            yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+                            return;
+                        }
+                    }
+                    Err(e) => {
+                        yield TurnEvent::Error(crucible_core::turn::TurnError::Communication(e.to_string()));
+                        return;
+                    }
+                }
+            }
+            yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+        };
+        Ok(Box::pin(body))
+    }
+    async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
+        Ok(())
+    }
+    async fn switch_model(
+        &mut self,
+        _: &str,
+    ) -> Result<(), crucible_core::turn::NotSupported> {
+        Err(crucible_core::turn::NotSupported::new("switch_model"))
+    }
+}
 
 #[async_trait]
 impl AgentHandle for MockSubagentHandle {

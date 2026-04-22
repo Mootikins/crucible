@@ -131,8 +131,18 @@ impl AgentManager {
 
         let stream_start = Instant::now();
 
+        // Flatten the scheduler-owned tree path to messages so the
+        // agent sees the full conversation and doesn't need to hold
+        // its own history.
+        let flattened_messages = {
+            let tree = stream_ctx.conversation_tree.lock().await;
+            tree.flatten_current_path_to_context()
+        };
+
         let (inbound_tx, inbound_rx) = mpsc::channel::<TurnEvent>(32);
-        let mut turn_ctx = TurnContext::new(content).with_inbound(inbound_rx);
+        let mut turn_ctx = TurnContext::new(content)
+            .with_inbound(inbound_rx)
+            .with_messages(flattened_messages);
         if is_continuation {
             turn_ctx = turn_ctx.continuation();
         }
