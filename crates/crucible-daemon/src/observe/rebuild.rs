@@ -188,4 +188,44 @@ this is not json
         let tree = rebuild_tree_from_str(jsonl);
         assert_eq!(tree.len(), 3); // root + user + agent
     }
+
+    #[tokio::test]
+    async fn roundtrip_session_writer_to_rebuilder() {
+        use crate::observe::id::SessionType;
+        use crate::observe::session::SessionWriter;
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let mut writer = SessionWriter::create(tmp.path(), SessionType::Chat)
+            .await
+            .unwrap();
+        writer
+            .append(LogEvent::init_with_details(
+                "test-session",
+                Some(".".into()),
+                Some("mock".into()),
+            ))
+            .await
+            .unwrap();
+        writer.append(LogEvent::user("hello")).await.unwrap();
+        writer.append(LogEvent::assistant("hi there")).await.unwrap();
+        writer.append(LogEvent::user("bye")).await.unwrap();
+        writer
+            .append(LogEvent::assistant("goodbye"))
+            .await
+            .unwrap();
+        // Writer flushes on drop.
+        let session_dir = writer.session_dir().to_path_buf();
+        drop(writer);
+
+        let tree = rebuild_tree_from_jsonl(&session_dir.join("session.jsonl"))
+            .await
+            .unwrap();
+        let path = tree.path_to_here(tree.current());
+        assert_eq!(path.len(), 5); // root + 2 user + 2 agent
+        assert!(matches!(
+            &tree.get(path[4]).content,
+            NodeContent::Agent { text } if text == "goodbye"
+        ));
+    }
 }
