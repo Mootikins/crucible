@@ -15,6 +15,7 @@ use crucible_core::config::{AcpConfig, AgentProfile, BackendType, DelegationConf
 use crucible_core::session::RecordingMode;
 use crucible_core::session::{OutputValidation, SessionAgent};
 use crucible_core::traits::chat::AgentHandle;
+use crucible_core::turn::{Agent, TurnContext, TurnEvent};
 use crucible_daemon::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
 use crucible_daemon::background_manager::{BackgroundJobManager, SubagentContext, SubagentFactory};
 use crucible_daemon::protocol::SessionEventMessage;
@@ -250,21 +251,22 @@ async fn mock_acp_agent_returns_message_response() {
     .expect("ACP handshake timed out")
     .expect("ACP handshake failed");
 
-    let chunks = timeout(Duration::from_secs(30), async {
-        handle
-            .send_message_stream("hello from smoke test".to_string())
-            .collect::<Vec<_>>()
+    let events = timeout(Duration::from_secs(30), async {
+        let stream = handle
+            .turn(TurnContext::new("hello from smoke test"))
             .await
+            .expect("Agent::turn failed");
+        stream.collect::<Vec<_>>().await
     })
     .await
     .expect("Streaming response timed out");
 
-    assert!(!chunks.is_empty(), "Expected at least one response chunk");
+    assert!(!events.is_empty(), "Expected at least one TurnEvent");
     assert!(
-        chunks
+        events
             .iter()
-            .any(|chunk| matches!(chunk, Ok(chunk) if chunk.done)),
-        "Expected at least one done=true ChatChunk"
+            .any(|e| matches!(e, TurnEvent::Done { .. })),
+        "Expected at least one Done event"
     );
 }
 

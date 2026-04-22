@@ -11,6 +11,7 @@
 use crucible_core::config::{BackendType, DelegationConfig};
 use crucible_core::session::{OutputValidation, SessionAgent};
 use crucible_core::traits::chat::AgentHandle;
+use crucible_core::turn::{Agent, TurnContext};
 use crucible_daemon::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
 use crucible_daemon::background_manager::{BackgroundJobManager, SubagentContext, SubagentFactory};
 use crucible_daemon::protocol::SessionEventMessage;
@@ -219,19 +220,17 @@ async fn real_agent_single_message() {
     .expect("ACP handshake timed out (60s)")
     .expect("ACP handshake failed");
 
-    let chunks = timeout(Duration::from_secs(60), async {
-        handle
-            .send_message_stream("Reply with just the word 'hello'".to_string())
-            .collect::<Vec<_>>()
+    let events = timeout(Duration::from_secs(60), async {
+        let stream = handle
+            .turn(TurnContext::new("Reply with just the word 'hello'"))
             .await
+            .expect("Agent::turn failed");
+        stream.collect::<Vec<_>>().await
     })
     .await
     .expect("streaming response timed out (60s)");
 
-    assert!(
-        !chunks.is_empty(),
-        "Expected at least one ChatChunk from real agent"
-    );
+    assert!(!events.is_empty(), "Expected at least one TurnEvent from real agent");
 }
 
 #[tokio::test]

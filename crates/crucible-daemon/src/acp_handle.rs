@@ -28,9 +28,7 @@ use crucible_core::background::BackgroundSpawner;
 use crucible_core::config::{AcpConfig, DataClassification, DelegationConfig};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::session::SessionAgent;
-use crucible_core::traits::chat::{
-    AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall, ChatToolResult,
-};
+use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatError, ChatResult};
 use crucible_core::traits::KnowledgeRepository;
 use crucible_core::types::acp::schema::SessionModeState;
 use crucible_core::types::mode::default_internal_modes;
@@ -227,286 +225,18 @@ impl AcpAgentHandle {
 
 #[async_trait]
 impl AgentHandle for AcpAgentHandle {
+    // Deprecated: Agent::turn emits TurnEvents directly; this stub only
+    // exists to satisfy the not-yet-deleted AgentHandle::send_message_stream
+    // trait slot.
     fn send_message_stream(
         &mut self,
-        message: String,
+        _message: String,
     ) -> BoxStream<'static, ChatResult<ChatChunk>> {
-        use tokio::sync::mpsc;
-
-        let session_id = match &self.session_id {
-            Some(id) => id.clone(),
-            None => {
-                return Box::pin(futures::stream::once(async {
-                    Err(ChatError::AgentUnavailable(
-                        "ACP agent not connected".to_string(),
-                    ))
-                }));
-            }
-        };
-
-        let (chunk_tx, chunk_rx) = mpsc::unbounded_channel::<StreamingChunk>();
-        let callback = channel_callback(chunk_tx);
-
-        let client_arc = Arc::clone(&self.client);
-        let client_opt = {
-            // &mut self prevents concurrent calls at compile time,
-            // so this lock is never contended during normal operation.
-            let mut guard = match client_arc.try_lock() {
-                Ok(g) => g,
-                Err(_) => {
-                    return Box::pin(futures::stream::once(async {
-                        Err(ChatError::AgentUnavailable(
-                            "ACP client lock contention (concurrent send_message_stream)"
-                                .to_string(),
-                        ))
-                    }));
-                }
-            };
-            guard.take()
-        };
-
-        let Some(client) = client_opt else {
-            return Box::pin(futures::stream::once(async {
-                Err(ChatError::AgentUnavailable(
-                    "ACP client is busy (already streaming)".to_string(),
-                ))
-            }));
-        };
-
-        let (result_tx, result_rx) = tokio::sync::oneshot::channel();
-
-        tokio::spawn(async move {
-            use agent_client_protocol::{ContentBlock, PromptRequest, SessionId};
-
-            let prompt_request = PromptRequest::new(
-                SessionId::from(session_id),
-                vec![ContentBlock::from(message)],
-            );
-
-            let mut owned_client = client;
-            let result = owned_client
-                .send_prompt_with_callback(prompt_request, callback)
-                .await;
-            // Capture usage now while we still own the client. The streaming
-            // code parsed it from the ACP PromptResponse and stashed it on
-            // the client; we move it into the result so the terminal
-            // ChatChunk can carry it through to message_complete.
-            let usage = owned_client.take_last_usage();
-
-            {
-                let mut guard = client_arc.lock().await;
-                *guard = Some(owned_client);
-            }
-
-            let _ = result_tx
-                .send(result.map(|(content, tools, response)| (content, tools, response, usage)));
-        });
-
-        type UnfoldState = Option<(
-            mpsc::UnboundedReceiver<StreamingChunk>,
-            tokio::sync::oneshot::Receiver<
-                Result<
-                    (
-                        String,
-                        Vec<crate::acp::ToolCallInfo>,
-                        agent_client_protocol::PromptResponse,
-                        Option<crucible_core::traits::llm::TokenUsage>,
-                    ),
-                    crate::acp::ClientError,
-                >,
-            >,
-            Vec<ChatToolCall>,
-            HashMap<String, String>,
-        )>;
-
-        Box::pin(futures::stream::unfold(
-            Some((chunk_rx, result_rx, Vec::new(), HashMap::new())) as UnfoldState,
-            |state| async move {
-                let (mut rx, result_rx, mut tool_calls, mut tool_names_by_id): (
-                    mpsc::UnboundedReceiver<StreamingChunk>,
-                    _,
-                    Vec<ChatToolCall>,
-                    HashMap<String, String>,
-                ) = state?;
-
-                match rx.recv().await {
-                    Some(chunk) => {
-                        let chat_chunk = match chunk {
-                            StreamingChunk::Text(text) => {
-                                debug!(
-                                    chunk_type = "text",
-                                    len = text.len(),
-                                    "ACP streaming chunk"
-                                );
-                                ChatChunk {
-                                    delta: text,
-                                    done: false,
-                                    tool_calls: None,
-                                    tool_results: None,
-                                    reasoning: None,
-                                    usage: None,
-                                }
-                            }
-                            StreamingChunk::Thinking(text) => {
-                                debug!(
-                                    chunk_type = "thinking",
-                                    len = text.len(),
-                                    "ACP streaming chunk"
-                                );
-                                ChatChunk {
-                                    delta: String::new(),
-                                    done: false,
-                                    tool_calls: None,
-                                    tool_results: None,
-                                    reasoning: Some(text),
-                                    usage: None,
-                                }
-                            }
-                            StreamingChunk::ToolStart {
-                                name,
-                                id,
-                                arguments,
-                            } => {
-                                info!(tool = %name, tool_id = %id, "ACP tool call started");
-                                tool_names_by_id.insert(id.clone(), name.clone());
-                                tool_calls.push(ChatToolCall {
-                                    name: name.clone(),
-                                    arguments: arguments.clone(),
-                                    id: Some(id.clone()),
-                                });
-                                ChatChunk {
-                                    delta: String::new(),
-                                    done: false,
-                                    tool_calls: Some(vec![ChatToolCall {
-                                        name,
-                                        arguments,
-                                        id: Some(id),
-                                    }]),
-                                    tool_results: None,
-                                    reasoning: None,
-                                    usage: None,
-                                }
-                            }
-                            StreamingChunk::ToolEnd { id, result, error } => {
-                                let name = tool_names_by_id
-                                    .remove(&id)
-                                    .unwrap_or_else(|| "unknown_tool".to_string());
-                                info!(tool = %name, tool_id = %id, has_error = error.is_some(), "ACP tool call completed");
-                                ChatChunk {
-                                    delta: String::new(),
-                                    done: false,
-                                    tool_calls: None,
-                                    tool_results: Some(vec![ChatToolResult {
-                                        name,
-                                        result: result.unwrap_or_default(),
-                                        error,
-                                        call_id: Some(id),
-                                    }]),
-                                    reasoning: None,
-                                    usage: None,
-                                }
-                            }
-                        };
-                        Some((
-                            Ok(chat_chunk),
-                            Some((rx, result_rx, tool_calls, tool_names_by_id)),
-                        ))
-                    }
-                    None => match result_rx.await {
-                        Ok(Ok((_content, acp_tool_calls, _response, usage))) => {
-                            let acp_tool_calls: Vec<crate::acp::ToolCallInfo> = acp_tool_calls;
-                            debug!(
-                                tool_count = acp_tool_calls.len(),
-                                has_usage = usage.is_some(),
-                                "ACP stream completed"
-                            );
-
-                            let final_tool_calls: Vec<ChatToolCall> = acp_tool_calls
-                                .into_iter()
-                                .map(|t| ChatToolCall {
-                                    name: t.title,
-                                    arguments: t.arguments,
-                                    id: t.id,
-                                })
-                                .collect();
-
-                            Some((
-                                Ok(ChatChunk {
-                                    delta: String::new(),
-                                    done: true,
-                                    tool_calls: if final_tool_calls.is_empty() {
-                                        None
-                                    } else {
-                                        Some(final_tool_calls)
-                                    },
-                                    tool_results: None,
-                                    reasoning: None,
-                                    usage,
-                                }),
-                                None,
-                            ))
-                        }
-                        Ok(Err(e)) => {
-                            warn!(error = %e, "ACP stream error");
-                            let chat_err = match e {
-                                crate::acp::ClientError::Connection(msg) => ChatError::Connection(
-                                    format!("ACP agent connection lost: {msg}"),
-                                ),
-                                crate::acp::ClientError::Timeout(msg) => {
-                                    ChatError::Communication(format!("ACP agent timed out: {msg}"))
-                                }
-                                crate::acp::ClientError::Session(msg) => {
-                                    ChatError::AgentUnavailable(format!("ACP session error: {msg}"))
-                                }
-                                crate::acp::ClientError::Protocol(e) => {
-                                    ChatError::Communication(format!("ACP protocol error: {e}"))
-                                }
-                                crate::acp::ClientError::PermissionDenied(msg) => {
-                                    ChatError::Communication(format!(
-                                        "ACP permission denied: {msg}"
-                                    ))
-                                }
-                                crate::acp::ClientError::InvalidConfig(msg) => {
-                                    ChatError::InvalidInput(format!(
-                                        "ACP configuration error: {msg}"
-                                    ))
-                                }
-                                crate::acp::ClientError::Validation(msg) => {
-                                    ChatError::InvalidInput(format!("ACP validation error: {msg}"))
-                                }
-                                crate::acp::ClientError::NotFound(msg) => {
-                                    ChatError::AgentUnavailable(format!(
-                                        "ACP resource not found: {msg}"
-                                    ))
-                                }
-                                crate::acp::ClientError::Io(e) => {
-                                    ChatError::Internal(format!("ACP error: {e}"))
-                                }
-                                crate::acp::ClientError::Serialization(e) => {
-                                    ChatError::Internal(format!("ACP error: {e}"))
-                                }
-                                crate::acp::ClientError::FileSystem(msg) => {
-                                    ChatError::Internal(format!("ACP error: {msg}"))
-                                }
-                                crate::acp::ClientError::Other(e) => {
-                                    ChatError::Internal(format!("ACP error: {e}"))
-                                }
-                            };
-                            Some((Err(chat_err), None))
-                        }
-                        Err(_) => {
-                            warn!("ACP streaming task dropped (oneshot cancelled)");
-                            Some((
-                                Err(ChatError::AgentUnavailable(
-                                    "ACP agent process terminated unexpectedly".to_string(),
-                                )),
-                                None,
-                            ))
-                        }
-                    },
-                }
-            },
-        ))
+        Box::pin(futures::stream::once(async {
+            Err(ChatError::NotSupported(
+                "AcpAgentHandle::send_message_stream removed — use Agent::turn".to_string(),
+            ))
+        }))
     }
 
     fn get_mode_id(&self) -> &str {
@@ -601,9 +331,9 @@ impl AgentHandle for AcpAgentHandle {
 
 // -- Native `Agent` impl ----------------------------------------------------
 //
-// ACP agents run their own tool loop server-side — this impl only translates
-// the outbound `ChatChunk` stream into `TurnEvent`s. No inbound channel is
-// consumed (ACP observes, doesn't re-enter).
+// ACP agents run their own tool loop server-side; this impl translates each
+// streaming chunk directly to a `TurnEvent`. No inbound channel is consumed
+// (ACP observes, doesn't re-enter).
 
 #[async_trait]
 impl crucible_core::turn::Agent for AcpAgentHandle {
@@ -629,40 +359,199 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
         futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
         crucible_core::turn::AgentError,
     > {
-        use crate::agent_manager::chat_chunk_bridge::chat_chunk_to_events;
         use async_stream::stream;
-        use crucible_core::traits::chat::AgentHandle as _;
         use crucible_core::turn::{StopReason, TurnError, TurnEvent};
-        use futures::StreamExt;
+        use tokio::sync::mpsc;
 
-        let mut chat_stream = self.send_message_stream(ctx.content);
+        let message = ctx.content;
+
+        let Some(session_id) = self.session_id.clone() else {
+            let body = stream! {
+                yield TurnEvent::Error(TurnError::AgentUnavailable(
+                    "ACP agent not connected".to_string(),
+                ));
+            };
+            return Ok(Box::pin(body));
+        };
+
+        let client_arc = Arc::clone(&self.client);
+        let client_opt = {
+            // &mut self prevents concurrent calls at compile time,
+            // so this lock is never contended during normal operation.
+            let mut guard = match client_arc.try_lock() {
+                Ok(g) => g,
+                Err(_) => {
+                    let body = stream! {
+                        yield TurnEvent::Error(TurnError::AgentUnavailable(
+                            "ACP client lock contention (concurrent turn)".to_string(),
+                        ));
+                    };
+                    return Ok(Box::pin(body));
+                }
+            };
+            guard.take()
+        };
+
+        let Some(client) = client_opt else {
+            let body = stream! {
+                yield TurnEvent::Error(TurnError::AgentUnavailable(
+                    "ACP client is busy (already streaming)".to_string(),
+                ));
+            };
+            return Ok(Box::pin(body));
+        };
+
+        let (chunk_tx, mut chunk_rx) = mpsc::unbounded_channel::<StreamingChunk>();
+        let callback = channel_callback(chunk_tx);
+        let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+
+        tokio::spawn(async move {
+            use agent_client_protocol::{ContentBlock, PromptRequest, SessionId};
+
+            let prompt_request = PromptRequest::new(
+                SessionId::from(session_id),
+                vec![ContentBlock::from(message)],
+            );
+
+            let mut owned_client = client;
+            let result = owned_client
+                .send_prompt_with_callback(prompt_request, callback)
+                .await;
+            // Capture usage now while we still own the client; stream code
+            // parsed it from the ACP PromptResponse and stashed it there.
+            let usage = owned_client.take_last_usage();
+
+            {
+                let mut guard = client_arc.lock().await;
+                *guard = Some(owned_client);
+            }
+
+            let _ = result_tx
+                .send(result.map(|(content, tools, response)| (content, tools, response, usage)));
+        });
 
         let body = stream! {
-            while let Some(result) = chat_stream.next().await {
-                match result {
-                    Ok(chunk) => {
-                        let terminal = chunk.done;
-                        let mut events = Vec::new();
-                        chat_chunk_to_events(chunk, &mut events);
-                        for event in events {
-                            yield event;
-                        }
-                        if terminal {
-                            yield TurnEvent::Done {
-                                stop_reason: StopReason::EndTurn,
-                            };
-                            return;
-                        }
+            let mut announced_ids: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+            let mut tool_names_by_id: HashMap<String, String> = HashMap::new();
+
+            while let Some(chunk) = chunk_rx.recv().await {
+                match chunk {
+                    StreamingChunk::Text(text) => {
+                        debug!(chunk_type = "text", len = text.len(), "ACP streaming chunk");
+                        yield TurnEvent::TextDelta(text);
                     }
-                    Err(e) => {
-                        yield TurnEvent::Error(TurnError::Communication(e.to_string()));
-                        return;
+                    StreamingChunk::Thinking(text) => {
+                        debug!(chunk_type = "thinking", len = text.len(), "ACP streaming chunk");
+                        yield TurnEvent::Thinking(text);
+                    }
+                    StreamingChunk::ToolStart { name, id, arguments } => {
+                        info!(tool = %name, tool_id = %id, "ACP tool call started");
+                        tool_names_by_id.insert(id.clone(), name.clone());
+                        announced_ids.insert(id.clone());
+                        yield TurnEvent::ToolCall {
+                            id,
+                            name,
+                            args: arguments.unwrap_or(serde_json::Value::Null),
+                        };
+                    }
+                    StreamingChunk::ToolEnd { id, result, error } => {
+                        let name = tool_names_by_id
+                            .remove(&id)
+                            .unwrap_or_else(|| "unknown_tool".to_string());
+                        info!(
+                            tool = %name, tool_id = %id,
+                            has_error = error.is_some(),
+                            "ACP tool call completed"
+                        );
+                        yield TurnEvent::ToolResult {
+                            id,
+                            name,
+                            result: serde_json::Value::String(result.unwrap_or_default()),
+                            error,
+                        };
                     }
                 }
             }
-            yield TurnEvent::Done {
-                stop_reason: StopReason::EndTurn,
-            };
+
+            match result_rx.await {
+                Ok(Ok((_content, acp_tool_calls, _response, usage))) => {
+                    debug!(
+                        tool_count = acp_tool_calls.len(),
+                        has_usage = usage.is_some(),
+                        "ACP stream completed"
+                    );
+
+                    // Emit any final tool calls the ACP client reported but
+                    // the streaming callback hadn't announced.
+                    for tc in acp_tool_calls {
+                        let id = tc.id.clone().unwrap_or_default();
+                        if announced_ids.contains(&id) {
+                            continue;
+                        }
+                        yield TurnEvent::ToolCall {
+                            id,
+                            name: tc.title,
+                            args: tc.arguments.unwrap_or(serde_json::Value::Null),
+                        };
+                    }
+
+                    if let Some(usage) = usage {
+                        yield TurnEvent::Usage(usage);
+                    }
+                    yield TurnEvent::Done {
+                        stop_reason: StopReason::EndTurn,
+                    };
+                }
+                Ok(Err(e)) => {
+                    warn!(error = %e, "ACP stream error");
+                    let turn_err = match e {
+                        crate::acp::ClientError::Connection(msg) => TurnError::Connection(
+                            format!("ACP agent connection lost: {msg}"),
+                        ),
+                        crate::acp::ClientError::Timeout(msg) => {
+                            TurnError::Communication(format!("ACP agent timed out: {msg}"))
+                        }
+                        crate::acp::ClientError::Session(msg) => {
+                            TurnError::AgentUnavailable(format!("ACP session error: {msg}"))
+                        }
+                        crate::acp::ClientError::Protocol(err) => {
+                            TurnError::Communication(format!("ACP protocol error: {err}"))
+                        }
+                        crate::acp::ClientError::PermissionDenied(msg) => {
+                            TurnError::Communication(format!("ACP permission denied: {msg}"))
+                        }
+                        crate::acp::ClientError::InvalidConfig(msg) => {
+                            TurnError::Communication(format!("ACP configuration error: {msg}"))
+                        }
+                        crate::acp::ClientError::Validation(msg) => {
+                            TurnError::Communication(format!("ACP validation error: {msg}"))
+                        }
+                        crate::acp::ClientError::NotFound(msg) => {
+                            TurnError::AgentUnavailable(format!("ACP resource not found: {msg}"))
+                        }
+                        crate::acp::ClientError::Io(err) => {
+                            TurnError::Communication(format!("ACP error: {err}"))
+                        }
+                        crate::acp::ClientError::Serialization(err) => {
+                            TurnError::Communication(format!("ACP error: {err}"))
+                        }
+                        crate::acp::ClientError::FileSystem(msg) => {
+                            TurnError::Communication(format!("ACP error: {msg}"))
+                        }
+                        crate::acp::ClientError::Other(err) => {
+                            TurnError::Communication(format!("ACP error: {err}"))
+                        }
+                    };
+                    yield TurnEvent::Error(turn_err);
+                }
+                Err(_) => {
+                    warn!("ACP streaming task dropped (oneshot cancelled)");
+                    yield TurnEvent::Error(TurnError::AgentUnavailable(
+                        "ACP agent process terminated unexpectedly".to_string(),
+                    ));
+                }
+            }
         };
 
         Ok(Box::pin(body))
