@@ -3,6 +3,8 @@ use super::*;
 /// A mock agent whose stream never yields — blocks forever until cancelled.
 struct PendingMockAgent;
 
+crucible_core::impl_noop_agent!(PendingMockAgent);
+
 #[async_trait::async_trait]
 impl AgentHandle for PendingMockAgent {
     fn send_message_stream(&mut self, _: String) -> BoxStream<'static, ChatResult<ChatChunk>> {

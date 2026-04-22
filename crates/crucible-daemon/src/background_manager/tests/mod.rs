@@ -31,6 +31,8 @@ pub(super) struct MockSubagentHandle {
     behavior: MockSubagentBehavior,
 }
 
+crucible_core::impl_noop_agent!(MockSubagentHandle);
+
 impl MockSubagentHandle {
     pub(super) fn new(behavior: MockSubagentBehavior) -> Self {
         Self { behavior }

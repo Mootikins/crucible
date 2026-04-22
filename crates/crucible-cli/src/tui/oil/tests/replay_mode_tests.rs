@@ -28,6 +28,8 @@ impl CountingAgent {
     }
 }
 
+crucible_core::impl_noop_agent!(CountingAgent);
+
 #[async_trait]
 impl AgentHandle for CountingAgent {
     fn send_message_stream(

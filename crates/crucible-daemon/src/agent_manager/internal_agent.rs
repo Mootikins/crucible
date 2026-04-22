@@ -323,15 +323,14 @@ impl Agent for InternalAgent {
 
     async fn cancel(&self) -> Result<(), AgentError> {
         let guard = self.inner.lock().await;
-        guard
-            .cancel()
+        AgentHandle::cancel(&*guard)
             .await
             .map_err(|e| AgentError::Communication(e.to_string()))
     }
 
     async fn switch_model(&mut self, model_id: &str) -> Result<(), NotSupported> {
         let mut guard = self.inner.lock().await;
-        match guard.switch_model(model_id).await {
+        match AgentHandle::switch_model(&mut *guard, model_id).await {
             Ok(()) => Ok(()),
             Err(_) => Err(NotSupported::new("switch_model")),
         }
@@ -353,6 +352,8 @@ mod tests {
         initial: Vec<ChatResult<ChatChunk>>,
         follow_ups: std::sync::Mutex<Vec<Vec<ChatResult<ChatChunk>>>>,
     }
+
+    crucible_core::impl_noop_agent!(MockHandle);
 
     impl MockHandle {
         fn new(initial: Vec<ChatChunk>) -> Self {
@@ -511,6 +512,8 @@ mod tests {
             second: std::sync::Mutex<Vec<ChatResult<ChatChunk>>>,
         }
 
+        crucible_core::impl_noop_agent!(Restartable);
+
         #[async_trait]
         impl AgentHandle for Restartable {
             fn send_message_stream(
@@ -571,6 +574,8 @@ mod tests {
             captured_prompt: Arc<std::sync::Mutex<Option<String>>>,
             second: std::sync::Mutex<Vec<ChatResult<ChatChunk>>>,
         }
+
+        crucible_core::impl_noop_agent!(DepthCapMock);
 
         #[async_trait]
         impl AgentHandle for DepthCapMock {

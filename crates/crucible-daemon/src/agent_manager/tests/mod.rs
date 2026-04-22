@@ -40,9 +40,13 @@ pub(crate) fn clear_provider_env() -> Vec<EnvVarGuard> {
 }
 struct MockAgent;
 
+crucible_core::impl_noop_agent!(MockAgent);
+
 struct StreamingMockAgent {
     chunks: Vec<ChatChunk>,
 }
+
+crucible_core::impl_noop_agent!(StreamingMockAgent);
 
 struct MockHandler {
     name: String,
@@ -106,6 +110,8 @@ struct PromptCapturingAgent {
     received_prompt: Arc<std::sync::Mutex<Option<String>>>,
     chunks: Vec<ChatChunk>,
 }
+
+crucible_core::impl_noop_agent!(PromptCapturingAgent);
 
 #[async_trait::async_trait]
 impl AgentHandle for PromptCapturingAgent {

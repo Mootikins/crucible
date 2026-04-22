@@ -611,6 +611,8 @@ struct ScriptedHandle {
     captured_prompts: Arc<std::sync::Mutex<Vec<String>>>,
 }
 
+crucible_core::impl_noop_agent!(ScriptedHandle);
+
 impl ScriptedHandle {
     fn new(scripts: Vec<Vec<ChatChunk>>, captured: Arc<std::sync::Mutex<Vec<String>>>) -> Self {
         Self {

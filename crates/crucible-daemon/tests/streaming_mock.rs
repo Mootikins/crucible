@@ -27,6 +27,8 @@ pub struct StreamingMockAgent {
     hanging: bool,
 }
 
+crucible_core::impl_noop_agent!(StreamingMockAgent);
+
 impl StreamingMockAgent {
     /// Create a mock agent that yields only text chunks
     ///

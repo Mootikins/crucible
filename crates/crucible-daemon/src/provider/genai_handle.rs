@@ -1084,6 +1084,8 @@ mod tests {
         hanging: bool,
     }
 
+    crucible_core::impl_noop_agent!(StreamingMockAgent);
+
     impl StreamingMockAgent {
         fn immediate_end() -> Self {
             Self {

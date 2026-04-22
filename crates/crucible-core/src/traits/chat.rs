@@ -106,9 +106,16 @@ pub struct ChatToolResult {
     pub call_id: Option<String>,
 }
 
-/// Runtime handle to an active agent
+/// Runtime handle to an active agent.
+///
+/// `AgentHandle` is a supertrait of [`Agent`](crate::turn::Agent): every
+/// handle must also expose the lean `Agent` surface (`capabilities`,
+/// `turn`, `cancel`, `switch_model`). Setters below are the "wide"
+/// surface specific to interactive sessions; over time they migrate
+/// to inherent methods on the concrete handle types, leaving this
+/// trait as a narrow extension of `Agent`.
 #[async_trait]
-pub trait AgentHandle: Send + Sync {
+pub trait AgentHandle: crate::turn::Agent + Send + Sync {
     fn send_message_stream(&mut self, message: String)
         -> BoxStream<'static, ChatResult<ChatChunk>>;
 
@@ -381,6 +388,35 @@ pub trait AgentHandle: Send + Sync {
     }
 }
 
+/// Blanket `Agent` impl for boxed `AgentHandle` trait objects. Forwards
+/// each method to the underlying handle so callers holding a
+/// `Box<dyn AgentHandle + Send + Sync>` can drive it through `Agent`
+/// without downcasting.
+#[async_trait]
+impl crate::turn::Agent for Box<dyn AgentHandle + Send + Sync> {
+    fn capabilities(&self) -> crate::turn::AgentCapabilities {
+        (**self).capabilities()
+    }
+
+    async fn turn<'a>(
+        &'a mut self,
+        ctx: crate::turn::TurnContext,
+    ) -> Result<BoxStream<'a, crate::turn::TurnEvent>, crate::turn::AgentError> {
+        (**self).turn(ctx).await
+    }
+
+    async fn cancel(&self) -> Result<(), crate::turn::AgentError> {
+        crate::turn::Agent::cancel(&**self).await
+    }
+
+    async fn switch_model(
+        &mut self,
+        model_id: &str,
+    ) -> Result<(), crate::turn::NotSupported> {
+        crate::turn::Agent::switch_model(&mut **self, model_id).await
+    }
+}
+
 /// Blanket implementation for boxed trait objects
 ///
 /// This allows `Box<dyn AgentHandle + Send + Sync>` to be used anywhere
@@ -424,7 +460,7 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
     }
 
     async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {
-        (**self).switch_model(model_id).await
+        AgentHandle::switch_model(&mut **self, model_id).await
     }
 
     fn current_model(&self) -> Option<&str> {
@@ -460,7 +496,7 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
     }
 
     async fn cancel(&self) -> ChatResult<()> {
-        (**self).cancel().await
+        AgentHandle::cancel(&**self).await
     }
 
     async fn set_temperature(&mut self, temperature: f64) -> ChatResult<()> {
@@ -598,6 +634,8 @@ mod tests {
     struct TestAgent {
         chunks: Vec<String>,
     }
+
+    crate::impl_noop_agent!(TestAgent);
 
     #[async_trait]
     impl AgentHandle for TestAgent {

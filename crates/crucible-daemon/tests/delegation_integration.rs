@@ -39,6 +39,8 @@ impl MockSubagentHandle {
     }
 }
 
+crucible_core::impl_noop_agent!(MockSubagentHandle);
+
 #[async_trait]
 impl AgentHandle for MockSubagentHandle {
     fn send_message_stream(

@@ -164,7 +164,7 @@ impl OilChatRunner {
                     }
                     ChatAppMsg::ClearHistory => {
                         if params.app.is_streaming() {
-                            if let Err(e) = params.agent.cancel().await {
+                            if let Err(e) = AgentHandle::cancel(params.agent).await {
                                 tracing::warn!(error = %e, "Failed to cancel agent stream");
                             }
                         }
@@ -186,7 +186,7 @@ impl OilChatRunner {
                     }
                     ChatAppMsg::StreamCancelled => {
                         if params.app.is_streaming() {
-                            if let Err(e) = params.agent.cancel().await {
+                            if let Err(e) = AgentHandle::cancel(params.agent).await {
                                 tracing::warn!(error = %e, "Failed to cancel agent stream on daemon");
                             }
                             tracing::info!("Cancelled active turn via session.cancel RPC");
@@ -194,7 +194,7 @@ impl OilChatRunner {
                     }
                     ChatAppMsg::SwitchModel(model_id) => {
                         tracing::info!(model = %model_id, "Model switch requested");
-                        match params.agent.switch_model(model_id).await {
+                        match AgentHandle::switch_model(params.agent, model_id).await {
                             Ok(()) => {
                                 tracing::info!(model = %model_id, "Model switched successfully");
                             }

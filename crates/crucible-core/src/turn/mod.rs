@@ -272,6 +272,53 @@ pub trait Agent: Send + Sync {
 /// A boxed agent instance.
 pub type BoxAgent = Box<dyn Agent + Send + Sync>;
 
+/// Convenience macro for test fixtures that need to satisfy the
+/// [`Agent`] supertrait bound on [`crate::traits::chat::AgentHandle`]
+/// but never have their `Agent::turn` called in tests. Emits an impl
+/// that returns `Done{Empty}` immediately and `NotSupported` for
+/// `switch_model`.
+///
+/// Usage:
+/// ```ignore
+/// crucible_core::impl_noop_agent!(MyMockHandle);
+/// ```
+#[macro_export]
+macro_rules! impl_noop_agent {
+    ($ty:ty) => {
+        #[async_trait::async_trait]
+        impl $crate::turn::Agent for $ty {
+            fn capabilities(&self) -> $crate::turn::AgentCapabilities {
+                $crate::turn::AgentCapabilities::default()
+            }
+
+            async fn turn<'a>(
+                &'a mut self,
+                _ctx: $crate::turn::TurnContext,
+            ) -> Result<
+                futures::stream::BoxStream<'a, $crate::turn::TurnEvent>,
+                $crate::turn::AgentError,
+            > {
+                Ok(Box::pin(futures::stream::iter(vec![
+                    $crate::turn::TurnEvent::Done {
+                        stop_reason: $crate::turn::StopReason::Empty,
+                    },
+                ])))
+            }
+
+            async fn cancel(&self) -> Result<(), $crate::turn::AgentError> {
+                Ok(())
+            }
+
+            async fn switch_model(
+                &mut self,
+                _model_id: &str,
+            ) -> Result<(), $crate::turn::NotSupported> {
+                Err($crate::turn::NotSupported::new("switch_model"))
+            }
+        }
+    };
+}
+
 /// Shared agent instance.
 pub type SharedAgent = Arc<tokio::sync::Mutex<BoxAgent>>;
 

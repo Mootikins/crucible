@@ -65,7 +65,9 @@ impl OilChatRunner {
                 let _ = reply.send(agent.current_model().map(|s| s.to_string()));
             }
             SessionCommand::SwitchModel(model, reply) => {
-                let result = agent.switch_model(&model).await.map_err(|e| e.to_string());
+                let result = AgentHandle::switch_model(agent, &model)
+                    .await
+                    .map_err(|e| e.to_string());
                 let _ = reply.send(result);
             }
             SessionCommand::ListModels(reply) => {

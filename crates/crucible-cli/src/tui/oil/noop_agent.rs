@@ -11,6 +11,9 @@ use futures::stream::{self, BoxStream, StreamExt};
 
 use crucible_core::interaction::InteractionEvent;
 use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatResult};
+use crucible_core::turn::{
+    Agent, AgentCapabilities, AgentError, NotSupported, StopReason, TurnContext, TurnEvent,
+};
 use tokio::sync::mpsc;
 
 /// No-op [`AgentHandle`] used for pure-display replay.
@@ -32,6 +35,31 @@ impl NoopAgentHandle {
             session_id,
             interaction_rx: Some(rx),
         }
+    }
+}
+
+#[async_trait]
+impl Agent for NoopAgentHandle {
+    fn capabilities(&self) -> AgentCapabilities {
+        AgentCapabilities::default()
+    }
+
+    async fn turn<'a>(
+        &'a mut self,
+        _ctx: TurnContext,
+    ) -> Result<BoxStream<'a, TurnEvent>, AgentError> {
+        Ok(stream::iter(vec![TurnEvent::Done {
+            stop_reason: StopReason::Empty,
+        }])
+        .boxed())
+    }
+
+    async fn cancel(&self) -> Result<(), AgentError> {
+        Ok(())
+    }
+
+    async fn switch_model(&mut self, _model_id: &str) -> Result<(), NotSupported> {
+        Err(NotSupported::new("switch_model"))
     }
 }
 

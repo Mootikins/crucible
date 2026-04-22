@@ -730,7 +730,9 @@ async fn apply_rpc_action(
 
     match action {
         SetRpcAction::SwitchModel(model) => {
-            handle.switch_model(&model).await.map_err(|e| e.to_string())
+            crucible_core::traits::chat::AgentHandle::switch_model(handle, &model)
+                .await
+                .map_err(|e| e.to_string())
         }
         SetRpcAction::SetThinkingBudget(Some(budget)) => handle
             .set_thinking_budget(budget)
