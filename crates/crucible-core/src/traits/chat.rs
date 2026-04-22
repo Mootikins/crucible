@@ -28,7 +28,6 @@ use async_trait::async_trait;
 use futures::stream::BoxStream;
 use serde::{Deserialize, Serialize};
 
-use super::llm::TokenUsage;
 use crate::types::acp::schema::SessionModeState;
 
 /// Result type for chat operations
@@ -71,28 +70,6 @@ pub enum ChatError {
 pub struct PrecognitionNoteInfo {
     pub title: String,
     pub kiln_label: Option<String>,
-}
-
-/// Legacy "chunk from streaming response" shape retained only as a
-/// scripting DSL for daemon test fixtures. Production paths emit
-/// [`crate::turn::TurnEvent`]s directly — do not use `ChatChunk` outside
-/// of `#[cfg(test)]` code.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ChatChunk {
-    pub delta: String,
-    pub done: bool,
-    /// Tool calls initiated by the agent
-    pub tool_calls: Option<Vec<ChatToolCall>>,
-    /// Tool results (completions) from executed tools
-    #[serde(default)]
-    pub tool_results: Option<Vec<ChatToolResult>>,
-    /// Reasoning/thinking content from the model (e.g., Qwen3-thinking, DeepSeek-R1)
-    /// Rendered separately from main delta, typically in a collapsible block
-    #[serde(default)]
-    pub reasoning: Option<String>,
-    /// Token usage (typically only present in final chunk when done=true)
-    #[serde(default)]
-    pub usage: Option<TokenUsage>,
 }
 
 /// Result from a completed tool execution
@@ -393,10 +370,7 @@ impl crate::turn::Agent for Box<dyn AgentHandle + Send + Sync> {
         crate::turn::Agent::cancel(&**self).await
     }
 
-    async fn switch_model(
-        &mut self,
-        model_id: &str,
-    ) -> Result<(), crate::turn::NotSupported> {
+    async fn switch_model(&mut self, model_id: &str) -> Result<(), crate::turn::NotSupported> {
         crate::turn::Agent::switch_model(&mut **self, model_id).await
     }
 }

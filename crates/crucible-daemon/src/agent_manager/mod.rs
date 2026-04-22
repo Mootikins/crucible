@@ -299,8 +299,7 @@ struct StreamContext {
     permission_override: Option<PermissionMode>,
     /// Scheduler-owned conversation tree. Populated as a shadow of
     /// events; see `AgentManager::session_trees`.
-    conversation_tree:
-        Arc<tokio::sync::Mutex<crucible_core::turn::ConversationTree>>,
+    conversation_tree: Arc<tokio::sync::Mutex<crucible_core::turn::ConversationTree>>,
 }
 
 #[allow(dead_code)] // fields capture config snapshot; model used in events, others reserved for stream configuration

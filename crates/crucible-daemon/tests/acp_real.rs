@@ -230,7 +230,10 @@ async fn real_agent_single_message() {
     .await
     .expect("streaming response timed out (60s)");
 
-    assert!(!events.is_empty(), "Expected at least one TurnEvent from real agent");
+    assert!(
+        !events.is_empty(),
+        "Expected at least one TurnEvent from real agent"
+    );
 }
 
 #[tokio::test]

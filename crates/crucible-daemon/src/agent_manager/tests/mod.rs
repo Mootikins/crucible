@@ -8,16 +8,52 @@ use crucible_core::events::{InternalSessionEvent, SessionEvent};
 use crucible_core::parser::ParsedNote;
 use crucible_core::session::SessionType;
 use crucible_core::test_support::EnvVarGuard;
-use crucible_core::traits::chat::{
-    AgentHandle, ChatChunk, ChatResult, ChatToolCall, ChatToolResult,
-};
+use crucible_core::traits::chat::{AgentHandle, ChatResult};
 use crucible_core::traits::knowledge::NoteInfo;
 use crucible_core::traits::KnowledgeRepository;
+use crucible_core::turn::{StopReason, TurnEvent};
 use crucible_core::types::SearchResult;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex as StdMutex};
 use tempfile::TempDir;
 use tokio::time::{timeout, Duration};
+
+/// Test DSL for assembling `TurnEvent` scripts in fixture tests.
+pub(super) mod script {
+    use crucible_core::turn::{StopReason, TurnEvent};
+    use serde_json::Value;
+
+    pub(crate) fn text(s: impl Into<String>) -> TurnEvent {
+        TurnEvent::TextDelta(s.into())
+    }
+
+    pub(crate) fn thinking(s: impl Into<String>) -> TurnEvent {
+        TurnEvent::Thinking(s.into())
+    }
+
+    pub(crate) fn tool_call(id: &str, name: &str, args: Value) -> TurnEvent {
+        TurnEvent::ToolCall {
+            id: id.to_string(),
+            name: name.to_string(),
+            args,
+        }
+    }
+
+    pub(crate) fn tool_result(id: &str, name: &str, result: &str) -> TurnEvent {
+        TurnEvent::ToolResult {
+            id: id.to_string(),
+            name: name.to_string(),
+            result: Value::String(result.to_string()),
+            error: None,
+        }
+    }
+
+    pub(crate) fn done() -> TurnEvent {
+        TurnEvent::Done {
+            stop_reason: StopReason::EndTurn,
+        }
+    }
+}
 
 /// Shared lock for any test that mutates process-wide env vars related
 /// to provider configuration. Tests in `providers.rs` and sibling files
@@ -41,91 +77,57 @@ struct MockAgent;
 crucible_core::impl_noop_agent!(MockAgent);
 
 struct StreamingMockAgent {
-    chunks: Vec<ChatChunk>,
+    events: Vec<TurnEvent>,
 }
 
-/// Translate a single scripted `ChatChunk` into the equivalent
-/// [`TurnEvent`] sequence. Test-only helper that lets fixtures keep
-/// writing `Vec<ChatChunk>` scripts while their `Agent::turn` emits
-/// `TurnEvent`s directly.
-fn chat_chunk_to_turn_events(chunk: &ChatChunk) -> Vec<crucible_core::turn::TurnEvent> {
-    use crucible_core::turn::TurnEvent;
-    let mut events = Vec::new();
-    if let Some(reasoning) = &chunk.reasoning {
-        events.push(TurnEvent::Thinking(reasoning.clone()));
-    }
-    if !chunk.delta.is_empty() {
-        events.push(TurnEvent::TextDelta(chunk.delta.clone()));
-    }
-    if let Some(calls) = &chunk.tool_calls {
-        for call in calls {
-            events.push(TurnEvent::ToolCall {
-                id: call.id.clone().unwrap_or_default(),
-                name: call.name.clone(),
-                args: call.arguments.clone().unwrap_or(serde_json::Value::Null),
-            });
-        }
-    }
-    if let Some(results) = &chunk.tool_results {
-        for r in results {
-            events.push(TurnEvent::ToolResult {
-                id: r.call_id.clone().unwrap_or_default(),
-                name: r.name.clone(),
-                result: serde_json::Value::String(r.result.clone()),
-                error: r.error.clone(),
-            });
-        }
-    }
-    if let Some(usage) = chunk.usage.clone() {
-        events.push(TurnEvent::Usage(usage));
-    }
-    events
-}
-
-/// Run a scripted `Vec<ChatChunk>` as a sequence of `TurnEvent`s,
-/// terminating in `Done{EndTurn}` when the last chunk has `done=true`.
-/// If any chunk carries tool calls, the loop waits for corresponding
-/// `ToolResult`s on `ctx.inbound` before continuing.
-fn scripted_chunks_stream<'a>(
-    chunks: Vec<ChatChunk>,
+/// Replay a scripted `Vec<TurnEvent>` verbatim.
+///
+/// Behaviour rules:
+/// - If the script already contains a terminal `Done`/`Error`, it is
+///   emitted verbatim and the stream ends — the test is in full control.
+/// - If the script has no terminal and no tool calls, we emit
+///   `Done { Empty }` so the scheduler knows the turn finished cleanly.
+/// - If the script has no terminal but emitted `ToolCall`s, we emit
+///   `ToolBatchEnd` and wait for matching `ToolResult`s on `ctx.inbound`
+///   before finalising — exercising the scheduler's tool-dispatch loop.
+fn scripted_events_stream<'a>(
+    events: Vec<TurnEvent>,
     ctx: crucible_core::turn::TurnContext,
-) -> futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent> {
-    use crucible_core::turn::{StopReason, TurnEvent};
+) -> futures::stream::BoxStream<'a, TurnEvent> {
     let mut inbound = ctx.inbound;
     let body = async_stream::stream! {
-        let mut pending_tool_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for chunk in chunks {
-            let terminal = chunk.done;
-            let events = chat_chunk_to_turn_events(&chunk);
-            for event in &events {
-                if let TurnEvent::ToolCall { id, .. } = event {
-                    pending_tool_ids.insert(id.clone());
-                }
+        let mut pending_tool_ids: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+        let mut saw_terminal = false;
+        for event in events {
+            if let TurnEvent::ToolCall { ref id, .. } = event {
+                pending_tool_ids.insert(id.clone());
             }
-            for event in events {
-                yield event;
+            if matches!(event, TurnEvent::Done { .. } | TurnEvent::Error(_)) {
+                saw_terminal = true;
             }
-            if terminal {
-                if !pending_tool_ids.is_empty() {
-                    yield TurnEvent::ToolBatchEnd;
-                    // Wait for tool results or depth cap
-                    if let Some(rx) = inbound.as_mut() {
-                        while !pending_tool_ids.is_empty() {
-                            let Some(event) = rx.recv().await else {
-                                yield TurnEvent::Done { stop_reason: StopReason::Cancelled };
-                                return;
-                            };
-                            if let TurnEvent::ToolResult { id, .. } = &event {
-                                pending_tool_ids.remove(id);
-                            }
-                        }
+            yield event;
+        }
+        if saw_terminal {
+            return;
+        }
+        if !pending_tool_ids.is_empty() {
+            yield TurnEvent::ToolBatchEnd;
+            if let Some(rx) = inbound.as_mut() {
+                while !pending_tool_ids.is_empty() {
+                    let Some(event) = rx.recv().await else {
+                        yield TurnEvent::Done { stop_reason: StopReason::Cancelled };
+                        return;
+                    };
+                    if let TurnEvent::ToolResult { id, .. } = &event {
+                        pending_tool_ids.remove(id);
                     }
                 }
-                yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
-                return;
             }
+            yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+        } else {
+            yield TurnEvent::Done { stop_reason: StopReason::Empty };
         }
-        yield TurnEvent::Done { stop_reason: StopReason::Empty };
     };
     Box::pin(body)
 }
@@ -138,19 +140,13 @@ impl crucible_core::turn::Agent for StreamingMockAgent {
     async fn turn<'a>(
         &'a mut self,
         ctx: crucible_core::turn::TurnContext,
-    ) -> Result<
-        futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
-        crucible_core::turn::AgentError,
-    > {
-        Ok(scripted_chunks_stream(self.chunks.clone(), ctx))
+    ) -> Result<futures::stream::BoxStream<'a, TurnEvent>, crucible_core::turn::AgentError> {
+        Ok(scripted_events_stream(self.events.clone(), ctx))
     }
     async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
         Ok(())
     }
-    async fn switch_model(
-        &mut self,
-        _: &str,
-    ) -> Result<(), crucible_core::turn::NotSupported> {
+    async fn switch_model(&mut self, _: &str) -> Result<(), crucible_core::turn::NotSupported> {
         Err(crucible_core::turn::NotSupported::new("switch_model"))
     }
 }
@@ -215,7 +211,7 @@ impl Handler for MockHandler {
 
 struct PromptCapturingAgent {
     received_prompt: Arc<std::sync::Mutex<Option<String>>>,
-    chunks: Vec<ChatChunk>,
+    events: Vec<TurnEvent>,
 }
 
 #[async_trait::async_trait]
@@ -226,20 +222,14 @@ impl crucible_core::turn::Agent for PromptCapturingAgent {
     async fn turn<'a>(
         &'a mut self,
         ctx: crucible_core::turn::TurnContext,
-    ) -> Result<
-        futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
-        crucible_core::turn::AgentError,
-    > {
+    ) -> Result<futures::stream::BoxStream<'a, TurnEvent>, crucible_core::turn::AgentError> {
         *self.received_prompt.lock().unwrap() = Some(ctx.content.clone());
-        Ok(scripted_chunks_stream(self.chunks.clone(), ctx))
+        Ok(scripted_events_stream(self.events.clone(), ctx))
     }
     async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
         Ok(())
     }
-    async fn switch_model(
-        &mut self,
-        _: &str,
-    ) -> Result<(), crucible_core::turn::NotSupported> {
+    async fn switch_model(&mut self, _: &str) -> Result<(), crucible_core::turn::NotSupported> {
         Err(crucible_core::turn::NotSupported::new("switch_model"))
     }
 }
@@ -425,37 +415,30 @@ impl ReactorTestHarness {
 
     fn inject_capturing_agent(
         &self,
-        chunks: Vec<ChatChunk>,
+        events: Vec<TurnEvent>,
     ) -> Arc<std::sync::Mutex<Option<String>>> {
         let received_prompt = Arc::new(std::sync::Mutex::new(None::<String>));
         self.agent_manager.agent_cache.insert(
             self.session_id.clone(),
             Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
                 received_prompt: received_prompt.clone(),
-                chunks,
+                events,
             }) as BoxedAgentHandle)),
         );
         received_prompt
     }
 
-    fn inject_streaming_agent(&self, chunks: Vec<ChatChunk>) {
+    fn inject_streaming_agent(&self, events: Vec<TurnEvent>) {
         self.agent_manager.agent_cache.insert(
             self.session_id.clone(),
             Arc::new(Mutex::new(
-                Box::new(StreamingMockAgent { chunks }) as BoxedAgentHandle
+                Box::new(StreamingMockAgent { events }) as BoxedAgentHandle
             )),
         );
     }
 
-    fn default_ok_chunks() -> Vec<ChatChunk> {
-        vec![ChatChunk {
-            delta: "ok".to_string(),
-            done: true,
-            tool_calls: None,
-            tool_results: None,
-            reasoning: None,
-            usage: None,
-        }]
+    fn default_ok_events() -> Vec<TurnEvent> {
+        vec![script::text("ok"), script::done()]
     }
 
     async fn send(&mut self, msg: &str) {

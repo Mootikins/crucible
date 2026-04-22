@@ -320,7 +320,7 @@ impl GenaiAgentHandle {
             .with_capture_reasoning_content(true);
         let options = if let Some(budget) = self.thinking_budget {
             options.with_reasoning_effort(ReasoningEffort::Budget(
-                budget.clamp(0, u32::MAX as i64) as u32,
+                budget.clamp(0, u32::MAX as i64) as u32
             ))
         } else {
             options
@@ -590,7 +590,6 @@ impl GenaiAgentHandle {
 
         Box::pin(body)
     }
-
 }
 
 #[async_trait]
@@ -740,7 +739,7 @@ mod tests {
     use super::*;
     use crate::provider::ChatClient;
     use crucible_core::config::{BackendType, LlmProviderConfig};
-    
+
     use futures::StreamExt;
 
     /// Build a scripted `TurnEvent` stream for driving
@@ -757,7 +756,9 @@ mod tests {
     /// Single terminal `Done` with no prior content — exercises the
     /// empty-response detection.
     fn immediate_done_events() -> Vec<TurnEvent> {
-        vec![TurnEvent::Done { stop_reason: StopReason::EndTurn }]
+        vec![TurnEvent::Done {
+            stop_reason: StopReason::EndTurn,
+        }]
     }
 
     #[test]
@@ -792,17 +793,21 @@ mod tests {
     }
 
     fn has_empty_response_error(events: &[TurnEvent]) -> bool {
-        events.iter().any(|e| matches!(
-            e,
-            TurnEvent::Error(TurnError::Communication(msg)) if msg.contains("empty response")
-        ))
+        events.iter().any(|e| {
+            matches!(
+                e,
+                TurnEvent::Error(TurnError::Communication(msg)) if msg.contains("empty response")
+            )
+        })
     }
 
     fn has_timeout_error(events: &[TurnEvent]) -> bool {
-        events.iter().any(|e| matches!(
-            e,
-            TurnEvent::Error(TurnError::Communication(msg)) if msg.contains("timed out")
-        ))
+        events.iter().any(|e| {
+            matches!(
+                e,
+                TurnEvent::Error(TurnError::Communication(msg)) if msg.contains("timed out")
+            )
+        })
     }
 
     fn has_any_error(events: &[TurnEvent]) -> bool {
@@ -835,9 +840,9 @@ mod tests {
     #[tokio::test]
     async fn test_unterminated_stream_yields_unexpected_end_error() {
         // Content arrived but the inner stream closed without Done/Error.
-        let events = wrap_stream_with_guards(scripted_turn_stream(vec![
-            TurnEvent::TextDelta("partial".to_string()),
-        ]))
+        let events = wrap_stream_with_guards(scripted_turn_stream(vec![TurnEvent::TextDelta(
+            "partial".to_string(),
+        )]))
         .collect::<Vec<_>>()
         .await;
         assert!(
@@ -870,7 +875,9 @@ mod tests {
     async fn test_normal_text_response_no_error() {
         let events = wrap_stream_with_guards(scripted_turn_stream(vec![
             TurnEvent::TextDelta("Hello world".to_string()),
-            TurnEvent::Done { stop_reason: StopReason::EndTurn },
+            TurnEvent::Done {
+                stop_reason: StopReason::EndTurn,
+            },
         ]))
         .collect::<Vec<_>>()
         .await;
@@ -885,7 +892,9 @@ mod tests {
                 name: "search".to_string(),
                 args: serde_json::Value::Null,
             },
-            TurnEvent::Done { stop_reason: StopReason::EndTurn },
+            TurnEvent::Done {
+                stop_reason: StopReason::EndTurn,
+            },
         ]))
         .collect::<Vec<_>>()
         .await;
@@ -896,7 +905,9 @@ mod tests {
     async fn test_thinking_only_response_no_error() {
         let events = wrap_stream_with_guards(scripted_turn_stream(vec![
             TurnEvent::Thinking("Let me think about this...".to_string()),
-            TurnEvent::Done { stop_reason: StopReason::EndTurn },
+            TurnEvent::Done {
+                stop_reason: StopReason::EndTurn,
+            },
         ]))
         .collect::<Vec<_>>()
         .await;
@@ -912,7 +923,9 @@ mod tests {
                 name: "search".to_string(),
                 args: serde_json::Value::Null,
             },
-            TurnEvent::Done { stop_reason: StopReason::EndTurn },
+            TurnEvent::Done {
+                stop_reason: StopReason::EndTurn,
+            },
         ]))
         .collect::<Vec<_>>()
         .await;

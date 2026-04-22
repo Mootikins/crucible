@@ -24,7 +24,7 @@ mod native_agent;
 /// This handle implements `AgentHandle` by:
 /// 1. Sending messages via `session.send_message` RPC
 /// 2. Subscribing to session events for streaming responses
-/// 3. Converting `SessionEvent` back to `ChatChunk` for the TUI
+/// 3. Translating `SessionEvent`s into `TurnEvent`s for `Agent::turn`
 /// 4. Routing interaction events to a separate channel for the TUI event loop
 pub struct DaemonAgentHandle {
     pub(super) client: Arc<DaemonClient>,
@@ -33,12 +33,11 @@ pub struct DaemonAgentHandle {
     pub(super) streaming_rx: Arc<Mutex<mpsc::UnboundedReceiver<SessionEvent>>>,
     pub(super) interaction_rx: Option<mpsc::UnboundedReceiver<InteractionEvent>>,
     /// Raw SessionEvent receiver for callers that want to bypass the
-    /// streaming_rx → ChatChunk conversion. Used by the live TUI, which
-    /// subscribes to SessionEvents directly instead of consuming ChatChunks.
-    /// Set at construction time via `new_and_subscribe_with_raw_forwarding`.
-    /// Only one of `streaming_rx` / `raw_event_rx` gets populated per
-    /// handle: when raw forwarding is enabled, the router skips
-    /// `streaming_tx`.
+    /// `streaming_rx` → `Agent::turn` path. Used by the live TUI, which
+    /// subscribes to SessionEvents directly. Set at construction time
+    /// via `new_and_subscribe_with_raw_forwarding`. Only one of
+    /// `streaming_rx` / `raw_event_rx` gets populated per handle: when
+    /// raw forwarding is enabled, the router skips `streaming_tx`.
     pub(super) raw_event_rx: Option<mpsc::UnboundedReceiver<SessionEvent>>,
     pub(super) mode_id: String,
     pub(super) cached_model: Option<String>,
@@ -151,11 +150,13 @@ impl DaemonAgentHandle {
     }
 
     /// Subscribe variant that forwards raw SessionEvents to the caller
-    /// (via `take_raw_event_receiver`) instead of converting them into
-    /// ChatChunks internally. Used by the live TUI.
+    /// (via `take_raw_event_receiver`) instead of routing them through
+    /// `Agent::turn`'s converter. Used by the live TUI, which owns the
+    /// `SessionEvent` stream directly.
     ///
-    /// In this mode, `send_message_stream` will block indefinitely — callers
-    /// must use `send_message_fire_and_forget` instead.
+    /// In this mode, `Agent::turn` will block on `streaming_rx` (which
+    /// receives nothing) — callers must use
+    /// `send_message_fire_and_forget` to dispatch messages.
     pub async fn new_and_subscribe_with_raw_forwarding(
         client: Arc<DaemonClient>,
         session_id: String,

@@ -448,8 +448,7 @@ impl BackgroundJobManager {
                 };
                 messages.push(ContextMessage::user(&input));
 
-                let ctx = TurnContext::new(input.clone())
-                    .with_messages(messages.clone());
+                let ctx = TurnContext::new(input.clone()).with_messages(messages.clone());
                 let mut stream = match agent.turn(ctx).await {
                     Ok(s) => s,
                     Err(e) => return Err(SubagentError::Failed(e.to_string())),

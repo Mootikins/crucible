@@ -51,7 +51,7 @@ pub use acp::SessionManager;
 pub use change_detection::{CacheEntry, ChangeDetector, ContentHasher, HashLookupStorage};
 pub use graph_query::{GraphQueryError, GraphQueryExecutor, GraphQueryResult};
 
-pub use chat::{AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall};
+pub use chat::{AgentHandle, ChatError, ChatResult, ChatToolCall};
 pub use completion_backend::{
     BackendCompletionChunk, BackendCompletionRequest, BackendCompletionResponse, BackendError,
     BackendResult, CompletionBackend,

@@ -168,9 +168,9 @@ mod tests {
         assert_eq!(tree.len(), 5); // root + user + call + result + agent
 
         // Verify a ToolCall and ToolResult node both exist.
-        let has_tool_call = tree
-            .iter()
-            .any(|(_, n)| matches!(&n.content, NodeContent::ToolCall { name, .. } if name == "search"));
+        let has_tool_call = tree.iter().any(
+            |(_, n)| matches!(&n.content, NodeContent::ToolCall { name, .. } if name == "search"),
+        );
         assert!(has_tool_call, "missing ToolCall node");
 
         let has_tool_result = tree
@@ -208,12 +208,12 @@ this is not json
             .await
             .unwrap();
         writer.append(LogEvent::user("hello")).await.unwrap();
-        writer.append(LogEvent::assistant("hi there")).await.unwrap();
-        writer.append(LogEvent::user("bye")).await.unwrap();
         writer
-            .append(LogEvent::assistant("goodbye"))
+            .append(LogEvent::assistant("hi there"))
             .await
             .unwrap();
+        writer.append(LogEvent::user("bye")).await.unwrap();
+        writer.append(LogEvent::assistant("goodbye")).await.unwrap();
         // Writer flushes on drop.
         let session_dir = writer.session_dir().to_path_buf();
         drop(writer);

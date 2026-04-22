@@ -229,7 +229,7 @@ impl OilChatRunner {
         // Spawn the live SessionEvent consumer if the factory handed us a
         // raw event receiver. This is the unified event path: the daemon's
         // broadcast flows through SessionEventStream → ChatAppMsg, matching
-        // replay and resume. Live turns do not consume ChatChunk streams.
+        // replay and resume.
         if let Some(event_rx) = live_event_rx {
             let session_id = agent.session_id().unwrap_or("").to_string();
             let msg_tx_live = msg_tx.clone();

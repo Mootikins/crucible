@@ -19,7 +19,7 @@ use crate::SessionEvent;
 /// Routing:
 /// - `interaction_requested` → parsed and forwarded on `interaction_tx`
 /// - all others → forwarded on `raw_event_tx` if present (live TUI path),
-///   otherwise on `streaming_tx` (oneshot / ChatChunk path)
+///   otherwise on `streaming_tx` (consumed by `Agent::turn`)
 pub(super) async fn event_router(
     mut event_rx: mpsc::UnboundedReceiver<SessionEvent>,
     streaming_tx: mpsc::UnboundedSender<SessionEvent>,

@@ -72,10 +72,7 @@ impl crucible_core::turn::Agent for MockSubagentHandle {
     async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
         Ok(())
     }
-    async fn switch_model(
-        &mut self,
-        _: &str,
-    ) -> Result<(), crucible_core::turn::NotSupported> {
+    async fn switch_model(&mut self, _: &str) -> Result<(), crucible_core::turn::NotSupported> {
         Err(crucible_core::turn::NotSupported::new("switch_model"))
     }
 }

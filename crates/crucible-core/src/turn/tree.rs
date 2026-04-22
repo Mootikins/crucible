@@ -253,8 +253,9 @@ impl ConversationTree {
             .into_iter()
             .map(|label| self.add_child(parent, NodeContent::Marker { label }))
             .collect();
-        let parent_meta =
-            &mut self.nodes[(parent.index() - 1) as usize].meta.fanout_children;
+        let parent_meta = &mut self.nodes[(parent.index() - 1) as usize]
+            .meta
+            .fanout_children;
         parent_meta.extend(ids.iter().copied());
         ids
     }
@@ -430,7 +431,9 @@ mod tests {
         let mut t = ConversationTree::new();
         let a = t.add_child_and_advance(
             t.root(),
-            NodeContent::Agent { text: String::new() },
+            NodeContent::Agent {
+                text: String::new(),
+            },
         );
         assert_eq!(t.current(), a);
     }
@@ -440,7 +443,9 @@ mod tests {
         let mut t = ConversationTree::new();
         let a = t.add_child_and_advance(
             t.root(),
-            NodeContent::Agent { text: String::new() },
+            NodeContent::Agent {
+                text: String::new(),
+            },
         );
         assert!(t.append_delta("hel"));
         assert!(t.append_delta("lo"));
@@ -505,19 +510,9 @@ mod tests {
     fn undo_depth_counts_user_nodes() {
         let mut t = ConversationTree::new();
         let u1 = t.add_child_and_advance(t.root(), text("u1"));
-        t.add_child_and_advance(
-            u1,
-            NodeContent::Agent {
-                text: "a1".into(),
-            },
-        );
+        t.add_child_and_advance(u1, NodeContent::Agent { text: "a1".into() });
         let u2 = t.add_child_and_advance(t.current(), text("u2"));
-        t.add_child_and_advance(
-            u2,
-            NodeContent::Agent {
-                text: "a2".into(),
-            },
-        );
+        t.add_child_and_advance(u2, NodeContent::Agent { text: "a2".into() });
         assert_eq!(t.undo_depth(), 2);
         assert!(t.can_undo());
     }
@@ -526,19 +521,9 @@ mod tests {
     fn undo_turns_rewinds_cursor_to_parent_of_user() {
         let mut t = ConversationTree::new();
         let u1 = t.add_child_and_advance(t.root(), text("u1"));
-        let a1 = t.add_child_and_advance(
-            u1,
-            NodeContent::Agent {
-                text: "a1".into(),
-            },
-        );
+        let a1 = t.add_child_and_advance(u1, NodeContent::Agent { text: "a1".into() });
         let u2 = t.add_child_and_advance(t.current(), text("u2"));
-        let _a2 = t.add_child_and_advance(
-            u2,
-            NodeContent::Agent {
-                text: "a2".into(),
-            },
-        );
+        let _a2 = t.add_child_and_advance(u2, NodeContent::Agent { text: "a2".into() });
 
         let summaries = t.undo_turns(1);
         assert_eq!(summaries.len(), 1);
@@ -550,12 +535,7 @@ mod tests {
     fn undo_turns_more_than_available_caps() {
         let mut t = ConversationTree::new();
         let u1 = t.add_child_and_advance(t.root(), text("u1"));
-        t.add_child_and_advance(
-            u1,
-            NodeContent::Agent {
-                text: "a1".into(),
-            },
-        );
+        t.add_child_and_advance(u1, NodeContent::Agent { text: "a1".into() });
         let summaries = t.undo_turns(5);
         assert_eq!(summaries.len(), 1);
         assert_eq!(t.current(), t.root());

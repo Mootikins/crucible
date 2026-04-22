@@ -12,7 +12,7 @@ async fn reactor_pre_llm_modifies_prompt() {
         behavior: MockHandlerBehavior::ModifyPrompt("MODIFIED: hello".to_string()),
     })
     .await;
-    let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_chunks());
+    let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
 
     h.send("hello").await;
     h.wait_for("message_complete").await;
@@ -35,14 +35,8 @@ async fn reactor_pre_llm_cancel_aborts() {
     })
     .await;
 
-    let received_prompt = h.inject_capturing_agent(vec![ChatChunk {
-        delta: "should-not-run".to_string(),
-        done: true,
-        tool_calls: None,
-        tool_results: None,
-        reasoning: None,
-        usage: None,
-    }]);
+    let received_prompt =
+        h.inject_capturing_agent(vec![script::text("should-not-run"), script::done()]);
 
     h.send("hello").await;
     let ended = h.wait_for("ended").await;
@@ -59,7 +53,7 @@ async fn reactor_pre_llm_cancel_aborts() {
 #[tokio::test]
 async fn reactor_pre_llm_empty_passthrough() {
     let mut h = ReactorTestHarness::new().await;
-    let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_chunks());
+    let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
 
     h.send("hello").await;
     h.wait_for("message_complete").await;
@@ -81,7 +75,7 @@ async fn reactor_pre_llm_error_fails_open() {
     })
     .await;
 
-    let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_chunks());
+    let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
 
     h.send("hello").await;
     h.wait_for("message_complete").await;
@@ -104,7 +98,7 @@ async fn reactor_post_llm_fires_after_stream() {
     })
     .await;
 
-    h.inject_streaming_agent(ReactorTestHarness::default_ok_chunks());
+    h.inject_streaming_agent(ReactorTestHarness::default_ok_events());
 
     h.send("hello").await;
     h.wait_for("message_complete").await;
@@ -126,26 +120,13 @@ async fn reactor_pre_tool_cancel_denies() {
     .await;
 
     h.inject_streaming_agent(vec![
-        ChatChunk {
-            delta: String::new(),
-            done: false,
-            tool_calls: Some(vec![ChatToolCall {
-                name: "write".to_string(),
-                arguments: Some(serde_json::json!({ "path": "foo.txt", "content": "x" })),
-                id: Some("call-pre-tool-cancel".to_string()),
-            }]),
-            tool_results: None,
-            reasoning: None,
-            usage: None,
-        },
-        ChatChunk {
-            delta: "done".to_string(),
-            done: true,
-            tool_calls: None,
-            tool_results: None,
-            reasoning: None,
-            usage: None,
-        },
+        script::tool_call(
+            "call-pre-tool-cancel",
+            "write",
+            serde_json::json!({ "path": "foo.txt", "content": "x" }),
+        ),
+        script::text("done"),
+        script::done(),
     ]);
 
     h.send("run tool").await;
@@ -181,7 +162,7 @@ async fn runtime_dispatch_pre_llm_call_transforms_prompt() {
             .unwrap();
     }
 
-    let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_chunks());
+    let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
 
     h.send("hello").await;
     h.wait_for("message_complete").await;
@@ -211,26 +192,13 @@ async fn runtime_dispatch_pre_tool_call_cancels_execution() {
     }
 
     h.inject_streaming_agent(vec![
-        ChatChunk {
-            delta: String::new(),
-            done: false,
-            tool_calls: Some(vec![ChatToolCall {
-                name: "write".to_string(),
-                arguments: Some(serde_json::json!({ "path": "foo.txt", "content": "x" })),
-                id: Some("call-runtime-pre-tool-cancel".to_string()),
-            }]),
-            tool_results: None,
-            reasoning: None,
-            usage: None,
-        },
-        ChatChunk {
-            delta: "done".to_string(),
-            done: true,
-            tool_calls: None,
-            tool_results: None,
-            reasoning: None,
-            usage: None,
-        },
+        script::tool_call(
+            "call-runtime-pre-tool-cancel",
+            "write",
+            serde_json::json!({ "path": "foo.txt", "content": "x" }),
+        ),
+        script::text("done"),
+        script::done(),
     ]);
 
     h.send("run tool").await;
@@ -267,7 +235,7 @@ async fn runtime_dispatch_post_llm_call_fires_handler() {
             .unwrap();
     }
 
-    h.inject_streaming_agent(ReactorTestHarness::default_ok_chunks());
+    h.inject_streaming_agent(ReactorTestHarness::default_ok_events());
 
     h.send("hello").await;
 
@@ -307,7 +275,7 @@ async fn reactor_persists_across_messages() {
     })
     .await;
 
-    h.inject_streaming_agent(ReactorTestHarness::default_ok_chunks());
+    h.inject_streaming_agent(ReactorTestHarness::default_ok_events());
 
     h.send("one").await;
     h.wait_for("message_complete").await;
@@ -340,7 +308,7 @@ async fn reactor_lua_handler_discovery_empty_dir() {
         assert!(state.reactor.is_empty());
     }
 
-    let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_chunks());
+    let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
 
     h.send("hello").await;
     h.wait_for("message_complete").await;

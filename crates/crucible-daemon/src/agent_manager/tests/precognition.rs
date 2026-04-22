@@ -28,14 +28,7 @@ async fn test_precognition_skipped_when_disabled() {
     agent_manager.agent_cache.insert(
         session.id.clone(),
         Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            chunks: vec![ChatChunk {
-                delta: "ok".to_string(),
-                done: true,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-            }],
+            events: vec![script::text("ok"), script::done()],
         }))),
     );
 
@@ -77,14 +70,7 @@ async fn test_precognition_skipped_for_search_command() {
     agent_manager.agent_cache.insert(
         session.id.clone(),
         Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            chunks: vec![ChatChunk {
-                delta: "ok".to_string(),
-                done: true,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-            }],
+            events: vec![script::text("ok"), script::done()],
         }))),
     );
 
@@ -131,14 +117,7 @@ async fn test_precognition_skipped_when_no_kiln() {
     agent_manager.agent_cache.insert(
         session.id.clone(),
         Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            chunks: vec![ChatChunk {
-                delta: "ok".to_string(),
-                done: true,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-            }],
+            events: vec![script::text("ok"), script::done()],
         }))),
     );
 
@@ -185,14 +164,7 @@ async fn test_precognition_complete_event_emitted_when_enrichment_runs() {
     agent_manager.agent_cache.insert(
         session.id.clone(),
         Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            chunks: vec![ChatChunk {
-                delta: "ok".to_string(),
-                done: true,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-            }],
+            events: vec![script::text("ok"), script::done()],
         }))),
     );
 
@@ -282,14 +254,7 @@ async fn test_precognition_enriched_content_reaches_agent() {
         session.id.clone(),
         Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
             received_prompt: received.clone(),
-            chunks: vec![ChatChunk {
-                delta: "ok".to_string(),
-                done: true,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-            }],
+            events: vec![script::text("ok"), script::done()],
         }) as BoxedAgentHandle)),
     );
 
@@ -414,14 +379,7 @@ async fn test_precognition_emits_note_info_in_event() {
     agent_manager.agent_cache.insert(
         session.id.clone(),
         Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            chunks: vec![ChatChunk {
-                delta: "ok".to_string(),
-                done: true,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-            }],
+            events: vec![script::text("ok"), script::done()],
         }))),
     );
 

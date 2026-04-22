@@ -413,15 +413,11 @@ impl AgentManager {
                     {
                         let mut tree = stream_ctx.conversation_tree.lock().await;
                         let parent = tree.current();
-                        let result_value =
-                            serde_json::Value::String(tool_result.result.clone());
+                        let result_value = serde_json::Value::String(tool_result.result.clone());
                         tree.add_child(
                             parent,
                             crucible_core::turn::NodeContent::ToolResult {
-                                id: tool_result
-                                    .call_id
-                                    .clone()
-                                    .unwrap_or_else(|| id.clone()),
+                                id: tool_result.call_id.clone().unwrap_or_else(|| id.clone()),
                                 name: tool_result.name.clone(),
                                 result: result_value,
                                 error: tool_result.error.clone(),

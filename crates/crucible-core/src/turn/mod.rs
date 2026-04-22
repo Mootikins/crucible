@@ -3,7 +3,7 @@
 //! One event type (`TurnEvent`) flows from every agent — ACP, internal
 //! genai, future backends — into the daemon's runtime. The runtime
 //! aggregates the stream into `SessionEvent`s for subscribers; there is
-//! no per-backend `ChatChunk`/`SessionEvent` reassembly.
+//! no per-backend `SessionEvent` reassembly.
 //!
 //! Tool-loop control is event-driven: the agent emits `ToolCall`, the
 //! runtime replies with a `ToolResult` on an inbound channel. The

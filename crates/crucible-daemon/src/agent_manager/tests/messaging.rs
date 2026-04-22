@@ -26,23 +26,10 @@ async fn send_message_emits_text_delta_events_in_order() {
     agent_manager.agent_cache.insert(
         session.id.clone(),
         Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            chunks: vec![
-                ChatChunk {
-                    delta: "hello".to_string(),
-                    done: false,
-                    tool_calls: None,
-                    tool_results: None,
-                    reasoning: None,
-                    usage: None,
-                },
-                ChatChunk {
-                    delta: " world".to_string(),
-                    done: true,
-                    tool_calls: None,
-                    tool_results: None,
-                    reasoning: None,
-                    usage: None,
-                },
+            events: vec![
+                script::text("hello"),
+                script::text(" world"),
+                script::done(),
             ],
         }))),
     );
@@ -130,23 +117,10 @@ async fn send_message_emits_thinking_before_text_delta() {
     agent_manager.agent_cache.insert(
         session.id.clone(),
         Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            chunks: vec![
-                ChatChunk {
-                    delta: String::new(),
-                    done: false,
-                    tool_calls: None,
-                    tool_results: None,
-                    reasoning: Some("thinking...".to_string()),
-                    usage: None,
-                },
-                ChatChunk {
-                    delta: "response".to_string(),
-                    done: true,
-                    tool_calls: None,
-                    tool_results: None,
-                    reasoning: None,
-                    usage: None,
-                },
+            events: vec![
+                script::thinking("thinking..."),
+                script::text("response"),
+                script::done(),
             ],
         }))),
     );
@@ -178,8 +152,8 @@ async fn send_message_emits_thinking_before_text_delta() {
     assert_eq!(complete.data["full_response"], "response");
 }
 
-/// When a single ChatChunk contains BOTH delta and reasoning (same-chunk transition),
-/// the thinking event must be emitted before text_delta.
+/// When a turn emits both Thinking and TextDelta events, the thinking
+/// event must reach the scheduler before text_delta.
 #[tokio::test]
 async fn same_chunk_thinking_emitted_before_text_delta() {
     let tmp = TempDir::new().unwrap();
@@ -203,18 +177,16 @@ async fn same_chunk_thinking_emitted_before_text_delta() {
         .await
         .unwrap();
 
-    // Single chunk with BOTH reasoning and delta populated
+    // Script emits thinking before text so the scheduler must relay
+    // them in that order.
     agent_manager.agent_cache.insert(
         session.id.clone(),
         Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            chunks: vec![ChatChunk {
-                delta: "answer".to_string(),
-                done: true,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: Some("let me think".to_string()),
-                usage: None,
-            }],
+            events: vec![
+                script::thinking("let me think"),
+                script::text("answer"),
+                script::done(),
+            ],
         }))),
     );
 
@@ -278,40 +250,15 @@ async fn send_message_emits_tool_call_and_tool_result_events() {
     agent_manager.agent_cache.insert(
         session.id.clone(),
         Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            chunks: vec![
-                ChatChunk {
-                    delta: String::new(),
-                    done: false,
-                    tool_calls: Some(vec![ChatToolCall {
-                        name: "read_file".to_string(),
-                        arguments: Some(serde_json::json!({ "path": "test.md" })),
-                        id: Some("call1".to_string()),
-                    }]),
-                    tool_results: None,
-                    reasoning: None,
-                    usage: None,
-                },
-                ChatChunk {
-                    delta: String::new(),
-                    done: false,
-                    tool_calls: None,
-                    tool_results: Some(vec![ChatToolResult {
-                        name: "read_file".to_string(),
-                        result: "content".to_string(),
-                        error: None,
-                        call_id: Some("call1".to_string()),
-                    }]),
-                    reasoning: None,
-                    usage: None,
-                },
-                ChatChunk {
-                    delta: "Done.".to_string(),
-                    done: true,
-                    tool_calls: None,
-                    tool_results: None,
-                    reasoning: None,
-                    usage: None,
-                },
+            events: vec![
+                script::tool_call(
+                    "call1",
+                    "read_file",
+                    serde_json::json!({ "path": "test.md" }),
+                ),
+                script::tool_result("call1", "read_file", "content"),
+                script::text("Done."),
+                script::done(),
             ],
         }))),
     );
@@ -394,27 +341,14 @@ async fn display_hook_lua_tool_enriches_tool_call_metadata() {
     agent_manager.agent_cache.insert(
         session.id.clone(),
         Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            chunks: vec![
-                ChatChunk {
-                    delta: String::new(),
-                    done: false,
-                    tool_calls: Some(vec![ChatToolCall {
-                        name: "read_file".to_string(),
-                        arguments: Some(serde_json::json!({ "path": "test.md" })),
-                        id: Some("call-display-hook".to_string()),
-                    }]),
-                    tool_results: None,
-                    reasoning: None,
-                    usage: None,
-                },
-                ChatChunk {
-                    delta: "Done.".to_string(),
-                    done: true,
-                    tool_calls: None,
-                    tool_results: None,
-                    reasoning: None,
-                    usage: None,
-                },
+            events: vec![
+                script::tool_call(
+                    "call-display-hook",
+                    "read_file",
+                    serde_json::json!({ "path": "test.md" }),
+                ),
+                script::text("Done."),
+                script::done(),
             ],
         }))),
     );
@@ -463,14 +397,7 @@ async fn test_execute_agent_stream_empty_response_emits_error_event() {
     agent_manager.agent_cache.insert(
         session.id.clone(),
         Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            chunks: vec![ChatChunk {
-                delta: String::new(),
-                done: true,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-            }],
+            events: vec![script::done()],
         }))),
     );
 
@@ -534,40 +461,14 @@ async fn test_execute_agent_stream_tool_call_only_is_not_error() {
     agent_manager.agent_cache.insert(
         session.id.clone(),
         Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            chunks: vec![
-                ChatChunk {
-                    delta: String::new(),
-                    done: false,
-                    tool_calls: Some(vec![ChatToolCall {
-                        name: "read_file".to_string(),
-                        arguments: Some(serde_json::json!({ "path": "test.md" })),
-                        id: Some("call-tool-only".to_string()),
-                    }]),
-                    tool_results: None,
-                    reasoning: None,
-                    usage: None,
-                },
-                ChatChunk {
-                    delta: String::new(),
-                    done: false,
-                    tool_calls: None,
-                    tool_results: Some(vec![ChatToolResult {
-                        name: "read_file".to_string(),
-                        result: "content".to_string(),
-                        error: None,
-                        call_id: Some("call-tool-only".to_string()),
-                    }]),
-                    reasoning: None,
-                    usage: None,
-                },
-                ChatChunk {
-                    delta: String::new(),
-                    done: true,
-                    tool_calls: None,
-                    tool_results: None,
-                    reasoning: None,
-                    usage: None,
-                },
+            events: vec![
+                script::tool_call(
+                    "call-tool-only",
+                    "read_file",
+                    serde_json::json!({ "path": "test.md" }),
+                ),
+                script::tool_result("call-tool-only", "read_file", "content"),
+                script::done(),
             ],
         }))),
     );
@@ -643,7 +544,7 @@ impl crate::tool_dispatch::ToolDispatcher for HangingToolDispatcher {
 /// `send_message_stream` invocation so tests can assert the depth-cap
 /// prompt was replayed.
 struct ScriptedHandle {
-    scripts: std::sync::Mutex<Vec<Vec<ChatResult<ChatChunk>>>>,
+    scripts: std::sync::Mutex<Vec<Vec<TurnEvent>>>,
     captured_prompts: Arc<std::sync::Mutex<Vec<String>>>,
 }
 
@@ -656,14 +557,13 @@ impl crucible_core::turn::Agent for ScriptedHandle {
     async fn turn<'a>(
         &'a mut self,
         ctx: crucible_core::turn::TurnContext,
-    ) -> Result<
-        futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
-        crucible_core::turn::AgentError,
-    > {
-        use crucible_core::turn::{StopReason, TurnEvent};
+    ) -> Result<futures::stream::BoxStream<'a, TurnEvent>, crucible_core::turn::AgentError> {
         const DEPTH_CAP_PROMPT: &str = "You have reached the tool call limit. Please provide your final answer based on the information gathered so far.";
 
-        self.captured_prompts.lock().unwrap().push(ctx.content.clone());
+        self.captured_prompts
+            .lock()
+            .unwrap()
+            .push(ctx.content.clone());
         let scripts = std::mem::take(&mut *self.scripts.lock().unwrap());
         let mut scripts_iter = scripts.into_iter();
         let captured_prompts = Arc::clone(&self.captured_prompts);
@@ -678,38 +578,12 @@ impl crucible_core::turn::Agent for ScriptedHandle {
 
                 let mut pending_tool_ids: std::collections::HashSet<String> =
                     std::collections::HashSet::new();
-                let mut terminal_seen = false;
 
-                for chunk_result in script {
-                    match chunk_result {
-                        Ok(chunk) => {
-                            let is_terminal = chunk.done;
-                            let events = super::tests::chat_chunk_to_turn_events(&chunk);
-                            for event in &events {
-                                if let TurnEvent::ToolCall { id, .. } = event {
-                                    pending_tool_ids.insert(id.clone());
-                                }
-                            }
-                            for event in events {
-                                yield event;
-                            }
-                            if is_terminal {
-                                terminal_seen = true;
-                                break;
-                            }
-                        }
-                        Err(e) => {
-                            yield TurnEvent::Error(
-                                crucible_core::turn::TurnError::Communication(e.to_string()),
-                            );
-                            return;
-                        }
+                for event in script {
+                    if let TurnEvent::ToolCall { ref id, .. } = event {
+                        pending_tool_ids.insert(id.clone());
                     }
-                }
-
-                if !terminal_seen {
-                    yield TurnEvent::Done { stop_reason: StopReason::Empty };
-                    return;
+                    yield event;
                 }
 
                 if pending_tool_ids.is_empty() {
@@ -752,23 +626,15 @@ impl crucible_core::turn::Agent for ScriptedHandle {
     async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
         Ok(())
     }
-    async fn switch_model(
-        &mut self,
-        _: &str,
-    ) -> Result<(), crucible_core::turn::NotSupported> {
+    async fn switch_model(&mut self, _: &str) -> Result<(), crucible_core::turn::NotSupported> {
         Err(crucible_core::turn::NotSupported::new("switch_model"))
     }
 }
 
 impl ScriptedHandle {
-    fn new(scripts: Vec<Vec<ChatChunk>>, captured: Arc<std::sync::Mutex<Vec<String>>>) -> Self {
+    fn new(scripts: Vec<Vec<TurnEvent>>, captured: Arc<std::sync::Mutex<Vec<String>>>) -> Self {
         Self {
-            scripts: std::sync::Mutex::new(
-                scripts
-                    .into_iter()
-                    .map(|s| s.into_iter().map(Ok).collect())
-                    .collect(),
-            ),
+            scripts: std::sync::Mutex::new(scripts),
             captured_prompts: captured,
         }
     }
@@ -784,30 +650,8 @@ impl AgentHandle for ScriptedHandle {
     }
 }
 
-fn terminal_tool_chunk(name: &str, id: &str) -> ChatChunk {
-    ChatChunk {
-        delta: String::new(),
-        done: true,
-        tool_calls: Some(vec![ChatToolCall {
-            name: name.to_string(),
-            arguments: Some(serde_json::json!({ "path": "fixtures/test.md" })),
-            id: Some(id.to_string()),
-        }]),
-        tool_results: None,
-        reasoning: None,
-        usage: None,
-    }
-}
-
-fn terminal_text_chunk(text: &str) -> ChatChunk {
-    ChatChunk {
-        delta: text.to_string(),
-        done: true,
-        tool_calls: None,
-        tool_results: None,
-        reasoning: None,
-        usage: None,
-    }
+fn tool_call_fixture(name: &str, id: &str) -> TurnEvent {
+    script::tool_call(id, name, serde_json::json!({ "path": "fixtures/test.md" }))
 }
 
 #[tokio::test]
@@ -849,10 +693,10 @@ async fn depth_cap_triggers_depth_prompt_and_completes_with_text() {
     //   4. send_message_stream(DEPTH_CAP_PROMPT) → terminal text "final"
     let handle: BoxedAgentHandle = Box::new(ScriptedHandle::new(
         vec![
-            vec![terminal_tool_chunk("read_file", "call-1")],
-            vec![terminal_tool_chunk("read_file", "call-2")],
-            vec![terminal_tool_chunk("read_file", "call-3")],
-            vec![terminal_text_chunk("final answer")],
+            vec![tool_call_fixture("read_file", "call-1")],
+            vec![tool_call_fixture("read_file", "call-2")],
+            vec![tool_call_fixture("read_file", "call-3")],
+            vec![script::text("final answer"), script::done()],
         ],
         captured.clone(),
     ));

@@ -145,4 +145,3 @@ async fn test_daemon_agent_error_produces_chat_error() {
 
     server.shutdown().await;
 }
-

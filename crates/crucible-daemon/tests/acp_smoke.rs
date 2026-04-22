@@ -263,9 +263,7 @@ async fn mock_acp_agent_returns_message_response() {
 
     assert!(!events.is_empty(), "Expected at least one TurnEvent");
     assert!(
-        events
-            .iter()
-            .any(|e| matches!(e, TurnEvent::Done { .. })),
+        events.iter().any(|e| matches!(e, TurnEvent::Done { .. })),
         "Expected at least one Done event"
     );
 }
