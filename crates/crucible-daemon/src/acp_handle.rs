@@ -514,25 +514,25 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                             TurnError::Communication(format!("ACP permission denied: {msg}"))
                         }
                         crate::acp::ClientError::InvalidConfig(msg) => {
-                            TurnError::Communication(format!("ACP configuration error: {msg}"))
+                            TurnError::InvalidInput(format!("ACP configuration error: {msg}"))
                         }
                         crate::acp::ClientError::Validation(msg) => {
-                            TurnError::Communication(format!("ACP validation error: {msg}"))
+                            TurnError::InvalidInput(format!("ACP validation error: {msg}"))
                         }
                         crate::acp::ClientError::NotFound(msg) => {
                             TurnError::AgentUnavailable(format!("ACP resource not found: {msg}"))
                         }
                         crate::acp::ClientError::Io(err) => {
-                            TurnError::Communication(format!("ACP error: {err}"))
+                            TurnError::Internal(format!("ACP error: {err}"))
                         }
                         crate::acp::ClientError::Serialization(err) => {
-                            TurnError::Communication(format!("ACP error: {err}"))
+                            TurnError::Internal(format!("ACP error: {err}"))
                         }
                         crate::acp::ClientError::FileSystem(msg) => {
-                            TurnError::Communication(format!("ACP error: {msg}"))
+                            TurnError::Internal(format!("ACP error: {msg}"))
                         }
                         crate::acp::ClientError::Other(err) => {
-                            TurnError::Communication(format!("ACP error: {err}"))
+                            TurnError::Internal(format!("ACP error: {err}"))
                         }
                     };
                     yield TurnEvent::Error(turn_err);

@@ -101,8 +101,7 @@ pub trait AgentHandle: crate::turn::Agent + Send + Sync {
     ///
     /// Used by clients that observe the response through a side channel
     /// (e.g. the live TUI, which subscribes to SessionEvents directly).
-    /// Concrete impls are responsible for the actual dispatch; this
-    /// trait no longer ships a default body tied to `send_message_stream`.
+    /// Concrete impls are responsible for the actual dispatch.
     async fn send_message_fire_and_forget(&mut self, message: String) -> ChatResult<()>;
 
     fn get_modes(&self) -> Option<&SessionModeState> {

@@ -1,8 +1,8 @@
 //! `AgentHandle` trait implementation for `DaemonAgentHandle`.
 //!
 //! All trait method implementations delegate to daemon RPC calls and update
-//! locally-cached values. The `send_message_stream` implementation drives the
-//! streaming receiver set up by the event router in `convert.rs`.
+//! locally-cached values. The `Agent::turn` stream (see `native_agent.rs`)
+//! consumes the streaming receiver set up by the event router in `convert.rs`.
 
 use async_trait::async_trait;
 use crucible_core::interaction::InteractionEvent;

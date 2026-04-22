@@ -539,10 +539,9 @@ impl crate::tool_dispatch::ToolDispatcher for HangingToolDispatcher {
 }
 
 /// Mock handle that returns a scripted sequence of stream responses,
-/// one per top-level call to `send_message_stream` /
-/// `continue_with_tool_results`. Captures the prompt passed to each
-/// `send_message_stream` invocation so tests can assert the depth-cap
-/// prompt was replayed.
+/// one per top-level call to `Agent::turn`. Captures the prompt passed
+/// to each `turn` invocation so tests can assert the depth-cap prompt
+/// was replayed.
 struct ScriptedHandle {
     scripts: std::sync::Mutex<Vec<Vec<TurnEvent>>>,
     captured_prompts: Arc<std::sync::Mutex<Vec<String>>>,
@@ -686,11 +685,11 @@ async fn depth_cap_triggers_depth_prompt_and_completes_with_text() {
         .unwrap();
 
     let captured = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
-    // Script:
-    //   1. initial send_message_stream("test") → tool_call id=call-1
-    //   2. continue_with_tool_results      → tool_call id=call-2
-    //   3. continue_with_tool_results      → tool_call id=call-3 (would be depth=3, capped)
-    //   4. send_message_stream(DEPTH_CAP_PROMPT) → terminal text "final"
+    // Script (each entry = one `Agent::turn` iteration):
+    //   1. initial turn("test")                 → tool_call id=call-1
+    //   2. turn after tool result               → tool_call id=call-2
+    //   3. turn after tool result               → tool_call id=call-3 (would be depth=3, capped)
+    //   4. turn with DEPTH_CAP_PROMPT injection → terminal text "final"
     let handle: BoxedAgentHandle = Box::new(ScriptedHandle::new(
         vec![
             vec![tool_call_fixture("read_file", "call-1")],

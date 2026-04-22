@@ -262,7 +262,7 @@ pub async fn create_daemon_agent(
 
 /// Like [`create_daemon_agent`], but also returns the raw SessionEvent
 /// receiver for the session. Used by the live TUI, which consumes
-/// SessionEvents directly instead of through `send_message_stream`.
+/// SessionEvents directly instead of through `Agent::turn`.
 pub async fn create_daemon_agent_with_events(
     config: &CliAppConfig,
     params: &AgentInitParams,
