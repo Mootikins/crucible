@@ -1231,16 +1231,6 @@ impl crucible_core::turn::Agent for GenaiAgentHandle {
         futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
         crucible_core::turn::AgentError,
     > {
-        // If the scheduler provided a flattened conversation via
-        // `ctx.messages`, drive the tool loop from that authoritative
-        // list — `self.history` becomes irrelevant for that turn.
-        // Otherwise fall back to the legacy path that uses
-        // `self.history`.
-        if ctx.messages.is_empty() {
-            return Ok(crate::agent_manager::chat_chunk_bridge::legacy_tool_loop_stream(
-                self, ctx,
-            ));
-        }
         Ok(Self::scheduler_driven_turn(self, ctx))
     }
 
