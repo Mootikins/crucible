@@ -9,8 +9,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use crucible_core::events::EventRing;
-use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatResult};
-use futures::stream::BoxStream;
+use crucible_core::traits::chat::{AgentHandle, ChatResult};
 
 use crate::chat::bridge::AgentEventBridge;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
@@ -32,17 +31,6 @@ crucible_core::impl_noop_agent!(CountingAgent);
 
 #[async_trait]
 impl AgentHandle for CountingAgent {
-    fn send_message_stream(
-        &mut self,
-        _message: String,
-    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
-        // Not used on this path post-Phase 4, but the trait still requires it.
-        // If ever called, count it as a send so regressions to the old
-        // ChatChunk path get flagged.
-        self.sends.fetch_add(1, Ordering::Relaxed);
-        Box::pin(futures::stream::empty())
-    }
-
     async fn send_message_fire_and_forget(&mut self, _message: String) -> ChatResult<()> {
         self.sends.fetch_add(1, Ordering::Relaxed);
         Ok(())
@@ -51,7 +39,6 @@ impl AgentHandle for CountingAgent {
     async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
         Ok(())
     }
-
 }
 
 #[tokio::test]

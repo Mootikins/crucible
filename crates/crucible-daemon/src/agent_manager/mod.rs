@@ -836,7 +836,6 @@ impl AgentManager {
     }
 }
 
-pub(crate) mod chat_chunk_bridge;
 pub mod context_length;
 mod iter;
 mod messaging;

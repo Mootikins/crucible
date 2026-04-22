@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use futures::stream::{self, BoxStream, StreamExt};
 
 use crucible_core::interaction::InteractionEvent;
-use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatResult};
+use crucible_core::traits::chat::{AgentHandle, ChatResult};
 use crucible_core::turn::{
     Agent, AgentCapabilities, AgentError, NotSupported, StopReason, TurnContext, TurnEvent,
 };
@@ -65,11 +65,8 @@ impl Agent for NoopAgentHandle {
 
 #[async_trait]
 impl AgentHandle for NoopAgentHandle {
-    fn send_message_stream(
-        &mut self,
-        _message: String,
-    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
-        stream::empty().boxed()
+    async fn send_message_fire_and_forget(&mut self, _message: String) -> ChatResult<()> {
+        Ok(())
     }
 
     async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
@@ -88,18 +85,12 @@ impl AgentHandle for NoopAgentHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::StreamExt;
 
     #[tokio::test]
     async fn noop_agent_session_id_returns_constructor_arg() {
         let agent = NoopAgentHandle::new("replay-session-42".into());
         assert_eq!(agent.session_id(), Some("replay-session-42"));
-    }
-
-    #[tokio::test]
-    async fn noop_agent_send_message_stream_is_empty() {
-        let mut agent = NoopAgentHandle::new("replay-test".into());
-        let mut s = agent.send_message_stream("hi".into());
-        assert!(s.next().await.is_none());
     }
 
     #[tokio::test]
@@ -120,10 +111,11 @@ mod tests {
     async fn noop_agent_is_benign_for_replay() {
         let mut agent = NoopAgentHandle::new("replay-all".into());
 
-        // Streams are empty, so replay never waits on the agent.
+        // Agent::turn yields a single Done event, so replay never waits.
         {
-            let mut s = agent.send_message_stream("hi".into());
-            assert!(s.next().await.is_none());
+            let mut s = agent.turn(TurnContext::new("hi")).await.unwrap();
+            let first = s.next().await.expect("expected at least one TurnEvent");
+            assert!(matches!(first, TurnEvent::Done { .. }));
         }
 
         // set_mode_str must succeed — it has no default impl.

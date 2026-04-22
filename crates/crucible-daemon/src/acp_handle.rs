@@ -28,7 +28,7 @@ use crucible_core::background::BackgroundSpawner;
 use crucible_core::config::{AcpConfig, DataClassification, DelegationConfig};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::session::SessionAgent;
-use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatError, ChatResult};
+use crucible_core::traits::chat::{AgentHandle, ChatError, ChatResult};
 use crucible_core::traits::KnowledgeRepository;
 use crucible_core::types::acp::schema::SessionModeState;
 use crucible_core::types::mode::default_internal_modes;
@@ -225,18 +225,11 @@ impl AcpAgentHandle {
 
 #[async_trait]
 impl AgentHandle for AcpAgentHandle {
-    // Deprecated: Agent::turn emits TurnEvents directly; this stub only
-    // exists to satisfy the not-yet-deleted AgentHandle::send_message_stream
-    // trait slot.
-    fn send_message_stream(
-        &mut self,
-        _message: String,
-    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
-        Box::pin(futures::stream::once(async {
-            Err(ChatError::NotSupported(
-                "AcpAgentHandle::send_message_stream removed — use Agent::turn".to_string(),
-            ))
-        }))
+    async fn send_message_fire_and_forget(&mut self, _message: String) -> ChatResult<()> {
+        // ACP handles are daemon-side — the TUI never calls this directly.
+        Err(ChatError::NotSupported(
+            "AcpAgentHandle::send_message_fire_and_forget — use Agent::turn".to_string(),
+        ))
     }
 
     fn get_mode_id(&self) -> &str {

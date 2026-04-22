@@ -163,14 +163,6 @@ pub struct GenaiAgentHandle {
     model: ModelIden,
     system_prompt: String,
     tools: Vec<LlmToolDefinition>,
-    /// Legacy conversation history. Used only by the mock-contract
-    /// test path and `AgentHandle::send_message_stream` /
-    /// `::continue_with_tool_results` (test-only callers). The
-    /// scheduler-driven `Agent::turn` path does **not** read or write
-    /// this field — `TurnContext.messages` is authoritative. Retained
-    /// as a narrow legacy slot until the mock-contract path is
-    /// migrated off it.
-    history: Vec<genai::chat::ChatMessage>,
     mode_state: SessionModeState,
     current_mode_id: String,
     mode_context_sent: bool,
@@ -269,7 +261,6 @@ impl GenaiAgentHandle {
             model,
             system_prompt: system_prompt.to_string(),
             tools,
-            history: Vec::new(),
             mode_state,
             current_mode_id,
             mode_context_sent: false,
@@ -281,171 +272,6 @@ impl GenaiAgentHandle {
             output_validation: OutputValidation::default(),
             validation_retries: 3,
         }
-    }
-
-    fn send_mock_contract_stream(
-        &mut self,
-        message: String,
-    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
-        self.history.push(ChatMessage::user(&message));
-
-        let mut chunks: Vec<ChatResult<ChatChunk>> = Vec::new();
-
-        if message.contains("Use read_note") || message.contains("Call read_note") {
-            chunks.push(Ok(ChatChunk {
-                delta: String::new(),
-                done: false,
-                tool_calls: Some(vec![ChatToolCall {
-                    name: "read_note".to_string(),
-                    arguments: Some(serde_json::json!({"path": "docs/README.md"})),
-                    id: Some("call_read_note_1".to_string()),
-                }]),
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-            }));
-            chunks.push(Ok(ChatChunk {
-                delta: String::new(),
-                done: true,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-            }));
-            return Box::pin(futures::stream::iter(chunks));
-        }
-
-        if message.contains("Think step by step") {
-            chunks.push(Ok(ChatChunk {
-                delta: String::new(),
-                done: false,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: Some("I will reason internally before final output.".to_string()),
-                usage: None,
-            }));
-            chunks.push(Ok(ChatChunk {
-                delta: "42".to_string(),
-                done: false,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-            }));
-            chunks.push(Ok(ChatChunk {
-                delta: String::new(),
-                done: true,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-            }));
-            return Box::pin(futures::stream::iter(chunks));
-        }
-
-        if message.contains("Tool result:") {
-            chunks.push(Ok(ChatChunk {
-                delta: "Wikilinks connect notes and make navigation easier.".to_string(),
-                done: false,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-            }));
-            chunks.push(Ok(ChatChunk {
-                delta: String::new(),
-                done: true,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-            }));
-            return Box::pin(futures::stream::iter(chunks));
-        }
-
-        if message.contains("What token did I ask you to remember?") {
-            let token = self
-                .history
-                .iter()
-                .rev()
-                .filter_map(|m| {
-                    if m.role == genai::chat::ChatRole::User {
-                        m.content.first_text().and_then(|txt| {
-                            txt.split_once("Remember this token:")
-                                .map(|(_, rest)| rest.trim().to_string())
-                        })
-                    } else {
-                        None
-                    }
-                })
-                .next()
-                .unwrap_or_else(|| "unknown".to_string());
-
-            chunks.push(Ok(ChatChunk {
-                delta: format!("You asked me to remember {token}."),
-                done: false,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-            }));
-            chunks.push(Ok(ChatChunk {
-                delta: String::new(),
-                done: true,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-            }));
-            return Box::pin(futures::stream::iter(chunks));
-        }
-
-        if message.contains("Say hello in two chunks") {
-            chunks.push(Ok(ChatChunk {
-                delta: "Hello".to_string(),
-                done: false,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-            }));
-            chunks.push(Ok(ChatChunk {
-                delta: " there".to_string(),
-                done: false,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-            }));
-            chunks.push(Ok(ChatChunk {
-                delta: String::new(),
-                done: true,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-            }));
-            return Box::pin(futures::stream::iter(chunks));
-        }
-
-        chunks.push(Ok(ChatChunk {
-            delta: "ok".to_string(),
-            done: false,
-            tool_calls: None,
-            tool_results: None,
-            reasoning: None,
-            usage: None,
-        }));
-        chunks.push(Ok(ChatChunk {
-            delta: String::new(),
-            done: true,
-            tool_calls: None,
-            tool_results: None,
-            reasoning: None,
-            usage: None,
-        }));
-
-        Box::pin(futures::stream::iter(chunks))
     }
 
     fn visible_tools(&self) -> Vec<LlmToolDefinition> {
@@ -641,10 +467,55 @@ impl GenaiAgentHandle {
         &'a mut self,
         ctx: crucible_core::turn::TurnContext,
     ) -> futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent> {
-        use crate::agent_manager::chat_chunk_bridge::{
-            chat_chunk_to_events, DEPTH_CAP_PROMPT,
-        };
         use crucible_core::turn::{StopReason, TurnError, TurnEvent};
+
+        /// Depth-cap prompt sent back to the agent when `max_iterations`
+        /// is reached. Kept in sync with
+        /// `agent_manager::messaging::TOOL_DEPTH_LIMIT_FINAL_PROMPT`.
+        const DEPTH_CAP_PROMPT: &str = "You have reached the tool call limit. Please provide your final answer based on the information gathered so far.";
+
+        /// Translate a single `ChatChunk` from `stream_chat_from_messages`
+        /// into its equivalent `TurnEvent` sequence. Returns any tool
+        /// calls the chunk carried so the caller can track them for
+        /// result-dispatch.
+        fn chunk_to_events(
+            chunk: ChatChunk,
+            events: &mut Vec<TurnEvent>,
+        ) -> Option<Vec<ChatToolCall>> {
+            if let Some(reasoning) = chunk.reasoning {
+                events.push(TurnEvent::Thinking(reasoning));
+            }
+            if !chunk.delta.is_empty() {
+                events.push(TurnEvent::TextDelta(chunk.delta));
+            }
+            let carried = chunk.tool_calls.filter(|c| !c.is_empty());
+            if let Some(calls) = &carried {
+                for call in calls {
+                    events.push(TurnEvent::ToolCall {
+                        id: call.id.clone().unwrap_or_default(),
+                        name: call.name.clone(),
+                        args: call
+                            .arguments
+                            .clone()
+                            .unwrap_or(serde_json::Value::Null),
+                    });
+                }
+            }
+            if let Some(results) = chunk.tool_results {
+                for r in results {
+                    events.push(TurnEvent::ToolResult {
+                        id: r.call_id.unwrap_or_default(),
+                        name: r.name,
+                        result: serde_json::Value::String(r.result),
+                        error: r.error,
+                    });
+                }
+            }
+            if let Some(usage) = chunk.usage {
+                events.push(TurnEvent::Usage(usage));
+            }
+            carried
+        }
 
         let mut messages = self.context_messages_to_chat(&ctx.messages);
         let mut inbound = ctx.inbound;
@@ -677,7 +548,7 @@ impl GenaiAgentHandle {
                         Ok(chunk) => {
                             let terminal = chunk.done;
                             let mut events = Vec::new();
-                            let carried_calls = chat_chunk_to_events(chunk, &mut events);
+                            let carried_calls = chunk_to_events(chunk, &mut events);
                             for event in events {
                                 yield event;
                             }
@@ -816,304 +687,10 @@ impl GenaiAgentHandle {
 
 #[async_trait]
 impl AgentHandle for GenaiAgentHandle {
-    fn send_message_stream(
-        &mut self,
-        message: String,
-    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
-        if self.max_tool_depth == 0 {
-            return wrap_stream_with_guards(self.send_mock_contract_stream(message));
-        }
-
-        let mode_prefix = if self.current_mode_id == "plan" && !self.mode_context_sent {
-            self.mode_context_sent = true;
-            Some("[MODE: Plan mode - write tools are disabled. Use read-only tools only.]\n\n")
-        } else {
-            None
-        };
-
-        self.history.push(ChatMessage::user(&message));
-
-        let req_message = match mode_prefix {
-            Some(prefix) => format!("{prefix}{message}"),
-            None => message,
-        };
-
-        let mut messages = self.history.clone();
-        if mode_prefix.is_some() {
-            if let Some(last) = messages.last_mut() {
-                *last = ChatMessage::user(req_message);
-            }
-        }
-
-        apply_prompt_caching(&self.system_prompt, &mut messages);
-        enforce_context_budget(
-            &mut messages,
-            self.context_budget,
-            &self.context_strategy,
-            self.context_window,
-        );
-
-        let req_tools: Vec<Tool> = self
-            .visible_tools()
-            .iter()
-            .map(super::tool_bridge::llm_tool_to_genai)
-            .collect();
-        let request = ChatRequest::new(messages).with_tools(req_tools);
-
-        let options = ChatOptions::default()
-            .with_capture_tool_calls(true)
-            .with_capture_content(true)
-            .with_capture_usage(true)
-            .with_capture_reasoning_content(true);
-        let options = if let Some(budget) = self.thinking_budget {
-            options.with_reasoning_effort(ReasoningEffort::Budget(
-                budget.clamp(0, u32::MAX as i64) as u32
-            ))
-        } else {
-            options
-        };
-
-        let client = self.client.clone();
-        let model_name = self.explicit_model_name();
-        let max_tool_depth = self.max_tool_depth;
-
-        let stream = Box::pin(async_stream::stream! {
-            let stream_res = client.exec_chat_stream(&model_name, request, Some(&options)).await;
-            let mut stream = match stream_res {
-                Ok(res) => res.stream,
-                Err(err) => {
-                    yield Err(ChatError::Communication(format!("genai stream start failed: {err}")));
-                    return;
-                }
-            };
-
-            let mut emitted_calls = 0usize;
-
-            while let Some(next) = stream.next().await {
-                let event = match next {
-                    Ok(event) => event,
-                    Err(err) => {
-                        yield Err(ChatError::Communication(format!("genai stream error: {err}")));
-                        return;
-                    }
-                };
-
-                match event {
-                    ChatStreamEvent::Start => {}
-                    ChatStreamEvent::Chunk(chunk) => {
-                        yield Ok(ChatChunk {
-                            delta: chunk.content,
-                            done: false,
-                            tool_calls: None,
-                            tool_results: None,
-                            reasoning: None,
-                            usage: None,
-                        });
-                    }
-                    ChatStreamEvent::ReasoningChunk(chunk) => {
-                        yield Ok(ChatChunk {
-                            delta: String::new(),
-                            done: false,
-                            tool_calls: None,
-                            tool_results: None,
-                            reasoning: Some(chunk.content),
-                            usage: None,
-                        });
-                    }
-                    ChatStreamEvent::ThoughtSignatureChunk(_) => {}
-                    ChatStreamEvent::ToolCallChunk(_) => {}
-                    ChatStreamEvent::End(end) => {
-                        let mut tool_calls = Vec::new();
-                        if let Some(content) = end.captured_content {
-                            for part in content.into_parts() {
-                                if let ContentPart::ToolCall(tc) = part {
-                                    if emitted_calls >= max_tool_depth {
-                                        break;
-                                    }
-                                    emitted_calls += 1;
-                                    tool_calls.push(ChatToolCall {
-                                        name: tc.fn_name,
-                                        arguments: Some(tc.fn_arguments),
-                                        id: Some(tc.call_id),
-                                    });
-                                }
-                            }
-                        }
-
-                        let usage = end.captured_usage.as_ref().map(usage_to_token_usage);
-
-                        yield Ok(ChatChunk {
-                            delta: String::new(),
-                            done: true,
-                            tool_calls: if tool_calls.is_empty() {
-                                None
-                            } else {
-                                Some(tool_calls)
-                            },
-                            tool_results: None,
-                            reasoning: end.captured_reasoning_content,
-                            usage,
-                        });
-                        break;
-                    }
-                }
-            }
-        });
-
-        wrap_stream_with_guards(stream)
-    }
-
-    fn continue_with_tool_results(
-        &mut self,
-        tool_calls: Vec<ChatToolCall>,
-        tool_results: Vec<ChatToolResult>,
-    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
-        let genai_tool_calls: Vec<ToolCall> = tool_calls
-            .iter()
-            .enumerate()
-            .map(|(idx, call)| ToolCall {
-                call_id: call
-                    .id
-                    .clone()
-                    .unwrap_or_else(|| format!("tool_call_{idx}")),
-                fn_name: call.name.clone(),
-                fn_arguments: call.arguments.clone().unwrap_or(serde_json::Value::Null),
-                thought_signatures: None,
-            })
-            .collect();
-
-        if !genai_tool_calls.is_empty() {
-            self.history.push(ChatMessage::from(genai_tool_calls));
-        }
-
-        for (idx, result) in tool_results.into_iter().enumerate() {
-            let call_id = result.call_id.unwrap_or_else(|| {
-                tool_calls
-                    .get(idx)
-                    .and_then(|call| call.id.clone())
-                    .unwrap_or_else(|| format!("tool_call_{idx}"))
-            });
-            self.history
-                .push(ChatMessage::from(ToolResponse::new(call_id, result.result)));
-        }
-
-        let mut messages = self.history.clone();
-        apply_prompt_caching(&self.system_prompt, &mut messages);
-        enforce_context_budget(
-            &mut messages,
-            self.context_budget,
-            &self.context_strategy,
-            self.context_window,
-        );
-
-        let req_tools: Vec<Tool> = self
-            .visible_tools()
-            .iter()
-            .map(super::tool_bridge::llm_tool_to_genai)
-            .collect();
-        let request = ChatRequest::new(messages).with_tools(req_tools);
-
-        let options = ChatOptions::default()
-            .with_capture_tool_calls(true)
-            .with_capture_content(true)
-            .with_capture_usage(true)
-            .with_capture_reasoning_content(true);
-        let options = if let Some(budget) = self.thinking_budget {
-            options.with_reasoning_effort(ReasoningEffort::Budget(
-                budget.clamp(0, u32::MAX as i64) as u32
-            ))
-        } else {
-            options
-        };
-
-        let client = self.client.clone();
-        let model_name = self.explicit_model_name();
-        let max_tool_depth = self.max_tool_depth;
-
-        let stream = Box::pin(async_stream::stream! {
-            let stream_res = client.exec_chat_stream(&model_name, request, Some(&options)).await;
-            let mut stream = match stream_res {
-                Ok(res) => res.stream,
-                Err(err) => {
-                    yield Err(ChatError::Communication(format!("genai stream start failed: {err}")));
-                    return;
-                }
-            };
-
-            let mut emitted_calls = 0usize;
-
-            while let Some(next) = stream.next().await {
-                let event = match next {
-                    Ok(event) => event,
-                    Err(err) => {
-                        yield Err(ChatError::Communication(format!("genai stream error: {err}")));
-                        return;
-                    }
-                };
-
-                match event {
-                    ChatStreamEvent::Start => {}
-                    ChatStreamEvent::Chunk(chunk) => {
-                        yield Ok(ChatChunk {
-                            delta: chunk.content,
-                            done: false,
-                            tool_calls: None,
-                            tool_results: None,
-                            reasoning: None,
-                            usage: None,
-                        });
-                    }
-                    ChatStreamEvent::ReasoningChunk(chunk) => {
-                        yield Ok(ChatChunk {
-                            delta: String::new(),
-                            done: false,
-                            tool_calls: None,
-                            tool_results: None,
-                            reasoning: Some(chunk.content),
-                            usage: None,
-                        });
-                    }
-                    ChatStreamEvent::ThoughtSignatureChunk(_) => {}
-                    ChatStreamEvent::ToolCallChunk(_) => {}
-                    ChatStreamEvent::End(end) => {
-                        let mut tool_calls = Vec::new();
-                        if let Some(content) = end.captured_content {
-                            for part in content.into_parts() {
-                                if let ContentPart::ToolCall(tc) = part {
-                                    if emitted_calls >= max_tool_depth {
-                                        break;
-                                    }
-                                    emitted_calls += 1;
-                                    tool_calls.push(ChatToolCall {
-                                        name: tc.fn_name,
-                                        arguments: Some(tc.fn_arguments),
-                                        id: Some(tc.call_id),
-                                    });
-                                }
-                            }
-                        }
-
-                        let usage = end.captured_usage.as_ref().map(usage_to_token_usage);
-
-                        yield Ok(ChatChunk {
-                            delta: String::new(),
-                            done: true,
-                            tool_calls: if tool_calls.is_empty() {
-                                None
-                            } else {
-                                Some(tool_calls)
-                            },
-                            tool_results: None,
-                            reasoning: end.captured_reasoning_content,
-                            usage,
-                        });
-                        break;
-                    }
-                }
-            }
-        });
-
-        wrap_stream_with_guards(stream)
+    async fn send_message_fire_and_forget(&mut self, _message: String) -> ChatResult<()> {
+        // GenaiAgentHandle is daemon-side — the TUI never calls this
+        // directly. Included only to satisfy the AgentHandle trait.
+        Ok(())
     }
 
     fn get_modes(&self) -> Option<&SessionModeState> {
@@ -1258,69 +835,28 @@ mod tests {
     use crucible_core::traits::Undoable;
     use futures::StreamExt;
 
-    #[derive(Clone)]
-    struct StreamingMockAgent {
-        chunks: Vec<ChatChunk>,
-        hanging: bool,
+    /// Build a scripted `ChatChunk` stream for driving
+    /// `wrap_stream_with_guards` in unit tests.
+    fn scripted_chunk_stream(chunks: Vec<ChatChunk>) -> BoxStream<'static, ChatResult<ChatChunk>> {
+        futures::stream::iter(chunks.into_iter().map(Ok)).boxed()
     }
 
-    crucible_core::impl_noop_agent!(StreamingMockAgent);
-
-    impl StreamingMockAgent {
-        fn immediate_end() -> Self {
-            Self {
-                chunks: vec![ChatChunk {
-                    delta: String::new(),
-                    done: true,
-                    tool_calls: None,
-                    tool_results: None,
-                    reasoning: None,
-                    usage: None,
-                }],
-                hanging: false,
-            }
-        }
-
-        fn empty() -> Self {
-            Self::immediate_end()
-        }
-
-        fn hanging() -> Self {
-            Self {
-                chunks: Vec::new(),
-                hanging: true,
-            }
-        }
+    /// Stream that never yields — exercises `STREAM_CHUNK_TIMEOUT`.
+    fn hanging_chunk_stream() -> BoxStream<'static, ChatResult<ChatChunk>> {
+        futures::stream::pending::<ChatResult<ChatChunk>>().boxed()
     }
 
-    #[async_trait]
-    impl AgentHandle for StreamingMockAgent {
-        fn send_message_stream(
-            &mut self,
-            _message: String,
-        ) -> BoxStream<'static, ChatResult<ChatChunk>> {
-            if self.hanging {
-                futures::stream::pending::<ChatResult<ChatChunk>>().boxed()
-            } else {
-                futures::stream::iter(self.chunks.clone().into_iter().map(Ok)).boxed()
-            }
-        }
-
-        fn continue_with_tool_results(
-            &mut self,
-            _tool_calls: Vec<ChatToolCall>,
-            _tool_results: Vec<ChatToolResult>,
-        ) -> BoxStream<'static, ChatResult<ChatChunk>> {
-            if self.hanging {
-                futures::stream::pending::<ChatResult<ChatChunk>>().boxed()
-            } else {
-                futures::stream::iter(self.chunks.clone().into_iter().map(Ok)).boxed()
-            }
-        }
-
-        async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
-            Ok(())
-        }
+    /// Single "done" chunk with no content — exercises the empty-response
+    /// detection.
+    fn immediate_end_chunks() -> Vec<ChatChunk> {
+        vec![ChatChunk {
+            delta: String::new(),
+            done: true,
+            tool_calls: None,
+            tool_results: None,
+            reasoning: None,
+            usage: None,
+        }]
     }
 
     #[test]
@@ -1355,9 +891,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_send_message_stream_empty_response_yields_error() {
-        let mut agent = StreamingMockAgent::immediate_end();
-        let results = wrap_stream_with_guards(agent.send_message_stream("hello".to_string()))
+    async fn test_immediate_end_yields_empty_response_error() {
+        let results = wrap_stream_with_guards(scripted_chunk_stream(immediate_end_chunks()))
             .collect::<Vec<_>>()
             .await;
 
@@ -1367,9 +902,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_send_message_stream_empty_iterator_yields_error() {
-        let mut agent = StreamingMockAgent::empty();
-        let results = wrap_stream_with_guards(agent.send_message_stream("hello".to_string()))
+    async fn test_empty_iterator_yields_empty_response_error() {
+        let results = wrap_stream_with_guards(scripted_chunk_stream(vec![]))
             .collect::<Vec<_>>()
             .await;
 
@@ -1379,10 +913,9 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn test_send_message_stream_timeout_yields_error() {
-        let mut agent = StreamingMockAgent::hanging();
+    async fn test_hanging_stream_yields_timeout_error() {
         let task = tokio::spawn(async move {
-            wrap_stream_with_guards(agent.send_message_stream("hello".to_string()))
+            wrap_stream_with_guards(hanging_chunk_stream())
                 .collect::<Vec<_>>()
                 .await
         });
@@ -1395,51 +928,19 @@ mod tests {
             .any(|r| matches!(r, Err(ChatError::Communication(msg)) if msg.contains("timed out"))));
     }
 
-    #[tokio::test]
-    async fn test_continue_with_tool_results_empty_response_yields_error() {
-        let mut agent = StreamingMockAgent::immediate_end();
-        let results = wrap_stream_with_guards(agent.continue_with_tool_results(vec![], vec![]))
-            .collect::<Vec<_>>()
-            .await;
-
-        assert!(results.iter().any(
-            |r| matches!(r, Err(ChatError::Communication(msg)) if msg == EMPTY_RESPONSE_ERROR)
-        ));
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn test_continue_with_tool_results_timeout_yields_error() {
-        let mut agent = StreamingMockAgent::hanging();
-        let task = tokio::spawn(async move {
-            wrap_stream_with_guards(agent.continue_with_tool_results(vec![], vec![]))
-                .collect::<Vec<_>>()
-                .await
-        });
-
-        tokio::time::advance(std::time::Duration::from_secs(301)).await;
-
-        let results = task.await.expect("task panicked");
-        assert!(results.iter().any(
-            |r| matches!(r, Err(ChatError::Communication(msg)) if msg == STREAM_TIMEOUT_ERROR)
-        ));
-    }
-
     // === Negative tests: verify no false positives on legitimate responses ===
 
     #[tokio::test]
     async fn test_normal_text_response_no_error() {
-        let mut agent = StreamingMockAgent {
-            chunks: vec![ChatChunk {
-                delta: "Hello world".to_string(),
-                done: true,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-            }],
-            hanging: false,
-        };
-        let results = wrap_stream_with_guards(agent.send_message_stream("test".to_string()))
+        let chunks = vec![ChatChunk {
+            delta: "Hello world".to_string(),
+            done: true,
+            tool_calls: None,
+            tool_results: None,
+            reasoning: None,
+            usage: None,
+        }];
+        let results = wrap_stream_with_guards(scripted_chunk_stream(chunks))
             .collect::<Vec<_>>()
             .await;
         assert!(
@@ -1451,22 +952,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_call_only_response_no_error() {
-        let mut agent = StreamingMockAgent {
-            chunks: vec![ChatChunk {
-                delta: String::new(),
-                done: true,
-                tool_calls: Some(vec![ChatToolCall {
-                    name: "search".to_string(),
-                    arguments: None,
-                    id: Some("call_1".to_string()),
-                }]),
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-            }],
-            hanging: false,
-        };
-        let results = wrap_stream_with_guards(agent.send_message_stream("test".to_string()))
+        let chunks = vec![ChatChunk {
+            delta: String::new(),
+            done: true,
+            tool_calls: Some(vec![ChatToolCall {
+                name: "search".to_string(),
+                arguments: None,
+                id: Some("call_1".to_string()),
+            }]),
+            tool_results: None,
+            reasoning: None,
+            usage: None,
+        }];
+        let results = wrap_stream_with_guards(scripted_chunk_stream(chunks))
             .collect::<Vec<_>>()
             .await;
         assert!(
@@ -1478,18 +976,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_thinking_only_response_no_error() {
-        let mut agent = StreamingMockAgent {
-            chunks: vec![ChatChunk {
-                delta: String::new(),
-                done: true,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: Some("Let me think about this...".to_string()),
-                usage: None,
-            }],
-            hanging: false,
-        };
-        let results = wrap_stream_with_guards(agent.send_message_stream("test".to_string()))
+        let chunks = vec![ChatChunk {
+            delta: String::new(),
+            done: true,
+            tool_calls: None,
+            tool_results: None,
+            reasoning: Some("Let me think about this...".to_string()),
+            usage: None,
+        }];
+        let results = wrap_stream_with_guards(scripted_chunk_stream(chunks))
             .collect::<Vec<_>>()
             .await;
         assert!(
@@ -1501,32 +996,29 @@ mod tests {
 
     #[tokio::test]
     async fn test_text_plus_tool_call_response_no_error() {
-        let mut agent = StreamingMockAgent {
-            chunks: vec![
-                ChatChunk {
-                    delta: "Hello".to_string(),
-                    done: false,
-                    tool_calls: None,
-                    tool_results: None,
-                    reasoning: None,
-                    usage: None,
-                },
-                ChatChunk {
-                    delta: String::new(),
-                    done: true,
-                    tool_calls: Some(vec![ChatToolCall {
-                        name: "search".to_string(),
-                        arguments: None,
-                        id: Some("call_1".to_string()),
-                    }]),
-                    tool_results: None,
-                    reasoning: None,
-                    usage: None,
-                },
-            ],
-            hanging: false,
-        };
-        let results = wrap_stream_with_guards(agent.send_message_stream("test".to_string()))
+        let chunks = vec![
+            ChatChunk {
+                delta: "Hello".to_string(),
+                done: false,
+                tool_calls: None,
+                tool_results: None,
+                reasoning: None,
+                usage: None,
+            },
+            ChatChunk {
+                delta: String::new(),
+                done: true,
+                tool_calls: Some(vec![ChatToolCall {
+                    name: "search".to_string(),
+                    arguments: None,
+                    id: Some("call_1".to_string()),
+                }]),
+                tool_results: None,
+                reasoning: None,
+                usage: None,
+            },
+        ];
+        let results = wrap_stream_with_guards(scripted_chunk_stream(chunks))
             .collect::<Vec<_>>()
             .await;
         assert!(

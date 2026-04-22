@@ -10,12 +10,13 @@ impl crucible_core::turn::Agent for PendingMockAgent {
     }
     async fn turn<'a>(
         &'a mut self,
-        ctx: crucible_core::turn::TurnContext,
+        _ctx: crucible_core::turn::TurnContext,
     ) -> Result<
         futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
         crucible_core::turn::AgentError,
     > {
-        Ok(crate::agent_manager::chat_chunk_bridge::legacy_tool_loop_stream(self, ctx))
+        // Hangs forever until the manager cancels the stream.
+        Ok(Box::pin(futures::stream::pending()))
     }
     async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
         Ok(())
@@ -30,10 +31,9 @@ impl crucible_core::turn::Agent for PendingMockAgent {
 
 #[async_trait::async_trait]
 impl AgentHandle for PendingMockAgent {
-    fn send_message_stream(&mut self, _: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
-        Box::pin(futures::stream::pending())
+    async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
+        Ok(())
     }
-
     async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
         Ok(())
     }

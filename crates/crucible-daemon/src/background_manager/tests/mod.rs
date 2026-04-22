@@ -2,6 +2,7 @@ use super::*;
 use crucible_core::config::{AgentProfile, BackendType, DelegationConfig};
 use crucible_core::session::OutputValidation;
 use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatError, ChatResult};
+use crucible_core::turn::{StopReason, TurnError, TurnEvent};
 use futures::stream::{self, BoxStream};
 use std::collections::HashMap;
 use std::sync::Mutex as StdMutex;
@@ -38,12 +39,36 @@ impl crucible_core::turn::Agent for MockSubagentHandle {
     }
     async fn turn<'a>(
         &'a mut self,
-        ctx: crucible_core::turn::TurnContext,
+        _ctx: crucible_core::turn::TurnContext,
     ) -> Result<
         futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
         crucible_core::turn::AgentError,
     > {
-        Ok(crate::agent_manager::chat_chunk_bridge::legacy_tool_loop_stream(self, ctx))
+        let behavior = self.behavior.clone();
+        let body = async_stream::stream! {
+            match behavior {
+                MockSubagentBehavior::ImmediateSuccess(output) => {
+                    yield TurnEvent::TextDelta(output);
+                    yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+                }
+                MockSubagentBehavior::DelayedSuccess { output, delay } => {
+                    tokio::time::sleep(delay).await;
+                    yield TurnEvent::TextDelta(output);
+                    yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+                }
+                MockSubagentBehavior::DelayedFailure { error, delay } => {
+                    tokio::time::sleep(delay).await;
+                    yield TurnEvent::Error(TurnError::Internal(error));
+                }
+                MockSubagentBehavior::Pending => {
+                    futures::future::pending::<()>().await;
+                }
+                MockSubagentBehavior::StreamFailure(message) => {
+                    yield TurnEvent::Error(TurnError::Internal(message));
+                }
+            }
+        };
+        Ok(Box::pin(body))
     }
     async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
         Ok(())
@@ -75,37 +100,12 @@ pub(super) fn chunk(delta: String, done: bool) -> ChatChunk {
 
 #[async_trait]
 impl AgentHandle for MockSubagentHandle {
-    fn send_message_stream(
-        &mut self,
-        _message: String,
-    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
-        match self.behavior.clone() {
-            MockSubagentBehavior::ImmediateSuccess(output) => {
-                Box::pin(stream::iter(vec![Ok(chunk(output, true))]))
-            }
-            MockSubagentBehavior::DelayedSuccess { output, delay } => {
-                Box::pin(stream::once(async move {
-                    tokio::time::sleep(delay).await;
-                    Ok(chunk(output, true))
-                }))
-            }
-            MockSubagentBehavior::DelayedFailure { error, delay } => {
-                Box::pin(stream::once(async move {
-                    tokio::time::sleep(delay).await;
-                    Err(ChatError::Internal(error))
-                }))
-            }
-            MockSubagentBehavior::Pending => Box::pin(stream::pending()),
-            MockSubagentBehavior::StreamFailure(message) => {
-                Box::pin(stream::iter(vec![Err(ChatError::Internal(message))]))
-            }
-        }
+    async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
+        Ok(())
     }
-
     async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
         Ok(())
     }
-
 }
 
 pub(super) fn test_session_agent(delegation_config: Option<DelegationConfig>) -> SessionAgent {

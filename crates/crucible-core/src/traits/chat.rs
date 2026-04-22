@@ -73,7 +73,10 @@ pub struct PrecognitionNoteInfo {
     pub kiln_label: Option<String>,
 }
 
-/// Chunk from streaming response
+/// Legacy "chunk from streaming response" shape retained only as a
+/// scripting DSL for daemon test fixtures. Production paths emit
+/// [`crate::turn::TurnEvent`]s directly — do not use `ChatChunk` outside
+/// of `#[cfg(test)]` code.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ChatChunk {
     pub delta: String,
@@ -116,33 +119,14 @@ pub struct ChatToolResult {
 /// trait as a narrow extension of `Agent`.
 #[async_trait]
 pub trait AgentHandle: crate::turn::Agent + Send + Sync {
-    fn send_message_stream(&mut self, message: String)
-        -> BoxStream<'static, ChatResult<ChatChunk>>;
-
-    /// Send a message without consuming the response stream.
+    /// Dispatch a user message to the underlying agent without
+    /// consuming its response stream.
     ///
     /// Used by clients that observe the response through a side channel
     /// (e.g. the live TUI, which subscribes to SessionEvents directly).
-    /// The default impl drains `send_message_stream` and discards chunks,
-    /// so test mocks keep working without modification.
-    async fn send_message_fire_and_forget(&mut self, message: String) -> ChatResult<()> {
-        use futures::StreamExt;
-        let mut stream = self.send_message_stream(message);
-        while let Some(chunk) = stream.next().await {
-            chunk?;
-        }
-        Ok(())
-    }
-
-    fn continue_with_tool_results(
-        &mut self,
-        _tool_calls: Vec<ChatToolCall>,
-        _tool_results: Vec<ChatToolResult>,
-    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
-        Box::pin(futures::stream::once(async {
-            Err(ChatError::NotSupported("continue_with_tool_results".into()))
-        }))
-    }
+    /// Concrete impls are responsible for the actual dispatch; this
+    /// trait no longer ships a default body tied to `send_message_stream`.
+    async fn send_message_fire_and_forget(&mut self, message: String) -> ChatResult<()>;
 
     fn get_modes(&self) -> Option<&SessionModeState> {
         None
@@ -424,23 +408,8 @@ impl crate::turn::Agent for Box<dyn AgentHandle + Send + Sync> {
 /// type-erased agents.
 #[async_trait]
 impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
-    fn send_message_stream(
-        &mut self,
-        message: String,
-    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
-        (**self).send_message_stream(message)
-    }
-
     async fn send_message_fire_and_forget(&mut self, message: String) -> ChatResult<()> {
         (**self).send_message_fire_and_forget(message).await
-    }
-
-    fn continue_with_tool_results(
-        &mut self,
-        tool_calls: Vec<ChatToolCall>,
-        tool_results: Vec<ChatToolResult>,
-    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
-        (**self).continue_with_tool_results(tool_calls, tool_results)
     }
 
     fn get_modes(&self) -> Option<&SessionModeState> {
@@ -629,50 +598,6 @@ pub fn mode_display_name(mode_id: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::stream::StreamExt;
-
-    struct TestAgent {
-        chunks: Vec<String>,
-    }
-
-    crate::impl_noop_agent!(TestAgent);
-
-    #[async_trait]
-    impl AgentHandle for TestAgent {
-        fn send_message_stream(
-            &mut self,
-            _message: String,
-        ) -> BoxStream<'static, ChatResult<ChatChunk>> {
-            let chunks = self.chunks.clone();
-            let total = chunks.len();
-            Box::pin(futures::stream::iter(chunks.into_iter().enumerate().map(
-                move |(i, delta)| {
-                    Ok(ChatChunk {
-                        delta,
-                        done: i == total - 1,
-                        tool_calls: None,
-                        tool_results: None,
-                        reasoning: None,
-                        usage: None,
-                    })
-                },
-            )))
-        }
-
-        async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
-            Ok(())
-        }
-    }
-
-    #[tokio::test]
-    async fn test_streaming() {
-        let mut agent = TestAgent {
-            chunks: vec!["Hello".to_string()],
-        };
-        let mut stream = agent.send_message_stream("test".to_string());
-        let chunk = stream.next().await.unwrap().unwrap();
-        assert_eq!(chunk.delta, "Hello");
-    }
 
     #[test]
     fn test_is_read_only() {

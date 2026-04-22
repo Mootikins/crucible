@@ -652,6 +652,7 @@ impl crucible_core::turn::Agent for ScriptedHandle {
     fn capabilities(&self) -> crucible_core::turn::AgentCapabilities {
         crucible_core::turn::AgentCapabilities::default()
     }
+
     async fn turn<'a>(
         &'a mut self,
         ctx: crucible_core::turn::TurnContext,
@@ -659,8 +660,95 @@ impl crucible_core::turn::Agent for ScriptedHandle {
         futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
         crucible_core::turn::AgentError,
     > {
-        Ok(crate::agent_manager::chat_chunk_bridge::legacy_tool_loop_stream(self, ctx))
+        use crucible_core::turn::{StopReason, TurnEvent};
+        const DEPTH_CAP_PROMPT: &str = "You have reached the tool call limit. Please provide your final answer based on the information gathered so far.";
+
+        self.captured_prompts.lock().unwrap().push(ctx.content.clone());
+        let scripts = std::mem::take(&mut *self.scripts.lock().unwrap());
+        let mut scripts_iter = scripts.into_iter();
+        let captured_prompts = Arc::clone(&self.captured_prompts);
+        let mut inbound = ctx.inbound;
+
+        let body = async_stream::stream! {
+            'turn: loop {
+                let Some(script) = scripts_iter.next() else {
+                    yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+                    return;
+                };
+
+                let mut pending_tool_ids: std::collections::HashSet<String> =
+                    std::collections::HashSet::new();
+                let mut terminal_seen = false;
+
+                for chunk_result in script {
+                    match chunk_result {
+                        Ok(chunk) => {
+                            let is_terminal = chunk.done;
+                            let events = super::tests::chat_chunk_to_turn_events(&chunk);
+                            for event in &events {
+                                if let TurnEvent::ToolCall { id, .. } = event {
+                                    pending_tool_ids.insert(id.clone());
+                                }
+                            }
+                            for event in events {
+                                yield event;
+                            }
+                            if is_terminal {
+                                terminal_seen = true;
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            yield TurnEvent::Error(
+                                crucible_core::turn::TurnError::Communication(e.to_string()),
+                            );
+                            return;
+                        }
+                    }
+                }
+
+                if !terminal_seen {
+                    yield TurnEvent::Done { stop_reason: StopReason::Empty };
+                    return;
+                }
+
+                if pending_tool_ids.is_empty() {
+                    yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+                    return;
+                }
+
+                yield TurnEvent::ToolBatchEnd;
+
+                let Some(rx) = inbound.as_mut() else {
+                    yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+                    return;
+                };
+
+                while !pending_tool_ids.is_empty() {
+                    let Some(event) = rx.recv().await else {
+                        yield TurnEvent::Done { stop_reason: StopReason::Cancelled };
+                        return;
+                    };
+                    match event {
+                        TurnEvent::ToolResult { id, .. } => {
+                            pending_tool_ids.remove(&id);
+                        }
+                        TurnEvent::DepthCapHit { .. } => {
+                            captured_prompts
+                                .lock()
+                                .unwrap()
+                                .push(DEPTH_CAP_PROMPT.to_string());
+                            continue 'turn;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        };
+
+        Ok(Box::pin(body))
     }
+
     async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
         Ok(())
     }
@@ -684,34 +772,13 @@ impl ScriptedHandle {
             captured_prompts: captured,
         }
     }
-
-    fn pop_script(&self) -> Vec<ChatResult<ChatChunk>> {
-        let mut guard = self.scripts.lock().unwrap();
-        if guard.is_empty() {
-            Vec::new()
-        } else {
-            guard.remove(0)
-        }
-    }
 }
 
 #[async_trait::async_trait]
 impl AgentHandle for ScriptedHandle {
-    fn send_message_stream(&mut self, prompt: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
-        self.captured_prompts.lock().unwrap().push(prompt);
-        let chunks = self.pop_script();
-        Box::pin(futures::stream::iter(chunks))
+    async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
+        Ok(())
     }
-
-    fn continue_with_tool_results(
-        &mut self,
-        _tool_calls: Vec<ChatToolCall>,
-        _tool_results: Vec<ChatToolResult>,
-    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
-        let chunks = self.pop_script();
-        Box::pin(futures::stream::iter(chunks))
-    }
-
     async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
         Ok(())
     }

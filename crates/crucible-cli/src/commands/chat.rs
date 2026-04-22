@@ -645,23 +645,20 @@ async fn run_oneshot_chat(params: RunOneshotChatParams) -> Result<()> {
 
     {
         use crate::formatting::render_markdown;
-        use crucible_core::traits::chat::AgentHandle;
+        use crucible_core::turn::{Agent, TurnContext, TurnEvent};
         use futures::StreamExt;
 
         let mut response_content = String::new();
-        let mut stream = handle.send_message_stream(prompt);
-        while let Some(result) = stream.next().await {
-            match result {
-                Ok(chunk) => {
-                    if !chunk.done {
-                        response_content.push_str(&chunk.delta);
-                    }
-                }
-                Err(e) => {
+        let mut stream = handle.turn(TurnContext::new(prompt)).await?;
+        while let Some(event) = stream.next().await {
+            match event {
+                TurnEvent::TextDelta(text) => response_content.push_str(&text),
+                TurnEvent::Error(err) => {
                     eprintln!();
-                    output::error(&format!("{}", e));
-                    return Err(e.into());
+                    output::error(&format!("{}", err));
+                    return Err(anyhow::anyhow!("{err}"));
                 }
+                _ => {}
             }
         }
 

@@ -19,9 +19,6 @@ mod agent_handle;
 mod convert;
 mod native_agent;
 
-#[cfg(test)]
-mod tests;
-
 /// Agent handle that routes messages through the daemon
 ///
 /// This handle implements `AgentHandle` by:

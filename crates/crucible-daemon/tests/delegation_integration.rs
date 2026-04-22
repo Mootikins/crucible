@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use crucible_core::background::{JobResult, JobStatus, SubagentBlockingConfig};
 use crucible_core::config::{AcpConfig, AgentProfile, BackendType, DelegationConfig};
 use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
-use crucible_core::traits::chat::{AgentHandle, ChatChunk};
+use crucible_core::traits::chat::AgentHandle;
 use crucible_core::traits::ChatResult;
 use crucible_daemon::acp::discovery::default_agent_profiles;
 use crucible_daemon::background_manager::{BackgroundJobManager, SubagentContext, SubagentFactory};
@@ -46,35 +46,28 @@ impl crucible_core::turn::Agent for MockSubagentHandle {
     }
     async fn turn<'a>(
         &'a mut self,
-        ctx: crucible_core::turn::TurnContext,
+        _ctx: crucible_core::turn::TurnContext,
     ) -> Result<
         futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
         crucible_core::turn::AgentError,
     > {
-        // Integration test fixture; drive the real tool-loop helper so
-        // subagents exercise the same plumbing as production.
         use crucible_core::turn::{StopReason, TurnEvent};
-        use futures::stream::StreamExt;
-        let mut inner = self.send_message_stream(ctx.content);
+        let behavior = self.behavior.clone();
         let body = async_stream::stream! {
-            while let Some(r) = inner.next().await {
-                match r {
-                    Ok(c) => {
-                        if !c.delta.is_empty() {
-                            yield TurnEvent::TextDelta(c.delta);
-                        }
-                        if c.done {
-                            yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
-                            return;
-                        }
-                    }
-                    Err(e) => {
-                        yield TurnEvent::Error(crucible_core::turn::TurnError::Communication(e.to_string()));
-                        return;
-                    }
+            match behavior {
+                MockSubagentBehavior::ImmediateSuccess(output) => {
+                    yield TurnEvent::TextDelta(output);
+                    yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+                }
+                MockSubagentBehavior::DelayedSuccess { output, delay } => {
+                    sleep(delay).await;
+                    yield TurnEvent::TextDelta(output);
+                    yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+                }
+                MockSubagentBehavior::Pending => {
+                    futures::future::pending::<()>().await;
                 }
             }
-            yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
         };
         Ok(Box::pin(body))
     }
@@ -91,36 +84,9 @@ impl crucible_core::turn::Agent for MockSubagentHandle {
 
 #[async_trait]
 impl AgentHandle for MockSubagentHandle {
-    fn send_message_stream(
-        &mut self,
-        _message: String,
-    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
-        match self.behavior.clone() {
-            MockSubagentBehavior::ImmediateSuccess(output) => stream::iter(vec![Ok(ChatChunk {
-                delta: output,
-                done: true,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-            })])
-            .boxed(),
-            MockSubagentBehavior::DelayedSuccess { output, delay } => stream::once(async move {
-                sleep(delay).await;
-                Ok(ChatChunk {
-                    delta: output,
-                    done: true,
-                    tool_calls: None,
-                    tool_results: None,
-                    reasoning: None,
-                    usage: None,
-                })
-            })
-            .boxed(),
-            MockSubagentBehavior::Pending => stream::pending().boxed(),
-        }
+    async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
+        Ok(())
     }
-
     async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
         Ok(())
     }

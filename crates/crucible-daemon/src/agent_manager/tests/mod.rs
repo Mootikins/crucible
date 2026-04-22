@@ -46,8 +46,92 @@ struct StreamingMockAgent {
     chunks: Vec<ChatChunk>,
 }
 
-// Real Agent impl: delegate through the legacy tool-loop helper so
-// AgentManager tests exercise the same plumbing as production.
+/// Translate a single scripted `ChatChunk` into the equivalent
+/// [`TurnEvent`] sequence. Test-only helper that lets fixtures keep
+/// writing `Vec<ChatChunk>` scripts while their `Agent::turn` emits
+/// `TurnEvent`s directly.
+fn chat_chunk_to_turn_events(chunk: &ChatChunk) -> Vec<crucible_core::turn::TurnEvent> {
+    use crucible_core::turn::TurnEvent;
+    let mut events = Vec::new();
+    if let Some(reasoning) = &chunk.reasoning {
+        events.push(TurnEvent::Thinking(reasoning.clone()));
+    }
+    if !chunk.delta.is_empty() {
+        events.push(TurnEvent::TextDelta(chunk.delta.clone()));
+    }
+    if let Some(calls) = &chunk.tool_calls {
+        for call in calls {
+            events.push(TurnEvent::ToolCall {
+                id: call.id.clone().unwrap_or_default(),
+                name: call.name.clone(),
+                args: call.arguments.clone().unwrap_or(serde_json::Value::Null),
+            });
+        }
+    }
+    if let Some(results) = &chunk.tool_results {
+        for r in results {
+            events.push(TurnEvent::ToolResult {
+                id: r.call_id.clone().unwrap_or_default(),
+                name: r.name.clone(),
+                result: serde_json::Value::String(r.result.clone()),
+                error: r.error.clone(),
+            });
+        }
+    }
+    if let Some(usage) = chunk.usage.clone() {
+        events.push(TurnEvent::Usage(usage));
+    }
+    events
+}
+
+/// Run a scripted `Vec<ChatChunk>` as a sequence of `TurnEvent`s,
+/// terminating in `Done{EndTurn}` when the last chunk has `done=true`.
+/// If any chunk carries tool calls, the loop waits for corresponding
+/// `ToolResult`s on `ctx.inbound` before continuing.
+fn scripted_chunks_stream<'a>(
+    chunks: Vec<ChatChunk>,
+    ctx: crucible_core::turn::TurnContext,
+) -> futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent> {
+    use crucible_core::turn::{StopReason, TurnEvent};
+    let mut inbound = ctx.inbound;
+    let body = async_stream::stream! {
+        let mut pending_tool_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for chunk in chunks {
+            let terminal = chunk.done;
+            let events = chat_chunk_to_turn_events(&chunk);
+            for event in &events {
+                if let TurnEvent::ToolCall { id, .. } = event {
+                    pending_tool_ids.insert(id.clone());
+                }
+            }
+            for event in events {
+                yield event;
+            }
+            if terminal {
+                if !pending_tool_ids.is_empty() {
+                    yield TurnEvent::ToolBatchEnd;
+                    // Wait for tool results or depth cap
+                    if let Some(rx) = inbound.as_mut() {
+                        while !pending_tool_ids.is_empty() {
+                            let Some(event) = rx.recv().await else {
+                                yield TurnEvent::Done { stop_reason: StopReason::Cancelled };
+                                return;
+                            };
+                            if let TurnEvent::ToolResult { id, .. } = &event {
+                                pending_tool_ids.remove(id);
+                            }
+                        }
+                    }
+                }
+                yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+                return;
+            }
+        }
+        yield TurnEvent::Done { stop_reason: StopReason::Empty };
+    };
+    Box::pin(body)
+}
+
 #[async_trait::async_trait]
 impl crucible_core::turn::Agent for StreamingMockAgent {
     fn capabilities(&self) -> crucible_core::turn::AgentCapabilities {
@@ -60,7 +144,7 @@ impl crucible_core::turn::Agent for StreamingMockAgent {
         futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
         crucible_core::turn::AgentError,
     > {
-        Ok(crate::agent_manager::chat_chunk_bridge::legacy_tool_loop_stream(self, ctx))
+        Ok(scripted_chunks_stream(self.chunks.clone(), ctx))
     }
     async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
         Ok(())
@@ -148,7 +232,8 @@ impl crucible_core::turn::Agent for PromptCapturingAgent {
         futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
         crucible_core::turn::AgentError,
     > {
-        Ok(crate::agent_manager::chat_chunk_bridge::legacy_tool_loop_stream(self, ctx))
+        *self.received_prompt.lock().unwrap() = Some(ctx.content.clone());
+        Ok(scripted_chunks_stream(self.chunks.clone(), ctx))
     }
     async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
         Ok(())
@@ -163,15 +248,9 @@ impl crucible_core::turn::Agent for PromptCapturingAgent {
 
 #[async_trait::async_trait]
 impl AgentHandle for PromptCapturingAgent {
-    fn send_message_stream(
-        &mut self,
-        content: String,
-    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
-        *self.received_prompt.lock().unwrap() = Some(content);
-        let chunks = self.chunks.clone();
-        futures::stream::iter(chunks.into_iter().map(Ok)).boxed()
+    async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
+        Ok(())
     }
-
     async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
         Ok(())
     }
@@ -235,10 +314,9 @@ impl EmbeddingProvider for MockEmbeddingProvider {
 
 #[async_trait::async_trait]
 impl AgentHandle for MockAgent {
-    fn send_message_stream(&mut self, _: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
-        Box::pin(futures::stream::empty())
+    async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
+        Ok(())
     }
-
     async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
         Ok(())
     }
@@ -246,11 +324,9 @@ impl AgentHandle for MockAgent {
 
 #[async_trait::async_trait]
 impl AgentHandle for StreamingMockAgent {
-    fn send_message_stream(&mut self, _: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
-        let chunks = self.chunks.clone();
-        futures::stream::iter(chunks.into_iter().map(Ok)).boxed()
+    async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
+        Ok(())
     }
-
     async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
         Ok(())
     }

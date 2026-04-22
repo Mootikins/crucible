@@ -4,15 +4,11 @@
 //! locally-cached values. The `send_message_stream` implementation drives the
 //! streaming receiver set up by the event router in `convert.rs`.
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use crucible_core::interaction::InteractionEvent;
-use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatError, ChatResult};
-use futures::stream::BoxStream;
+use crucible_core::traits::chat::{AgentHandle, ChatError, ChatResult};
 use tokio::sync::mpsc;
 
-use super::convert::session_event_to_chat_chunk;
 use super::DaemonAgentHandle;
 use crate::ChatResultExt;
 
@@ -25,82 +21,6 @@ impl AgentHandle for DaemonAgentHandle {
             .await
             .map_err(|e| ChatError::Communication(format!("Failed to send message: {}", e)))?;
         Ok(())
-    }
-
-    fn send_message_stream(
-        &mut self,
-        message: String,
-    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
-        let client = Arc::clone(&self.client);
-        let session_id = self.session_id.clone();
-        let streaming_rx = Arc::clone(&self.streaming_rx);
-
-        Box::pin(async_stream::stream! {
-            tracing::debug!(session_id = %session_id, "Sending message to daemon");
-
-            let send_result = client
-                .session_send_message(&session_id, &message, true)
-                .await;
-            if let Err(e) = send_result {
-                tracing::error!(error = %e, "Failed to send message to daemon");
-                yield Err(ChatError::Communication(format!("Failed to send message: {}", e)));
-                return;
-            }
-
-            tracing::debug!(session_id = %session_id, "Message sent, waiting for streaming events");
-
-            let mut rx = streaming_rx.lock().await;
-            loop {
-                match rx.recv().await {
-                    Some(event) => {
-                        tracing::trace!(
-                            event_type = %event.event_type,
-                            "Received streaming event"
-                        );
-
-                        if let Some(chunk) = session_event_to_chat_chunk(&event) {
-                            tracing::debug!(
-                                delta_len = chunk.delta.len(),
-                                done = chunk.done,
-                                has_tool_calls = chunk.tool_calls.is_some(),
-                                "Converted event to ChatChunk"
-                            );
-                            if chunk.done {
-                                if let Some(reason) = event.data.get("reason").and_then(|value| value.as_str()) {
-                                    if let Some(stripped_reason) = reason.strip_prefix("error: ") {
-                                        tracing::warn!(reason = %reason, "LLM stream ended with error");
-                                        // Strip any ChatError variant Display prefix so TUI shows a single "Communication error: ..." prefix
-                                        const CHAT_ERROR_PREFIXES: &[&str] = &[
-                                            "Connection error: ", "Communication error: ", "Mode change error: ",
-                                            "Command execution failed: ", "Invalid input: ",
-                                            "Agent not available: ", "Internal error: ", "Invalid mode: ",
-                                            "Operation not supported: ",
-                                        ];
-                                        let inner = CHAT_ERROR_PREFIXES
-                                            .iter()
-                                            .find_map(|prefix| stripped_reason.strip_prefix(prefix))
-                                            .unwrap_or(stripped_reason);
-                                        yield Err(ChatError::Communication(inner.to_string()));
-                                        break;
-                                    }
-                                }
-                                yield Ok(chunk);
-                                tracing::debug!("Stream complete (done=true)");
-                                break;
-                            }
-                            yield Ok(chunk);
-                        } else {
-                            tracing::debug!(event_type = %event.event_type, "Event not convertible to chunk");
-                        }
-                    }
-                    None => {
-                        tracing::warn!("Streaming channel closed unexpectedly");
-                        yield Err(ChatError::Connection("Event channel closed".to_string()));
-                        break;
-                    }
-                }
-            }
-        })
     }
 
     fn take_interaction_receiver(&mut self) -> Option<mpsc::UnboundedReceiver<InteractionEvent>> {
