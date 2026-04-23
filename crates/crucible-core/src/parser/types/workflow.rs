@@ -8,7 +8,6 @@
 //!
 //! Canonical location for workflow AST. Re-exported from [`crate::parser`].
 
-use super::inline_metadata::extract_inline_metadata;
 use super::{Callout, CheckboxStatus, Frontmatter, InlineMetadata, ParsedNote, TaskItem};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -140,18 +139,8 @@ impl From<&Callout> for Gate {
 /// Non-fatal parser warnings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum WorkflowParseWarning {
-    DuplicateGoalsSection {
-        offset: usize,
-    },
-    DuplicateValidationSection {
-        offset: usize,
-    },
-    /// Heading contained `@` or `->` that didn't match the strict trailing
-    /// pattern; the suffix is treated as literal title text.
-    AmbiguousHeadingToken {
-        text: String,
-        offset: usize,
-    },
+    DuplicateGoalsSection { offset: usize },
+    DuplicateValidationSection { offset: usize },
 }
 
 // ---------- Impl ----------
@@ -295,30 +284,78 @@ fn heading_re() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"^(#{1,6})\s+(.+?)\s*$").unwrap())
 }
 
-fn scan_headings(body: &str) -> Vec<RawHeading> {
-    let mut headings = Vec::new();
+fn gate_hdr_re() -> &'static Regex {
+    static HDR: OnceLock<Regex> = OnceLock::new();
+    HDR.get_or_init(|| Regex::new(r"^>\s*\[!gate\](?:\s+(.*?))?\s*$").unwrap())
+}
+
+/// A body line with pre-computed byte offset and "inside code fence" flag.
+/// Both scanners share this so fence state is established once and applied
+/// consistently.
+#[derive(Debug, Clone, Copy)]
+struct BodyLine<'a> {
+    text: &'a str,
+    byte_offset: usize,
+    in_fence: bool,
+}
+
+fn body_lines(body: &str) -> Vec<BodyLine<'_>> {
+    let mut out = Vec::new();
+    let mut byte_pos = 0usize;
     let mut in_fence = false;
     let mut fence_marker: Option<String> = None;
-    let mut byte_pos = 0usize;
 
-    for (line_num, line) in body.split('\n').enumerate() {
+    for line in body.split('\n') {
         let trimmed = line.trim_start();
 
+        // Fence transitions happen on the fence line itself; that line is
+        // "in fence" from the opener's perspective but the code inside is
+        // what we want to ignore. Mark both the opening and closing fence
+        // lines as in-fence so nothing inside a fence (including `> [!gate]`
+        // in an example block) matches.
+        let line_in_fence;
         if in_fence {
+            line_in_fence = true;
             if let Some(marker) = &fence_marker {
                 if trimmed.starts_with(marker.as_str()) {
                     in_fence = false;
                     fence_marker = None;
                 }
             }
-        } else if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+        } else if (trimmed.starts_with("```") || trimmed.starts_with("~~~"))
+            && trimmed
+                .chars()
+                .take_while(|&c| c == '`' || c == '~')
+                .count()
+                >= 3
+        {
             let ch = trimmed.chars().next().unwrap();
             let run_len = trimmed.chars().take_while(|&c| c == ch).count();
-            if run_len >= 3 {
-                in_fence = true;
-                fence_marker = Some(std::iter::repeat_n(ch, run_len).collect::<String>());
-            }
-        } else if let Some(cap) = heading_re().captures(line) {
+            in_fence = true;
+            fence_marker = Some(std::iter::repeat_n(ch, run_len).collect::<String>());
+            line_in_fence = true;
+        } else {
+            line_in_fence = false;
+        }
+
+        out.push(BodyLine {
+            text: line,
+            byte_offset: byte_pos,
+            in_fence: line_in_fence,
+        });
+
+        byte_pos += line.len() + 1;
+    }
+    out
+}
+
+fn scan_headings(body: &str) -> Vec<RawHeading> {
+    let mut headings = Vec::new();
+    for (line_num, bl) in body_lines(body).into_iter().enumerate() {
+        if bl.in_fence {
+            continue;
+        }
+        if let Some(cap) = heading_re().captures(bl.text) {
             let hashes = cap.get(1).unwrap().as_str();
             let level = hashes.len() as u8;
             let text = cap
@@ -332,73 +369,72 @@ fn scan_headings(body: &str) -> Vec<RawHeading> {
                 level,
                 text,
                 line: line_num,
-                byte_offset: byte_pos,
+                byte_offset: bl.byte_offset,
             });
         }
-
-        // Advance byte_pos past this line plus the \n that split consumed.
-        // For the final segment there's no trailing \n, but we still add 1;
-        // this only affects byte_pos past end-of-body, which is never read.
-        byte_pos += line.len() + 1;
     }
     headings
 }
 
 fn scan_gates(body: &str) -> Vec<RawGate> {
-    static HDR: OnceLock<Regex> = OnceLock::new();
-    let hdr = HDR.get_or_init(|| Regex::new(r"^>\s*\[!gate\](?:\s+(.*?))?\s*$").unwrap());
-
+    let hdr = gate_hdr_re();
+    let lines = body_lines(body);
     let mut gates = Vec::new();
-    let lines: Vec<(usize, &str)> = {
-        let mut v = Vec::new();
-        let mut byte_pos = 0usize;
-        for line in body.split('\n') {
-            v.push((byte_pos, line));
-            byte_pos += line.len() + 1;
-        }
-        v
-    };
-
     let mut i = 0;
     while i < lines.len() {
-        let (byte_offset, line) = lines[i];
-        if let Some(cap) = hdr.captures(line) {
-            let title = cap
-                .get(1)
-                .map(|m| m.as_str().trim().to_string())
-                .filter(|s| !s.is_empty());
-            let start_line = i;
+        let bl = lines[i];
+        if bl.in_fence || !hdr.is_match(bl.text) {
             i += 1;
-
-            let mut content_lines = Vec::new();
-            while i < lines.len() {
-                let cont = lines[i].1;
-                // Continuation: starts with `>`. Content is everything after
-                // the leading `>` (and one optional space).
-                if let Some(rest) = cont.strip_prefix('>') {
-                    let rest = rest.strip_prefix(' ').unwrap_or(rest);
-                    // If the next callout header starts here, stop.
-                    if hdr.is_match(cont) {
-                        break;
-                    }
-                    content_lines.push(rest.to_string());
-                    i += 1;
-                } else {
-                    break;
-                }
-            }
-
-            gates.push(RawGate {
-                title,
-                content: content_lines.join("\n"),
-                line: start_line,
-                byte_offset,
-            });
-        } else {
-            i += 1;
+            continue;
         }
+        let cap = hdr.captures(bl.text).unwrap();
+        let title = cap
+            .get(1)
+            .map(|m| m.as_str().trim().to_string())
+            .filter(|s| !s.is_empty());
+        let start_line = i;
+        let start_byte = bl.byte_offset;
+        i += 1;
+
+        let mut content_lines = Vec::new();
+        while i < lines.len() {
+            let cont = lines[i];
+            if cont.in_fence {
+                break;
+            }
+            // Continuation: starts with `>`. Content is everything after the
+            // leading `>` (and one optional space). A new gate header ends
+            // the current gate.
+            if hdr.is_match(cont.text) {
+                break;
+            }
+            if let Some(rest) = cont.text.strip_prefix('>') {
+                let rest = rest.strip_prefix(' ').unwrap_or(rest);
+                content_lines.push(rest.to_string());
+                i += 1;
+            } else {
+                break;
+            }
+        }
+
+        gates.push(RawGate {
+            title,
+            content: content_lines.join("\n"),
+            line: start_line,
+            byte_offset: start_byte,
+        });
     }
     gates
+}
+
+/// Regex for Dataview-style inline metadata with a stricter-than-global
+/// key pattern: the key may not cross `]` (so a heading like
+/// `## Impl [TICKET-123] @dev [priority:: high]` parses correctly — the
+/// global `extract_inline_metadata` uses `[^:]+` which greedily consumes
+/// the first `]` and the surrounding prose).
+fn workflow_meta_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\s*\[([^:\]]+?)::\s*([^\]]+)\]").unwrap())
 }
 
 /// Parse a heading's text into (title, agent, output, attributes).
@@ -415,17 +451,15 @@ fn parse_heading_suffix(
     HashMap<String, String>,
 ) {
     // 1. Extract `[k:: v]` pairs and strip them (anywhere in the text).
-    let metadata = extract_inline_metadata(text);
+    let meta_re = workflow_meta_re();
     let mut attributes: HashMap<String, String> = HashMap::new();
-    for m in &metadata {
-        if let Some(v) = InlineMetadata::as_string(m) {
-            attributes.insert(m.key.clone(), v.to_string());
-        }
+    for cap in meta_re.captures_iter(text) {
+        let key = cap.get(1).unwrap().as_str().trim().to_string();
+        let value = cap.get(2).unwrap().as_str().trim().to_string();
+        attributes.insert(key, value);
     }
 
-    static META_STRIP: OnceLock<Regex> = OnceLock::new();
-    let meta_strip = META_STRIP.get_or_init(|| Regex::new(r"\s*\[([^:]+)::\s*([^\]]+)\]").unwrap());
-    let stripped = meta_strip.replace_all(text, "").trim().to_string();
+    let stripped = meta_re.replace_all(text, "").trim().to_string();
 
     // 2. Trailing `-> <ident>` (only ASCII bare idents, no spaces).
     static OUT_RE: OnceLock<Regex> = OnceLock::new();
@@ -542,6 +576,7 @@ fn parse_goal_items(section: &str) -> Vec<TaskItem> {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| Regex::new(r"^[ \t]*-\s*\[(.)\]\s*(.+)$").unwrap());
 
+    let meta_re = workflow_meta_re();
     let mut items = Vec::new();
     for line in section.lines() {
         if let Some(cap) = re.captures(line) {
@@ -549,23 +584,23 @@ fn parse_goal_items(section: &str) -> Vec<TaskItem> {
             let raw_content = cap[2].to_string();
             let status = CheckboxStatus::from_char(status_char).unwrap_or(CheckboxStatus::Pending);
 
-            let metadata_vec = extract_inline_metadata(&raw_content);
+            // Use the stricter `workflow_meta_re` (key pattern doesn't cross
+            // `]`) so goal text like `[TICKET-123] do the thing [id:: g1]`
+            // extracts {id: "g1"}, not {TICKET-123] do the thing [id: "g1"}.
             let mut metadata_map: HashMap<String, InlineMetadata> = HashMap::new();
-            for m in metadata_vec {
-                metadata_map.insert(m.key.clone(), m);
+            for m in meta_re.captures_iter(&raw_content) {
+                let key = m.get(1).unwrap().as_str().trim().to_string();
+                let value_str = m.get(2).unwrap().as_str().trim();
+                let values: Vec<String> =
+                    value_str.split(',').map(|v| v.trim().to_string()).collect();
+                metadata_map.insert(key.clone(), InlineMetadata { key, values });
             }
-            let clean = strip_inline_metadata(&raw_content);
+            let clean = meta_re.replace_all(&raw_content, "").trim().to_string();
 
             items.push(TaskItem::new(clean, status, metadata_map));
         }
     }
     items
-}
-
-fn strip_inline_metadata(text: &str) -> String {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| Regex::new(r"\s*\[([^:]+)::\s*([^\]]+)\]").unwrap());
-    re.replace_all(text, "").trim().to_string()
 }
 
 fn parse_validation_items(section: &str, section_start_in_source: usize) -> Vec<ValidationEntry> {
@@ -1416,5 +1451,101 @@ type: workflow
         let wf = parse_workflow(source).unwrap();
         let titles: Vec<_> = wf.iter_steps().map(|s| s.title.as_str()).collect();
         assert_eq!(titles, vec!["A", "A1", "A2", "B", "B1"]);
+    }
+
+    // ---- regression tests from code review ----
+
+    #[test]
+    fn gate_inside_code_fence_is_not_attached() {
+        // Docs often contain fenced examples that *show* gate syntax. Those
+        // must not create real gates on the enclosing step.
+        let source = "\
+---
+type: workflow
+---
+## Step With Example
+
+Here's how to write a gate:
+
+```markdown
+> [!gate]
+> This is an example in docs
+```
+
+Real step content.
+";
+        let wf = parse_workflow(source).unwrap();
+        assert_eq!(wf.steps.len(), 1);
+        assert_eq!(wf.steps[0].gates.len(), 0);
+        assert!(wf.preamble_gates.is_empty());
+    }
+
+    #[test]
+    fn heading_with_bracketed_ticket_and_metadata_parses_correctly() {
+        // The global `extract_inline_metadata` regex uses `[^:]+` for the
+        // key, which greedily consumes the first `]` in a heading like
+        // `## Impl [TICKET-123] @dev [priority:: high]` and produces a
+        // nonsense key. The workflow parser uses a stricter regex that
+        // doesn't cross `]` boundaries.
+        let (title, agent, _output, attrs) =
+            parse_heading_suffix("Implement [TICKET-123] @dev [priority:: high]");
+        assert_eq!(
+            attrs.get("priority").map(String::as_str),
+            Some("high"),
+            "priority attribute should be extracted cleanly"
+        );
+        assert_eq!(attrs.len(), 1, "no spurious attributes: {:?}", attrs);
+        assert_eq!(agent.as_deref(), Some("dev"));
+        assert_eq!(title, "Implement [TICKET-123]");
+    }
+
+    #[test]
+    fn goals_with_bracketed_ticket_and_metadata_parse_correctly() {
+        let source = "\
+---
+type: workflow
+---
+## Goals
+
+- [ ] Fix [TICKET-123] auth bug [id:: g1]
+- [ ] Ship [TICKET-456] feature [id:: g2] [priority:: high]
+";
+        let wf = parse_workflow(source).unwrap();
+        assert_eq!(wf.goals.len(), 2);
+        assert_eq!(wf.goals[0].id, "g1");
+        assert!(
+            wf.goals[0].content.contains("TICKET-123"),
+            "content preserves ticket reference: {:?}",
+            wf.goals[0].content
+        );
+        assert_eq!(wf.goals[1].id, "g2");
+        assert_eq!(
+            wf.goals[1]
+                .metadata
+                .get("priority")
+                .and_then(|m| m.as_string()),
+            Some("high")
+        );
+    }
+
+    #[test]
+    fn heading_inside_tilde_fence_ignored() {
+        // Previously we only handled backtick fences; tilde fences are also
+        // legal CommonMark and should mask their contents.
+        let source = "\
+---
+type: workflow
+---
+## Real Step
+
+~~~md
+## Fake Step Inside Tilde Fence
+~~~
+
+## Another Real
+";
+        let wf = parse_workflow(source).unwrap();
+        let titles: Vec<_> = wf.steps.iter().map(|s| s.title.as_str()).collect();
+        assert_eq!(titles, vec!["Real Step", "Another Real"]);
     }
 }
