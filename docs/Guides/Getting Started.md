@@ -199,7 +199,7 @@ The first time you run `cru chat`, Crucible automatically starts a background da
 - **Plan**: Read-only, agent can search and read but not modify
 - **Auto**: Auto-approve tool calls without prompting
 
-**Slash commands:** `/plan`, `/auto`, `/normal`, `/search`, `/help`
+**Slash commands:** `/mode`, `/plan`, `/auto`, `/default`, `/search`, `/new`, `/resume`, `/models`
 **REPL commands:** `:model`, `:set`, `:export`, `:clear`, `:help`
 
 **Implementation:** `crates/crucible-cli/src/commands/chat.rs`
@@ -231,7 +231,7 @@ This database contains:
 
 ### "Error: kiln path does not exist"
 
-Check that `CRUCIBLE_KILN_PATH` is set correctly or configure it in your config file.
+Check that your kiln is registered under `[kilns]` in `~/.config/crucible/config.toml` and that the path resolves. Alternatively, the legacy `CRUCIBLE_KILN_PATH` environment variable is still honored as a fallback.
 
 ### Processing is slow
 

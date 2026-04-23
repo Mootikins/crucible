@@ -69,24 +69,25 @@ This is my knowledge base. Here I'll store notes, ideas, and references.
 
 ### 4. Configure Crucible
 
-Set your kiln path:
+Register the kiln in your global config under the `[kilns]` section:
 
 ```bash
-# Option 1: Environment variable
-export CRUCIBLE_KILN_PATH=~/Documents/my-kiln
-
-# Option 2: Config file
 mkdir -p ~/.config/crucible
 cat > ~/.config/crucible/config.toml << 'EOF'
-kiln_path = "/home/user/Documents/my-kiln"
+default_kiln = "my-kiln"
 
-[embedding]
-provider = "fastembed"
+[kilns]
+my-kiln = "/home/user/Documents/my-kiln"
+
+[enrichment.provider]
+type = "fastembed"
 
 [cli]
 show_progress = true
 EOF
 ```
+
+The simpler way is to let `cru init` do this for you from inside the kiln directory — it creates `.crucible/kiln.toml`, registers the kiln in your global config, and prompts for a data classification.
 
 ### 5. Process Your Notes
 

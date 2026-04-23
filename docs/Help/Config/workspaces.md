@@ -62,17 +62,28 @@ path = "docs"  # Relative path to kiln
 EOF
 ```
 
-### Registered Workspaces
+### Registered Projects
 
-For daemon mode or explicit control, register workspaces globally:
+For daemon mode or explicit control, register projects globally. Projects bind to one or more named kilns from the `[kilns]` registry.
 
 ```toml
-# ~/.config/crucible/workspaces.d/myprojects.toml
-[[workspaces]]
-name = "myproject"
+# ~/.config/crucible/config.toml
+
+[kilns]
+docs = "~/crucible/docs"
+shared = "~/shared-knowledge"
+
+[projects.myproject]
 path = "~/projects/myproject"
-kilns = ["docs", "~/shared-knowledge"]
+kilns = ["docs", "shared"]
+default_kiln = "docs"
 ```
+
+| Field | Type | Description |
+|---|---|---|
+| `path` | path | Project root directory |
+| `kilns` | list | Named kilns from `[kilns]` that this project uses |
+| `default_kiln` | string | Primary kiln for session storage |
 
 ## Shell Security
 

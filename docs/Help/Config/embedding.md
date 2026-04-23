@@ -6,259 +6,207 @@ tags:
   - config
 ---
 
-# Embedding Configuration
+# Embedding & Enrichment Configuration
 
-Configure embedding providers for semantic search and similarity features.
+Semantic search, precognition, and similarity features all run through the **enrichment pipeline**. This page documents the `[enrichment]` section in `crucible.toml`.
 
-## Configuration File
+> Previous versions used a flat top-level `[embedding]` section. This is no longer supported — Crucible now rejects configs containing `[embedding]`. Use `[enrichment]` with a nested `provider` table as shown below.
+
+## Configuration Location
 
 Add to `~/.config/crucible/config.toml`:
 
 ```toml
-[embedding]
-provider = "fastembed"
-model = "all-MiniLM-L6-v2"
-batch_size = 32
+[enrichment.provider]
+type = "fastembed"
 ```
+
+The `[enrichment]` section has two sub-tables:
+
+| Sub-table | Purpose |
+|---|---|
+| `[enrichment.provider]` | Which embedding backend to use + its settings |
+| `[enrichment.pipeline]` | Pipeline tuning (batch processing, chunking) |
 
 ## Providers
 
-### FastEmbed (Default, Local)
+Select a provider by setting `type = "..."`. Each type has its own fields.
 
-Fast local embeddings with no API needed:
+### FastEmbed (default, local)
+
+Fast local embeddings with no API key needed:
 
 ```toml
-[embedding]
-provider = "fastembed"
-model = "all-MiniLM-L6-v2"
+[enrichment.provider]
+type = "fastembed"
+model = "BAAI/bge-small-en-v1.5"   # default
+batch_size = 32
+dimensions = 384
+# cache_dir = "/path/to/cache"     # optional
+# num_threads = 4                  # optional (auto-detected)
 ```
 
-**Available models:**
-- `all-MiniLM-L6-v2` - Fast, good quality (default)
-- `nomic-embed-text-v1.5` - Higher quality, slower
-
-**Advantages:**
-- No API key needed
-- Works offline
-- Fast for batch processing
-- Free
+**Advantages:** no API key, offline, free, fast for batch processing.
 
 ### Ollama
 
-Use Ollama's embedding models:
+Use Ollama's embedding models locally:
 
 ```toml
-[embedding]
-provider = "ollama"
+[enrichment.provider]
+type = "ollama"
 model = "nomic-embed-text"
-endpoint = "http://localhost:11434"
+base_url = "http://localhost:11434"
+batch_size = 32
 ```
 
-**Available models:**
-- `nomic-embed-text` - Good general purpose
-- `mxbai-embed-large` - Higher quality
-
-**Setup:**
-```bash
-ollama pull nomic-embed-text
-```
+**Setup:** `ollama pull nomic-embed-text`
 
 ### OpenAI
 
-Use OpenAI's embedding API:
-
 ```toml
-[embedding]
-provider = "openai"
+[enrichment.provider]
+type = "openai"
 model = "text-embedding-3-small"
+# api_key read from OPENAI_API_KEY by default
+# base_url = "https://api.openai.com/v1"   # optional
+# dimensions = 1536                        # optional
 ```
-
-**Environment variable:**
-```bash
-export OPENAI_API_KEY=your-api-key
-```
-
-**Available models:**
-- `text-embedding-3-small` - Fast, cost-effective
-- `text-embedding-3-large` - Highest quality
 
 ### Cohere
 
-Use Cohere's embedding API:
-
 ```toml
-[embedding]
-provider = "cohere"
+[enrichment.provider]
+type = "cohere"
 model = "embed-english-v3.0"
-```
-
-**Environment variable:**
-```bash
-export COHERE_API_KEY=your-api-key
+# api_key read from COHERE_API_KEY
 ```
 
 ### Vertex AI
 
-Use Google Vertex AI embeddings:
-
 ```toml
-[embedding]
-provider = "vertexai"
+[enrichment.provider]
+type = "vertexai"
 model = "text-embedding-004"
 ```
 
 Requires Google Cloud credentials configured in your environment.
 
-## Parameters
-
-### batch_size
-
-Number of texts to embed at once:
+### Burn (GPU-accelerated local)
 
 ```toml
-[embedding]
-batch_size = 32
+[enrichment.provider]
+type = "burn"
 ```
 
-Larger batches are faster but use more memory.
+Experimental local provider backed by the Burn ML framework.
 
-### endpoint
-
-Custom API endpoint:
+### Custom
 
 ```toml
-[embedding]
-endpoint = "http://localhost:11434"  # Ollama
+[enrichment.provider]
+type = "custom"
+endpoint = "http://your-service/embed"
 ```
 
-## Embedding Dimensions
+For HTTP-based providers that aren't first-class.
 
-Different models produce different vector dimensions:
+### Mock
+
+```toml
+[enrichment.provider]
+type = "mock"
+```
+
+Returns deterministic stub vectors. Used by tests and local dev.
+
+## Dimensions
+
+Different models produce different vector sizes:
 
 | Model | Dimensions |
 |-------|------------|
-| `all-MiniLM-L6-v2` | 384 |
+| `BAAI/bge-small-en-v1.5` (default) | 384 |
 | `nomic-embed-text-v1.5` | 768 |
 | `text-embedding-3-small` | 1536 |
 | `text-embedding-3-large` | 3072 |
 
-Higher dimensions may provide better quality but use more storage.
+Changing model changes the vector dimension, which makes old vectors unusable — reprocess after switching with `cru process --force`.
 
 ## Processing
 
 Embeddings are generated during `cru process`:
 
 ```bash
-# Process with current config
-cru process
-
-# Force regenerate all embeddings
-cru process --force
+cru process               # incremental
+cru process --force       # regenerate all embeddings
 ```
 
 ## Storage
 
-Embeddings are stored in the local database (SQLite by default) at:
+Embeddings live alongside the other daemon state in the kiln:
+
 ```
-<kiln_path>/.crucible/crucible-sqlite.db
+<kiln>/.crucible/crucible-sqlite.db
 ```
 
-Changing embedding provider requires reprocessing with `--force`.
+The vector index can be rebuilt from the markdown source with `cru process --force` — it's cache, not source of truth.
 
 ## Example Configurations
 
-### Local Development
+### Local Development (default)
 
 ```toml
-[embedding]
-provider = "fastembed"
-model = "all-MiniLM-L6-v2"
-batch_size = 32
+[enrichment.provider]
+type = "fastembed"
 ```
 
 No setup required.
 
-### High Quality Local
+### High-Quality Local
 
 ```toml
-[embedding]
-provider = "ollama"
+[enrichment.provider]
+type = "ollama"
 model = "nomic-embed-text"
-endpoint = "http://localhost:11434"
 ```
-
-Requires Ollama with model installed.
 
 ### Cloud API
 
 ```toml
-[embedding]
-provider = "openai"
+[enrichment.provider]
+type = "openai"
 model = "text-embedding-3-small"
 batch_size = 100
 ```
 
-Faster with larger batches, but costs per API call.
-
-### Memory Constrained
+### Memory-Constrained
 
 ```toml
-[embedding]
-provider = "fastembed"
-model = "all-MiniLM-L6-v2"
-batch_size = 8  # Lower memory usage
+[enrichment.provider]
+type = "fastembed"
+batch_size = 8
 ```
 
 ## Troubleshooting
 
 ### "Embedding service unavailable"
 
-For Ollama, check it's running:
-```bash
-ollama list
-```
+For Ollama, check it's running: `ollama list`.
 
 ### Slow processing
 
-Increase batch size:
-```toml
-[embedding]
-batch_size = 64
-```
-
-Or use a faster model:
-```toml
-[embedding]
-provider = "fastembed"
-model = "all-MiniLM-L6-v2"
-```
+Increase `batch_size` or switch to FastEmbed (local, no network).
 
 ### Out of memory
 
-Decrease batch size:
-```toml
-[embedding]
-batch_size = 8
-```
+Decrease `batch_size`.
 
-### Changed models
+### Switched models
 
-Reprocess to regenerate embeddings:
-```bash
-cru process --force
-```
+Reprocess: `cru process --force`.
 
 ## Implementation
 
-**Source code:** `crates/crucible-llm/src/embeddings/`
-
-**Providers:**
-- `crates/crucible-llm/src/embeddings/fastembed.rs`
-- `crates/crucible-llm/src/embeddings/ollama.rs`
-- `crates/crucible-llm/src/embeddings/openai.rs`
-
-## See Also
-
-- `:h config.llm` - LLM configuration
-- `:h search` - Using semantic search
-- [[Help/CLI/process]] - Processing reference
+**Source code:** `crates/crucible-daemon/src/llm/embeddings/`  
+**Config struct:** `crates/crucible-core/src/config/enrichment.rs`
