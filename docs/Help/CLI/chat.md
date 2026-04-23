@@ -110,7 +110,7 @@ Number of context results to include (default: 5).
 
 #### `--plan`
 
-Start in plan mode (read-only) instead of normal mode. The agent can search and read notes but can't execute write operations. Toggle during a session with `/plan` and `/normal` commands.
+Start in plan mode (read-only) instead of normal mode. The agent can search and read notes but can't execute write operations. Toggle during a session with `/plan` and `/default` commands.
 
 ```bash
 cru chat --plan
@@ -171,11 +171,17 @@ Full tool access with automatic approval. Tool calls execute without confirmatio
 
 | Command | Description |
 |---------|-------------|
-| `/help` | Show available commands |
+| `/mode` | Cycle through chat modes |
+| `/default` | Switch to normal (ask-for-writes) mode |
 | `/plan` | Switch to plan (read-only) mode |
-| `/normal` | Switch to normal (full access) mode |
-| `/clear` | Clear conversation history |
-| `/agent <name>` | Switch to a different agent |
+| `/auto` | Switch to auto (full access) mode |
+| `/agent` | Show or list available agents |
+| `/new` | Start a new session |
+| `/resume` | Resume a recent session |
+| `/models` | List or switch models |
+| `/search` | Search the knowledge base |
+| `/commit` | Smart git commit workflow |
+| `/view` | Open or list Lua-defined views |
 
 ### REPL Commands
 

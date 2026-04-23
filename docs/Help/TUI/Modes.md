@@ -60,8 +60,8 @@ Press `Shift+Tab` to cycle through modes: Normal → Plan → Auto → Normal
 ### Slash Commands
 
 ```
-/normal     Switch to normal mode
-/plan       Switch to plan mode  
+/default    Switch to normal mode (alias: /normal)
+/plan       Switch to plan mode
 /auto       Switch to auto mode
 /mode       Cycle to next mode
 ```

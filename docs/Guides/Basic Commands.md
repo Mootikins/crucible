@@ -30,26 +30,34 @@ Running `cru` with no arguments starts interactive chat:
 cru
 ```
 
-This is the primary way to interact with your kiln. The AI agent can search, read, and (in act mode) modify your notes.
+This is the primary way to interact with your kiln. The AI agent can search, read, and (in auto mode) modify your notes.
 
 ### Chat Modes
 
-**Plan Mode** (default): Read-only, agent explores but doesn't modify
+**Normal Mode** (default): Agent reads freely; asks permission before writes or commands
+```
+/default
+```
+
+**Plan Mode**: Read-only; agent explores but doesn't modify
 ```
 /plan
 ```
 
-**Act Mode**: Agent can create and modify notes
+**Auto Mode**: Agent can create and modify notes without prompting
 ```
-/act
+/auto
 ```
 
 ### Useful Commands in Chat
 
-- `/help` - Show available commands
+- `/default` - Switch to normal (ask-for-writes) mode
 - `/plan` - Switch to read-only mode
-- `/act` - Enable write mode
-- `/clear` - Clear conversation history
+- `/auto` - Enable full-access mode
+- `/mode` - Cycle through modes
+- `/new` - Start a new session
+- `/resume` - Resume a recent session
+- `/models` - List or switch models
 - `Shift+Tab` - Cycle modes
 - `Ctrl+C` - Cancel (double to exit)
 
