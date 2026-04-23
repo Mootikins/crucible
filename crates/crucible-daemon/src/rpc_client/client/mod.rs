@@ -43,6 +43,7 @@ pub mod session;
 pub mod storage;
 pub mod subscription;
 pub mod types;
+pub mod workflow;
 
 // Re-export public types so the original `rpc_client::client::<Type>` paths
 // still resolve after the split. Only types the parent `rpc_client` module

@@ -7,6 +7,7 @@ use crate::mcp_server::McpServerManager;
 use crate::protocol::SessionEventMessage;
 use crate::session_manager::SessionManager;
 use crate::subscription::SubscriptionManager;
+use crate::workflow_registry::WorkflowRegistry;
 use crucible_core::config::{LlmConfig, McpConfig};
 use dashmap::DashMap;
 use std::sync::Arc;
@@ -28,6 +29,8 @@ pub struct RpcContext {
     /// task (Task 1.2f) can surface the configured servers as a setup event
     /// without a round-trip through the MCP gateway.
     pub mcp_config: Option<McpConfig>,
+    /// Active workflow executions keyed by session id (Phase 3a).
+    pub workflows: Arc<WorkflowRegistry>,
 }
 
 impl RpcContext {
@@ -59,6 +62,7 @@ impl RpcContext {
             llm_config,
             mcp_server_manager,
             mcp_config,
+            workflows: Arc::new(WorkflowRegistry::new()),
         }
     }
 }

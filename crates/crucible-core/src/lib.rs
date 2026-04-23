@@ -35,6 +35,7 @@ pub mod traits;
 pub mod turn;
 pub mod types;
 pub mod utils;
+pub mod workflow;
 
 pub use crate::crucible_core::CrucibleCore;
 pub use agent::{

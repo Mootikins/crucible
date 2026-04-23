@@ -124,6 +124,10 @@ pub const METHODS: &[&str] = &[
     "subagent.collect",
     "webhook.receive",
     "suggest_links",
+    "workflow.start",
+    "workflow.approve_gate",
+    "workflow.status",
+    "workflow.cancel",
 ];
 
 fn to_response(id: Option<RequestId>, result: RpcResult<serde_json::Value>) -> Response {
@@ -351,6 +355,24 @@ impl RpcDispatcher {
 
             // Webhook RPC handler
             "webhook.receive" => to_response(id, self.handle_webhook_receive(&req)),
+
+            // Workflow execution (Phase 3a)
+            "workflow.start" => to_response(
+                id,
+                crate::rpc::workflow_handlers::handle_workflow_start(&self.ctx, &req).await,
+            ),
+            "workflow.approve_gate" => to_response(
+                id,
+                crate::rpc::workflow_handlers::handle_workflow_approve_gate(&self.ctx, &req).await,
+            ),
+            "workflow.status" => to_response(
+                id,
+                crate::rpc::workflow_handlers::handle_workflow_status(&self.ctx, &req).await,
+            ),
+            "workflow.cancel" => to_response(
+                id,
+                crate::rpc::workflow_handlers::handle_workflow_cancel(&self.ctx, &req).await,
+            ),
 
             _ => Response::error(
                 id,
@@ -1390,7 +1412,7 @@ mod tests {
 
     #[test]
     fn methods_count() {
-        assert_eq!(METHODS.len(), 113, "Update when adding RPC methods");
+        assert_eq!(METHODS.len(), 117, "Update when adding RPC methods");
     }
 
     #[tokio::test]

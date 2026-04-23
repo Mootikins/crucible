@@ -1,9 +1,11 @@
-//! Workflow CLI commands: `cru workflow list` and `cru workflow show`.
+//! Workflow CLI commands: `list`, `show`, `start`, `approve`, `status`,
+//! `cancel`.
 //!
-//! Both operate on the active kiln: they scan for markdown notes whose
-//! frontmatter declares `type: workflow` and render the parsed
-//! [`WorkflowDoc`] (Phase 1 AST). No execution happens here — that's
-//! Phase 3. See `thoughts/shared/plans/workflows_2026-04-22-2030.md`.
+//! `list`/`show` are Phase 1+2: they read workflow notes from the active
+//! kiln and render the parsed [`WorkflowDoc`] without involving the
+//! daemon. `start`/`approve`/`status`/`cancel` are Phase 3a: they drive
+//! the daemon-side workflow engine over RPC. See the plan at
+//! `thoughts/shared/plans/workflows_2026-04-22-2030.md`.
 
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand};
@@ -11,9 +13,11 @@ use crucible_core::parser::types::{
     CheckboxStatus, Frontmatter, FrontmatterFormat, ParsedNote, WorkflowDoc, WorkflowStep,
 };
 use crucible_core::EXCLUDED_DIRS;
+use crucible_daemon::rpc_client::{WorkflowApproveGateRequest, WorkflowStartRequest};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
+use crate::common::daemon_client;
 use crate::config::CliConfig;
 use crate::formatting::OutputFormat;
 
@@ -40,6 +44,33 @@ pub enum WorkflowSubcommand {
         #[arg(short = 'f', long, default_value = "table")]
         format: String,
     },
+    /// Start a workflow execution against a new session
+    Start {
+        /// Workflow identifier (path, filename stem, or title)
+        target: String,
+        /// Existing session id to attach to (otherwise a new workflow
+        /// session is created against the active kiln).
+        #[arg(long)]
+        session: Option<String>,
+    },
+    /// Approve a pending gate on a running workflow
+    Approve {
+        /// Workflow session id
+        session: String,
+        /// Gate id (as emitted in a `workflow.gate_reached` event).
+        /// Omit to approve whichever gate is currently pending.
+        gate: Option<String>,
+    },
+    /// Show current status of a running workflow
+    Status {
+        /// Workflow session id
+        session: String,
+    },
+    /// Cancel a running workflow
+    Cancel {
+        /// Workflow session id
+        session: String,
+    },
 }
 
 pub async fn execute(config: CliConfig, command: WorkflowSubcommand) -> Result<()> {
@@ -48,6 +79,14 @@ pub async fn execute(config: CliConfig, command: WorkflowSubcommand) -> Result<(
         WorkflowSubcommand::Show { target, format } => {
             run_show(config, &target, OutputFormat::from_str(&format))
         }
+        WorkflowSubcommand::Start { target, session } => {
+            run_start(config, &target, session.as_deref()).await
+        }
+        WorkflowSubcommand::Approve { session, gate } => {
+            run_approve(&session, gate.as_deref()).await
+        }
+        WorkflowSubcommand::Status { session } => run_status(&session).await,
+        WorkflowSubcommand::Cancel { session } => run_cancel(&session).await,
     }
 }
 
@@ -329,6 +368,206 @@ where
         }
     }
     Ok(())
+}
+
+// ---------- execution commands (Phase 3a) ----------
+
+async fn run_start(config: CliConfig, target: &str, _session: Option<&str>) -> Result<()> {
+    // Locate the workflow note and keep the source for RPC transport.
+    let (path, source) = load_workflow_source(&config.kiln_path, target)?;
+
+    let client = daemon_client().await?;
+
+    // Create a fresh workflow session. Reusing an existing one is a
+    // follow-up — keeps this slice small and the invariant simple
+    // (one active workflow per session).
+    let create_resp = client
+        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+            session_type: "workflow".to_string(),
+            kiln: config.kiln_path.clone(),
+            workspace: None,
+            connect_kilns: Vec::new(),
+            recording_mode: None,
+            recording_path: None,
+            agent_type: None,
+        })
+        .await
+        .context("failed to create workflow session")?;
+    let session_id = create_resp
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!("daemon returned no session_id on session.create"))?
+        .to_string();
+
+    println!("Started workflow session: {}", session_id);
+    println!("Workflow: {}", path.display());
+    println!();
+
+    let result = client
+        .workflow_start(WorkflowStartRequest {
+            session_id: session_id.clone(),
+            source,
+            path: Some(path.display().to_string()),
+        })
+        .await
+        .context("workflow.start RPC failed")?;
+
+    print_status_result(&result);
+    Ok(())
+}
+
+async fn run_approve(session: &str, gate: Option<&str>) -> Result<()> {
+    let client = daemon_client().await?;
+
+    let gate_id = match gate {
+        Some(g) => g.to_string(),
+        None => gate_id_from_status(&client, session).await?,
+    };
+
+    let result = client
+        .workflow_approve_gate(WorkflowApproveGateRequest {
+            session_id: session.to_string(),
+            gate_id,
+        })
+        .await
+        .context("workflow.approve_gate RPC failed")?;
+
+    print_status_result(&result);
+    Ok(())
+}
+
+async fn run_status(session: &str) -> Result<()> {
+    let client = daemon_client().await?;
+    let snap = client
+        .workflow_status(session)
+        .await
+        .context("workflow.status RPC failed")?;
+
+    println!(
+        "Progress: {} / {}",
+        snap.get("completed_slots")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0),
+        snap.get("total_slots")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0),
+    );
+    if let Some(status) = snap.get("status") {
+        println!("Status: {}", status);
+    }
+    if let Some(scope) = snap.get("scope") {
+        if !scope.as_object().map(|o| o.is_empty()).unwrap_or(true) {
+            println!("Outputs: {}", scope);
+        }
+    }
+    Ok(())
+}
+
+async fn run_cancel(session: &str) -> Result<()> {
+    let client = daemon_client().await?;
+    client
+        .workflow_cancel(session)
+        .await
+        .context("workflow.cancel RPC failed")?;
+    println!("Cancelled workflow on session {}", session);
+    Ok(())
+}
+
+fn load_workflow_source(kiln_path: &Path, target: &str) -> Result<(PathBuf, String)> {
+    // Reuse the resolve logic, but return path + raw source so we can
+    // send to the daemon unmodified.
+    let direct = PathBuf::from(target);
+    if direct.exists() {
+        let src = std::fs::read_to_string(&direct)
+            .with_context(|| format!("reading {}", direct.display()))?;
+        if try_parse_workflow(&direct)?.is_none() {
+            return Err(anyhow!("{} is not a workflow note", direct.display()));
+        }
+        return Ok((direct, src));
+    }
+    let kiln_rel = kiln_path.join(target);
+    if kiln_rel.exists() {
+        let src = std::fs::read_to_string(&kiln_rel)
+            .with_context(|| format!("reading {}", kiln_rel.display()))?;
+        if try_parse_workflow(&kiln_rel)?.is_none() {
+            return Err(anyhow!("{} is not a workflow note", kiln_rel.display()));
+        }
+        return Ok((kiln_rel, src));
+    }
+
+    // Resolve via stem / title.
+    let wf = resolve_workflow(kiln_path, target)?;
+    let src = std::fs::read_to_string(&wf.path)
+        .with_context(|| format!("reading {}", wf.path.display()))?;
+    Ok((wf.path, src))
+}
+
+async fn gate_id_from_status(
+    client: &crucible_daemon::DaemonClient,
+    session: &str,
+) -> Result<String> {
+    let snap = client
+        .workflow_status(session)
+        .await
+        .context("workflow.status RPC failed")?;
+    snap.get("status")
+        .and_then(|s| s.get("gate"))
+        .and_then(|g| g.get("id"))
+        .and_then(|id| id.as_str())
+        .map(|s| s.to_string())
+        .ok_or_else(|| {
+            anyhow!(
+                "no gate is currently pending on session '{}'; pass gate id explicitly",
+                session
+            )
+        })
+}
+
+fn print_status_result(value: &serde_json::Value) {
+    let Some(status) = value.get("status") else {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(value).unwrap_or_default()
+        );
+        return;
+    };
+    match status.get("kind").and_then(|v| v.as_str()) {
+        Some("running") => println!("Status: running"),
+        Some("awaiting_approval") => {
+            let gate = status.get("gate");
+            let gate_id = gate
+                .and_then(|g| g.get("id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            let title = gate
+                .and_then(|g| g.get("title"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            println!("Status: awaiting approval");
+            if title.is_empty() {
+                println!("  Gate: {}", gate_id);
+            } else {
+                println!("  Gate: {} — {}", gate_id, title);
+            }
+            println!();
+            println!("Approve with: cru workflow approve <session> {}", gate_id);
+        }
+        Some("completed") => println!("Status: completed"),
+        Some("failed") => {
+            let reason = status.get("reason").and_then(|v| v.as_str()).unwrap_or("?");
+            let at = status.get("at_step").and_then(|v| v.as_str()).unwrap_or("");
+            if at.is_empty() {
+                println!("Status: failed — {}", reason);
+            } else {
+                println!("Status: failed at step {} — {}", at, reason);
+            }
+        }
+        Some("cancelled") => println!("Status: cancelled"),
+        _ => println!(
+            "{}",
+            serde_json::to_string_pretty(status).unwrap_or_default()
+        ),
+    }
 }
 
 #[cfg(test)]

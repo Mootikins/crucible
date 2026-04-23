@@ -251,6 +251,89 @@ impl SessionEventMessage {
         )
     }
 
+    // ---- workflow events (Phase 3a) ----
+
+    pub fn workflow_step_started(
+        session_id: impl Into<String>,
+        step_id: impl Into<String>,
+        title: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            session_id,
+            "workflow.step_started",
+            serde_json::json!({
+                "step_id": step_id.into(),
+                "title": title.into(),
+            }),
+        )
+    }
+
+    pub fn workflow_step_completed(
+        session_id: impl Into<String>,
+        step_id: impl Into<String>,
+        output_name: Option<String>,
+    ) -> Self {
+        Self::new(
+            session_id,
+            "workflow.step_completed",
+            serde_json::json!({
+                "step_id": step_id.into(),
+                "output_name": output_name,
+            }),
+        )
+    }
+
+    pub fn workflow_gate_reached(
+        session_id: impl Into<String>,
+        gate_id: impl Into<String>,
+        title: Option<String>,
+        owner: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            session_id,
+            "workflow.gate_reached",
+            serde_json::json!({
+                "gate_id": gate_id.into(),
+                "title": title,
+                "owner": owner.into(),
+            }),
+        )
+    }
+
+    pub fn workflow_gate_approved(
+        session_id: impl Into<String>,
+        gate_id: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            session_id,
+            "workflow.gate_approved",
+            serde_json::json!({ "gate_id": gate_id.into() }),
+        )
+    }
+
+    pub fn workflow_completed(session_id: impl Into<String>) -> Self {
+        Self::new(session_id, "workflow.completed", serde_json::json!({}))
+    }
+
+    pub fn workflow_failed(
+        session_id: impl Into<String>,
+        reason: impl Into<String>,
+        at_step: Option<String>,
+    ) -> Self {
+        Self::new(
+            session_id,
+            "workflow.failed",
+            serde_json::json!({
+                "reason": reason.into(),
+                "at_step": at_step,
+            }),
+        )
+    }
+
+    pub fn workflow_cancelled(session_id: impl Into<String>) -> Self {
+        Self::new(session_id, "workflow.cancelled", serde_json::json!({}))
+    }
+
     pub fn to_json_line(&self) -> Result<String, serde_json::Error> {
         let mut json = serde_json::to_string(self)?;
         json.push('\n');

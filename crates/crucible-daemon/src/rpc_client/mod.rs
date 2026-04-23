@@ -16,6 +16,9 @@ pub mod lifecycle;
 mod storage;
 
 pub use agent::DaemonAgentHandle;
+pub use client::workflow::{
+    WorkflowApproveGateRequest, WorkflowSessionRequest, WorkflowStartRequest,
+};
 pub use client::{
     DaemonCapabilities, DaemonClient, LuaDiscoverPluginsRequest, LuaDiscoverPluginsResponse,
     LuaExecuteHookRequest, LuaExecuteHookResponse, LuaGenerateStubsRequest,

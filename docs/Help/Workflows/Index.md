@@ -71,28 +71,41 @@ cru workflow show -f json deploy         # JSON for scripting
 
 See [[Help/Workflows/Workflow Syntax]] for the full syntax reference.
 
-## Execution (planned)
+## Execution
 
-> **⚠️ Not yet implemented.** The runtime that actually *runs* a workflow — spawning sub-sessions, enforcing gates, joining parallel fans, looping ralph steps — is a later phase.
-
-Planned commands (design-only):
+A minimal slice of the execution runtime is now wired up. It walks the
+parsed workflow, enforces gates (including step-level and preamble
+gates), and maintains a per-session output scope. Inline (`default`)
+steps currently produce a placeholder output — real LLM invocation
+lands in the next slice. `fan` and `ralph` step types are not yet
+implemented.
 
 ```bash
-cru workflow start "deploy-feature"    # start an execution session
-cru workflow status                     # inspect in-flight workflow
-cru workflow resume                     # resume after interruption
-cru workflow approve <session> <gate>   # resolve a gate
+cru workflow start deploy-feature                 # begin execution
+cru workflow status <session>                     # current step / pending gate
+cru workflow approve <session> [<gate-id>]        # resolve a gate
+cru workflow cancel <session>                     # stop mid-run
 ```
 
-The execution model dispatches per step:
+`start` creates a new workflow session against the active kiln and
+drives the engine to the first gate (or to completion if there are
+none). Progress arrives on the existing session event stream as
+`workflow.step_started`, `workflow.gate_reached`,
+`workflow.step_completed`, `workflow.completed`, etc. — subscribe
+with any existing session client.
 
-- default (no annotation) — inline turn in the workflow session
+**Dispatch model (stdlib):**
+
+- default (no annotation) — inline (placeholder; LLM turn coming next)
 - `[type:: gate]` — pause for human approval
-- `[type:: fan]` — parallel sub-sessions, one per child
-- `[type:: ralph]` — loop until validation criteria pass
-- unknown types — dispatched to Lua executors registered via `crucible.workflow.register`
+- unknown types — fall back to the default handler until a custom
+  executor is registered (ultimately via Lua; see Phase 3b in the
+  plan)
+- `[type:: fan]` / `[type:: ralph]` — **not yet implemented**; treated
+  as default for now
 
-See the plan at `thoughts/shared/plans/workflows_2026-04-22-2030.md` for the execution design.
+See the plan at `thoughts/shared/plans/workflows_2026-04-22-2030.md`
+for the complete execution design.
 
 ## Example Use Cases
 

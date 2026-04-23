@@ -7,6 +7,7 @@ mod context;
 mod dispatch;
 mod error;
 mod params;
+mod workflow_handlers;
 
 pub use context::RpcContext;
 #[allow(unused_imports)]
