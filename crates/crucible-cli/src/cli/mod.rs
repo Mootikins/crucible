@@ -344,6 +344,18 @@ Examples:
         command: crate::commands::tasks::TasksSubcommand,
     },
 
+    /// Inspect workflow notes in the active kiln (list, show)
+    ///
+    /// Workflows are markdown notes with `type: workflow` in frontmatter.
+    /// Phase 1 ships parsing and read-only views; execution is planned.
+    #[command(
+        long_about = "Inspect workflow notes in the active kiln.\n\nWorkflows are markdown notes whose frontmatter declares `type: workflow`. This command parses them into a typed AST and renders goals, validation criteria, gates, and the step tree. Execution is not yet implemented.\n\nExamples:\n  # List all workflows in the kiln\n  cru workflow list\n\n  # Show a workflow by filename stem, title, or path\n  cru workflow show deploy\n  cru workflow show \"Deploy Feature\"\n  cru workflow show workflows/deploy.md\n\n  # JSON output for scripting\n  cru workflow list -f json\n  cru workflow show deploy -f json"
+    )]
+    Workflow {
+        #[command(subcommand)]
+        command: crate::commands::workflow::WorkflowSubcommand,
+    },
+
     /// Manage the Crucible daemon (start, stop, status, logs)
     #[command(
         subcommand,

@@ -9,7 +9,7 @@ tags:
   - dags
   - agent-orchestration
 related:
-  - "[[Help/Workflows/Markup]]"
+  - "[[Help/Workflows/Workflow Syntax]]"
   - "[[Help/Extending/Workflow Authoring]]"
 ---
 
@@ -315,5 +315,5 @@ name: tdd-workflow
 
 ## See Also
 
-- [[Help/Workflows/Markup]] - Planned prose syntax
+- [[Help/Workflows/Workflow Syntax]] - Workflow markdown syntax
 - [[Help/Core/Sessions]] - Tracking execution state

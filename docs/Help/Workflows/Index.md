@@ -1,60 +1,100 @@
 ---
 title: Workflows
-description: Automate multi-step processes in your kiln
-status: planned
+description: Define multi-step planning and orchestration in markdown
 tags:
   - workflows
   - automation
 ---
 
-> **⚠️ Planned Feature**: This feature is not yet implemented. The documentation below describes the intended design.
-
 # Workflows
 
-Workflows let you define multi-step processes that can be executed automatically or triggered by events.
+Workflows let you define multi-step processes — the *what* and *why* of a task — in plain markdown. The system parses workflow notes into a typed AST that can be inspected today and (in a future phase) executed end-to-end.
 
 ## What Workflows Do
 
-A workflow is a series of steps that accomplish a goal:
+A workflow note describes:
 
-1. **Trigger** - What starts the workflow (manual, schedule, event)
-2. **Steps** - Actions to perform in order
-3. **Session** - Track progress and resume if interrupted
+1. **Goals** — outcomes to aim for (`## Goals` task list)
+2. **Validation** — success criteria, including runnable commands (`## Validation`)
+3. **Steps** — a tree of headings with optional `@agent`, `-> output`, and `[type:: ...]` attributes
+4. **Gates** — `> [!gate]` callouts for human approval checkpoints
 
-## Planned Features
+## Authoring (available today)
 
-### Workflow Markup
-
-Define workflows in natural prose format:
+Write a workflow as a markdown note with `type: workflow` in the frontmatter:
 
 ```markdown
-# Weekly Review Workflow
+---
+type: workflow
+title: Deploy New Feature
+---
 
-Start by gathering all notes modified this week.
-Then categorize them by project using [[tags]].
-Finally, create a summary note in Summaries/.
+## Goals
+
+- [ ] Users can export data in CSV format
+- [ ] Large exports don't block the UI
+
+## Validation
+
+- `cargo test` passes
+- Manual: happy-path export completes in under 2s
+
+## Plan -> plan
+
+Analyze requirements and identify affected components.
+
+## Implement @developer
+
+Use **plan** to drive changes.
+
+## Review and Deploy [type:: fan]
+
+> [!gate]
+> Requires ops sign-off before production
+
+### Code Review @reviewer
+### Deploy to Staging
+### Deploy to Production
 ```
 
-See [[Help/Workflows/Markup]] for syntax details.
-
-### Workflow Sessions
-
-Track workflow progress across sessions:
+Inspect parsed workflows with the CLI:
 
 ```bash
-# Start a workflow
-cru workflow start "weekly-review"
+# List all workflow notes in the active kiln
+cru workflow list
 
-# Check progress
-cru workflow status
-
-# Resume if interrupted
-cru workflow resume
+# Show a workflow's parsed structure
+cru workflow show "Deploy New Feature"
+cru workflow show deploy                 # by filename stem
+cru workflow show -f json deploy         # JSON for scripting
 ```
 
-See [[Help/Core/Sessions]] for session management (sessions are orthogonal to workflows).
+See [[Help/Workflows/Workflow Syntax]] for the full syntax reference.
 
-## Example Workflows
+## Execution (planned)
+
+> **⚠️ Not yet implemented.** The runtime that actually *runs* a workflow — spawning sub-sessions, enforcing gates, joining parallel fans, looping ralph steps — is a later phase.
+
+Planned commands (design-only):
+
+```bash
+cru workflow start "deploy-feature"    # start an execution session
+cru workflow status                     # inspect in-flight workflow
+cru workflow resume                     # resume after interruption
+cru workflow approve <session> <gate>   # resolve a gate
+```
+
+The execution model dispatches per step:
+
+- default (no annotation) — inline turn in the workflow session
+- `[type:: gate]` — pause for human approval
+- `[type:: fan]` — parallel sub-sessions, one per child
+- `[type:: ralph]` — loop until validation criteria pass
+- unknown types — dispatched to Lua executors registered via `crucible.workflow.register`
+
+See the plan at `thoughts/shared/plans/workflows_2026-04-22-2030.md` for the execution design.
+
+## Example Use Cases
 
 ### Weekly Review
 1. Find notes modified in last 7 days
@@ -73,6 +113,7 @@ See [[Help/Core/Sessions]] for session management (sessions are orthogonal to wo
 
 ## See Also
 
-- [[Extending Crucible]] - All extension points
-- [[Help/Extending/Event Hooks]] - Triggering workflows from events
-- [[AI Features]] - AI-assisted workflow execution
+- [[Help/Workflows/Workflow Syntax]] — full syntax reference
+- [[Help/Extending/Workflow Authoring]] — authoring workflows
+- [[Extending Crucible]] — all extension points
+- [[Help/Extending/Event Hooks]] — triggering workflows from events

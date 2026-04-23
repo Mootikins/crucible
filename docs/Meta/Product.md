@@ -415,7 +415,7 @@ HTTP Gateway (crucible-web wired to daemon)
 ## Workflow Automation
 
 - [ ] **Markdown Handlers** `P2` — Event handlers in pure markdown, inject context into agents · [[Help/Extending/Markdown Handlers]] · depends: [[#Extensibility & Plugins]]
-- [ ] **Workflow Markup** `P2` — DAG workflows in markdown (`@agent`, `->` data flow, `> [!gate]`) · [[Help/Workflows/Workflow Syntax]] · [[Help/Workflows/Markup]]
+- [ ] **Workflow Markup** `P2` — DAG workflows in markdown (`@agent`, `->` data flow, `> [!gate]`) · [[Help/Workflows/Workflow Syntax]]
 - [ ] **Workflow Sessions** `P2` — Log execution as markdown, resume interrupted work · [[Help/Workflows/Index]]
 - [ ] **Session Learning** `P2` — Codify successful sessions into reusable workflows
 - [ ] **Parallel Execution** `P2` — `(parallel)` suffix or `&` prefix for concurrent steps

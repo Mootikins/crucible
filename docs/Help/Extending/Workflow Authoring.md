@@ -90,7 +90,7 @@ cru workflow list
 ## See Also
 
 - [[Help/Workflows/Index]] - Workflow system overview
-- [[Help/Workflows/Markup]] - Planned prose syntax
+- [[Help/Workflows/Workflow Syntax]] - Markdown workflow syntax
 - [[Help/Core/Sessions]] - Session tracking
 - [[Help/Extending/Creating Plugins]] - Plugin development
 - [[Help/Extending/Custom Tools]] - Creating tools

@@ -93,6 +93,8 @@ pub use types::{
     FootnoteReference,
     Frontmatter,
     FrontmatterFormat,
+    // Workflow types
+    Gate,
     // Content structure types
     Heading,
     HorizontalRule,
@@ -120,6 +122,10 @@ pub use types::{
     // Task types
     TaskItem,
     TaskStatus,
+    ValidationEntry,
     // Link and tag types
     Wikilink,
+    WorkflowDoc,
+    WorkflowParseWarning,
+    WorkflowStep,
 };

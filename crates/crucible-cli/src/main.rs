@@ -325,6 +325,10 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             commands::tasks::execute(config, file, command).await?
         }
 
+        Some(Commands::Workflow { command }) => {
+            commands::workflow::execute(config, command).await?
+        }
+
         Some(Commands::Daemon(cmd)) => {
             commands::daemon::handle(cmd, cli_config_path).await?;
         }

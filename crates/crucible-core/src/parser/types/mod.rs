@@ -27,6 +27,7 @@ mod links;
 mod lists;
 mod parsed_note;
 mod task;
+mod workflow;
 
 // Re-export ParseError from parser error module
 pub use crate::parser::error::ParseError;
@@ -45,6 +46,7 @@ pub use lists::{
 };
 pub use parsed_note::{ParsedNote, ParsedNoteBuilder, ParsedNoteMetadata};
 pub use task::{TaskFile, TaskGraph, TaskItem};
+pub use workflow::{Gate, ValidationEntry, WorkflowDoc, WorkflowParseWarning, WorkflowStep};
 
 #[cfg(test)]
 mod tests {

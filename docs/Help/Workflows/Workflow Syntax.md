@@ -12,6 +12,8 @@ tags:
 
 Workflows define high-level planning and orchestration in readable markdown. Unlike [[Tasks]] which focus on execution details, workflows describe *what* needs to happen and *why*, letting the system derive execution steps.
 
+> **Status:** the **syntax and parsing** on this page are implemented — workflows parse into a typed `WorkflowDoc` AST and can be inspected with `cru workflow list` / `cru workflow show`. **Execution** (running a workflow end-to-end) is planned; see [[Help/Workflows/Index]] for the execution roadmap.
+
 ## Overview
 
 ```markdown
@@ -109,6 +111,22 @@ we can proceed. Invalid configs should fail early with
 clear error messages.
 ```
 
+## Step Attributes
+
+Steps can carry attributes using Dataview-style inline metadata on the heading line:
+
+```markdown
+## Build Artifacts [type:: fan] [timeout:: 5m]
+```
+
+Reserved attribute keys (interpreted by the execution runtime):
+
+- `[type:: gate|fan|ralph|<custom>]` — step execution kind. Custom types dispatch to Lua executors registered via `crucible.workflow.register`.
+- `[timeout:: <duration>]` — max wall-clock time (e.g. `30s`, `5m`, `1h`).
+- `[on_error:: halt|skip|retry|continue]` — per-step failure policy.
+
+Any `[k:: v]` pair is accepted on a heading; unrecognized keys are passed through to plugins.
+
 ## Agent Hints
 
 Reference agents or roles with `@name`:
@@ -191,17 +209,30 @@ Goals are:
 
 Use task list syntax (`- [ ]`) for trackable goals, bullets for aspirational guidance.
 
+## Validation Section
+
+A `## Validation` heading, parallel to Goals, captures success/failure criteria — *how* we know the workflow succeeded, distinct from *what* we're building:
+
+```markdown
+## Validation
+
+- `cargo test` passes
+- `cargo clippy --all-targets` clean
+- Manual: CSV download completes in under 2s for 10k rows
+```
+
+Items containing **exactly one** inline-code span are treated as runnable commands; everything else is a manual check. At execution time, validation entries prime agent context ("success looks like X, Y, Z") and serve as the default pass-criterion for `[type:: ralph]` steps.
+
+Goals describe the *outcome*; validation describes the *acceptance criteria*. They are independent — a workflow can have either, both, or neither.
+
 ## Checkbox Semantics
 
-Extended checkbox syntax for richer status:
+Workflows use standard task-list checkboxes in the `## Goals` section:
 
 | Syntax | Meaning |
 |--------|---------|
 | `- [ ]` | Pending |
 | `- [x]` | Complete |
-| `- [/]` | In progress |
-| `- [-]` | Blocked |
-| `- [?]` | Needs clarification |
 
 ## Parallel Execution (Future)
 
