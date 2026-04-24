@@ -6,14 +6,18 @@
 //! touching the dispatch table shape.
 
 use crate::workflow::handler::{DispatchTable, ExecContext, StepHandler, StepOutcome};
+use async_trait::async_trait;
 
-/// Inline (same-session) step handler for steps without a `[type:: ...]`
-/// attribute. Produces a placeholder output; real LLM invocation comes
-/// in the next slice via a daemon-provided handler that overrides this.
+/// Placeholder inline-step handler used for dry runs and engine-only
+/// tests. Produces a synthetic output describing the step. The daemon
+/// overrides `default` with a real `DaemonInlineHandler` that drives an
+/// LLM turn; this type remains the fallback when
+/// `CRUCIBLE_WORKFLOW_DRY_RUN=1` is set.
 pub struct DefaultHandler;
 
+#[async_trait]
 impl StepHandler for DefaultHandler {
-    fn execute(&self, ctx: &ExecContext<'_>) -> StepOutcome {
+    async fn execute(&self, ctx: &ExecContext<'_>) -> StepOutcome {
         let output = ctx.step.output.as_ref().map(|name| {
             serde_json::json!({
                 "placeholder": true,
@@ -33,8 +37,9 @@ impl StepHandler for DefaultHandler {
 /// have a real handler for `fan`/`ralph`.
 pub struct GateHandler;
 
+#[async_trait]
 impl StepHandler for GateHandler {
-    fn execute(&self, ctx: &ExecContext<'_>) -> StepOutcome {
+    async fn execute(&self, ctx: &ExecContext<'_>) -> StepOutcome {
         // Prefer an explicit gate title from a callout inside the body.
         let gate_title = ctx
             .step

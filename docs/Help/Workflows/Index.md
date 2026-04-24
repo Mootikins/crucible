@@ -73,12 +73,14 @@ See [[Help/Workflows/Workflow Syntax]] for the full syntax reference.
 
 ## Execution
 
-A minimal slice of the execution runtime is now wired up. It walks the
-parsed workflow, enforces gates (including step-level and preamble
-gates), and maintains a per-session output scope. Inline (`default`)
-steps currently produce a placeholder output — real LLM invocation
-lands in the next slice. `fan` and `ralph` step types are not yet
-implemented.
+The runtime walks the parsed workflow, enforces gates (preamble and
+step-level), and maintains a per-session output scope. Inline
+(`default`) steps drive one turn of the session's configured agent
+with the step body (after scope interpolation) as the prompt;
+assistant response text is captured as the step's named output when
+`-> name` is present. `fan` and `ralph` step types are not yet
+implemented — steps annotated with those types fall back to the
+default handler.
 
 ```bash
 cru workflow start deploy-feature                 # begin execution
@@ -94,9 +96,33 @@ none). Progress arrives on the existing session event stream as
 `workflow.step_completed`, `workflow.completed`, etc. — subscribe
 with any existing session client.
 
+**Output interpolation:** `**name**` tokens in a step body are
+replaced with the value of the matching key in the output scope
+before the prompt is sent. String values inline verbatim; other JSON
+values serialise as pretty JSON. Bold text whose content doesn't
+match a scope key passes through unchanged.
+
+**Completion assessment:** when the run reaches `Completed`, the
+daemon executes each runnable entry from the workflow's
+`## Validation` section (list items with a single backticked command)
+and emits a `workflow.assessed` event summarising passes, failures,
+and manual (command-less) entries.
+
+**Resumability:** the daemon persists a compact workflow snapshot
+next to the session metadata after each state change (new gate,
+approval, cancel). If the daemon restarts mid-run, the next RPC
+against the session (`workflow.status`, `workflow.approve_gate`,
+etc.) transparently rehydrates the paused execution. A crash
+*during* an inline turn loses that turn — the workflow picks back up
+at the step that was running.
+
+Set `CRUCIBLE_WORKFLOW_DRY_RUN=1` in the daemon environment to swap
+the real inline handler for a placeholder that produces synthetic
+output without calling an LLM. Handy for CI and demos.
+
 **Dispatch model (stdlib):**
 
-- default (no annotation) — inline (placeholder; LLM turn coming next)
+- default (no annotation) — inline: one agent turn per step
 - `[type:: gate]` — pause for human approval
 - unknown types — fall back to the default handler until a custom
   executor is registered (ultimately via Lua; see Phase 3b in the
@@ -104,8 +130,16 @@ with any existing session client.
 - `[type:: fan]` / `[type:: ralph]` — **not yet implemented**; treated
   as default for now
 
+**Agent hints (`@agent`)** on a step heading are parsed and visible in
+`cru workflow show`, but cross-agent dispatch is deferred until
+`[type:: fan]` lands — every step currently runs on the session's
+configured agent regardless of the `@agent` suffix. The daemon logs a
+warning when it sees a mismatched hint so you aren't surprised.
+
 See the plan at `thoughts/shared/plans/workflows_2026-04-22-2030.md`
-for the complete execution design.
+for the complete execution design and
+`thoughts/shared/plans/workflows_phase3a_followups_2026-04-23-1646.md`
+for the Phase 3a follow-up slice plan.
 
 ## Example Use Cases
 

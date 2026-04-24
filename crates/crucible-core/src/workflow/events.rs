@@ -36,3 +36,20 @@ pub enum WorkflowEvent {
     },
     WorkflowCancelled,
 }
+
+/// Captured result of running a single validation command. The daemon
+/// executes each runnable entry in `WorkflowDoc.validations` after a
+/// workflow completes and ships the outcomes over the session event
+/// stream as a `workflow.assessed` message. Kept in core so that
+/// factory/consumer share one shape.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssessmentOutcome {
+    pub description: String,
+    pub command: String,
+    pub exit_code: i32,
+    /// Truncated stdout (daemon-side cap).
+    pub stdout: String,
+    /// Truncated stderr (daemon-side cap).
+    pub stderr: String,
+    pub duration_ms: u64,
+}

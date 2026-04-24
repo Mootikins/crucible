@@ -7,9 +7,11 @@
 
 use crate::parser::types::{ValidationEntry, WorkflowStep};
 use crate::workflow::OutputScope;
+use async_trait::async_trait;
 use std::collections::HashMap;
 
 /// Why the engine called a handler — handler decides what to return.
+#[derive(Debug)]
 pub enum StepOutcome {
     /// Step succeeded. Optional output is bound under the step's
     /// `-> name` suffix if that's set on the heading.
@@ -42,8 +44,14 @@ pub struct ExecContext<'a> {
 
 /// Step-type handler. Keyed by the `[type:: X]` attribute on a heading
 /// (or the sentinel `""` key for the default/no-type handler).
+///
+/// `execute` is async so daemon-side handlers can drive LLM turns,
+/// shell-exec, and sub-session spawns without blocking. Pure handlers
+/// (`GateHandler`, test placeholders) stay trivial — the async body
+/// returns immediately.
+#[async_trait]
 pub trait StepHandler: Send + Sync {
-    fn execute(&self, ctx: &ExecContext<'_>) -> StepOutcome;
+    async fn execute(&self, ctx: &ExecContext<'_>) -> StepOutcome;
 }
 
 /// Handler lookup by step-type string. Missing types fall back to the

@@ -315,6 +315,23 @@ impl SessionEventMessage {
         Self::new(session_id, "workflow.completed", serde_json::json!({}))
     }
 
+    pub fn workflow_assessed(
+        session_id: impl Into<String>,
+        runnable_passed: &[crate::workflow::AssessmentOutcome],
+        runnable_failed: &[crate::workflow::AssessmentOutcome],
+        manual_entries: &[String],
+    ) -> Self {
+        Self::new(
+            session_id,
+            "workflow.assessed",
+            serde_json::json!({
+                "runnable_passed": runnable_passed,
+                "runnable_failed": runnable_failed,
+                "manual_entries": manual_entries,
+            }),
+        )
+    }
+
     pub fn workflow_failed(
         session_id: impl Into<String>,
         reason: impl Into<String>,

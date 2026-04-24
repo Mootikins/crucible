@@ -27,8 +27,8 @@ mod events;
 mod handler;
 mod stdlib;
 
-pub use engine::{PendingGate, WorkflowExecution, WorkflowStatus};
-pub use events::WorkflowEvent;
+pub use engine::{PendingGate, WorkflowExecution, WorkflowSnapshot, WorkflowStatus};
+pub use events::{AssessmentOutcome, WorkflowEvent};
 pub use handler::{DispatchTable, ExecContext, StepHandler, StepOutcome};
 pub use stdlib::{stdlib_dispatch, DefaultHandler, GateHandler};
 

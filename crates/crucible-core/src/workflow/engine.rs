@@ -56,6 +56,19 @@ impl WorkflowStatus {
     }
 }
 
+/// Serializable subset of [`WorkflowExecution`] — the fields the
+/// daemon persists to disk between RPC calls so it can resume a run
+/// after a restart. Slot list and dispatch table are rebuilt on
+/// rehydrate; pending events are already drained by the time a
+/// snapshot is taken.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowSnapshot {
+    pub doc: WorkflowDoc,
+    pub cursor: usize,
+    pub scope: OutputScope,
+    pub status: WorkflowStatus,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PendingGate {
     pub id: String,
@@ -110,6 +123,36 @@ impl WorkflowExecution {
         }
     }
 
+    /// Take a durable snapshot of execution state — enough to rehydrate
+    /// with the same [`WorkflowDoc`] and a freshly-built [`DispatchTable`].
+    /// Slots are re-derived from `doc`, so we don't serialize them.
+    /// `pending_events` is transient (the daemon drains after every
+    /// tick).
+    pub fn snapshot(&self) -> WorkflowSnapshot {
+        WorkflowSnapshot {
+            doc: self.doc.clone(),
+            cursor: self.cursor,
+            scope: self.scope.clone(),
+            status: self.status.clone(),
+        }
+    }
+
+    /// Rebuild an execution from a previously-captured snapshot. The
+    /// caller supplies a fresh dispatch table (handlers hold runtime
+    /// state that isn't — and shouldn't be — serialised).
+    pub fn rehydrate(snapshot: WorkflowSnapshot, dispatch: DispatchTable) -> Self {
+        let slots = flatten(&snapshot.doc);
+        Self {
+            doc: snapshot.doc,
+            slots,
+            cursor: snapshot.cursor,
+            scope: snapshot.scope,
+            status: snapshot.status,
+            dispatch,
+            pending_events: Vec::new(),
+        }
+    }
+
     pub fn doc(&self) -> &WorkflowDoc {
         &self.doc
     }
@@ -137,7 +180,7 @@ impl WorkflowExecution {
     }
 
     /// Advance one slot if `Running`. No-op if in any other state.
-    pub fn tick(&mut self) -> &WorkflowStatus {
+    pub async fn tick(&mut self) -> &WorkflowStatus {
         if !matches!(self.status, WorkflowStatus::Running) {
             return &self.status;
         }
@@ -198,7 +241,7 @@ impl WorkflowExecution {
                     validations: &self.doc.validations,
                 };
 
-                match handler.execute(&ctx) {
+                match handler.execute(&ctx).await {
                     StepOutcome::Advance { output } => {
                         let output_name = step.output.clone();
                         if let (Some(name), Some(value)) = (&step.output, output) {
@@ -378,10 +421,10 @@ mod tests {
         (None, source.to_string())
     }
 
-    fn run_until_gate_or_done(exec: &mut WorkflowExecution) -> Vec<WorkflowEvent> {
+    async fn run_until_gate_or_done(exec: &mut WorkflowExecution) -> Vec<WorkflowEvent> {
         let mut events = Vec::new();
         loop {
-            exec.tick();
+            exec.tick().await;
             events.extend(exec.drain_events());
             if !matches!(exec.status(), WorkflowStatus::Running) {
                 return events;
@@ -389,8 +432,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn linear_workflow_runs_to_completion() {
+    #[tokio::test]
+    async fn linear_workflow_runs_to_completion() {
         let source = "\
 ---
 type: workflow
@@ -400,7 +443,7 @@ type: workflow
 ## Ship
 ";
         let mut exec = exec_from(source);
-        let events = run_until_gate_or_done(&mut exec);
+        let events = run_until_gate_or_done(&mut exec).await;
         assert_eq!(exec.status(), &WorkflowStatus::Completed);
         // Three StepStarted + three StepCompleted + WorkflowCompleted.
         assert_eq!(events.len(), 7);
@@ -411,8 +454,8 @@ type: workflow
         ));
     }
 
-    #[test]
-    fn step_with_output_binds_scope() {
+    #[tokio::test]
+    async fn step_with_output_binds_scope() {
         let source = "\
 ---
 type: workflow
@@ -421,13 +464,13 @@ type: workflow
 ## Use
 ";
         let mut exec = exec_from(source);
-        run_until_gate_or_done(&mut exec);
+        run_until_gate_or_done(&mut exec).await;
         assert_eq!(exec.status(), &WorkflowStatus::Completed);
         assert!(exec.scope().contains_key("config"));
     }
 
-    #[test]
-    fn gate_pauses_and_approval_resumes() {
+    #[tokio::test]
+    async fn gate_pauses_and_approval_resumes() {
         let source = "\
 ---
 type: workflow
@@ -437,21 +480,21 @@ Require sign-off.
 ## Do Thing
 ";
         let mut exec = exec_from(source);
-        run_until_gate_or_done(&mut exec);
+        run_until_gate_or_done(&mut exec).await;
         let WorkflowStatus::AwaitingApproval { gate } = exec.status().clone() else {
             panic!("expected AwaitingApproval, got {:?}", exec.status());
         };
         // After approval, completes.
         exec.approve_gate(&gate.id).unwrap();
-        let events = run_until_gate_or_done(&mut exec);
+        let events = run_until_gate_or_done(&mut exec).await;
         assert_eq!(exec.status(), &WorkflowStatus::Completed);
         assert!(events
             .iter()
             .any(|e| matches!(e, WorkflowEvent::GateApproved { .. })));
     }
 
-    #[test]
-    fn preamble_gate_blocks_before_any_step() {
+    #[tokio::test]
+    async fn preamble_gate_blocks_before_any_step() {
         let source = "\
 ---
 type: workflow
@@ -462,7 +505,7 @@ type: workflow
 ## Do Thing
 ";
         let mut exec = exec_from(source);
-        let events = run_until_gate_or_done(&mut exec);
+        let events = run_until_gate_or_done(&mut exec).await;
         let WorkflowStatus::AwaitingApproval { gate } = exec.status().clone() else {
             panic!();
         };
@@ -472,12 +515,12 @@ type: workflow
             .iter()
             .any(|e| matches!(e, WorkflowEvent::StepStarted { .. })));
         exec.approve_gate(&gate.id).unwrap();
-        run_until_gate_or_done(&mut exec);
+        run_until_gate_or_done(&mut exec).await;
         assert_eq!(exec.status(), &WorkflowStatus::Completed);
     }
 
-    #[test]
-    fn step_level_gate_fires_before_step_body() {
+    #[tokio::test]
+    async fn step_level_gate_fires_before_step_body() {
         let source = "\
 ---
 type: workflow
@@ -488,7 +531,7 @@ type: workflow
 ## After
 ";
         let mut exec = exec_from(source);
-        let events = run_until_gate_or_done(&mut exec);
+        let events = run_until_gate_or_done(&mut exec).await;
         let WorkflowStatus::AwaitingApproval { gate } = exec.status().clone() else {
             panic!();
         };
@@ -499,8 +542,8 @@ type: workflow
             .any(|e| matches!(e, WorkflowEvent::StepStarted { .. })));
     }
 
-    #[test]
-    fn nested_children_run_in_dfs_order() {
+    #[tokio::test]
+    async fn nested_children_run_in_dfs_order() {
         let source = "\
 ---
 type: workflow
@@ -511,7 +554,7 @@ type: workflow
 ## B
 ";
         let mut exec = exec_from(source);
-        let events = run_until_gate_or_done(&mut exec);
+        let events = run_until_gate_or_done(&mut exec).await;
         let titles: Vec<_> = events
             .iter()
             .filter_map(|e| match e {
@@ -522,11 +565,11 @@ type: workflow
         assert_eq!(titles, vec!["A", "A1", "A2", "B"]);
     }
 
-    #[test]
-    fn approve_with_wrong_id_errors() {
+    #[tokio::test]
+    async fn approve_with_wrong_id_errors() {
         let source = "---\ntype: workflow\n---\n## G [type:: gate]\n";
         let mut exec = exec_from(source);
-        run_until_gate_or_done(&mut exec);
+        run_until_gate_or_done(&mut exec).await;
         let err = exec.approve_gate("wrong").unwrap_err();
         assert!(matches!(err, GateError::Mismatch { .. }));
     }
@@ -539,11 +582,11 @@ type: workflow
         assert!(matches!(err, GateError::NoGatePending));
     }
 
-    #[test]
-    fn cancel_transitions_to_cancelled() {
+    #[tokio::test]
+    async fn cancel_transitions_to_cancelled() {
         let source = "---\ntype: workflow\n---\n## A\n## B\n";
         let mut exec = exec_from(source);
-        exec.tick();
+        exec.tick().await;
         let _ = exec.drain_events();
         exec.cancel();
         assert_eq!(exec.status(), &WorkflowStatus::Cancelled);
@@ -552,34 +595,74 @@ type: workflow
             .iter()
             .any(|e| matches!(e, WorkflowEvent::WorkflowCancelled)));
         // Subsequent ticks are no-ops.
-        exec.tick();
+        exec.tick().await;
         assert_eq!(exec.status(), &WorkflowStatus::Cancelled);
     }
 
-    #[test]
-    fn cancel_after_terminal_is_noop() {
+    #[tokio::test]
+    async fn cancel_after_terminal_is_noop() {
         let source = "---\ntype: workflow\n---\n## A\n";
         let mut exec = exec_from(source);
-        run_until_gate_or_done(&mut exec);
+        run_until_gate_or_done(&mut exec).await;
         assert_eq!(exec.status(), &WorkflowStatus::Completed);
         exec.cancel();
         assert_eq!(exec.status(), &WorkflowStatus::Completed);
     }
 
-    #[test]
-    fn unknown_step_type_falls_back_to_default() {
+    #[tokio::test]
+    async fn unknown_step_type_falls_back_to_default() {
         let source = "---\ntype: workflow\n---\n## Custom [type:: unknown-type]\n";
         let mut exec = exec_from(source);
-        run_until_gate_or_done(&mut exec);
+        run_until_gate_or_done(&mut exec).await;
         // Unknown types route to default, which advances successfully.
         assert_eq!(exec.status(), &WorkflowStatus::Completed);
     }
 
-    #[test]
-    fn failed_handler_halts_workflow() {
+    #[tokio::test]
+    async fn snapshot_roundtrip_preserves_cursor_and_scope() {
+        let source = "\
+---
+type: workflow
+---
+## First -> first_out
+## Second [type:: gate]
+## Third
+";
+        let mut exec = exec_from(source);
+        // Run to the gate — cursor past first step, scope populated.
+        run_until_gate_or_done(&mut exec).await;
+        assert!(matches!(
+            exec.status(),
+            WorkflowStatus::AwaitingApproval { .. }
+        ));
+        assert!(exec.scope().contains_key("first_out"));
+
+        // Round-trip through serialization.
+        let snapshot = exec.snapshot();
+        let bytes = serde_json::to_vec(&snapshot).unwrap();
+        let snapshot2: WorkflowSnapshot = serde_json::from_slice(&bytes).unwrap();
+
+        let mut rehydrated = WorkflowExecution::rehydrate(snapshot2, stdlib_dispatch());
+        assert_eq!(rehydrated.status(), exec.status());
+        assert_eq!(rehydrated.completed_slots(), exec.completed_slots());
+        assert!(rehydrated.scope().contains_key("first_out"));
+
+        // Approve the gate on the rehydrated execution — it should
+        // progress as if it had been running all along.
+        let WorkflowStatus::AwaitingApproval { gate } = rehydrated.status().clone() else {
+            panic!();
+        };
+        rehydrated.approve_gate(&gate.id).unwrap();
+        run_until_gate_or_done(&mut rehydrated).await;
+        assert_eq!(rehydrated.status(), &WorkflowStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn failed_handler_halts_workflow() {
         struct AlwaysFail;
+        #[async_trait::async_trait]
         impl crate::workflow::handler::StepHandler for AlwaysFail {
-            fn execute(&self, _ctx: &ExecContext<'_>) -> StepOutcome {
+            async fn execute(&self, _ctx: &ExecContext<'_>) -> StepOutcome {
                 StepOutcome::Fail {
                     reason: "intentional".into(),
                 }
@@ -593,7 +676,7 @@ type: workflow
         let mut table = stdlib_dispatch();
         table.register("boom", Box::new(AlwaysFail));
         let mut exec = WorkflowExecution::new(doc, table);
-        run_until_gate_or_done(&mut exec);
+        run_until_gate_or_done(&mut exec).await;
         let WorkflowStatus::Failed { reason, at_step } = exec.status() else {
             panic!("expected Failed, got {:?}", exec.status());
         };
