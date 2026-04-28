@@ -43,6 +43,13 @@ pub struct ChatConfig {
     /// or understanding model reasoning.
     #[serde(default)]
     pub show_thinking: bool,
+    /// Show inline diff bodies for edit/write tool calls
+    ///
+    /// When enabled, edit and write tool calls render a unified diff body
+    /// beneath the tool header. When disabled, only the tool header is shown.
+    /// Useful for trimming visual noise in long sessions.
+    #[serde(default = "default_true")]
+    pub show_diffs: bool,
 }
 
 impl Default for ChatConfig {
@@ -56,6 +63,7 @@ impl Default for ChatConfig {
             max_tokens: None,
             timeout_secs: None,
             show_thinking: false,
+            show_diffs: true,
         }
     }
 }

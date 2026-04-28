@@ -74,6 +74,7 @@ impl OilChatRunner {
             app.set_available_models(std::mem::take(&mut self.available_models));
         }
         app.set_show_thinking(self.show_thinking);
+        app.set_show_diffs(self.show_diffs);
         if !self.slash_commands.is_empty() {
             app.set_slash_commands(std::mem::take(&mut self.slash_commands));
         }

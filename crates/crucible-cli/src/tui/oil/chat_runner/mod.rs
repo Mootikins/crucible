@@ -93,6 +93,7 @@ pub struct OilChatRunner {
     pub(super) mcp_config: Option<crucible_core::config::mcp::McpConfig>,
     pub(super) available_models: Vec<String>,
     pub(super) show_thinking: bool,
+    pub(super) show_diffs: bool,
     pub(super) session_cmd_rx: Option<mpsc::UnboundedReceiver<SessionCommand>>,
     pub(super) slash_commands: Vec<(String, String)>,
     pub(super) agent_name: Option<String>,
@@ -148,6 +149,7 @@ impl OilChatRunner {
             mcp_config: None,
             available_models: Vec::new(),
             show_thinking: false,
+            show_diffs: true,
             session_cmd_rx: None,
             slash_commands: Vec::new(),
             agent_name: None,
@@ -212,6 +214,11 @@ impl OilChatRunner {
 
     pub fn with_show_thinking(mut self, show: bool) -> Self {
         self.show_thinking = show;
+        self
+    }
+
+    pub fn with_show_diffs(mut self, show: bool) -> Self {
+        self.show_diffs = show;
         self
     }
 

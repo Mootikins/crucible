@@ -398,6 +398,7 @@ fn test_effective_llm_provider_without_llm_default_returns_error() {
             max_tokens: Some(4096),
             timeout_secs: Some(60),
             show_thinking: false,
+            show_diffs: true,
         }),
         ..Config::default()
     };

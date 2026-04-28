@@ -248,6 +248,7 @@ async fn run_replay(
         .with_model("replay")
         .with_context_limit(0)
         .with_show_thinking(config.chat.show_thinking)
+        .with_show_diffs(config.chat.show_diffs)
         .with_replay_path(Some(path))
         .with_replay_speed(speed)
         .with_replay_auto_exit(auto_exit);
@@ -413,6 +414,7 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
         .with_model(&display_model)
         .with_context_limit(0)
         .with_show_thinking(config.chat.show_thinking)
+        .with_show_diffs(config.chat.show_diffs)
         .with_agent_name(agent_name)
         .with_initial_sets(parsed_set_overrides)
         .with_recording_mode(recording_mode.clone())
