@@ -49,6 +49,7 @@ use std::path::PathBuf;
 use crucible_core::interaction::{InteractionRequest, InteractionResponse};
 use crucible_core::protocol::session_events::{ContextLimitSource, SessionInitializedPayload};
 use crucible_core::traits::chat::PrecognitionNoteInfo;
+use crucible_core::types::acp::FileDiff;
 use crucible_core::types::ProviderInfo;
 
 use super::{McpServerDisplay, PluginStatusEntry};
@@ -74,6 +75,11 @@ pub enum ChatAppMsg {
         source: Option<String>,
         /// Primary argument from Lua tool display hook.
         lua_primary_arg: Option<String>,
+        /// File modification previews when the daemon can derive them
+        /// (ACP `ToolCallContent::Diff` or args-based synthesis). Empty
+        /// when the tool does not produce diffs or the daemon hasn't
+        /// computed them yet.
+        diffs: Vec<FileDiff>,
     },
     /// **Event** (daemon → TUI): Streaming delta of tool result output.
     ToolResultDelta {

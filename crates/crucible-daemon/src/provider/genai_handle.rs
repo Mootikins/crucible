@@ -128,6 +128,8 @@ impl ToolCallEmitter {
             id: tc.call_id,
             name: tc.fn_name,
             args: normalize_tool_args(tc.fn_arguments),
+            // TODO(task-12b): synthesize from args for native edit-style tools.
+            diffs: Vec::new(),
         })
     }
 
@@ -173,21 +175,19 @@ impl ReasoningEmissionState {
 fn normalize_tool_args(args: serde_json::Value) -> serde_json::Value {
     match args {
         serde_json::Value::Object(_) => args,
-        serde_json::Value::String(ref s) => {
-            match serde_json::from_str::<serde_json::Value>(s) {
-                Ok(parsed) if parsed.is_object() => parsed,
-                _ => {
-                    tracing::warn!(
-                        target: "provider",
-                        raw = %s,
-                        "tool args were a string but didn't decode to a JSON object; \
-                         coercing to {{}} — dispatcher will surface this as a \
-                         missing-parameter error"
-                    );
-                    serde_json::Value::Object(serde_json::Map::new())
-                }
+        serde_json::Value::String(ref s) => match serde_json::from_str::<serde_json::Value>(s) {
+            Ok(parsed) if parsed.is_object() => parsed,
+            _ => {
+                tracing::warn!(
+                    target: "provider",
+                    raw = %s,
+                    "tool args were a string but didn't decode to a JSON object; \
+                     coercing to {{}} — dispatcher will surface this as a \
+                     missing-parameter error"
+                );
+                serde_json::Value::Object(serde_json::Map::new())
             }
-        }
+        },
         serde_json::Value::Null => serde_json::Value::Object(serde_json::Map::new()),
         other => {
             tracing::warn!(
@@ -647,7 +647,7 @@ impl GenaiAgentHandle {
                     };
 
                     match event {
-                        TurnEvent::ToolCall { ref id, ref name, ref args } => {
+                        TurnEvent::ToolCall { ref id, ref name, ref args, .. } => {
                             pending_calls.push(ChatToolCall {
                                 id: Some(id.clone()),
                                 name: name.clone(),
@@ -1269,8 +1269,7 @@ mod tests {
                 tool_call: tc("zz", "bash"),
             }),
         ] {
-            let (_out, terminal) =
-                translate_chat_stream_event(ev, &mut emitter, &mut reasoning);
+            let (_out, terminal) = translate_chat_stream_event(ev, &mut emitter, &mut reasoning);
             assert!(!terminal, "non-End events must not be terminal");
         }
     }
@@ -1424,6 +1423,7 @@ mod tests {
                 id: "call_1".to_string(),
                 name: "search".to_string(),
                 args: serde_json::Value::Null,
+                diffs: Vec::new(),
             },
             TurnEvent::Done {
                 stop_reason: StopReason::EndTurn,
@@ -1455,6 +1455,7 @@ mod tests {
                 id: "call_1".to_string(),
                 name: "search".to_string(),
                 args: serde_json::Value::Null,
+                diffs: Vec::new(),
             },
             TurnEvent::Done {
                 stop_reason: StopReason::EndTurn,

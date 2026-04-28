@@ -186,12 +186,10 @@ fn test_perm_modal_esc_from_text_returns_to_selecting() {
 
 #[test]
 fn snap_perm_popup_with_edit_diff() {
-    let req = PermRequest::tool("edit", serde_json::json!({"file_path": "src/foo.rs"}))
-        .with_diffs(vec![FileDiff::from_contents(
-            "src/foo.rs",
-            Some("fn old() {}\n".into()),
-            "fn new() {}\n",
-        )]);
+    let req =
+        PermRequest::tool("edit", serde_json::json!({"file_path": "src/foo.rs"})).with_diffs(vec![
+            FileDiff::from_contents("src/foo.rs", Some("fn old() {}\n".into()), "fn new() {}\n"),
+        ]);
     let modal = InteractionModal::new(
         "req-1".to_string(),
         InteractionRequest::Permission(req),

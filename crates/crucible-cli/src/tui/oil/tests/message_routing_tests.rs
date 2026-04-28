@@ -167,6 +167,7 @@ fn tool_call_creates_tool_group() {
         description: None,
         source: None,
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
 
     assert_eq!(app.container_list.len(), 1);
@@ -182,6 +183,7 @@ fn tool_result_error_sets_error_on_tool() {
         description: None,
         source: None,
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     app.on_message(ChatAppMsg::ToolResultError {
         name: "bash".into(),

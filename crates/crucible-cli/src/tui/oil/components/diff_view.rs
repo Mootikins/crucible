@@ -259,11 +259,7 @@ fn pair_changes(old: &str, new: &str) -> Vec<PairedRow> {
     let mut pending_deletes: Vec<String> = Vec::new();
     let mut pending_inserts: Vec<String> = Vec::new();
 
-    fn flush(
-        rows: &mut Vec<PairedRow>,
-        deletes: &mut Vec<String>,
-        inserts: &mut Vec<String>,
-    ) {
+    fn flush(rows: &mut Vec<PairedRow>, deletes: &mut Vec<String>, inserts: &mut Vec<String>) {
         let n = deletes.len().max(inserts.len());
         for i in 0..n {
             rows.push(PairedRow {
@@ -592,7 +588,10 @@ mod tests {
         let mut opts = DiffOptions::for_width(80);
         opts.collapsed = true;
         let out = render(&d, &opts);
-        assert!(!out.contains("CHANGED"), "collapsed must not show body: {out:?}");
+        assert!(
+            !out.contains("CHANGED"),
+            "collapsed must not show body: {out:?}"
+        );
     }
 
     #[test]
@@ -695,7 +694,10 @@ mod tests {
         opts.max_lines = Some(50);
         opts.layout = DiffLayout::Unified;
         let out = render(&d, &opts);
-        assert!(out.contains("more lines"), "expected truncation footer: {out:?}");
+        assert!(
+            out.contains("more lines"),
+            "expected truncation footer: {out:?}"
+        );
     }
 
     #[test]
@@ -706,7 +708,9 @@ mod tests {
         let mut opts = DiffOptions::for_width(80);
         opts.layout = DiffLayout::Unified;
         let out = render(&d, &opts);
-        assert!(out.to_lowercase().contains("suppressed") || out.to_lowercase().contains("too large"));
+        assert!(
+            out.to_lowercase().contains("suppressed") || out.to_lowercase().contains("too large")
+        );
     }
 }
 

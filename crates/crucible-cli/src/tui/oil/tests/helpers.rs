@@ -45,6 +45,7 @@ pub fn apply_rpc_event(app: &mut OilChatApp, event: &RpcEvent) {
                 description: None,
                 source: None,
                 lua_primary_arg: None,
+                diffs: Vec::new(),
             });
         }
         RpcEvent::ToolResultDelta { name, delta } => {

@@ -143,9 +143,19 @@ impl SessionEventMessage {
         tool: impl Into<String>,
         args: Value,
     ) -> Self {
-        Self::tool_call_with_metadata(session_id, call_id, tool, args, None, None, None)
+        Self::tool_call_with_metadata(
+            session_id,
+            call_id,
+            tool,
+            args,
+            None,
+            None,
+            None,
+            Vec::new(),
+        )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn tool_call_with_metadata(
         session_id: impl Into<String>,
         call_id: impl Into<String>,
@@ -154,6 +164,7 @@ impl SessionEventMessage {
         description: Option<String>,
         source: Option<String>,
         lua_primary_arg: Option<String>,
+        diffs: Vec<crate::types::acp::FileDiff>,
     ) -> Self {
         let mut data = serde_json::json!({
             "call_id": call_id.into(),
@@ -168,6 +179,9 @@ impl SessionEventMessage {
         }
         if let Some(pa) = lua_primary_arg {
             data["lua_primary_arg"] = serde_json::json!(pa);
+        }
+        if !diffs.is_empty() {
+            data["diffs"] = serde_json::to_value(&diffs).unwrap_or(Value::Null);
         }
 
         Self::new(session_id, "tool_call", data)
@@ -627,6 +641,115 @@ mod tests {
         assert_eq!(evt.event, "user_message");
         assert_eq!(evt.data["message_id"], "msg-42");
         assert_eq!(evt.data["content"], "hello agent");
+    }
+
+    #[test]
+    fn tool_call_with_diffs_roundtrip() {
+        use crate::types::acp::FileDiff;
+
+        let diffs = vec![
+            FileDiff::from_contents(
+                "src/foo.rs",
+                Some("fn old() {}\n".to_string()),
+                "fn new() {}\n",
+            ),
+            FileDiff::new("src/bar.rs", "// brand new file\n"),
+        ];
+
+        // Wire-side construction (daemon path).
+        let evt = SessionEventMessage::tool_call_with_metadata(
+            "s1",
+            "call-1",
+            "edit",
+            serde_json::json!({"path": "src/foo.rs"}),
+            None,
+            None,
+            None,
+            diffs.clone(),
+        );
+
+        // Round-trip the JSON line as the daemon emits and TUI parses.
+        let line = evt.to_json_line().unwrap();
+        let parsed: SessionEventMessage = serde_json::from_str(line.trim()).unwrap();
+
+        assert_eq!(parsed.event, "tool_call");
+        let parsed_diffs: Vec<FileDiff> = serde_json::from_value(
+            parsed
+                .data
+                .get("diffs")
+                .cloned()
+                .expect("diffs key must round-trip"),
+        )
+        .expect("diffs must deserialize as Vec<FileDiff>");
+        assert_eq!(parsed_diffs, diffs);
+    }
+
+    #[test]
+    fn tool_call_without_diffs_omits_diffs_key() {
+        // Back-compat: empty diffs must not appear in the JSON payload.
+        let evt = SessionEventMessage::tool_call(
+            "s1",
+            "call-1",
+            "read_file",
+            serde_json::json!({"path": "/tmp/x"}),
+        );
+        let json = serde_json::to_string(&evt).unwrap();
+        assert!(
+            !json.contains("\"diffs\""),
+            "tool_call without diffs should omit the key, got: {json}"
+        );
+    }
+
+    #[test]
+    fn tool_call_legacy_payload_parses_with_empty_diffs() {
+        // An old daemon emitting tool_call without "diffs" must parse cleanly.
+        let json = r#"{
+            "type":"event",
+            "session_id":"s1",
+            "event":"tool_call",
+            "data":{"call_id":"c","tool":"t","args":{}}
+        }"#;
+        let parsed: SessionEventMessage = serde_json::from_str(json).unwrap();
+        assert!(parsed.data.get("diffs").is_none());
+    }
+
+    #[test]
+    fn turn_event_tool_call_diffs_roundtrip_json() {
+        use crate::turn::TurnEvent;
+        use crate::types::acp::FileDiff;
+
+        let diffs = vec![FileDiff::from_contents(
+            "src/foo.rs",
+            Some("a\n".to_string()),
+            "b\n",
+        )];
+        let ev = TurnEvent::ToolCall {
+            id: "call-1".into(),
+            name: "edit".into(),
+            args: serde_json::json!({"path": "src/foo.rs"}),
+            diffs: diffs.clone(),
+        };
+        let s = serde_json::to_string(&ev).unwrap();
+        let r: TurnEvent = serde_json::from_str(&s).unwrap();
+        match r {
+            TurnEvent::ToolCall {
+                diffs: parsed_diffs,
+                ..
+            } => assert_eq!(parsed_diffs, diffs),
+            other => panic!("wrong variant: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn turn_event_tool_call_legacy_json_parses_with_empty_diffs() {
+        use crate::turn::TurnEvent;
+        // A snapshot from before the diffs field existed.
+        let json = r#"{"ToolCall":{"id":"c","name":"t","args":null}}"#;
+        let r: TurnEvent = serde_json::from_str(json).unwrap();
+        match r {
+            TurnEvent::ToolCall { diffs, .. } => assert!(diffs.is_empty()),
+            other => panic!("wrong variant: {other:?}"),
+        }
     }
 
     #[test]

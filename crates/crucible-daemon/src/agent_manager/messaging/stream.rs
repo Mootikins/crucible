@@ -253,7 +253,12 @@ impl AgentManager {
                         );
                     }
                 }
-                TurnEvent::ToolCall { id, name, args } => {
+                TurnEvent::ToolCall {
+                    id,
+                    name,
+                    args,
+                    diffs,
+                } => {
                     // New batch? increment depth, possibly cap.
                     if !in_tool_batch {
                         // If the depth cap already fired once and the
@@ -366,7 +371,8 @@ impl AgentManager {
                         })
                     } else {
                         attempt = Some(tracker.record_call(&name, &args));
-                        Self::handle_tool_call_in_stream(&stream_ctx, &tool_call).await
+                        Self::handle_tool_call_in_stream(&stream_ctx, &tool_call, diffs.clone())
+                            .await
                     };
 
                     // Repeat-failure tracking / annotation.

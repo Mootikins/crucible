@@ -154,6 +154,56 @@ fn translate_unknown_event_returns_empty() {
 }
 
 #[test]
+fn translate_tool_call_propagates_diffs_into_chat_msg() {
+    use crucible_core::types::acp::FileDiff;
+    use serde_json::json;
+
+    // Build a payload as the daemon emits via tool_call_with_metadata
+    // (with non-empty diffs).
+    let diffs_in = vec![FileDiff::from_contents(
+        "src/foo.rs",
+        Some("fn old() {}\n".to_string()),
+        "fn new() {}\n",
+    )];
+    let data = json!({
+        "call_id": "call-1",
+        "tool": "edit",
+        "args": { "path": "src/foo.rs" },
+        "diffs": diffs_in,
+    });
+
+    let msgs = session_event_to_chat_msgs("tool_call", &data);
+    assert_eq!(msgs.len(), 1);
+    match &msgs[0] {
+        ChatAppMsg::ToolCall { diffs, .. } => {
+            assert_eq!(diffs, &diffs_in, "diffs must propagate end-to-end");
+        }
+        other => panic!("expected ToolCall, got {other:?}"),
+    }
+}
+
+#[test]
+fn translate_tool_call_without_diffs_yields_empty_vec() {
+    use serde_json::json;
+    let data = json!({
+        "call_id": "call-1",
+        "tool": "read_file",
+        "args": { "path": "/tmp/x" },
+    });
+    let msgs = session_event_to_chat_msgs("tool_call", &data);
+    assert_eq!(msgs.len(), 1);
+    match &msgs[0] {
+        ChatAppMsg::ToolCall { diffs, .. } => {
+            assert!(
+                diffs.is_empty(),
+                "missing diffs key must yield empty Vec, got {diffs:?}"
+            );
+        }
+        other => panic!("expected ToolCall, got {other:?}"),
+    }
+}
+
+#[test]
 fn translate_context_limit_resolved_updates_atomic_through_stream() {
     use serde_json::json;
     let limit = Arc::new(AtomicUsize::new(0));

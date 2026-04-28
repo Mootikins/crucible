@@ -44,10 +44,18 @@ pub enum TurnEvent {
     Thinking(String),
 
     /// Model invoked a tool. Outbound only (agent → runtime).
+    ///
+    /// `diffs` carries protocol-agnostic file modification previews when the
+    /// agent layer can derive them (e.g. ACP `ToolCallContent::Diff` frames,
+    /// or args-based synthesis for native tools). Empty by default; the field
+    /// is omitted from the serialized form when empty for back-compat with
+    /// older daemons/agents.
     ToolCall {
         id: String,
         name: String,
         args: serde_json::Value,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        diffs: Vec<crate::types::acp::FileDiff>,
     },
 
     /// Result of a tool call.

@@ -48,6 +48,7 @@ fn e2e_full_conversation_render() {
         description: None,
         source: None,
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     vt.render_frame(&mut app);
     let out = strip_ansi(&vt.full_history());
@@ -77,6 +78,7 @@ fn e2e_full_conversation_render() {
         description: None,
         source: None,
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "Glob".into(),
@@ -143,6 +145,7 @@ fn debug_continuation_flag() {
         description: None,
         source: None,
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "Bash".into(),
@@ -190,6 +193,7 @@ fn debug_continuation_rendering() {
         description: None,
         source: None,
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "Bash".into(),
@@ -245,6 +249,7 @@ fn debug_full_view_rendering() {
         description: None,
         source: None,
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "Bash".into(),
@@ -290,6 +295,7 @@ fn debug_scrollback_vs_viewport_step7() {
         description: None,
         source: None,
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "Bash".into(),
@@ -302,6 +308,7 @@ fn debug_scrollback_vs_viewport_step7() {
         description: None,
         source: None,
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "Glob".into(),
@@ -350,6 +357,7 @@ fn debug_container_state_before_continuation() {
         description: None,
         source: None,
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
 
     eprintln!("After tool call:");
@@ -376,6 +384,7 @@ fn debug_container_state_before_continuation() {
         description: None,
         source: None,
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "Glob".into(),
@@ -557,6 +566,7 @@ fn e2e_multi_turn_graduation() {
         description: None,
         source: None,
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     vt.render_frame(&mut app);
 
@@ -685,6 +695,7 @@ fn e2e_tool_multiline_output() {
         description: None,
         source: None,
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "Bash".into(),
@@ -732,6 +743,7 @@ fn e2e_tool_error_rendering() {
         description: None,
         source: None,
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     app.on_message(ChatAppMsg::ToolResultError {
         name: "Bash".into(),
@@ -854,6 +866,7 @@ fn e2e_rapid_tool_calls_group() {
             description: None,
             source: None,
             lua_primary_arg: None,
+            diffs: Vec::new(),
         });
         app.on_message(ChatAppMsg::ToolResultComplete {
             name,
@@ -1014,6 +1027,7 @@ fn e2e_cancel_during_tool_execution() {
         description: None,
         source: None,
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     vt.render_frame(&mut app);
 
@@ -1403,6 +1417,7 @@ fn all_container_types_render_at_all_widths() {
         description: None,
         source: None,
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "Bash".into(),

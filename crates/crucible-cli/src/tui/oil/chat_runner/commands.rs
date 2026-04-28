@@ -201,6 +201,10 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
                 .get("lua_primary_arg")
                 .and_then(|v| v.as_str())
                 .map(String::from);
+            let diffs = data
+                .get("diffs")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
             vec![ChatAppMsg::ToolCall {
                 name,
                 args,
@@ -208,6 +212,7 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
                 description,
                 source,
                 lua_primary_arg,
+                diffs,
             }]
         }
         "tool_result" => {

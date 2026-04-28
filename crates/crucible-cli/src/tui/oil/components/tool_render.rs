@@ -232,10 +232,7 @@ impl CachedToolCall {
             )
         };
         let header = row([
-            styled(
-                icon_str,
-                Style::new().fg(t.resolve_color(t.colors.success)),
-            ),
+            styled(icon_str, Style::new().fg(t.resolve_color(t.colors.success))),
             styled(
                 display_name,
                 Style::new().fg(t.resolve_color(t.colors.text_dim)),
@@ -898,9 +895,21 @@ mod tests {
         let node = tool.render_compact(100);
         let plain = render_to_plain_text(&node, 100);
 
-        assert!(plain.contains("ALPHA_NEW"), "first diff visible: {:?}", plain);
-        assert!(plain.contains("BETA_NEW"), "second diff visible: {:?}", plain);
-        assert!(plain.contains("a.rs") && plain.contains("b.rs"), "both paths: {:?}", plain);
+        assert!(
+            plain.contains("ALPHA_NEW"),
+            "first diff visible: {:?}",
+            plain
+        );
+        assert!(
+            plain.contains("BETA_NEW"),
+            "second diff visible: {:?}",
+            plain
+        );
+        assert!(
+            plain.contains("a.rs") && plain.contains("b.rs"),
+            "both paths: {:?}",
+            plain
+        );
     }
 
     #[test]
@@ -1219,7 +1228,10 @@ mod tests {
     fn fit_arg_to_width_truncates_with_ellipsis() {
         let long = "abcdefghijklmnopqrstuvwxyz";
         let result = fit_arg_to_width(long, 15);
-        assert!(result.ends_with('…'), "should end with ellipsis: {result:?}");
+        assert!(
+            result.ends_with('…'),
+            "should end with ellipsis: {result:?}"
+        );
         assert!(crucible_oil::ansi::visible_width(&result) <= 15);
     }
 
@@ -1330,7 +1342,12 @@ mod tests {
 
         for line in plain.lines() {
             let w = crucible_oil::ansi::visible_width(line);
-            assert!(w <= 80, "line wider than terminal width: {} - {:?}", w, line);
+            assert!(
+                w <= 80,
+                "line wider than terminal width: {} - {:?}",
+                w,
+                line
+            );
         }
 
         let header_line = plain

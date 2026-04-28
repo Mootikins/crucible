@@ -1,5 +1,6 @@
 use super::super::*;
 use crucible_core::events::InternalSessionEvent;
+use crucible_core::types::acp::FileDiff;
 use crucible_core::types::ToolSource;
 use crucible_lua::{
     execute_tool_before_execute_hooks, execute_tool_display_complete_hooks,
@@ -11,6 +12,7 @@ impl AgentManager {
     pub(super) async fn handle_tool_call_in_stream(
         stream_ctx: &StreamContext,
         tool_call: &crucible_core::traits::chat::ChatToolCall,
+        diffs: Vec<FileDiff>,
     ) -> Option<crucible_core::traits::chat::ChatToolResult> {
         let call_id = tool_call
             .id
@@ -246,6 +248,7 @@ impl AgentManager {
                 description,
                 source,
                 lua_primary_arg,
+                diffs,
             ),
         ) {
             warn!(

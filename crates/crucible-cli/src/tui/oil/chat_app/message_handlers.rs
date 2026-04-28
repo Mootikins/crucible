@@ -53,6 +53,7 @@ impl OilChatApp {
                 description,
                 source,
                 lua_primary_arg,
+                diffs,
             } => {
                 let tool = CachedToolCall {
                     id: call_id.as_deref().map_or_else(
@@ -72,7 +73,7 @@ impl OilChatApp {
                     description: description.map(|d| Arc::from(d.as_str())),
                     source: source.as_deref().and_then(parse_tool_source),
                     lua_primary_arg: lua_primary_arg.map(|a| Arc::from(a.as_str())),
-                    diffs: Vec::new(),
+                    diffs,
                 };
                 self.container_list.add_tool_call(tool);
             }

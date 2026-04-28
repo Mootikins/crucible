@@ -145,10 +145,16 @@ pub(super) fn session_event_to_turn_events(event: &SessionEvent) -> Vec<TurnEven
                 .get("args")
                 .cloned()
                 .unwrap_or(serde_json::Value::Null);
+            let diffs = event
+                .data
+                .get("diffs")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
             vec![TurnEvent::ToolCall {
                 id,
                 name: tool.to_string(),
                 args,
+                diffs,
             }]
         }
         "tool_result" => {
@@ -275,7 +281,7 @@ mod tests {
             }),
         ));
         match out.as_slice() {
-            [TurnEvent::ToolCall { id, name, args }] => {
+            [TurnEvent::ToolCall { id, name, args, .. }] => {
                 assert_eq!(id, "tc-123");
                 assert_eq!(name, "search");
                 assert_eq!(args, &json!({ "query": "rust async" }));
@@ -291,7 +297,7 @@ mod tests {
             json!({ "tool": "search", "args": { "query": "test" } }),
         ));
         match out.as_slice() {
-            [TurnEvent::ToolCall { id, name, args }] => {
+            [TurnEvent::ToolCall { id, name, args, .. }] => {
                 assert_eq!(id, "");
                 assert_eq!(name, "search");
                 assert_eq!(args, &json!({ "query": "test" }));

@@ -445,6 +445,8 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                             id,
                             name,
                             args: arguments.unwrap_or(serde_json::Value::Null),
+                            // TODO(task-12b): populate from ACP ToolCallContent::Diff frames.
+                            diffs: Vec::new(),
                         };
                     }
                     StreamingChunk::ToolEnd { id, result, error } => {
@@ -485,6 +487,8 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                             id,
                             name: tc.title,
                             args: tc.arguments.unwrap_or(serde_json::Value::Null),
+                            // TODO(task-12b): populate from ACP ToolCallContent::Diff frames.
+                            diffs: Vec::new(),
                         };
                     }
 

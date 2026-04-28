@@ -130,11 +130,9 @@ impl AgentManager {
                             );
                         }
 
-                        let result = tokio::time::timeout(
-                            std::time::Duration::from_secs(300),
-                            response_rx,
-                        )
-                        .await;
+                        let result =
+                            tokio::time::timeout(std::time::Duration::from_secs(300), response_rx)
+                                .await;
 
                         match result {
                             Ok(Ok(response)) => response,
@@ -205,8 +203,7 @@ impl AgentManager {
                         &args,
                         &workspace_path,
                     );
-                    let permission =
-                        PermRequest::tool(tool_name, args).with_diffs(diffs);
+                    let permission = PermRequest::tool(tool_name, args).with_diffs(diffs);
                     let response = gate.request_permission(permission).await;
 
                     let desired_kind = if response.allowed {
@@ -761,12 +758,8 @@ mod permission_serializer_tests {
                     let n = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
                     let mut prev = max_seen.load(Ordering::SeqCst);
                     while n > prev {
-                        match max_seen.compare_exchange(
-                            prev,
-                            n,
-                            Ordering::SeqCst,
-                            Ordering::SeqCst,
-                        ) {
+                        match max_seen.compare_exchange(prev, n, Ordering::SeqCst, Ordering::SeqCst)
+                        {
                             Ok(_) => break,
                             Err(actual) => prev = actual,
                         }
@@ -817,12 +810,8 @@ mod permission_serializer_tests {
                     let n = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
                     let mut prev = max_seen.load(Ordering::SeqCst);
                     while n > prev {
-                        match max_seen.compare_exchange(
-                            prev,
-                            n,
-                            Ordering::SeqCst,
-                            Ordering::SeqCst,
-                        ) {
+                        match max_seen.compare_exchange(prev, n, Ordering::SeqCst, Ordering::SeqCst)
+                        {
                             Ok(_) => break,
                             Err(actual) => prev = actual,
                         }

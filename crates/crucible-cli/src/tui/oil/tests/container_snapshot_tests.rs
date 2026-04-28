@@ -85,6 +85,7 @@ fn snapshot_tool_complete() {
         description: None,
         source: None,
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "read_file".into(),
@@ -107,6 +108,7 @@ fn snapshot_tool_pending() {
         description: None,
         source: None,
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     // Tool is still pending (no ToolResultComplete)
 
@@ -132,6 +134,7 @@ fn snapshot_multi_turn() {
         description: None,
         source: None,
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "read_file".into(),
