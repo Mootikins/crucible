@@ -123,11 +123,14 @@ impl AgentManager {
         mut tool_depth: usize,
         max_tool_depth: usize,
     ) {
+        let ttft_local = Instant::now();
+        info!(target: "ttft", session_id = %stream_ctx.session_id, stage = "execute_stream_entry", elapsed_ms = 0, "ttft");
         let Some(content) =
             Self::apply_pre_llm_call_handlers(content, &stream_ctx, &stream_config).await
         else {
             return;
         };
+        info!(target: "ttft", session_id = %stream_ctx.session_id, stage = "pre_llm_done", elapsed_ms = ttft_local.elapsed().as_millis() as u64, "ttft");
 
         let stream_start = Instant::now();
 
@@ -147,6 +150,7 @@ impl AgentManager {
             turn_ctx = turn_ctx.continuation();
         }
 
+        info!(target: "ttft", session_id = %stream_ctx.session_id, stage = "before_turn_start", elapsed_ms = ttft_local.elapsed().as_millis() as u64, "ttft");
         // Hold the handle guard for the entire turn; Agent::turn returns
         // a stream that borrows `&mut *guard`.
         let mut guard = agent.lock().await;
@@ -193,7 +197,13 @@ impl AgentManager {
         let mut last_usage: Option<TokenUsage> = None;
         let mut terminal_stop_reason: Option<StopReason> = None;
 
+        let mut ttft_first_token_logged = false;
+        let mut ttft_first_event_logged = false;
         while let Some(event) = event_stream.next().await {
+            if !ttft_first_event_logged {
+                info!(target: "ttft", session_id = %stream_ctx.session_id, stage = "first_turn_event", elapsed_ms = ttft_local.elapsed().as_millis() as u64, kind = ?std::mem::discriminant(&event), "ttft");
+                ttft_first_event_logged = true;
+            }
             match event {
                 TurnEvent::TextDelta(delta) => {
                     if delta.is_empty() {
@@ -211,6 +221,10 @@ impl AgentManager {
                         continue;
                     }
 
+                    if !ttft_first_token_logged {
+                        info!(target: "ttft", session_id = %stream_ctx.session_id, stage = "first_text_delta", elapsed_ms = ttft_local.elapsed().as_millis() as u64, "ttft");
+                        ttft_first_token_logged = true;
+                    }
                     accumulated_response.push_str(&delta);
                     debug!(
                         session_id = %stream_ctx.session_id,

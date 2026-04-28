@@ -11,6 +11,8 @@ impl AgentManager {
         is_interactive: bool,
         permission_override: Option<PermissionMode>,
     ) -> Result<String, AgentError> {
+        let ttft_start = Instant::now();
+        info!(target: "ttft", session_id = %session_id, stage = "send_message_entry", elapsed_ms = 0, "ttft");
         let session = self
             .session_manager
             .get_session(session_id)
@@ -55,6 +57,7 @@ impl AgentManager {
                 return Err(e);
             }
         };
+        info!(target: "ttft", session_id = %session_id, stage = "agent_ready", elapsed_ms = ttft_start.elapsed().as_millis() as u64, "ttft");
 
         let message_id = format!("msg-{}", uuid::Uuid::new_v4());
         let original_content = content;
@@ -83,6 +86,7 @@ impl AgentManager {
             );
         }
 
+        info!(target: "ttft", session_id = %session_id, stage = "precognition_start", elapsed_ms = ttft_start.elapsed().as_millis() as u64, "ttft");
         let content = if agent_config.precognition_enabled
             && !original_content.starts_with("/search")
             && !session.kiln.as_os_str().is_empty()
@@ -98,6 +102,7 @@ impl AgentManager {
         } else {
             original_content.clone()
         };
+        info!(target: "ttft", session_id = %session_id, stage = "precognition_done", elapsed_ms = ttft_start.elapsed().as_millis() as u64, "ttft");
 
         let session_id_owned = session_id.to_string();
         let request_state = self.request_state.clone();
