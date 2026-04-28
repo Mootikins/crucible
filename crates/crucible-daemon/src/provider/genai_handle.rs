@@ -92,6 +92,179 @@ fn usage_to_token_usage(usage: &genai::chat::Usage) -> TokenUsage {
     }
 }
 
+/// Tracks emitted tool calls during a stream so we can:
+///   1. Emit each tool call live (on `ToolCallChunk`) instead of waiting for
+///      `End` — the user sees a permission prompt as soon as each tool call's
+///      args finish streaming, rather than after the whole response block.
+///   2. Avoid double-emission when the provider also replays tool calls in
+///      `captured_content` at `End` (deduplication by `call_id`).
+///   3. Honor `max_tool_depth` consistently across both paths.
+struct ToolCallEmitter {
+    emitted_call_ids: std::collections::HashSet<String>,
+    emitted_count: usize,
+    max_depth: usize,
+}
+
+impl ToolCallEmitter {
+    fn new(max_depth: usize) -> Self {
+        Self {
+            emitted_call_ids: std::collections::HashSet::new(),
+            emitted_count: 0,
+            max_depth,
+        }
+    }
+
+    /// Try to emit a `TurnEvent::ToolCall` for `tc`. Returns `None` when the
+    /// `call_id` was already emitted or the depth cap has been reached.
+    fn try_emit(&mut self, tc: ToolCall) -> Option<TurnEvent> {
+        if self.emitted_count >= self.max_depth {
+            return None;
+        }
+        if !self.emitted_call_ids.insert(tc.call_id.clone()) {
+            return None;
+        }
+        self.emitted_count += 1;
+        Some(TurnEvent::ToolCall {
+            id: tc.call_id,
+            name: tc.fn_name,
+            args: normalize_tool_args(tc.fn_arguments),
+        })
+    }
+
+    #[cfg(test)]
+    fn emitted_count(&self) -> usize {
+        self.emitted_count
+    }
+}
+
+/// Tracks whether any reasoning chunks have been emitted live during a stream
+/// so we don't double-emit at `End` for providers that *also* replay the full
+/// reasoning content there. If no live chunks fired (the End-only path),
+/// the End-time replay is the user's only source of reasoning, so we still
+/// emit it.
+#[derive(Default)]
+struct ReasoningEmissionState {
+    emitted_live: bool,
+}
+
+impl ReasoningEmissionState {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn note_live_chunk(&mut self) {
+        self.emitted_live = true;
+    }
+
+    fn should_emit_end_replay(&self) -> bool {
+        !self.emitted_live
+    }
+}
+
+/// Normalize tool arguments coming back from the provider into a JSON object.
+///
+/// Some OpenAI-compatible providers serialize the arguments as a *string*
+/// containing JSON rather than as a native object. The downstream tool
+/// dispatcher expects an object with named fields (`args.get("command")`),
+/// so we unwrap one level of string-encoding when we recognise it. Anything
+/// we can't massage into an object becomes an empty object — that gives the
+/// dispatcher a clean "missing parameter" error instead of a panic-y
+/// "expected object, got string".
+fn normalize_tool_args(args: serde_json::Value) -> serde_json::Value {
+    match args {
+        serde_json::Value::Object(_) => args,
+        serde_json::Value::String(ref s) => {
+            match serde_json::from_str::<serde_json::Value>(s) {
+                Ok(parsed) if parsed.is_object() => parsed,
+                _ => {
+                    tracing::warn!(
+                        target: "provider",
+                        raw = %s,
+                        "tool args were a string but didn't decode to a JSON object; \
+                         coercing to {{}} — dispatcher will surface this as a \
+                         missing-parameter error"
+                    );
+                    serde_json::Value::Object(serde_json::Map::new())
+                }
+            }
+        }
+        serde_json::Value::Null => serde_json::Value::Object(serde_json::Map::new()),
+        other => {
+            tracing::warn!(
+                target: "provider",
+                kind = ?other,
+                "unexpected tool args shape; coercing to {{}}"
+            );
+            serde_json::Value::Object(serde_json::Map::new())
+        }
+    }
+}
+
+/// Translate a single `ChatStreamEvent` into the equivalent `TurnEvent`(s).
+/// Returns `(events, terminal)` where `terminal == true` indicates the stream
+/// should be consumed no further (an `End` event was seen).
+///
+/// Stateful concerns — tool-call dedup and depth capping — are delegated to
+/// `emitter`, so the caller threads the same emitter across every event in
+/// one stream lifetime.
+fn translate_chat_stream_event(
+    event: ChatStreamEvent,
+    emitter: &mut ToolCallEmitter,
+    reasoning: &mut ReasoningEmissionState,
+) -> (Vec<TurnEvent>, bool) {
+    let mut out = Vec::new();
+    match event {
+        ChatStreamEvent::Start => {}
+        ChatStreamEvent::Chunk(chunk) => {
+            if !chunk.content.is_empty() {
+                out.push(TurnEvent::TextDelta(chunk.content));
+            }
+        }
+        ChatStreamEvent::ReasoningChunk(chunk) => {
+            if !chunk.content.is_empty() {
+                reasoning.note_live_chunk();
+                out.push(TurnEvent::Thinking(chunk.content));
+            }
+        }
+        ChatStreamEvent::ThoughtSignatureChunk(_) => {}
+        ChatStreamEvent::ToolCallChunk(chunk) => {
+            if let Some(ev) = emitter.try_emit(chunk.tool_call) {
+                out.push(ev);
+            }
+        }
+        ChatStreamEvent::End(end) => {
+            // Skip End's reasoning replay when chunks already streamed it —
+            // the model's chunks already populated the TUI's thinking block,
+            // and re-emitting the full text creates a duplicate "Thought"
+            // node.
+            if reasoning.should_emit_end_replay() {
+                if let Some(text) = end.captured_reasoning_content {
+                    if !text.is_empty() {
+                        out.push(TurnEvent::Thinking(text));
+                    }
+                }
+            }
+            if let Some(content) = end.captured_content {
+                for part in content.into_parts() {
+                    if let ContentPart::ToolCall(tc) = part {
+                        if let Some(ev) = emitter.try_emit(tc) {
+                            out.push(ev);
+                        }
+                    }
+                }
+            }
+            if let Some(usage) = end.captured_usage.as_ref() {
+                out.push(TurnEvent::Usage(usage_to_token_usage(usage)));
+            }
+            out.push(TurnEvent::Done {
+                stop_reason: StopReason::EndTurn,
+            });
+            return (out, true);
+        }
+    }
+    (out, false)
+}
+
 /// Wrap an LLM turn-event stream with stream-level invariants:
 /// per-chunk timeout, empty-response detection, and unexpected-end
 /// detection. On a guard failure the stream re-emits a terminal
@@ -331,9 +504,17 @@ impl GenaiAgentHandle {
         let max_tool_depth = self.max_tool_depth;
 
         let stream = Box::pin(async_stream::stream! {
+            let provider_start = std::time::Instant::now();
+            tracing::info!(target: "ttft", stage = "provider_call_start", model = %model_name, "ttft");
             let stream_res = client
                 .exec_chat_stream(&model_name, request, Some(&options))
                 .await;
+            tracing::info!(
+                target: "ttft",
+                stage = "provider_call_returned",
+                elapsed_ms = provider_start.elapsed().as_millis() as u64,
+                "ttft"
+            );
             let mut stream = match stream_res {
                 Ok(res) => res.stream,
                 Err(err) => {
@@ -343,8 +524,10 @@ impl GenaiAgentHandle {
                     return;
                 }
             };
+            let mut first_chunk_logged = false;
 
-            let mut emitted_calls = 0usize;
+            let mut tool_emitter = ToolCallEmitter::new(max_tool_depth);
+            let mut reasoning_state = ReasoningEmissionState::new();
 
             while let Some(next) = stream.next().await {
                 let event = match next {
@@ -357,47 +540,31 @@ impl GenaiAgentHandle {
                     }
                 };
 
-                match event {
-                    ChatStreamEvent::Start => {}
-                    ChatStreamEvent::Chunk(chunk) => {
-                        if !chunk.content.is_empty() {
-                            yield TurnEvent::TextDelta(chunk.content);
-                        }
-                    }
-                    ChatStreamEvent::ReasoningChunk(chunk) => {
-                        if !chunk.content.is_empty() {
-                            yield TurnEvent::Thinking(chunk.content);
-                        }
-                    }
-                    ChatStreamEvent::ThoughtSignatureChunk(_) => {}
-                    ChatStreamEvent::ToolCallChunk(_) => {}
-                    ChatStreamEvent::End(end) => {
-                        if let Some(reasoning) = end.captured_reasoning_content {
-                            if !reasoning.is_empty() {
-                                yield TurnEvent::Thinking(reasoning);
-                            }
-                        }
-                        if let Some(content) = end.captured_content {
-                            for part in content.into_parts() {
-                                if let ContentPart::ToolCall(tc) = part {
-                                    if emitted_calls >= max_tool_depth {
-                                        break;
-                                    }
-                                    emitted_calls += 1;
-                                    yield TurnEvent::ToolCall {
-                                        id: tc.call_id,
-                                        name: tc.fn_name,
-                                        args: tc.fn_arguments,
-                                    };
-                                }
-                            }
-                        }
-                        if let Some(usage) = end.captured_usage.as_ref() {
-                            yield TurnEvent::Usage(usage_to_token_usage(usage));
-                        }
-                        yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
-                        return;
-                    }
+                if !first_chunk_logged {
+                    tracing::info!(
+                        target: "ttft",
+                        stage = "provider_first_chunk",
+                        elapsed_ms = provider_start.elapsed().as_millis() as u64,
+                        kind = ?std::mem::discriminant(&event),
+                        "ttft"
+                    );
+                    first_chunk_logged = true;
+                }
+                tracing::info!(
+                    target: "ttft",
+                    stage = "raw_chat_stream_event",
+                    elapsed_ms = provider_start.elapsed().as_millis() as u64,
+                    kind = ?std::mem::discriminant(&event),
+                    "ttft"
+                );
+
+                let (events, terminal) =
+                    translate_chat_stream_event(event, &mut tool_emitter, &mut reasoning_state);
+                for ev in events {
+                    yield ev;
+                }
+                if terminal {
+                    return;
                 }
             }
         });
@@ -741,6 +908,372 @@ mod tests {
     use crucible_core::config::{BackendType, LlmProviderConfig};
 
     use futures::StreamExt;
+
+    // ─── ToolCallEmitter contract ──────────────────────────────────────
+
+    fn tc(id: &str, name: &str) -> ToolCall {
+        ToolCall {
+            call_id: id.to_string(),
+            fn_name: name.to_string(),
+            fn_arguments: serde_json::json!({}),
+            thought_signatures: None,
+        }
+    }
+
+    #[test]
+    fn emitter_unwraps_double_encoded_json_string_args() {
+        // Some OpenAI-compatible providers (e.g. GLM-style endpoints over
+        // OpenAI-compat) return tool call arguments as a *JSON-encoded
+        // string* rather than a JSON object. The downstream tool dispatcher
+        // expects an object with named fields, so the emitter must unwrap
+        // the string-shaped payload before forwarding it.
+        let raw = ToolCall {
+            call_id: "call-1".to_string(),
+            fn_name: "bash".to_string(),
+            fn_arguments: serde_json::Value::String(
+                r#"{"command":"ls -la","timeout_ms":5000}"#.to_string(),
+            ),
+            thought_signatures: None,
+        };
+        let mut e = ToolCallEmitter::new(10);
+        let ev = e.try_emit(raw).expect("must emit");
+        match ev {
+            TurnEvent::ToolCall { args, .. } => {
+                let obj = args.as_object().expect("args must be parsed into object");
+                assert_eq!(obj.get("command").and_then(|v| v.as_str()), Some("ls -la"));
+                assert_eq!(obj.get("timeout_ms").and_then(|v| v.as_u64()), Some(5000));
+            }
+            other => panic!("expected ToolCall, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn emitter_passes_object_args_through_unchanged() {
+        let args_obj = serde_json::json!({"command": "ls"});
+        let raw = ToolCall {
+            call_id: "call-1".to_string(),
+            fn_name: "bash".to_string(),
+            fn_arguments: args_obj.clone(),
+            thought_signatures: None,
+        };
+        let mut e = ToolCallEmitter::new(10);
+        let ev = e.try_emit(raw).expect("must emit");
+        match ev {
+            TurnEvent::ToolCall { args, .. } => assert_eq!(args, args_obj),
+            other => panic!("expected ToolCall, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn emitter_leaves_unparseable_string_args_as_object() {
+        // String args that aren't valid JSON should still produce an object
+        // (empty) so the dispatcher's `args.get("...")` calls don't blow up.
+        let raw = ToolCall {
+            call_id: "call-1".to_string(),
+            fn_name: "bash".to_string(),
+            fn_arguments: serde_json::Value::String("not really json".to_string()),
+            thought_signatures: None,
+        };
+        let mut e = ToolCallEmitter::new(10);
+        let ev = e.try_emit(raw).expect("must emit");
+        match ev {
+            TurnEvent::ToolCall { args, .. } => {
+                assert!(args.is_object(), "must coerce to object: got {args:?}");
+            }
+            other => panic!("expected ToolCall, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn emitter_emits_first_chunk() {
+        let mut e = ToolCallEmitter::new(10);
+        let ev = e.try_emit(tc("call-1", "bash"));
+        assert!(matches!(ev, Some(TurnEvent::ToolCall { ref id, .. }) if id == "call-1"));
+    }
+
+    #[test]
+    fn emitter_dedupes_same_call_id() {
+        let mut e = ToolCallEmitter::new(10);
+        assert!(e.try_emit(tc("call-1", "bash")).is_some());
+        assert!(
+            e.try_emit(tc("call-1", "bash")).is_none(),
+            "second emission of same call_id must be deduplicated"
+        );
+    }
+
+    #[test]
+    fn emitter_distinct_ids_both_emit() {
+        let mut e = ToolCallEmitter::new(10);
+        assert!(e.try_emit(tc("a", "bash")).is_some());
+        assert!(e.try_emit(tc("b", "read")).is_some());
+    }
+
+    #[test]
+    fn emitter_caps_at_max_depth() {
+        let mut e = ToolCallEmitter::new(2);
+        assert!(e.try_emit(tc("a", "x")).is_some());
+        assert!(e.try_emit(tc("b", "x")).is_some());
+        assert!(
+            e.try_emit(tc("c", "x")).is_none(),
+            "third call past max_depth must not emit"
+        );
+    }
+
+    #[test]
+    fn emitter_chunk_then_end_no_double_emit() {
+        // Real-world: provider streams ToolCallChunk live AND replays the
+        // same tool calls in captured_content at End. Emitter dedupes by id.
+        let mut e = ToolCallEmitter::new(10);
+        let chunk_ev = e.try_emit(tc("call-1", "bash"));
+        assert!(chunk_ev.is_some());
+        let end_ev = e.try_emit(tc("call-1", "bash"));
+        assert!(
+            end_ev.is_none(),
+            "End-time replay of already-emitted tool call must be skipped"
+        );
+    }
+
+    #[test]
+    fn emitter_end_only_path_still_works() {
+        // Provider that does NOT emit ToolCallChunks (only End): emitter
+        // sees the tool calls for the first time at End and emits.
+        let mut e = ToolCallEmitter::new(10);
+        let ev = e.try_emit(tc("call-1", "bash"));
+        assert!(ev.is_some());
+        assert_eq!(e.emitted_count(), 1);
+    }
+
+    // ─── translate_chat_stream_event wiring ────────────────────────────
+
+    use genai::chat::{MessageContent, StreamChunk, StreamEnd, ToolChunk};
+
+    fn drive_translate(events: Vec<ChatStreamEvent>) -> Vec<TurnEvent> {
+        let mut emitter = ToolCallEmitter::new(10);
+        let mut reasoning = ReasoningEmissionState::new();
+        let mut out = Vec::new();
+        for ev in events {
+            let (translated, terminal) =
+                translate_chat_stream_event(ev, &mut emitter, &mut reasoning);
+            out.extend(translated);
+            if terminal {
+                break;
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn reasoning_chunk_then_end_replay_does_not_duplicate() {
+        // Regression: providers that stream reasoning via ReasoningChunk
+        // ALSO put the same content in End.captured_reasoning_content. That
+        // replay would previously emit a second TurnEvent::Thinking, causing
+        // the TUI to render two identical "Thought (N words)" blocks.
+        let mut emitter = ToolCallEmitter::new(10);
+        let mut state = ReasoningEmissionState::new();
+
+        let chunk = ChatStreamEvent::ReasoningChunk(StreamChunk {
+            content: "deliberate reasoning".to_string(),
+        });
+        let (live, _) = translate_chat_stream_event(chunk, &mut emitter, &mut state);
+        assert_eq!(live.len(), 1);
+        assert!(matches!(live[0], TurnEvent::Thinking(ref s) if s == "deliberate reasoning"));
+
+        let end = ChatStreamEvent::End(StreamEnd {
+            captured_usage: None,
+            captured_content: None,
+            captured_reasoning_content: Some("deliberate reasoning".to_string()),
+        });
+        let (events, terminal) = translate_chat_stream_event(end, &mut emitter, &mut state);
+        assert!(terminal);
+        let thinking_replay: Vec<_> = events
+            .iter()
+            .filter(|e| matches!(e, TurnEvent::Thinking(_)))
+            .collect();
+        assert!(
+            thinking_replay.is_empty(),
+            "End must not replay reasoning when chunks already streamed it: {:?}",
+            events
+        );
+    }
+
+    #[test]
+    fn end_only_provider_still_emits_reasoning() {
+        // Provider that only delivers reasoning at End (no live chunks)
+        // must still surface it once.
+        let mut emitter = ToolCallEmitter::new(10);
+        let mut state = ReasoningEmissionState::new();
+
+        let end = ChatStreamEvent::End(StreamEnd {
+            captured_usage: None,
+            captured_content: None,
+            captured_reasoning_content: Some("after-the-fact reasoning".to_string()),
+        });
+        let (events, _) = translate_chat_stream_event(end, &mut emitter, &mut state);
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, TurnEvent::Thinking(s) if s == "after-the-fact reasoning")),
+            "End-only provider must still emit reasoning: {:?}",
+            events
+        );
+    }
+
+    #[test]
+    fn translate_text_chunk_yields_text_delta() {
+        let out = drive_translate(vec![ChatStreamEvent::Chunk(StreamChunk {
+            content: "hello".to_string(),
+        })]);
+        assert!(matches!(&out[..], [TurnEvent::TextDelta(s)] if s == "hello"));
+    }
+
+    #[test]
+    fn translate_empty_text_chunk_yields_nothing() {
+        let out = drive_translate(vec![ChatStreamEvent::Chunk(StreamChunk {
+            content: String::new(),
+        })]);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn translate_reasoning_chunk_yields_thinking() {
+        let out = drive_translate(vec![ChatStreamEvent::ReasoningChunk(StreamChunk {
+            content: "thinking".to_string(),
+        })]);
+        assert!(matches!(&out[..], [TurnEvent::Thinking(s)] if s == "thinking"));
+    }
+
+    #[test]
+    fn translate_tool_call_chunk_emits_live_tool_call() {
+        // Regression: previously ToolCallChunk was a no-op, and tool calls
+        // only fired at End. Now each chunk emits a TurnEvent::ToolCall
+        // immediately so the user sees a permission prompt as soon as the
+        // tool call's args finish streaming.
+        let out = drive_translate(vec![ChatStreamEvent::ToolCallChunk(ToolChunk {
+            tool_call: tc("call-1", "bash"),
+        })]);
+        assert!(
+            matches!(&out[..], [TurnEvent::ToolCall { id, name, .. }] if id == "call-1" && name == "bash"),
+            "ToolCallChunk must emit a live TurnEvent::ToolCall: got {:?}",
+            out
+        );
+    }
+
+    #[test]
+    fn translate_three_tool_call_chunks_emit_in_order() {
+        // Parallel tool batch: each chunk's permission prompt should fire
+        // as soon as that tool call streams in.
+        let out = drive_translate(vec![
+            ChatStreamEvent::ToolCallChunk(ToolChunk {
+                tool_call: tc("a", "bash"),
+            }),
+            ChatStreamEvent::ToolCallChunk(ToolChunk {
+                tool_call: tc("b", "read_file"),
+            }),
+            ChatStreamEvent::ToolCallChunk(ToolChunk {
+                tool_call: tc("c", "grep"),
+            }),
+        ]);
+        assert_eq!(out.len(), 3);
+        let ids: Vec<&str> = out
+            .iter()
+            .filter_map(|e| match e {
+                TurnEvent::ToolCall { id, .. } => Some(id.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ids, ["a", "b", "c"]);
+    }
+
+    #[test]
+    fn translate_chunk_then_end_no_double_emission() {
+        // Provider that streams ToolCallChunks AND replays them in End's
+        // captured_content (the genai default with capture_tool_calls=true).
+        // The emitter must dedupe so the same tool call only fires once.
+        let live_call = tc("call-1", "bash");
+        let end_replay = ContentPart::ToolCall(tc("call-1", "bash"));
+        let out = drive_translate(vec![
+            ChatStreamEvent::ToolCallChunk(ToolChunk {
+                tool_call: live_call,
+            }),
+            ChatStreamEvent::End(StreamEnd {
+                captured_usage: None,
+                captured_content: Some(MessageContent::from_parts(vec![end_replay])),
+                captured_reasoning_content: None,
+            }),
+        ]);
+        let tool_calls: Vec<_> = out
+            .iter()
+            .filter(|e| matches!(e, TurnEvent::ToolCall { .. }))
+            .collect();
+        assert_eq!(
+            tool_calls.len(),
+            1,
+            "live + replay must dedupe to one TurnEvent::ToolCall: {:?}",
+            out
+        );
+        // Done must still fire from End.
+        assert!(out.iter().any(|e| matches!(e, TurnEvent::Done { .. })));
+    }
+
+    #[test]
+    fn translate_end_only_provider_still_emits_tool_calls() {
+        // Provider that only delivers tool calls in End (older behavior).
+        let out = drive_translate(vec![ChatStreamEvent::End(StreamEnd {
+            captured_usage: None,
+            captured_content: Some(MessageContent::from_parts(vec![
+                ContentPart::ToolCall(tc("call-1", "bash")),
+                ContentPart::ToolCall(tc("call-2", "read_file")),
+            ])),
+            captured_reasoning_content: None,
+        })]);
+        let ids: Vec<&str> = out
+            .iter()
+            .filter_map(|e| match e {
+                TurnEvent::ToolCall { id, .. } => Some(id.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ids, ["call-1", "call-2"]);
+    }
+
+    #[test]
+    fn translate_end_yields_done_terminal() {
+        let mut emitter = ToolCallEmitter::new(10);
+        let mut reasoning = ReasoningEmissionState::new();
+        let (out, terminal) = translate_chat_stream_event(
+            ChatStreamEvent::End(StreamEnd {
+                captured_usage: None,
+                captured_content: None,
+                captured_reasoning_content: None,
+            }),
+            &mut emitter,
+            &mut reasoning,
+        );
+        assert!(terminal, "End must be terminal");
+        assert!(matches!(out.last(), Some(TurnEvent::Done { .. })));
+    }
+
+    #[test]
+    fn translate_pre_end_events_are_not_terminal() {
+        let mut emitter = ToolCallEmitter::new(10);
+        let mut reasoning = ReasoningEmissionState::new();
+        for ev in [
+            ChatStreamEvent::Start,
+            ChatStreamEvent::Chunk(StreamChunk {
+                content: "x".to_string(),
+            }),
+            ChatStreamEvent::ReasoningChunk(StreamChunk {
+                content: "y".to_string(),
+            }),
+            ChatStreamEvent::ToolCallChunk(ToolChunk {
+                tool_call: tc("zz", "bash"),
+            }),
+        ] {
+            let (_out, terminal) =
+                translate_chat_stream_event(ev, &mut emitter, &mut reasoning);
+            assert!(!terminal, "non-End events must not be terminal");
+        }
+    }
 
     /// Build a scripted `TurnEvent` stream for driving
     /// `wrap_stream_with_guards` in unit tests.
