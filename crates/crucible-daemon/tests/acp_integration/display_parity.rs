@@ -193,6 +193,36 @@ fn tool_call_notification_with_diff(
     })
 }
 
+/// Build a `tool_call_update` notification whose `content` array carries one
+/// `ToolCallContent::Diff` entry — exercises the late-diff path where the
+/// ACP agent (e.g. Claude Code) defers diffs until after the initial
+/// `tool_call` frame.
+fn tool_call_update_with_diff(
+    session_id: &str,
+    tool_call_id: &str,
+    diff_path: &str,
+    old_text: Option<&str>,
+    new_text: &str,
+) -> serde_json::Value {
+    json!({
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+            "sessionId": session_id,
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": tool_call_id,
+                "content": [{
+                    "type": "diff",
+                    "path": diff_path,
+                    "oldText": old_text,
+                    "newText": new_text,
+                }],
+            },
+        }
+    })
+}
+
 #[tokio::test]
 async fn tool_start_with_arguments_emits_chunk_with_args() {
     let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
@@ -455,6 +485,112 @@ async fn tool_start_forwards_diff_content_to_streaming_chunk() {
             assert_eq!(diffs.len(), 1, "should forward exactly one diff");
             let diff = &diffs[0];
             assert_eq!(diff.path, "/tmp/foo.rs");
+            assert_eq!(diff.old_content.as_deref(), Some("fn old() {}\n"));
+            assert_eq!(diff.new_content, "fn new() {}\n");
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[tokio::test]
+async fn tool_call_update_with_late_diffs_emits_diff_update_chunk() {
+    // Regression: when an ACP agent (e.g. Claude Code) sends an empty
+    // `tool_call` notification first and then attaches diffs via a later
+    // `tool_call_update` frame, the diffs must reach the TUI as a live
+    // chunk — they were previously being silently dropped because the
+    // post-stream replay in `acp_handle.rs` filters out tool ids that
+    // were already announced via `ToolStart`.
+    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
+
+    let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
+    let chunks_cb = Arc::clone(&chunks);
+
+    tokio::spawn(async move {
+        let mut request_line = String::new();
+        agent_reader.read_line(&mut request_line).await.unwrap();
+        let request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
+        let request_id = request["id"].as_u64().unwrap();
+
+        // 1. Initial tool_call frame: NO diffs yet (mimics Claude Code).
+        write_json_line(
+            &mut agent_writer,
+            tool_call_notification(
+                "ses-late-diff",
+                "tool-ld1",
+                "Edit",
+                Some(json!({
+                    "file_path": "/tmp/late.rs",
+                    "old_string": "old",
+                    "new_string": "new",
+                })),
+            ),
+        )
+        .await
+        .unwrap();
+
+        // 2. Later tool_call_update frame carries the diff content.
+        write_json_line(
+            &mut agent_writer,
+            tool_call_update_with_diff(
+                "ses-late-diff",
+                "tool-ld1",
+                "/tmp/late.rs",
+                Some("fn old() {}\n"),
+                "fn new() {}\n",
+            ),
+        )
+        .await
+        .unwrap();
+
+        write_json_line(&mut agent_writer, final_response(request_id))
+            .await
+            .unwrap();
+    });
+
+    let request = make_prompt_request("ses-late-diff", "edit late");
+    client
+        .send_prompt_with_callback(
+            request,
+            Box::new(move |chunk| {
+                chunks_cb.lock().unwrap().push(chunk);
+                true
+            }),
+        )
+        .await
+        .expect("streaming should complete");
+
+    let captured = chunks.lock().unwrap();
+
+    // The initial ToolStart should still be there, with empty diffs.
+    let tool_start = captured
+        .iter()
+        .find(|c| matches!(c, StreamingChunk::ToolStart { .. }))
+        .expect("should have ToolStart chunk");
+    match tool_start {
+        StreamingChunk::ToolStart { id, diffs, .. } => {
+            assert_eq!(id, "tool-ld1");
+            assert!(
+                diffs.is_empty(),
+                "initial ToolStart should have no diffs (agent deferred them)"
+            );
+        }
+        _ => unreachable!(),
+    }
+
+    // The late diffs must surface as a follow-up ToolDiffUpdate chunk.
+    let diff_update = captured
+        .iter()
+        .find(|c| matches!(c, StreamingChunk::ToolDiffUpdate { .. }))
+        .expect(
+            "should emit a ToolDiffUpdate chunk when a tool_call_update \
+             carries diffs for an already-announced tool",
+        );
+    match diff_update {
+        StreamingChunk::ToolDiffUpdate { call_id, diffs } => {
+            assert_eq!(call_id, "tool-ld1");
+            assert_eq!(diffs.len(), 1, "should carry exactly one diff");
+            let diff = &diffs[0];
+            assert_eq!(diff.path, "/tmp/late.rs");
             assert_eq!(diff.old_content.as_deref(), Some("fn old() {}\n"));
             assert_eq!(diff.new_content, "fn new() {}\n");
         }
@@ -819,6 +955,7 @@ async fn full_flow_text_tool_result_text_via_callback() {
             StreamingChunk::Thinking(_) => "thinking",
             StreamingChunk::ToolStart { .. } => "tool_start",
             StreamingChunk::ToolEnd { .. } => "tool_end",
+            StreamingChunk::ToolDiffUpdate { .. } => "tool_diff_update",
         })
         .collect();
 
@@ -855,6 +992,9 @@ fn streaming_chunk_variants_roundtrip_via_json() {
             StreamingChunk::ToolEnd { id, result, error } => {
                 json!({"kind": "tool_end", "id": id, "result": result, "error": error})
             }
+            StreamingChunk::ToolDiffUpdate { call_id, diffs } => {
+                json!({"kind": "tool_diff_update", "id": call_id, "diffs": diffs})
+            }
         };
 
         let kind = serialized["kind"].as_str().unwrap();
@@ -880,6 +1020,10 @@ fn streaming_chunk_variants_roundtrip_via_json() {
                 error: serialized
                     .get("error")
                     .and_then(|v| v.as_str().map(str::to_string)),
+            },
+            "tool_diff_update" => StreamingChunk::ToolDiffUpdate {
+                call_id: serialized["id"].as_str().unwrap().to_string(),
+                diffs: serde_json::from_value(serialized["diffs"].clone()).unwrap_or_default(),
             },
             _ => panic!("unknown kind"),
         }

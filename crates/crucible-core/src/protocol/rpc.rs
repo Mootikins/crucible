@@ -187,6 +187,26 @@ impl SessionEventMessage {
         Self::new(session_id, "tool_call", data)
     }
 
+    /// Late file-diff content for a tool call that was already announced
+    /// via a prior `tool_call` event. Produced when an ACP agent (e.g.
+    /// Claude Code) defers diff content until a follow-up
+    /// `ToolCallUpdate` frame. Subscribers should merge `diffs` into the
+    /// existing tool entry keyed by `call_id`.
+    pub fn tool_call_diff_update(
+        session_id: impl Into<String>,
+        call_id: impl Into<String>,
+        diffs: Vec<crate::types::acp::FileDiff>,
+    ) -> Self {
+        Self::new(
+            session_id,
+            "tool_call_diff_update",
+            serde_json::json!({
+                "call_id": call_id.into(),
+                "diffs": diffs,
+            }),
+        )
+    }
+
     pub fn tool_result(
         session_id: impl Into<String>,
         call_id: impl Into<String>,

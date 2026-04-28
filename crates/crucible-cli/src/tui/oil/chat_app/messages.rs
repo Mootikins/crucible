@@ -81,6 +81,15 @@ pub enum ChatAppMsg {
         /// computed them yet.
         diffs: Vec<FileDiff>,
     },
+    /// **Event** (daemon → TUI): Late file-diff content for an
+    /// already-announced tool call (e.g. ACP agents like Claude Code
+    /// that defer diffs until after the initial `tool_call` frame).
+    /// The TUI merges `diffs` into the existing `CachedToolCall` keyed
+    /// by `call_id`.
+    ToolCallDiffUpdate {
+        call_id: String,
+        diffs: Vec<FileDiff>,
+    },
     /// **Event** (daemon → TUI): Streaming delta of tool result output.
     ToolResultDelta {
         name: String,
@@ -248,6 +257,7 @@ impl ChatAppMsg {
             Self::TextDelta(_)
             | Self::ThinkingDelta(_)
             | Self::ToolCall { .. }
+            | Self::ToolCallDiffUpdate { .. }
             | Self::ToolResultDelta { .. }
             | Self::ToolResultComplete { .. }
             | Self::ToolResultError { .. }

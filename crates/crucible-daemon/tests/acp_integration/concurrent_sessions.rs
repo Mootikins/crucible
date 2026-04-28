@@ -109,6 +109,9 @@ fn serialize_chunk(chunk: &StreamingChunk) -> serde_json::Value {
         StreamingChunk::ToolEnd { id, result, error } => {
             json!({"kind": "tool_end", "id": id, "result": result, "error": error})
         }
+        StreamingChunk::ToolDiffUpdate { call_id, diffs } => {
+            json!({"kind": "tool_diff_update", "id": call_id, "diffs": diffs})
+        }
     }
 }
 

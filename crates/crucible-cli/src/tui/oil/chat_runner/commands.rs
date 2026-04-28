@@ -209,6 +209,8 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
                             target: "tui",
                             error = %err,
                             tool = ?data.get("tool"),
+                            call_id = ?data.get("call_id"),
+                            raw = %raw,
                             "tool_call event carried a malformed `diffs` field; \
                              ignoring and continuing with empty Vec",
                         );
@@ -226,6 +228,36 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
                 lua_primary_arg,
                 diffs,
             }]
+        }
+        "tool_call_diff_update" => {
+            let Some(call_id) = data
+                .get("call_id")
+                .and_then(|v| v.as_str())
+                .map(String::from)
+            else {
+                return Vec::new();
+            };
+            let diffs = match data.get("diffs") {
+                Some(raw) => match serde_json::from_value(raw.clone()) {
+                    Ok(parsed) => parsed,
+                    Err(err) => {
+                        tracing::warn!(
+                            target: "tui",
+                            error = %err,
+                            call_id = %call_id,
+                            raw = %raw,
+                            "tool_call_diff_update event carried a malformed `diffs` field; \
+                             ignoring",
+                        );
+                        return Vec::new();
+                    }
+                },
+                None => Vec::new(),
+            };
+            if diffs.is_empty() {
+                return Vec::new();
+            }
+            vec![ChatAppMsg::ToolCallDiffUpdate { call_id, diffs }]
         }
         "tool_result" => {
             let name = data

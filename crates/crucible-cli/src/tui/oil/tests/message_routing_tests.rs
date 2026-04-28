@@ -174,6 +174,67 @@ fn tool_call_creates_tool_group() {
 }
 
 #[test]
+fn tool_call_diff_update_merges_diffs_into_existing_tool() {
+    use crucible_core::types::acp::FileDiff;
+
+    // Simulates the ACP late-diff flow (Claude Code): the daemon
+    // first emits a ToolCall with empty diffs, then a follow-up
+    // ToolCallDiffUpdate carries the diff content.
+    let mut app = OilChatApp::init();
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "edit_file".into(),
+        args: r#"{"path": "src/late.rs"}"#.into(),
+        call_id: Some("late-1".into()),
+        description: None,
+        source: None,
+        lua_primary_arg: None,
+        diffs: Vec::new(),
+    });
+
+    let diffs = vec![FileDiff::from_contents(
+        "src/late.rs",
+        Some("fn old() {}\n".to_string()),
+        "fn new() {}\n",
+    )];
+    app.on_message(ChatAppMsg::ToolCallDiffUpdate {
+        call_id: "late-1".into(),
+        diffs: diffs.clone(),
+    });
+
+    let nodes = app.container_list.nodes();
+    if let crate::tui::oil::containers::ChatNode::ToolGroup { tools } = &nodes[0] {
+        assert_eq!(
+            tools[0].diffs, diffs,
+            "late ToolCallDiffUpdate must populate diffs on the matching tool"
+        );
+    } else {
+        panic!("expected ToolGroup node");
+    }
+}
+
+#[test]
+fn tool_call_diff_update_for_unknown_call_id_is_a_noop() {
+    use crucible_core::types::acp::FileDiff;
+
+    let mut app = OilChatApp::init();
+    let diffs = vec![FileDiff::from_contents(
+        "src/orphan.rs",
+        None,
+        "fn anything() {}\n",
+    )];
+    // No prior ToolCall — should silently skip without panicking.
+    app.on_message(ChatAppMsg::ToolCallDiffUpdate {
+        call_id: "ghost".into(),
+        diffs,
+    });
+    assert_eq!(
+        app.container_list.len(),
+        0,
+        "orphan diff update must not insert a node"
+    );
+}
+
+#[test]
 fn tool_result_error_sets_error_on_tool() {
     let mut app = OilChatApp::init();
     app.on_message(ChatAppMsg::ToolCall {

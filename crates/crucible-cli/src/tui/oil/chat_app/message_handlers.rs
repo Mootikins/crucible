@@ -77,6 +77,10 @@ impl OilChatApp {
                 };
                 self.container_list.add_tool_call(tool);
             }
+            ChatAppMsg::ToolCallDiffUpdate { call_id, diffs } => {
+                self.container_list
+                    .update_tool_by_call_id(&call_id, |t| t.set_diffs(diffs));
+            }
             ChatAppMsg::ToolResultDelta {
                 name,
                 delta,

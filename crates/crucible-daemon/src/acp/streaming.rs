@@ -43,6 +43,16 @@ pub enum StreamingChunk {
         result: Option<String>,
         error: Option<String>,
     },
+    /// Diffs that arrived in a `ToolCallUpdate` after the matching
+    /// `ToolStart` was already announced. ACP agents like Claude Code
+    /// send the initial `tool_call` notification with empty `content`
+    /// and only attach `ToolCallContent::Diff` entries via a follow-up
+    /// `tool_call_update` frame; this variant carries those late diffs
+    /// to the daemon outer loop so they reach the TUI.
+    ToolDiffUpdate {
+        call_id: String,
+        diffs: Vec<FileDiff>,
+    },
 }
 
 /// Callback type for receiving streaming chunks.

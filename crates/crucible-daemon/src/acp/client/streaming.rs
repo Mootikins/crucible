@@ -395,6 +395,27 @@ impl CrucibleAcpClient {
                         })
                         .collect();
 
+                    // Late-diff path: if the tool was already announced via
+                    // a prior `ToolStart` and this update brings new diff
+                    // content (e.g. Claude Code defers diffs), fire a live
+                    // `ToolDiffUpdate` chunk so the TUI can merge them into
+                    // the existing scrollback entry. Without this, the
+                    // diffs are recorded into `state.tool_calls` but the
+                    // post-stream replay in `acp_handle.rs` filters out
+                    // already-announced ids and silently drops them.
+                    if has_content_diffs && !diffs.is_empty() {
+                        let already_announced = state
+                            .tool_calls
+                            .iter()
+                            .any(|tc| tc.id.as_deref() == Some(tool_id.as_str()));
+                        if already_announced {
+                            callback(StreamingChunk::ToolDiffUpdate {
+                                call_id: tool_id.clone(),
+                                diffs: diffs.clone(),
+                            });
+                        }
+                    }
+
                     let mut info = ToolCallInfo::new(title).with_id(tool_id).with_diffs(diffs);
                     if let Some(args) = update.fields.raw_input.clone() {
                         info = info.with_arguments(args);

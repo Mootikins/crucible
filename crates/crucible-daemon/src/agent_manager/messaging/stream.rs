@@ -486,6 +486,28 @@ impl AgentManager {
                         );
                     }
                 }
+                TurnEvent::ToolCallDiffUpdate { id, diffs } => {
+                    // ACP late-diff path: the agent attached file-diff
+                    // content via a `tool_call_update` after the matching
+                    // `tool_call` was already announced. Pass through to
+                    // subscribers so the TUI can merge into the existing
+                    // tool entry. Does not advance tool depth or trigger
+                    // dispatch.
+                    if !emit_event(
+                        &stream_ctx.event_tx,
+                        SessionEventMessage::tool_call_diff_update(
+                            &stream_ctx.session_id,
+                            &id,
+                            diffs,
+                        ),
+                    ) {
+                        warn!(
+                            session_id = %stream_ctx.session_id,
+                            call_id = %id,
+                            "No subscribers for tool_call_diff_update event"
+                        );
+                    }
+                }
                 TurnEvent::ToolBatchEnd => {
                     // Adapter has finished emitting all tool calls for
                     // this batch and is about to wait for ToolResults.

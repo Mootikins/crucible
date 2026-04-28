@@ -359,6 +359,25 @@ impl ContainerList {
         tracing::debug!(name = %name, call_id = ?call_id, "tool update for unknown tool (already graduated or never received)");
     }
 
+    /// Update the most recent tool with the given call_id (without
+    /// requiring the tool name). Used for ACP `tool_call_diff_update`
+    /// events that key only on call_id.
+    pub fn update_tool_by_call_id(&mut self, call_id: &str, f: impl FnOnce(&mut CachedToolCall)) {
+        for node in self.nodes.iter_mut().rev() {
+            if let ChatNode::ToolGroup { tools } = node {
+                if let Some(tool) = tools
+                    .iter_mut()
+                    .rev()
+                    .find(|t| t.call_id.as_deref() == Some(call_id))
+                {
+                    f(tool);
+                    return;
+                }
+            }
+        }
+        tracing::debug!(call_id = %call_id, "tool update by call_id for unknown tool (already graduated or never received)");
+    }
+
     pub fn add_agent_task(&mut self, agent: CachedSubagent) {
         self.nodes.push(ChatNode::SubagentTask { agent });
     }

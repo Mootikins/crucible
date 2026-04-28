@@ -220,6 +220,7 @@ async fn test_acp_tool_roundtrip_read_file() {
             StreamingChunk::Thinking(_) => "thinking",
             StreamingChunk::ToolStart { .. } => "tool_start",
             StreamingChunk::ToolEnd { .. } => "tool_end",
+            StreamingChunk::ToolDiffUpdate { .. } => "tool_diff_update",
         })
         .collect();
 
@@ -395,6 +396,7 @@ async fn test_acp_tool_roundtrip_multiple_tools() {
             StreamingChunk::Thinking(_) => "thinking",
             StreamingChunk::ToolStart { .. } => "tool_start",
             StreamingChunk::ToolEnd { .. } => "tool_end",
+            StreamingChunk::ToolDiffUpdate { .. } => "tool_diff_update",
         })
         .collect();
 

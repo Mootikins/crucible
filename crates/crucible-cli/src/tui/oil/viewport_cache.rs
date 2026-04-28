@@ -138,6 +138,14 @@ impl CachedToolCall {
         self.complete = true;
     }
 
+    /// Replace the tool's file-diff snapshot. Used when ACP agents
+    /// (e.g. Claude Code) defer diff content until after the initial
+    /// tool_call frame and surface it via a follow-up
+    /// `tool_call_diff_update` event.
+    pub fn set_diffs(&mut self, diffs: Vec<FileDiff>) {
+        self.diffs = diffs;
+    }
+
     pub fn set_output_path(&mut self, path: PathBuf) {
         self.output_path = Some(path);
     }

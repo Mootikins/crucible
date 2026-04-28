@@ -72,6 +72,21 @@ pub enum TurnEvent {
         error: Option<String>,
     },
 
+    /// File-diff content that arrived after the corresponding `ToolCall`
+    /// was already emitted. ACP agents like Claude Code send the initial
+    /// `tool_call` notification with empty `content` and only attach
+    /// `ToolCallContent::Diff` entries via a follow-up `tool_call_update`
+    /// frame; this variant carries those late diffs to the runtime so it
+    /// can forward them to subscribers (the TUI merges them into the
+    /// existing scrollback entry by `id`).
+    ///
+    /// Outbound only (agent → runtime). Does not advance tool depth and
+    /// does not trigger tool dispatch.
+    ToolCallDiffUpdate {
+        id: String,
+        diffs: Vec<crate::types::acp::FileDiff>,
+    },
+
     /// Marker that all `ToolCall`s from the current chat completion
     /// have been emitted. The runtime uses this to tick tool-depth
     /// per batch rather than per individual call — models that emit
