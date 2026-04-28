@@ -1,5 +1,4 @@
 mod command_panel;
-mod diff_preview;
 pub(crate) mod diff_view;
 mod drawer;
 mod input_area;
@@ -20,8 +19,6 @@ mod turn_indicator;
 
 pub use command_panel::CommandPanel;
 pub use crucible_oil::components::DrawerKind;
-#[allow(unused_imports)] // WIP: render_diff_preview not yet used
-pub(crate) use diff_preview::render_diff_preview;
 pub use drawer::Drawer;
 pub use input_area::{InputArea, InputMode, INPUT_MAX_CONTENT_LINES};
 pub use input_component::InputComponent;
