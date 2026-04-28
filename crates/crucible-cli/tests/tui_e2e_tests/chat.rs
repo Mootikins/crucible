@@ -3,7 +3,8 @@
 
 use std::time::Duration;
 
-use super::tui_e2e_harness::{Key, TuiTestBuilder};
+use super::shared::{provider_test_config, require_binary};
+use super::tui_e2e_harness::{Key, TuiTestBuilder, TuiTestSession};
 
 // =============================================================================
 // Chat TUI Startup Tests
@@ -382,4 +383,83 @@ fn chat_rapid_input() {
 
     // Clean exit
     session.send_control('c').expect("Failed to send Ctrl+C");
+}
+
+// =============================================================================
+// HANG REGRESSION
+// =============================================================================
+
+/// Reproduces the user-reported hang: typing a prompt into `cru chat` and
+/// pressing Enter results in an indefinite spinner with no response stream.
+///
+/// Strategy: send a prompt that does NOT contain the expected response
+/// substring, then assert the response appears in the viewport. This avoids
+/// false positives from the user's own echoed input.
+///
+/// Failure mode we're hunting: TUI shows spinner, no text ever streams.
+#[test]
+#[ignore = "requires built binary and live LLM provider; run with --ignored"]
+fn chat_short_prompt_streams_response() {
+    require_binary!();
+
+    // Force the freshly-built debug binary — `target/release/cru` may be a
+    // stale snapshot from before the current refactor.
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let manifest_path = std::path::PathBuf::from(manifest_dir);
+    let workspace_root = manifest_path
+        .parent()
+        .and_then(|p| p.parent())
+        .expect("workspace root");
+    let debug_bin = workspace_root.join("target/debug/cru");
+    assert!(
+        debug_bin.exists(),
+        "debug binary missing at {:?}; run `cargo build -p crucible-cli` first",
+        debug_bin
+    );
+
+    let mut config = provider_test_config();
+    config.binary_path = Some(debug_bin);
+    config = config.with_timeout(Duration::from_secs(90));
+
+    let mut session = TuiTestSession::spawn(config).expect("spawn cru chat");
+
+    session
+        .wait_for_ready()
+        .expect("TUI never reached NORMAL ready state");
+
+    // The TUI echoes the user's prompt as a message bubble, so any token
+    // that appears in the prompt will trivially match on the screen. We send
+    // a question whose expected answer is NOT present in the prompt itself.
+    //
+    // NOTE: avoid `send_line` — expectrl sends `\n` on Linux, but the TUI
+    // (crossterm via PTY) expects `\r` for Enter. Send raw text + explicit
+    // Enter keystroke.
+    session
+        .send("What is the capital city of France? Reply with one word.")
+        .expect("send prompt text");
+    session.send_key(Key::Enter).expect("send Enter");
+
+    // "Paris" is not present in the prompt, so a hit means the model's
+    // response actually rendered. Match case-insensitively.
+    let result = session.wait_until(
+        |screen| {
+            let lower = screen.contents().to_lowercase();
+            lower.contains("paris")
+        },
+        Duration::from_secs(75),
+    );
+
+    if let Err(e) = result {
+        eprintln!("=== HANG REPRODUCED: assistant response never appeared ===");
+        eprintln!("{}", e);
+        eprintln!(
+            "=== Final screen contents ===\n{}",
+            session.screen_contents()
+        );
+        panic!("TUI hang: assistant never streamed the expected token");
+    }
+
+    let _ = session.send_control('c');
+    let _ = session.send_control('c');
+    session.settle();
 }

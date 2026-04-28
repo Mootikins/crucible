@@ -25,25 +25,16 @@ impl OilChatRunner {
     ) -> Action<ChatAppMsg> {
         match msg {
             ChatAppMsg::UserMessage(content) => {
-                if !is_replay && !app.is_streaming() && !app.precognition() {
+                // Daemon-side precognition handles enrichment; the TUI just
+                // forwards the raw user message. (Older code gated this on
+                // `!app.precognition()` and waited for an EnrichedMessage
+                // that no longer has a producer — every message was dropped.)
+                if !is_replay && !app.is_streaming() {
                     bridge.ring.push(SessionEvent::MessageReceived {
                         content: content.clone(),
                         participant_id: "user".to_string(),
                     });
                     if let Err(e) = agent.send_message_fire_and_forget(content.clone()).await {
-                        tracing::warn!(error = %e, "send_message_fire_and_forget failed");
-                    }
-                }
-            }
-            ChatAppMsg::EnrichedMessage {
-                original, enriched, ..
-            } => {
-                if !is_replay && !app.is_streaming() {
-                    bridge.ring.push(SessionEvent::MessageReceived {
-                        content: original.clone(),
-                        participant_id: "user".to_string(),
-                    });
-                    if let Err(e) = agent.send_message_fire_and_forget(enriched.clone()).await {
                         tracing::warn!(error = %e, "send_message_fire_and_forget failed");
                     }
                 }
@@ -494,7 +485,14 @@ impl OilChatRunner {
                         }
                     }
                     ChatAppMsg::UserMessage(ref content) => {
-                        if !self.is_replay && !params.app.is_streaming() {
+                        // Note: do NOT gate on `app.is_streaming()` here.
+                        // `handle_submit` calls `submit_user_message` (which
+                        // marks the turn active so the spinner appears)
+                        // BEFORE returning this action, so an is_streaming
+                        // check here always trips and silently drops the
+                        // send. Keypress entry is already gated against
+                        // streaming upstream in input_handling.
+                        if !self.is_replay {
                             params.bridge.ring.push(SessionEvent::MessageReceived {
                                 content: content.clone(),
                                 participant_id: "user".to_string(),

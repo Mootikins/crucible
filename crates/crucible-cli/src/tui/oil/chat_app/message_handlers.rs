@@ -242,16 +242,6 @@ impl OilChatApp {
                 self.precognition.last_notes_count = Some(notes_count);
                 self.precognition.last_notes = notes;
             }
-            ChatAppMsg::EnrichedMessage { original, enriched } => {
-                // The enriched message replaces the original for sending.
-                // The original was already displayed as a user message.
-                tracing::debug!(
-                    original_len = original.len(),
-                    enriched_len = enriched.len(),
-                    "enriched message ready"
-                );
-                // The chat_runner handles the actual send; nothing to update in state.
-            }
             ChatAppMsg::UndoComplete {
                 turns,
                 messages_removed,

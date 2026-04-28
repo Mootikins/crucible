@@ -186,8 +186,6 @@ pub enum ChatAppMsg {
         notes_count: usize,
         notes: Vec<PrecognitionNoteInfo>,
     },
-    /// **Dual-duty**: Internal enriched message ready to send (from background precognition).
-    EnrichedMessage { original: String, enriched: String },
     /// **Command** (TUI → daemon): Undo the last N agent turns.
     Undo(usize),
     /// **Event** (daemon → TUI): Undo completed, with count of turns reverted.
@@ -285,7 +283,6 @@ impl ChatAppMsg {
             | Self::OpenInteraction { .. }
             | Self::CloseInteraction { .. }
             | Self::PrecognitionResult { .. }
-            | Self::EnrichedMessage { .. }
             | Self::ExecuteSlashCommand(_)
             | Self::ExportSession(_)
             | Self::ReloadPlugin(_)
