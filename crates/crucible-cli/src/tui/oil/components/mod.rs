@@ -1,5 +1,6 @@
 mod command_panel;
 mod diff_preview;
+pub(crate) mod diff_view;
 mod drawer;
 mod input_area;
 mod input_component;
