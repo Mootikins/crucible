@@ -151,16 +151,15 @@ impl ChatNode {
 
         let mut items: Vec<Node> = Vec::new();
 
-        // Thinking renders when: text has started, container is complete, or graduated.
-        // While actively streaming with no text yet, the turn indicator shows
-        // "◐ Thinking… (N words)" — content stays empty to avoid duplication.
-        let thinking_finalized = !content.is_empty() || is_complete;
+        // Thinking renders inline as it streams. The component itself picks
+        // the right view (expanded when `show_thinking`, collapsed
+        // "Thinking… (N words)" otherwise) and handles the complete vs
+        // in-progress distinction via the `is_complete` flag below.
+        let thinking_complete = !content.is_empty() || is_complete;
         for tc in thinking {
-            if tc.is_graduated() || thinking_finalized {
-                let node = tc.render(&render_state, true);
-                if !matches!(node, Node::Empty) {
-                    items.push(node);
-                }
+            let node = tc.render(&render_state, thinking_complete);
+            if !matches!(node, Node::Empty) {
+                items.push(node);
             }
         }
 
@@ -215,9 +214,6 @@ pub struct ContainerList {
     nodes: Vec<ChatNode>,
     turn_active: bool,
     has_graduated: bool,
-    /// Thinking content that hasn't been attached to an AR yet.
-    /// Flushed into an AR when text, a tool call, or completion arrives.
-    pending_thinking: Option<ThinkingComponent>,
 }
 
 impl ContainerList {
@@ -226,7 +222,6 @@ impl ContainerList {
             nodes: Vec::new(),
             turn_active: false,
             has_graduated: false,
-            pending_thinking: None,
         }
     }
 
@@ -242,7 +237,6 @@ impl ContainerList {
         self.nodes.clear();
         self.has_graduated = false;
         self.turn_active = false;
-        self.pending_thinking = None;
     }
 
     pub fn nodes(&self) -> &[ChatNode] {
@@ -259,11 +253,6 @@ impl ContainerList {
         self.turn_active
     }
 
-    /// Word count of pending (unbuffered) thinking, if any.
-    pub fn pending_thinking_words(&self) -> Option<usize> {
-        self.pending_thinking.as_ref().map(|tc| tc.word_count())
-    }
-
     pub fn has_graduated(&self) -> bool {
         self.has_graduated
     }
@@ -274,26 +263,8 @@ impl ContainerList {
         self.nodes.push(ChatNode::UserMessage { text: content });
     }
 
-    /// Flush pending thinking into the trailing AR (creating one if needed).
-    fn flush_pending_thinking(&mut self) {
-        if let Some(tc) = self.pending_thinking.take() {
-            if !matches!(self.nodes.last(), Some(ChatNode::AssistantResponse { .. })) {
-                self.nodes.push(ChatNode::AssistantResponse {
-                    text: String::new(),
-                    thinking: Vec::new(),
-                    complete: false,
-                });
-            }
-            if let Some(ChatNode::AssistantResponse { thinking, .. }) = self.nodes.last_mut() {
-                thinking.push(tc);
-            }
-        }
-    }
-
     /// Ensure there's an AssistantResponse at the end. Creates one if needed.
-    /// Flushes any pending thinking first.
     pub fn start_assistant_response(&mut self) {
-        self.flush_pending_thinking();
         if !matches!(self.nodes.last(), Some(ChatNode::AssistantResponse { .. })) {
             self.nodes.push(ChatNode::AssistantResponse {
                 text: String::new(),
@@ -313,27 +284,23 @@ impl ContainerList {
 
     /// Append thinking content.
     ///
-    /// If a trailing AR exists, appends directly to it (thinking belongs
-    /// to the current response). Otherwise buffers in `pending_thinking`
-    /// so we don't create phantom AR nodes that graduate as empty batches.
+    /// Always lands inside an AssistantResponse (creating an empty one if
+    /// none exists yet) so the thinking renders inline as it streams. The
+    /// AR's empty `text` won't graduate on its own — graduation only fires
+    /// once the AR is complete or another node lands after it.
     pub fn append_thinking(&mut self, delta: &str) {
+        self.start_assistant_response();
         if let Some(ChatNode::AssistantResponse { thinking, .. }) = self.nodes.last_mut() {
             if thinking.is_empty() {
                 thinking.push(ThinkingComponent::new(String::new()));
             }
             thinking.last_mut().unwrap().append(delta);
-        } else {
-            self.pending_thinking
-                .get_or_insert_with(|| ThinkingComponent::new(String::new()))
-                .append(delta);
         }
     }
 
     /// Add a tool call. Groups into an existing trailing ToolGroup if present,
     /// otherwise creates a new one.
     pub fn add_tool_call(&mut self, tool: CachedToolCall) {
-        self.flush_pending_thinking();
-
         tracing::debug!(
             tool_name = %tool.name,
             node_count = self.nodes.len(),
@@ -413,7 +380,6 @@ impl ContainerList {
     /// Mark the turn as complete: sets turn_active = false and marks
     /// the trailing AssistantResponse as Complete.
     pub fn complete_response(&mut self) {
-        self.flush_pending_thinking();
         self.turn_active = false;
         if let Some(ChatNode::AssistantResponse { complete, .. }) = self.nodes.last_mut() {
             *complete = true;
@@ -422,7 +388,6 @@ impl ContainerList {
 
     /// Cancel streaming: marks all streaming nodes as complete.
     pub fn cancel_streaming(&mut self) {
-        self.flush_pending_thinking();
         self.turn_active = false;
         for node in &mut self.nodes {
             if let ChatNode::AssistantResponse { complete, .. } = node {
@@ -535,6 +500,75 @@ mod tests {
         let mut ctx = ViewContext::new(&focus);
         ctx.show_thinking = true;
         list.drain_completed(&ctx)
+    }
+
+    fn render_node(node: &ChatNode, show_thinking: bool) -> String {
+        let focus = FocusContext::default();
+        let mut ctx = ViewContext::new(&focus);
+        ctx.show_thinking = show_thinking;
+        let rendered = node.render(None, &ctx);
+        render_to_plain_text(&rendered, 80)
+    }
+
+    fn render_list(list: &ContainerList, show_thinking: bool) -> String {
+        list.nodes()
+            .iter()
+            .map(|n| render_node(n, show_thinking))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    // ─── Live thinking rendering ───────────────────────────────────────
+
+    #[test]
+    fn streaming_thinking_first_turn_renders_inline() {
+        // First-turn case: no prior AR yet, but thinking starts streaming.
+        // The user must see thinking content immediately, not wait for the
+        // first text delta to materialize an AR.
+        let mut list = ContainerList::new();
+        list.add_user_message("hi".into());
+        list.mark_turn_active();
+        list.append_thinking("Working it out");
+        let plain = render_list(&list, true);
+        assert!(
+            plain.contains("Working it out"),
+            "first-turn thinking must render live: {:?}",
+            plain
+        );
+    }
+
+    #[test]
+    fn streaming_thinking_renders_inline_during_streaming() {
+        // Regression: thinking should appear in the viewport as it streams,
+        // not stay invisible until text arrives or the turn ends.
+        let mut list = ContainerList::new();
+        list.add_user_message("hi".into());
+        list.mark_turn_active();
+        list.start_assistant_response();
+        list.append_thinking("Reasoning about the question");
+        let plain = render_list(&list, true);
+        assert!(
+            plain.contains("Reasoning about the question"),
+            "thinking content must render live: {:?}",
+            plain
+        );
+    }
+
+    #[test]
+    fn streaming_thinking_collapsed_shows_word_count_live() {
+        // With show_thinking=false, the live render should at least show a
+        // "Thinking… (N words)" placeholder so users see progress.
+        let mut list = ContainerList::new();
+        list.add_user_message("hi".into());
+        list.mark_turn_active();
+        list.start_assistant_response();
+        list.append_thinking("alpha beta gamma");
+        let plain = render_list(&list, false);
+        assert!(
+            plain.contains("3 words") || plain.contains("Thinking"),
+            "collapsed live thinking must indicate progress: {:?}",
+            plain
+        );
     }
 
     #[test]

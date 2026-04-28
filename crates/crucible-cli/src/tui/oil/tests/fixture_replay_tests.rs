@@ -267,7 +267,9 @@ fn styled_snapshot_tool_call() {
 
 #[test]
 fn styled_snapshot_thinking_collapsed() {
+    // show_thinking=off: graduated thinking collapses to "◇ Thought (N words)".
     let mut app = OilChatApp::init();
+    app.set_show_thinking(false);
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(crate::tui::oil::chat_app::ChatAppMsg::UserMessage(
@@ -284,6 +286,29 @@ fn styled_snapshot_thinking_collapsed() {
 
     let styled = vt.screen_contents_styled();
     insta::assert_snapshot!("styled_thinking_collapsed", styled);
+}
+
+#[test]
+fn styled_snapshot_thinking_expanded_after_graduation() {
+    // show_thinking=on: graduated thinking keeps the expanded content.
+    let mut app = OilChatApp::init();
+    app.set_show_thinking(true);
+    let mut vt = Vt100TestRuntime::new(80, 24);
+
+    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::UserMessage(
+        "Think about this".into(),
+    ));
+    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::ThinkingDelta(
+        "Deep analysis of the question at hand with multiple considerations".into(),
+    ));
+    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::TextDelta(
+        "Here is my conclusion.".into(),
+    ));
+    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::StreamComplete);
+    vt.render_frame(&mut app);
+
+    let styled = vt.screen_contents_styled();
+    insta::assert_snapshot!("styled_thinking_expanded_after_graduation", styled);
 }
 
 // ─── Reproduce formatting fixture ──────────────────────────────────────────

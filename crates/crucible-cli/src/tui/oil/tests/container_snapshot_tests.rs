@@ -34,7 +34,9 @@ fn snapshot_assistant_text() {
 
 #[test]
 fn snapshot_thinking_collapsed() {
+    // show_thinking=off: graduated thinking collapses to "◇ Thought (N words)".
     let mut app = OilChatApp::init();
+    app.set_show_thinking(false);
     app.on_message(ChatAppMsg::UserMessage("Think about this".into()));
     app.on_message(ChatAppMsg::ThinkingDelta(
         "Let me reason through this problem step by step to find the answer".into(),
@@ -42,12 +44,31 @@ fn snapshot_thinking_collapsed() {
     app.on_message(ChatAppMsg::TextDelta("Here is my conclusion.".into()));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    // After StreamComplete, thinking should graduate collapsed.
-    // Render through vt100 which triggers graduation.
     let mut vt = super::vt100_runtime::Vt100TestRuntime::new(80, 24);
     vt.render_frame(&mut app);
 
-    // The full history (scrollback + screen) should show collapsed thinking
+    let full = vt.full_history();
+    let stripped = crucible_oil::ansi::strip_ansi(&full);
+    insta::assert_snapshot!(stripped);
+}
+
+#[test]
+fn snapshot_thinking_expanded_after_graduation() {
+    // show_thinking=on: graduated thinking keeps the expanded reasoning
+    // visible — the user already saw it streaming and shouldn't lose it
+    // when the turn completes.
+    let mut app = OilChatApp::init();
+    app.set_show_thinking(true);
+    app.on_message(ChatAppMsg::UserMessage("Think about this".into()));
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "Let me reason through this problem step by step to find the answer".into(),
+    ));
+    app.on_message(ChatAppMsg::TextDelta("Here is my conclusion.".into()));
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    let mut vt = super::vt100_runtime::Vt100TestRuntime::new(80, 24);
+    vt.render_frame(&mut app);
+
     let full = vt.full_history();
     let stripped = crucible_oil::ansi::strip_ansi(&full);
     insta::assert_snapshot!(stripped);

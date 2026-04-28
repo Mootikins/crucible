@@ -56,16 +56,17 @@ impl ThinkingComponent {
 
     /// Render this thinking block.
     ///
-    /// - Graduated: always collapsed summary, no spinner
+    /// - Graduated + show_thinking: keep the expanded content (mirrors what
+    ///   the user saw while it streamed)
+    /// - Graduated + !show_thinking: collapsed "Thought (N words)" summary
     /// - Live + show_thinking: full expanded content
     /// - Live + !show_thinking: collapsed summary with spinner
     pub fn render(&self, state: &RenderState, is_complete: bool) -> Node {
-        if self.graduated {
-            self.render_collapsed_complete()
-        } else if state.show_thinking {
-            self.render_expanded(state, is_complete)
-        } else {
-            self.render_collapsed_live(state, is_complete)
+        match (self.graduated, state.show_thinking) {
+            (true, true) => self.render_expanded(state, true),
+            (true, false) => self.render_collapsed_complete(),
+            (false, true) => self.render_expanded(state, is_complete),
+            (false, false) => self.render_collapsed_live(state, is_complete),
         }
     }
 
@@ -209,7 +210,7 @@ mod tests {
     }
 
     #[test]
-    fn graduated_renders_collapsed() {
+    fn graduated_renders_collapsed_when_show_thinking_off() {
         let mut tc = ThinkingComponent::new("thinking about many things here".into());
         tc.graduate();
 
@@ -219,6 +220,26 @@ mod tests {
         assert!(plain.contains("Thought"));
         assert!(plain.contains("words)"));
         assert!(!plain.contains("Thinking"));
+    }
+
+    #[test]
+    fn graduated_keeps_expanded_content_when_show_thinking_on() {
+        // Regression: with thinking display on, the user already saw the
+        // expanded reasoning while it streamed. Graduating into scrollback
+        // must not hide it — they should still see the same content rather
+        // than a "Thought (N words)" stub.
+        let mut tc = ThinkingComponent::new("detailed graduated reasoning content".into());
+        tc.graduate();
+
+        let mut state = default_state();
+        state.show_thinking = true;
+        let node = tc.render(&state, false);
+        let plain = render_to_plain_text(&node, 80);
+        assert!(
+            plain.contains("detailed graduated reasoning content"),
+            "graduated thinking with show_thinking=on must keep content: {:?}",
+            plain
+        );
     }
 
     #[test]

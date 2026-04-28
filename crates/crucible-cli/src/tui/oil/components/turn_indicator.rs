@@ -1,22 +1,20 @@
-use crucible_oil::node::{row, spinner, styled, text, Node};
+use crucible_oil::node::{row, spinner, text, Node};
 use crucible_oil::style::Style;
 
 use crate::tui::oil::app::ViewContext;
 use crate::tui::oil::component::Component;
 
-/// Turn-level activity indicator. Shows spinner + optional thinking word count.
+/// Turn-level activity indicator. A bare spinner — the active reasoning
+/// content (and its word count) is rendered inline by the in-progress
+/// `AssistantResponse`, so duplicating it here would just confuse the eye.
 #[derive(Default)]
 pub struct TurnIndicator {
     pub active: bool,
-    pub thinking_words: Option<usize>,
 }
 
 impl TurnIndicator {
     pub fn new() -> Self {
-        Self {
-            active: false,
-            thinking_words: None,
-        }
+        Self { active: false }
     }
 }
 
@@ -27,21 +25,10 @@ impl Component for TurnIndicator {
         }
         let t = crate::tui::oil::theme::active();
         let spinner_style = Style::new().fg(t.resolve_color(t.colors.text));
-        let muted = Style::new()
-            .fg(t.resolve_color(t.colors.text_muted))
-            .italic();
-
-        match self.thinking_words {
-            Some(words) if words > 0 => row([
-                text(" "),
-                spinner(None, ctx.spinner_frame).with_style(spinner_style),
-                styled(format!(" Thinking\u{2026} ({words} words)"), muted),
-            ]),
-            _ => row([
-                text(" "),
-                spinner(None, ctx.spinner_frame).with_style(spinner_style),
-            ]),
-        }
+        row([
+            text(" "),
+            spinner(None, ctx.spinner_frame).with_style(spinner_style),
+        ])
     }
 }
 
@@ -68,10 +55,7 @@ mod tests {
 
     #[test]
     fn active_shows_spinner() {
-        let ti = TurnIndicator {
-            active: true,
-            thinking_words: None,
-        };
+        let ti = TurnIndicator { active: true };
         let ctx = test_ctx(0);
         let node = ti.view(&ctx);
         let plain = render_to_plain_text(&node, 80);
@@ -79,15 +63,14 @@ mod tests {
     }
 
     #[test]
-    fn active_with_thinking_words_shows_count() {
-        let ti = TurnIndicator {
-            active: true,
-            thinking_words: Some(42),
-        };
+    fn active_does_not_render_thinking_label() {
+        // Thinking content is rendered inline by the AssistantResponse; the
+        // turn indicator stays minimal (spinner only) to avoid duplication.
+        let ti = TurnIndicator { active: true };
         let ctx = test_ctx(3);
         let node = ti.view(&ctx);
         let plain = render_to_plain_text(&node, 80);
-        assert!(plain.contains("42 words"), "should show word count");
-        assert!(plain.contains("Thinking"), "should show thinking label");
+        assert!(!plain.contains("Thinking"));
+        assert!(!plain.contains("words"));
     }
 }

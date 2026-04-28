@@ -4,7 +4,6 @@ use crate::tui::oil::components::{
     CommandPanel, InteractionModal, NotificationArea, ShellModal, StatusComponent,
 };
 use crate::tui::oil::config::RuntimeConfig;
-use crate::tui::oil::containers::ChatNode;
 #[cfg(test)]
 use crate::tui::oil::event::InputAction;
 use crate::tui::oil::event::{Event, InputBuffer};
@@ -318,29 +317,9 @@ impl OilChatApp {
         use crate::tui::oil::components::TurnIndicator;
         use crate::tui::oil::components::{InputComponent, InputMode as ComponentInputMode};
 
-        // Turn indicator
+        // Turn indicator (bare spinner — thinking content renders inline)
         let mut indicator = TurnIndicator::new();
         indicator.active = self.container_list.is_streaming();
-        // Pending thinking (not yet in a node) takes priority for word count
-        if let Some(words) = self.container_list.pending_thinking_words() {
-            if words > 0 {
-                indicator.thinking_words = Some(words);
-            }
-        } else if let Some(ChatNode::AssistantResponse {
-            thinking,
-            text,
-            complete: false,
-            ..
-        }) = self.container_list.nodes().iter().rev().find(
-            |n| matches!(n, ChatNode::AssistantResponse { thinking, .. } if !thinking.is_empty()),
-        ) {
-            if text.is_empty() {
-                let total_words: usize = thinking.iter().map(|t| t.word_count()).sum();
-                if total_words > 0 {
-                    indicator.thinking_words = Some(total_words);
-                }
-            }
-        }
 
         // Input
         let input_mode = ComponentInputMode::from_content(self.input.content());
