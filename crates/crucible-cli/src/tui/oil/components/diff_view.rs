@@ -6,7 +6,6 @@
 //! tool call, deciding whether to render at all, etc).
 
 use crate::formatting::SyntaxHighlighter;
-use crate::tui::oil::diff::count_changes;
 use crate::tui::oil::theme;
 use crate::tui::oil::utils::{truncate_to_chars, visible_width};
 use crucible_core::types::acp::FileDiff;
@@ -16,6 +15,20 @@ use similar::{ChangeTag, TextDiff};
 use std::path::Path;
 
 pub const SIDE_BY_SIDE_MIN_WIDTH: usize = 120;
+
+fn count_changes(old: &str, new: &str) -> (usize, usize) {
+    let diff = TextDiff::from_lines(old, new);
+    let mut added = 0;
+    let mut removed = 0;
+    for change in diff.iter_all_changes() {
+        match change.tag() {
+            ChangeTag::Insert => added += 1,
+            ChangeTag::Delete => removed += 1,
+            ChangeTag::Equal => {}
+        }
+    }
+    (added, removed)
+}
 
 /// Suppress diff body when either side exceeds this byte budget. The full file
 /// content is still in the FileDiff, but materializing 1 MiB+ through

@@ -23,7 +23,6 @@ pub mod components;
 mod composer;
 pub mod config;
 pub mod containers;
-pub mod diff;
 mod event;
 pub mod local_replay;
 pub mod lua_bridge;
