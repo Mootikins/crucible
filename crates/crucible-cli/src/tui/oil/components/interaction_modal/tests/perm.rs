@@ -4,6 +4,8 @@ use crate::tui::oil::components::interaction_modal::{
 };
 use crossterm::event::KeyCode;
 use crucible_core::interaction::{InteractionRequest, PermRequest};
+use crucible_core::types::acp::FileDiff;
+use crucible_oil::render::render_to_string;
 use std::collections::HashSet;
 
 #[test]
@@ -180,6 +182,24 @@ fn test_perm_modal_esc_from_text_returns_to_selecting() {
 
     modal.update(InteractionModalMsg::Key(key_event(KeyCode::Esc)));
     assert_eq!(modal.mode, InteractionMode::Selecting);
+}
+
+#[test]
+fn snap_perm_popup_with_edit_diff() {
+    let req = PermRequest::tool("edit", serde_json::json!({"file_path": "src/foo.rs"}))
+        .with_diffs(vec![FileDiff::from_contents(
+            "src/foo.rs",
+            Some("fn old() {}\n".into()),
+            "fn new() {}\n",
+        )]);
+    let modal = InteractionModal::new(
+        "req-1".to_string(),
+        InteractionRequest::Permission(req),
+        true,
+    );
+    let node = modal.view(120, 0);
+    let out = render_to_string(&node, 120);
+    insta::assert_snapshot!(out);
 }
 
 #[test]
