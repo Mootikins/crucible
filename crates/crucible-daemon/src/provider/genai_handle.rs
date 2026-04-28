@@ -349,8 +349,10 @@ pub struct GenaiAgentHandle {
     validation_retries: u32,
     /// Working directory used to resolve relative `path` arguments when
     /// synthesizing diffs for file-mutating tool calls
-    /// (`edit_file`, `write_file`, etc.). Empty `PathBuf` falls back to
-    /// `synthesize_diffs` resolving paths verbatim.
+    /// (`edit_file`, `write_file`, etc.). Empty `PathBuf` causes
+    /// `synthesize_diffs` to resolve relative paths against the daemon's
+    /// current working directory (an empty base joins to the input path
+    /// unchanged, which the file-system then resolves against the CWD).
     workspace_root: std::path::PathBuf,
 }
 
@@ -445,7 +447,11 @@ impl GenaiAgentHandle {
     /// Construct a handle with an explicit workspace root used for
     /// resolving relative file paths in synthesized diffs. The
     /// daemon's `agent_factory` calls this with the session's
-    /// working directory; tests can pass any directory.
+    /// working directory; tests can pass any directory. An empty
+    /// `PathBuf` resolves relative paths against the daemon's CWD
+    /// (because joining an empty base with a relative path yields
+    /// the relative path unchanged, which the file-system then
+    /// resolves against the process CWD).
     pub fn with_workspace(
         client: genai::Client,
         model: ModelIden,
@@ -963,9 +969,10 @@ mod tests {
     }
 
     /// Build an emitter with no workspace root — synthesized diffs will
-    /// resolve relative paths verbatim, which is fine for tests that
-    /// don't exercise diff synthesis (the tool name is a non-edit tool
-    /// like "bash" or "read", so synthesis returns an empty Vec).
+    /// resolve relative paths against the daemon's current working
+    /// directory, which is fine for tests that don't exercise diff
+    /// synthesis (the tool name is a non-edit tool like "bash" or
+    /// "read", so synthesis returns an empty Vec).
     fn emitter(max_depth: usize) -> ToolCallEmitter {
         ToolCallEmitter::new(max_depth, std::path::PathBuf::new())
     }

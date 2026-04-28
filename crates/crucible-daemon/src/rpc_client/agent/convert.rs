@@ -153,6 +153,8 @@ pub(super) fn session_event_to_turn_events(event: &SessionEvent) -> Vec<TurnEven
                             target: "rpc_client",
                             error = %err,
                             tool = ?event.data.get("tool"),
+                            call_id = ?event.data.get("call_id"),
+                            raw = %raw,
                             "tool_call event carried a malformed `diffs` field; \
                              ignoring and continuing with empty Vec",
                         );
