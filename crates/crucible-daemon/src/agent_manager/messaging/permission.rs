@@ -84,6 +84,7 @@ impl AgentManager {
         is_interactive: bool,
         permission_override: Option<PermissionMode>,
         agent_permissions: Option<PermissionConfig>,
+        workspace_path: std::path::PathBuf,
     ) -> crate::acp::client::PermissionRequestHandler {
         let pending_permissions = self.pending_permissions.clone();
         let session_id_owned = session_id.to_string();
@@ -178,6 +179,7 @@ impl AgentManager {
         Arc::new(
             move |request: agent_client_protocol::RequestPermissionRequest| {
                 let gate = gate.clone();
+                let workspace_path = workspace_path.clone();
 
                 Box::pin(async move {
                     use agent_client_protocol::{
@@ -198,7 +200,13 @@ impl AgentManager {
                         .clone()
                         .unwrap_or(serde_json::Value::Null);
 
-                    let permission = PermRequest::tool(tool_name, args);
+                    let diffs = crate::tools::diff_synth::synthesize_diffs(
+                        &tool_name,
+                        &args,
+                        &workspace_path,
+                    );
+                    let permission =
+                        PermRequest::tool(tool_name, args).with_diffs(diffs);
                     let response = gate.request_permission(permission).await;
 
                     let desired_kind = if response.allowed {
@@ -439,7 +447,13 @@ impl AgentManager {
                 false
             }
             PermissionHookResult::Prompt => {
-                let perm_request = PermRequest::tool(&tool_call.name, args.clone());
+                let diffs = crate::tools::diff_synth::synthesize_diffs(
+                    &tool_call.name,
+                    args,
+                    &stream_ctx.workspace_path,
+                );
+                let perm_request =
+                    PermRequest::tool(&tool_call.name, args.clone()).with_diffs(diffs);
                 let interaction_request = InteractionRequest::Permission(perm_request.clone());
                 let permission_id = format!("perm-{}", uuid::Uuid::new_v4());
                 let (response_tx, response_rx) = oneshot::channel();

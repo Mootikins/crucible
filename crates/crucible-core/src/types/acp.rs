@@ -330,7 +330,7 @@ impl ToolCallInfo {
 /// let diff = FileDiff::new("/path/to/file.rs", "fn new() {}")
 ///     .with_old_content("fn old() {}");
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileDiff {
     /// Path to the modified file
     pub path: String,

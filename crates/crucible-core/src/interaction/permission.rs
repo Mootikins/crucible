@@ -6,6 +6,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
+use crate::types::acp::FileDiff;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Permission Request/Response
 // ─────────────────────────────────────────────────────────────────────────────
@@ -63,6 +65,15 @@ pub enum PermAction {
 pub struct PermRequest {
     /// The action requiring permission.
     pub action: PermAction,
+
+    /// File diffs for this permission. Empty for non-file actions or when
+    /// the diff couldn't be synthesized at the daemon (e.g. file too large
+    /// or `old_string` not found in disk content).
+    ///
+    /// `#[serde(default)]` keeps older clients/servers wire-compatible:
+    /// requests without this field deserialize as `vec![]`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diffs: Vec<FileDiff>,
 }
 
 impl PermRequest {
@@ -76,6 +87,7 @@ impl PermRequest {
             action: PermAction::Bash {
                 tokens: tokens.into_iter().map(Into::into).collect(),
             },
+            diffs: Vec::new(),
         }
     }
 
@@ -89,6 +101,7 @@ impl PermRequest {
             action: PermAction::Read {
                 segments: segments.into_iter().map(Into::into).collect(),
             },
+            diffs: Vec::new(),
         }
     }
 
@@ -102,6 +115,7 @@ impl PermRequest {
             action: PermAction::Write {
                 segments: segments.into_iter().map(Into::into).collect(),
             },
+            diffs: Vec::new(),
         }
     }
 
@@ -112,7 +126,15 @@ impl PermRequest {
                 name: name.into(),
                 args,
             },
+            diffs: Vec::new(),
         }
+    }
+
+    /// Builder: attach a set of file diffs to this permission.
+    #[must_use]
+    pub fn with_diffs(mut self, diffs: Vec<FileDiff>) -> Self {
+        self.diffs = diffs;
+        self
     }
 
     pub fn tokens(&self) -> &[String] {
