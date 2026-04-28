@@ -145,11 +145,22 @@ pub(super) fn session_event_to_turn_events(event: &SessionEvent) -> Vec<TurnEven
                 .get("args")
                 .cloned()
                 .unwrap_or(serde_json::Value::Null);
-            let diffs = event
-                .data
-                .get("diffs")
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-                .unwrap_or_default();
+            let diffs = match event.data.get("diffs") {
+                Some(raw) => match serde_json::from_value(raw.clone()) {
+                    Ok(parsed) => parsed,
+                    Err(err) => {
+                        tracing::warn!(
+                            target: "rpc_client",
+                            error = %err,
+                            tool = ?event.data.get("tool"),
+                            "tool_call event carried a malformed `diffs` field; \
+                             ignoring and continuing with empty Vec",
+                        );
+                        Vec::new()
+                    }
+                },
+                None => Vec::new(),
+            };
             vec![TurnEvent::ToolCall {
                 id,
                 name: tool.to_string(),
@@ -325,6 +336,51 @@ mod tests {
     fn tool_call_without_tool_name_is_dropped() {
         let out = session_event_to_turn_events(&event("tool_call", json!({ "call_id": "tc-1" })));
         assert!(out.is_empty());
+    }
+
+    #[test]
+    fn tool_call_with_malformed_diffs_falls_back_to_empty_vec() {
+        // Wire-protocol drift safety: if the daemon ever sends a `diffs`
+        // field that isn't a Vec<FileDiff> (older clients, schema bugs,
+        // hand-edited replay logs), we must not panic — just log and emit
+        // an empty Vec so the rest of the TurnEvent stays usable.
+        let out = session_event_to_turn_events(&event(
+            "tool_call",
+            json!({
+                "call_id": "tc-1",
+                "tool": "edit_file",
+                "args": {},
+                "diffs": "this is not a list"
+            }),
+        ));
+        match out.as_slice() {
+            [TurnEvent::ToolCall { diffs, .. }] => assert!(diffs.is_empty()),
+            other => panic!("expected single ToolCall, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tool_call_with_well_formed_diffs_passes_through() {
+        let out = session_event_to_turn_events(&event(
+            "tool_call",
+            json!({
+                "call_id": "tc-1",
+                "tool": "edit_file",
+                "args": {},
+                "diffs": [{
+                    "path": "/tmp/foo.rs",
+                    "old_content": "fn old() {}",
+                    "new_content": "fn new() {}"
+                }]
+            }),
+        ));
+        match out.as_slice() {
+            [TurnEvent::ToolCall { diffs, .. }] => {
+                assert_eq!(diffs.len(), 1);
+                assert_eq!(diffs[0].path, "/tmp/foo.rs");
+            }
+            other => panic!("expected single ToolCall, got {other:?}"),
+        }
     }
 
     #[test]

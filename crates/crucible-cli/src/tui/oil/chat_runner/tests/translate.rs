@@ -147,6 +147,48 @@ fn translate_bad_payload_shape_returns_empty() {
 }
 
 #[test]
+fn translate_tool_call_with_malformed_diffs_yields_empty_diffs() {
+    use serde_json::json;
+    // Wire-protocol drift safety: if the daemon sends a `diffs` field that
+    // isn't a Vec<FileDiff>, the translator must log a warning and emit
+    // an empty Vec rather than panic or drop the entire ToolCall message.
+    let data = json!({
+        "call_id": "tc-1",
+        "tool": "edit_file",
+        "args": {},
+        "diffs": "this is not a list",
+    });
+    let msgs = session_event_to_chat_msgs("tool_call", &data);
+    match msgs.as_slice() {
+        [ChatAppMsg::ToolCall { diffs, .. }] => assert!(diffs.is_empty()),
+        other => panic!("expected single ToolCall, got {other:?}"),
+    }
+}
+
+#[test]
+fn translate_tool_call_with_well_formed_diffs_passes_through() {
+    use serde_json::json;
+    let data = json!({
+        "call_id": "tc-1",
+        "tool": "edit_file",
+        "args": {},
+        "diffs": [{
+            "path": "/tmp/foo.rs",
+            "old_content": "old",
+            "new_content": "new"
+        }],
+    });
+    let msgs = session_event_to_chat_msgs("tool_call", &data);
+    match msgs.as_slice() {
+        [ChatAppMsg::ToolCall { diffs, .. }] => {
+            assert_eq!(diffs.len(), 1);
+            assert_eq!(diffs[0].path, "/tmp/foo.rs");
+        }
+        other => panic!("expected single ToolCall, got {other:?}"),
+    }
+}
+
+#[test]
 fn translate_unknown_event_returns_empty() {
     use serde_json::json;
     let msgs = session_event_to_chat_msgs("never_heard_of_it", &json!({}));

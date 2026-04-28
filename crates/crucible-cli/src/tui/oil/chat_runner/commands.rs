@@ -201,10 +201,22 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
                 .get("lua_primary_arg")
                 .and_then(|v| v.as_str())
                 .map(String::from);
-            let diffs = data
-                .get("diffs")
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-                .unwrap_or_default();
+            let diffs = match data.get("diffs") {
+                Some(raw) => match serde_json::from_value(raw.clone()) {
+                    Ok(parsed) => parsed,
+                    Err(err) => {
+                        tracing::warn!(
+                            target: "tui",
+                            error = %err,
+                            tool = ?data.get("tool"),
+                            "tool_call event carried a malformed `diffs` field; \
+                             ignoring and continuing with empty Vec",
+                        );
+                        Vec::new()
+                    }
+                },
+                None => Vec::new(),
+            };
             vec![ChatAppMsg::ToolCall {
                 name,
                 args,
