@@ -55,13 +55,16 @@ pub enum ToolSourceDisplay {
 }
 
 impl ToolSourceDisplay {
-    /// Returns the display label for this source.
-    pub fn label(&self) -> String {
+    /// Badge label for non-internal sources.
+    ///
+    /// Core/Crucible tools are part of the runtime — provenance is implicit,
+    /// so they render no badge. MCP and plugin tools surface their origin so
+    /// the user can tell where a tool came from.
+    pub fn badge_label(&self) -> Option<String> {
         match self {
-            Self::Core => "core".to_string(),
-            Self::Crucible => "crucible".to_string(),
-            Self::Mcp { server } => format!("mcp:{server}"),
-            Self::Plugin { name } => format!("plugin:{name}"),
+            Self::Core | Self::Crucible => None,
+            Self::Mcp { server } => Some(format!("mcp:{server}")),
+            Self::Plugin { name } => Some(format!("plugin:{name}")),
         }
     }
 }
@@ -348,22 +351,26 @@ mod tests {
     }
 
     #[test]
-    fn tool_source_display_label() {
-        assert_eq!(ToolSourceDisplay::Core.label(), "core");
-        assert_eq!(ToolSourceDisplay::Crucible.label(), "crucible");
+    fn tool_source_badge_label_internal_returns_none() {
+        assert_eq!(ToolSourceDisplay::Core.badge_label(), None);
+        assert_eq!(ToolSourceDisplay::Crucible.badge_label(), None);
+    }
+
+    #[test]
+    fn tool_source_badge_label_external_returns_label() {
         assert_eq!(
             ToolSourceDisplay::Mcp {
                 server: Arc::from("gmail")
             }
-            .label(),
-            "mcp:gmail"
+            .badge_label(),
+            Some("mcp:gmail".to_string())
         );
         assert_eq!(
             ToolSourceDisplay::Plugin {
                 name: Arc::from("my_plugin")
             }
-            .label(),
-            "plugin:my_plugin"
+            .badge_label(),
+            Some("plugin:my_plugin".to_string())
         );
     }
 }

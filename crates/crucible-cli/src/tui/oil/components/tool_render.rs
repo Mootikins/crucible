@@ -70,14 +70,24 @@ impl CachedToolCall {
         )
     }
 
+    /// Raw badge text (with leading space and brackets) for width math.
+    /// Empty string when no badge should be shown.
+    fn source_badge_text(&self) -> String {
+        self.source
+            .as_ref()
+            .and_then(|s| s.badge_label())
+            .map(|label| format!(" [{}]", label))
+            .unwrap_or_default()
+    }
+
     fn render_source_badge(&self) -> Node {
-        let source = match self.source {
-            Some(ref s) => s,
-            None => return Node::Empty,
-        };
+        let text = self.source_badge_text();
+        if text.is_empty() {
+            return Node::Empty;
+        }
         let t = crate::tui::oil::theme::active();
         styled(
-            format!(" [{}]", source.label()),
+            text,
             Style::new().fg(t.resolve_color(t.colors.text_muted)).dim(),
         )
     }
@@ -91,11 +101,18 @@ impl CachedToolCall {
     ) -> Node {
         let t = crate::tui::oil::theme::active();
         let icon = format!(" {} ", t.decorations.tool_error_icon);
+        let badge_text = self.source_badge_text();
         let source_badge = self.render_source_badge();
-        let arg_part = if primary_arg.is_empty() {
+        // Budget for primary_arg: terminal width minus icon, name, badge, and
+        // the surrounding spaces in `arg_part` (` {} `, =2 cols).
+        let arg_budget = width.saturating_sub(
+            visible_width(&icon) + visible_width(display_name) + visible_width(&badge_text) + 2,
+        );
+        let fitted_arg = fit_arg_to_width(primary_arg, arg_budget);
+        let arg_part = if fitted_arg.is_empty() {
             " ".to_string()
         } else {
-            format!(" {} ", primary_arg)
+            format!(" {} ", fitted_arg)
         };
         let prefix_width =
             visible_width(&icon) + visible_width(display_name) + visible_width(&arg_part);
@@ -166,8 +183,25 @@ impl CachedToolCall {
             Node::Empty
         };
 
+        let badge_text = self.source_badge_text();
         let source_badge = self.render_source_badge();
-        let arg_node = if primary_arg.is_empty() {
+        let icon_str = format!(" {} ", t.decorations.tool_success_icon);
+        let arrow_suffix_text = collapsed
+            .as_ref()
+            .map(|s| format!("→ {}", s))
+            .unwrap_or_default();
+        // Budget for primary_arg: total width minus icon, display name, badge,
+        // arrow suffix, and the surrounding spaces in arg_node (1 or 2 cols).
+        let arg_spacing = if has_arrow_suffix { 2 } else { 1 };
+        let arg_budget = width.saturating_sub(
+            visible_width(&icon_str)
+                + visible_width(display_name)
+                + visible_width(&badge_text)
+                + visible_width(&arrow_suffix_text)
+                + arg_spacing,
+        );
+        let fitted_arg = fit_arg_to_width(primary_arg, arg_budget);
+        let arg_node = if fitted_arg.is_empty() {
             if has_arrow_suffix {
                 styled(" ", Style::new())
             } else {
@@ -175,18 +209,18 @@ impl CachedToolCall {
             }
         } else if has_arrow_suffix {
             styled(
-                format!(" {} ", primary_arg),
+                format!(" {} ", fitted_arg),
                 Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
             )
         } else {
             styled(
-                format!(" {}", primary_arg),
+                format!(" {}", fitted_arg),
                 Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
             )
         };
         let header = row([
             styled(
-                format!(" {} ", t.decorations.tool_success_icon),
+                icon_str,
                 Style::new().fg(t.resolve_color(t.colors.success)),
             ),
             styled(
@@ -230,12 +264,26 @@ impl CachedToolCall {
             "\u{25CF}",
             Style::new().fg(t.resolve_color(t.colors.text_dim)),
         );
+        let badge_text = self.source_badge_text();
         let source_badge = self.render_source_badge();
-        let arg_node = if primary_arg.is_empty() {
+        let elapsed_text = if show_elapsed {
+            format!("  {}", format_elapsed(elapsed))
+        } else {
+            String::new()
+        };
+        // Header layout: " ● " (3 cols) + display_name + badge + " " + arg + elapsed
+        let arg_budget = width.saturating_sub(
+            3 + visible_width(display_name)
+                + visible_width(&badge_text)
+                + 1
+                + visible_width(&elapsed_text),
+        );
+        let fitted_arg = fit_arg_to_width(primary_arg, arg_budget);
+        let arg_node = if fitted_arg.is_empty() {
             Node::Empty
         } else {
             styled(
-                format!(" {}", primary_arg),
+                format!(" {}", fitted_arg),
                 Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
             )
         };
@@ -364,6 +412,9 @@ const PRIMARY_ARG_KEYS: &[&str] = &[
     "prompt",
 ];
 
+/// Extracts the primary argument from a JSON arg blob and normalizes it to a
+/// single line. Does NOT truncate — callers fit it to available width via
+/// [`fit_arg_to_width`].
 pub fn format_primary_arg(args: &str) -> String {
     if args.is_empty() || args == "{}" {
         return String::new();
@@ -382,19 +433,31 @@ pub fn format_primary_arg(args: &str) -> String {
         .find_map(|key| obj.get(*key))
         .or_else(|| obj.values().next());
 
-    let Some(value) = value else {
-        return String::new();
+    let value = match value {
+        Some(v) => v,
+        None => return String::new(),
     };
 
-    let text = match value {
+    match value {
         serde_json::Value::String(s) => s.replace('\n', " ").replace('\r', ""),
         other => other.to_string(),
-    };
+    }
+}
 
-    if text.chars().count() > 40 {
-        format!("{}…", truncate_to_chars(&text, 39, false))
+/// Minimum visible columns the primary arg gets, even on tight terminals.
+const MIN_ARG_WIDTH: usize = 10;
+
+/// Truncates `arg` to fit within `available` visible columns, appending "…"
+/// when truncated. Falls back to [`MIN_ARG_WIDTH`] if `available` is smaller.
+fn fit_arg_to_width(arg: &str, available: usize) -> String {
+    if arg.is_empty() {
+        return String::new();
+    }
+    let cap = available.max(MIN_ARG_WIDTH);
+    if visible_width(arg) <= cap {
+        arg.to_string()
     } else {
-        text
+        format!("{}…", truncate_to_width(arg, cap.saturating_sub(1), false))
     }
 }
 
@@ -994,12 +1057,41 @@ mod tests {
     }
 
     #[test]
-    fn format_primary_arg_truncates_long_value() {
+    fn format_primary_arg_returns_full_value_no_truncation() {
+        // Truncation is the renderer's job (width-aware); format_primary_arg
+        // just normalizes to a single line.
         let long_path = "a".repeat(60);
         let args = format!(r#"{{"path": "{}"}}"#, long_path);
         let result = format_primary_arg(&args);
-        assert!(result.contains("…"), "Should truncate: {}", result);
-        assert!(result.chars().count() <= 41);
+        assert_eq!(result, long_path);
+        assert!(!result.contains("…"));
+    }
+
+    #[test]
+    fn fit_arg_to_width_passes_through_when_short() {
+        assert_eq!(fit_arg_to_width("hello", 80), "hello");
+    }
+
+    #[test]
+    fn fit_arg_to_width_truncates_with_ellipsis() {
+        let long = "abcdefghijklmnopqrstuvwxyz";
+        let result = fit_arg_to_width(long, 15);
+        assert!(result.ends_with('…'), "should end with ellipsis: {result:?}");
+        assert!(crucible_oil::ansi::visible_width(&result) <= 15);
+    }
+
+    #[test]
+    fn fit_arg_to_width_respects_minimum() {
+        // Even with available=0, we never produce zero-width output for a
+        // non-empty arg — fall back to MIN_ARG_WIDTH.
+        let result = fit_arg_to_width("a long string here", 0);
+        assert!(crucible_oil::ansi::visible_width(&result) <= MIN_ARG_WIDTH);
+        assert!(crucible_oil::ansi::visible_width(&result) > 0);
+    }
+
+    #[test]
+    fn fit_arg_to_width_empty() {
+        assert_eq!(fit_arg_to_width("", 80), "");
     }
 
     #[test]
@@ -1064,6 +1156,107 @@ mod tests {
         assert!(
             !plain.contains("()"),
             "Should NOT have empty parens: {:?}",
+            plain
+        );
+    }
+
+    #[test]
+    fn bash_command_uses_full_terminal_width() {
+        // Long command that fits in 120 cols but not in the old hardcoded 40-char cap.
+        let cmd = "cd /home/moot/crucible && git log --oneline -n 20 | head -50";
+        let args = format!(r#"{{"command": "{}"}}"#, cmd);
+        let tool = test_tool("bash", &args, false);
+        let node = tool.render_compact(120);
+        let plain = render_to_plain_text(&node, 120);
+        assert!(
+            plain.contains("git log --oneline -n 20"),
+            "wide terminal should show full command, not 40-char truncation: {:?}",
+            plain
+        );
+    }
+
+    #[test]
+    fn bash_command_truncation_respects_width_not_hardcoded() {
+        // Long command at width=80: must truncate to fit, but show MORE than the
+        // old hardcoded 40 chars.
+        let cmd = "x".repeat(200);
+        let args = format!(r#"{{"command": "{}"}}"#, cmd);
+        let tool = test_tool("bash", &args, false);
+        let node = tool.render_compact(80);
+        let plain = render_to_plain_text(&node, 80);
+
+        for line in plain.lines() {
+            let w = crucible_oil::ansi::visible_width(line);
+            assert!(w <= 80, "line wider than terminal width: {} - {:?}", w, line);
+        }
+
+        let header_line = plain
+            .lines()
+            .find(|l| l.contains("Bash"))
+            .expect("header line");
+        let visible = crucible_oil::ansi::visible_width(header_line);
+        assert!(
+            visible > 50,
+            "at width=80 the header should fill more than 50 chars (old cap was 40): {} - {:?}",
+            visible,
+            header_line
+        );
+    }
+
+    #[test]
+    fn core_source_renders_no_badge() {
+        let mut tool = test_tool_with_output("bash", r#"{"command": "ls"}"#, "ok", true);
+        tool.source = Some(crate::tui::oil::viewport_cache::ToolSourceDisplay::Core);
+        let node = tool.render_compact(80);
+        let plain = render_to_plain_text(&node, 80);
+        assert!(
+            !plain.contains("[core]"),
+            "Core tools must not show a [core] badge: {:?}",
+            plain
+        );
+    }
+
+    #[test]
+    fn crucible_source_renders_no_badge() {
+        let mut tool = test_tool_with_output("bash", r#"{"command": "ls"}"#, "ok", true);
+        tool.source = Some(crate::tui::oil::viewport_cache::ToolSourceDisplay::Crucible);
+        let node = tool.render_compact(80);
+        let plain = render_to_plain_text(&node, 80);
+        assert!(
+            !plain.contains("[crucible]"),
+            "Crucible tools must not show a [crucible] badge: {:?}",
+            plain
+        );
+    }
+
+    #[test]
+    fn mcp_source_renders_badge() {
+        use std::sync::Arc;
+        let mut tool = test_tool_with_output("send_email", r#"{}"#, "ok", true);
+        tool.source = Some(crate::tui::oil::viewport_cache::ToolSourceDisplay::Mcp {
+            server: Arc::from("gmail"),
+        });
+        let node = tool.render_compact(80);
+        let plain = render_to_plain_text(&node, 80);
+        assert!(
+            plain.contains("[mcp:gmail]"),
+            "MCP tools must show a [mcp:server] badge: {:?}",
+            plain
+        );
+    }
+
+    #[test]
+    fn plugin_source_renders_badge() {
+        use std::sync::Arc;
+        let mut tool = test_tool_with_output("oci_run", r#"{}"#, "ok", true);
+        tool.source = Some(crate::tui::oil::viewport_cache::ToolSourceDisplay::Plugin {
+            name: Arc::from("oci"),
+        });
+        let node = tool.render_compact(80);
+        let plain = render_to_plain_text(&node, 80);
+        assert!(
+            plain.contains("[plugin:oci]"),
+            "Plugin tools must show a [plugin:name] badge: {:?}",
             plain
         );
     }
