@@ -1,6 +1,47 @@
 use super::super::*;
 use crucible_core::config::components::permissions::{PermissionConfig, PermissionMode};
 use crucible_core::events::InternalSessionEvent;
+use std::future::Future;
+
+/// Serializer that ensures only one permission prompt is in-flight at a time
+/// per ACP session.
+///
+/// **Why:** ACP clients (Claude Code, etc.) invoke our permission handler
+/// concurrently for parallel tool batches. Without serialization, all N
+/// `interaction_requested` events emit at once and pile up in the TUI's
+/// queue — the user perceives them as "batched" instead of as "each
+/// permission prompt arriving as the corresponding tool finishes".
+///
+/// Holding the lock across the entire prompt+await window means that
+/// caller N+1 waits for caller N's response before its own
+/// `interaction_requested` event is emitted, so the TUI sees prompts
+/// one-at-a-time even though the ACP client called us in parallel.
+///
+/// **UX consequence:** if the user walks away from a prompt and it hits
+/// the 300 s timeout, queued callers stay blocked for the full timeout
+/// before they get a chance to fire. That's the deliberate tradeoff —
+/// silent batching was worse — but worth knowing if you're debugging
+/// "why did my second prompt take 5 minutes to appear?".
+#[derive(Clone, Default)]
+pub(super) struct PermissionSerializer {
+    inner: Arc<tokio::sync::Mutex<()>>,
+}
+
+impl PermissionSerializer {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Run `fut` while holding the serializer lock. Subsequent calls on the
+    /// same serializer queue behind this one.
+    pub async fn run<F, R>(&self, fut: F) -> R
+    where
+        F: Future<Output = R>,
+    {
+        let _guard = self.inner.lock().await;
+        fut.await
+    }
+}
 
 impl AgentManager {
     /// Register delegation context and permission handlers for an agent session.
@@ -47,62 +88,76 @@ impl AgentManager {
         let pending_permissions = self.pending_permissions.clone();
         let session_id_owned = session_id.to_string();
         let event_tx_owned = event_tx.clone();
+        // One serializer per handler == per session. Concurrent prompt
+        // requests within a session queue behind each other; cross-session
+        // prompts proceed independently.
+        let serializer = PermissionSerializer::new();
 
         let ask_callback: PermissionPromptCallback = Arc::new(move |perm_request: PermRequest| {
             let pending_permissions = pending_permissions.clone();
             let session_id_owned = session_id_owned.clone();
             let event_tx_owned = event_tx_owned.clone();
+            let serializer = serializer.clone();
 
             Box::pin(async move {
-                let permission_id = format!("perm-{}", uuid::Uuid::new_v4());
-                let (response_tx, response_rx) = oneshot::channel();
+                serializer
+                    .run(async move {
+                        let permission_id = format!("perm-{}", uuid::Uuid::new_v4());
+                        let (response_tx, response_rx) = oneshot::channel();
 
-                let pending = PendingPermission {
-                    request: perm_request.clone(),
-                    response_tx,
-                };
+                        let pending = PendingPermission {
+                            request: perm_request.clone(),
+                            response_tx,
+                        };
 
-                pending_permissions
-                    .entry(session_id_owned.clone())
-                    .or_default()
-                    .insert(permission_id.clone(), pending);
+                        pending_permissions
+                            .entry(session_id_owned.clone())
+                            .or_default()
+                            .insert(permission_id.clone(), pending);
 
-                let interaction_request = InteractionRequest::Permission(perm_request);
-                if !emit_event(
-                    &event_tx_owned,
-                    SessionEventMessage::interaction_requested(
-                        &session_id_owned,
-                        &permission_id,
-                        &interaction_request,
-                    ),
-                ) {
-                    tracing::debug!("Failed to emit interaction_requested event (no subscribers)");
-                }
-
-                let result =
-                    tokio::time::timeout(std::time::Duration::from_secs(300), response_rx).await;
-
-                match result {
-                    Ok(Ok(response)) => response,
-                    Ok(Err(_)) => {
-                        if let Some(mut session_map) =
-                            pending_permissions.get_mut(&session_id_owned)
-                        {
-                            session_map.remove(&permission_id);
+                        let interaction_request = InteractionRequest::Permission(perm_request);
+                        if !emit_event(
+                            &event_tx_owned,
+                            SessionEventMessage::interaction_requested(
+                                &session_id_owned,
+                                &permission_id,
+                                &interaction_request,
+                            ),
+                        ) {
+                            tracing::debug!(
+                                "Failed to emit interaction_requested event (no subscribers)"
+                            );
                         }
-                        PermResponse::deny_with_reason(
-                            "Permission request channel closed before response",
+
+                        let result = tokio::time::timeout(
+                            std::time::Duration::from_secs(300),
+                            response_rx,
                         )
-                    }
-                    Err(_) => {
-                        if let Some(mut session_map) =
-                            pending_permissions.get_mut(&session_id_owned)
-                        {
-                            session_map.remove(&permission_id);
+                        .await;
+
+                        match result {
+                            Ok(Ok(response)) => response,
+                            Ok(Err(_)) => {
+                                if let Some(mut session_map) =
+                                    pending_permissions.get_mut(&session_id_owned)
+                                {
+                                    session_map.remove(&permission_id);
+                                }
+                                PermResponse::deny_with_reason(
+                                    "Permission request channel closed before response",
+                                )
+                            }
+                            Err(_) => {
+                                if let Some(mut session_map) =
+                                    pending_permissions.get_mut(&session_id_owned)
+                                {
+                                    session_map.remove(&permission_id);
+                                }
+                                PermResponse::deny_with_reason("Permission request timed out")
+                            }
                         }
-                        PermResponse::deny_with_reason("Permission request timed out")
-                    }
-                }
+                    })
+                    .await
             })
         });
 
@@ -662,6 +717,122 @@ impl AgentManager {
 /// returned config has the requested default and *empty* allow/deny/ask rule
 /// lists, so base-config rules cannot re-introduce prompts or blocks. For
 /// `Ask` the existing allow/deny/ask rules are preserved (interactive default).
+#[cfg(test)]
+mod permission_serializer_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[tokio::test]
+    async fn serializer_lets_single_caller_through() {
+        let s = PermissionSerializer::new();
+        let result = s.run(async { 42 }).await;
+        assert_eq!(result, 42);
+    }
+
+    #[tokio::test]
+    async fn serializer_runs_concurrent_calls_one_at_a_time() {
+        // Three concurrent callers must execute strictly serially.
+        // Track in-flight count: it must never exceed 1.
+        let s = PermissionSerializer::new();
+        let in_flight = Arc::new(AtomicUsize::new(0));
+        let max_seen = Arc::new(AtomicUsize::new(0));
+
+        let mut handles = Vec::new();
+        for _ in 0..3 {
+            let s = s.clone();
+            let in_flight = in_flight.clone();
+            let max_seen = max_seen.clone();
+            handles.push(tokio::spawn(async move {
+                s.run(async {
+                    let n = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+                    let mut prev = max_seen.load(Ordering::SeqCst);
+                    while n > prev {
+                        match max_seen.compare_exchange(
+                            prev,
+                            n,
+                            Ordering::SeqCst,
+                            Ordering::SeqCst,
+                        ) {
+                            Ok(_) => break,
+                            Err(actual) => prev = actual,
+                        }
+                    }
+                    // Hold the section briefly so concurrent callers stack up.
+                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                    in_flight.fetch_sub(1, Ordering::SeqCst);
+                })
+                .await;
+            }));
+        }
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        assert_eq!(
+            max_seen.load(Ordering::SeqCst),
+            1,
+            "concurrent callers must execute one at a time, but the in-flight high-water mark was higher"
+        );
+    }
+
+    #[tokio::test]
+    async fn serializer_releases_lock_after_completion() {
+        // Once one call completes, the next one must be able to proceed.
+        let s = PermissionSerializer::new();
+        s.run(async {}).await;
+        // Must complete without deadlock.
+        let started = std::time::Instant::now();
+        s.run(async {}).await;
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+    }
+
+    #[tokio::test]
+    async fn separate_serializers_do_not_block_each_other() {
+        // Per-session serialization: two distinct serializers should NOT
+        // queue behind each other.
+        let a = PermissionSerializer::new();
+        let b = PermissionSerializer::new();
+        let in_flight = Arc::new(AtomicUsize::new(0));
+        let max_seen = Arc::new(AtomicUsize::new(0));
+
+        let task = |s: PermissionSerializer| {
+            let in_flight = in_flight.clone();
+            let max_seen = max_seen.clone();
+            tokio::spawn(async move {
+                s.run(async {
+                    let n = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+                    let mut prev = max_seen.load(Ordering::SeqCst);
+                    while n > prev {
+                        match max_seen.compare_exchange(
+                            prev,
+                            n,
+                            Ordering::SeqCst,
+                            Ordering::SeqCst,
+                        ) {
+                            Ok(_) => break,
+                            Err(actual) => prev = actual,
+                        }
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                    in_flight.fetch_sub(1, Ordering::SeqCst);
+                })
+                .await;
+            })
+        };
+
+        let h1 = task(a);
+        let h2 = task(b);
+        h1.await.unwrap();
+        h2.await.unwrap();
+
+        assert_eq!(
+            max_seen.load(Ordering::SeqCst),
+            2,
+            "different serializers must not block each other; both should run concurrently"
+        );
+    }
+}
+
 pub(super) fn resolve_effective_permission_config(
     permission_override: Option<PermissionMode>,
     agent_permissions: Option<PermissionConfig>,
