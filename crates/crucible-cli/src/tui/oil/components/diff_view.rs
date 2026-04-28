@@ -5,6 +5,7 @@
 //! caller is responsible for everything else (extracting the diff from a
 //! tool call, deciding whether to render at all, etc).
 
+use crate::tui::oil::diff::{count_changes, diff_to_node_width};
 use crate::tui::oil::theme;
 use crucible_core::types::acp::FileDiff;
 use crucible_oil::node::{col, row, styled, Node};
@@ -81,11 +82,26 @@ fn render_header(diff: &FileDiff, line_counts: Option<(usize, usize)>) -> Node {
 }
 
 pub fn render_diff(diff: &FileDiff, opts: &DiffOptions) -> Node {
-    let header = render_header(diff, None);
+    let old = diff.old_content.as_deref().unwrap_or("");
+    let new = diff.new_content.as_str();
+    let counts = count_changes(old, new);
+    let header = render_header(diff, Some(counts));
+
     if opts.collapsed {
         return header;
     }
-    col([header])
+
+    let body = match opts.resolved_layout() {
+        DiffLayout::Unified => {
+            diff_to_node_width(old, new, opts.context_lines, Some(opts.max_width))
+        }
+        DiffLayout::SideBySide => {
+            diff_to_node_width(old, new, opts.context_lines, Some(opts.max_width))
+        }
+        DiffLayout::Auto => unreachable!("resolved_layout never returns Auto"),
+    };
+
+    col([header, body])
 }
 
 #[cfg(test)]
@@ -147,5 +163,30 @@ mod tests {
         opts.collapsed = true;
         let out = render(&d, &opts);
         assert!(!out.contains("CHANGED"), "collapsed must not show body: {out:?}");
+    }
+
+    #[test]
+    fn unified_renders_added_and_removed_lines() {
+        let d = FileDiff::from_contents(
+            "x.rs",
+            Some("alpha\nbeta\ngamma\n".into()),
+            "alpha\nbeta-CHANGED\ngamma\n",
+        );
+        let mut opts = DiffOptions::for_width(80);
+        opts.layout = DiffLayout::Unified;
+        let out = render(&d, &opts);
+        assert!(out.contains("-beta"), "got: {out:?}");
+        assert!(out.contains("+beta-CHANGED"), "got: {out:?}");
+    }
+
+    #[test]
+    fn header_shows_line_counts_when_expanded() {
+        let d = FileDiff::from_contents("x.rs", Some("a\nb\n".into()), "a\nB1\nB2\n");
+        let mut opts = DiffOptions::for_width(80);
+        opts.layout = DiffLayout::Unified;
+        opts.context_lines = 0;
+        let out = render(&d, &opts);
+        assert!(out.contains("+2"), "expected +2 in: {out:?}");
+        assert!(out.contains("-1"), "expected -1 in: {out:?}");
     }
 }

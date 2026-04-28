@@ -147,6 +147,21 @@ pub fn diff_to_node_with_word_highlight(old: &str, new: &str) -> Node {
     }
 }
 
+/// Returns `(added, removed)` line counts.
+pub fn count_changes(old: &str, new: &str) -> (usize, usize) {
+    let diff = TextDiff::from_lines(old, new);
+    let mut added = 0;
+    let mut removed = 0;
+    for change in diff.iter_all_changes() {
+        match change.tag() {
+            ChangeTag::Insert => added += 1,
+            ChangeTag::Delete => removed += 1,
+            ChangeTag::Equal => {}
+        }
+    }
+    (added, removed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
