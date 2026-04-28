@@ -7,15 +7,27 @@
 
 use crate::tui::oil::diff::{count_changes, diff_to_node_width};
 use crate::tui::oil::theme;
+use crate::tui::oil::utils::truncate_to_chars;
 use crucible_core::types::acp::FileDiff;
 use crucible_oil::node::{col, row, styled, Node};
 use crucible_oil::style::Style;
+use similar::{ChangeTag, TextDiff};
 
 pub const SIDE_BY_SIDE_MIN_WIDTH: usize = 120;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffLayout {
     Auto,
+    Unified,
+    SideBySide,
+}
+
+/// Layout after `Auto` has been resolved against `max_width`.
+///
+/// Returning this from `resolved_layout()` lets the renderer match
+/// exhaustively without an `unreachable!` arm for `Auto`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResolvedLayout {
     Unified,
     SideBySide,
 }
@@ -42,11 +54,14 @@ impl DiffOptions {
         }
     }
 
-    pub fn resolved_layout(&self) -> DiffLayout {
+    pub fn resolved_layout(&self) -> ResolvedLayout {
         match self.layout {
-            DiffLayout::Auto if self.max_width >= SIDE_BY_SIDE_MIN_WIDTH => DiffLayout::SideBySide,
-            DiffLayout::Auto => DiffLayout::Unified,
-            other => other,
+            DiffLayout::Unified => ResolvedLayout::Unified,
+            DiffLayout::SideBySide => ResolvedLayout::SideBySide,
+            DiffLayout::Auto if self.max_width >= SIDE_BY_SIDE_MIN_WIDTH => {
+                ResolvedLayout::SideBySide
+            }
+            DiffLayout::Auto => ResolvedLayout::Unified,
         }
     }
 }
@@ -92,16 +107,100 @@ pub fn render_diff(diff: &FileDiff, opts: &DiffOptions) -> Node {
     }
 
     let body = match opts.resolved_layout() {
-        DiffLayout::Unified => {
+        ResolvedLayout::Unified => {
             diff_to_node_width(old, new, opts.context_lines, Some(opts.max_width))
         }
-        DiffLayout::SideBySide => {
-            diff_to_node_width(old, new, opts.context_lines, Some(opts.max_width))
-        }
-        DiffLayout::Auto => unreachable!("resolved_layout never returns Auto"),
+        ResolvedLayout::SideBySide => render_side_by_side(old, new, opts.max_width),
     };
 
     col([header, body])
+}
+
+/// One row of the side-by-side view: optional left line, optional right line.
+struct PairedRow {
+    left: Option<(String, ChangeTag)>,
+    right: Option<(String, ChangeTag)>,
+}
+
+fn pair_changes(old: &str, new: &str) -> Vec<PairedRow> {
+    let diff = TextDiff::from_lines(old, new);
+    let mut rows = Vec::new();
+    let mut pending_deletes: Vec<String> = Vec::new();
+    let mut pending_inserts: Vec<String> = Vec::new();
+
+    fn flush(
+        rows: &mut Vec<PairedRow>,
+        deletes: &mut Vec<String>,
+        inserts: &mut Vec<String>,
+    ) {
+        let n = deletes.len().max(inserts.len());
+        for i in 0..n {
+            rows.push(PairedRow {
+                left: deletes.get(i).map(|s| (s.clone(), ChangeTag::Delete)),
+                right: inserts.get(i).map(|s| (s.clone(), ChangeTag::Insert)),
+            });
+        }
+        deletes.clear();
+        inserts.clear();
+    }
+
+    for change in diff.iter_all_changes() {
+        let line = change.value().trim_end_matches('\n').to_string();
+        match change.tag() {
+            ChangeTag::Delete => pending_deletes.push(line),
+            ChangeTag::Insert => pending_inserts.push(line),
+            ChangeTag::Equal => {
+                flush(&mut rows, &mut pending_deletes, &mut pending_inserts);
+                rows.push(PairedRow {
+                    left: Some((line.clone(), ChangeTag::Equal)),
+                    right: Some((line, ChangeTag::Equal)),
+                });
+            }
+        }
+    }
+    flush(&mut rows, &mut pending_deletes, &mut pending_inserts);
+    rows
+}
+
+fn render_side_by_side(old: &str, new: &str, max_width: usize) -> Node {
+    let t = theme::active();
+    let pane_width = max_width.saturating_sub(3) / 2;
+    // Defensive: Auto only picks SideBySide at max_width >= 120, but explicit
+    // callers can request a narrow side-by-side. Fall back to unified rather
+    // than render unreadable 3-column-wide panes.
+    if pane_width < 10 {
+        return diff_to_node_width(old, new, 3, Some(max_width));
+    }
+    let separator_style = Style::new().fg(t.resolve_color(t.colors.text_dim)).dim();
+    let delete_style = Style::new().fg(t.resolve_color(t.colors.error));
+    let insert_style = Style::new().fg(t.resolve_color(t.colors.success));
+    let context_style = Style::new().fg(t.resolve_color(t.colors.text_dim));
+
+    let cell = |content: Option<&(String, ChangeTag)>, width: usize| -> Node {
+        match content {
+            None => styled(" ".repeat(width), Style::new()),
+            Some((text, tag)) => {
+                let style = match tag {
+                    ChangeTag::Delete => delete_style,
+                    ChangeTag::Insert => insert_style,
+                    ChangeTag::Equal => context_style,
+                };
+                let truncated = truncate_to_chars(text, width, true).into_owned();
+                let padded = format!("{:width$}", truncated, width = width);
+                styled(padded, style)
+            }
+        }
+    };
+
+    let mut rows = Vec::new();
+    for pr in pair_changes(old, new) {
+        rows.push(row([
+            cell(pr.left.as_ref(), pane_width),
+            styled(" │ ", separator_style),
+            cell(pr.right.as_ref(), pane_width),
+        ]));
+    }
+    col(rows)
 }
 
 #[cfg(test)]
@@ -116,20 +215,20 @@ mod tests {
     #[test]
     fn auto_layout_picks_unified_under_threshold() {
         let opts = DiffOptions::for_width(119);
-        assert_eq!(opts.resolved_layout(), DiffLayout::Unified);
+        assert_eq!(opts.resolved_layout(), ResolvedLayout::Unified);
     }
 
     #[test]
     fn auto_layout_picks_side_by_side_at_threshold() {
         let opts = DiffOptions::for_width(120);
-        assert_eq!(opts.resolved_layout(), DiffLayout::SideBySide);
+        assert_eq!(opts.resolved_layout(), ResolvedLayout::SideBySide);
     }
 
     #[test]
     fn explicit_layout_overrides_auto() {
         let mut opts = DiffOptions::for_width(200);
         opts.layout = DiffLayout::Unified;
-        assert_eq!(opts.resolved_layout(), DiffLayout::Unified);
+        assert_eq!(opts.resolved_layout(), ResolvedLayout::Unified);
     }
 
     #[test]
@@ -188,5 +287,36 @@ mod tests {
         let out = render(&d, &opts);
         assert!(out.contains("+2"), "expected +2 in: {out:?}");
         assert!(out.contains("-1"), "expected -1 in: {out:?}");
+    }
+
+    #[test]
+    fn side_by_side_pairs_lines_in_two_columns() {
+        let d = FileDiff::from_contents(
+            "x.rs",
+            Some("kept\nold\nkept2\n".into()),
+            "kept\nnew\nkept2\n",
+        );
+        let mut opts = DiffOptions::for_width(140);
+        opts.layout = DiffLayout::SideBySide;
+        opts.context_lines = 1;
+        let out = render(&d, &opts);
+        let line_with_old = out.lines().find(|l| l.contains("old")).unwrap_or("");
+        assert!(
+            line_with_old.contains("new"),
+            "expected old and new on same row, got line: {line_with_old:?}\nfull:\n{out}"
+        );
+    }
+
+    #[test]
+    fn side_by_side_pads_unmatched_insert() {
+        let d = FileDiff::from_contents("x.rs", Some("a\nb\n".into()), "a\nNEW\nb\n");
+        let mut opts = DiffOptions::for_width(140);
+        opts.layout = DiffLayout::SideBySide;
+        let out = render(&d, &opts);
+        let line_with_new = out.lines().find(|l| l.contains("NEW")).unwrap_or("");
+        assert!(
+            line_with_new.contains('│'),
+            "expected pane separator on insert row: {line_with_new:?}"
+        );
     }
 }
