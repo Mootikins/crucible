@@ -709,3 +709,77 @@ mod tests {
         assert!(out.to_lowercase().contains("suppressed") || out.to_lowercase().contains("too large"));
     }
 }
+
+#[cfg(test)]
+mod snapshot_tests {
+    use super::*;
+    use crucible_oil::render::render_to_string;
+
+    fn snap(diff: &FileDiff, opts: &DiffOptions) -> String {
+        render_to_string(&render_diff(diff, opts), opts.max_width)
+    }
+
+    /// Modify a small Rust snippet at width 80 with explicit unified layout.
+    #[test]
+    fn snap_unified_modify_rust() {
+        let d = FileDiff::from_contents(
+            "src/lib.rs",
+            Some("pub fn add(a: u32, b: u32) -> u32 {\n    a + b\n}\n".into()),
+            "pub fn add(a: u32, b: u32) -> u32 {\n    a.saturating_add(b)\n}\n",
+        );
+        let mut opts = DiffOptions::for_width(80);
+        opts.layout = DiffLayout::Unified;
+        let out = snap(&d, &opts);
+        insta::assert_snapshot!(out);
+    }
+
+    /// Same diff at width 140 with explicit side-by-side layout.
+    #[test]
+    fn snap_side_by_side_modify_rust() {
+        let d = FileDiff::from_contents(
+            "src/lib.rs",
+            Some("pub fn add(a: u32, b: u32) -> u32 {\n    a + b\n}\n".into()),
+            "pub fn add(a: u32, b: u32) -> u32 {\n    a.saturating_add(b)\n}\n",
+        );
+        let mut opts = DiffOptions::for_width(140);
+        opts.layout = DiffLayout::SideBySide;
+        let out = snap(&d, &opts);
+        insta::assert_snapshot!(out);
+    }
+
+    /// File-create diff (no `old_content`); auto layout at width 80 → unified.
+    #[test]
+    fn snap_create_new_file() {
+        let d = FileDiff::new("README.md", "# Hello\n\nA new file.\n");
+        let opts = DiffOptions::for_width(80);
+        let out = snap(&d, &opts);
+        insta::assert_snapshot!(out);
+    }
+
+    /// Collapsed view yields header only — no diff body.
+    #[test]
+    fn snap_collapsed_header_only() {
+        let d = FileDiff::from_contents(
+            "x.rs",
+            Some("alpha\nbeta\ngamma\n".into()),
+            "alpha\nbeta-CHANGED\ngamma\n",
+        );
+        let mut opts = DiffOptions::for_width(80);
+        opts.collapsed = true;
+        let out = snap(&d, &opts);
+        insta::assert_snapshot!(out);
+    }
+
+    /// At width 60 (< SIDE_BY_SIDE_MIN_WIDTH = 120), Auto must pick unified.
+    #[test]
+    fn snap_narrow_terminal_forces_unified() {
+        let d = FileDiff::from_contents(
+            "src/lib.rs",
+            Some("pub fn add(a: u32, b: u32) -> u32 {\n    a + b\n}\n".into()),
+            "pub fn add(a: u32, b: u32) -> u32 {\n    a.saturating_add(b)\n}\n",
+        );
+        let opts = DiffOptions::for_width(60);
+        let out = snap(&d, &opts);
+        insta::assert_snapshot!(out);
+    }
+}
