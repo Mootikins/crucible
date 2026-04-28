@@ -5,13 +5,15 @@
 //! caller is responsible for everything else (extracting the diff from a
 //! tool call, deciding whether to render at all, etc).
 
-use crate::tui::oil::diff::{count_changes, diff_to_node_width};
+use crate::formatting::SyntaxHighlighter;
+use crate::tui::oil::diff::count_changes;
 use crate::tui::oil::theme;
-use crate::tui::oil::utils::truncate_to_chars;
+use crate::tui::oil::utils::{truncate_to_chars, visible_width};
 use crucible_core::types::acp::FileDiff;
 use crucible_oil::node::{col, row, styled, Node};
-use crucible_oil::style::Style;
+use crucible_oil::style::{Color, Style};
 use similar::{ChangeTag, TextDiff};
+use std::path::Path;
 
 pub const SIDE_BY_SIDE_MIN_WIDTH: usize = 120;
 
@@ -106,14 +108,116 @@ pub fn render_diff(diff: &FileDiff, opts: &DiffOptions) -> Node {
         return header;
     }
 
+    let language = infer_language(&diff.path, opts.language_hint.as_deref());
+    let highlighter = SyntaxHighlighter::new();
+
     let body = match opts.resolved_layout() {
-        ResolvedLayout::Unified => {
-            diff_to_node_width(old, new, opts.context_lines, Some(opts.max_width))
+        ResolvedLayout::Unified => render_unified(
+            old,
+            new,
+            opts.context_lines,
+            opts.max_width,
+            &highlighter,
+            language.as_deref(),
+        ),
+        ResolvedLayout::SideBySide => {
+            render_side_by_side(old, new, opts.max_width, &highlighter, language.as_deref())
         }
-        ResolvedLayout::SideBySide => render_side_by_side(old, new, opts.max_width),
     };
 
     col([header, body])
+}
+
+fn is_binary_extension(ext: &str) -> bool {
+    matches!(
+        ext,
+        "png"
+            | "jpg"
+            | "jpeg"
+            | "gif"
+            | "bmp"
+            | "ico"
+            | "webp"
+            | "tiff"
+            | "pdf"
+            | "zip"
+            | "tar"
+            | "gz"
+            | "bz2"
+            | "xz"
+            | "7z"
+            | "rar"
+            | "exe"
+            | "dll"
+            | "so"
+            | "dylib"
+            | "bin"
+            | "wasm"
+            | "class"
+            | "jar"
+            | "mp3"
+            | "mp4"
+            | "wav"
+            | "ogg"
+            | "flac"
+            | "mov"
+            | "avi"
+            | "mkv"
+            | "webm"
+    )
+}
+
+fn infer_language(path: &str, hint: Option<&str>) -> Option<String> {
+    if let Some(h) = hint {
+        return Some(h.to_string());
+    }
+    Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_lowercase)
+        .filter(|e| !is_binary_extension(e))
+}
+
+/// Highlight a single diff line and recolor each span's `fg` to `diff_fg` so
+/// red/green diff coloring wins over syntax tokens while preserving bold/italic
+/// (and any future bg) bits emitted by the highlighter.
+fn highlight_line(
+    highlighter: &SyntaxHighlighter,
+    language: Option<&str>,
+    line: &str,
+    diff_fg: Option<Color>,
+) -> Vec<Node> {
+    let lang = match language {
+        Some(l) if SyntaxHighlighter::supports_language(l) => l,
+        _ => {
+            let mut style = Style::new();
+            if let Some(fg) = diff_fg {
+                style = style.fg(fg);
+            }
+            return vec![styled(line.to_string(), style)];
+        }
+    };
+
+    if line.is_empty() {
+        let mut style = Style::new();
+        if let Some(fg) = diff_fg {
+            style = style.fg(fg);
+        }
+        return vec![styled(String::new(), style)];
+    }
+
+    highlighter
+        .highlight(line, lang)
+        .into_iter()
+        .flat_map(|hl| hl.spans)
+        .map(|span| {
+            let style = match diff_fg {
+                Some(fg) => span.style.fg(fg),
+                None => span.style,
+            };
+            styled(span.text, style)
+        })
+        .collect()
 }
 
 /// One row of the side-by-side view: optional left line, optional right line.
@@ -162,32 +266,148 @@ fn pair_changes(old: &str, new: &str) -> Vec<PairedRow> {
     rows
 }
 
-fn render_side_by_side(old: &str, new: &str, max_width: usize) -> Node {
+fn render_unified(
+    old: &str,
+    new: &str,
+    context_lines: usize,
+    max_width: usize,
+    highlighter: &SyntaxHighlighter,
+    language: Option<&str>,
+) -> Node {
+    if old == new {
+        return Node::Empty;
+    }
+
+    let diff = TextDiff::from_lines(old, new);
+    let mut nodes: Vec<Node> = Vec::new();
+
+    let t = theme::active();
+    let delete_color = t.resolve_color(t.colors.error);
+    let insert_color = t.resolve_color(t.colors.success);
+    let context_color = t.resolve_color(t.colors.text_dim);
+
+    let mut in_hunk = false;
+    let mut hunk_lines: Vec<Node> = Vec::new();
+    let mut context_buffer: Vec<String> = Vec::new();
+    let mut pending_context: Vec<String> = Vec::new();
+
+    let line_budget = max_width.saturating_sub(1);
+
+    let push_context = |hunk_lines: &mut Vec<Node>, ctx_line: &str| {
+        let truncated = truncate_to_chars(ctx_line, line_budget, true).into_owned();
+        let mut spans = vec![styled(" ", Style::new().fg(context_color))];
+        spans.extend(highlight_line(
+            highlighter,
+            language,
+            &truncated,
+            Some(context_color),
+        ));
+        hunk_lines.push(row(spans));
+    };
+
+    for change in diff.iter_all_changes() {
+        let tag = change.tag();
+        let line_content = change.value().trim_end_matches('\n');
+
+        match tag {
+            ChangeTag::Equal => {
+                if in_hunk {
+                    if context_lines > 0 && pending_context.len() < context_lines {
+                        pending_context.push(line_content.to_string());
+                    } else {
+                        flush_hunk(&mut nodes, &mut hunk_lines);
+                        in_hunk = false;
+                        pending_context.clear();
+                    }
+                }
+                if context_lines > 0 {
+                    context_buffer.push(line_content.to_string());
+                    if context_buffer.len() > context_lines {
+                        context_buffer.remove(0);
+                    }
+                }
+            }
+            ChangeTag::Delete | ChangeTag::Insert => {
+                if !in_hunk {
+                    in_hunk = true;
+                    for ctx_line in &context_buffer {
+                        push_context(&mut hunk_lines, ctx_line);
+                    }
+                } else {
+                    let ctx: Vec<String> = pending_context.drain(..).collect();
+                    for ctx_line in &ctx {
+                        push_context(&mut hunk_lines, ctx_line);
+                    }
+                }
+
+                let (prefix, color) = match tag {
+                    ChangeTag::Delete => ("-", delete_color),
+                    ChangeTag::Insert => ("+", insert_color),
+                    ChangeTag::Equal => unreachable!(),
+                };
+                let truncated = truncate_to_chars(line_content, line_budget, true).into_owned();
+                let mut spans = vec![styled(prefix, Style::new().fg(color))];
+                spans.extend(highlight_line(highlighter, language, &truncated, Some(color)));
+                hunk_lines.push(row(spans));
+            }
+        }
+    }
+
+    if in_hunk {
+        flush_hunk(&mut nodes, &mut hunk_lines);
+    }
+
+    if nodes.is_empty() {
+        Node::Empty
+    } else {
+        col(nodes)
+    }
+}
+
+fn flush_hunk(nodes: &mut Vec<Node>, hunk_lines: &mut Vec<Node>) {
+    if hunk_lines.is_empty() {
+        return;
+    }
+    nodes.append(hunk_lines);
+}
+
+fn render_side_by_side(
+    old: &str,
+    new: &str,
+    max_width: usize,
+    highlighter: &SyntaxHighlighter,
+    language: Option<&str>,
+) -> Node {
     let t = theme::active();
     let pane_width = max_width.saturating_sub(3) / 2;
     // Defensive: Auto only picks SideBySide at max_width >= 120, but explicit
     // callers can request a narrow side-by-side. Fall back to unified rather
     // than render unreadable 3-column-wide panes.
     if pane_width < 10 {
-        return diff_to_node_width(old, new, 3, Some(max_width));
+        return render_unified(old, new, 3, max_width, highlighter, language);
     }
     let separator_style = Style::new().fg(t.resolve_color(t.colors.text_dim)).dim();
-    let delete_style = Style::new().fg(t.resolve_color(t.colors.error));
-    let insert_style = Style::new().fg(t.resolve_color(t.colors.success));
-    let context_style = Style::new().fg(t.resolve_color(t.colors.text_dim));
+    let delete_color = t.resolve_color(t.colors.error);
+    let insert_color = t.resolve_color(t.colors.success);
+    let context_color = t.resolve_color(t.colors.text_dim);
 
     let cell = |content: Option<&(String, ChangeTag)>, width: usize| -> Node {
         match content {
             None => styled(" ".repeat(width), Style::new()),
             Some((text, tag)) => {
-                let style = match tag {
-                    ChangeTag::Delete => delete_style,
-                    ChangeTag::Insert => insert_style,
-                    ChangeTag::Equal => context_style,
+                let diff_fg = match tag {
+                    ChangeTag::Delete => delete_color,
+                    ChangeTag::Insert => insert_color,
+                    ChangeTag::Equal => context_color,
                 };
                 let truncated = truncate_to_chars(text, width, true).into_owned();
-                let padded = format!("{:width$}", truncated, width = width);
-                styled(padded, style)
+                let used = visible_width(&truncated);
+                let mut spans =
+                    highlight_line(highlighter, language, &truncated, Some(diff_fg));
+                if used < width {
+                    spans.push(styled(" ".repeat(width - used), Style::new()));
+                }
+                row(spans)
             }
         }
     };
@@ -318,5 +538,41 @@ mod tests {
             line_with_new.contains('│'),
             "expected pane separator on insert row: {line_with_new:?}"
         );
+    }
+
+    #[test]
+    fn syntax_highlighted_diff_for_rust_extension() {
+        let d = FileDiff::from_contents(
+            "src/lib.rs",
+            Some("fn main() {\n    let x = 1;\n}\n".into()),
+            "fn main() {\n    let x = 2;\n}\n",
+        );
+        let mut opts = DiffOptions::for_width(140);
+        opts.layout = DiffLayout::SideBySide;
+        let out = render(&d, &opts);
+        assert!(
+            out.contains("fn"),
+            "expected `fn` keyword to survive highlighting: {out:?}"
+        );
+        assert!(
+            out.contains("let x = 1"),
+            "expected old line content to be present: {out:?}"
+        );
+        assert!(
+            out.contains("let x = 2"),
+            "expected new line content to be present: {out:?}"
+        );
+    }
+
+    #[test]
+    fn binary_extension_skips_highlighting_no_panic() {
+        let d = FileDiff::from_contents(
+            "assets/logo.png",
+            Some("\u{89}PNG\r\n\u{1a}\nbinaryjunk\n".into()),
+            "\u{89}PNG\r\n\u{1a}\nDIFFERENT\n",
+        );
+        let mut opts = DiffOptions::for_width(80);
+        opts.layout = DiffLayout::Unified;
+        let _ = render(&d, &opts);
     }
 }
