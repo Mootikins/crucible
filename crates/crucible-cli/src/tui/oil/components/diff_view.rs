@@ -17,6 +17,11 @@ use std::path::Path;
 
 pub const SIDE_BY_SIDE_MIN_WIDTH: usize = 120;
 
+/// Suppress diff body when either side exceeds this byte budget. The full file
+/// content is still in the FileDiff, but materializing 1 MiB+ through
+/// `TextDiff::from_lines` and the highlighter blows up frame time.
+const MAX_DIFF_BYTES: usize = 1024 * 1024;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffLayout {
     Auto,
@@ -101,6 +106,22 @@ fn render_header(diff: &FileDiff, line_counts: Option<(usize, usize)>) -> Node {
 pub fn render_diff(diff: &FileDiff, opts: &DiffOptions) -> Node {
     let old = diff.old_content.as_deref().unwrap_or("");
     let new = diff.new_content.as_str();
+
+    // Oversize guard runs *before* count_changes / TextDiff / highlighter so a
+    // 10 MiB blob doesn't pin the UI thread just to render a one-line header.
+    if old.len() > MAX_DIFF_BYTES || new.len() > MAX_DIFF_BYTES {
+        let header = render_header(diff, None);
+        if opts.collapsed {
+            return header;
+        }
+        let t = theme::active();
+        let msg = styled(
+            "  diff suppressed (file too large)",
+            Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+        );
+        return col([header, msg]);
+    }
+
     let counts = count_changes(old, new);
     let header = render_header(diff, Some(counts));
 
@@ -117,12 +138,18 @@ pub fn render_diff(diff: &FileDiff, opts: &DiffOptions) -> Node {
             new,
             opts.context_lines,
             opts.max_width,
+            opts.max_lines,
             &highlighter,
             language.as_deref(),
         ),
-        ResolvedLayout::SideBySide => {
-            render_side_by_side(old, new, opts.max_width, &highlighter, language.as_deref())
-        }
+        ResolvedLayout::SideBySide => render_side_by_side(
+            old,
+            new,
+            opts.max_width,
+            opts.max_lines,
+            &highlighter,
+            language.as_deref(),
+        ),
     };
 
     col([header, body])
@@ -271,6 +298,7 @@ fn render_unified(
     new: &str,
     context_lines: usize,
     max_width: usize,
+    max_lines: Option<usize>,
     highlighter: &SyntaxHighlighter,
     language: Option<&str>,
 ) -> Node {
@@ -291,15 +319,24 @@ fn render_unified(
     let mut context_buffer: Vec<String> = Vec::new();
     let mut pending_context: Vec<String> = Vec::new();
 
+    // Once we cross `max_lines`, stop emitting and just tally the remaining
+    // changes for the footer. We prefer to cut between hunks (after a flush),
+    // but a single massive hunk also flushes at a line boundary so file-create
+    // diffs don't blow past the budget entirely.
+    let mut truncated = false;
+    let mut remaining_lines = 0usize;
+    let mut remaining_added = 0usize;
+    let mut remaining_removed = 0usize;
+
     let line_budget = max_width.saturating_sub(1);
 
     let push_context = |hunk_lines: &mut Vec<Node>, ctx_line: &str| {
-        let truncated = truncate_to_chars(ctx_line, line_budget, true).into_owned();
+        let trunc = truncate_to_chars(ctx_line, line_budget, true).into_owned();
         let mut spans = vec![styled(" ", Style::new().fg(context_color))];
         spans.extend(highlight_line(
             highlighter,
             language,
-            &truncated,
+            &trunc,
             Some(context_color),
         ));
         hunk_lines.push(row(spans));
@@ -308,6 +345,21 @@ fn render_unified(
     for change in diff.iter_all_changes() {
         let tag = change.tag();
         let line_content = change.value().trim_end_matches('\n');
+
+        if truncated {
+            match tag {
+                ChangeTag::Insert => {
+                    remaining_added += 1;
+                    remaining_lines += 1;
+                }
+                ChangeTag::Delete => {
+                    remaining_removed += 1;
+                    remaining_lines += 1;
+                }
+                ChangeTag::Equal => {}
+            }
+            continue;
+        }
 
         match tag {
             ChangeTag::Equal => {
@@ -318,6 +370,11 @@ fn render_unified(
                         flush_hunk(&mut nodes, &mut hunk_lines);
                         in_hunk = false;
                         pending_context.clear();
+                        if let Some(max) = max_lines {
+                            if nodes.len() >= max {
+                                truncated = true;
+                            }
+                        }
                     }
                 }
                 if context_lines > 0 {
@@ -345,16 +402,40 @@ fn render_unified(
                     ChangeTag::Insert => ("+", insert_color),
                     ChangeTag::Equal => unreachable!(),
                 };
-                let truncated = truncate_to_chars(line_content, line_budget, true).into_owned();
+                let trunc = truncate_to_chars(line_content, line_budget, true).into_owned();
                 let mut spans = vec![styled(prefix, Style::new().fg(color))];
-                spans.extend(highlight_line(highlighter, language, &truncated, Some(color)));
+                spans.extend(highlight_line(highlighter, language, &trunc, Some(color)));
                 hunk_lines.push(row(spans));
+
+                // Mid-hunk budget check: a single giant hunk (e.g. file-create
+                // with hundreds of inserts) would otherwise blow past max_lines
+                // entirely. Flush at the line boundary; row-level rendering
+                // means each line is self-contained, so this is a clean cut.
+                if let Some(max) = max_lines {
+                    if nodes.len() + hunk_lines.len() >= max {
+                        flush_hunk(&mut nodes, &mut hunk_lines);
+                        in_hunk = false;
+                        pending_context.clear();
+                        truncated = true;
+                    }
+                }
             }
         }
     }
 
-    if in_hunk {
+    if in_hunk && !truncated {
         flush_hunk(&mut nodes, &mut hunk_lines);
+    }
+
+    if truncated && remaining_lines > 0 {
+        let footer = styled(
+            format!(
+                "  … {} more lines (+{} -{})",
+                remaining_lines, remaining_added, remaining_removed
+            ),
+            Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+        );
+        nodes.push(footer);
     }
 
     if nodes.is_empty() {
@@ -375,6 +456,7 @@ fn render_side_by_side(
     old: &str,
     new: &str,
     max_width: usize,
+    max_lines: Option<usize>,
     highlighter: &SyntaxHighlighter,
     language: Option<&str>,
 ) -> Node {
@@ -384,7 +466,7 @@ fn render_side_by_side(
     // callers can request a narrow side-by-side. Fall back to unified rather
     // than render unreadable 3-column-wide panes.
     if pane_width < 10 {
-        return render_unified(old, new, 3, max_width, highlighter, language);
+        return render_unified(old, new, 3, max_width, max_lines, highlighter, language);
     }
     let separator_style = Style::new().fg(t.resolve_color(t.colors.text_dim)).dim();
     let delete_color = t.resolve_color(t.colors.error);
@@ -400,10 +482,9 @@ fn render_side_by_side(
                     ChangeTag::Insert => insert_color,
                     ChangeTag::Equal => context_color,
                 };
-                let truncated = truncate_to_chars(text, width, true).into_owned();
-                let used = visible_width(&truncated);
-                let mut spans =
-                    highlight_line(highlighter, language, &truncated, Some(diff_fg));
+                let trunc = truncate_to_chars(text, width, true).into_owned();
+                let used = visible_width(&trunc);
+                let mut spans = highlight_line(highlighter, language, &trunc, Some(diff_fg));
                 if used < width {
                     spans.push(styled(" ".repeat(width - used), Style::new()));
                 }
@@ -412,14 +493,44 @@ fn render_side_by_side(
         }
     };
 
-    let mut rows = Vec::new();
-    for pr in pair_changes(old, new) {
+    let all_rows = pair_changes(old, new);
+    let (visible, dropped): (&[PairedRow], &[PairedRow]) = match max_lines {
+        Some(max) if all_rows.len() > max => all_rows.split_at(max),
+        _ => (all_rows.as_slice(), &[]),
+    };
+
+    let mut rows = Vec::with_capacity(visible.len() + 1);
+    for pr in visible {
         rows.push(row([
             cell(pr.left.as_ref(), pane_width),
             styled(" │ ", separator_style),
             cell(pr.right.as_ref(), pane_width),
         ]));
     }
+
+    if !dropped.is_empty() {
+        let mut remaining_added = 0usize;
+        let mut remaining_removed = 0usize;
+        for pr in dropped {
+            if let Some((_, ChangeTag::Insert)) = &pr.right {
+                remaining_added += 1;
+            }
+            if let Some((_, ChangeTag::Delete)) = &pr.left {
+                remaining_removed += 1;
+            }
+        }
+        let footer = styled(
+            format!(
+                "  … {} more lines (+{} -{})",
+                dropped.len(),
+                remaining_added,
+                remaining_removed
+            ),
+            Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+        );
+        rows.push(footer);
+    }
+
     col(rows)
 }
 
@@ -574,5 +685,27 @@ mod tests {
         let mut opts = DiffOptions::for_width(80);
         opts.layout = DiffLayout::Unified;
         let _ = render(&d, &opts);
+    }
+
+    #[test]
+    fn truncation_footer_appears_when_max_lines_exceeded() {
+        let new = (0..300).map(|i| format!("line{i}\n")).collect::<String>();
+        let d = FileDiff::from_contents("x.rs", Some(String::new()), new);
+        let mut opts = DiffOptions::for_width(80);
+        opts.max_lines = Some(50);
+        opts.layout = DiffLayout::Unified;
+        let out = render(&d, &opts);
+        assert!(out.contains("more lines"), "expected truncation footer: {out:?}");
+    }
+
+    #[test]
+    fn oversize_diff_shows_suppressed_message() {
+        // Either side > 1 MiB → suppress
+        let big = "x".repeat(1024 * 1024 + 1);
+        let d = FileDiff::from_contents("x.rs", Some(String::new()), big);
+        let mut opts = DiffOptions::for_width(80);
+        opts.layout = DiffLayout::Unified;
+        let out = render(&d, &opts);
+        assert!(out.to_lowercase().contains("suppressed") || out.to_lowercase().contains("too large"));
     }
 }
