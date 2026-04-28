@@ -437,16 +437,20 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                         debug!(chunk_type = "thinking", len = text.len(), "ACP streaming chunk");
                         yield TurnEvent::Thinking(text);
                     }
-                    StreamingChunk::ToolStart { name, id, arguments } => {
-                        info!(tool = %name, tool_id = %id, "ACP tool call started");
+                    StreamingChunk::ToolStart { name, id, arguments, diffs } => {
+                        info!(
+                            tool = %name,
+                            tool_id = %id,
+                            diff_count = diffs.len(),
+                            "ACP tool call started"
+                        );
                         tool_names_by_id.insert(id.clone(), name.clone());
                         announced_ids.insert(id.clone());
                         yield TurnEvent::ToolCall {
                             id,
                             name,
                             args: arguments.unwrap_or(serde_json::Value::Null),
-                            // TODO(task-12b): populate from ACP ToolCallContent::Diff frames.
-                            diffs: Vec::new(),
+                            diffs,
                         };
                     }
                     StreamingChunk::ToolEnd { id, result, error } => {
@@ -477,7 +481,10 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                     );
 
                     // Emit any final tool calls the ACP client reported but
-                    // the streaming callback hadn't announced.
+                    // the streaming callback hadn't announced. `tc.diffs` was
+                    // populated by `record_tool_call` from the ACP frames'
+                    // `ToolCallContent::Diff` entries (initial + later
+                    // `ToolCallUpdate` frames merged via `upsert_tool_info`).
                     for tc in acp_tool_calls {
                         let id = tc.id.clone().unwrap_or_default();
                         if announced_ids.contains(&id) {
@@ -487,8 +494,7 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                             id,
                             name: tc.title,
                             args: tc.arguments.unwrap_or(serde_json::Value::Null),
-                            // TODO(task-12b): populate from ACP ToolCallContent::Diff frames.
-                            diffs: Vec::new(),
+                            diffs: tc.diffs,
                         };
                     }
 

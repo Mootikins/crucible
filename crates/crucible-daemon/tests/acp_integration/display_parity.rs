@@ -156,6 +156,43 @@ fn final_response(request_id: u64) -> serde_json::Value {
     })
 }
 
+/// Build a `tool_call` notification whose `content` array carries one
+/// `ToolCallContent::Diff` entry — exercises the path that surfaces ACP
+/// file-mutation previews into the TUI scrollback.
+fn tool_call_notification_with_diff(
+    session_id: &str,
+    tool_call_id: &str,
+    title: &str,
+    raw_input: Option<serde_json::Value>,
+    diff_path: &str,
+    old_text: Option<&str>,
+    new_text: &str,
+) -> serde_json::Value {
+    let mut update = json!({
+        "sessionUpdate": "tool_call",
+        "toolCallId": tool_call_id,
+        "title": title,
+        "status": "in_progress",
+        "content": [{
+            "type": "diff",
+            "path": diff_path,
+            "oldText": old_text,
+            "newText": new_text,
+        }],
+    });
+    if let Some(input) = raw_input {
+        update["rawInput"] = input;
+    }
+    json!({
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+            "sessionId": session_id,
+            "update": update,
+        }
+    })
+}
+
 #[tokio::test]
 async fn tool_start_with_arguments_emits_chunk_with_args() {
     let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
@@ -209,6 +246,7 @@ async fn tool_start_with_arguments_emits_chunk_with_args() {
             name,
             id,
             arguments,
+            ..
         } => {
             assert_eq!(name, "Semantic Search", "MCP prefix should be humanized");
             assert_eq!(id, "tool-42");
@@ -347,6 +385,78 @@ async fn tool_start_complex_arguments_preserved() {
                 *args, expected_args,
                 "nested JSON should be fully preserved"
             );
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[tokio::test]
+async fn tool_start_forwards_diff_content_to_streaming_chunk() {
+    // Regression: when an ACP `tool_call` notification carries a
+    // `ToolCallContent::Diff` entry in its `content` array, the
+    // diff must surface on the live `StreamingChunk::ToolStart`
+    // so the TUI can render it in scrollback as the call appears.
+    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
+
+    let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
+    let chunks_cb = Arc::clone(&chunks);
+
+    tokio::spawn(async move {
+        let mut request_line = String::new();
+        agent_reader.read_line(&mut request_line).await.unwrap();
+        let request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
+        let request_id = request["id"].as_u64().unwrap();
+
+        write_json_line(
+            &mut agent_writer,
+            tool_call_notification_with_diff(
+                "ses-diff",
+                "tool-d1",
+                "Edit",
+                Some(json!({
+                    "file_path": "/tmp/foo.rs",
+                    "old_string": "fn old() {}",
+                    "new_string": "fn new() {}",
+                })),
+                "/tmp/foo.rs",
+                Some("fn old() {}\n"),
+                "fn new() {}\n",
+            ),
+        )
+        .await
+        .unwrap();
+
+        write_json_line(&mut agent_writer, final_response(request_id))
+            .await
+            .unwrap();
+    });
+
+    let request = make_prompt_request("ses-diff", "edit file");
+    client
+        .send_prompt_with_callback(
+            request,
+            Box::new(move |chunk| {
+                chunks_cb.lock().unwrap().push(chunk);
+                true
+            }),
+        )
+        .await
+        .expect("streaming should complete");
+
+    let captured = chunks.lock().unwrap();
+    let tool_start = captured
+        .iter()
+        .find(|c| matches!(c, StreamingChunk::ToolStart { .. }))
+        .expect("should have ToolStart");
+
+    match tool_start {
+        StreamingChunk::ToolStart { id, diffs, .. } => {
+            assert_eq!(id, "tool-d1");
+            assert_eq!(diffs.len(), 1, "should forward exactly one diff");
+            let diff = &diffs[0];
+            assert_eq!(diff.path, "/tmp/foo.rs");
+            assert_eq!(diff.old_content.as_deref(), Some("fn old() {}\n"));
+            assert_eq!(diff.new_content, "fn new() {}\n");
         }
         _ => unreachable!(),
     }
@@ -740,6 +850,7 @@ fn streaming_chunk_variants_roundtrip_via_json() {
                 name,
                 id,
                 arguments,
+                ..
             } => json!({"kind": "tool_start", "name": name, "id": id, "arguments": arguments}),
             StreamingChunk::ToolEnd { id, result, error } => {
                 json!({"kind": "tool_end", "id": id, "result": result, "error": error})
@@ -759,6 +870,7 @@ fn streaming_chunk_variants_roundtrip_via_json() {
                     .get("arguments")
                     .cloned()
                     .filter(|v| !v.is_null()),
+                diffs: Vec::new(),
             },
             "tool_end" => StreamingChunk::ToolEnd {
                 id: serialized["id"].as_str().unwrap().to_string(),
@@ -780,11 +892,13 @@ fn streaming_chunk_variants_roundtrip_via_json() {
             name: "semantic_search".to_string(),
             id: "tool-1".to_string(),
             arguments: Some(json!({"query": "rust", "limit": 10})),
+            diffs: Vec::new(),
         },
         StreamingChunk::ToolStart {
             name: "list_models".to_string(),
             id: "tool-2".to_string(),
             arguments: None,
+            diffs: Vec::new(),
         },
         StreamingChunk::ToolEnd {
             id: "tool-1".to_string(),
@@ -808,11 +922,13 @@ fn streaming_chunk_variants_roundtrip_via_json() {
                     name: a_n,
                     id: a_i,
                     arguments: a_a,
+                    ..
                 },
                 StreamingChunk::ToolStart {
                     name: b_n,
                     id: b_i,
                     arguments: b_a,
+                    ..
                 },
             ) => {
                 assert_eq!(a_n, b_n);

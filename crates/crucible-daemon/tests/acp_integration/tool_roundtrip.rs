@@ -240,6 +240,7 @@ async fn test_acp_tool_roundtrip_read_file() {
             name,
             id,
             arguments,
+            ..
         } => {
             assert_eq!(name, "Read File", "tool name should be humanized");
             assert_eq!(id, "tc-read-1");
@@ -619,6 +620,7 @@ async fn test_acp_tool_roundtrip_with_mcp_server() {
                 name,
                 id,
                 arguments,
+                ..
             } => {
                 // MCP-prefixed names get humanized
                 assert_eq!(name, "List Notes", "MCP tool name should be humanized");

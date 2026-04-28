@@ -308,14 +308,9 @@ impl CrucibleAcpClient {
                 let tool_name = humanize_tool_title(&tool_call.title);
                 let tool_id = tool_call.tool_call_id.to_string();
 
-                // Emit tool start event
-                callback(StreamingChunk::ToolStart {
-                    name: tool_name.clone(),
-                    id: tool_id.clone(),
-                    arguments: tool_call.raw_input.clone(),
-                });
-
-                // Record tool call in state
+                // Extract diffs once from this notification's content; reuse
+                // for both the live `ToolStart` chunk and the `ToolCallInfo`
+                // recorded in `state.tool_calls`.
                 let diffs: Vec<FileDiff> = tool_call
                     .content
                     .iter()
@@ -328,6 +323,16 @@ impl CrucibleAcpClient {
                         _ => None,
                     })
                     .collect();
+
+                // Emit tool start event with the diffs we just extracted so
+                // the TUI can render them in scrollback as the call appears.
+                callback(StreamingChunk::ToolStart {
+                    name: tool_name.clone(),
+                    id: tool_id.clone(),
+                    arguments: tool_call.raw_input.clone(),
+                    diffs: diffs.clone(),
+                });
+
                 let mut info = ToolCallInfo::new(tool_call.title.clone())
                     .with_id(tool_id)
                     .with_diffs(diffs);
