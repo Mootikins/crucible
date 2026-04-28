@@ -3,6 +3,7 @@
 //! Renders tool call states: pending (with static ● icon), complete (with ✓),
 //! and error (with ✗). No animated spinners — animation lives in chrome only.
 
+use crate::tui::oil::components::diff_view::{render_diff, DiffOptions};
 use crate::tui::oil::utils::truncate_to_chars;
 use crate::tui::oil::viewport_cache::CachedToolCall;
 use crucible_oil::ansi::visible_width;
@@ -238,10 +239,25 @@ impl CachedToolCall {
             format_tool_result(&self.name, result_str, width)
         };
 
-        if matches!(result_node, Node::Empty) {
-            header
+        let diff_node = if self.diffs.is_empty() {
+            Node::Empty
         } else {
-            col([header, result_node])
+            let opts = DiffOptions::for_width(width);
+            let nodes: Vec<Node> = self.diffs.iter().map(|d| render_diff(d, &opts)).collect();
+            col(nodes)
+        };
+
+        let mut children = vec![header];
+        if !matches!(diff_node, Node::Empty) {
+            children.push(diff_node);
+        }
+        if !matches!(result_node, Node::Empty) {
+            children.push(result_node);
+        }
+        if children.len() == 1 {
+            children.pop().unwrap()
+        } else {
+            col(children)
         }
     }
 
@@ -776,6 +792,78 @@ mod tests {
         assert!(
             plain.contains("Read"),
             "Should show tool name (title-cased, without mcp_ prefix): {:?}",
+            plain
+        );
+    }
+
+    #[test]
+    fn render_complete_includes_diff_body_when_diffs_present() {
+        use crucible_core::types::acp::FileDiff;
+
+        let mut tool = test_tool_with_output(
+            "edit",
+            r#"{"path": "src/foo.rs"}"#,
+            r#"{"success": true}"#,
+            true,
+        );
+        tool.diffs = vec![FileDiff::from_contents(
+            "src/foo.rs",
+            Some("OLD_LINE\n".to_string()),
+            "CHANGED_LINE\n".to_string(),
+        )];
+        let node = tool.render_compact(100);
+        let plain = render_to_plain_text(&node, 100);
+
+        assert!(
+            plain.contains("Edit"),
+            "Should still show tool header: {:?}",
+            plain
+        );
+        assert!(
+            plain.contains("src/foo.rs"),
+            "Diff header should show path: {:?}",
+            plain
+        );
+        assert!(
+            plain.contains("CHANGED_LINE"),
+            "Diff body should show added line: {:?}",
+            plain
+        );
+    }
+
+    #[test]
+    fn render_complete_with_multiple_diffs_renders_all() {
+        use crucible_core::types::acp::FileDiff;
+
+        let mut tool = test_tool_with_output("edit", r#"{}"#, r#"{"ok":true}"#, true);
+        tool.diffs = vec![
+            FileDiff::from_contents("a.rs", Some("X\n".into()), "ALPHA_NEW\n".to_string()),
+            FileDiff::from_contents("b.rs", Some("Y\n".into()), "BETA_NEW\n".to_string()),
+        ];
+        let node = tool.render_compact(100);
+        let plain = render_to_plain_text(&node, 100);
+
+        assert!(plain.contains("ALPHA_NEW"), "first diff visible: {:?}", plain);
+        assert!(plain.contains("BETA_NEW"), "second diff visible: {:?}", plain);
+        assert!(plain.contains("a.rs") && plain.contains("b.rs"), "both paths: {:?}", plain);
+    }
+
+    #[test]
+    fn render_running_omits_diff_body_even_if_diffs_present() {
+        use crucible_core::types::acp::FileDiff;
+
+        let mut tool = test_tool("edit", r#"{"path": "in_flight.rs"}"#, false);
+        tool.diffs = vec![FileDiff::from_contents(
+            "in_flight.rs",
+            Some(String::new()),
+            "PARTIAL_OUTPUT\n".to_string(),
+        )];
+        let node = tool.render_compact(100);
+        let plain = render_to_plain_text(&node, 100);
+
+        assert!(
+            !plain.contains("PARTIAL_OUTPUT"),
+            "in-flight tool should not render diff content yet: {:?}",
             plain
         );
     }

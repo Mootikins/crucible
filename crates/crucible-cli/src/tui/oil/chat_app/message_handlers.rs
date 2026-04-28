@@ -72,6 +72,7 @@ impl OilChatApp {
                     description: description.map(|d| Arc::from(d.as_str())),
                     source: source.as_deref().and_then(parse_tool_source),
                     lua_primary_arg: lua_primary_arg.map(|a| Arc::from(a.as_str())),
+                    diffs: Vec::new(),
                 };
                 self.container_list.add_tool_call(tool);
             }
