@@ -86,6 +86,8 @@ pub struct OilChatApp {
     needs_full_redraw: bool,
     /// Whether to render LLM thinking/reasoning blocks
     show_thinking: bool,
+    /// Whether to render Edit/Write tool diff bodies (header always renders)
+    show_diffs: bool,
     /// Precognition state (auto-RAG settings)
     precognition: PrecognitionState,
     /// Current terminal size (width, height) — updated in view()
@@ -143,6 +145,7 @@ impl App for OilChatApp {
         let ctx = &ViewContext {
             spinner_frame: self.spinner_frame(),
             show_thinking: self.show_thinking,
+            show_diffs: self.show_diffs,
             ..*ctx
         };
 
@@ -302,6 +305,10 @@ impl OilChatApp {
 
     pub(crate) fn set_show_thinking(&mut self, show: bool) {
         self.show_thinking = show;
+    }
+
+    pub(crate) fn set_show_diffs(&mut self, show: bool) {
+        self.show_diffs = show;
     }
 
     /// Spinner frame derived from wall clock (100ms per frame).
@@ -482,6 +489,7 @@ impl OilChatApp {
         let ctx = &ViewContext {
             spinner_frame: self.spinner_frame(),
             show_thinking: self.show_thinking,
+            show_diffs: self.show_diffs,
             ..*ctx
         };
         self.container_list.drain_completed(ctx)

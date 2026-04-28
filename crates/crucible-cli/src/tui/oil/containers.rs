@@ -78,7 +78,7 @@ impl ChatNode {
                 Self::render_assistant_response(text, thinking, is_continuation, *complete, ctx)
             }
             Self::ToolGroup { tools } => {
-                Self::render_tool_group(tools, ctx.spinner_frame, ctx.width())
+                Self::render_tool_group(tools, ctx.spinner_frame, ctx.width(), ctx.show_diffs)
             }
             Self::SubagentTask { agent } => render_subagent(agent, ctx.spinner_frame, ctx.width()),
             Self::ShellExecution { shell } => render_shell_execution(shell),
@@ -140,6 +140,7 @@ impl ChatNode {
             terminal_width: ctx.terminal_size.0,
             spinner_frame: ctx.spinner_frame,
             show_thinking: ctx.show_thinking,
+            show_diffs: ctx.show_diffs,
         };
 
         let has_thinking = !thinking.is_empty();
@@ -178,10 +179,15 @@ impl ChatNode {
     }
 
     /// Tool group: renders each tool via the existing tool renderer.
-    fn render_tool_group(tools: &[CachedToolCall], spinner_frame: usize, width: usize) -> Node {
+    fn render_tool_group(
+        tools: &[CachedToolCall],
+        spinner_frame: usize,
+        width: usize,
+        show_diffs: bool,
+    ) -> Node {
         let items: Vec<Node> = tools
             .iter()
-            .map(|tool| tool.render_compact_with_frame(spinner_frame, width))
+            .map(|tool| tool.render_compact_with(spinner_frame, width, show_diffs))
             .filter(|n| !matches!(n, Node::Empty))
             .collect();
 

@@ -13,13 +13,24 @@ use crucible_oil::truncate_to_width;
 use std::time::Duration;
 
 impl CachedToolCall {
-    /// Render a compact tool call with default spinner frame (0).
+    /// Render a compact tool call with default spinner frame (0) and diffs visible.
     pub fn render_compact(&self, width: usize) -> Node {
-        self.render_compact_with_frame(0, width)
+        self.render_compact_with(0, width, true)
     }
 
-    /// Render a compact tool call with specified spinner frame for animation.
+    /// Render a compact tool call with specified spinner frame; diffs visible.
     pub fn render_compact_with_frame(&self, spinner_frame: usize, width: usize) -> Node {
+        self.render_compact_with(spinner_frame, width, true)
+    }
+
+    /// Render a compact tool call. `show_diffs` gates the diff body for
+    /// Edit/Write tool calls; the rest of the result still renders.
+    pub fn render_compact_with(
+        &self,
+        spinner_frame: usize,
+        width: usize,
+        show_diffs: bool,
+    ) -> Node {
         if self.superseded {
             return Node::Empty;
         }
@@ -36,7 +47,7 @@ impl CachedToolCall {
         let inner = if let Some(ref error) = self.error {
             self.render_error(&display_name, primary_arg, error, width)
         } else if self.complete {
-            self.render_complete(&display_name, primary_arg, &result_str, width)
+            self.render_complete(&display_name, primary_arg, &result_str, width, show_diffs)
         } else {
             self.render_running(
                 &display_name,
@@ -164,6 +175,7 @@ impl CachedToolCall {
         primary_arg: &str,
         result_str: &str,
         width: usize,
+        show_diffs: bool,
     ) -> Node {
         let result_summary = if !result_str.is_empty() {
             summarize_tool_result(&self.name, result_str)
@@ -239,12 +251,12 @@ impl CachedToolCall {
             format_tool_result(&self.name, result_str, width)
         };
 
-        let diff_node = if self.diffs.is_empty() {
-            Node::Empty
-        } else {
+        let diff_node = if show_diffs && !self.diffs.is_empty() {
             let opts = DiffOptions::for_width(width);
             let nodes: Vec<Node> = self.diffs.iter().map(|d| render_diff(d, &opts)).collect();
             col(nodes)
+        } else {
+            Node::Empty
         };
 
         let mut children = vec![header];
@@ -828,6 +840,49 @@ mod tests {
             plain.contains("CHANGED_LINE"),
             "Diff body should show added line: {:?}",
             plain
+        );
+    }
+
+    #[test]
+    fn render_complete_hides_diff_body_when_show_diffs_off() {
+        use crucible_core::types::acp::FileDiff;
+
+        let mut tool = test_tool_with_output(
+            "edit",
+            r#"{"path": "src/foo.rs"}"#,
+            r#"{"success": true}"#,
+            true,
+        );
+        tool.diffs = vec![FileDiff::from_contents(
+            "src/foo.rs",
+            Some("OLD_LINE\n".to_string()),
+            "CHANGED_LINE\n".to_string(),
+        )];
+
+        let on = tool.render_compact_with(0, 100, true);
+        let on_plain = render_to_plain_text(&on, 100);
+        assert!(
+            on_plain.contains("CHANGED_LINE"),
+            "show_diffs=true must render diff body: {:?}",
+            on_plain
+        );
+
+        let off = tool.render_compact_with(0, 100, false);
+        let off_plain = render_to_plain_text(&off, 100);
+        assert!(
+            off_plain.contains("Edit"),
+            "show_diffs=false must still render the tool header: {:?}",
+            off_plain
+        );
+        assert!(
+            !off_plain.contains("CHANGED_LINE"),
+            "show_diffs=false must omit diff body: {:?}",
+            off_plain
+        );
+        assert!(
+            !off_plain.contains("OLD_LINE"),
+            "show_diffs=false must omit removed line text: {:?}",
+            off_plain
         );
     }
 

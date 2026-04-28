@@ -80,6 +80,12 @@ pub static SHORTCUTS: &[ConfigShortcut] = &[
         description: "Show thinking/reasoning blocks",
     },
     ConfigShortcut {
+        short: "show_diffs",
+        target: ShortcutTarget::Virtual,
+        completions: CompletionSource::None,
+        description: "Show diff bodies for Edit/Write tool calls",
+    },
+    ConfigShortcut {
         short: "thinkingbudget",
         target: ShortcutTarget::Path("llm.thinking_budget"),
         completions: CompletionSource::ThinkingPresets,
@@ -299,12 +305,13 @@ mod tests {
 
         // Should have all defined shortcuts
         assert_eq!(all.len(), SHORTCUTS.len());
-        assert_eq!(all.len(), 9);
+        assert_eq!(all.len(), 10);
 
         // Verify we have expected shortcuts
         let shorts: Vec<_> = all.iter().map(|s| s.short).collect();
         assert!(shorts.contains(&"model"));
         assert!(shorts.contains(&"thinking"));
+        assert!(shorts.contains(&"show_diffs"));
         assert!(shorts.contains(&"thinkingbudget"));
         assert!(shorts.contains(&"theme"));
         assert!(shorts.contains(&"verbose"));
