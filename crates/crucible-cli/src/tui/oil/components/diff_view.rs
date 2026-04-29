@@ -37,17 +37,6 @@ const MAX_DIFF_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffLayout {
-    Auto,
-    Unified,
-    SideBySide,
-}
-
-/// Layout after `Auto` has been resolved against `max_width`.
-///
-/// Returning this from `resolved_layout()` lets the renderer match
-/// exhaustively without an `unreachable!` arm for `Auto`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ResolvedLayout {
     Unified,
     SideBySide,
 }
@@ -58,7 +47,8 @@ pub struct DiffOptions {
     pub max_lines: Option<usize>,
     pub context_lines: usize,
     pub collapsed: bool,
-    pub layout: DiffLayout,
+    /// `None` = auto-pick from `max_width`; `Some` = forced override (used by tests).
+    pub layout: Option<DiffLayout>,
     pub language_hint: Option<String>,
 }
 
@@ -69,20 +59,19 @@ impl DiffOptions {
             max_lines: Some(200),
             context_lines: 3,
             collapsed: false,
-            layout: DiffLayout::Auto,
+            layout: None,
             language_hint: None,
         }
     }
 
-    pub fn resolved_layout(&self) -> ResolvedLayout {
-        match self.layout {
-            DiffLayout::Unified => ResolvedLayout::Unified,
-            DiffLayout::SideBySide => ResolvedLayout::SideBySide,
-            DiffLayout::Auto if self.max_width >= SIDE_BY_SIDE_MIN_WIDTH => {
-                ResolvedLayout::SideBySide
+    pub fn resolved_layout(&self) -> DiffLayout {
+        self.layout.unwrap_or_else(|| {
+            if self.max_width >= SIDE_BY_SIDE_MIN_WIDTH {
+                DiffLayout::SideBySide
+            } else {
+                DiffLayout::Unified
             }
-            DiffLayout::Auto => ResolvedLayout::Unified,
-        }
+        })
     }
 }
 
@@ -146,7 +135,7 @@ pub fn render_diff(diff: &FileDiff, opts: &DiffOptions) -> Node {
     let highlighter = SyntaxHighlighter::new();
 
     let body = match opts.resolved_layout() {
-        ResolvedLayout::Unified => render_unified(
+        DiffLayout::Unified => render_unified(
             old,
             new,
             opts.context_lines,
@@ -155,7 +144,7 @@ pub fn render_diff(diff: &FileDiff, opts: &DiffOptions) -> Node {
             &highlighter,
             language.as_deref(),
         ),
-        ResolvedLayout::SideBySide => render_side_by_side(
+        DiffLayout::SideBySide => render_side_by_side(
             old,
             new,
             opts.max_width,
@@ -555,20 +544,20 @@ mod tests {
     #[test]
     fn auto_layout_picks_unified_under_threshold() {
         let opts = DiffOptions::for_width(119);
-        assert_eq!(opts.resolved_layout(), ResolvedLayout::Unified);
+        assert_eq!(opts.resolved_layout(), DiffLayout::Unified);
     }
 
     #[test]
     fn auto_layout_picks_side_by_side_at_threshold() {
         let opts = DiffOptions::for_width(120);
-        assert_eq!(opts.resolved_layout(), ResolvedLayout::SideBySide);
+        assert_eq!(opts.resolved_layout(), DiffLayout::SideBySide);
     }
 
     #[test]
     fn explicit_layout_overrides_auto() {
         let mut opts = DiffOptions::for_width(200);
-        opts.layout = DiffLayout::Unified;
-        assert_eq!(opts.resolved_layout(), ResolvedLayout::Unified);
+        opts.layout = Some(DiffLayout::Unified);
+        assert_eq!(opts.resolved_layout(), DiffLayout::Unified);
     }
 
     #[test]
@@ -615,7 +604,7 @@ mod tests {
             "alpha\nbeta-CHANGED\ngamma\n",
         );
         let mut opts = DiffOptions::for_width(80);
-        opts.layout = DiffLayout::Unified;
+        opts.layout = Some(DiffLayout::Unified);
         let out = render(&d, &opts);
         assert!(out.contains("-beta"), "got: {out:?}");
         assert!(out.contains("+beta-CHANGED"), "got: {out:?}");
@@ -625,7 +614,7 @@ mod tests {
     fn header_shows_line_counts_when_expanded() {
         let d = FileDiff::from_contents("x.rs", Some("a\nb\n".into()), "a\nB1\nB2\n");
         let mut opts = DiffOptions::for_width(80);
-        opts.layout = DiffLayout::Unified;
+        opts.layout = Some(DiffLayout::Unified);
         opts.context_lines = 0;
         let out = render(&d, &opts);
         assert!(out.contains("+2"), "expected +2 in: {out:?}");
@@ -640,7 +629,7 @@ mod tests {
             "kept\nnew\nkept2\n",
         );
         let mut opts = DiffOptions::for_width(140);
-        opts.layout = DiffLayout::SideBySide;
+        opts.layout = Some(DiffLayout::SideBySide);
         opts.context_lines = 1;
         let out = render(&d, &opts);
         let line_with_old = out.lines().find(|l| l.contains("old")).unwrap_or("");
@@ -654,7 +643,7 @@ mod tests {
     fn side_by_side_pads_unmatched_insert() {
         let d = FileDiff::from_contents("x.rs", Some("a\nb\n".into()), "a\nNEW\nb\n");
         let mut opts = DiffOptions::for_width(140);
-        opts.layout = DiffLayout::SideBySide;
+        opts.layout = Some(DiffLayout::SideBySide);
         let out = render(&d, &opts);
         let line_with_new = out.lines().find(|l| l.contains("NEW")).unwrap_or("");
         assert!(
@@ -671,7 +660,7 @@ mod tests {
             "fn main() {\n    let x = 2;\n}\n",
         );
         let mut opts = DiffOptions::for_width(140);
-        opts.layout = DiffLayout::SideBySide;
+        opts.layout = Some(DiffLayout::SideBySide);
         let out = render(&d, &opts);
         assert!(
             out.contains("fn"),
@@ -695,7 +684,7 @@ mod tests {
             "\u{89}PNG\r\n\u{1a}\nDIFFERENT\n",
         );
         let mut opts = DiffOptions::for_width(80);
-        opts.layout = DiffLayout::Unified;
+        opts.layout = Some(DiffLayout::Unified);
         let _ = render(&d, &opts);
     }
 
@@ -705,7 +694,7 @@ mod tests {
         let d = FileDiff::from_contents("x.rs", Some(String::new()), new);
         let mut opts = DiffOptions::for_width(80);
         opts.max_lines = Some(50);
-        opts.layout = DiffLayout::Unified;
+        opts.layout = Some(DiffLayout::Unified);
         let out = render(&d, &opts);
         assert!(
             out.contains("more lines"),
@@ -719,7 +708,7 @@ mod tests {
         let big = "x".repeat(1024 * 1024 + 1);
         let d = FileDiff::from_contents("x.rs", Some(String::new()), big);
         let mut opts = DiffOptions::for_width(80);
-        opts.layout = DiffLayout::Unified;
+        opts.layout = Some(DiffLayout::Unified);
         let out = render(&d, &opts);
         assert!(
             out.to_lowercase().contains("suppressed") || out.to_lowercase().contains("too large")
@@ -745,7 +734,7 @@ mod snapshot_tests {
             "pub fn add(a: u32, b: u32) -> u32 {\n    a.saturating_add(b)\n}\n",
         );
         let mut opts = DiffOptions::for_width(80);
-        opts.layout = DiffLayout::Unified;
+        opts.layout = Some(DiffLayout::Unified);
         let out = snap(&d, &opts);
         insta::assert_snapshot!(out);
     }
@@ -759,7 +748,7 @@ mod snapshot_tests {
             "pub fn add(a: u32, b: u32) -> u32 {\n    a.saturating_add(b)\n}\n",
         );
         let mut opts = DiffOptions::for_width(140);
-        opts.layout = DiffLayout::SideBySide;
+        opts.layout = Some(DiffLayout::SideBySide);
         let out = snap(&d, &opts);
         insta::assert_snapshot!(out);
     }
