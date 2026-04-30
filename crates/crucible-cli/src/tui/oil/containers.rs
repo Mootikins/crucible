@@ -825,6 +825,83 @@ mod tests {
     }
 
     #[test]
+    fn user_then_thinking_then_tool_call_preserves_thinking() {
+        // Sequence: user message → thinking delta arrives → tool call lands.
+        // The append_thinking call creates an AR that holds the thinking
+        // content. add_tool_call marks the AR complete and creates a fresh
+        // ToolGroup. Both nodes must render meaningful content; the AR is
+        // not empty (it carries the thinking) so it must NOT be silently
+        // swallowed by render-time Node::Empty short-circuiting.
+        let mut list = ContainerList::new();
+        list.add_user_message("question".into());
+        list.mark_turn_active();
+        list.append_thinking("considering options");
+        list.add_tool_call(CachedToolCall::new("t1", "bash", "{}"));
+
+        let nodes = list.nodes();
+        // Expect [user, AR(thinking), ToolGroup] — three distinct nodes.
+        assert_eq!(
+            nodes.len(),
+            3,
+            "expected 3 nodes, got {} ({:?})",
+            nodes.len(),
+            nodes
+                .iter()
+                .map(|n| match n {
+                    ChatNode::UserMessage { .. } => "user",
+                    ChatNode::AssistantResponse { .. } => "ar",
+                    ChatNode::ToolGroup { .. } => "tools",
+                    ChatNode::SystemMessage { .. } => "sys",
+                    _ => "other",
+                })
+                .collect::<Vec<_>>()
+        );
+        match &nodes[1] {
+            ChatNode::AssistantResponse {
+                text,
+                thinking,
+                complete,
+            } => {
+                assert!(*complete, "AR before ToolGroup must be complete");
+                assert!(text.is_empty(), "no text yet — only thinking");
+                assert_eq!(thinking.len(), 1, "thinking component should exist");
+                let plain = render_node(&nodes[1], true);
+                assert!(
+                    plain.contains("considering options"),
+                    "thinking content must render: {:?}",
+                    plain
+                );
+            }
+            other => panic!("expected AssistantResponse, got {:?}", other),
+        }
+        assert!(matches!(&nodes[2], ChatNode::ToolGroup { .. }));
+    }
+
+    #[test]
+    fn empty_thinking_then_tool_call_does_not_render_blank_assistant_band() {
+        // Defensive: if append_thinking is called with an empty delta and a
+        // tool call follows immediately, we must not graduate a visually-
+        // empty AssistantResponse band into scrollback. Sanity check on
+        // the Node::Empty short-circuit in render_assistant_response.
+        let mut list = ContainerList::new();
+        list.add_user_message("q".into());
+        list.mark_turn_active();
+        list.append_thinking("");
+        list.add_tool_call(CachedToolCall::new("t1", "bash", "{}"));
+        list.complete_response();
+
+        let grad = drain(&mut list).expect("graduation expected");
+        let plain = render_to_plain_text(&grad.node, 80);
+        // The graduated output should reach the tool group with no extra
+        // assistant indicator/bullet/separator that would belong to a real AR.
+        assert!(
+            !plain.lines().any(|l| l.trim() == "▌"),
+            "no assistant bullet expected for an empty thinking-only AR: {:?}",
+            plain
+        );
+    }
+
+    #[test]
     fn is_streaming_reflects_turn_active() {
         let mut list = ContainerList::new();
         assert!(!list.is_streaming());

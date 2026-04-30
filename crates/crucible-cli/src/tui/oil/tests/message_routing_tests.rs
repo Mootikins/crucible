@@ -174,7 +174,7 @@ fn tool_call_creates_tool_group() {
 }
 
 #[test]
-fn tool_call_diff_update_merges_diffs_into_existing_tool() {
+fn tool_call_diff_update_replaces_empty_diffs_with_late_content() {
     use crucible_core::types::acp::FileDiff;
 
     // Simulates the ACP late-diff flow (Claude Code): the daemon

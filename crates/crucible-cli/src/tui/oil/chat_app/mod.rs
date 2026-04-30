@@ -311,6 +311,10 @@ impl OilChatApp {
         self.show_diffs = show;
     }
 
+    pub(crate) fn show_diffs(&self) -> bool {
+        self.show_diffs
+    }
+
     /// Spinner frame derived from wall clock (100ms per frame).
     /// Independent of tick events — animates even during rapid streaming.
     pub fn spinner_frame(&self) -> usize {

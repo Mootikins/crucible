@@ -297,4 +297,28 @@ impl OilChatRunner {
     ) -> Action<ChatAppMsg> {
         Self::process_message(msg, app, agent, bridge, is_replay).await
     }
+
+    /// Test-only helper: drive `process_action` directly so tests exercise
+    /// the real production path rather than a mirrored copy of its body.
+    /// Constructs the dependent params (msg_tx, background_tasks) inline.
+    #[cfg(test)]
+    pub(crate) async fn process_action_for_test<A: AgentHandle>(
+        &mut self,
+        action: Action<ChatAppMsg>,
+        app: &mut OilChatApp,
+        agent: &mut A,
+        bridge: &AgentEventBridge,
+    ) -> io::Result<bool> {
+        let (msg_tx, _msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
+        let mut background_tasks: Vec<JoinHandle<()>> = Vec::new();
+        self.process_action(ProcessActionParams {
+            action,
+            app,
+            agent,
+            bridge,
+            msg_tx: &msg_tx,
+            background_tasks: &mut background_tasks,
+        })
+        .await
+    }
 }
