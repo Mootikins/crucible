@@ -3,7 +3,54 @@ use agent_client_protocol::ToolCallStatus;
 use super::types::{ResponseSegment, StreamingState};
 use super::CrucibleAcpClient;
 use crate::acp::streaming::humanize_tool_title;
-use crucible_core::types::acp::ToolCallInfo;
+use crucible_core::types::acp::{FileDiff, ToolCallInfo};
+
+/// Format a slice of `FileDiff`s as a unified-diff text block, suitable for
+/// embedding in the assistant's textual response. Returns None if every diff
+/// produced no changed lines.
+fn format_diffs_unified(diffs: &[FileDiff]) -> Option<String> {
+    use similar::{ChangeTag, TextDiff};
+
+    let mut output = String::new();
+    for diff_entry in diffs {
+        let entry_start = output.len();
+        if !output.is_empty() {
+            output.push_str("\n--- \n");
+        }
+        output.push_str(&format!("--- {}\n", diff_entry.path));
+        output.push_str(&format!("+++ {}\n", diff_entry.path));
+
+        let old = diff_entry.old_content.as_deref().unwrap_or("");
+        let diff = TextDiff::from_lines(old, diff_entry.new_content.as_str());
+
+        let mut wrote_any = false;
+        for change in diff.iter_all_changes() {
+            let line = change.to_string_lossy();
+            let line_content = line.strip_suffix('\n').unwrap_or(&line);
+            match change.tag() {
+                ChangeTag::Delete => {
+                    output.push_str(&format!("-{}\n", line_content));
+                    wrote_any = true;
+                }
+                ChangeTag::Insert => {
+                    output.push_str(&format!("+{}\n", line_content));
+                    wrote_any = true;
+                }
+                ChangeTag::Equal => {}
+            }
+        }
+        if !wrote_any {
+            // Roll back the empty header for this path so the join stays clean.
+            output.truncate(entry_start);
+        }
+    }
+
+    if output.is_empty() {
+        None
+    } else {
+        Some(output)
+    }
+}
 
 impl CrucibleAcpClient {
     pub(super) fn extract_tool_result(raw_output: Option<&serde_json::Value>) -> Option<String> {
@@ -95,150 +142,36 @@ impl CrucibleAcpClient {
 
     /// Generate a diff for write operations.
     ///
-    /// Checks three sources in order:
+    /// Checks two sources in order:
     /// 1. Pre-computed diffs from protocol (e.g., ACP's ToolCallContent::Diff)
-    /// 2. Tool arguments with path + content (for update_note, Write, etc.)
-    /// 3. Edit tool arguments with old_string/new_string (find-and-replace)
+    /// 2. Synthesized diffs from tool name + arguments (delegates to
+    ///    `crate::tools::diff_synth::synthesize_diffs` so tool-name normalization
+    ///    and arg-fallback rules stay in one place).
     pub(super) fn generate_diff_for_write(&self, tool_call: &ToolCallInfo) -> Option<String> {
-        use similar::{ChangeTag, TextDiff};
-
-        // Check for pre-computed diffs first (preferred source)
+        // Pre-computed diffs from the protocol take priority.
         if !tool_call.diffs.is_empty() {
-            let mut output = String::new();
-            for diff_entry in &tool_call.diffs {
-                if !output.is_empty() {
-                    output.push_str("\n--- \n");
-                }
-                output.push_str(&format!("--- {}\n", diff_entry.path));
-                output.push_str(&format!("+++ {}\n", diff_entry.path));
-
-                let old = diff_entry.old_content.as_deref().unwrap_or("");
-                let diff = TextDiff::from_lines(old, diff_entry.new_content.as_str());
-
-                for change in diff.iter_all_changes() {
-                    let tag = change.tag();
-                    let line = change.to_string_lossy();
-                    let line_content = line.strip_suffix('\n').unwrap_or(&line);
-
-                    match tag {
-                        ChangeTag::Delete => {
-                            output.push_str(&format!("-{}\n", line_content));
-                        }
-                        ChangeTag::Insert => {
-                            output.push_str(&format!("+{}\n", line_content));
-                        }
-                        ChangeTag::Equal => {
-                            // Skip unchanged lines to keep output compact
-                        }
-                    }
-                }
-            }
-            return if output.is_empty() {
-                None
-            } else {
-                Some(output)
-            };
+            return format_diffs_unified(&tool_call.diffs);
         }
 
-        // Fall back to generating diff from arguments
-
-        // Detect write operations by tool name
-        const WRITE_TOOLS: &[&str] = &[
-            "Edit",
-            "edit",
-            "WriteFile",
-            "write_file",
-            "write_text_file",
-            "update_note",
-            "create_note",
-            "Write",
-            "write",
-            "MultiEdit",
-        ];
-
-        let title = &tool_call.title;
-        let is_write = WRITE_TOOLS.iter().any(|w| title.contains(w));
-        if !is_write {
-            return None;
-        }
-
-        // Extract arguments
+        // Fall back to synthesizing from tool name + args. Single source of
+        // truth for write-tool detection and argument shape. Resolve relative
+        // paths against the session's working dir; tests pass absolute paths
+        // and tolerate the empty fallback.
         let args = tool_call.arguments.as_ref()?;
-        let obj = args.as_object()?;
-
-        // Get file path (try multiple common parameter names)
-        let path = obj
-            .get("path")
-            .or_else(|| obj.get("file_path"))
-            .or_else(|| obj.get("file"))
-            .and_then(|v| v.as_str())?;
-
-        // Read current file content (may not exist for creates)
-        let old_content = std::fs::read_to_string(path).unwrap_or_default();
-
-        // Determine new content based on tool type:
-        // 1. Edit tool: apply old_string -> new_string replacement
-        // 2. Write tools: use content directly
-        let new_content = if let (Some(old_str), Some(new_str)) = (
-            obj.get("old_string").and_then(|v| v.as_str()),
-            obj.get("new_string").and_then(|v| v.as_str()),
-        ) {
-            // Edit tool: apply the string replacement
-            let replace_all = obj
-                .get("replace_all")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-
-            if replace_all {
-                old_content.replace(old_str, new_str)
-            } else {
-                old_content.replacen(old_str, new_str, 1)
-            }
-        } else if let Some(content) = obj
-            .get("content")
-            .or_else(|| obj.get("new_content"))
-            .or_else(|| obj.get("text"))
-            .and_then(|v| v.as_str())
-        {
-            // Full file write
-            content.to_string()
-        } else {
-            // No content found
-            return None;
-        };
-
-        // Skip if no changes
-        if old_content == new_content {
+        let workspace_root = self
+            .config
+            .working_dir
+            .as_deref()
+            .unwrap_or_else(|| std::path::Path::new(""));
+        let synthesized = crate::tools::diff_synth::synthesize_diffs(
+            &tool_call.title,
+            args,
+            workspace_root,
+        );
+        if synthesized.is_empty() {
             return None;
         }
-
-        // Generate unified diff
-        let diff = TextDiff::from_lines(old_content.as_str(), new_content.as_str());
-        let mut output = String::new();
-
-        for change in diff.iter_all_changes() {
-            let tag = change.tag();
-            let line = change.to_string_lossy();
-            let line_content = line.strip_suffix('\n').unwrap_or(&line);
-
-            match tag {
-                ChangeTag::Delete => {
-                    output.push_str(&format!("-{}\n", line_content));
-                }
-                ChangeTag::Insert => {
-                    output.push_str(&format!("+{}\n", line_content));
-                }
-                ChangeTag::Equal => {
-                    // Skip unchanged lines to keep output compact
-                }
-            }
-        }
-
-        if output.is_empty() {
-            None
-        } else {
-            Some(output)
-        }
+        format_diffs_unified(&synthesized)
     }
 
     pub(super) fn upsert_tool_info(&self, tool_call: ToolCallInfo, state: &mut StreamingState) {

@@ -322,6 +322,7 @@ impl CrucibleAcpClient {
                         )),
                         _ => None,
                     })
+                    .filter(filter_oversize_diff)
                     .collect();
 
                 // Emit tool start event with the diffs we just extracted so
@@ -393,6 +394,7 @@ impl CrucibleAcpClient {
                             )),
                             _ => None,
                         })
+                        .filter(filter_oversize_diff)
                         .collect();
 
                     // Late-diff path: if the tool was already announced via
@@ -561,6 +563,7 @@ impl CrucibleAcpClient {
                         )),
                         _ => None,
                     })
+                    .filter(filter_oversize_diff)
                     .collect();
                 let mut info = ToolCallInfo::new(tool_call.title.clone())
                     .with_id(tool_call.tool_call_id.to_string())
@@ -609,6 +612,7 @@ impl CrucibleAcpClient {
                             )),
                             _ => None,
                         })
+                        .filter(filter_oversize_diff)
                         .collect();
 
                     let mut info = ToolCallInfo::new(title).with_id(id).with_diffs(diffs);
@@ -629,5 +633,20 @@ impl CrucibleAcpClient {
                 tracing::debug!("Ignoring update type: {:?}", other);
             }
         }
+    }
+}
+
+/// True if this diff is within the size cap; logs and returns false otherwise.
+/// Use as a `.filter()` predicate when ingesting ACP-supplied diffs so the
+/// cache and renderer never have to hold huge payloads.
+fn filter_oversize_diff(d: &FileDiff) -> bool {
+    if d.is_oversize() {
+        tracing::debug!(
+            path = %d.path,
+            "ACP-supplied diff exceeded MAX_DIFF_BYTES; dropping at edge"
+        );
+        false
+    } else {
+        true
     }
 }

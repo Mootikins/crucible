@@ -17,12 +17,8 @@
 
 use std::path::{Path, PathBuf};
 
-use crucible_core::types::acp::FileDiff;
+use crucible_core::types::acp::{FileDiff, MAX_DIFF_BYTES};
 use serde_json::Value;
-
-/// Per-side size limit (1 MiB) for diff content. Beyond this, the diff
-/// is dropped entirely.
-const MAX_DIFF_BYTES: usize = 1024 * 1024;
 
 /// Synthesize `FileDiff`s for a permission request, given the tool name
 /// and the raw JSON arguments the agent passed.
@@ -62,15 +58,14 @@ fn normalize_tool_name(name: &str) -> ToolKind {
         "edit_file" | "edit" | "Edit" | "str_replace" | "str_replace_editor" => {
             ToolKind::EditOrStrReplace
         }
-        "write_file" | "write" | "Write" | "WriteFile" | "write_text_file" | "create_file" => {
-            ToolKind::Write
-        }
+        "write_file" | "write" | "Write" | "WriteFile" | "write_text_file" | "create_file"
+        | "update_note" | "create_note" => ToolKind::Write,
         "multi_edit" | "MultiEdit" => ToolKind::MultiEdit,
         _ => ToolKind::Unknown,
     }
 }
 
-fn extract_path<'a>(obj: &'a serde_json::Map<String, Value>) -> Option<&'a str> {
+fn extract_path(obj: &serde_json::Map<String, Value>) -> Option<&str> {
     obj.get("path")
         .or_else(|| obj.get("file_path"))
         .or_else(|| obj.get("file"))
@@ -91,7 +86,7 @@ fn read_old_content(resolved: &Path) -> Option<String> {
 }
 
 fn within_size_cap(old: Option<&str>, new: &str) -> bool {
-    new.len() <= MAX_DIFF_BYTES && old.map_or(true, |s| s.len() <= MAX_DIFF_BYTES)
+    new.len() <= MAX_DIFF_BYTES && old.is_none_or(|s| s.len() <= MAX_DIFF_BYTES)
 }
 
 fn synth_edit(args: &Value, workspace_root: &Path) -> Vec<FileDiff> {
@@ -116,7 +111,11 @@ fn synth_edit(args: &Value, workspace_root: &Path) -> Vec<FileDiff> {
     };
 
     if !old_content.contains(old_string) {
-        // old_string not in file — graceful skip.
+        tracing::debug!(
+            path = %resolved.display(),
+            old_string_len = old_string.len(),
+            "synth_edit: old_string not found on disk; skipping diff emission"
+        );
         return Vec::new();
     }
 
@@ -411,5 +410,61 @@ mod tests {
             "content": big,
         });
         assert!(synthesize_diffs("write_file", &args, tmp.path()).is_empty());
+    }
+
+    /// Native synthesis reads on-disk content and applies the edit in
+    /// memory; an ACP agent would ship the pre/post strings directly. The
+    /// real assertion this test makes is that native synthesis honors the
+    /// disk state (so `old_content` matches what was on disk) and applies
+    /// the agent-supplied `old_string`→`new_string` substitution to
+    /// produce `new_content`. If those derivations drift, the user sees
+    /// inconsistent diffs depending on which agent path produced them.
+    #[test]
+    fn synthesized_edit_derives_from_disk_and_agent_args() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("foo.rs");
+        let on_disk = "fn main() {\n    println!(\"hi\");\n}\n";
+        std::fs::write(&path, on_disk).unwrap();
+
+        let native = synthesize_diffs(
+            "edit_file",
+            &json!({
+                "path": path.to_str().unwrap(),
+                "old_string": "println!(\"hi\");",
+                "new_string": "println!(\"hello\");",
+            }),
+            tmp.path(),
+        );
+        assert_eq!(native.len(), 1);
+
+        // old_content comes from disk verbatim (not synthesized).
+        assert_eq!(native[0].old_content.as_deref(), Some(on_disk));
+        // new_content reflects the substitution applied to the disk state.
+        assert_eq!(
+            native[0].new_content,
+            "fn main() {\n    println!(\"hello\");\n}\n"
+        );
+    }
+
+    /// For create-style writes (file doesn't exist), the diff has
+    /// `old_content == None` and `new_content` is exactly the agent's
+    /// `content` argument — matching the shape an ACP agent emits.
+    #[test]
+    fn synthesized_write_create_has_no_old_content() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("new.md");
+        let new_content = "# New File\n\nFresh content.\n";
+
+        let native = synthesize_diffs(
+            "write_file",
+            &json!({
+                "path": path.to_str().unwrap(),
+                "content": new_content,
+            }),
+            tmp.path(),
+        );
+        assert_eq!(native.len(), 1);
+        assert!(native[0].old_content.is_none());
+        assert_eq!(native[0].new_content, new_content);
     }
 }
