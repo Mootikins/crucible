@@ -1,9 +1,10 @@
 ---
 source: crates/crucible-cli/src/tui/oil/components/diff_view.rs
-assertion_line: 733
+assertion_line: 826
 expression: out
 ---
 [38;2;0;206;209medit [0m[38;5;15msrc/lib.rs[0m[38;5;7m[2m  +1 -1[0m
 [38;5;7m pub fn add(a: u32, b: u32) -> u32 {[0m
 [38;2;247;118;142m-    a + b[0m
 [38;2;158;206;106m+    a.saturating_add(b)[0m
+[38;5;7m }[0m

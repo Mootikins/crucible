@@ -8,7 +8,7 @@
 use crate::formatting::SyntaxHighlighter;
 use crate::tui::oil::theme;
 use crate::tui::oil::utils::{truncate_to_chars, visible_width};
-use crucible_core::types::acp::FileDiff;
+use crucible_core::types::acp::{FileDiff, MAX_DIFF_BYTES};
 use crucible_oil::node::{col, row, styled, Node};
 use crucible_oil::style::{Color, Style};
 use similar::{ChangeTag, TextDiff};
@@ -30,11 +30,6 @@ fn count_changes(old: &str, new: &str) -> (usize, usize) {
     (added, removed)
 }
 
-/// Suppress diff body when either side exceeds this byte budget. The full file
-/// content is still in the FileDiff, but materializing 1 MiB+ through
-/// `TextDiff::from_lines` and the highlighter blows up frame time.
-const MAX_DIFF_BYTES: usize = 1024 * 1024;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffLayout {
     Unified,
@@ -49,7 +44,6 @@ pub struct DiffOptions {
     pub collapsed: bool,
     /// `None` = auto-pick from `max_width`; `Some` = forced override (used by tests).
     pub layout: Option<DiffLayout>,
-    pub language_hint: Option<String>,
 }
 
 impl DiffOptions {
@@ -60,17 +54,14 @@ impl DiffOptions {
             context_lines: 3,
             collapsed: false,
             layout: None,
-            language_hint: None,
         }
     }
 
     pub fn resolved_layout(&self) -> DiffLayout {
-        self.layout.unwrap_or_else(|| {
-            if self.max_width >= SIDE_BY_SIDE_MIN_WIDTH {
-                DiffLayout::SideBySide
-            } else {
-                DiffLayout::Unified
-            }
+        self.layout.unwrap_or(if self.max_width >= SIDE_BY_SIDE_MIN_WIDTH {
+            DiffLayout::SideBySide
+        } else {
+            DiffLayout::Unified
         })
     }
 }
@@ -131,7 +122,7 @@ pub fn render_diff(diff: &FileDiff, opts: &DiffOptions) -> Node {
         return header;
     }
 
-    let language = infer_language(&diff.path, opts.language_hint.as_deref());
+    let language = infer_language(&diff.path);
     let highlighter = SyntaxHighlighter::new();
 
     let body = match opts.resolved_layout() {
@@ -196,10 +187,7 @@ fn is_binary_extension(ext: &str) -> bool {
     )
 }
 
-fn infer_language(path: &str, hint: Option<&str>) -> Option<String> {
-    if let Some(h) = hint {
-        return Some(h.to_string());
-    }
+fn infer_language(path: &str) -> Option<String> {
     Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
@@ -291,6 +279,14 @@ fn pair_changes(old: &str, new: &str) -> Vec<PairedRow> {
     rows
 }
 
+/// One change inside a collected hunk, carrying enough info to emit later
+/// once the full hunk is known and the budget can be balanced across
+/// deletes/inserts.
+struct HunkChange {
+    tag: ChangeTag,
+    line: String,
+}
+
 fn render_unified(
     old: &str,
     new: &str,
@@ -305,78 +301,44 @@ fn render_unified(
     }
 
     let diff = TextDiff::from_lines(old, new);
-    let mut nodes: Vec<Node> = Vec::new();
 
-    let t = theme::active();
-    let delete_color = t.resolve_color(t.colors.error);
-    let insert_color = t.resolve_color(t.colors.success);
-    let context_color = t.resolve_color(t.colors.text_dim);
-
+    // Two-pass approach: collect hunks first, then emit with a budget that
+    // balances deletes vs inserts. The previous single-pass design cut at
+    // `max_lines` mid-hunk; because `similar` emits all deletes before any
+    // inserts within a contiguous changed region, a 30D-then-30I hunk with
+    // budget=8 produced 8 minus-lines and zero plus-lines — the user saw
+    // what was removed but never what replaced it. Collecting first lets
+    // us split the budget proportionally per hunk.
+    let mut hunks: Vec<Vec<HunkChange>> = Vec::new();
+    let mut current_hunk: Vec<HunkChange> = Vec::new();
     let mut in_hunk = false;
-    let mut hunk_lines: Vec<Node> = Vec::new();
     let mut context_buffer: Vec<String> = Vec::new();
     let mut pending_context: Vec<String> = Vec::new();
 
-    // Once we cross `max_lines`, stop emitting and just tally the remaining
-    // changes for the footer. We prefer to cut between hunks (after a flush),
-    // but a single massive hunk also flushes at a line boundary so file-create
-    // diffs don't blow past the budget entirely.
-    let mut truncated = false;
-    let mut remaining_lines = 0usize;
-    let mut remaining_added = 0usize;
-    let mut remaining_removed = 0usize;
-
-    let line_budget = max_width.saturating_sub(1);
-
-    let push_context = |hunk_lines: &mut Vec<Node>, ctx_line: &str| {
-        let trunc = truncate_to_chars(ctx_line, line_budget, true).into_owned();
-        let mut spans = vec![styled(" ", Style::new().fg(context_color))];
-        spans.extend(highlight_line(
-            highlighter,
-            language,
-            &trunc,
-            Some(context_color),
-        ));
-        hunk_lines.push(row(spans));
-    };
-
     for change in diff.iter_all_changes() {
         let tag = change.tag();
-        let line_content = change.value().trim_end_matches('\n');
-
-        if truncated {
-            match tag {
-                ChangeTag::Insert => {
-                    remaining_added += 1;
-                    remaining_lines += 1;
-                }
-                ChangeTag::Delete => {
-                    remaining_removed += 1;
-                    remaining_lines += 1;
-                }
-                ChangeTag::Equal => {}
-            }
-            continue;
-        }
+        let line_content = change.value().trim_end_matches('\n').to_string();
 
         match tag {
             ChangeTag::Equal => {
                 if in_hunk {
                     if context_lines > 0 && pending_context.len() < context_lines {
-                        pending_context.push(line_content.to_string());
+                        pending_context.push(line_content.clone());
                     } else {
-                        flush_hunk(&mut nodes, &mut hunk_lines);
-                        in_hunk = false;
-                        pending_context.clear();
-                        if let Some(max) = max_lines {
-                            if nodes.len() >= max {
-                                truncated = true;
-                            }
+                        // Hunk ends here — append the trailing context lines
+                        // we deferred and close it out.
+                        for ctx_line in pending_context.drain(..) {
+                            current_hunk.push(HunkChange {
+                                tag: ChangeTag::Equal,
+                                line: ctx_line,
+                            });
                         }
+                        hunks.push(std::mem::take(&mut current_hunk));
+                        in_hunk = false;
                     }
                 }
                 if context_lines > 0 {
-                    context_buffer.push(line_content.to_string());
+                    context_buffer.push(line_content);
                     if context_buffer.len() > context_lines {
                         context_buffer.remove(0);
                     }
@@ -385,51 +347,136 @@ fn render_unified(
             ChangeTag::Delete | ChangeTag::Insert => {
                 if !in_hunk {
                     in_hunk = true;
-                    for ctx_line in &context_buffer {
-                        push_context(&mut hunk_lines, ctx_line);
+                    for ctx_line in context_buffer.drain(..) {
+                        current_hunk.push(HunkChange {
+                            tag: ChangeTag::Equal,
+                            line: ctx_line,
+                        });
                     }
                 } else {
-                    let ctx: Vec<String> = pending_context.drain(..).collect();
-                    for ctx_line in &ctx {
-                        push_context(&mut hunk_lines, ctx_line);
+                    for ctx_line in pending_context.drain(..) {
+                        current_hunk.push(HunkChange {
+                            tag: ChangeTag::Equal,
+                            line: ctx_line,
+                        });
                     }
                 }
+                current_hunk.push(HunkChange {
+                    tag,
+                    line: line_content,
+                });
+            }
+        }
+    }
+    if in_hunk {
+        for ctx_line in pending_context.drain(..) {
+            current_hunk.push(HunkChange {
+                tag: ChangeTag::Equal,
+                line: ctx_line,
+            });
+        }
+        hunks.push(current_hunk);
+    }
 
-                let (prefix, color) = match tag {
-                    ChangeTag::Delete => ("-", delete_color),
-                    ChangeTag::Insert => ("+", insert_color),
-                    ChangeTag::Equal => unreachable!(),
-                };
-                let trunc = truncate_to_chars(line_content, line_budget, true).into_owned();
-                let mut spans = vec![styled(prefix, Style::new().fg(color))];
-                spans.extend(highlight_line(highlighter, language, &trunc, Some(color)));
-                hunk_lines.push(row(spans));
+    // Emit pass: walk hunks within the line budget. Each hunk that exceeds
+    // its share of the remaining budget gets a balanced trim.
+    let t = theme::active();
+    let delete_color = t.resolve_color(t.colors.error);
+    let insert_color = t.resolve_color(t.colors.success);
+    let context_color = t.resolve_color(t.colors.text_dim);
+    let line_budget = max_width.saturating_sub(1);
 
-                // Mid-hunk budget check: a single giant hunk (e.g. file-create
-                // with hundreds of inserts) would otherwise blow past max_lines
-                // entirely. Flush at the line boundary; row-level rendering
-                // means each line is self-contained, so this is a clean cut.
-                if let Some(max) = max_lines {
-                    if nodes.len() + hunk_lines.len() >= max {
-                        flush_hunk(&mut nodes, &mut hunk_lines);
-                        in_hunk = false;
-                        pending_context.clear();
-                        truncated = true;
+    let render_change = |change: &HunkChange| -> Node {
+        let (prefix, color) = match change.tag {
+            ChangeTag::Delete => ("-", delete_color),
+            ChangeTag::Insert => ("+", insert_color),
+            ChangeTag::Equal => (" ", context_color),
+        };
+        let trunc = truncate_to_chars(&change.line, line_budget, true).into_owned();
+        let mut spans = vec![styled(prefix, Style::new().fg(color))];
+        spans.extend(highlight_line(highlighter, language, &trunc, Some(color)));
+        row(spans)
+    };
+
+    let mut nodes: Vec<Node> = Vec::new();
+    let mut remaining_added = 0usize;
+    let mut remaining_removed = 0usize;
+    let max = max_lines.unwrap_or(usize::MAX);
+
+    for hunk in &hunks {
+        let remaining_budget = max.saturating_sub(nodes.len());
+        if remaining_budget == 0 {
+            for c in hunk {
+                match c.tag {
+                    ChangeTag::Insert => remaining_added += 1,
+                    ChangeTag::Delete => remaining_removed += 1,
+                    ChangeTag::Equal => {}
+                }
+            }
+            continue;
+        }
+
+        let (deletes, inserts, contexts) = count_kinds(hunk);
+        if hunk.len() <= remaining_budget {
+            for c in hunk {
+                nodes.push(render_change(c));
+            }
+        } else {
+            // Allocate the budget proportionally between deletes and inserts,
+            // reserving the smaller of (remaining_budget, contexts) for the
+            // surrounding context lines.
+            let ctx_share = contexts.min(remaining_budget / 4);
+            let change_budget = remaining_budget.saturating_sub(ctx_share);
+            let total_changes = deletes + inserts;
+            let (delete_cap, insert_cap) = if total_changes == 0 {
+                (0, 0)
+            } else {
+                let dcap = (change_budget * deletes / total_changes).max(if deletes > 0 { 1 } else { 0 });
+                let icap = change_budget.saturating_sub(dcap);
+                let icap = icap.max(if inserts > 0 { 1 } else { 0 }).min(inserts);
+                let dcap = dcap.min(deletes);
+                (dcap, icap)
+            };
+
+            let mut emitted_deletes = 0usize;
+            let mut emitted_inserts = 0usize;
+            let mut emitted_contexts = 0usize;
+            for c in hunk {
+                match c.tag {
+                    ChangeTag::Delete => {
+                        if emitted_deletes < delete_cap {
+                            nodes.push(render_change(c));
+                            emitted_deletes += 1;
+                        } else {
+                            remaining_removed += 1;
+                        }
+                    }
+                    ChangeTag::Insert => {
+                        if emitted_inserts < insert_cap {
+                            nodes.push(render_change(c));
+                            emitted_inserts += 1;
+                        } else {
+                            remaining_added += 1;
+                        }
+                    }
+                    ChangeTag::Equal => {
+                        if emitted_contexts < ctx_share {
+                            nodes.push(render_change(c));
+                            emitted_contexts += 1;
+                        }
                     }
                 }
             }
         }
     }
 
-    if in_hunk && !truncated {
-        flush_hunk(&mut nodes, &mut hunk_lines);
-    }
-
-    if truncated && remaining_lines > 0 {
+    if remaining_added + remaining_removed > 0 {
         let footer = styled(
             format!(
                 "  … {} more lines (+{} -{})",
-                remaining_lines, remaining_added, remaining_removed
+                remaining_added + remaining_removed,
+                remaining_added,
+                remaining_removed
             ),
             Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
         );
@@ -443,11 +490,18 @@ fn render_unified(
     }
 }
 
-fn flush_hunk(nodes: &mut Vec<Node>, hunk_lines: &mut Vec<Node>) {
-    if hunk_lines.is_empty() {
-        return;
+fn count_kinds(hunk: &[HunkChange]) -> (usize, usize, usize) {
+    let mut d = 0;
+    let mut i = 0;
+    let mut e = 0;
+    for c in hunk {
+        match c.tag {
+            ChangeTag::Delete => d += 1,
+            ChangeTag::Insert => i += 1,
+            ChangeTag::Equal => e += 1,
+        }
     }
-    nodes.append(hunk_lines);
+    (d, i, e)
 }
 
 fn render_side_by_side(
@@ -688,6 +742,33 @@ mod tests {
         let _ = render(&d, &opts);
     }
 
+    /// When a hunk is delete-heavy followed by insert-heavy (similar's
+    /// natural emit order), truncation must show some of BOTH sides — not
+    /// fill the budget with deletes and drop every insert. Regression for
+    /// the unified-diff hide-all-inserts bug.
+    #[test]
+    fn truncation_balances_deletes_and_inserts() {
+        let mut old = String::new();
+        let mut new = String::new();
+        for i in 0..30 {
+            old.push_str(&format!("old_line_{i}\n"));
+            new.push_str(&format!("new_line_{i}\n"));
+        }
+        let d = FileDiff::from_contents("big.rs", Some(old), new);
+        let mut opts = DiffOptions::for_width(80);
+        opts.max_lines = Some(8);
+        opts.layout = Some(DiffLayout::Unified);
+        let out = render(&d, &opts);
+        assert!(
+            out.contains("-old_line_"),
+            "expected at least one delete line: {out}"
+        );
+        assert!(
+            out.contains("+new_line_"),
+            "expected at least one insert line: {out}"
+        );
+    }
+
     #[test]
     fn truncation_footer_appears_when_max_lines_exceeded() {
         let new = (0..300).map(|i| format!("line{i}\n")).collect::<String>();
@@ -785,6 +866,98 @@ mod snapshot_tests {
             "pub fn add(a: u32, b: u32) -> u32 {\n    a.saturating_add(b)\n}\n",
         );
         let opts = DiffOptions::for_width(60);
+        let out = snap(&d, &opts);
+        insta::assert_snapshot!(out);
+    }
+
+    /// Delete-file diff (`new_content == ""`): every body row must be a
+    /// minus-prefixed line; header should say "delete".
+    #[test]
+    fn snap_delete_file_shows_all_red() {
+        let d = FileDiff::from_contents(
+            "src/old.rs",
+            Some("fn doomed() {}\nfn also_doomed() {}\n".into()),
+            "",
+        );
+        let mut opts = DiffOptions::for_width(80);
+        opts.layout = Some(DiffLayout::Unified);
+        let out = snap(&d, &opts);
+        insta::assert_snapshot!(out);
+    }
+
+    /// Truncation: with max_lines smaller than the change set, the body
+    /// must be cut and a "more lines" footer must appear.
+    #[test]
+    fn snap_truncation_footer() {
+        // 30 changed lines, max_lines=8 → must truncate.
+        let mut old = String::new();
+        let mut new = String::new();
+        for i in 0..30 {
+            old.push_str(&format!("line_{i}_old\n"));
+            new.push_str(&format!("line_{i}_NEW\n"));
+        }
+        let d = FileDiff::from_contents("big.rs", Some(old), new);
+        let mut opts = DiffOptions::for_width(80);
+        opts.layout = Some(DiffLayout::Unified);
+        opts.max_lines = Some(8);
+        let out = snap(&d, &opts);
+        assert!(out.contains("more"), "expected truncation footer: {out:?}");
+        insta::assert_snapshot!(out);
+    }
+
+    /// Oversize fallback: either side > MAX_DIFF_BYTES suppresses the body.
+    #[test]
+    fn snap_oversize_fallback_suppresses_body() {
+        let big = "x".repeat(MAX_DIFF_BYTES + 1);
+        let d = FileDiff::from_contents("huge.bin", Some("a\n".to_string()), big);
+        let opts = DiffOptions::for_width(80);
+        let out = snap(&d, &opts);
+        insta::assert_snapshot!(out);
+    }
+
+    /// Side-by-side row with an unmatched insert must pad the left pane and
+    /// preserve the central pane separator on every row.
+    #[test]
+    fn snap_side_by_side_unmatched_insert_padding() {
+        let d = FileDiff::from_contents(
+            "x.rs",
+            Some("alpha\nbeta\n".into()),
+            "alpha\nINSERTED\nbeta\n",
+        );
+        let mut opts = DiffOptions::for_width(140);
+        opts.layout = Some(DiffLayout::SideBySide);
+        let out = snap(&d, &opts);
+        insta::assert_snapshot!(out);
+    }
+
+    /// Non-Rust language (Python) — snapshot ensures the highlighter
+    /// dispatches on extension rather than hardcoding Rust.
+    #[test]
+    fn snap_python_syntax_highlighting() {
+        let d = FileDiff::from_contents(
+            "script.py",
+            Some("def hello():\n    return 1\n".into()),
+            "def hello():\n    return 42\n",
+        );
+        let mut opts = DiffOptions::for_width(80);
+        opts.layout = Some(DiffLayout::Unified);
+        let out = snap(&d, &opts);
+        insta::assert_snapshot!(out);
+    }
+
+    /// Binary extension: should NOT be syntax-highlighted (the binary-skip
+    /// path in `infer_language` returns None for these). Use a printable
+    /// .png-named payload — we only care that the .png extension blocks
+    /// syntax highlighting, not that the bytes are real PNG magic.
+    #[test]
+    fn snap_binary_extension_no_highlight() {
+        let d = FileDiff::from_contents(
+            "image.png",
+            Some("placeholder bytes\n".to_string()),
+            "different placeholder\n".to_string(),
+        );
+        let mut opts = DiffOptions::for_width(80);
+        opts.layout = Some(DiffLayout::Unified);
         let out = snap(&d, &opts);
         insta::assert_snapshot!(out);
     }
