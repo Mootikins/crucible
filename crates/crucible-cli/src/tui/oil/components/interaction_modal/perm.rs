@@ -215,7 +215,13 @@ impl InteractionModal {
                 let mut opts = DiffOptions::for_width(term_width);
                 opts.max_lines = Some(500);
                 opts.collapsed = self.diff_collapsed;
-                lines.push(render_diff(fd, &opts));
+                // Wrap the rendered diff in a Box with `style.bg = panel_bg`
+                // so the panel background paints behind the diff body. The
+                // renderer fills the box rect with bg-styled spaces, and
+                // CellGrid composition preserves the bg under any child
+                // text spans (which only set fg). See
+                // `crucible_oil::layout::tree_render::render_box_content`.
+                lines.push(col([render_diff(fd, &opts)]).with_style(Style::new().bg(panel_bg)));
             }
             lines.push(styled(
                 "  press h to expand/collapse diff",
