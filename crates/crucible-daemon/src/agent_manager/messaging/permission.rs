@@ -89,9 +89,6 @@ impl AgentManager {
         let pending_permissions = self.pending_permissions.clone();
         let session_id_owned = session_id.to_string();
         let event_tx_owned = event_tx.clone();
-        // One serializer per handler == per session. Concurrent prompt
-        // requests within a session queue behind each other; cross-session
-        // prompts proceed independently.
         let serializer = PermissionSerializer::new();
 
         let ask_callback: PermissionPromptCallback = Arc::new(move |perm_request: PermRequest| {
@@ -142,8 +139,14 @@ impl AgentManager {
                                 {
                                     session_map.remove(&permission_id);
                                 }
+                                tracing::debug!(
+                                    permission_id = %permission_id,
+                                    session_id = %session_id_owned,
+                                    "permission channel closed before response"
+                                );
                                 PermResponse::deny_with_reason(
-                                    "Permission request channel closed before response",
+                                    "Permission request channel closed before response"
+                                        .to_string(),
                                 )
                             }
                             Err(_) => {
@@ -152,7 +155,14 @@ impl AgentManager {
                                 {
                                     session_map.remove(&permission_id);
                                 }
-                                PermResponse::deny_with_reason("Permission request timed out")
+                                tracing::debug!(
+                                    permission_id = %permission_id,
+                                    session_id = %session_id_owned,
+                                    "permission request timed out"
+                                );
+                                PermResponse::deny_with_reason(
+                                    "Permission request timed out".to_string(),
+                                )
                             }
                         }
                     })
@@ -728,6 +738,29 @@ impl AgentManager {
 /// returned config has the requested default and *empty* allow/deny/ask rule
 /// lists, so base-config rules cannot re-introduce prompts or blocks. For
 /// `Ask` the existing allow/deny/ask rules are preserved (interactive default).
+pub(super) fn resolve_effective_permission_config(
+    permission_override: Option<PermissionMode>,
+    agent_permissions: Option<PermissionConfig>,
+    global_permission_config: Option<PermissionConfig>,
+) -> Option<PermissionConfig> {
+    match permission_override {
+        Some(mode @ (PermissionMode::Allow | PermissionMode::Deny)) => Some(PermissionConfig {
+            default: mode,
+            allow: Vec::new(),
+            deny: Vec::new(),
+            ask: Vec::new(),
+        }),
+        Some(PermissionMode::Ask) => {
+            let mut config = agent_permissions
+                .or(global_permission_config)
+                .unwrap_or_default();
+            config.default = PermissionMode::Ask;
+            Some(config)
+        }
+        None => agent_permissions.or(global_permission_config),
+    }
+}
+
 #[cfg(test)]
 mod permission_serializer_tests {
     use super::*;
@@ -833,28 +866,5 @@ mod permission_serializer_tests {
             2,
             "different serializers must not block each other; both should run concurrently"
         );
-    }
-}
-
-pub(super) fn resolve_effective_permission_config(
-    permission_override: Option<PermissionMode>,
-    agent_permissions: Option<PermissionConfig>,
-    global_permission_config: Option<PermissionConfig>,
-) -> Option<PermissionConfig> {
-    match permission_override {
-        Some(mode @ (PermissionMode::Allow | PermissionMode::Deny)) => Some(PermissionConfig {
-            default: mode,
-            allow: Vec::new(),
-            deny: Vec::new(),
-            ask: Vec::new(),
-        }),
-        Some(PermissionMode::Ask) => {
-            let mut config = agent_permissions
-                .or(global_permission_config)
-                .unwrap_or_default();
-            config.default = PermissionMode::Ask;
-            Some(config)
-        }
-        None => agent_permissions.or(global_permission_config),
     }
 }
