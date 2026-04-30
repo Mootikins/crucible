@@ -469,20 +469,24 @@ pub fn format_primary_arg(args: &str) -> String {
     }
 }
 
-/// Minimum visible columns the primary arg gets, even on tight terminals.
-const MIN_ARG_WIDTH: usize = 10;
-
 /// Truncates `arg` to fit within `available` visible columns, appending "…"
-/// when truncated. Falls back to [`MIN_ARG_WIDTH`] if `available` is smaller.
+/// when truncated. Returns empty when the budget is too small to convey any
+/// information — the caller should drop the arg from the line entirely.
+///
+/// Strict width contract: the returned string's visible width is always
+/// `<= available`. Callers like the tool-call header pass a budget computed
+/// after the icon/name/badge/separator are accounted for, so undershooting
+/// the budget is the only safe direction on narrow terminals.
 fn fit_arg_to_width(arg: &str, available: usize) -> String {
-    if arg.is_empty() {
+    if arg.is_empty() || available == 0 {
         return String::new();
     }
-    let cap = available.max(MIN_ARG_WIDTH);
-    if visible_width(arg) <= cap {
+    if visible_width(arg) <= available {
         arg.to_string()
+    } else if available == 1 {
+        "…".to_string()
     } else {
-        format!("{}…", truncate_to_width(arg, cap.saturating_sub(1), false))
+        format!("{}…", truncate_to_width(arg, available - 1, false))
     }
 }
 
@@ -1236,12 +1240,29 @@ mod tests {
     }
 
     #[test]
-    fn fit_arg_to_width_respects_minimum() {
-        // Even with available=0, we never produce zero-width output for a
-        // non-empty arg — fall back to MIN_ARG_WIDTH.
-        let result = fit_arg_to_width("a long string here", 0);
-        assert!(crucible_oil::ansi::visible_width(&result) <= MIN_ARG_WIDTH);
-        assert!(crucible_oil::ansi::visible_width(&result) > 0);
+    fn fit_arg_to_width_returns_empty_when_budget_zero() {
+        // Strict width contract: budget=0 means caller has no room → drop.
+        assert_eq!(fit_arg_to_width("a long string here", 0), "");
+    }
+
+    #[test]
+    fn fit_arg_to_width_single_col_returns_ellipsis() {
+        let result = fit_arg_to_width("a long string here", 1);
+        assert_eq!(result, "…");
+        assert_eq!(crucible_oil::ansi::visible_width(&result), 1);
+    }
+
+    #[test]
+    fn fit_arg_to_width_narrow_budget_does_not_overflow() {
+        for budget in 2..=20 {
+            let result = fit_arg_to_width("abcdefghijklmnopqrstuvwxyz", budget);
+            assert!(
+                crucible_oil::ansi::visible_width(&result) <= budget,
+                "budget={} produced width={} for {result:?}",
+                budget,
+                crucible_oil::ansi::visible_width(&result)
+            );
+        }
     }
 
     #[test]
@@ -1361,6 +1382,31 @@ mod tests {
             visible,
             header_line
         );
+    }
+
+    #[test]
+    fn tool_header_respects_narrow_terminal_width() {
+        // Regression for the MIN_ARG_WIDTH=10 floor that previously overrode
+        // the caller's budget on narrow terminals, blowing the header past
+        // the terminal width. Sweep widths from a 24-col mobile terminal up
+        // to a typical 80-col split pane.
+        let cmd = "x".repeat(120);
+        let args = format!(r#"{{"command": "{}"}}"#, cmd);
+        let tool = test_tool("bash", &args, false);
+        for width in [24usize, 30, 40, 50, 60, 80] {
+            let node = tool.render_compact(width);
+            let plain = render_to_plain_text(&node, width);
+            for line in plain.lines() {
+                let w = crucible_oil::ansi::visible_width(line);
+                assert!(
+                    w <= width,
+                    "width={} produced line of width {}: {:?}",
+                    width,
+                    w,
+                    line
+                );
+            }
+        }
     }
 
     #[test]
