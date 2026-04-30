@@ -598,7 +598,7 @@ impl GenaiAgentHandle {
                     );
                     first_chunk_logged = true;
                 }
-                tracing::info!(
+                tracing::trace!(
                     target: "ttft",
                     stage = "raw_chat_stream_event",
                     elapsed_ms = provider_start.elapsed().as_millis() as u64,
