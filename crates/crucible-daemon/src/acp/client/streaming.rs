@@ -279,7 +279,7 @@ impl CrucibleAcpClient {
     }
 
     /// Apply a session update and invoke callback for streaming chunks.
-    fn apply_session_update_with_callback(
+    pub(super) fn apply_session_update_with_callback(
         &mut self,
         notification: SessionNotification,
         state: &mut StreamingState,
@@ -398,23 +398,31 @@ impl CrucibleAcpClient {
                         .collect();
 
                     // Late-diff path: if the tool was already announced via
-                    // a prior `ToolStart` and this update brings new diff
-                    // content (e.g. Claude Code defers diffs), fire a live
-                    // `ToolDiffUpdate` chunk so the TUI can merge them into
-                    // the existing scrollback entry. Without this, the
-                    // diffs are recorded into `state.tool_calls` but the
-                    // post-stream replay in `acp_handle.rs` filters out
-                    // already-announced ids and silently drops them.
+                    // a prior `ToolStart` and this update brings *changed*
+                    // diff content (e.g. Claude Code defers diffs), fire a
+                    // live `ToolDiffUpdate` chunk so the TUI can replace the
+                    // diff snapshot in the existing scrollback entry.
+                    // Without this, the diffs are recorded into
+                    // `state.tool_calls` but the post-stream replay in
+                    // `acp_handle.rs` filters out already-announced ids and
+                    // silently drops them.
+                    //
+                    // Skip the emit when the prior recorded diffs already
+                    // match — re-rendering an identical snapshot causes a
+                    // visual flash with no informational gain.
                     if has_content_diffs && !diffs.is_empty() {
-                        let already_announced = state
+                        let prior_diffs = state
                             .tool_calls
                             .iter()
-                            .any(|tc| tc.id.as_deref() == Some(tool_id.as_str()));
-                        if already_announced {
-                            callback(StreamingChunk::ToolDiffUpdate {
-                                call_id: tool_id.clone(),
-                                diffs: diffs.clone(),
-                            });
+                            .find(|tc| tc.id.as_deref() == Some(tool_id.as_str()))
+                            .map(|tc| &tc.diffs);
+                        if let Some(prior) = prior_diffs {
+                            if prior != &diffs {
+                                callback(StreamingChunk::ToolDiffUpdate {
+                                    call_id: tool_id.clone(),
+                                    diffs: diffs.clone(),
+                                });
+                            }
                         }
                     }
 

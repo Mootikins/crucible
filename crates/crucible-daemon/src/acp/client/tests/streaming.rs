@@ -6,6 +6,8 @@ use tempfile::NamedTempFile;
 use super::{test_path, upsert_tool_info};
 use crate::acp::client::types::{ClientConfig, StreamingState};
 use crate::acp::client::CrucibleAcpClient;
+use crate::acp::streaming::{StreamingCallback, StreamingChunk};
+use agent_client_protocol::SessionNotification;
 use crucible_core::types::acp::ToolCallInfo;
 
 #[test]
@@ -293,5 +295,185 @@ fn test_tool_deduplication_same_id_updates() {
         args.get("path").and_then(|v| v.as_str()),
         Some("new.md"),
         "Arguments should be updated to new values"
+    );
+}
+
+// =========================================================================
+// Late-diff predicate tests
+// Verify ToolCallUpdate carrying changed diffs emits a ToolDiffUpdate chunk,
+// and that an unchanged repeat does NOT — preventing visual flashes when
+// agents send idempotent tool_call updates.
+// =========================================================================
+
+fn make_client() -> CrucibleAcpClient {
+    let config = ClientConfig {
+        agent_path: test_path("test-agent"),
+        agent_args: None,
+        working_dir: None,
+        env_vars: None,
+        timeout_ms: Some(1000),
+        max_retries: Some(1),
+    };
+    CrucibleAcpClient::new(config)
+}
+
+fn capture_apply(
+    client: &mut CrucibleAcpClient,
+    state: &mut StreamingState,
+    notification_json: serde_json::Value,
+) -> Vec<StreamingChunk> {
+    let notification: SessionNotification =
+        serde_json::from_value(notification_json).expect("notification should deserialize");
+    let collected: std::sync::Arc<std::sync::Mutex<Vec<StreamingChunk>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sink = collected.clone();
+    let mut callback: StreamingCallback = Box::new(move |chunk| {
+        sink.lock().unwrap().push(chunk);
+        true
+    });
+    client.apply_session_update_with_callback(notification, state, &mut callback);
+    let guard = collected.lock().unwrap();
+    guard.clone()
+}
+
+#[test]
+fn tool_call_update_with_changed_diffs_emits_diff_update_chunk() {
+    let mut client = make_client();
+    let mut state = StreamingState::default();
+
+    // Initial tool_call with empty diffs (Claude Code defers diffs).
+    capture_apply(
+        &mut client,
+        &mut state,
+        json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "tool-1",
+                "title": "edit_file",
+                "rawInput": {"path": "x.rs"},
+            },
+        }),
+    );
+
+    // Follow-up tool_call_update with diff content.
+    let chunks = capture_apply(
+        &mut client,
+        &mut state,
+        json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "tool-1",
+                "content": [{
+                    "type": "diff",
+                    "path": "/tmp/x.rs",
+                    "oldText": "fn old() {}\n",
+                    "newText": "fn new() {}\n",
+                }],
+            },
+        }),
+    );
+
+    assert!(
+        chunks.iter().any(|c| matches!(c,
+            StreamingChunk::ToolDiffUpdate { call_id, diffs }
+                if call_id == "tool-1" && diffs.len() == 1
+        )),
+        "expected ToolDiffUpdate for changed diffs, got: {:?}",
+        chunks
+    );
+}
+
+#[test]
+fn tool_call_update_with_unchanged_diffs_does_not_emit_diff_update() {
+    let mut client = make_client();
+    let mut state = StreamingState::default();
+
+    let initial_diff = json!([{
+        "type": "diff",
+        "path": "/tmp/x.rs",
+        "oldText": "old\n",
+        "newText": "new\n",
+    }]);
+
+    // Initial tool_call carries a diff.
+    capture_apply(
+        &mut client,
+        &mut state,
+        json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "tool-1",
+                "title": "edit_file",
+                "content": initial_diff.clone(),
+            },
+        }),
+    );
+
+    // Follow-up update repeats the same diff verbatim — should be silent.
+    let chunks = capture_apply(
+        &mut client,
+        &mut state,
+        json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "tool-1",
+                "content": initial_diff,
+            },
+        }),
+    );
+
+    assert!(
+        !chunks
+            .iter()
+            .any(|c| matches!(c, StreamingChunk::ToolDiffUpdate { .. })),
+        "expected no ToolDiffUpdate for unchanged diff, got: {:?}",
+        chunks
+    );
+}
+
+#[test]
+fn tool_call_update_without_prior_announcement_does_not_emit_diff_update() {
+    // If we never saw the initial tool_call, a tool_call_update with diffs
+    // should not fire a late-diff chunk — the post-stream replay will
+    // handle the brand-new tool call as usual.
+    let mut client = make_client();
+    let mut state = StreamingState::default();
+
+    let chunks = capture_apply(
+        &mut client,
+        &mut state,
+        json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "ghost-1",
+                "title": "edit_file",
+                "content": [{
+                    "type": "diff",
+                    "path": "/tmp/y.rs",
+                    "oldText": "a\n",
+                    "newText": "b\n",
+                }],
+            },
+        }),
+    );
+
+    let prior = state
+        .tool_calls
+        .iter()
+        .filter(|tc| tc.id.as_deref() == Some("ghost-1"))
+        .count();
+    assert_eq!(prior, 1, "tool_calls should record the new entry");
+
+    assert!(
+        !chunks
+            .iter()
+            .any(|c| matches!(c, StreamingChunk::ToolDiffUpdate { .. })),
+        "expected no ToolDiffUpdate without prior announcement, got: {:?}",
+        chunks
     );
 }
