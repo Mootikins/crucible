@@ -1,5 +1,7 @@
 use unicode_width::UnicodeWidthChar;
 
+use crate::ansi::extract_bg;
+
 #[derive(Debug, Clone, Default)]
 pub struct StyledCell {
     pub ch: char,
@@ -107,7 +109,26 @@ impl CellGrid {
             } else {
                 let char_width = UnicodeWidthChar::width(c).unwrap_or(1);
                 if col + char_width <= self.width {
-                    self.cells[y][col] = StyledCell::new(c, current_style.clone());
+                    // Style composition: if the new write doesn't set its
+                    // own bg, inherit whatever bg was on the cell already.
+                    // This lets a parent Box's `style.bg` survive children
+                    // that only paint fg, mirroring CSS layering. Pair
+                    // with `tree_render::render_box_content`'s bg-fill.
+                    let final_style = if extract_bg(&current_style).is_none() {
+                        match extract_bg(&self.cells[y][col].style) {
+                            Some(prior_bg) => {
+                                if current_style.is_empty() {
+                                    prior_bg
+                                } else {
+                                    format!("{}{}", prior_bg, current_style)
+                                }
+                            }
+                            None => current_style.clone(),
+                        }
+                    } else {
+                        current_style.clone()
+                    };
+                    self.cells[y][col] = StyledCell::new(c, final_style);
                     for i in 1..char_width {
                         if col + i < self.width {
                             self.cells[y][col + i] = StyledCell::new('\0', String::new());

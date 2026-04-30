@@ -302,6 +302,21 @@ fn render_box_content(
     height: usize,
     grid: &mut CellGrid,
 ) {
+    // Background fill: if `style.bg` is set, paint the entire rect with
+    // bg-styled spaces. Mirrors CSS `background-color`: the box owns its
+    // rectangular region, and children render on top. Pair with the
+    // bg-preserving cell composition in `cell_grid::blit_line` so a child
+    // Text node that writes only fg keeps the bg underneath.
+    if style.bg.is_some() && width > 0 && height > 0 {
+        let fill = apply_style(&" ".repeat(width), style);
+        for row in 0..height {
+            let target_y = y + row;
+            if target_y < grid.height() {
+                grid.blit_line(&fill, x, target_y);
+            }
+        }
+    }
+
     if let Some(border) = border {
         let chars = border.chars();
         let inner_width = width.saturating_sub(2);
@@ -660,5 +675,99 @@ mod tests {
         let (result, _) = render_layout_tree(&tree);
         // Should be "ABBA" followed by spaces
         assert!(result.starts_with("ABB"));
+    }
+
+    /// A borderless Box with `style.bg` set must paint its rect with the
+    /// background color, just like CSS `background-color`. Today the
+    /// renderer ignores `style` when there's no border — that's the bug.
+    #[test]
+    fn borderless_box_with_bg_fills_rect() {
+        use crate::style::Color;
+
+        let panel_bg = Color::Rgb(40, 44, 52);
+        let tree = LayoutTree::new(LayoutBox::new(
+            Rect::new(0, 0, 10, 2),
+            LayoutContent::Box {
+                border: None,
+                style: Style::new().bg(panel_bg),
+            },
+        ));
+
+        let (result, _) = render_layout_tree(&tree);
+        // Each row of the rect should carry the bg-color ANSI escape.
+        // Crossterm formats RGB bg as `\x1b[48;2;40;44;52m`.
+        let bg_escape = "\x1b[48;2;40;44;52m";
+        let occurrences = result.matches(bg_escape).count();
+        assert!(
+            occurrences >= 2,
+            "expected bg escape {:?} to appear at least twice (once per rect row), got {} times in: {:?}",
+            bg_escape,
+            occurrences,
+            result
+        );
+    }
+
+    /// Cell composition: a write that does NOT specify bg must preserve
+    /// whatever bg was already in the cell. Without this, a Box-bg fill
+    /// gets clobbered the moment a Text child writes over it.
+    #[test]
+    fn box_bg_persists_through_overwriting_text_child() {
+        use crate::style::Color;
+
+        let panel_bg = Color::Rgb(40, 44, 52);
+        let parent = LayoutBox::new(
+            Rect::new(0, 0, 10, 1),
+            LayoutContent::Box {
+                border: None,
+                style: Style::new().bg(panel_bg),
+            },
+        )
+        .with_child(LayoutBox::new(
+            Rect::new(0, 0, 5, 1),
+            LayoutContent::Text {
+                content: "abc".to_string(),
+                // Only fg is set — no bg specified.
+                style: Style::new().fg(Color::Rgb(247, 118, 142)),
+            },
+        ));
+
+        let tree = LayoutTree::new(parent);
+        let (result, _) = render_layout_tree(&tree);
+
+        // The cells holding "abc" must end up with BOTH the fg from the
+        // child AND the bg from the parent. A leaky implementation paints
+        // the bg first, then the text overwrites with only fg, leaving
+        // the text cells without bg. Verify by checking that the fg-
+        // colored span includes the bg escape.
+        let bg_escape = "\x1b[48;2;40;44;52m";
+        let fg_escape = "\x1b[38;2;247;118;142m";
+
+        // Find the run that contains "abc" and verify both escapes apply.
+        let abc_pos = result.find("abc").expect("text should render");
+        let prefix = &result[..abc_pos];
+        // Walk back from "abc" to the most recent bg escape — it must
+        // still be active when "abc" is drawn.
+        let last_bg = prefix.rfind(bg_escape);
+        let last_reset = prefix.rfind("\x1b[0m");
+        let last_fg = prefix.rfind(fg_escape);
+
+        assert!(
+            last_bg.is_some(),
+            "no bg escape preceded 'abc' in output: {:?}",
+            result
+        );
+        // Either the bg is set after the most recent reset, OR the fg
+        // escape itself carries bg. In both cases the bg must not have
+        // been cleared by the time "abc" renders.
+        if let (Some(bg), Some(reset)) = (last_bg, last_reset) {
+            assert!(
+                bg > reset || last_fg.is_some_and(|fg| fg > reset),
+                "bg was reset before 'abc' rendered (bg at {}, reset at {}, fg at {:?}): {:?}",
+                bg,
+                reset,
+                last_fg,
+                result
+            );
+        }
     }
 }
