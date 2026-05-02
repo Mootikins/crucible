@@ -34,7 +34,7 @@ crucible-lua = { path = "../crucible-lua", features = ["send"] }
 genai = "0.5"
 async-stream = "0.3"
 agent-client-protocol = "0.10.4"
-gix = { version = "0.81", default-features = false, features = ["blocking-network-client", "sha1"] }
+gix = { version = "0.83", default-features = false, features = ["blocking-network-client", "sha1"] }
 mlua = { workspace = true }
 notify = { workspace = true }
 notify-debouncer-full = { workspace = true }
@@ -61,7 +61,7 @@ chumsky = "0.12"
 similar = "3"
 
 # Absorbed from crucible-llm (async-stream already present above)
-tokenizers = { version = "0.22", default-features = false, features = ["progressbar", "onig"] }
+tokenizers = { version = "0.23", default-features = false, features = ["progressbar", "onig"] }
 safetensors = "0.7"
 gguf = "0.1"
 shellexpand = "3.1"
@@ -69,7 +69,7 @@ fastembed = { version = "5.13", optional = true, default-features = false, featu
 ort = { version = "=2.0.0-rc.11", default-features = false, features = ["std", "ndarray", "download-binaries", "tls-rustls", "copy-dylibs"], optional = true }
 
 # Tools dependencies (absorbed from crucible-tools)
-rmcp = { version = "1.4", features = ["macros", "server", "client", "transport-io", "transport-streamable-http-server", "transport-child-process", "transport-streamable-http-client-reqwest"] }
+rmcp = { version = "1.6", features = ["macros", "server", "client", "transport-io", "transport-streamable-http-server", "transport-child-process", "transport-streamable-http-client-reqwest"] }
 axum = "0.8"
 schemars = { workspace = true }
 regex = { workspace = true }
