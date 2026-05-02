@@ -114,6 +114,14 @@ impl CellGrid {
                     // This lets a parent Box's `style.bg` survive children
                     // that only paint fg, mirroring CSS layering. Pair
                     // with `tree_render::render_box_content`'s bg-fill.
+                    //
+                    // Asymmetric guarantee: this composes by *cell state*,
+                    // not by tree ancestry. If a sibling Box-with-bg paints
+                    // a region, then a *later* sibling (no bg) writes text
+                    // over the same cells, the second sibling's text picks
+                    // up the first sibling's bg. Tree layouts that don't
+                    // overlap siblings (Crucible's norm) see only the
+                    // intended parent→child inheritance.
                     let final_style = if extract_bg(&current_style).is_none() {
                         match extract_bg(&self.cells[y][col].style) {
                             Some(prior_bg) => {
@@ -322,5 +330,30 @@ mod tests {
         assert!(lines[0].starts_with("Line1"));
         assert!(lines[0].contains("Short"));
         assert!(lines[1].starts_with("Line2"));
+    }
+
+    /// Locks in the asymmetric composition rule documented above
+    /// `final_style`: when an earlier blit established a bg, a later blit
+    /// with no bg of its own picks up that bg. Tree layouts that don't
+    /// overlap siblings never observe this; the test exists to make the
+    /// trade-off explicit if anyone changes the composition logic.
+    #[test]
+    fn fg_only_write_inherits_prior_bg_from_cell() {
+        let mut grid = CellGrid::new(10, 1);
+        // First blit paints bg.
+        grid.blit_line("\x1b[48;2;40;44;52m     \x1b[0m", 0, 0);
+        // Second blit writes only fg over the same cells.
+        grid.blit_line("\x1b[38;2;255;0;0mABC\x1b[0m", 0, 0);
+
+        let line = &grid.to_lines()[0];
+        // The bg escape from the first blit should still be present in the
+        // composed output for the cells the second blit wrote to.
+        assert!(
+            line.contains("\x1b[48;2;40;44;52m"),
+            "expected prior bg to be preserved through fg-only write: {:?}",
+            line
+        );
+        assert!(line.contains("\x1b[38;2;255;0;0m"));
+        assert!(line.contains("ABC"));
     }
 }

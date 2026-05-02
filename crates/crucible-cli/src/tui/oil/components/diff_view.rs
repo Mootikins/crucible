@@ -425,16 +425,30 @@ fn render_unified(
             // Allocate the budget proportionally between deletes and inserts,
             // reserving the smaller of (remaining_budget, contexts) for the
             // surrounding context lines.
+            //
+            // Invariant: `delete_cap + insert_cap <= change_budget`. The two
+            // adjustments below keep both sides visible when possible
+            // without overshooting:
+            //   1. If proportional dcap rounded to 0 but deletes exist,
+            //      give them at least one slot (consuming budget).
+            //   2. If dcap consumed the whole budget but inserts exist and
+            //      the budget can spare it (>=2), reduce dcap by one so
+            //      inserts get a slot. At budget=1 with both sides present,
+            //      the tie-breaker is deletes (similar's natural emit order).
             let ctx_share = contexts.min(remaining_budget / 4);
             let change_budget = remaining_budget.saturating_sub(ctx_share);
             let total_changes = deletes + inserts;
             let (delete_cap, insert_cap) = if total_changes == 0 {
                 (0, 0)
             } else {
-                let dcap = (change_budget * deletes / total_changes).max(if deletes > 0 { 1 } else { 0 });
-                let icap = change_budget.saturating_sub(dcap);
-                let icap = icap.max(if inserts > 0 { 1 } else { 0 }).min(inserts);
-                let dcap = dcap.min(deletes);
+                let mut dcap = (change_budget * deletes / total_changes).min(deletes);
+                if deletes > 0 && dcap == 0 && change_budget >= 1 {
+                    dcap = 1;
+                }
+                if inserts > 0 && dcap == change_budget && change_budget >= 2 {
+                    dcap = change_budget - 1;
+                }
+                let icap = change_budget.saturating_sub(dcap).min(inserts);
                 (dcap, icap)
             };
 
@@ -767,6 +781,40 @@ mod tests {
             out.contains("+new_line_"),
             "expected at least one insert line: {out}"
         );
+    }
+
+    /// `max_lines` is a hard cap. Earlier proportional split applied
+    /// `.max(1)` to both delete- and insert-caps, which could emit two
+    /// rows for a budget of one. Verify the body row count never exceeds
+    /// `max_lines` regardless of the delete/insert ratio.
+    #[test]
+    fn truncation_never_overshoots_max_lines() {
+        let mut old = String::new();
+        let mut new = String::new();
+        for i in 0..20 {
+            old.push_str(&format!("old_{i}\n"));
+            new.push_str(&format!("new_{i}\n"));
+        }
+        let d = FileDiff::from_contents("x.rs", Some(old), new);
+        for max in 1usize..=6 {
+            let mut opts = DiffOptions::for_width(80);
+            opts.max_lines = Some(max);
+            opts.layout = Some(DiffLayout::Unified);
+            let out = render(&d, &opts);
+            // Body lines are the +/- prefixed rows; the header and footer
+            // are separate. Count those two prefixes only.
+            let body_lines = out
+                .lines()
+                .filter(|l| {
+                    let stripped = crucible_oil::ansi::strip_ansi(l);
+                    stripped.starts_with('+') || stripped.starts_with('-')
+                })
+                .count();
+            assert!(
+                body_lines <= max,
+                "max={max} produced {body_lines} body lines: {out}"
+            );
+        }
     }
 
     #[test]
