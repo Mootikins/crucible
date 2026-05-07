@@ -424,6 +424,48 @@ fn enforce_context_budget(
                 messages.drain(system_count..drain_end);
             }
         }
+        ContextStrategy::Summarize => {
+            // MVP: replace dropped messages with a single elision marker
+            // so the model is aware context was removed (Truncate hides
+            // the gap entirely). A follow-up commit will replace this
+            // placeholder with a live LLM-generated recap; the same
+            // call site will then flip from a synchronous transform
+            // into a backend round-trip.
+            let keep = window.unwrap_or(10);
+            let keep_count = keep * 2;
+            let system_count = messages
+                .iter()
+                .take_while(|m| m.role == genai::chat::ChatRole::System)
+                .count();
+            if messages.len() > system_count + keep_count {
+                let drain_end = messages.len() - keep_count;
+                let n_dropped = drain_end - system_count;
+                messages.drain(system_count..drain_end);
+                let placeholder = ChatMessage::system(format!(
+                    "[summary placeholder] {n_dropped} earlier turn{} elided to fit context budget",
+                    if n_dropped == 1 { "" } else { "s" }
+                ));
+                messages.insert(system_count, placeholder);
+            }
+            // Belt-and-braces: if even the kept window plus the
+            // placeholder + system prompt exceed the budget, fall back
+            // to Truncate behaviour to avoid over-budget prompts.
+            while messages.iter().map(estimate_message_tokens).sum::<usize>() > budget
+                && messages.len() > 2
+            {
+                if let Some(idx) = messages
+                    .iter()
+                    .position(|m| m.role != genai::chat::ChatRole::System)
+                {
+                    if idx >= messages.len() - 1 {
+                        break;
+                    }
+                    messages.remove(idx);
+                } else {
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -1595,4 +1637,117 @@ mod tests {
     // Undo semantics moved to AgentManager (operates on the scheduler-
     // owned ConversationTree). See agent_manager::models::undo + the
     // integration test `agent_manager::tests::messaging::*`.
+
+    // ─── ContextStrategy::Summarize ─────────────────────────────────────
+
+    fn user(s: &str) -> ChatMessage {
+        ChatMessage::user(s)
+    }
+    fn asst(s: &str) -> ChatMessage {
+        ChatMessage::assistant(s)
+    }
+    fn sys(s: &str) -> ChatMessage {
+        ChatMessage::system(s)
+    }
+
+    /// With Summarize and a budget that the message list exceeds, the
+    /// older non-system non-keep messages are replaced by a single
+    /// "[summary placeholder]" system message — distinct from Truncate,
+    /// which silently drops them.
+    #[test]
+    fn summarize_inserts_elision_placeholder() {
+        // Use long messages so token estimates exceed the small budget;
+        // estimate_message_tokens uses chars/4.
+        let long = "x".repeat(40); // 10 tokens
+        let mut messages = vec![
+            sys("system"),
+            user(&long),
+            asst(&long),
+            user(&long),
+            asst(&long),
+            user(&long),
+            asst(&long),
+            user("current question"),
+        ];
+        // Budget=12 means the 80-token total triggers drainage; window=1
+        // keeps the last 2 messages.
+        enforce_context_budget(
+            &mut messages,
+            Some(12),
+            &ContextStrategy::Summarize,
+            Some(1),
+        );
+
+        let placeholder_present = messages.iter().any(|m| {
+            m.role == genai::chat::ChatRole::System
+                && content_string(m).contains("[summary placeholder]")
+        });
+        assert!(
+            placeholder_present,
+            "expected [summary placeholder] system message after Summarize, got: {:#?}",
+            messages.iter().map(content_string).collect::<Vec<_>>()
+        );
+        // Last message survives.
+        assert_eq!(content_string(messages.last().unwrap()), "current question");
+    }
+
+    /// When the message list is already under budget, Summarize is a
+    /// no-op — no placeholder is inserted.
+    #[test]
+    fn summarize_noop_when_under_budget() {
+        let mut messages = vec![sys("S"), user("hi"), asst("hello")];
+        let before_len = messages.len();
+        enforce_context_budget(
+            &mut messages,
+            Some(10_000),
+            &ContextStrategy::Summarize,
+            None,
+        );
+        assert_eq!(messages.len(), before_len);
+        assert!(!messages
+            .iter()
+            .any(|m| content_string(m).contains("[summary placeholder]")));
+    }
+
+    /// The placeholder cites the correct number of elided turns.
+    #[test]
+    fn summarize_placeholder_reports_dropped_count() {
+        let long = "x".repeat(40);
+        let mut messages = vec![sys("S")];
+        // 8 long turns past the system prompt; window=1 keeps the last 2.
+        for _ in 0..4 {
+            messages.push(user(&long));
+            messages.push(asst(&long));
+        }
+        messages.push(user("current"));
+
+        enforce_context_budget(
+            &mut messages,
+            Some(12),
+            &ContextStrategy::Summarize,
+            Some(1),
+        );
+
+        let placeholder = messages
+            .iter()
+            .find(|m| content_string(m).contains("[summary placeholder]"))
+            .expect("placeholder must be present");
+        let body = content_string(placeholder);
+        assert!(
+            body.contains("earlier turn"),
+            "body should mention turn count: {body}"
+        );
+    }
+
+    fn content_string(msg: &ChatMessage) -> String {
+        msg.content
+            .parts()
+            .iter()
+            .filter_map(|p| match p {
+                ContentPart::Text(t) => Some(t.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("")
+    }
 }

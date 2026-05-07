@@ -11,6 +11,13 @@ pub enum ContextStrategy {
     Truncate,
     /// Keep system prompt + last N message pairs
     SlidingWindow,
+    /// Replace oldest non-system non-last messages with a single
+    /// elision-summary placeholder. Today the placeholder is a static
+    /// "[N earlier turns elided]" line so the model knows context was
+    /// dropped; a follow-up commit will replace this with a live
+    /// LLM-generated recap that preserves names, decisions, and
+    /// code references.
+    Summarize,
 }
 
 impl std::fmt::Display for ContextStrategy {
@@ -18,6 +25,7 @@ impl std::fmt::Display for ContextStrategy {
         match self {
             Self::Truncate => write!(f, "truncate"),
             Self::SlidingWindow => write!(f, "sliding_window"),
+            Self::Summarize => write!(f, "summarize"),
         }
     }
 }
@@ -29,8 +37,9 @@ impl FromStr for ContextStrategy {
         match s.to_lowercase().as_str() {
             "truncate" => Ok(Self::Truncate),
             "sliding_window" | "slidingwindow" => Ok(Self::SlidingWindow),
+            "summarize" => Ok(Self::Summarize),
             _ => Err(format!(
-                "unknown context strategy '{}'. Valid: truncate, sliding_window",
+                "unknown context strategy '{}'. Valid: truncate, sliding_window, summarize",
                 s
             )),
         }

@@ -242,7 +242,7 @@ pub fn validate_set_for_cli(input: &str) -> Result<SetEffect, SetError> {
             "contextstrategy" | "context_strategy" => {
                 // Validate the strategy value
                 match value.to_lowercase().as_str() {
-                    "truncate" | "sliding_window" | "slidingwindow" => {
+                    "truncate" | "sliding_window" | "slidingwindow" | "summarize" => {
                         let normalized = if value.to_lowercase() == "slidingwindow" {
                             "sliding_window".to_string()
                         } else {
@@ -255,7 +255,7 @@ pub fn validate_set_for_cli(input: &str) -> Result<SetEffect, SetError> {
                     _ => Err(SetError::InvalidValue {
                         key,
                         message: format!(
-                            "unknown strategy '{}'. Valid: truncate, sliding_window",
+                            "unknown strategy '{}'. Valid: truncate, sliding_window, summarize",
                             value
                         ),
                     }),
