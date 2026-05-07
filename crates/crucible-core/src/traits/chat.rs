@@ -294,6 +294,18 @@ pub trait AgentHandle: crate::turn::Agent + Send + Sync {
         3
     }
 
+    /// Set the auto-compaction threshold (fraction of `context_budget`).
+    /// `None` resets to the daemon default; `Some(0.0)` explicitly disables.
+    async fn set_autocompact_threshold(&mut self, _threshold: Option<f32>) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_autocompact_threshold".into()))
+    }
+
+    /// Get the current auto-compaction threshold. `None` indicates the
+    /// daemon default is in effect.
+    fn get_autocompact_threshold(&self) -> Option<f32> {
+        None
+    }
+
     /// Set the maximum number of Precognition search results.
     async fn set_precognition_results(&mut self, _count: usize) -> ChatResult<()> {
         Err(ChatError::NotSupported("set_precognition_results".into()))

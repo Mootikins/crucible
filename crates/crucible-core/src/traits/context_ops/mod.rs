@@ -113,6 +113,27 @@ impl ContextMessage {
     }
 }
 
+/// Heuristic token estimate for arbitrary text.
+///
+/// Uses the standard `chars / 4` approximation (≈one BPE token per four
+/// characters of English / common code). This is *not* a real tokenizer —
+/// it is a budget heuristic for triggering compaction decisions before
+/// the provider sees the prompt. Off-the-shelf accurate tokenizers don't
+/// exist for Claude 3+ and tiktoken-rs covers OpenAI only; calibrating
+/// `chars / 4` against post-hoc provider usage is sufficient for budget
+/// gating.
+pub fn estimate_tokens(text: &str) -> usize {
+    text.len().div_ceil(4)
+}
+
+/// Sum of per-message token estimates across `msgs`. Reads each
+/// message's pre-computed `metadata.token_estimate` rather than
+/// recomputing from `content`, so callers see the same value the
+/// constructor wrote.
+pub fn estimate_messages_tokens(msgs: &[ContextMessage]) -> usize {
+    msgs.iter().map(|m| m.metadata.token_estimate).sum()
+}
+
 /// Position for context insertions
 #[derive(Debug, Clone)]
 pub enum Position {

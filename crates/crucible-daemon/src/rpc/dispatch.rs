@@ -49,6 +49,8 @@ pub const METHODS: &[&str] = &[
     "session.set_thinking_budget",
     "session.get_thinking_budget",
     "session.cache_stats",
+    "session.set_autocompact_threshold",
+    "session.get_autocompact_threshold",
     "session.add_notification",
     "session.list_notifications",
     "session.dismiss_notification",
@@ -194,7 +196,8 @@ impl RpcDispatcher {
             | "session.set_validation_retries"
             | "session.set_system_prompt"
             | "session.set_precognition"
-            | "session.set_precognition_results" => {
+            | "session.set_precognition_results"
+            | "session.set_autocompact_threshold" => {
                 to_response(id, self.dispatch_session_config_setter(&req).await)
             }
             "session.get_thinking_budget"
@@ -209,7 +212,8 @@ impl RpcDispatcher {
             | "session.get_validation_retries"
             | "session.get_system_prompt"
             | "session.get_precognition"
-            | "session.get_precognition_results" => {
+            | "session.get_precognition_results"
+            | "session.get_autocompact_threshold" => {
                 to_response(id, self.dispatch_session_config_getter(&req).await)
             }
             "session.cache_stats" => to_response(id, self.handle_session_cache_stats(&req).await),
@@ -597,6 +601,14 @@ impl RpcDispatcher {
                 )
                 .await
             }
+            "session.set_autocompact_threshold" => {
+                session::handle_session_set_autocompact_threshold(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx,
+                )
+                .await
+            }
             _ => unreachable!("dispatch match already filtered to known setter methods"),
         };
         map_server_resp(resp)
@@ -646,6 +658,10 @@ impl RpcDispatcher {
             }
             "session.get_precognition_results" => {
                 session::handle_session_get_precognition_results(req.clone(), &self.ctx.agents)
+                    .await
+            }
+            "session.get_autocompact_threshold" => {
+                session::handle_session_get_autocompact_threshold(req.clone(), &self.ctx.agents)
                     .await
             }
             _ => unreachable!("dispatch match already filtered to known getter methods"),
@@ -1421,7 +1437,7 @@ mod tests {
 
     #[test]
     fn methods_count() {
-        assert_eq!(METHODS.len(), 118, "Update when adding RPC methods");
+        assert_eq!(METHODS.len(), 120, "Update when adding RPC methods");
     }
 
     #[tokio::test]

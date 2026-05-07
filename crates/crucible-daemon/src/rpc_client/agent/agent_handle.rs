@@ -336,6 +336,24 @@ impl AgentHandle for DaemonAgentHandle {
         Ok(())
     }
 
+    async fn set_autocompact_threshold(&mut self, threshold: Option<f32>) -> ChatResult<()> {
+        tracing::info!(
+            session_id = %self.session_id,
+            autocompact_threshold = ?threshold,
+            "Setting autocompact_threshold via daemon"
+        );
+        self.client
+            .session_set_autocompact_threshold(&self.session_id, threshold)
+            .await
+            .chat_comm()?;
+        self.cached_autocompact_threshold = threshold;
+        Ok(())
+    }
+
+    fn get_autocompact_threshold(&self) -> Option<f32> {
+        self.cached_autocompact_threshold
+    }
+
     fn get_validation_retries(&self) -> u32 {
         self.cached_validation_retries.unwrap_or(3)
     }

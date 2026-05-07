@@ -460,6 +460,26 @@ impl OilChatRunner {
                             }
                         }
                     }
+                    ChatAppMsg::SetAutocompactThreshold(threshold) => {
+                        tracing::info!(autocompact_threshold = ?threshold, "Setting autocompact_threshold");
+                        match params.agent.set_autocompact_threshold(*threshold).await {
+                            Ok(()) => {
+                                tracing::info!(
+                                    autocompact_threshold = ?threshold,
+                                    "Autocompact threshold set successfully"
+                                );
+                            }
+                            Err(e) => {
+                                tracing::warn!(autocompact_threshold = ?threshold, error = %e, "set_autocompact_threshold failed");
+                                params.app.add_notification(
+                                    crucible_core::types::Notification::warning(format!(
+                                        "Set autocompact_threshold failed: {}",
+                                        e
+                                    )),
+                                );
+                            }
+                        }
+                    }
                     ChatAppMsg::CloseInteraction {
                         request_id,
                         response,

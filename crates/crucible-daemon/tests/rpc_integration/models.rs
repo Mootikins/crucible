@@ -61,6 +61,7 @@ async fn test_session_switch_model() {
         context_window: None,
         output_validation: OutputValidation::default(),
         validation_retries: 3,
+        autocompact_threshold: None,
     };
 
     client
@@ -147,6 +148,7 @@ async fn test_daemon_agent_handle_switch_model() {
         context_window: None,
         output_validation: OutputValidation::default(),
         validation_retries: 3,
+        autocompact_threshold: None,
     };
 
     client

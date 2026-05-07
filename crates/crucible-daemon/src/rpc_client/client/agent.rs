@@ -131,6 +131,14 @@ pub struct SessionSetValidationRetriesRequest {
     pub validation_retries: u32,
 }
 
+/// Request for `session.set_autocompact_threshold`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSetAutocompactThresholdRequest {
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub autocompact_threshold: Option<f32>,
+}
+
 /// Request for `models.list` (no active session required).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ListAllModelsRequest {
@@ -266,10 +274,7 @@ impl DaemonClient {
     /// Fetch the prompt-cache aggregate for a session as a raw JSON object.
     /// Always returns a value — fields are zero before any completion has
     /// reported cache data, with `hit_rate` set to `null`.
-    pub async fn session_cache_stats(
-        &self,
-        session_id: &str,
-    ) -> Result<serde_json::Value> {
+    pub async fn session_cache_stats(&self, session_id: &str) -> Result<serde_json::Value> {
         let req = serde_json::json!({ "session_id": session_id });
         self.call_with_retry("session.cache_stats", req).await
     }
@@ -467,6 +472,31 @@ impl DaemonClient {
             session_id,
             "context_budget",
             |v| v.as_u64().map(|n| n as usize),
+        )
+        .await
+    }
+
+    pub async fn session_set_autocompact_threshold(
+        &self,
+        session_id: &str,
+        threshold: Option<f32>,
+    ) -> Result<()> {
+        self.typed_unit_call_with_retry(
+            "session.set_autocompact_threshold",
+            SessionSetAutocompactThresholdRequest {
+                session_id: session_id.to_string(),
+                autocompact_threshold: threshold,
+            },
+        )
+        .await
+    }
+
+    pub async fn session_get_autocompact_threshold(&self, session_id: &str) -> Result<Option<f32>> {
+        self.get_session_option(
+            "session.get_autocompact_threshold",
+            session_id,
+            "autocompact_threshold",
+            |v| v.as_f64().map(|n| n as f32),
         )
         .await
     }

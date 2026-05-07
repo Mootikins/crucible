@@ -108,6 +108,7 @@ fn test_output_validation_serde_roundtrip() {
         context_window: None,
         output_validation: OutputValidation::Json,
         validation_retries: 5,
+        autocompact_threshold: None,
     };
 
     let json = serde_json::to_string(&agent).unwrap();

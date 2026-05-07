@@ -119,6 +119,7 @@ impl AgentManager {
             permission_override,
             conversation_tree,
             cache_stats: self.cache_stats_handle(),
+            session_manager: self.session_manager.clone(),
         };
 
         let task = tokio::spawn(async move {

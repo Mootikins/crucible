@@ -787,6 +787,10 @@ async fn apply_rpc_action(
             .set_precognition_results(count)
             .await
             .map_err(|e| e.to_string()),
+        SetRpcAction::SetAutocompactThreshold(threshold) => handle
+            .set_autocompact_threshold(threshold)
+            .await
+            .map_err(|e| e.to_string()),
     }
 }
 

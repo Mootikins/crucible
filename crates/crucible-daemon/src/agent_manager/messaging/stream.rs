@@ -64,6 +64,29 @@ impl AgentManager {
                 .entry(stream_ctx.session_id.clone())
                 .or_default()
                 .record(u);
+            if crate::agent_manager::autocompact::should_autocompact(
+                u.prompt_tokens,
+                stream_ctx.agent_stream_config.context_budget,
+                stream_ctx.agent_stream_config.autocompact_threshold,
+            ) {
+                match stream_ctx
+                    .session_manager
+                    .request_compaction(&stream_ctx.session_id)
+                    .await
+                {
+                    Ok(_) => info!(
+                        session_id = %stream_ctx.session_id,
+                        prompt_tokens = u.prompt_tokens,
+                        budget = ?stream_ctx.agent_stream_config.context_budget,
+                        "Auto-compaction triggered"
+                    ),
+                    Err(e) => debug!(
+                        session_id = %stream_ctx.session_id,
+                        error = %e,
+                        "Auto-compaction request skipped (not Active or already compacting)"
+                    ),
+                }
+            }
         }
         if !emit_event(
             &stream_ctx.event_tx,
@@ -624,6 +647,7 @@ impl AgentManager {
                 permission_override: stream_ctx.permission_override,
                 conversation_tree: stream_ctx.conversation_tree.clone(),
                 cache_stats: stream_ctx.cache_stats.clone(),
+                session_manager: stream_ctx.session_manager.clone(),
             };
 
             Box::pin(Self::execute_agent_stream(

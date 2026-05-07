@@ -303,6 +303,10 @@ struct StreamContext {
     /// Per-session prompt-cache aggregate updated on every
     /// `message_complete` that carries usage data.
     cache_stats: Arc<DashMap<String, cache_stats::CacheStats>>,
+    /// Session manager handle, used by the auto-compact trigger to
+    /// request compaction when prompt usage exceeds the configured
+    /// threshold.
+    session_manager: Arc<SessionManager>,
 }
 
 #[allow(dead_code)] // fields capture config snapshot; model used in events, others reserved for stream configuration
@@ -315,6 +319,13 @@ struct AgentStreamConfig {
     system_prompt: String,
     max_iterations: Option<u32>,
     execution_timeout_secs: Option<u64>,
+    /// Snapshot of the session's `context_budget` for auto-compaction.
+    /// `None` disables auto-compaction (no budget to compare against).
+    context_budget: Option<usize>,
+    /// Fraction of `context_budget` that triggers auto-compaction.
+    /// `None` falls back to `DEFAULT_AUTOCOMPACT_THRESHOLD`. See
+    /// [`crate::agent_manager::autocompact`].
+    autocompact_threshold: Option<f32>,
 }
 
 impl AgentStreamConfig {
@@ -327,6 +338,8 @@ impl AgentStreamConfig {
             system_prompt: session_agent.system_prompt.clone(),
             max_iterations: session_agent.max_iterations,
             execution_timeout_secs: session_agent.execution_timeout_secs,
+            context_budget: session_agent.context_budget,
+            autocompact_threshold: session_agent.autocompact_threshold,
         }
     }
 }
@@ -489,9 +502,7 @@ impl AgentManager {
             .unwrap_or_default()
     }
 
-    pub(crate) fn cache_stats_handle(
-        &self,
-    ) -> Arc<DashMap<String, cache_stats::CacheStats>> {
+    pub(crate) fn cache_stats_handle(&self) -> Arc<DashMap<String, cache_stats::CacheStats>> {
         self.cache_stats.clone()
     }
 
@@ -857,6 +868,7 @@ impl AgentManager {
     }
 }
 
+pub mod autocompact;
 pub mod cache_stats;
 pub mod context_length;
 mod iter;

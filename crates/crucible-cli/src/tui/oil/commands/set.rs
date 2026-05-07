@@ -41,6 +41,10 @@ pub enum SetRpcAction {
     SetOutputValidation(String),
     SetValidationRetries(u32),
     SetPrecognitionResults(usize),
+    /// Auto-compaction threshold as a fraction of `context_budget`.
+    /// `None` clears the override (daemon falls back to its default).
+    /// `Some(0.0)` is "explicitly disabled" — emitted by `:set autocompact_threshold=off`.
+    SetAutocompactThreshold(Option<f32>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -197,6 +201,44 @@ pub fn validate_set_for_cli(input: &str) -> Result<SetEffect, SetError> {
                     };
                 Ok(SetEffect::DaemonRpc(SetRpcAction::SetContextBudget(budget)))
             }
+            "autocompactthreshold" | "autocompact_threshold" => {
+                let v = if value.eq_ignore_ascii_case("off")
+                    || value == "0"
+                    || value.eq_ignore_ascii_case("false")
+                {
+                    Some(0.0_f32)
+                } else if value.eq_ignore_ascii_case("none")
+                    || value.eq_ignore_ascii_case("null")
+                    || value.eq_ignore_ascii_case("default")
+                {
+                    None
+                } else {
+                    match value.parse::<f32>() {
+                        Ok(t) if (0.0..=1.0).contains(&t) => Some(t),
+                        Ok(_) => {
+                            return Err(SetError::InvalidValue {
+                                key,
+                                message: format!(
+                                    "autocompact_threshold {} out of range; expected 0.0..=1.0, 'off', or 'default'",
+                                    value
+                                ),
+                            });
+                        }
+                        Err(_) => {
+                            return Err(SetError::InvalidValue {
+                                key,
+                                message: format!(
+                                    "invalid autocompact_threshold {}; expected a number in 0.0..=1.0, 'off', or 'default'",
+                                    value
+                                ),
+                            });
+                        }
+                    }
+                };
+                Ok(SetEffect::DaemonRpc(SetRpcAction::SetAutocompactThreshold(
+                    v,
+                )))
+            }
             "contextstrategy" | "context_strategy" => {
                 // Validate the strategy value
                 match value.to_lowercase().as_str() {
@@ -337,6 +379,8 @@ fn is_daemon_rpc_key(key: &str) -> bool {
             | "context_strategy"
             | "contextwindow"
             | "context_window"
+            | "autocompactthreshold"
+            | "autocompact_threshold"
             | "precognition.results"
     )
 }

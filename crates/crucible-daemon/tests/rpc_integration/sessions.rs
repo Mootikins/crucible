@@ -191,6 +191,7 @@ async fn test_session_configure_agent() {
         context_window: None,
         output_validation: OutputValidation::default(),
         validation_retries: 3,
+        autocompact_threshold: None,
     };
 
     let result = client.session_configure_agent(&session_id, &agent).await;

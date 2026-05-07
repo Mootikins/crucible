@@ -160,6 +160,9 @@ pub enum ChatAppMsg {
     SetValidationRetries(u32),
     /// **Command** (TUI → daemon): Set precognition search results count.
     SetPrecognitionResults(usize),
+    /// **Command** (TUI → daemon): Set auto-compaction threshold (fraction of `context_budget`).
+    /// `None` clears the override; `Some(0.0)` disables auto-compaction.
+    SetAutocompactThreshold(Option<f32>),
     // --- Delegation & Subagent Events (daemon → TUI) ---
     /// **Event** (daemon → TUI): Subagent spawned (background task started).
     SubagentSpawned { id: String, prompt: String },
@@ -279,6 +282,7 @@ impl ChatAppMsg {
             | Self::SetOutputValidation(_)
             | Self::SetValidationRetries(_)
             | Self::SetPrecognitionResults(_)
+            | Self::SetAutocompactThreshold(_)
             | Self::McpStatusLoaded(_)
             | Self::PluginStatusLoaded(_) => MsgCategory::Config,
 

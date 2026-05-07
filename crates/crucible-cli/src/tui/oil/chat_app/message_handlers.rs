@@ -171,7 +171,8 @@ impl OilChatApp {
             | ChatAppMsg::SetContextWindow(_)
             | ChatAppMsg::SetOutputValidation(_)
             | ChatAppMsg::SetValidationRetries(_)
-            | ChatAppMsg::SetPrecognitionResults(_) => {}
+            | ChatAppMsg::SetPrecognitionResults(_)
+            | ChatAppMsg::SetAutocompactThreshold(_) => {}
             _ => {
                 tracing::warn!("unhandled config msg: {:?}", msg.category());
             }

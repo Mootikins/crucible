@@ -691,6 +691,45 @@ impl AgentManager {
         Ok(agent_config.context_budget)
     }
 
+    pub async fn set_autocompact_threshold(
+        &self,
+        session_id: &str,
+        threshold: Option<f32>,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        if let Some(t) = threshold {
+            if !(0.0..=1.0).contains(&t) {
+                return Err(AgentError::InvalidConfig(format!(
+                    "autocompact_threshold {t} out of range; expected 0.0..=1.0"
+                )));
+            }
+        }
+        self.update_agent_config_and_emit(
+            session_id,
+            event_tx,
+            "autocompact_threshold_changed",
+            serde_json::json!({ "autocompact_threshold": threshold }),
+            "Failed to emit autocompact_threshold_changed event (no subscribers)",
+            |agent_config| {
+                agent_config.autocompact_threshold = threshold;
+                Ok(())
+            },
+            || {
+                info!(
+                    session_id = %session_id,
+                    autocompact_threshold = ?threshold,
+                    "Autocompact threshold updated (agent cache invalidated)"
+                );
+            },
+        )
+        .await
+    }
+
+    pub fn get_autocompact_threshold(&self, session_id: &str) -> Result<Option<f32>, AgentError> {
+        let (_, agent_config) = self.get_session_with_agent(session_id)?;
+        Ok(agent_config.autocompact_threshold)
+    }
+
     pub async fn set_context_strategy(
         &self,
         session_id: &str,

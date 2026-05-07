@@ -276,6 +276,9 @@ impl OilChatRunner {
                             SetRpcAction::SetPrecognitionResults(n) => {
                                 ChatAppMsg::SetPrecognitionResults(n)
                             }
+                            SetRpcAction::SetAutocompactThreshold(t) => {
+                                ChatAppMsg::SetAutocompactThreshold(t)
+                            }
                         };
                         let _ = msg_tx.send(msg);
                     }

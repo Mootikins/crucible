@@ -80,6 +80,7 @@ pub fn mock_session_agent(agent_path: &str) -> SessionAgent {
         context_window: None,
         output_validation: OutputValidation::default(),
         validation_retries: 3,
+        autocompact_threshold: None,
     }
 }
 

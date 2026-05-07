@@ -121,6 +121,7 @@ pub(super) fn test_session_agent(delegation_config: Option<DelegationConfig>) ->
         context_window: None,
         output_validation: OutputValidation::default(),
         validation_retries: 3,
+        autocompact_threshold: None,
     }
 }
 

@@ -121,6 +121,7 @@ fn test_session_agent(enabled: bool, max_concurrent_delegations: u32) -> Session
         context_window: None,
         output_validation: OutputValidation::default(),
         validation_retries: 3,
+        autocompact_threshold: None,
     }
 }
 
@@ -158,6 +159,7 @@ fn test_root_session_agent(enabled: bool, max_concurrent_delegations: u32) -> Se
         context_window: None,
         output_validation: OutputValidation::default(),
         validation_retries: 3,
+        autocompact_threshold: None,
     }
 }
 

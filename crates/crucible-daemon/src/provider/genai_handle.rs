@@ -347,6 +347,7 @@ pub struct GenaiAgentHandle {
     context_window: Option<usize>,
     output_validation: OutputValidation,
     validation_retries: u32,
+    autocompact_threshold: Option<f32>,
     /// Working directory used to resolve relative `path` arguments when
     /// synthesizing diffs for file-mutating tool calls
     /// (`edit_file`, `write_file`, etc.). Empty `PathBuf` causes
@@ -478,6 +479,7 @@ impl GenaiAgentHandle {
             context_window: None,
             output_validation: OutputValidation::default(),
             validation_retries: 3,
+            autocompact_threshold: None,
             workspace_root,
         }
     }
@@ -903,6 +905,15 @@ impl AgentHandle for GenaiAgentHandle {
 
     fn get_validation_retries(&self) -> u32 {
         self.validation_retries
+    }
+
+    async fn set_autocompact_threshold(&mut self, threshold: Option<f32>) -> ChatResult<()> {
+        self.autocompact_threshold = threshold;
+        Ok(())
+    }
+
+    fn get_autocompact_threshold(&self) -> Option<f32> {
+        self.autocompact_threshold
     }
 }
 
