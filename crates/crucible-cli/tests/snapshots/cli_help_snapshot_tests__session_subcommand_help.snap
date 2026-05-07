@@ -1,0 +1,49 @@
+---
+source: crates/crucible-cli/tests/cli_help_snapshot_tests.rs
+assertion_line: 40
+expression: help
+---
+Manage chat sessions through their full lifecycle.
+
+Lifecycle: create -> configure -> send -> pause -> resume -> end
+
+Examples:
+  cru session create --title "My task"           # Create and name a session
+  cru session configure <id> -p openai -m gpt-4  # Set backend
+  cru session send <id> "message"                 # Send and stream response
+  cru session pause <id>                          # Pause
+  cru session resume <id>                         # Resume from paused
+  cru session end <id>                            # End when done
+
+  cru session list                                # List recent sessions
+  cru session show <id>                           # Show session details
+  cru session open <id>                           # Open in TUI
+  cru session export <id> -o session.md           # Export to markdown
+  cru session search "rust"                       # Search by title
+
+Scripting (non-interactive):
+  ID=$(cru session create -q)                     # Capture session ID
+  CRU_SESSION=$ID cru session send "hello"        # Use env var
+
+Usage: session <COMMAND>
+
+Commands:
+  list       List recent sessions
+  search     Search sessions by title
+  show       Show session details
+  open       Open a previous session in the TUI (same as `cru chat --resume`)
+  export     Export session to markdown file
+  reindex    Rebuild session index from JSONL files
+  cleanup    Clean up old sessions
+  create     Create a new daemon session
+  pause      Pause a daemon session
+  resume     Resume a paused daemon session
+  end        End a daemon session
+  send       Send a message to a session and stream response
+  configure  Configure agent backend (provider + model + endpoint) for a session. Use `cru set` for runtime parameter tweaks (temperature, thinking_budget, etc.)
+  load       Load a persisted session from storage into daemon memory
+  help       Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help
+          Print help (see a summary with '-h')

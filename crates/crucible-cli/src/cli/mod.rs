@@ -56,6 +56,7 @@ impl From<LogLevel> for LevelFilter {
 #[command(about = "cru - Crucible CLI - Interactive knowledge management with semantic search")]
 #[command(version)]
 #[command(arg_required_else_help = false)]
+#[command(infer_subcommands = true)]
 pub struct Cli {
     /// Subcommand to execute (defaults to chat if not provided)
     #[command(subcommand)]
@@ -454,7 +455,6 @@ Examples:
         session_id_flag: Option<String>,
     },
 
-    /// Generate shell completion scripts (bash, zsh)
     /// Bootstrap the Crucible runtime (plugins, themes, default init.lua)
     #[command(
         long_about = "Bootstrap the Crucible runtime directory with bundled plugins, themes, and a template init.lua.\n\nRun this after installing Crucible to set up the runtime files that plugins and themes need.\n\nExamples:\n  # Bootstrap runtime to default location\n  cru setup\n\n  # Bootstrap to custom location\n  cru setup --runtime-dir ~/.config/crucible/runtime\n\n  # Force re-bootstrap (overwrites existing)\n  cru setup --force"

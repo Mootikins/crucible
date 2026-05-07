@@ -1,0 +1,77 @@
+---
+source: crates/crucible-cli/tests/cli_help_snapshot_tests.rs
+assertion_line: 28
+expression: help
+---
+Interactive AI chat with session persistence and tool access.
+
+Examples:
+  # Interactive chat session
+  cru chat
+
+  # One-shot query
+  cru chat "Explain the architecture"
+
+  # Resume previous session
+  cru chat --resume chat-20250102-1430-a1b2
+
+  # Use specific agent
+  cru chat --agent claude-code
+
+  # Plan mode (read-only)
+  cru chat --plan
+
+Usage: chat [OPTIONS] [QUERY]
+
+Arguments:
+  [QUERY]
+          Optional one-shot query (if omitted, starts interactive mode)
+
+Options:
+  -a, --agent <AGENT>
+          Preferred ACP agent to use (claude-code, gemini-cli, codex, or custom profile)
+
+  -r, --resume <RESUME>
+          Resume a previous session by ID (format: chat-YYYYMMDD-HHMM-xxxx)
+
+  -e, --env <KEY=VALUE>
+          Environment variables to pass to the ACP agent (can be repeated) Format: KEY=VALUE Example: --env ANTHROPIC_BASE_URL=http://localhost:4000
+
+      --set <KEY[=VALUE]>
+          Session configuration overrides in vim-style format (can be repeated) Same syntax as TUI :set — examples: --set model=llama3 --set temperature=0.5 Use --set key for boolean flags (e.g. --set perm.autoconfirm_session)
+
+      --provider <PROVIDER>
+          LLM provider to use (from config [llm.providers])
+
+      --max-context <MAX_CONTEXT>
+          Maximum context window tokens for internal agent (default: 16384)
+          
+          [default: 16384]
+
+      --no-context
+          Skip context enrichment (faster, but agent has no knowledge base access)
+
+      --context-size <CONTEXT_SIZE>
+          Number of context results to include (default: 5)
+          
+          [default: 5]
+
+      --plan
+          Start in plan mode (read-only) instead of normal mode (full access) Can be toggled during session with /plan and /normal commands
+
+      --record <RECORD>
+          Record TUI session to a JSONL file for later replay
+
+      --replay <REPLAY>
+          Replay a previously recorded JSONL session
+
+      --replay-speed <REPLAY_SPEED>
+          Playback speed multiplier for replay (default: 1.0)
+          
+          [default: 1.0]
+
+      --replay-auto-exit [<DELAY_MS>]
+          Auto-exit after replay completes. Optional value is delay in milliseconds (default: 2000)
+
+  -h, --help
+          Print help (see a summary with '-h')
