@@ -170,15 +170,15 @@ When writing Help/ docs, reference these code locations:
 - `crates/crucible-core/src/parser/types/` - Parser types
 
 ### Storage
-- `crates/crucible-sqlite/src/` - Database layer
+- `crates/crucible-daemon/src/storage/sqlite/` - Database layer
 - `crates/crucible-core/src/storage/` - Storage traits
 
 ### Agents
-- `crates/crucible-acp/src/` - Agent implementation
+- `crates/crucible-daemon/src/acp/` - ACP host implementation
 - `crates/crucible-core/src/traits/chat.rs` - AgentHandle trait
 
 ### Configuration
-- `crates/crucible-config/src/` - Configuration loading and types
+- `crates/crucible-core/src/config/` - Configuration loading and types
 
 ### MCP/Tools
 - `crates/crucible-daemon/src/tools/` - MCP server

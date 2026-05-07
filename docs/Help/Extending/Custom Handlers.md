@@ -69,7 +69,7 @@ impl MyHandler {
 Handles database persistence:
 
 ```rust
-// From crucible-sqlite/src/event_handlers/storage_handler.rs
+// Illustrative — see crucible-daemon/src/watch/handlers/ for current handlers
 
 pub struct StorageHandler {
     store: Arc<EAVGraphStore>,
