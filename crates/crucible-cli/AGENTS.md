@@ -114,8 +114,8 @@ The CLI imports a **minimal set of domain crates** for display purposes only. Th
 | Crate | What We Use | Why | Scope |
 |-------|------------|-----|-------|
 | `crucible-lua` | `LuaNode`, `FennelCompiler` types | Render Lua execution results in chat | Display only |
-| `crucible-acp` | `humanize_tool_title()`, `get_known_agents()` | Format tool names and agent lists for display | Display only |
-| `crucible-observe` | `SessionId`, `LogEvent` types | Render session metadata and event logs | Display only |
+| `crucible-daemon::acp` | `humanize_tool_title()`, `get_known_agents()` | Format tool names and agent lists for display | Display only |
+| `crucible-daemon::observe` | `SessionWriter`, `SessionMetadata` types | Render session metadata and event logs | Display only |
 
 **Key principle:** We import *types and display utilities*, never *execution logic*. The daemon owns all business logic.
 
