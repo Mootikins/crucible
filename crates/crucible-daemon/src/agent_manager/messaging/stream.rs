@@ -23,12 +23,25 @@
 use super::super::*;
 use crate::agent_manager::tool_tracking::ToolCallTracker;
 use crucible_core::events::InternalSessionEvent;
+use crucible_core::session::{validate_output, OutputValidation};
 use crucible_core::traits::chat::{ChatToolCall, ChatToolResult};
 use crucible_core::traits::llm::TokenUsage;
 use crucible_core::turn::{Agent as TurnAgent, StopReason, TurnContext, TurnEvent};
 use futures::StreamExt;
 use std::collections::HashSet;
 use tokio::sync::mpsc;
+
+/// Outcome of running output validation on an accumulated response.
+enum ValidationOutcome {
+    /// Validation passes (or is disabled). Continue normally.
+    Pass,
+    /// Validation failed but retries remain — the carried string is the
+    /// synthetic user message to inject for the regeneration turn.
+    Retry(String),
+    /// Validation failed and `validation_retries` is exhausted. The
+    /// caller should bail out; an `ended` event has already been emitted.
+    Exhausted,
+}
 
 impl AgentManager {
     #[allow(clippy::ptr_arg)]
@@ -142,6 +155,60 @@ impl AgentManager {
         injection
     }
 
+    /// Validate the assistant response against the configured
+    /// `OutputValidation` and return the next action.
+    ///
+    /// `Pass` when validation is disabled or the response is valid.
+    /// `Retry` carries the synthetic user message to send next when
+    /// retries remain. `Exhausted` emits an `ended` event with reason
+    /// `error: output validation exhausted retries` and returns.
+    fn validate_response_or_retry(
+        stream_ctx: &StreamContext,
+        stream_config: &AgentStreamConfig,
+        accumulated_response: &str,
+        attempts_so_far: u32,
+    ) -> ValidationOutcome {
+        if matches!(stream_config.output_validation, OutputValidation::None) {
+            return ValidationOutcome::Pass;
+        }
+        let Err(reason) = validate_output(accumulated_response, &stream_config.output_validation)
+        else {
+            return ValidationOutcome::Pass;
+        };
+        if attempts_so_far >= stream_config.validation_retries {
+            warn!(
+                session_id = %stream_ctx.session_id,
+                attempts = attempts_so_far,
+                retries = stream_config.validation_retries,
+                reason = %reason,
+                "Output validation exhausted retries"
+            );
+            if !emit_event(
+                &stream_ctx.event_tx,
+                SessionEventMessage::ended(
+                    &stream_ctx.session_id,
+                    "error: output validation exhausted retries",
+                ),
+            ) {
+                warn!(
+                    session_id = %stream_ctx.session_id,
+                    "No subscribers for validation-exhausted ended event"
+                );
+            }
+            return ValidationOutcome::Exhausted;
+        }
+        info!(
+            session_id = %stream_ctx.session_id,
+            attempt = attempts_so_far + 1,
+            retries = stream_config.validation_retries,
+            reason = %reason,
+            "Output validation failed; injecting retry prompt"
+        );
+        ValidationOutcome::Retry(format!(
+            "Output validation failed: {reason}. Please regenerate your previous response so it satisfies the validation requirement."
+        ))
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn execute_agent_stream(
         agent: Arc<Mutex<BoxedAgentHandle>>,
@@ -152,6 +219,7 @@ impl AgentManager {
         is_continuation: bool,
         mut tool_depth: usize,
         max_tool_depth: usize,
+        validation_attempts: u32,
     ) {
         let ttft_local = Instant::now();
         info!(target: "ttft", session_id = %stream_ctx.session_id, stage = "execute_stream_entry", elapsed_ms = 0, "ttft");
@@ -627,6 +695,30 @@ impl AgentManager {
         )
         .await;
 
+        // If the Lua reactor didn't produce an injection, run output
+        // validation. Failure produces a synthetic "regenerate" prompt
+        // and increments the validation_attempts counter; exhaustion
+        // emits an ended event and aborts the turn.
+        let mut next_validation_attempts = validation_attempts;
+        let injection = match injection {
+            Some(_) => injection,
+            None => match Self::validate_response_or_retry(
+                &stream_ctx,
+                &stream_config,
+                accumulated_response,
+                validation_attempts,
+            ) {
+                ValidationOutcome::Pass => None,
+                ValidationOutcome::Retry(prompt) => {
+                    next_validation_attempts = validation_attempts + 1;
+                    Some((prompt, "after".to_string()))
+                }
+                ValidationOutcome::Exhausted => {
+                    return;
+                }
+            },
+        };
+
         if let Some((injected_content, _)) = injection {
             drop(event_stream);
             // Release the handle lock before recursing so the inner
@@ -659,6 +751,7 @@ impl AgentManager {
                 true,
                 tool_depth,
                 max_tool_depth,
+                next_validation_attempts,
             ))
             .await;
         }

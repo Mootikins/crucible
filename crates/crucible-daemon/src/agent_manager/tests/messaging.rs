@@ -779,3 +779,113 @@ async fn tool_dispatch_has_timeout() {
         "dispatch_tool should timeout after 30s when tool hangs"
     );
 }
+
+/// With `OutputValidation::Json` and `validation_retries=0`, an invalid
+/// JSON response must surface as a single `ended` event whose reason is
+/// the validation-exhausted marker — no second turn is attempted.
+#[tokio::test]
+async fn test_validate_retry_zero_retries_emits_exhausted_ended() {
+    let tmp = TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let agent_manager = create_test_agent_manager(session_manager.clone());
+    let mut agent = test_agent();
+    agent.output_validation = crucible_core::session::OutputValidation::Json;
+    agent.validation_retries = 0;
+    agent_manager
+        .configure_agent(&session.id, agent)
+        .await
+        .unwrap();
+
+    agent_manager.agent_cache.insert(
+        session.id.clone(),
+        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+            events: vec![script::text("not json at all"), script::done()],
+        }))),
+    );
+
+    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    agent_manager
+        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
+        .await
+        .unwrap();
+
+    let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+
+    let ended = timeout(Duration::from_secs(2), async {
+        loop {
+            match event_rx.recv().await {
+                Ok(event) if event.event == "ended" => return event,
+                Ok(_) => continue,
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(err) => panic!("event channel closed while waiting for ended: {err}"),
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for ended event");
+
+    let reason = ended.data["reason"].as_str().unwrap_or_default();
+    assert_eq!(
+        reason, "error: output validation exhausted retries",
+        "expected validation-exhausted reason, got: {reason}"
+    );
+}
+
+/// With `OutputValidation::None` (the default), invalid JSON should
+/// flow through normally — no validation, no retry, no ended-error.
+#[tokio::test]
+async fn test_validate_retry_none_validation_passes_freely() {
+    let tmp = TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let agent_manager = create_test_agent_manager(session_manager.clone());
+    agent_manager
+        .configure_agent(&session.id, test_agent())
+        .await
+        .unwrap();
+
+    agent_manager.agent_cache.insert(
+        session.id.clone(),
+        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+            events: vec![script::text("not json"), script::done()],
+        }))),
+    );
+
+    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    agent_manager
+        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
+        .await
+        .unwrap();
+
+    let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+
+    // We expect message_complete to fire normally — no validation
+    // gate intercepted it.
+    let mc = next_event_or_skip(&mut event_rx, "message_complete").await;
+    assert_eq!(mc.data["full_response"], "not json");
+}

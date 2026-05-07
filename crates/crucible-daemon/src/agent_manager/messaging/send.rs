@@ -140,6 +140,7 @@ impl AgentManager {
                 false,
                 0,
                 max_tool_depth,
+                0,
             );
 
             // Wrap in execution timeout if configured

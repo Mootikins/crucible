@@ -326,6 +326,11 @@ struct AgentStreamConfig {
     /// `None` falls back to `DEFAULT_AUTOCOMPACT_THRESHOLD`. See
     /// [`crate::agent_manager::autocompact`].
     autocompact_threshold: Option<f32>,
+    /// Validation mode for assistant text responses. Drives the
+    /// validate-retry loop in `execute_agent_stream`.
+    output_validation: OutputValidation,
+    /// Maximum retry count when output validation fails.
+    validation_retries: u32,
 }
 
 impl AgentStreamConfig {
@@ -340,6 +345,8 @@ impl AgentStreamConfig {
             execution_timeout_secs: session_agent.execution_timeout_secs,
             context_budget: session_agent.context_budget,
             autocompact_threshold: session_agent.autocompact_threshold,
+            output_validation: session_agent.output_validation.clone(),
+            validation_retries: session_agent.validation_retries,
         }
     }
 }
