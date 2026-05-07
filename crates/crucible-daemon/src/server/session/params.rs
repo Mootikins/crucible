@@ -706,3 +706,27 @@ pub(crate) async fn handle_session_undo_depth(req: Request, am: &Arc<AgentManage
         Err(e) => internal_error(req.id, e),
     }
 }
+
+/// `session.cache_stats` — return the per-session prompt-cache aggregate.
+/// `hit_rate` is `null` until at least one completion has reported cache
+/// fields, distinguishing "never had a cache event" from "0%".
+pub(crate) async fn handle_session_cache_stats(
+    req: Request,
+    am: &Arc<AgentManager>,
+) -> Response {
+    let session_id = require_param!(req, "session_id", as_str);
+    let stats = am.get_cache_stats(session_id);
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "session_id": session_id,
+            "hits": stats.hits,
+            "misses": stats.misses,
+            "read_tokens": stats.read_tokens,
+            "creation_tokens": stats.creation_tokens,
+            "prompt_tokens": stats.prompt_tokens,
+            "completion_tokens": stats.completion_tokens,
+            "hit_rate": stats.hit_rate(),
+        }),
+    )
+}

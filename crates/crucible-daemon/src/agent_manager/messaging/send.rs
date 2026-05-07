@@ -118,6 +118,7 @@ impl AgentManager {
             tool_dispatcher: self.get_or_create_session_dispatcher(&session).await,
             permission_override,
             conversation_tree,
+            cache_stats: self.cache_stats_handle(),
         };
 
         let task = tokio::spawn(async move {

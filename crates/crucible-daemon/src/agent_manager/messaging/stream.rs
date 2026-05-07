@@ -58,6 +58,13 @@ impl AgentManager {
             response_len = accumulated_response.len(),
             "Sending message_complete event"
         );
+        if let Some(u) = usage {
+            stream_ctx
+                .cache_stats
+                .entry(stream_ctx.session_id.clone())
+                .or_default()
+                .record(u);
+        }
         if !emit_event(
             &stream_ctx.event_tx,
             SessionEventMessage::message_complete(
@@ -616,6 +623,7 @@ impl AgentManager {
                 tool_dispatcher: stream_ctx.tool_dispatcher.clone(),
                 permission_override: stream_ctx.permission_override,
                 conversation_tree: stream_ctx.conversation_tree.clone(),
+                cache_stats: stream_ctx.cache_stats.clone(),
             };
 
             Box::pin(Self::execute_agent_stream(

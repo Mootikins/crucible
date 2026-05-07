@@ -48,6 +48,7 @@ pub const METHODS: &[&str] = &[
     "session.list_models",
     "session.set_thinking_budget",
     "session.get_thinking_budget",
+    "session.cache_stats",
     "session.add_notification",
     "session.list_notifications",
     "session.dismiss_notification",
@@ -211,6 +212,7 @@ impl RpcDispatcher {
             | "session.get_precognition_results" => {
                 to_response(id, self.dispatch_session_config_getter(&req).await)
             }
+            "session.cache_stats" => to_response(id, self.handle_session_cache_stats(&req).await),
             // Kiln CRUD handlers
             "kiln.open" => to_response(id, self.handle_kiln_open(&req).await),
             "kiln.close" => to_response(id, self.handle_kiln_close(&req).await),
@@ -874,6 +876,12 @@ impl RpcDispatcher {
         map_server_resp(resp)
     }
 
+    async fn handle_session_cache_stats(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp =
+            crate::server::session::handle_session_cache_stats(req.clone(), &self.ctx.agents).await;
+        map_server_resp(resp)
+    }
+
     async fn handle_session_fork(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::session::handle_session_fork(
             req.clone(),
@@ -1407,12 +1415,13 @@ mod tests {
         assert!(METHODS.contains(&"daemon.capabilities"));
         assert!(METHODS.contains(&"session.subscribe"));
         assert!(METHODS.contains(&"session.set_thinking_budget"));
+        assert!(METHODS.contains(&"session.cache_stats"));
         assert!(METHODS.contains(&"subagent.collect"));
     }
 
     #[test]
     fn methods_count() {
-        assert_eq!(METHODS.len(), 117, "Update when adding RPC methods");
+        assert_eq!(METHODS.len(), 118, "Update when adding RPC methods");
     }
 
     #[tokio::test]

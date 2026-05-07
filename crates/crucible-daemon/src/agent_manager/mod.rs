@@ -300,6 +300,9 @@ struct StreamContext {
     /// Scheduler-owned conversation tree. Populated as a shadow of
     /// events; see `AgentManager::session_trees`.
     conversation_tree: Arc<tokio::sync::Mutex<crucible_core::turn::ConversationTree>>,
+    /// Per-session prompt-cache aggregate updated on every
+    /// `message_complete` that carries usage data.
+    cache_stats: Arc<DashMap<String, cache_stats::CacheStats>>,
 }
 
 #[allow(dead_code)] // fields capture config snapshot; model used in events, others reserved for stream configuration
@@ -433,6 +436,7 @@ pub struct AgentManager {
     permission_config: Option<PermissionConfig>,
     plugin_loader: Option<Arc<Mutex<Option<DaemonPluginLoader>>>>,
     tool_dispatcher: Arc<dyn ToolDispatcher>,
+    cache_stats: Arc<DashMap<String, cache_stats::CacheStats>>,
 }
 
 /// Parameters for creating an AgentManager.
@@ -470,7 +474,25 @@ impl AgentManager {
             plugin_loader: params.plugin_loader,
             tool_dispatcher,
             session_trees: Arc::new(DashMap::new()),
+            cache_stats: Arc::new(DashMap::new()),
         }
+    }
+
+    /// Snapshot the prompt-cache aggregate for `session_id`. Returns
+    /// `Default::default()` (all zeros) when no completion has reported
+    /// cache fields yet — callers can interpret that as "no data" via
+    /// `CacheStats::hit_rate()`, which returns `None`.
+    pub fn get_cache_stats(&self, session_id: &str) -> cache_stats::CacheStats {
+        self.cache_stats
+            .get(session_id)
+            .map(|s| s.clone())
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn cache_stats_handle(
+        &self,
+    ) -> Arc<DashMap<String, cache_stats::CacheStats>> {
+        self.cache_stats.clone()
     }
 
     /// Look up or create the scheduler-owned `ConversationTree` for a
@@ -835,6 +857,7 @@ impl AgentManager {
     }
 }
 
+pub mod cache_stats;
 pub mod context_length;
 mod iter;
 mod messaging;

@@ -42,7 +42,7 @@ pub(crate) use notifications::{
     handle_session_list_notifications,
 };
 pub(crate) use params::{
-    handle_session_can_undo, handle_session_get_context_budget,
+    handle_session_cache_stats, handle_session_can_undo, handle_session_get_context_budget,
     handle_session_get_context_strategy, handle_session_get_context_window,
     handle_session_get_execution_timeout, handle_session_get_max_iterations,
     handle_session_get_max_tokens, handle_session_get_output_validation,

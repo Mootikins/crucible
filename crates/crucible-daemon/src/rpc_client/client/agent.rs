@@ -263,6 +263,17 @@ impl DaemonClient {
         .await
     }
 
+    /// Fetch the prompt-cache aggregate for a session as a raw JSON object.
+    /// Always returns a value — fields are zero before any completion has
+    /// reported cache data, with `hit_rate` set to `null`.
+    pub async fn session_cache_stats(
+        &self,
+        session_id: &str,
+    ) -> Result<serde_json::Value> {
+        let req = serde_json::json!({ "session_id": session_id });
+        self.call_with_retry("session.cache_stats", req).await
+    }
+
     pub async fn session_set_system_prompt(&self, session_id: &str, prompt: &str) -> Result<()> {
         self.typed_unit_call_with_retry(
             "session.set_system_prompt",
