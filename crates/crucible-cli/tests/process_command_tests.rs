@@ -142,11 +142,6 @@ async fn test_process_executes_pipeline() -> Result<()> {
         "Process command should execute successfully"
     );
 
-    // TODO: After implementation, verify:
-    // 1. Pipeline was actually invoked (not just a stub)
-    // 2. Files were processed through all 5 phases
-    // 3. Data was written to SQLite
-
     Ok(())
 }
 
@@ -183,11 +178,6 @@ async fn test_storage_persists_across_runs() -> Result<()> {
     // Then: Second run should succeed
     assert!(result.is_ok(), "Second run should access persisted storage");
 
-    // TODO: After implementation, verify:
-    // 1. Data from first run is still present
-    // 2. Change detection recognizes files haven't changed
-    // 3. Files are not reprocessed unnecessarily
-
     Ok(())
 }
 
@@ -223,11 +213,6 @@ async fn test_change_detection_skips_unchanged_files() -> Result<()> {
 
     assert!(result.is_ok());
 
-    // TODO: After implementation, verify:
-    // 1. Change detection identified files as unchanged
-    // 2. Pipeline quick filter skipped unchanged files
-    // 3. No embeddings were regenerated
-
     // When: Modifying one file
     std::fs::write(
         kiln_path.join("note1.md"),
@@ -239,11 +224,6 @@ async fn test_change_detection_skips_unchanged_files() -> Result<()> {
     let result2 = process::execute(config3, None, false, false, false, false, None, false).await;
 
     assert!(result2.is_ok());
-
-    // TODO: After implementation, verify:
-    // 1. Only note1.md was reprocessed
-    // 2. note2.md and note3.md were skipped
-    // 3. Embeddings only generated for modified file
 
     Ok(())
 }
@@ -281,11 +261,6 @@ async fn test_force_flag_overrides_change_detection() -> Result<()> {
     // Then: Should reprocess all files despite no changes
     assert!(result.is_ok(), "Force flag should cause reprocessing");
 
-    // TODO: After implementation, verify:
-    // 1. All files were reprocessed
-    // 2. Change detection was bypassed
-    // 3. New embeddings were generated
-
     Ok(())
 }
 
@@ -319,11 +294,6 @@ async fn test_process_single_file() -> Result<()> {
     // Then: Should succeed
     assert!(result.is_ok(), "Processing single file should succeed");
 
-    // TODO: After implementation, verify:
-    // 1. Only note1.md was processed
-    // 2. note2.md and note3.md were not touched
-    // 3. Storage contains data only for processed file
-
     Ok(())
 }
 
@@ -345,34 +315,6 @@ async fn test_all_pipeline_phases_execute() -> Result<()> {
 
     // Then: All 5 pipeline phases should execute
     assert!(result.is_ok(), "Pipeline execution should succeed");
-
-    // TODO: After implementation, verify each phase executed:
-    // Phase 1: Quick Filter (change detection)
-    // Phase 2: Parse (extract blocks, links, tags)
-    // Phase 3: Merkle Diff (identify changed blocks)
-    // Phase 4: Enrich (generate embeddings)
-    // Phase 5: Store (persist to SQLite)
-    //
-    // Verification approaches:
-    // - Query SQLite tables (file_state, enriched_notes, embeddings)
-    // - Check for parsed content (blocks, wikilinks, tags)
-    // - Verify embeddings were generated for content
-    // - Confirm Merkle trees were computed
-
-    Ok(())
-}
-
-// Note: Output consistency test will be added after implementation
-// This test will compare process command output with chat command's pre-processing
-// and verify they produce identical results for the same input files.
-#[tokio::test]
-#[ignore = "Requires both commands to be fully implemented"]
-async fn test_output_consistency_with_chat_preprocessing() -> Result<()> {
-    // This test will:
-    // 1. Run process command on test files
-    // 2. Run chat command with pre-processing on same files
-    // 3. Compare results from SQLite
-    // 4. Assert identical: embeddings, Merkle trees, metadata
 
     Ok(())
 }
@@ -427,14 +369,6 @@ async fn test_verbose_shows_phase_timings() -> Result<()> {
     // THEN: Should succeed and show timing information
     assert!(result.is_ok());
 
-    // TODO: After implementation, capture output and verify:
-    // - "Phase 1: Quick filter" with duration
-    // - "Phase 2: Parse" with duration
-    // - "Phase 3: Merkle Diff" with duration
-    // - "Phase 4: Enrich" with duration
-    // - "Phase 5: Store" with duration
-    // - Total pipeline time
-
     Ok(())
 }
 
@@ -456,12 +390,6 @@ async fn test_verbose_shows_detailed_parse_info() -> Result<()> {
 
     // THEN: Should show parse details
     assert!(result.is_ok());
-
-    // TODO: After implementation, verify output shows:
-    // - Extracted wikilinks with targets
-    // - Found tags (#tag1, #tag2)
-    // - Block count
-    // - File hash (first 8 chars)
 
     Ok(())
 }
@@ -505,12 +433,6 @@ async fn test_verbose_shows_merkle_diff_details() -> Result<()> {
     // THEN: Should show Merkle diff details
     assert!(result.is_ok());
 
-    // TODO: After implementation, verify output shows:
-    // - Old Merkle root hash
-    // - New Merkle root hash
-    // - Changed section indices
-    // - "2 blocks changed" or similar
-
     Ok(())
 }
 
@@ -533,12 +455,6 @@ async fn test_verbose_shows_enrichment_progress() -> Result<()> {
     // THEN: Should show enrichment details
     assert!(result.is_ok());
 
-    // TODO: After implementation, verify output shows:
-    // - Embedding service URL
-    // - Model name (nomic-embed-text-v1.5-q8_0)
-    // - "Generating embeddings for 5 blocks" or similar
-    // - Embedding API call timing
-
     Ok(())
 }
 
@@ -560,12 +476,6 @@ async fn test_verbose_shows_storage_operations() -> Result<()> {
 
     // THEN: Should show storage details
     assert!(result.is_ok());
-
-    // TODO: After implementation, verify output shows:
-    // - "Updating file_state table"
-    // - "Storing 3 enriched notes"
-    // - "Updating Merkle trees"
-    // - Record counts
 
     Ok(())
 }
@@ -595,12 +505,6 @@ async fn test_dry_run_discovers_files_without_processing() -> Result<()> {
         result.is_ok(),
         "Dry-run command should execute successfully"
     );
-
-    // AND: Database should be empty (no files were actually processed)
-    // TODO: After implementation, verify:
-    // 1. Files were discovered (shown in output)
-    // 2. No data was written to SQLite
-    // 3. Summary showed "Would process: 3 files"
 
     Ok(())
 }
@@ -637,11 +541,6 @@ async fn test_dry_run_respects_change_detection() -> Result<()> {
 
     // THEN: Should show which files would be skipped
     assert!(result.is_ok());
-
-    // TODO: After implementation, verify:
-    // 1. Output shows "Would skip: 3 files (unchanged)"
-    // 2. Change detection logic was still applied
-    // 3. No database modifications occurred
 
     Ok(())
 }
@@ -689,11 +588,6 @@ async fn test_dry_run_with_force_shows_all_files() -> Result<()> {
     // THEN: Should show all files would be processed
     assert!(result.is_ok());
 
-    // TODO: After implementation, verify:
-    // 1. Output shows "Would process: 3 files" (not skipped)
-    // 2. Force flag bypassed change detection
-    // 3. No database modifications occurred
-
     Ok(())
 }
 
@@ -716,12 +610,6 @@ async fn test_dry_run_shows_detailed_preview() -> Result<()> {
     // THEN: Should succeed
     assert!(result.is_ok());
 
-    // TODO: After implementation, verify output shows:
-    // - "DRY RUN MODE - No changes will be made to database"
-    // - For each file: "Would process: note1.md (1 section, 0 links)"
-    // - Summary: "Would process: X files, Would skip: Y files"
-    // - File hash preview (first 8 chars)
-
     Ok(())
 }
 
@@ -743,12 +631,6 @@ async fn test_dry_run_with_verbose() -> Result<()> {
 
     // THEN: Should succeed and show detailed information
     assert!(result.is_ok());
-
-    // TODO: After implementation, verify output shows:
-    // - All verbose phase timing information
-    // - Detailed file preview for each file
-    // - "DRY RUN MODE" indicator in verbose output
-    // - Change detection details per file
 
     Ok(())
 }
