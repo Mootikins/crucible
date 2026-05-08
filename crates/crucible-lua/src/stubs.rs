@@ -1,8 +1,9 @@
 use crate::error::LuaError;
 use crate::{
-    register_graph_module, register_mcp_module_stub, register_oq_module, register_paths_module,
-    register_popup_module, register_sessions_module, register_statusline_module,
-    register_tools_module, register_ui_module, register_vault_module, LuaExecutor, PathsContext,
+    register_context_module_stub, register_graph_module, register_mcp_module_stub,
+    register_oq_module, register_paths_module, register_popup_module, register_sessions_module,
+    register_statusline_module, register_tools_module, register_ui_module, register_vault_module,
+    LuaExecutor, PathsContext,
 };
 use mlua::{Lua, Table, Value};
 use serde::Serialize;
@@ -17,6 +18,7 @@ const UNIVERSAL_MODULES: &[&str] = &[
     "fs",
     "session",
     "sessions",
+    "context",
     "tools",
     "oq",
     "paths",
@@ -57,6 +59,7 @@ impl StubGenerator {
         register_graph_module(lua)?;
         register_vault_module(lua)?;
         register_sessions_module(lua)?;
+        register_context_module_stub(lua)?;
         register_tools_module(lua)?;
         register_mcp_module_stub(lua)?;
         register_popup_module(lua)?;

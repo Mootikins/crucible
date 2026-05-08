@@ -47,6 +47,7 @@ pub mod annotations;
 mod ask;
 pub mod auth_plugin;
 pub mod capability_gate;
+mod context;
 pub mod core_handler;
 mod error;
 mod error_ext;
@@ -112,6 +113,7 @@ pub use config::{
     get_app_config, get_statusline_config, get_theme_config, list_available_themes,
     seed_app_config, ConfigLoader, ConfigState,
 };
+pub use context::{register_context_module, register_context_module_stub};
 pub use core_handler::{LuaHandler, LuaHandlerMeta};
 pub use error::{format_lua_error, LuaError};
 pub use executor::LuaExecutor;

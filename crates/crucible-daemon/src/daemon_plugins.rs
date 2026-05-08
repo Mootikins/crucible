@@ -10,8 +10,8 @@
 use crucible_core::storage::NoteStore;
 use crucible_core::storage::PropertyStore;
 use crucible_lua::{
-    register_graph_module, register_graph_module_with_store, register_oq_module,
-    register_paths_module, register_schedule_module, register_sessions_module,
+    register_context_module, register_graph_module, register_graph_module_with_store,
+    register_oq_module, register_paths_module, register_schedule_module, register_sessions_module,
     register_sessions_module_with_api, register_shell_module, register_storage_module,
     register_storage_module_with_store, register_tools_module, register_tools_module_with_api,
     register_vault_module, register_vault_module_with_store, register_ws_module, DaemonSessionApi,
@@ -182,11 +182,16 @@ impl DaemonPluginLoader {
     /// Upgrade sessions module with real daemon-backed implementations.
     ///
     /// Call after session/agent managers are created. Replaces stub `cru.sessions.*`
-    /// functions with implementations that delegate to the provided API.
+    /// functions with implementations that delegate to the provided API. Also
+    /// registers `cru.context.*` (Wave 1 plugin closure surface) which shares
+    /// the same [`DaemonSessionApi`].
     pub fn upgrade_with_sessions(&self, api: Arc<dyn DaemonSessionApi>) -> anyhow::Result<()> {
-        register_sessions_module_with_api(self.executor.lua(), api)
+        let lua = self.executor.lua();
+        register_sessions_module_with_api(lua, Arc::clone(&api))
             .map_err(|e| anyhow::anyhow!("sessions upgrade: {e}"))?;
-        info!("Lua sessions module upgraded with daemon API");
+        register_context_module(lua, api)
+            .map_err(|e| anyhow::anyhow!("context module: {e}"))?;
+        info!("Lua sessions + context modules upgraded with daemon API");
         Ok(())
     }
 
