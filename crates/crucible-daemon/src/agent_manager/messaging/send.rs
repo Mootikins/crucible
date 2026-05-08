@@ -74,7 +74,21 @@ impl AgentManager {
         // authoritative source of conversation state; the agent handle
         // receives the flattened path via `TurnContext.messages` and
         // does not hold history between turns.
+        //
+        // Workspace snapshot capture happens *before* we add the User
+        // node, keyed by the cursor's pre-turn node id. After
+        // `undo_turns(n)` the cursor lands on that exact node — the
+        // parent of the rewound User — so on undo the daemon looks up
+        // the snapshot under the new cursor and restores it.
         let conversation_tree = self.get_or_create_session_tree(session_id);
+        let snapshot_key_node = {
+            let t = conversation_tree.lock().await;
+            t.current()
+        };
+        let snapshot =
+            crate::workspace_snapshot::WorkspaceSnapshot::create(&session.workspace).await;
+        self.snapshots
+            .insert(session_id.to_string(), snapshot_key_node.index(), snapshot);
         {
             let mut t = conversation_tree.lock().await;
             let parent = t.current();

@@ -870,21 +870,44 @@ impl AgentManager {
         count: usize,
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
     ) -> Result<Vec<crucible_core::types::UndoSummary>, AgentError> {
-        let _ = self.get_session_with_agent(session_id)?;
+        let (session, _) = self.get_session_with_agent(session_id)?;
 
         if self.request_state.contains_key(session_id) {
             return Err(AgentError::ConcurrentRequest(session_id.to_string()));
         }
 
-        let summaries = match self.get_session_tree(session_id) {
+        // Rewind the conversation tree first, then capture the new
+        // cursor so we know which snapshot to replay. The snapshot was
+        // keyed by the node that was `current` at the moment the
+        // rewound turn began — which is exactly where the cursor lands
+        // post-rewind.
+        let (summaries, new_cursor_id) = match self.get_session_tree(session_id) {
             Some(tree) => {
                 let mut t = tree.lock().await;
-                t.undo_turns(count)
+                let summaries = t.undo_turns(count);
+                let new_cursor = t.current().index();
+                (summaries, Some(new_cursor))
             }
-            None => Vec::new(),
+            None => (Vec::new(), None),
         };
 
         if !summaries.is_empty() {
+            // Replay the workspace snapshot for the cursor's new
+            // position. Restore failures are logged but do not abort
+            // the undo — the conversation has already been rewound and
+            // the user's mental model of "undo happened" should hold.
+            if let Some(node_id) = new_cursor_id {
+                if let Some(snap) = self.snapshots.remove(session_id, node_id) {
+                    if let Err(e) = snap.restore(&session.workspace).await {
+                        warn!(
+                            session_id = %session_id,
+                            error = %e,
+                            "workspace snapshot restore failed"
+                        );
+                    }
+                }
+            }
+
             if let Some(tx) = event_tx {
                 let total_removed: usize = summaries.iter().map(|s| s.messages_removed).sum();
                 emit_event(

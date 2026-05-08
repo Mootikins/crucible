@@ -480,6 +480,12 @@ pub struct AgentManager {
     /// it empty and `OutputValidation::Lua` surfaces as a validation
     /// failure with a clear reason instead of panicking.
     lua_validators: std::sync::OnceLock<(Arc<LuaValidatorRegistry>, Arc<Lua>)>,
+    /// Per-session, per-turn workspace snapshots indexed by the
+    /// conversation-tree node id that was `current` at the moment the
+    /// snapshot was captured (i.e. the parent of the soon-to-be-added
+    /// User node). On undo, the tree's new cursor position is looked up
+    /// here and its snapshot is replayed to revert tool-side file edits.
+    pub(crate) snapshots: Arc<crate::workspace_snapshot::SnapshotMap>,
 }
 
 /// Parameters for creating an AgentManager.
@@ -519,6 +525,7 @@ impl AgentManager {
             session_trees: Arc::new(DashMap::new()),
             cache_stats: Arc::new(DashMap::new()),
             lua_validators: std::sync::OnceLock::new(),
+            snapshots: Arc::new(crate::workspace_snapshot::SnapshotMap::default()),
         }
     }
 

@@ -1100,3 +1100,91 @@ async fn test_lua_validator_unregistered_name_errors() {
         "expected validation-exhausted reason, got: {reason}"
     );
 }
+
+
+/// `send_message` captures a workspace snapshot before the agent turn
+/// begins, and `undo` restores that snapshot. This drives the full
+/// wire-up: the snapshot is keyed by the conversation tree's pre-turn
+/// cursor, the cursor lands back on that key after `undo_turns(1)`, and
+/// the journal-mode restore replays the original file bytes.
+#[tokio::test]
+async fn turn_undo_restores_snapshotted_file() {
+    let tmp = TempDir::new().unwrap();
+    let workspace = tmp.path();
+
+    // Seed the workspace with a tracked file in its pre-turn state.
+    std::fs::write(workspace.join("a.txt"), b"v1").unwrap();
+
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            workspace.to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let agent_manager = create_test_agent_manager(session_manager.clone());
+    agent_manager
+        .configure_agent(&session.id, test_agent())
+        .await
+        .unwrap();
+
+    // Mock agent: text reply, done. The "tool effect" we simulate is
+    // the file mutation below — we do not need a real tool to verify
+    // the snapshot/undo wire-up.
+    agent_manager.agent_cache.insert(
+        session.id.clone(),
+        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+            events: vec![script::text("ok"), script::done()],
+        }))),
+    );
+
+    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    agent_manager
+        .send_message(&session.id, "go".to_string(), &event_tx, true, None)
+        .await
+        .unwrap();
+
+    // Drain to message_complete so the snapshot has definitely been
+    // taken (capture is synchronous in send_message before the spawned
+    // task starts the stream).
+    let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
+
+    // Simulate a tool that wrote to the file mid-turn.
+    std::fs::write(workspace.join("a.txt"), b"v2").unwrap();
+    assert_eq!(std::fs::read(workspace.join("a.txt")).unwrap(), b"v2");
+
+    // Undo the turn — restoration should bring back v1.
+    let summaries = agent_manager
+        .undo(&session.id, 1, None)
+        .await
+        .expect("undo should succeed");
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(
+        std::fs::read(workspace.join("a.txt")).unwrap(),
+        b"v1",
+        "workspace snapshot should have restored a.txt to its pre-turn bytes"
+    );
+}
+
+/// Snapshot lookup is keyed by the conversation-tree cursor *post-undo*.
+/// This unit test exercises the SnapshotMap directly to lock in the
+/// contract: `insert(node_id) → remove(node_id)` returns the same value
+/// and clears the entry.
+#[tokio::test]
+async fn snapshot_map_round_trip_consumes_entry() {
+    use crate::workspace_snapshot::{SnapshotMap, WorkspaceSnapshot};
+
+    let map = SnapshotMap::default();
+    map.insert("s1".to_string(), 7, WorkspaceSnapshot::default());
+    assert_eq!(map.len(), 1);
+
+    let got = map.remove("s1", 7).expect("expected entry under (s1, 7)");
+    assert!(got.commit_id.is_none() && got.journal.is_none());
+    assert!(map.is_empty());
+}

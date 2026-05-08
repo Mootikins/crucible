@@ -67,6 +67,7 @@ pub mod watch;
 pub mod workflow_handlers;
 pub mod workflow_registry;
 pub mod workspace;
+pub mod workspace_snapshot;
 
 pub use acp_handle::{AcpAgentHandle, AcpHandleError};
 pub use agent_factory::{create_agent_from_session_config, AgentFactoryError};
