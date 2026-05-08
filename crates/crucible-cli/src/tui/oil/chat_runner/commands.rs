@@ -323,6 +323,29 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
                     total: 0,
                 });
             }
+            // Compute cache hit rate from the per-event token fields.
+            // Both fields are optional; emit only when at least one is
+            // present so the StatusBar's "no data" sentinel still works
+            // for older sessions.
+            let cache_read = data
+                .get("cache_read_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let cache_creation = data
+                .get("cache_creation_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            if data.get("cache_read_tokens").is_some()
+                || data.get("cache_creation_tokens").is_some()
+            {
+                let denom = cache_read + cache_creation;
+                let rate = if denom == 0 {
+                    None
+                } else {
+                    Some(cache_read as f64 / denom as f64)
+                };
+                msgs.push(ChatAppMsg::CacheHitRate(rate));
+            }
             msgs.push(ChatAppMsg::StreamComplete);
             msgs
         }

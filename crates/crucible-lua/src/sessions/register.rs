@@ -55,6 +55,7 @@ pub fn register_sessions_module(lua: &Lua) -> Result<(), LuaError> {
     );
     stub_async!("messages", lua, sessions, (String, mlua::Value));
     stub_async!("fork", lua, sessions, (String, mlua::Value));
+    stub_async!("cache_stats", lua, sessions, String);
 
     register_in_namespaces(lua, "sessions", sessions)?;
 
@@ -509,6 +510,25 @@ pub fn register_sessions_module_with_api(
         }
     })?;
     sessions.set("fork", fork_fn)?;
+
+    // cache_stats(session_id) -> (table, nil) or (nil, err)
+    let a = Arc::clone(&api);
+    let cache_stats_fn = lua.create_async_function(move |lua, session_id: String| {
+        let a = Arc::clone(&a);
+        async move {
+            match a.cache_stats(session_id).await {
+                Ok(val) => {
+                    let lua_val = lua.to_value(&val)?;
+                    Ok((lua_val, Value::Nil))
+                }
+                Err(e) => {
+                    let err = lua.create_string(&e)?;
+                    Ok((Value::Nil, Value::String(err)))
+                }
+            }
+        }
+    })?;
+    sessions.set("cache_stats", cache_stats_fn)?;
 
     Ok(())
 }

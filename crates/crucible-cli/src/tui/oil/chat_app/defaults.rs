@@ -20,6 +20,7 @@ impl Default for OilChatApp {
             status: String::new(),
             context_used: 0,
             context_total: 0,
+            cache_hit_rate: None,
             current_provider: "local".to_string(),
             mcp_servers: Vec::new(),
             plugin_status: Vec::new(),

@@ -247,6 +247,15 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
         up_to: Option<u64>,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>>;
 
+    /// Fetch the prompt-cache aggregate for a session.
+    ///
+    /// Returns a JSON object with hits/misses/{read,creation,prompt,completion}_tokens
+    /// and `hit_rate` (null until the first cache event has fired).
+    fn cache_stats(
+        &self,
+        session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>>;
+
     /// Send a message and stream structured response parts.
     ///
     /// Subscribes, sends the message, then returns a receiver that yields

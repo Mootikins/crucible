@@ -57,6 +57,11 @@ pub struct OilChatApp {
     context_used: usize,
     /// Context window total capacity
     context_total: usize,
+    /// Latest prompt-cache hit rate (0.0..=1.0) from `message_complete`.
+    /// `None` until at least one completion has reported cache token
+    /// counts; the statusline `cache_hit_rate` component renders nothing
+    /// in that "no data" state to avoid a misleading `cache: 0%`.
+    pub(crate) cache_hit_rate: Option<f64>,
     /// Display name of the active LLM provider
     current_provider: String,
     /// MCP servers known to the daemon
@@ -346,6 +351,7 @@ impl OilChatApp {
             .mode(self.mode)
             .model(&self.model)
             .context(self.context_used, self.context_total)
+            .cache_hit_rate(self.cache_hit_rate)
             .status(&self.status);
         if let Some(ref cfg) = self.statusline_config {
             status = status.config(cfg);

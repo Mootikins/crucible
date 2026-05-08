@@ -224,6 +224,24 @@ impl DaemonSessionApi for MockDaemonApi {
         })
     }
 
+    fn cache_stats(
+        &self,
+        _session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
+        Box::pin(async {
+            Ok(serde_json::json!({
+                "session_id": "test-session",
+                "hits": 0,
+                "misses": 0,
+                "read_tokens": 0,
+                "creation_tokens": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "hit_rate": serde_json::Value::Null,
+            }))
+        })
+    }
+
     fn send_and_collect(
         &self,
         _session_id: String,

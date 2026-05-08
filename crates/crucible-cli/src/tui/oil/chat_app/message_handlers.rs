@@ -245,6 +245,9 @@ impl OilChatApp {
                 self.context_used = used;
                 self.context_total = total;
             }
+            ChatAppMsg::CacheHitRate(rate) => {
+                self.cache_hit_rate = rate;
+            }
             ChatAppMsg::PrecognitionResult { notes_count, notes } => {
                 self.precognition.last_notes_count = Some(notes_count);
                 self.precognition.last_notes = notes;

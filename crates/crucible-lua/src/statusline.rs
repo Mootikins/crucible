@@ -168,6 +168,15 @@ pub enum StatuslineComponent {
         #[serde(flatten)]
         style: StyleSpec,
     },
+    /// Prompt-cache hit-rate display. Renders `cache: NN%` once at
+    /// least one completion has reported cache token counts; renders
+    /// nothing (empty string) before that. The format string defaults
+    /// to `"cache: {percent}%"` and supports the `{percent}` placeholder.
+    CacheHitRate {
+        format: Option<String>,
+        #[serde(flatten)]
+        style: StyleSpec,
+    },
     /// Static text
     Text {
         content: String,
@@ -268,6 +277,11 @@ fn parse_component(table: &Table) -> LuaResult<StatuslineComponent> {
             let format: Option<String> = table.get("format").ok();
             let style = extract_style(table);
             Ok(StatuslineComponent::Context { format, style })
+        }
+        "cache_hit_rate" | "cache" => {
+            let format: Option<String> = table.get("format").ok();
+            let style = extract_style(table);
+            Ok(StatuslineComponent::CacheHitRate { format, style })
         }
         "text" => {
             let content: String = table.get("content")?;

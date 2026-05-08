@@ -163,6 +163,10 @@ pub enum ChatAppMsg {
     /// **Command** (TUI → daemon): Set auto-compaction threshold (fraction of `context_budget`).
     /// `None` clears the override; `Some(0.0)` disables auto-compaction.
     SetAutocompactThreshold(Option<f32>),
+    /// **Event** (daemon → TUI): Latest prompt-cache hit rate from
+    /// `message_complete`. `None` indicates "no cache data this turn".
+    /// Drives the optional `cache_hit_rate` statusline component.
+    CacheHitRate(Option<f64>),
     // --- Delegation & Subagent Events (daemon → TUI) ---
     /// **Event** (daemon → TUI): Subagent spawned (background task started).
     SubagentSpawned { id: String, prompt: String },
@@ -298,6 +302,7 @@ impl ChatAppMsg {
             | Self::Status(_)
             | Self::ModeChanged(_)
             | Self::ContextUsage { .. }
+            | Self::CacheHitRate(_)
             | Self::ClearHistory
             | Self::ToggleMessages
             | Self::OpenInteraction { .. }

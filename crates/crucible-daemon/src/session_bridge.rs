@@ -591,6 +591,22 @@ impl DaemonSessionApi for DaemonSessionBridge {
             Ok(part_rx)
         })
     }
+
+    fn cache_stats(&self, session_id: String) -> BoxFut<serde_json::Value> {
+        bridge_async!(self.agent_manager, |am| async move {
+            let stats = am.get_cache_stats(&session_id);
+            Ok(serde_json::json!({
+                "session_id": session_id,
+                "hits": stats.hits,
+                "misses": stats.misses,
+                "read_tokens": stats.read_tokens,
+                "creation_tokens": stats.creation_tokens,
+                "prompt_tokens": stats.prompt_tokens,
+                "completion_tokens": stats.completion_tokens,
+                "hit_rate": stats.hit_rate(),
+            }))
+        })
+    }
 }
 
 /// Extract tool name and human-readable description from a permission request's data payload.

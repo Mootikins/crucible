@@ -15,6 +15,11 @@ pub struct StatusBarData {
     pub status: String,
     pub notification_toast: Option<(String, NotificationToastKind)>,
     pub notification_counts: Vec<(NotificationToastKind, usize)>,
+    /// Prompt-cache hit rate from the latest `message_complete`. `None`
+    /// when the session hasn't received cache token counts yet — the
+    /// `CacheHitRate` renderer treats this as "no data" and emits an
+    /// empty cell rather than `cache: 0%`.
+    pub cache_hit_rate: Option<f64>,
 }
 
 pub fn color_spec_to_oil(spec: &ColorSpec) -> Option<Color> {
@@ -124,6 +129,20 @@ pub fn render_component_node(component: &StatuslineComponent, data: &StatusBarDa
                 Style::new().fg(t.resolve_color(t.colors.text_muted)),
             )
         }
+        StatuslineComponent::CacheHitRate { format, .. } => {
+            let Some(rate) = data.cache_hit_rate else {
+                // No data yet — emit an empty cell rather than a misleading
+                // "cache: 0%". The session bar will collapse this naturally.
+                return styled(String::new(), Style::new());
+            };
+            let percent = (rate * 100.0).round() as i64;
+            let template = format.as_deref().unwrap_or("cache: {percent}%");
+            let display = template.replace("{percent}", &percent.to_string());
+            styled(
+                display,
+                Style::new().fg(t.resolve_color(t.colors.text_muted)),
+            )
+        }
         StatuslineComponent::Text { content, .. } => styled(
             content.clone(),
             Style::new().fg(t.resolve_color(t.colors.text_muted)),
@@ -175,6 +194,7 @@ mod tests {
             status: String::new(),
             notification_toast: None,
             notification_counts: vec![],
+            cache_hit_rate: None,
         }
     }
 
@@ -436,6 +456,47 @@ mod tests {
             node_contains_text(&node, "— ctx"),
             "Context with no data should show placeholder"
         );
+    }
+
+    #[test]
+    fn render_cache_hit_rate_with_data() {
+        let mut data = default_data();
+        data.cache_hit_rate = Some(0.875);
+        let component = StatuslineComponent::CacheHitRate {
+            format: None,
+            style: StyleSpec::default(),
+        };
+        let node = render_component_node(&component, &data);
+        assert!(node_contains_text(&node, "cache: 88%"));
+    }
+
+    #[test]
+    fn render_cache_hit_rate_no_data_is_empty() {
+        let data = default_data();
+        // cache_hit_rate is None by default — emit nothing rather than
+        // a misleading "cache: 0%" placeholder.
+        let component = StatuslineComponent::CacheHitRate {
+            format: None,
+            style: StyleSpec::default(),
+        };
+        let node = render_component_node(&component, &data);
+        assert!(
+            !node_contains_text(&node, "cache:"),
+            "no-data CacheHitRate must not emit 'cache:'; got node: {:?}",
+            node
+        );
+    }
+
+    #[test]
+    fn render_cache_hit_rate_custom_format() {
+        let mut data = default_data();
+        data.cache_hit_rate = Some(0.5);
+        let component = StatuslineComponent::CacheHitRate {
+            format: Some("{percent}% cached".to_string()),
+            style: StyleSpec::default(),
+        };
+        let node = render_component_node(&component, &data);
+        assert!(node_contains_text(&node, "50% cached"));
     }
 
     #[test]

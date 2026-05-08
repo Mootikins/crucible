@@ -39,6 +39,9 @@ pub struct StatusBar {
     pub status: String,
     pub notification_toast: Option<(String, NotificationToastKind)>,
     pub notification_counts: Vec<(NotificationToastKind, usize)>,
+    /// Prompt-cache hit rate (0.0..=1.0) from the latest `message_complete`.
+    /// `None` when no cache event has fired for this session yet.
+    pub cache_hit_rate: Option<f64>,
 }
 
 impl StatusBar {
@@ -138,6 +141,7 @@ impl StatusBar {
             status: self.status.clone(),
             notification_toast: self.notification_toast.clone(),
             notification_counts: self.notification_counts.clone(),
+            cache_hit_rate: self.cache_hit_rate,
         };
 
         let sep = config.separator.as_deref().unwrap_or(" ");
