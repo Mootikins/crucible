@@ -373,6 +373,26 @@ fn estimate_message_tokens(msg: &ChatMessage) -> usize {
     (char_count / 4).max(1)
 }
 
+/// Outcome of `enforce_context_budget`. The Summarize variant carries
+/// the drained messages so an async caller can replace the inserted
+/// placeholder with an LLM-generated recap before the actual
+/// completion request goes out.
+pub(crate) enum BudgetAction {
+    /// Budget was respected without changes (no budget set, or under).
+    NoChange,
+    /// Mutated in place (Truncate or SlidingWindow). The caller has
+    /// nothing to do.
+    Mutated,
+    /// Summarize selected: a placeholder was inserted at
+    /// `placeholder_idx`, and `drained` holds the messages that were
+    /// removed. The async caller may replace the placeholder content
+    /// with an LLM-generated recap, or leave it as-is on error.
+    NeedsSummarize {
+        placeholder_idx: usize,
+        drained: Vec<ChatMessage>,
+    },
+}
+
 /// Enforce context budget by truncating messages according to the chosen strategy.
 ///
 /// Modifies the message vec in-place. System messages (at the front) are preserved.
@@ -382,12 +402,14 @@ fn enforce_context_budget(
     budget: Option<usize>,
     strategy: &ContextStrategy,
     window: Option<usize>,
-) {
-    let Some(budget) = budget else { return };
+) -> BudgetAction {
+    let Some(budget) = budget else {
+        return BudgetAction::NoChange;
+    };
 
     let current: usize = messages.iter().map(estimate_message_tokens).sum();
     if current <= budget {
-        return;
+        return BudgetAction::NoChange;
     }
 
     match strategy {
@@ -411,6 +433,7 @@ fn enforce_context_budget(
                     break;
                 }
             }
+            BudgetAction::Mutated
         }
         ContextStrategy::SlidingWindow => {
             let keep = window.unwrap_or(10);
@@ -423,30 +446,36 @@ fn enforce_context_budget(
                 let drain_end = messages.len() - keep_count;
                 messages.drain(system_count..drain_end);
             }
+            BudgetAction::Mutated
         }
         ContextStrategy::Summarize => {
-            // MVP: replace dropped messages with a single elision marker
-            // so the model is aware context was removed (Truncate hides
-            // the gap entirely). A follow-up commit will replace this
-            // placeholder with a live LLM-generated recap; the same
-            // call site will then flip from a synchronous transform
-            // into a backend round-trip.
+            // Drain old non-system non-keep messages, insert a static
+            // placeholder, and return the drained vec so an async caller
+            // can replace the placeholder with an LLM summary. Ignoring
+            // the returned `NeedsSummarize` is safe — the placeholder
+            // is itself a usable (if static) elision marker.
             let keep = window.unwrap_or(10);
             let keep_count = keep * 2;
             let system_count = messages
                 .iter()
                 .take_while(|m| m.role == genai::chat::ChatRole::System)
                 .count();
-            if messages.len() > system_count + keep_count {
+            let action = if messages.len() > system_count + keep_count {
                 let drain_end = messages.len() - keep_count;
                 let n_dropped = drain_end - system_count;
-                messages.drain(system_count..drain_end);
+                let drained: Vec<ChatMessage> = messages.drain(system_count..drain_end).collect();
                 let placeholder = ChatMessage::system(format!(
                     "[summary placeholder] {n_dropped} earlier turn{} elided to fit context budget",
                     if n_dropped == 1 { "" } else { "s" }
                 ));
                 messages.insert(system_count, placeholder);
-            }
+                BudgetAction::NeedsSummarize {
+                    placeholder_idx: system_count,
+                    drained,
+                }
+            } else {
+                BudgetAction::NoChange
+            };
             // Belt-and-braces: if even the kept window plus the
             // placeholder + system prompt exceed the budget, fall back
             // to Truncate behaviour to avoid over-budget prompts.
@@ -465,7 +494,75 @@ fn enforce_context_budget(
                     break;
                 }
             }
+            action
         }
+    }
+}
+
+/// System prompt used for LLM-driven summarization in the Summarize
+/// context strategy. Kept brief; the conversation transcript is passed
+/// in the user message and dwarfs this anyway.
+const SUMMARIZE_SYSTEM_PROMPT: &str =
+    "You are summarizing earlier turns of an ongoing conversation so the assistant can keep \
+     context after older messages are dropped. Produce a concise factual recap of the \
+     transcript below. Preserve names, decisions, file paths, code references, and unresolved \
+     questions. Use 3-6 sentences. No preamble, no closing, no quotes — just the recap.";
+
+/// Format drained messages as a transcript for summarization.
+fn drained_transcript(drained: &[ChatMessage]) -> String {
+    drained
+        .iter()
+        .map(|m| {
+            let role = match m.role {
+                genai::chat::ChatRole::System => "system",
+                genai::chat::ChatRole::User => "user",
+                genai::chat::ChatRole::Assistant => "assistant",
+                genai::chat::ChatRole::Tool => "tool",
+            };
+            let body: String = m
+                .content
+                .parts()
+                .iter()
+                .filter_map(|p| match p {
+                    ContentPart::Text(t) => Some(t.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("");
+            format!("{role}: {body}")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Ask the same backend the agent uses to summarize `drained` into a
+/// single recap string. The genai client is shared (cheap clone). On
+/// any error this returns `Err`; the caller falls back to keeping the
+/// static placeholder rather than propagating the failure into the
+/// user's turn.
+pub(crate) async fn summarize_via_backend(
+    client: &genai::Client,
+    model_name: &str,
+    drained: &[ChatMessage],
+) -> Result<String, String> {
+    if drained.is_empty() {
+        return Ok(String::new());
+    }
+    let transcript = drained_transcript(drained);
+    let request = ChatRequest::new(vec![
+        ChatMessage::system(SUMMARIZE_SYSTEM_PROMPT),
+        ChatMessage::user(transcript),
+    ]);
+    let options = ChatOptions::default().with_capture_content(true);
+    let resp = client
+        .exec_chat(model_name, request, Some(&options))
+        .await
+        .map_err(|e| format!("summarize call failed: {e}"))?;
+    let text: String = resp.content.texts().join("");
+    if text.trim().is_empty() {
+        Err("summarize call returned empty content".to_string())
+    } else {
+        Ok(text)
     }
 }
 
@@ -563,19 +660,12 @@ impl GenaiAgentHandle {
         mut messages: Vec<ChatMessage>,
     ) -> BoxStream<'static, TurnEvent> {
         apply_prompt_caching(&self.system_prompt, &mut messages);
-        enforce_context_budget(
-            &mut messages,
-            self.context_budget,
-            &self.context_strategy,
-            self.context_window,
-        );
 
         let req_tools: Vec<Tool> = self
             .visible_tools()
             .iter()
             .map(super::tool_bridge::llm_tool_to_genai)
             .collect();
-        let request = ChatRequest::new(messages).with_tools(req_tools);
 
         let options = ChatOptions::default()
             .with_capture_tool_calls(true)
@@ -594,8 +684,47 @@ impl GenaiAgentHandle {
         let model_name = self.explicit_model_name();
         let max_tool_depth = self.max_tool_depth;
         let workspace_root = self.workspace_root.clone();
+        let context_budget = self.context_budget;
+        let context_strategy = self.context_strategy.clone();
+        let context_window = self.context_window;
 
         let stream = Box::pin(async_stream::stream! {
+            // Budget enforcement happens here (inside async) so the
+            // Summarize strategy can `.await` the LLM. Truncate /
+            // SlidingWindow are sync transforms and complete instantly.
+            let action = enforce_context_budget(
+                &mut messages,
+                context_budget,
+                &context_strategy,
+                context_window,
+            );
+            if let BudgetAction::NeedsSummarize { placeholder_idx, drained } = action {
+                match summarize_via_backend(&client, &model_name, &drained).await {
+                    Ok(summary) if !summary.trim().is_empty() => {
+                        let n = drained.len();
+                        messages[placeholder_idx] = ChatMessage::system(format!(
+                            "[summary of {} earlier turn{}] {}",
+                            n,
+                            if n == 1 { "" } else { "s" },
+                            summary.trim(),
+                        ));
+                    }
+                    Ok(_) => {
+                        tracing::warn!(
+                            "Summarize backend returned empty content; keeping static placeholder"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            "Summarize backend call failed; keeping static placeholder"
+                        );
+                    }
+                }
+            }
+
+            let request = ChatRequest::new(messages).with_tools(req_tools);
+
             let provider_start = std::time::Instant::now();
             tracing::info!(target: "ttft", stage = "provider_call_start", model = %model_name, "ttft");
             let stream_res = client
@@ -1654,6 +1783,92 @@ mod tests {
     /// older non-system non-keep messages are replaced by a single
     /// "[summary placeholder]" system message — distinct from Truncate,
     /// which silently drops them.
+    /// `enforce_context_budget` with Summarize must return
+    /// `NeedsSummarize` so the async caller can replace the placeholder
+    /// with an LLM-generated recap. The drained payload should be
+    /// non-empty and match what was removed.
+    #[test]
+    fn summarize_returns_needs_summarize_action() {
+        let long = "x".repeat(40);
+        let mut messages = vec![
+            sys("system"),
+            user(&long),
+            asst(&long),
+            user(&long),
+            asst(&long),
+            user("current"),
+        ];
+        let action = enforce_context_budget(
+            &mut messages,
+            Some(12),
+            &ContextStrategy::Summarize,
+            Some(1),
+        );
+        match action {
+            BudgetAction::NeedsSummarize {
+                placeholder_idx,
+                drained,
+            } => {
+                assert!(
+                    placeholder_idx < messages.len(),
+                    "placeholder_idx must point at a real message"
+                );
+                assert!(!drained.is_empty(), "drained must carry the removed turns");
+                assert!(
+                    content_string(&messages[placeholder_idx]).contains("[summary placeholder]")
+                );
+            }
+            other => panic!("expected NeedsSummarize, got {}", action_label(&other)),
+        }
+    }
+
+    /// Truncate / SlidingWindow / under-budget Summarize must NOT
+    /// return NeedsSummarize — the async caller would otherwise issue
+    /// pointless backend calls.
+    #[test]
+    fn truncate_and_window_do_not_request_summarization() {
+        let long = "x".repeat(40);
+        let mut messages = vec![sys("system"), user(&long), asst(&long), user("current")];
+        let action = enforce_context_budget(
+            &mut messages.clone(),
+            Some(12),
+            &ContextStrategy::Truncate,
+            None,
+        );
+        assert!(matches!(
+            action,
+            BudgetAction::Mutated | BudgetAction::NoChange
+        ));
+        let action = enforce_context_budget(
+            &mut messages,
+            Some(12),
+            &ContextStrategy::SlidingWindow,
+            Some(1),
+        );
+        assert!(matches!(
+            action,
+            BudgetAction::Mutated | BudgetAction::NoChange
+        ));
+    }
+
+    fn action_label(action: &BudgetAction) -> &'static str {
+        match action {
+            BudgetAction::NoChange => "NoChange",
+            BudgetAction::Mutated => "Mutated",
+            BudgetAction::NeedsSummarize { .. } => "NeedsSummarize",
+        }
+    }
+
+    /// `drained_transcript` formats messages with role prefixes; an
+    /// LLM consuming this can attribute statements to the right party.
+    #[test]
+    fn drained_transcript_formats_with_role_prefixes() {
+        let drained = vec![user("hello there"), asst("hi back")];
+        let transcript = drained_transcript(&drained);
+        assert!(transcript.contains("user: hello there"));
+        assert!(transcript.contains("assistant: hi back"));
+    }
+
     #[test]
     fn summarize_inserts_elision_placeholder() {
         // Use long messages so token estimates exceed the small budget;
