@@ -256,6 +256,47 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
         session_id: String,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>>;
 
+    /// Return current context usage for a session.
+    ///
+    /// JSON shape:
+    /// `{ messages: u32, prompt_tokens: u32, budget: u32, percent: f64 }`
+    ///
+    /// Default implementation returns `Err("not implemented")`; wired in Task A2.
+    fn context_usage(
+        &self,
+        _session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
+        Box::pin(async { Err("not implemented".into()) })
+    }
+
+    /// Trigger compaction on a session.
+    ///
+    /// Returns `()`; compaction runs asynchronously on the next agent turn.
+    /// Wraps `SessionManager::request_compaction`.
+    ///
+    /// Default implementation returns `Err("not implemented")`; wired in Task A2.
+    fn compact(
+        &self,
+        _session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+        Box::pin(async { Err("not implemented".into()) })
+    }
+
+    /// Remove messages from a session's conversation tree by range.
+    ///
+    /// `range` is `{ "type": "all" }` | `{ "type": "last" | "first", "n": N }` |
+    /// `{ "type": "indices", "start": S, "end": E }` (half-open `[S, E)`).
+    /// Returns the count of messages actually removed.
+    ///
+    /// Default implementation returns `Err("not implemented")`; wired in Task A2.
+    fn remove_messages(
+        &self,
+        _session_id: String,
+        _range: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<usize, String>> + Send>> {
+        Box::pin(async { Err("not implemented".into()) })
+    }
+
     /// Send a message and stream structured response parts.
     ///
     /// Subscribes, sends the message, then returns a receiver that yields
