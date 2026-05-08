@@ -58,13 +58,15 @@ Waves are dependency-ordered. **Items inside a wave can be parallelized**; later
 - ✅ **Cache Stats** — `CacheStats` aggregate + `session.cache_stats` RPC; `cru.sessions.cache_stats(id)` Lua binding via `DaemonSessionApi`; statusline `cache_hit_rate` component fed from `message_complete` cache token fields.
 - ✅ **CLI Help & Discoverability** — `infer_subcommands = true`; clap 4 typo suggestions; insta snapshots lock `cru --help` and the two most-used subcommands.
 
-### Wave 1 — Lua API closure (depends on Wave 0 types)
+### Wave 1 — Lua API closure ✅ fully shipped 2026-05-08
 
-- **Lua Context Operations** — bind `crucible-core/src/traits/context_ops` to `cru.context.{usage, compact, messages, remove, estimate_tokens}`
-- **Lua Validators** — depends on Wave 0 validate-retry; `cru.session.set("output_validation", { type = "lua", fn = ... })`
-- **Turn Undo + Undo Lua API** — wire existing `UndoTree<T>` + git stash; `/undo` slash command + `cru.session.{undo,redo,can_undo,undo_history}`
-- **`session.fork()`** — branching state for A/B exploration
-- **LuaCATS Type Stubs** — generate `---@meta` from Rust API surface; ship to `~/.config/crucible/luals/`. Land last in this wave once the Lua surface is stable.
+> Lua surface for context manipulation, output validation, and turn undo. Fork and LuaCATS landed earlier; the remaining three closed out this wave.
+
+- ✅ **Lua Context Operations** — `cru.context.{usage, compact, messages, remove, estimate_tokens}` bind to `crucible-core::traits::context_ops` via `DaemonSessionApi`. `remove` mirrors `undo_turns` semantics on the branchable `ConversationTree` (cursor rewind, not slice deletion).
+- ✅ **Lua Validators** — `OutputValidation::Lua { name }` variant; daemon plugin loader exposes `cru.context.register_validator(name, fn)`; stream loop calls `LuaValidatorRegistry::run` against the loader's `Arc<Lua>` (mlua `send` feature). Lua-side ergonomic: `cru.sessions.set_output_validation(id, { type = "lua", name = "..." })`.
+- ✅ **Turn Undo + Undo Lua API** — `cru.sessions.{undo, can_undo, undo_depth, undo_history}` bridge to `AgentManager`. File rollback via `WorkspaceSnapshot` (git: `write-tree`+`commit-tree` to capture untracked files; non-git: in-memory journal capped at 5MiB). Side-map keyed by `(session_id, NodeId)` keeps `crucible-core` types untouched. `redo` deferred — no `redo_turns` analogue exists yet.
+- ✅ **`session.fork()`** — already shipped in `cru.sessions.fork(id, opts)` before this wave.
+- ✅ **LuaCATS Type Stubs** — auto-generates on daemon start to `~/.config/crucible/luals/`; `cru.context` added to `UNIVERSAL_MODULES`.
 
 ### Wave 2 — Agent learning & teams (depends on Wave 1)
 

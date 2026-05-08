@@ -88,19 +88,19 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 ### Context Window Management
 - [x] **Token Budget Tracking** `P0` — `context_budget` field on `SessionAgent`, settable via RPC; `crucible_core::traits::context_ops::estimate_tokens` / `estimate_messages_tokens` provide chars/4 heuristic; auto-compact triggered in `run_reactor_handlers` via `agent_manager::autocompact::should_autocompact` when prompt usage exceeds `context_budget * autocompact_threshold` (default 0.95, configurable per session via `:set autocompact_threshold`) · `crucible-daemon`, `crucible-core`, `crucible-cli`
 - [x] **Context Strategies** `P1` — `ContextStrategy` enum: `Truncate` (drop oldest, default), `SlidingWindow` (keep last N pairs + system), and `Summarize` (drains older turns and replaces them with an LLM-generated recap via the same backend the agent uses; static `[summary placeholder]` is the fallback when the summarise call errors or returns empty); all three enforced in `genai_handle.rs::enforce_context_budget` + the async wrapper inside `stream_chat_from_messages`; `:set context_strategy=summarize` accepted · `crucible-core`, `crucible-daemon`
-- [ ] **Lua Context Operations** `P1` — Wire existing `context_ops` module to Lua: `cru.context.usage()`, `cru.context.compact()`, `cru.context.messages(range)`, `cru.context.remove(range)`, `cru.context.estimate_tokens(text)`; enables custom context strategies as plugins · `crucible-lua`, `crucible-core`
+- [x] **Lua Context Operations** `P1` — `cru.context.{usage, compact, messages, remove, estimate_tokens}` bind to `crucible-core::traits::context_ops` via `DaemonSessionApi`. `usage` returns `{messages, prompt_tokens, budget, percent}`; `compact` triggers `SessionManager::request_compaction`; `remove` mirrors `undo_turns` cursor-rewind semantics on the branchable `ConversationTree` · `crucible-lua`, `crucible-core`, `crucible-daemon`
 
 ### Execution Limits
 - [x] **Max Iterations** `P1` — `DEFAULT_MAX_TOOL_DEPTH = 10`; `max_iterations` on `SessionAgent` settable via RPC; injects "Iteration limit reached" prompt on exceed; `None` = unlimited · `crucible-daemon`
 - [x] **Execution Timeout** `P1` — `execution_timeout_secs` on `SessionAgent` settable via RPC; cancel and report on exceed; enforced in `execute_agent_stream()` · `crucible-daemon`
 
 ### Agent Undo
-- [ ] **Turn Undo** `P1` — `/undo` reverts last agent turn: git-based file rollback (`git stash create` before tool execution) + message truncation; `/undo 3` for multiple turns; `/redo` for branching; wires existing `UndoTree<T>` to session actions; non-git workspaces use file journal (path → original content); confirmation prompt before destructive revert · `crucible-daemon`, `crucible-cli`
-- [ ] **Undo Lua API** `P1` — `cru.session.undo(id, n?)`, `cru.session.redo(id, n?)`, `cru.session.can_undo(id)`, `cru.session.undo_history(id)` · `crucible-lua`
+- [x] **Turn Undo** `P1` — `/undo` reverts last agent turn: file rollback via `WorkspaceSnapshot` (git mode uses `write-tree`+`commit-tree` for untracked-file safety; non-git mode uses in-memory journal capped at 5MiB) + message truncation. Snapshots keyed by `(session_id, NodeId)` in a daemon-side `SnapshotMap`; restored on `AgentManager::undo` after tree rewind. `/undo 3` for multiple turns. `/redo` deferred — no `redo_turns` analogue on `ConversationTree` yet · `crucible-daemon`, `crucible-cli`
+- [x] **Undo Lua API** `P1` — `cru.sessions.undo(id, n?)`, `cru.sessions.can_undo(id)`, `cru.sessions.undo_depth(id)`, `cru.sessions.undo_history(id)` returning `[{turn_index, messages_removed}]`. `redo` deferred · `crucible-lua`, `crucible-daemon`
 
 ### Output Validation
 - [x] **Validate-Retry Loop** `P1` — `validate_output` runs in `agent_manager::messaging::stream::execute_agent_stream` after each assistant turn. Failure with retries remaining injects a synthetic regenerate-prompt and re-enters the stream; exhaustion emits `ended` with reason `error: output validation exhausted retries`. `OutputValidation::None` (default) is a zero-cost early return. Lua-callback validators are deferred to Wave 1 · `crucible-daemon`, `crucible-core`
-- [ ] **Lua Validators** `P1` — Custom validation via `cru.session.set("output_validation", { type = "lua", fn = validator_fn })`; validator returns `true` or `false, "reason"`; `cru.sessions.create({ output_validation = "json" })` at session creation · `crucible-lua`
+- [x] **Lua Validators** `P1` — `OutputValidation::Lua { name }` variant in core. Plugin authors register via `cru.context.register_validator(name, fn)` (validator returns `true | false, reason`); per-session enable via `cru.sessions.set_output_validation(id, { type = "lua", name = "..." })`. Daemon `DaemonPluginLoader` owns one `Arc<LuaValidatorRegistry>` shared with `AgentManager` via `OnceLock`; `validate_response_or_retry` calls `registry.run(&Lua, name, response)` synchronously (mlua `send` feature → no async lock). Unregistered names and unbound runtime degrade to validation failure (retry/exhaust path), not panic · `crucible-core`, `crucible-lua`, `crucible-daemon`
 
 ## AI Chat & Agents
 
@@ -156,7 +156,7 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 - [x] **`cru.tools.batch({...})`** `P1` — Concurrent multi-tool calls; `batch({{"semantic_search", {query="X"}}, {"list_notes", {tag="Y"}}})` runs in parallel via async runtime; essential for digest/summarization plugins · `crucible-lua`, `crucible-daemon` (tools)
 - [x] **`cru.sessions.messages(id, opts)`** `P1` — Read conversation history from Lua; opts: `{role, limit}`; enables context windowing, summarization, checkpoint detection · `crucible-lua`, `crucible-daemon`
 - [x] **`cru.sessions.inject(id, role, content)`** `P1` — Insert messages mid-conversation via `session.inject_context` RPC; requires session_id as first param; persists to session log and emits broadcast event · `crucible-lua`, `crucible-daemon`
-- [ ] **`session.fork()`** `P1` — Branch conversation state; enables parallel exploration, A/B approach testing · `crucible-lua`
+- [x] **`session.fork()`** `P1` — `cru.sessions.fork(id, opts)` returns `{ id, parent_id, messages_copied }`; copies message history and (via RPC handler) agent config; enables parallel exploration, A/B approach testing · `crucible-lua`, `crucible-daemon`
 - [x] **`cru.sessions.collect_subagents(ids, timeout?)`** `P1` — `subagent.collect` RPC + Lua API; await multiple subagents with optional timeout · `crucible-lua`, `crucible-daemon`
 
 ### In Progress / Planned
@@ -252,7 +252,7 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 >
 > **Guiding insight**: Neovim's plugin ecosystem exploded when LuaLS type stubs + lazy.nvim hot reload made Lua plugins as ergonomic as TypeScript. Crucible needs the same inflection point.
 
-- [ ] **LuaCATS Type Stubs** `P1` — Generate `---@meta` files from Rust API surface (`cru.fs`, `cru.session`, `cru.http`, etc.); ship with binary, write to `~/.config/crucible/luals/`; enables IDE autocomplete and type checking via LuaLS · `crucible-lua`
+- [x] **LuaCATS Type Stubs** `P1` — `StubGenerator::generate` walks the registered `cru.*` namespaces and emits `cru.lua` (EmmyLua/LuaCATS) plus `cru-docs.json`; auto-runs at daemon startup writing to `~/.config/crucible/luals/`. `cru.context` added to `UNIVERSAL_MODULES` so the new Wave 1 surface ships with stubs · `crucible-lua`, `crucible-daemon`
 - [x] **Plugin Hot Reload** `P1` — `:reload <plugin>` command; invalidate `package.loaded`, re-require, re-extract services; `plugin.reload` RPC + `plugin.list` RPC · `crucible-lua`, `crucible-daemon`, `crucible-cli`
 - [x] **`:lua` REPL** `P1` — `lua.eval` RPC + `cru lua` CLI command; `=expr` prints result (Neovim pattern); inspect plugin state, test API calls · `crucible-cli`, `crucible-daemon`
 - [x] **`cru plugin new`** `P1` — Scaffold plugin from template: `plugin.yaml`, `init.lua`, `health.lua`, `.luarc.json`, `tests/` directory · `crucible-cli`
