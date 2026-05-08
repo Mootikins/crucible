@@ -889,3 +889,214 @@ async fn test_validate_retry_none_validation_passes_freely() {
     let mc = next_event_or_skip(&mut event_rx, "message_complete").await;
     assert_eq!(mc.data["full_response"], "not json");
 }
+
+/// Build a Lua VM with `cru.context.register_validator(...)` mounted and
+/// return `(Arc<Lua>, Arc<LuaValidatorRegistry>)` ready for hand-off to
+/// `AgentManager::set_lua_validators`. Mirrors the daemon's plugin loader
+/// path without spinning up the full loader.
+fn lua_validator_runtime(
+) -> (Arc<mlua::Lua>, Arc<crucible_lua::LuaValidatorRegistry>) {
+    let lua = Arc::new(mlua::Lua::new());
+    let registry = Arc::new(crucible_lua::LuaValidatorRegistry::new());
+    crucible_lua::register_context_validators(&lua, Arc::clone(&registry))
+        .expect("register_context_validators");
+    (lua, registry)
+}
+
+/// `OutputValidation::Lua` with a registered validator that returns
+/// `false, reason` — the stream loop must inject a retry prompt and on
+/// exhaustion emit the standard validation-exhausted ended event.
+#[tokio::test]
+async fn test_lua_validator_failure_triggers_retry_and_exhausts() {
+    let tmp = TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let agent_manager = create_test_agent_manager(session_manager.clone());
+    let (lua, registry) = lua_validator_runtime();
+    lua.load(r#"cru.context.register_validator("nope", function(_) return false, "boom" end)"#)
+        .exec()
+        .expect("register validator");
+    agent_manager.set_lua_validators(Arc::clone(&registry), Arc::clone(&lua));
+
+    let mut agent = test_agent();
+    agent.output_validation = crucible_core::session::OutputValidation::Lua {
+        name: "nope".to_string(),
+    };
+    agent.validation_retries = 0;
+    agent_manager
+        .configure_agent(&session.id, agent)
+        .await
+        .unwrap();
+
+    agent_manager.agent_cache.insert(
+        session.id.clone(),
+        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+            events: vec![script::text("anything"), script::done()],
+        }))),
+    );
+
+    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    agent_manager
+        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
+        .await
+        .unwrap();
+
+    let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+
+    let ended = timeout(Duration::from_secs(2), async {
+        loop {
+            match event_rx.recv().await {
+                Ok(event) if event.event == "ended" => return event,
+                Ok(_) => continue,
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(err) => panic!("event channel closed: {err}"),
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for ended event");
+
+    let reason = ended.data["reason"].as_str().unwrap_or_default();
+    assert_eq!(
+        reason, "error: output validation exhausted retries",
+        "expected validation-exhausted reason, got: {reason}"
+    );
+}
+
+/// `OutputValidation::Lua` with a registered validator that returns
+/// `true` — the response should flow through normally without retry.
+#[tokio::test]
+async fn test_lua_validator_pass_no_retry() {
+    let tmp = TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let agent_manager = create_test_agent_manager(session_manager.clone());
+    let (lua, registry) = lua_validator_runtime();
+    lua.load(r#"cru.context.register_validator("ok", function(_) return true end)"#)
+        .exec()
+        .expect("register validator");
+    agent_manager.set_lua_validators(Arc::clone(&registry), Arc::clone(&lua));
+
+    let mut agent = test_agent();
+    agent.output_validation = crucible_core::session::OutputValidation::Lua {
+        name: "ok".to_string(),
+    };
+    agent.validation_retries = 0;
+    agent_manager
+        .configure_agent(&session.id, agent)
+        .await
+        .unwrap();
+
+    agent_manager.agent_cache.insert(
+        session.id.clone(),
+        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+            events: vec![script::text("anything"), script::done()],
+        }))),
+    );
+
+    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    agent_manager
+        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
+        .await
+        .unwrap();
+
+    let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+
+    let mc = next_event_or_skip(&mut event_rx, "message_complete").await;
+    assert_eq!(mc.data["full_response"], "anything");
+}
+
+/// `OutputValidation::Lua { name }` referring to an unregistered name
+/// surfaces as a validation failure (with a clear reason) and exhausts
+/// per `validation_retries`. The plugin runtime IS bound here — the only
+/// problem is that `name` was never `register_validator`'d.
+#[tokio::test]
+async fn test_lua_validator_unregistered_name_errors() {
+    let tmp = TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let agent_manager = create_test_agent_manager(session_manager.clone());
+    // Registry is bound but no validator named "missing" was registered.
+    let (lua, registry) = lua_validator_runtime();
+    agent_manager.set_lua_validators(Arc::clone(&registry), Arc::clone(&lua));
+
+    let mut agent = test_agent();
+    agent.output_validation = crucible_core::session::OutputValidation::Lua {
+        name: "missing".to_string(),
+    };
+    agent.validation_retries = 0;
+    agent_manager
+        .configure_agent(&session.id, agent)
+        .await
+        .unwrap();
+
+    agent_manager.agent_cache.insert(
+        session.id.clone(),
+        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+            events: vec![script::text("anything"), script::done()],
+        }))),
+    );
+
+    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    agent_manager
+        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
+        .await
+        .unwrap();
+
+    let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+
+    let ended = timeout(Duration::from_secs(2), async {
+        loop {
+            match event_rx.recv().await {
+                Ok(event) if event.event == "ended" => return event,
+                Ok(_) => continue,
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(err) => panic!("event channel closed: {err}"),
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for ended event");
+
+    let reason = ended.data["reason"].as_str().unwrap_or_default();
+    assert_eq!(
+        reason, "error: output validation exhausted retries",
+        "expected validation-exhausted reason, got: {reason}"
+    );
+}

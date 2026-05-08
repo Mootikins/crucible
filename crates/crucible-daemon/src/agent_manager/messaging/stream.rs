@@ -171,8 +171,26 @@ impl AgentManager {
         if matches!(stream_config.output_validation, OutputValidation::None) {
             return ValidationOutcome::Pass;
         }
-        let Err(reason) = validate_output(accumulated_response, &stream_config.output_validation)
-        else {
+        // Lua validators bypass the pure `validate_output` (which is a
+        // no-op for the `Lua` variant) and dispatch through the plugin
+        // registry. Other variants flow through `validate_output`.
+        let validation_result: Result<(), String> = match &stream_config.output_validation {
+            OutputValidation::Lua { name } => match (
+                stream_config.lua_validators.as_ref(),
+                stream_config.plugin_lua.as_ref(),
+            ) {
+                (Some(registry), Some(lua)) => match registry.run(lua, name, accumulated_response)
+                {
+                    Ok(verdict) => verdict,
+                    Err(e) => Err(format!("lua validator '{name}' invocation error: {e}")),
+                },
+                _ => Err(format!(
+                    "lua validator '{name}' unavailable: plugin runtime not bound"
+                )),
+            },
+            other => validate_output(accumulated_response, other),
+        };
+        let Err(reason) = validation_result else {
             return ValidationOutcome::Pass;
         };
         if attempts_so_far >= stream_config.validation_retries {

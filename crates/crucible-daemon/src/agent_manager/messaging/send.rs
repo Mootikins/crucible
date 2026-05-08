@@ -114,7 +114,13 @@ impl AgentManager {
             pending_permissions: self.pending_permissions.clone(),
             workspace_path: session.workspace.clone(),
             session_dir: session.storage_path(),
-            agent_stream_config: AgentStreamConfig::from_session_agent(&agent_config),
+            agent_stream_config: {
+                let (lua_validators, plugin_lua) = match self.lua_validators() {
+                    Some((r, l)) => (Some(r), Some(l)),
+                    None => (None, None),
+                };
+                AgentStreamConfig::from_session_agent(&agent_config, lua_validators, plugin_lua)
+            },
             tool_dispatcher: self.get_or_create_session_dispatcher(&session).await,
             permission_override,
             conversation_tree,

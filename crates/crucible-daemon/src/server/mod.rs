@@ -285,6 +285,13 @@ impl Server {
                     warn!("Failed to upgrade Lua sessions module: {}", e);
                 }
 
+                // Hand the validator registry + plugin Lua handle to the
+                // agent manager so the stream loop can dispatch
+                // `OutputValidation::Lua { name }` against plugin-registered
+                // validators. Bind once; `set_lua_validators` is idempotent.
+                self.agent_manager
+                    .set_lua_validators(loader.validator_registry(), loader.plugin_lua());
+
                 let tools_api: Arc<dyn crucible_lua::DaemonToolsApi> = Arc::new(
                     crate::tools_bridge::DaemonToolsBridge::new(Arc::clone(&self.workspace_tools)),
                 );

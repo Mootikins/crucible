@@ -31,7 +31,8 @@ use crucible_core::traits::tools::ToolExecutor;
 use crucible_core::traits::PermissionGate;
 use crucible_lua::{
     execute_permission_hooks, register_crucible_on_api, register_permission_hook_api,
-    LuaScriptHandlerRegistry, PermissionHook, PermissionHookResult, PermissionRequest,
+    LuaScriptHandlerRegistry, LuaValidatorRegistry, PermissionHook, PermissionHookResult,
+    PermissionRequest,
 };
 use dashmap::DashMap;
 use mlua::Lua;
@@ -331,10 +332,23 @@ struct AgentStreamConfig {
     output_validation: OutputValidation,
     /// Maximum retry count when output validation fails.
     validation_retries: u32,
+    /// Registry of Lua-defined validators, populated when the daemon
+    /// has a plugin loader. The agent stream loop dispatches
+    /// `OutputValidation::Lua { name }` against this registry.
+    /// `None` outside daemon contexts (tests, isolated managers) — the
+    /// stream loop treats that as a validation failure with a clear reason.
+    lua_validators: Option<Arc<LuaValidatorRegistry>>,
+    /// Plugin runtime `Lua` handle used to call into validator functions.
+    /// Paired with `lua_validators`; both are `Some` together or both `None`.
+    plugin_lua: Option<Arc<Lua>>,
 }
 
 impl AgentStreamConfig {
-    fn from_session_agent(session_agent: &SessionAgent) -> Self {
+    fn from_session_agent(
+        session_agent: &SessionAgent,
+        lua_validators: Option<Arc<LuaValidatorRegistry>>,
+        plugin_lua: Option<Arc<Lua>>,
+    ) -> Self {
         Self {
             model: session_agent.model.clone(),
             temperature: session_agent.temperature,
@@ -347,6 +361,8 @@ impl AgentStreamConfig {
             autocompact_threshold: session_agent.autocompact_threshold,
             output_validation: session_agent.output_validation.clone(),
             validation_retries: session_agent.validation_retries,
+            lua_validators,
+            plugin_lua,
         }
     }
 }
@@ -457,6 +473,13 @@ pub struct AgentManager {
     plugin_loader: Option<Arc<Mutex<Option<DaemonPluginLoader>>>>,
     tool_dispatcher: Arc<dyn ToolDispatcher>,
     cache_stats: Arc<DashMap<String, cache_stats::CacheStats>>,
+    /// Lua validator registry + plugin `Lua` handle. Populated once at
+    /// daemon startup via [`AgentManager::set_lua_validators`] after the
+    /// plugin loader has finished initializing. `OnceLock` keeps the
+    /// hot validation path lock-free; tests and isolated managers leave
+    /// it empty and `OutputValidation::Lua` surfaces as a validation
+    /// failure with a clear reason instead of panicking.
+    lua_validators: std::sync::OnceLock<(Arc<LuaValidatorRegistry>, Arc<Lua>)>,
 }
 
 /// Parameters for creating an AgentManager.
@@ -495,7 +518,26 @@ impl AgentManager {
             tool_dispatcher,
             session_trees: Arc::new(DashMap::new()),
             cache_stats: Arc::new(DashMap::new()),
+            lua_validators: std::sync::OnceLock::new(),
         }
+    }
+
+    /// Bind the plugin loader's validator registry + `Lua` handle.
+    ///
+    /// Called once during daemon startup after the plugin loader has
+    /// initialized. Subsequent calls are silently ignored (`OnceLock`
+    /// semantics) so reload paths can re-call without panicking; the
+    /// registry itself is shared by `Arc` and stays live across reloads.
+    pub fn set_lua_validators(&self, registry: Arc<LuaValidatorRegistry>, lua: Arc<Lua>) {
+        let _ = self.lua_validators.set((registry, lua));
+    }
+
+    /// Snapshot of `(registry, lua)` for the agent stream loop. `None`
+    /// when no plugin loader has bound validators (test contexts).
+    pub(crate) fn lua_validators(&self) -> Option<(Arc<LuaValidatorRegistry>, Arc<Lua>)> {
+        self.lua_validators
+            .get()
+            .map(|(r, l)| (Arc::clone(r), Arc::clone(l)))
     }
 
     /// Snapshot the prompt-cache aggregate for `session_id`. Returns

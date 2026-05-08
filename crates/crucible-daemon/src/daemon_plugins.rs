@@ -10,12 +10,13 @@
 use crucible_core::storage::NoteStore;
 use crucible_core::storage::PropertyStore;
 use crucible_lua::{
-    register_context_module, register_graph_module, register_graph_module_with_store,
-    register_oq_module, register_paths_module, register_schedule_module, register_sessions_module,
-    register_sessions_module_with_api, register_shell_module, register_storage_module,
-    register_storage_module_with_store, register_tools_module, register_tools_module_with_api,
-    register_vault_module, register_vault_module_with_store, register_ws_module, DaemonSessionApi,
-    DaemonToolsApi, LuaExecutor, PathsContext, PluginManager, PluginSource, PluginSpec,
+    register_context_module, register_context_validators, register_graph_module,
+    register_graph_module_with_store, register_oq_module, register_paths_module,
+    register_schedule_module, register_sessions_module, register_sessions_module_with_api,
+    register_shell_module, register_storage_module, register_storage_module_with_store,
+    register_tools_module, register_tools_module_with_api, register_vault_module,
+    register_vault_module_with_store, register_ws_module, DaemonSessionApi, DaemonToolsApi,
+    LuaExecutor, LuaValidatorRegistry, PathsContext, PluginManager, PluginSource, PluginSpec,
     ShellPolicy,
 };
 use mlua::LuaSerdeExt;
@@ -35,6 +36,12 @@ pub struct DaemonPluginLoader {
     /// Service functions extracted from plugins during loading.
     /// Each entry is `(service_name, mlua::Function)`.
     service_fns: Vec<(String, mlua::Function)>,
+    /// Shared registry of Lua-defined output validators.
+    ///
+    /// Plugins call `cru.context.register_validator(name, fn)` which inserts
+    /// a `RegistryKey` into this map; the agent stream loop dispatches
+    /// validations by name without re-entering Lua's globals table.
+    validator_registry: Arc<LuaValidatorRegistry>,
 }
 
 impl DaemonPluginLoader {
@@ -79,12 +86,41 @@ impl DaemonPluginLoader {
 
         let plugin_manager = PluginManager::new();
 
+        // Validator registry is created up front so plugins can register
+        // validators during init — even before `upgrade_with_sessions`
+        // wires the daemon-backed `cru.context.*` methods. The same Arc
+        // is shared with `AgentManager` so the stream loop can dispatch
+        // by name without re-entering Lua's symbol table.
+        let validator_registry = Arc::new(LuaValidatorRegistry::new());
+        register_context_validators(lua, Arc::clone(&validator_registry))
+            .map_err(|e| anyhow::anyhow!("context validators: {e}"))?;
+
         Ok(Self {
             executor,
             plugin_manager,
             loaded_specs: Vec::new(),
             service_fns: Vec::new(),
+            validator_registry,
         })
+    }
+
+    /// Shared registry of Lua-defined output validators.
+    ///
+    /// Hand this `Arc` to `AgentManager::set_lua_validators` together with
+    /// [`Self::plugin_lua`] so the agent stream loop can resolve
+    /// `OutputValidation::Lua { name }` against plugin-registered functions.
+    pub fn validator_registry(&self) -> Arc<LuaValidatorRegistry> {
+        Arc::clone(&self.validator_registry)
+    }
+
+    /// Clone of the plugin runtime's `Lua` handle.
+    ///
+    /// `mlua::Lua` is `Send + Sync` with the `send` feature enabled and
+    /// is internally reference-counted; the clone is cheap and lets the
+    /// agent stream loop call into Lua-registered validators without
+    /// going through the plugin loader's outer mutex.
+    pub fn plugin_lua(&self) -> Arc<mlua::Lua> {
+        Arc::new(self.executor.lua().clone())
     }
 
     /// Register plugin config as `crucible.config` in the Lua runtime.
