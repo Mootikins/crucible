@@ -48,14 +48,14 @@ A knowledge-grounded agent runtime — agents that draw from a knowledge graph m
 
 Waves are dependency-ordered. **Items inside a wave can be parallelized**; later waves depend on earlier ones. Wave numbers are not phase numbers — they reflect the topological sort of what's currently incomplete.
 
-### Wave 0 — Phase 0 finishers ✅ shipped 2026-05-07
+### Wave 0 — Phase 0 finishers ✅ fully shipped 2026-05-07
 
-> Mostly wiring: types and RPC plumbing already existed; calling code now lives.
+> Mostly wiring: types and RPC plumbing already existed; calling code now lives. All five items plus the two follow-ups (cache_stats Lua/statusline and LLM-driven Summarize) shipped same day.
 
 - ✅ **Validate-Retry Loop** — `validate_output()` runs after every turn in `execute_agent_stream`; failures inject a regenerate-prompt and re-enter the stream up to `validation_retries`; exhaustion emits `ended("error: output validation exhausted retries")`.
-- ⚠️ **`Summarize` Context Strategy** — variant added with a static `[summary placeholder]` elision message; LLM-generated recap deferred (needs hoisting summarisation into the genai backend call site so it can `.await` a completion).
+- ✅ **`Summarize` Context Strategy** — `enforce_context_budget` returns a `BudgetAction::NeedsSummarize` carrying the drained messages; `stream_chat_from_messages` calls `summarize_via_backend` (same genai client as the agent) and replaces the placeholder with the LLM-generated recap. On error or empty response, the static `[summary placeholder]` survives as fallback.
 - ✅ **Token Budget Tracking** — `estimate_tokens` / `estimate_messages_tokens` helpers in `crucible_core::traits::context_ops`; auto-compact threshold configurable via `:set autocompact_threshold` (default 0.95, range 0.0–1.0; `0` or `off` disables); `should_autocompact` triggers `SessionManager::request_compaction` from `run_reactor_handlers`.
-- ⚠️ **Cache Stats** — daemon-side `CacheStats` aggregate + `session.cache_stats` RPC shipped; Lua binding (`cru.session.cache_stats`) and statusline hit-rate token deferred (touches `DaemonSessionApi` trait + statusline format).
+- ✅ **Cache Stats** — `CacheStats` aggregate + `session.cache_stats` RPC; `cru.sessions.cache_stats(id)` Lua binding via `DaemonSessionApi`; statusline `cache_hit_rate` component fed from `message_complete` cache token fields.
 - ✅ **CLI Help & Discoverability** — `infer_subcommands = true`; clap 4 typo suggestions; insta snapshots lock `cru --help` and the two most-used subcommands.
 
 ### Wave 1 — Lua API closure (depends on Wave 0 types)
@@ -185,6 +185,7 @@ Wave 7 (ACP agent mode) has no dependencies on the others — it's a small lift 
 | 2025-01-24 | Model switching | Runtime model changes via :model command and daemon RPC |
 | 2026-05-07 | Roadmap split into Phase + Wave views | Phases communicate strategy; waves sequence execution. Topological sort of remaining work resolves dependency confusion when multiple tracks proceed in parallel. |
 | 2026-05-07 | Wave 0 shipped | 5 commits land CLI help discoverability, cache-stats RPC, configurable autocompact, validate-retry loop, and a `Summarize` strategy variant. Two follow-ups deferred: cache-stats Lua/statusline (trait surface) and LLM-driven Summarize recap (requires async backend access from `enforce_context_budget`). |
+| 2026-05-07 | Wave 0 follow-ups shipped | Two follow-ups landed same day: (1) `cru.sessions.cache_stats` Lua binding via the `DaemonSessionApi` trait + a statusline `cache_hit_rate` component fed from `message_complete` cache fields; (2) Summarize now hoists the drain into an async wrapper inside `stream_chat_from_messages`, calls `summarize_via_backend` on the same genai client the agent uses, and replaces the placeholder with the LLM recap (static placeholder remains as the error-fallback). |
 
 ---
 
