@@ -56,6 +56,14 @@ pub enum OutputValidation {
     Json,
     /// Response must match the given regex pattern
     Regex(String),
+    /// Lua-defined validator referenced by registered name.
+    ///
+    /// `validate_output` returns `Ok(())` for this variant; the daemon
+    /// stream loop dispatches to the plugin's `LuaValidatorRegistry`
+    /// separately. The variant exists in core only so it can flow through
+    /// config, RPC, and Display/FromStr without reaching back into the
+    /// Lua crate.
+    Lua { name: String },
 }
 
 impl std::fmt::Display for OutputValidation {
@@ -64,6 +72,7 @@ impl std::fmt::Display for OutputValidation {
             Self::None => write!(f, "none"),
             Self::Json => write!(f, "json"),
             Self::Regex(p) => write!(f, "regex:{p}"),
+            Self::Lua { name } => write!(f, "lua:{name}"),
         }
     }
 }
@@ -72,22 +81,29 @@ impl FromStr for OutputValidation {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Prefix-tagged forms preserve the case of their payload (regex
+        // patterns and lua validator names are arbitrary identifiers).
+        // Match those against the raw input before falling back to a
+        // case-insensitive keyword match.
+        if let Some(pattern) = s.strip_prefix("regex:") {
+            regex::Regex::new(pattern).map_err(|e| format!("invalid regex pattern: {e}"))?;
+            return Ok(Self::Regex(pattern.to_string()));
+        }
+        if let Some(name) = s.strip_prefix("lua:") {
+            if name.is_empty() {
+                return Err("lua validator requires a name (lua:<name>)".into());
+            }
+            return Ok(Self::Lua {
+                name: name.to_string(),
+            });
+        }
         match s.to_lowercase().as_str() {
             "none" | "off" => Ok(Self::None),
             "json" => Ok(Self::Json),
-            other => {
-                if let Some(pattern) = other.strip_prefix("regex:") {
-                    // Validate the regex is compilable
-                    regex::Regex::new(pattern)
-                        .map_err(|e| format!("invalid regex pattern: {e}"))?;
-                    Ok(Self::Regex(pattern.to_string()))
-                } else {
-                    Err(format!(
-                        "unknown validation '{}'. Valid: none, json, regex:<pattern>",
-                        s
-                    ))
-                }
-            }
+            _ => Err(format!(
+                "unknown validation '{}'. Valid: none, json, regex:<pattern>, lua:<name>",
+                s
+            )),
         }
     }
 }
@@ -123,5 +139,9 @@ pub fn validate_output(response: &str, validation: &OutputValidation) -> Result<
                 Err(format!("Response does not match pattern: {pattern}"))
             }
         }
+        // Lua validators are evaluated by the daemon stream loop against
+        // the plugin registry. Core's pure `validate_output` cannot hold a
+        // `Lua` handle, so this is a no-op pass-through here.
+        OutputValidation::Lua { .. } => Ok(()),
     }
 }

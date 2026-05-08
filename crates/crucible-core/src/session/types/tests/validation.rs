@@ -109,6 +109,47 @@ fn test_validate_output_regex_invalid_pattern() {
 }
 
 #[test]
+fn output_validation_lua_parses_and_displays() {
+    let v: OutputValidation = "lua:my_validator".parse().unwrap();
+    assert_eq!(
+        v,
+        OutputValidation::Lua {
+            name: "my_validator".into()
+        }
+    );
+    assert_eq!(v.to_string(), "lua:my_validator");
+}
+
+#[test]
+fn output_validation_lua_preserves_name_case() {
+    // Names are arbitrary identifiers — case must round-trip even though
+    // FromStr lowercases the prefix tag for matching.
+    let v: OutputValidation = "lua:MyValidator".parse().unwrap();
+    assert_eq!(
+        v,
+        OutputValidation::Lua {
+            name: "MyValidator".into()
+        }
+    );
+    assert_eq!(v.to_string(), "lua:MyValidator");
+}
+
+#[test]
+fn output_validation_lua_empty_name_rejected() {
+    let err = "lua:".parse::<OutputValidation>().unwrap_err();
+    assert!(err.contains("name"), "error did not mention 'name': {err}");
+}
+
+#[test]
+fn validate_output_lua_passes_through() {
+    // `validate_output` cannot evaluate Lua itself; it returns Ok(()) and
+    // leaves execution to the daemon stream loop which routes through the
+    // plugin registry.
+    let v = OutputValidation::Lua { name: "x".into() };
+    assert!(validate_output("anything", &v).is_ok());
+}
+
+#[test]
 fn test_output_validation_serde_roundtrip() {
     let agent = SessionAgent {
         agent_type: "internal".to_string(),
