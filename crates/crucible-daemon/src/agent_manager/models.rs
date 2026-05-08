@@ -987,10 +987,7 @@ impl AgentManager {
     ///   when unset.
     /// * `percent` — `prompt_tokens / budget * 100`, or 0 when budget
     ///   is unset/zero.
-    pub fn get_context_usage(
-        &self,
-        session_id: &str,
-    ) -> Result<serde_json::Value, AgentError> {
+    pub fn get_context_usage(&self, session_id: &str) -> Result<serde_json::Value, AgentError> {
         let (_, agent_config) = self.get_session_with_agent(session_id)?;
         let stats = self.get_cache_stats(session_id);
         let prompt_tokens = stats.prompt_tokens;

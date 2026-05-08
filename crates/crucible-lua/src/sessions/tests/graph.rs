@@ -148,9 +148,7 @@ async fn sessions_set_output_validation_serialises_lua_table_spec() {
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
     let result: (Value, Value) = lua
-        .load(
-            r#"return cru.sessions.set_output_validation("s1", { type = "lua", name = "x" })"#,
-        )
+        .load(r#"return cru.sessions.set_output_validation("s1", { type = "lua", name = "x" })"#)
         .eval_async()
         .await
         .unwrap();

@@ -145,8 +145,7 @@ impl AgentManager {
                                     "permission channel closed before response"
                                 );
                                 PermResponse::deny_with_reason(
-                                    "Permission request channel closed before response"
-                                        .to_string(),
+                                    "Permission request channel closed before response".to_string(),
                                 )
                             }
                             Err(_) => {

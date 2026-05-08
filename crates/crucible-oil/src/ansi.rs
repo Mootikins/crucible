@@ -281,8 +281,7 @@ pub fn extract_bg(style: &str) -> Option<String> {
                         // Extended bg: 48;5;N (256-color) or 48;2;R;G;B (RGB).
                         match params.get(p + 1) {
                             Some(&5) if params.len() > p + 2 => {
-                                last_bg =
-                                    Some(format!("\x1b[48;5;{}m", params[p + 2]));
+                                last_bg = Some(format!("\x1b[48;5;{}m", params[p + 2]));
                                 p += 3;
                             }
                             Some(&2) if params.len() > p + 4 => {
@@ -353,10 +352,7 @@ mod tests {
     #[test]
     fn extract_bg_returns_last_bg_when_multiple() {
         let style = "\x1b[48;2;0;0;0m\x1b[48;2;255;255;255m";
-        assert_eq!(
-            extract_bg(style).as_deref(),
-            Some("\x1b[48;2;255;255;255m")
-        );
+        assert_eq!(extract_bg(style).as_deref(), Some("\x1b[48;2;255;255;255m"));
     }
 
     #[test]
@@ -392,10 +388,7 @@ mod tests {
     fn extract_bg_handles_compound_fg_and_bg_in_one_escape() {
         // crossterm sometimes emits combined: \x1b[38;2;...;48;2;...m
         let style = "\x1b[38;2;255;255;255;48;2;40;44;52m";
-        assert_eq!(
-            extract_bg(style).as_deref(),
-            Some("\x1b[48;2;40;44;52m")
-        );
+        assert_eq!(extract_bg(style).as_deref(), Some("\x1b[48;2;40;44;52m"));
     }
 
     #[test]

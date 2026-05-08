@@ -397,10 +397,7 @@ impl ConversationTree {
     ///   non-root path nodes (the cursor lands on that node, or the
     ///   root if `start == 0`), then reports how many path nodes the
     ///   range named (`min(end, path_len) - start`, saturating at 0).
-    pub fn remove_range(
-        &mut self,
-        range: crate::traits::context_ops::Range,
-    ) -> usize {
+    pub fn remove_range(&mut self, range: crate::traits::context_ops::Range) -> usize {
         use crate::traits::context_ops::Range;
         // path_to_here includes root; non-root indices map to 1..path.len()
         let path = self.path_to_here(self.current);

@@ -225,8 +225,7 @@ impl DaemonPluginLoader {
         let lua = self.executor.lua();
         register_sessions_module_with_api(lua, Arc::clone(&api))
             .map_err(|e| anyhow::anyhow!("sessions upgrade: {e}"))?;
-        register_context_module(lua, api)
-            .map_err(|e| anyhow::anyhow!("context module: {e}"))?;
+        register_context_module(lua, api).map_err(|e| anyhow::anyhow!("context module: {e}"))?;
         info!("Lua sessions + context modules upgraded with daemon API");
         Ok(())
     }

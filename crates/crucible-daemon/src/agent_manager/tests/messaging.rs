@@ -894,8 +894,7 @@ async fn test_validate_retry_none_validation_passes_freely() {
 /// return `(Arc<Lua>, Arc<LuaValidatorRegistry>)` ready for hand-off to
 /// `AgentManager::set_lua_validators`. Mirrors the daemon's plugin loader
 /// path without spinning up the full loader.
-fn lua_validator_runtime(
-) -> (Arc<mlua::Lua>, Arc<crucible_lua::LuaValidatorRegistry>) {
+fn lua_validator_runtime() -> (Arc<mlua::Lua>, Arc<crucible_lua::LuaValidatorRegistry>) {
     let lua = Arc::new(mlua::Lua::new());
     let registry = Arc::new(crucible_lua::LuaValidatorRegistry::new());
     crucible_lua::register_context_validators(&lua, Arc::clone(&registry))
@@ -1100,7 +1099,6 @@ async fn test_lua_validator_unregistered_name_errors() {
         "expected validation-exhausted reason, got: {reason}"
     );
 }
-
 
 /// `send_message` captures a workspace snapshot before the agent turn
 /// begins, and `undo` restores that snapshot. This drives the full

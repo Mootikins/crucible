@@ -58,11 +58,12 @@ impl DiffOptions {
     }
 
     pub fn resolved_layout(&self) -> DiffLayout {
-        self.layout.unwrap_or(if self.max_width >= SIDE_BY_SIDE_MIN_WIDTH {
-            DiffLayout::SideBySide
-        } else {
-            DiffLayout::Unified
-        })
+        self.layout
+            .unwrap_or(if self.max_width >= SIDE_BY_SIDE_MIN_WIDTH {
+                DiffLayout::SideBySide
+            } else {
+                DiffLayout::Unified
+            })
     }
 }
 

@@ -56,7 +56,12 @@ pub fn register_sessions_module(lua: &Lua) -> Result<(), LuaError> {
     stub_async!("messages", lua, sessions, (String, mlua::Value));
     stub_async!("fork", lua, sessions, (String, mlua::Value));
     stub_async!("cache_stats", lua, sessions, String);
-    stub_async!("set_output_validation", lua, sessions, (String, mlua::Value));
+    stub_async!(
+        "set_output_validation",
+        lua,
+        sessions,
+        (String, mlua::Value)
+    );
     stub_async!("undo", lua, sessions, (String, mlua::Value));
     stub_async!("can_undo", lua, sessions, String);
     stub_async!("undo_depth", lua, sessions, String);

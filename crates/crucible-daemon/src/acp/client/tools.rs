@@ -163,11 +163,8 @@ impl CrucibleAcpClient {
             .working_dir
             .as_deref()
             .unwrap_or_else(|| std::path::Path::new(""));
-        let synthesized = crate::tools::diff_synth::synthesize_diffs(
-            &tool_call.title,
-            args,
-            workspace_root,
-        );
+        let synthesized =
+            crate::tools::diff_synth::synthesize_diffs(&tool_call.title, args, workspace_root);
         if synthesized.is_empty() {
             return None;
         }

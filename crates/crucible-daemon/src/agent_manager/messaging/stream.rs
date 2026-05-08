@@ -179,11 +179,12 @@ impl AgentManager {
                 stream_config.lua_validators.as_ref(),
                 stream_config.plugin_lua.as_ref(),
             ) {
-                (Some(registry), Some(lua)) => match registry.run(lua, name, accumulated_response)
-                {
-                    Ok(verdict) => verdict,
-                    Err(e) => Err(format!("lua validator '{name}' invocation error: {e}")),
-                },
+                (Some(registry), Some(lua)) => {
+                    match registry.run(lua, name, accumulated_response) {
+                        Ok(verdict) => verdict,
+                        Err(e) => Err(format!("lua validator '{name}' invocation error: {e}")),
+                    }
+                }
                 _ => Err(format!(
                     "lua validator '{name}' unavailable: plugin runtime not bound"
                 )),

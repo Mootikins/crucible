@@ -66,10 +66,7 @@ pub fn register_context_module_stub(lua: &Lua) -> Result<(), LuaError> {
 }
 
 /// Register `cru.context` / `crucible.context` with daemon-backed implementations.
-pub fn register_context_module(
-    lua: &Lua,
-    api: Arc<dyn DaemonSessionApi>,
-) -> Result<(), LuaError> {
+pub fn register_context_module(lua: &Lua, api: Arc<dyn DaemonSessionApi>) -> Result<(), LuaError> {
     let context = lua.create_table()?;
 
     // estimate_tokens(text) -> integer
@@ -210,12 +207,7 @@ impl LuaValidatorRegistry {
     /// surface as inner `Err`, not outer error, because the daemon
     /// stream loop wants to feed the reason back to the agent for retry
     /// rather than crash.
-    pub fn run(
-        &self,
-        lua: &Lua,
-        name: &str,
-        text: &str,
-    ) -> mlua::Result<Result<(), String>> {
+    pub fn run(&self, lua: &Lua, name: &str, text: &str) -> mlua::Result<Result<(), String>> {
         let guard = self.inner.lock().unwrap();
         let Some(key) = guard.get(name) else {
             return Ok(Err(format!("lua validator '{name}' not registered")));
@@ -237,9 +229,7 @@ impl LuaValidatorRegistry {
                 )));
             }
             None => {
-                return Ok(Err(format!(
-                    "lua validator '{name}' returned no values"
-                )));
+                return Ok(Err(format!("lua validator '{name}' returned no values")));
             }
         };
         if ok {
@@ -358,22 +348,13 @@ mod tests {
         ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
             unimplemented!()
         }
-        fn cancel(
-            &self,
-            _: String,
-        ) -> Pin<Box<dyn Future<Output = Result<bool, String>> + Send>> {
+        fn cancel(&self, _: String) -> Pin<Box<dyn Future<Output = Result<bool, String>> + Send>> {
             unimplemented!()
         }
-        fn pause(
-            &self,
-            _: String,
-        ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+        fn pause(&self, _: String) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
             unimplemented!()
         }
-        fn resume(
-            &self,
-            _: String,
-        ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+        fn resume(&self, _: String) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
             unimplemented!()
         }
         fn end_session(
@@ -416,8 +397,7 @@ mod tests {
             _: String,
             role_filter: Option<String>,
             limit: Option<usize>,
-        ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>>
-        {
+        ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
             Box::pin(async move {
                 let mut msgs = vec![
                     serde_json::json!({ "role": "system", "content": "sys" }),
@@ -470,8 +450,9 @@ mod tests {
             _: Option<usize>,
         ) -> Pin<
             Box<
-                dyn Future<Output = Result<tokio::sync::mpsc::UnboundedReceiver<ResponsePart>, String>>
-                    + Send,
+                dyn Future<
+                        Output = Result<tokio::sync::mpsc::UnboundedReceiver<ResponsePart>, String>,
+                    > + Send,
             >,
         > {
             unimplemented!()
@@ -492,10 +473,7 @@ mod tests {
                 }))
             })
         }
-        fn compact(
-            &self,
-            _: String,
-        ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+        fn compact(&self, _: String) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
             Box::pin(async { Ok(()) })
         }
         fn remove_messages(

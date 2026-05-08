@@ -623,11 +623,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
         })
     }
 
-    fn remove_messages(
-        &self,
-        session_id: String,
-        range: serde_json::Value,
-    ) -> BoxFut<usize> {
+    fn remove_messages(&self, session_id: String, range: serde_json::Value) -> BoxFut<usize> {
         bridge_async!(self.agent_manager, |am| async move {
             let parsed = parse_range(&range)?;
             am.remove_messages(&session_id, parsed)
@@ -674,9 +670,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
 
     fn undo_history(&self, session_id: String) -> BoxFut<Vec<serde_json::Value>> {
         bridge_async!(self.agent_manager, |am| async move {
-            let summaries = am
-                .undo_history(&session_id)
-                .map_err(|e| e.to_string())?;
+            let summaries = am.undo_history(&session_id).map_err(|e| e.to_string())?;
             Ok(summaries
                 .into_iter()
                 .enumerate()
@@ -698,9 +692,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
 /// * `{ "type": "all" }`
 /// * `{ "type": "last" | "first", "n": N }`
 /// * `{ "type": "indices", "start": S, "end": E }` (half-open `[S, E)`)
-fn parse_range(
-    v: &serde_json::Value,
-) -> Result<crucible_core::traits::context_ops::Range, String> {
+fn parse_range(v: &serde_json::Value) -> Result<crucible_core::traits::context_ops::Range, String> {
     use crucible_core::traits::context_ops::Range;
     let obj = v
         .as_object()
@@ -1083,7 +1075,10 @@ mod tests {
         let bridge = DaemonSessionBridge::new(session_manager.clone(), agent_manager, event_tx);
 
         let removed = bridge
-            .remove_messages(session.id.clone(), serde_json::json!({"type": "last", "n": 2}))
+            .remove_messages(
+                session.id.clone(),
+                serde_json::json!({"type": "last", "n": 2}),
+            )
             .await
             .unwrap();
         assert_eq!(removed, 2);
