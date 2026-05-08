@@ -1,5 +1,6 @@
 use super::*;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex as StdMutex;
 
 mod crud;
 mod graph;
@@ -11,13 +12,25 @@ mod subscription;
 /// Mock implementation of DaemonSessionApi for testing.
 pub(super) struct MockDaemonApi {
     create_called: AtomicBool,
+    /// Captures the most recent `set_output_validation` spec so tests
+    /// can assert what string the Lua binding serialised. Wrapped in a
+    /// `StdMutex` because `DaemonSessionApi` takes `&self` and tests
+    /// inspect the field across the async call.
+    last_validation_spec: StdMutex<Option<(String, String)>>,
 }
 
 impl MockDaemonApi {
     pub(super) fn new() -> Self {
         Self {
             create_called: AtomicBool::new(false),
+            last_validation_spec: StdMutex::new(None),
         }
+    }
+
+    /// Snapshot of `(session_id, spec)` from the most recent
+    /// `set_output_validation` call, or `None` if not yet invoked.
+    pub(super) fn last_validation_spec(&self) -> Option<(String, String)> {
+        self.last_validation_spec.lock().unwrap().clone()
     }
 }
 
@@ -240,6 +253,15 @@ impl DaemonSessionApi for MockDaemonApi {
                 "hit_rate": serde_json::Value::Null,
             }))
         })
+    }
+
+    fn set_output_validation(
+        &self,
+        session_id: String,
+        spec: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+        *self.last_validation_spec.lock().unwrap() = Some((session_id, spec));
+        Box::pin(async { Ok(()) })
     }
 
     fn send_and_collect(

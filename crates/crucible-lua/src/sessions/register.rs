@@ -56,6 +56,7 @@ pub fn register_sessions_module(lua: &Lua) -> Result<(), LuaError> {
     stub_async!("messages", lua, sessions, (String, mlua::Value));
     stub_async!("fork", lua, sessions, (String, mlua::Value));
     stub_async!("cache_stats", lua, sessions, String);
+    stub_async!("set_output_validation", lua, sessions, (String, mlua::Value));
 
     register_in_namespaces(lua, "sessions", sessions)?;
 
@@ -529,6 +530,63 @@ pub fn register_sessions_module_with_api(
         }
     })?;
     sessions.set("cache_stats", cache_stats_fn)?;
+
+    // set_output_validation(session_id, spec) -> (true, nil) or (nil, err)
+    //
+    // `spec` accepts either:
+    //   - a string: "none" | "json" | "regex:<pattern>" | "lua:<name>"
+    //   - a table:  { type = "none" | "json" }
+    //               { type = "regex", pattern = "..." }
+    //               { type = "lua", name = "..." }
+    //
+    // The Lua API normalises both forms to the canonical string before
+    // crossing the trait boundary. The daemon then runs it through
+    // `OutputValidation::from_str` for full validation (e.g. regex
+    // compile errors surface here, not at agent-turn time).
+    let a = Arc::clone(&api);
+    let set_validation_fn =
+        lua.create_async_function(move |lua, (sid, spec): (String, Value)| {
+            let a = Arc::clone(&a);
+            async move {
+                let serialized = match spec {
+                    Value::String(s) => s.to_str()?.to_string(),
+                    Value::Table(t) => {
+                        let ty: String = t.get("type")?;
+                        match ty.as_str() {
+                            "none" => "none".to_string(),
+                            "json" => "json".to_string(),
+                            "regex" => {
+                                let pattern: String = t.get("pattern")?;
+                                format!("regex:{pattern}")
+                            }
+                            "lua" => {
+                                let name: String = t.get("name")?;
+                                format!("lua:{name}")
+                            }
+                            other => {
+                                return Err(mlua::Error::runtime(format!(
+                                    "unknown validation type '{other}'; want none|json|regex|lua"
+                                )));
+                            }
+                        }
+                    }
+                    other => {
+                        return Err(mlua::Error::runtime(format!(
+                            "validation spec must be string or table, got {}",
+                            other.type_name()
+                        )));
+                    }
+                };
+                match a.set_output_validation(sid, serialized).await {
+                    Ok(()) => Ok((Value::Boolean(true), Value::Nil)),
+                    Err(e) => {
+                        let err = lua.create_string(&e)?;
+                        Ok((Value::Nil, Value::String(err)))
+                    }
+                }
+            }
+        })?;
+    sessions.set("set_output_validation", set_validation_fn)?;
 
     Ok(())
 }

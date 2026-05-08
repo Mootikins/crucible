@@ -297,6 +297,24 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
         Box::pin(async { Err("not implemented".into()) })
     }
 
+    /// Set the output validation mode for a session.
+    ///
+    /// `spec` is the stringified form parsed by
+    /// `OutputValidation::from_str`: `"none"` | `"json"` |
+    /// `"regex:<pattern>"` | `"lua:<name>"`. The Lua binding accepts
+    /// either a raw string or a structured table and serialises the
+    /// table form to one of the above before crossing this trait.
+    ///
+    /// Default implementation returns `Err("not implemented")`; wired
+    /// in Task B4.
+    fn set_output_validation(
+        &self,
+        _session_id: String,
+        _spec: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+        Box::pin(async { Err("not implemented".into()) })
+    }
+
     /// Send a message and stream structured response parts.
     ///
     /// Subscribes, sends the message, then returns a receiver that yields
