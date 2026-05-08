@@ -304,6 +304,37 @@ impl ConversationTree {
         self.undo_depth() > 0
     }
 
+    /// Per-turn summaries for every undoable turn on the current path,
+    /// in oldest-to-newest order. Each entry mirrors what `undo_turns`
+    /// *would* produce if invoked with the full undo depth — without
+    /// mutating the tree. Useful for the `cru.sessions.undo_history`
+    /// Lua API and any UI that wants to show "what would be undone".
+    pub fn turn_summaries(&self) -> Vec<crate::types::UndoSummary> {
+        let path = self.path_to_here(self.current);
+        let user_indices: Vec<usize> = path
+            .iter()
+            .enumerate()
+            .filter(|(_, id)| matches!(self.get(**id).content, NodeContent::User { .. }))
+            .map(|(idx, _)| idx)
+            .collect();
+        if user_indices.is_empty() {
+            return Vec::new();
+        }
+        let n = user_indices.len();
+        let mut summaries = Vec::with_capacity(n);
+        for i in 0..n {
+            let turn_span = if i + 1 < n {
+                user_indices[i + 1] - user_indices[i]
+            } else {
+                path.len() - user_indices[i]
+            };
+            summaries.push(crate::types::UndoSummary {
+                messages_removed: turn_span,
+            });
+        }
+        summaries
+    }
+
     /// Undo `n` turns: move `current` back to the parent of the
     /// `n`-th most-recent `User` node on the current path. Returns one
     /// entry per turn undone, recording how many non-root nodes were
@@ -599,6 +630,29 @@ mod tests {
         let u1 = t.add_child_and_advance(t.root(), text("u1"));
         assert!(t.undo_turns(0).is_empty());
         assert_eq!(t.current(), u1);
+    }
+
+    #[test]
+    fn turn_summaries_reports_per_turn_spans_oldest_first() {
+        let mut t = ConversationTree::new();
+        let u1 = t.add_child_and_advance(t.root(), text("u1"));
+        t.add_child_and_advance(u1, NodeContent::Agent { text: "a1".into() });
+        let u2 = t.add_child_and_advance(t.current(), text("u2"));
+        t.add_child_and_advance(u2, NodeContent::Agent { text: "a2".into() });
+
+        let summaries = t.turn_summaries();
+        assert_eq!(summaries.len(), 2);
+        // Each turn has 2 nodes (user + agent) on the path.
+        assert_eq!(summaries[0].messages_removed, 2);
+        assert_eq!(summaries[1].messages_removed, 2);
+        // Read-only — tree state unchanged.
+        assert_eq!(t.undo_depth(), 2);
+    }
+
+    #[test]
+    fn turn_summaries_empty_when_no_turns() {
+        let t = ConversationTree::new();
+        assert!(t.turn_summaries().is_empty());
     }
 
     #[test]

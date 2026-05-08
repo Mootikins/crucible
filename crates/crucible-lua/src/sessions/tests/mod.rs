@@ -17,6 +17,15 @@ pub(super) struct MockDaemonApi {
     /// `StdMutex` because `DaemonSessionApi` takes `&self` and tests
     /// inspect the field across the async call.
     last_validation_spec: StdMutex<Option<(String, String)>>,
+    /// Most recent `undo(session_id, count)` call.
+    last_undo_call: StdMutex<Option<(String, usize)>>,
+    /// Number of turns the next `undo` call should report. Defaults to
+    /// `min(count, 2)` if `None`.
+    undo_turns_to_return: StdMutex<Option<usize>>,
+    /// Override for `can_undo`. Defaults to `true`.
+    can_undo_value: StdMutex<bool>,
+    /// Override for `undo_depth`. Defaults to `2`.
+    undo_depth_value: StdMutex<usize>,
 }
 
 impl MockDaemonApi {
@@ -24,6 +33,10 @@ impl MockDaemonApi {
         Self {
             create_called: AtomicBool::new(false),
             last_validation_spec: StdMutex::new(None),
+            last_undo_call: StdMutex::new(None),
+            undo_turns_to_return: StdMutex::new(None),
+            can_undo_value: StdMutex::new(true),
+            undo_depth_value: StdMutex::new(2),
         }
     }
 
@@ -31,6 +44,11 @@ impl MockDaemonApi {
     /// `set_output_validation` call, or `None` if not yet invoked.
     pub(super) fn last_validation_spec(&self) -> Option<(String, String)> {
         self.last_validation_spec.lock().unwrap().clone()
+    }
+
+    /// Snapshot of the most recent `undo` call, or `None` if not invoked.
+    pub(super) fn last_undo_call(&self) -> Option<(String, usize)> {
+        self.last_undo_call.lock().unwrap().clone()
     }
 }
 
@@ -262,6 +280,45 @@ impl DaemonSessionApi for MockDaemonApi {
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
         *self.last_validation_spec.lock().unwrap() = Some((session_id, spec));
         Box::pin(async { Ok(()) })
+    }
+
+    fn undo(
+        &self,
+        session_id: String,
+        count: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<usize, String>> + Send>> {
+        *self.last_undo_call.lock().unwrap() = Some((session_id, count));
+        let override_count = *self.undo_turns_to_return.lock().unwrap();
+        let result = override_count.unwrap_or_else(|| count.min(2));
+        Box::pin(async move { Ok(result) })
+    }
+
+    fn can_undo(
+        &self,
+        _session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<bool, String>> + Send>> {
+        let v = *self.can_undo_value.lock().unwrap();
+        Box::pin(async move { Ok(v) })
+    }
+
+    fn undo_depth(
+        &self,
+        _session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<usize, String>> + Send>> {
+        let v = *self.undo_depth_value.lock().unwrap();
+        Box::pin(async move { Ok(v) })
+    }
+
+    fn undo_history(
+        &self,
+        _session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
+        Box::pin(async {
+            Ok(vec![
+                serde_json::json!({ "turn_index": 0, "messages_removed": 2 }),
+                serde_json::json!({ "turn_index": 1, "messages_removed": 3 }),
+            ])
+        })
     }
 
     fn send_and_collect(

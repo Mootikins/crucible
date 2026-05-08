@@ -182,6 +182,107 @@ async fn sessions_set_output_validation_serialises_regex_table_spec() {
     assert_eq!(captured.1, "regex:^OK$");
 }
 
+/// `cru.sessions.undo(session_id, count?)` returns the number of turns
+/// undone. Default count is 1.
+#[tokio::test]
+async fn sessions_undo_returns_count() {
+    let mock = Arc::new(MockDaemonApi::new());
+    let api: Arc<dyn DaemonSessionApi> = Arc::clone(&mock) as _;
+    let lua = TestLuaBuilder::new().with_sessions_api(api).build();
+
+    let result: (Value, Value) = lua
+        .load(r#"return cru.sessions.undo("s1", 2)"#)
+        .eval_async()
+        .await
+        .unwrap();
+
+    assert!(matches!(result.0, Value::Integer(2)));
+    assert!(matches!(result.1, Value::Nil));
+    let (sid, count) = mock.last_undo_call().expect("undo invoked");
+    assert_eq!(sid, "s1");
+    assert_eq!(count, 2);
+}
+
+/// Calling `undo` without a count argument defaults to 1.
+#[tokio::test]
+async fn sessions_undo_default_count_is_one() {
+    let mock = Arc::new(MockDaemonApi::new());
+    let api: Arc<dyn DaemonSessionApi> = Arc::clone(&mock) as _;
+    let lua = TestLuaBuilder::new().with_sessions_api(api).build();
+
+    let result: (Value, Value) = lua
+        .load(r#"return cru.sessions.undo("s1")"#)
+        .eval_async()
+        .await
+        .unwrap();
+
+    assert!(matches!(result.0, Value::Integer(1)));
+    assert!(matches!(result.1, Value::Nil));
+    let (_, count) = mock.last_undo_call().expect("undo invoked");
+    assert_eq!(count, 1, "missing count must default to 1");
+}
+
+/// `cru.sessions.can_undo(session_id)` round-trips a boolean.
+#[tokio::test]
+async fn sessions_can_undo_returns_bool() {
+    let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
+    let lua = TestLuaBuilder::new().with_sessions_api(api).build();
+
+    let result: (Value, Value) = lua
+        .load(r#"return cru.sessions.can_undo("s1")"#)
+        .eval_async()
+        .await
+        .unwrap();
+
+    assert!(matches!(result.0, Value::Boolean(true)));
+    assert!(matches!(result.1, Value::Nil));
+}
+
+/// `cru.sessions.undo_depth(session_id)` returns an integer count.
+#[tokio::test]
+async fn sessions_undo_depth_returns_int() {
+    let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
+    let lua = TestLuaBuilder::new().with_sessions_api(api).build();
+
+    let result: (Value, Value) = lua
+        .load(r#"return cru.sessions.undo_depth("s1")"#)
+        .eval_async()
+        .await
+        .unwrap();
+
+    assert!(matches!(result.0, Value::Integer(2)));
+    assert!(matches!(result.1, Value::Nil));
+}
+
+/// `cru.sessions.undo_history(session_id)` returns a list with one
+/// table per undoable turn, each carrying `turn_index` and
+/// `messages_removed`.
+#[tokio::test]
+async fn sessions_undo_history_returns_list() {
+    let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
+    let lua = TestLuaBuilder::new().with_sessions_api(api).build();
+
+    let result: Table = lua
+        .load(
+            r#"
+            local entries, err = cru.sessions.undo_history("s1")
+            assert(err == nil, "unexpected error: " .. tostring(err))
+            return entries
+            "#,
+        )
+        .eval_async()
+        .await
+        .unwrap();
+
+    assert_eq!(result.len().unwrap(), 2);
+    let first: Table = result.get(1).unwrap();
+    assert_eq!(first.get::<i64>("turn_index").unwrap(), 0);
+    assert_eq!(first.get::<i64>("messages_removed").unwrap(), 2);
+    let second: Table = result.get(2).unwrap();
+    assert_eq!(second.get::<i64>("turn_index").unwrap(), 1);
+    assert_eq!(second.get::<i64>("messages_removed").unwrap(), 3);
+}
+
 /// Unknown `type` keys raise a runtime error from the Lua binding —
 /// the daemon never sees the call.
 #[tokio::test]

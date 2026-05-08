@@ -315,6 +315,54 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
         Box::pin(async { Err("not implemented".into()) })
     }
 
+    /// Undo the last `count` agent turns by rewinding the session's
+    /// conversation tree cursor. Returns the number of turns actually
+    /// undone (capped at available turns).
+    ///
+    /// Default implementation returns `Err("not implemented")`; wired
+    /// in Task C1.
+    fn undo(
+        &self,
+        _session_id: String,
+        _count: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<usize, String>> + Send>> {
+        Box::pin(async { Err("not implemented".into()) })
+    }
+
+    /// Whether the session has at least one turn that can be undone.
+    ///
+    /// Default implementation returns `Err("not implemented")`; wired
+    /// in Task C1.
+    fn can_undo(
+        &self,
+        _session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<bool, String>> + Send>> {
+        Box::pin(async { Err("not implemented".into()) })
+    }
+
+    /// Number of turns currently available for undo.
+    ///
+    /// Default implementation returns `Err("not implemented")`; wired
+    /// in Task C1.
+    fn undo_depth(
+        &self,
+        _session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<usize, String>> + Send>> {
+        Box::pin(async { Err("not implemented".into()) })
+    }
+
+    /// Per-turn summaries of every turn currently undoable, oldest-to-
+    /// newest. Each entry serialises to (at minimum) `{ messages_removed }`.
+    ///
+    /// Default implementation returns `Err("not implemented")`; wired
+    /// in Task C1.
+    fn undo_history(
+        &self,
+        _session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
+        Box::pin(async { Err("not implemented".into()) })
+    }
+
     /// Send a message and stream structured response parts.
     ///
     /// Subscribes, sends the message, then returns a receiver that yields

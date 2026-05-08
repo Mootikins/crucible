@@ -935,6 +935,24 @@ impl AgentManager {
         Ok(result)
     }
 
+    /// Return one summary per undoable turn on the current path,
+    /// oldest-to-newest. Each entry serialises to `{ messages_removed }`.
+    /// Read-only — does not rewind the tree.
+    pub fn undo_history(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<crucible_core::types::UndoSummary>, AgentError> {
+        let _ = self.get_session_with_agent(session_id)?;
+        let Some(tree) = self.get_session_tree(session_id) else {
+            return Ok(Vec::new());
+        };
+        let result = match tree.try_lock() {
+            Ok(t) => t.turn_summaries(),
+            Err(_) => Vec::new(),
+        };
+        Ok(result)
+    }
+
     /// Snapshot context-usage telemetry for `session_id`.
     ///
     /// Returns `{ messages, prompt_tokens, budget, percent }`:

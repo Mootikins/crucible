@@ -647,6 +647,49 @@ impl DaemonSessionApi for DaemonSessionBridge {
                 .map_err(|e| e.to_string())
         })
     }
+
+    fn undo(&self, session_id: String, count: usize) -> BoxFut<usize> {
+        let agent_manager = Arc::clone(&self.agent_manager);
+        let event_tx = self.event_tx.clone();
+        Box::pin(async move {
+            let summaries = agent_manager
+                .undo(&session_id, count, Some(&event_tx))
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(summaries.len())
+        })
+    }
+
+    fn can_undo(&self, session_id: String) -> BoxFut<bool> {
+        bridge_async!(self.agent_manager, |am| async move {
+            am.can_undo(&session_id).map_err(|e| e.to_string())
+        })
+    }
+
+    fn undo_depth(&self, session_id: String) -> BoxFut<usize> {
+        bridge_async!(self.agent_manager, |am| async move {
+            am.undo_depth(&session_id).map_err(|e| e.to_string())
+        })
+    }
+
+    fn undo_history(&self, session_id: String) -> BoxFut<Vec<serde_json::Value>> {
+        bridge_async!(self.agent_manager, |am| async move {
+            let summaries = am
+                .undo_history(&session_id)
+                .map_err(|e| e.to_string())?;
+            Ok(summaries
+                .into_iter()
+                .enumerate()
+                .map(|(idx, s)| {
+                    let mut v = serde_json::to_value(&s).unwrap_or(serde_json::Value::Null);
+                    if let Some(obj) = v.as_object_mut() {
+                        obj.insert("turn_index".to_string(), serde_json::json!(idx));
+                    }
+                    v
+                })
+                .collect())
+        })
+    }
 }
 
 /// Decode a JSON range descriptor into a [`Range`] value.
@@ -1109,6 +1152,92 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(removed, 2);
+    }
+
+    /// Seeds a tree with two complete turns and verifies that
+    /// `bridge.undo` rewinds by one turn, that `can_undo`/`undo_depth`
+    /// reflect the new state, and that an `undo_history` lists what's
+    /// still undoable.
+    #[tokio::test]
+    async fn undo_rewinds_tree_and_emits_event() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = build_test_agent_manager(session_manager.clone());
+        agent_manager
+            .configure_agent(&session.id, make_test_agent(None))
+            .await
+            .unwrap();
+
+        // Seed two complete turns: User → Agent → User → Agent.
+        let tree = agent_manager.get_or_create_session_tree(&session.id);
+        {
+            let mut t = tree.lock().await;
+            let root = t.root();
+            let u1 = t.add_child_and_advance(
+                root,
+                crucible_core::turn::NodeContent::User { text: "u1".into() },
+            );
+            let a1 = t.add_child_and_advance(
+                u1,
+                crucible_core::turn::NodeContent::Agent { text: "a1".into() },
+            );
+            let u2 = t.add_child_and_advance(
+                a1,
+                crucible_core::turn::NodeContent::User { text: "u2".into() },
+            );
+            t.add_child_and_advance(
+                u2,
+                crucible_core::turn::NodeContent::Agent { text: "a2".into() },
+            );
+        }
+
+        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let bridge =
+            DaemonSessionBridge::new(session_manager.clone(), agent_manager.clone(), event_tx);
+
+        // Pre-undo state.
+        assert!(bridge.can_undo(session.id.clone()).await.unwrap());
+        assert_eq!(bridge.undo_depth(session.id.clone()).await.unwrap(), 2);
+        let history = bridge.undo_history(session.id.clone()).await.unwrap();
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0]["turn_index"].as_u64(), Some(0));
+        assert_eq!(history[0]["messages_removed"].as_u64(), Some(2));
+        assert_eq!(history[1]["turn_index"].as_u64(), Some(1));
+        assert_eq!(history[1]["messages_removed"].as_u64(), Some(2));
+
+        // Undo one turn.
+        let turns_undone = bridge.undo(session.id.clone(), 1).await.unwrap();
+        assert_eq!(turns_undone, 1);
+
+        // session_undo event should have been broadcast.
+        let mut saw_event = false;
+        while let Ok(msg) = event_rx.try_recv() {
+            if msg.event == "session_undo" {
+                assert_eq!(msg.data["turns_undone"].as_u64(), Some(1));
+                assert_eq!(msg.data["messages_removed"].as_u64(), Some(2));
+                saw_event = true;
+                break;
+            }
+        }
+        assert!(saw_event, "expected a session_undo broadcast event");
+
+        // Post-undo state: depth dropped, one turn still undoable.
+        assert_eq!(bridge.undo_depth(session.id.clone()).await.unwrap(), 1);
+        let history2 = bridge.undo_history(session.id.clone()).await.unwrap();
+        assert_eq!(history2.len(), 1);
+        assert_eq!(history2[0]["turn_index"].as_u64(), Some(0));
     }
 
     #[tokio::test]
