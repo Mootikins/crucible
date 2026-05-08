@@ -3,7 +3,7 @@ title: Product
 description: Product feature map — capabilities, status, documentation, and dependencies
 type: product
 status: active
-updated: 2026-04-09
+updated: 2026-05-07
 tags:
   - meta
   - product
@@ -83,11 +83,11 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 
 ### Prompt Caching
 - [x] **Anthropic Cache Control** `P0` — `CacheControl::Ephemeral` set on system prompts and second-to-last conversation turn via `apply_prompt_caching()` in genai_handle.rs; 90% cost reduction on cached reads; OpenAI caching is automatic (no code needed); cache token counts flow through `message_complete` events (`cache_read_tokens`, `cache_creation_tokens`) · `crucible-daemon`
-- [-] **Cache Stats** `P1` — Cache token counts available in events and web UI; Lua API (`cru.session.cache_stats()`) and statusline hit rate display not yet wired · `crucible-lua`, `crucible-cli`
+- [-] **Cache Stats** `P1` — Per-session `CacheStats` aggregate (hits, misses, read/creation tokens, hit_rate) maintained in `AgentManager` and exposed via `session.cache_stats` RPC + `DaemonClient::session_cache_stats`; Lua binding (`cru.session.cache_stats()`) and statusline hit-rate token still pending · `crucible-daemon`, `crucible-lua`, `crucible-cli`
 
 ### Context Window Management
-- [-] **Token Budget Tracking** `P0` — `context_budget` field on `SessionAgent`, settable via RPC; statusline shows `used/total` tokens from provider usage; char/4 heuristic estimation and auto-compact at >95% not yet implemented · `crucible-daemon`, `crucible-cli`
-- [-] **Context Strategies** `P1` — `ContextStrategy` enum implemented: `Truncate` (drop oldest, default) and `SlidingWindow` (keep last N turns + system); enforced in `genai_handle.rs`; `Summarize` (LLM-compress older turns) not yet implemented; `:set context_strategy` not yet wired · `crucible-core`, `crucible-daemon`
+- [x] **Token Budget Tracking** `P0` — `context_budget` field on `SessionAgent`, settable via RPC; `crucible_core::traits::context_ops::estimate_tokens` / `estimate_messages_tokens` provide chars/4 heuristic; auto-compact triggered in `run_reactor_handlers` via `agent_manager::autocompact::should_autocompact` when prompt usage exceeds `context_budget * autocompact_threshold` (default 0.95, configurable per session via `:set autocompact_threshold`) · `crucible-daemon`, `crucible-core`, `crucible-cli`
+- [-] **Context Strategies** `P1` — `ContextStrategy` enum: `Truncate` (drop oldest, default), `SlidingWindow` (keep last N pairs + system), and `Summarize` (drains older turns and inserts a `[summary placeholder]` system message describing how many turns were elided); all three enforced in `genai_handle.rs::enforce_context_budget`; `:set context_strategy=summarize` accepted; LLM-generated recap (replacing the static placeholder) is the remaining work · `crucible-core`, `crucible-daemon`
 - [ ] **Lua Context Operations** `P1` — Wire existing `context_ops` module to Lua: `cru.context.usage()`, `cru.context.compact()`, `cru.context.messages(range)`, `cru.context.remove(range)`, `cru.context.estimate_tokens(text)`; enables custom context strategies as plugins · `crucible-lua`, `crucible-core`
 
 ### Execution Limits
@@ -99,7 +99,7 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 - [ ] **Undo Lua API** `P1` — `cru.session.undo(id, n?)`, `cru.session.redo(id, n?)`, `cru.session.can_undo(id)`, `cru.session.undo_history(id)` · `crucible-lua`
 
 ### Output Validation
-- [-] **Validate-Retry Loop** `P1` — `OutputValidation` enum (`None`, `Json`, `Regex(String)`) and `validation_retries` field exist on `SessionAgent`; types defined but validate-retry loop not yet wired in messaging.rs · `crucible-daemon`
+- [x] **Validate-Retry Loop** `P1` — `validate_output` runs in `agent_manager::messaging::stream::execute_agent_stream` after each assistant turn. Failure with retries remaining injects a synthetic regenerate-prompt and re-enters the stream; exhaustion emits `ended` with reason `error: output validation exhausted retries`. `OutputValidation::None` (default) is a zero-cost early return. Lua-callback validators are deferred to Wave 1 · `crucible-daemon`, `crucible-core`
 - [ ] **Lua Validators** `P1` — Custom validation via `cru.session.set("output_validation", { type = "lua", fn = validator_fn })`; validator returns `true` or `false, "reason"`; `cru.sessions.create({ output_validation = "json" })` at session creation · `crucible-lua`
 
 ## AI Chat & Agents
@@ -456,7 +456,7 @@ HTTP Gateway (crucible-web wired to daemon)
 - [x] **Kiln Path Validation** `P0` — Shared validation layer: hard blocks (root, nested kiln), strong warnings (git repo, source project, home dir, tmp), mild warnings (cloud sync) · `crucible-cli`
 - [x] **Getting Started** `P0` — Installation and first steps guide · [[Guides/Getting Started]] · [[Guides/Your First Kiln]]
 - [x] **Platform Guides** `P0` — Windows setup, GitHub Copilot integration · [[Guides/Windows Setup]] · [[Guides/GitHub Copilot Setup]]
-- [-] **CLI Help & Discoverability** `P0` — `--help` completeness, command suggestions · `crucible-cli`
+- [x] **CLI Help & Discoverability** `P0` — Every subcommand carries a `long_about` with examples; `infer_subcommands = true` on the top-level `Cli` so unique prefixes resolve (e.g. `cru con show` → `cru config show`); clap 4 emits "did you mean" suggestions on typos by default; insta snapshots in `cli_help_snapshot_tests` lock `cru --help`, `cru chat --help`, and `cru session --help` · `crucible-cli`
 - [x] **Plugin Loading Errors** `P0` — `:plugins` command shows load status; failures surfaced as toast notifications with error details · `crucible-lua`, `crucible-cli`
 
 ## Web & Desktop
