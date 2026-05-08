@@ -934,4 +934,60 @@ impl AgentManager {
         };
         Ok(result)
     }
+
+    /// Snapshot context-usage telemetry for `session_id`.
+    ///
+    /// Returns `{ messages, prompt_tokens, budget, percent }`:
+    /// * `messages` — non-root nodes on the conversation tree's current
+    ///   path (0 if the tree hasn't been seeded yet).
+    /// * `prompt_tokens` — last-known cumulative prompt tokens from the
+    ///   session's cache aggregate (`get_cache_stats`).
+    /// * `budget` — the session's configured `context_budget`, or 0
+    ///   when unset.
+    /// * `percent` — `prompt_tokens / budget * 100`, or 0 when budget
+    ///   is unset/zero.
+    pub fn get_context_usage(
+        &self,
+        session_id: &str,
+    ) -> Result<serde_json::Value, AgentError> {
+        let (_, agent_config) = self.get_session_with_agent(session_id)?;
+        let stats = self.get_cache_stats(session_id);
+        let prompt_tokens = stats.prompt_tokens;
+        let budget = agent_config.context_budget.unwrap_or(0) as u64;
+        let percent = if budget == 0 {
+            0.0
+        } else {
+            (prompt_tokens as f64 / budget as f64) * 100.0
+        };
+        let messages = match self.get_session_tree(session_id) {
+            Some(tree) => match tree.try_lock() {
+                Ok(t) => t.path_to_here(t.current()).len().saturating_sub(1),
+                Err(_) => 0,
+            },
+            None => 0,
+        };
+        Ok(serde_json::json!({
+            "messages": messages,
+            "prompt_tokens": prompt_tokens,
+            "budget": budget,
+            "percent": percent,
+        }))
+    }
+
+    /// Remove a slice of messages from the session's conversation tree,
+    /// returning the count that became unreachable. See
+    /// [`crucible_core::turn::ConversationTree::remove_range`] for the
+    /// exact append-only semantics applied to each `Range` variant.
+    pub async fn remove_messages(
+        &self,
+        session_id: &str,
+        range: crucible_core::traits::context_ops::Range,
+    ) -> Result<usize, AgentError> {
+        let _ = self.get_session_with_agent(session_id)?;
+        let Some(tree) = self.get_session_tree(session_id) else {
+            return Ok(0);
+        };
+        let mut t = tree.lock().await;
+        Ok(t.remove_range(range))
+    }
 }

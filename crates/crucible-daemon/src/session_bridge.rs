@@ -607,6 +607,83 @@ impl DaemonSessionApi for DaemonSessionBridge {
             }))
         })
     }
+
+    fn context_usage(&self, session_id: String) -> BoxFut<serde_json::Value> {
+        bridge_async!(self.agent_manager, |am| async move {
+            am.get_context_usage(&session_id).map_err(|e| e.to_string())
+        })
+    }
+
+    fn compact(&self, session_id: String) -> BoxFut<()> {
+        bridge_async!(self.session_manager, |sm| async move {
+            sm.request_compaction(&session_id)
+                .await
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        })
+    }
+
+    fn remove_messages(
+        &self,
+        session_id: String,
+        range: serde_json::Value,
+    ) -> BoxFut<usize> {
+        bridge_async!(self.agent_manager, |am| async move {
+            let parsed = parse_range(&range)?;
+            am.remove_messages(&session_id, parsed)
+                .await
+                .map_err(|e| e.to_string())
+        })
+    }
+}
+
+/// Decode a JSON range descriptor into a [`Range`] value.
+///
+/// Accepted shapes:
+/// * `{ "type": "all" }`
+/// * `{ "type": "last" | "first", "n": N }`
+/// * `{ "type": "indices", "start": S, "end": E }` (half-open `[S, E)`)
+fn parse_range(
+    v: &serde_json::Value,
+) -> Result<crucible_core::traits::context_ops::Range, String> {
+    use crucible_core::traits::context_ops::Range;
+    let obj = v
+        .as_object()
+        .ok_or_else(|| "range must be an object".to_string())?;
+    let ty = obj.get("type").and_then(|x| x.as_str()).unwrap_or("");
+    match ty {
+        "all" => Ok(Range::All),
+        "last" => {
+            let n = obj
+                .get("n")
+                .and_then(|x| x.as_u64())
+                .ok_or_else(|| "range.n required for type='last'".to_string())?
+                as usize;
+            Ok(Range::Last(n))
+        }
+        "first" => {
+            let n = obj
+                .get("n")
+                .and_then(|x| x.as_u64())
+                .ok_or_else(|| "range.n required for type='first'".to_string())?
+                as usize;
+            Ok(Range::First(n))
+        }
+        "indices" => {
+            let start = obj
+                .get("start")
+                .and_then(|x| x.as_u64())
+                .ok_or_else(|| "range.start required for type='indices'".to_string())?
+                as usize;
+            let end = obj
+                .get("end")
+                .and_then(|x| x.as_u64())
+                .ok_or_else(|| "range.end required for type='indices'".to_string())?
+                as usize;
+            Ok(Range::Indices(start..end))
+        }
+        other => Err(format!("unknown range type '{other}'")),
+    }
 }
 
 /// Extract tool name and human-readable description from a permission request's data payload.
@@ -675,7 +752,60 @@ mod tests {
     use crate::background_manager::BackgroundJobManager;
     use crate::kiln_manager::KilnManager;
     use crate::session_manager::SessionManager;
+    use crate::session_storage::FileSessionStorage;
     use crate::tools::workspace::WorkspaceTools;
+    use crucible_core::config::BackendType;
+    use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
+    use std::collections::HashMap;
+    use tempfile::TempDir;
+
+    fn build_test_agent_manager(session_manager: Arc<SessionManager>) -> Arc<AgentManager> {
+        let (event_tx, _) = broadcast::channel(16);
+        let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
+        Arc::new(AgentManager::new(AgentManagerParams {
+            kiln_manager: Arc::new(KilnManager::new()),
+            session_manager,
+            background_manager,
+            mcp_gateway: None,
+            llm_config: None,
+            acp_config: None,
+            permission_config: None,
+            plugin_loader: None,
+            workspace_tools: Arc::new(WorkspaceTools::new(PathBuf::from("/tmp"))),
+        }))
+    }
+
+    fn make_test_agent(context_budget: Option<usize>) -> SessionAgent {
+        SessionAgent {
+            agent_type: "internal".to_string(),
+            agent_name: None,
+            provider_key: Some("ollama".to_string()),
+            provider: BackendType::Ollama,
+            model: "llama3.2".to_string(),
+            system_prompt: "You are helpful.".to_string(),
+            temperature: Some(0.7),
+            max_tokens: None,
+            max_context_tokens: None,
+            thinking_budget: None,
+            endpoint: None,
+            env_overrides: HashMap::new(),
+            mcp_servers: Vec::new(),
+            agent_card_name: None,
+            capabilities: None,
+            agent_description: None,
+            delegation_config: None,
+            precognition_enabled: false,
+            precognition_results: 5,
+            max_iterations: None,
+            execution_timeout_secs: None,
+            context_budget,
+            context_strategy: Default::default(),
+            context_window: None,
+            output_validation: OutputValidation::default(),
+            validation_retries: 3,
+            autocompact_threshold: None,
+        }
+    }
 
     #[test]
     fn test_daemon_session_bridge_construction() {
@@ -738,5 +868,266 @@ mod tests {
         // Verify Arc references are held (strong count increased)
         assert_eq!(Arc::strong_count(&session_manager), sm_strong_count + 1);
         assert_eq!(Arc::strong_count(&agent_manager), am_strong_count + 1);
+    }
+
+    #[test]
+    fn parse_range_accepts_known_types() {
+        use crucible_core::traits::context_ops::Range;
+        assert!(matches!(
+            parse_range(&serde_json::json!({"type": "all"})).unwrap(),
+            Range::All
+        ));
+        assert!(matches!(
+            parse_range(&serde_json::json!({"type": "last", "n": 3})).unwrap(),
+            Range::Last(3)
+        ));
+        assert!(matches!(
+            parse_range(&serde_json::json!({"type": "first", "n": 2})).unwrap(),
+            Range::First(2)
+        ));
+        match parse_range(&serde_json::json!({"type": "indices", "start": 1, "end": 4})).unwrap() {
+            Range::Indices(r) => assert_eq!(r, 1..4),
+            _ => panic!("expected Indices"),
+        }
+    }
+
+    #[test]
+    fn parse_range_rejects_unknown_type() {
+        let err = parse_range(&serde_json::json!({"type": "bogus"})).unwrap_err();
+        assert!(err.contains("unknown range type"), "got: {err}");
+    }
+
+    #[test]
+    fn parse_range_requires_n_for_last_and_first() {
+        let err = parse_range(&serde_json::json!({"type": "last"})).unwrap_err();
+        assert!(err.contains("range.n required"), "got: {err}");
+        let err = parse_range(&serde_json::json!({"type": "first"})).unwrap_err();
+        assert!(err.contains("range.n required"), "got: {err}");
+    }
+
+    #[test]
+    fn parse_range_requires_start_end_for_indices() {
+        let err = parse_range(&serde_json::json!({"type": "indices", "start": 0})).unwrap_err();
+        assert!(err.contains("range.end required"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn context_usage_returns_expected_shape() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = build_test_agent_manager(session_manager.clone());
+        agent_manager
+            .configure_agent(&session.id, make_test_agent(Some(10_000)))
+            .await
+            .unwrap();
+
+        let (event_tx, _) = broadcast::channel(16);
+        let bridge =
+            DaemonSessionBridge::new(session_manager.clone(), agent_manager.clone(), event_tx);
+
+        let usage = bridge.context_usage(session.id.clone()).await.unwrap();
+        let obj = usage.as_object().expect("expected object");
+        assert!(obj.contains_key("messages"));
+        assert!(obj.contains_key("prompt_tokens"));
+        assert!(obj.contains_key("budget"));
+        assert!(obj.contains_key("percent"));
+        assert_eq!(obj.get("budget").and_then(|v| v.as_u64()), Some(10_000));
+        // No turn has run, so no tree, no tokens.
+        assert_eq!(obj.get("messages").and_then(|v| v.as_u64()), Some(0));
+        assert_eq!(obj.get("prompt_tokens").and_then(|v| v.as_u64()), Some(0));
+        assert_eq!(obj.get("percent").and_then(|v| v.as_f64()), Some(0.0));
+    }
+
+    #[tokio::test]
+    async fn compact_transitions_session_to_compacting() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = build_test_agent_manager(session_manager.clone());
+        let (event_tx, _) = broadcast::channel(16);
+        let bridge =
+            DaemonSessionBridge::new(session_manager.clone(), agent_manager.clone(), event_tx);
+
+        bridge.compact(session.id.clone()).await.unwrap();
+        let after = session_manager.get_session(&session.id).unwrap();
+        assert_eq!(
+            format!("{}", after.state),
+            "compacting",
+            "session should be in compacting state after compact()"
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_messages_last_n_rewinds_tree() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = build_test_agent_manager(session_manager.clone());
+        agent_manager
+            .configure_agent(&session.id, make_test_agent(None))
+            .await
+            .unwrap();
+
+        // Seed the tree with three non-root nodes: User → Agent → User.
+        let tree = agent_manager.get_or_create_session_tree(&session.id);
+        {
+            let mut t = tree.lock().await;
+            let root = t.root();
+            let u1 = t.add_child_and_advance(
+                root,
+                crucible_core::turn::NodeContent::User { text: "u1".into() },
+            );
+            let a1 = t.add_child_and_advance(
+                u1,
+                crucible_core::turn::NodeContent::Agent { text: "a1".into() },
+            );
+            t.add_child_and_advance(
+                a1,
+                crucible_core::turn::NodeContent::User { text: "u2".into() },
+            );
+            // sanity: path has root + 3 nodes
+            let cur = t.current();
+            assert_eq!(t.path_to_here(cur).len(), 4);
+        }
+
+        let (event_tx, _) = broadcast::channel(16);
+        let bridge = DaemonSessionBridge::new(session_manager.clone(), agent_manager, event_tx);
+
+        let removed = bridge
+            .remove_messages(session.id.clone(), serde_json::json!({"type": "last", "n": 2}))
+            .await
+            .unwrap();
+        assert_eq!(removed, 2);
+
+        let tree = bridge
+            .agent_manager
+            .get_session_tree(&session.id)
+            .expect("tree should exist");
+        let t = tree.lock().await;
+        assert_eq!(
+            t.path_to_here(t.current()).len(),
+            2,
+            "expected root + 1 surviving node"
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_messages_indices_truncates_from_start() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = build_test_agent_manager(session_manager.clone());
+        agent_manager
+            .configure_agent(&session.id, make_test_agent(None))
+            .await
+            .unwrap();
+
+        // Seed the tree with three non-root nodes.
+        let tree = agent_manager.get_or_create_session_tree(&session.id);
+        {
+            let mut t = tree.lock().await;
+            let root = t.root();
+            let u1 = t.add_child_and_advance(
+                root,
+                crucible_core::turn::NodeContent::User { text: "u1".into() },
+            );
+            let a1 = t.add_child_and_advance(
+                u1,
+                crucible_core::turn::NodeContent::Agent { text: "a1".into() },
+            );
+            t.add_child_and_advance(
+                a1,
+                crucible_core::turn::NodeContent::User { text: "u2".into() },
+            );
+        }
+
+        let (event_tx, _) = broadcast::channel(16);
+        let bridge = DaemonSessionBridge::new(session_manager.clone(), agent_manager, event_tx);
+
+        let removed = bridge
+            .remove_messages(
+                session.id.clone(),
+                serde_json::json!({"type": "indices", "start": 1, "end": 3}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(removed, 2);
+    }
+
+    #[tokio::test]
+    async fn remove_messages_invalid_range_type_errors() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = build_test_agent_manager(session_manager.clone());
+        agent_manager
+            .configure_agent(&session.id, make_test_agent(None))
+            .await
+            .unwrap();
+
+        let (event_tx, _) = broadcast::channel(16);
+        let bridge = DaemonSessionBridge::new(session_manager, agent_manager, event_tx);
+
+        let err = bridge
+            .remove_messages(session.id, serde_json::json!({"type": "bogus"}))
+            .await
+            .unwrap_err();
+        assert!(err.contains("unknown range type"), "got: {err}");
     }
 }

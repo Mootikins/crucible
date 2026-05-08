@@ -347,6 +347,58 @@ impl ConversationTree {
         summaries
     }
 
+    /// Remove a contiguous slice of messages from the current path
+    /// (root excluded), reporting how many path nodes became
+    /// unreachable.
+    ///
+    /// The tree is append-only, so "removal" means rewinding the
+    /// `current` cursor to the last surviving node — anything below
+    /// becomes unreachable from `current` onward. Concretely:
+    ///
+    /// * `All` → drop everything, current becomes root, returns the
+    ///   prior path length (excluding root).
+    /// * `Last(n)` → rewind `n` non-root nodes from current; returns
+    ///   `min(n, path_len)`.
+    /// * `First(n)` → an append-only tree cannot drop a prefix while
+    ///   keeping a suffix; this rewinds to root and returns
+    ///   `min(n, path_len)`.
+    /// * `Indices(start..end)` → rewinds to keep the first `start`
+    ///   non-root path nodes (the cursor lands on that node, or the
+    ///   root if `start == 0`), then reports how many path nodes the
+    ///   range named (`min(end, path_len) - start`, saturating at 0).
+    pub fn remove_range(
+        &mut self,
+        range: crate::traits::context_ops::Range,
+    ) -> usize {
+        use crate::traits::context_ops::Range;
+        // path_to_here includes root; non-root indices map to 1..path.len()
+        let path = self.path_to_here(self.current);
+        if path.len() <= 1 {
+            return 0;
+        }
+        let path_len = path.len() - 1;
+        let (keep_idx_in_path, removed) = match range {
+            Range::All => (0, path_len),
+            Range::Last(n) => {
+                let n = n.min(path_len);
+                (path_len - n, n)
+            }
+            Range::First(n) => (0, n.min(path_len)),
+            Range::Indices(r) => {
+                let start = r.start.min(path_len);
+                let end = r.end.min(path_len);
+                if end <= start {
+                    return 0;
+                }
+                (start, end - start)
+            }
+        };
+        // path[0] = root; path[1..] are non-root nodes. Cursor lands on
+        // path[keep_idx_in_path] which is root when keep_idx_in_path == 0.
+        self.current = path[keep_idx_in_path];
+        removed
+    }
+
     /// Flatten the current path (root → current leaf) into the unified
     /// [`ContextMessage`] representation agents consume via
     /// `TurnContext.messages`. Root / marker / thinking nodes skip; the
@@ -547,6 +599,79 @@ mod tests {
         let u1 = t.add_child_and_advance(t.root(), text("u1"));
         assert!(t.undo_turns(0).is_empty());
         assert_eq!(t.current(), u1);
+    }
+
+    #[test]
+    fn remove_range_all_rewinds_to_root() {
+        let mut t = ConversationTree::new();
+        let u1 = t.add_child_and_advance(t.root(), text("u1"));
+        let _a1 = t.add_child_and_advance(u1, NodeContent::Agent { text: "a1".into() });
+        let removed = t.remove_range(crate::traits::context_ops::Range::All);
+        assert_eq!(removed, 2);
+        assert_eq!(t.current(), t.root());
+    }
+
+    #[test]
+    fn remove_range_last_rewinds_n_nodes() {
+        let mut t = ConversationTree::new();
+        let u1 = t.add_child_and_advance(t.root(), text("u1"));
+        let a1 = t.add_child_and_advance(u1, NodeContent::Agent { text: "a1".into() });
+        let _u2 = t.add_child_and_advance(a1, text("u2"));
+        let removed = t.remove_range(crate::traits::context_ops::Range::Last(2));
+        assert_eq!(removed, 2);
+        assert_eq!(t.current(), u1);
+    }
+
+    #[test]
+    fn remove_range_indices_truncates_from_start() {
+        let mut t = ConversationTree::new();
+        let u1 = t.add_child_and_advance(t.root(), text("u1"));
+        let a1 = t.add_child_and_advance(u1, NodeContent::Agent { text: "a1".into() });
+        let _u2 = t.add_child_and_advance(a1, text("u2"));
+        // path (excluding root) has 3 nodes; remove indices [1, 3) = 2 nodes.
+        let removed = t.remove_range(crate::traits::context_ops::Range::Indices(1..3));
+        assert_eq!(removed, 2);
+        assert_eq!(t.current(), u1);
+    }
+
+    #[test]
+    fn remove_range_first_drops_everything() {
+        let mut t = ConversationTree::new();
+        let u1 = t.add_child_and_advance(t.root(), text("u1"));
+        let _a1 = t.add_child_and_advance(u1, NodeContent::Agent { text: "a1".into() });
+        let removed = t.remove_range(crate::traits::context_ops::Range::First(1));
+        assert_eq!(removed, 1);
+        assert_eq!(t.current(), t.root());
+    }
+
+    #[test]
+    fn remove_range_last_more_than_available_caps() {
+        let mut t = ConversationTree::new();
+        let u1 = t.add_child_and_advance(t.root(), text("u1"));
+        let _a1 = t.add_child_and_advance(u1, NodeContent::Agent { text: "a1".into() });
+        let removed = t.remove_range(crate::traits::context_ops::Range::Last(10));
+        assert_eq!(removed, 2);
+        assert_eq!(t.current(), t.root());
+    }
+
+    #[test]
+    fn remove_range_empty_indices_is_noop() {
+        let mut t = ConversationTree::new();
+        let u1 = t.add_child_and_advance(t.root(), text("u1"));
+        // Build the range explicitly so clippy doesn't flag a literal empty range.
+        let two: usize = 2;
+        let one: usize = 1;
+        let removed = t.remove_range(crate::traits::context_ops::Range::Indices(two..one));
+        assert_eq!(removed, 0);
+        assert_eq!(t.current(), u1);
+    }
+
+    #[test]
+    fn remove_range_on_empty_tree_returns_zero() {
+        let mut t = ConversationTree::new();
+        let removed = t.remove_range(crate::traits::context_ops::Range::All);
+        assert_eq!(removed, 0);
+        assert_eq!(t.current(), t.root());
     }
 
     #[test]
