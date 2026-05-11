@@ -66,6 +66,7 @@ pub mod tool_dispatch;
 pub mod tools;
 pub mod tools_bridge;
 pub mod trust_resolution;
+pub mod vault_bridge;
 pub mod watch;
 pub mod workflow_handlers;
 pub mod workflow_registry;
@@ -117,4 +118,5 @@ pub use skills::{
 };
 pub use subscription::{ClientId, SubscriptionManager};
 pub use tools_bridge::DaemonToolsBridge;
+pub use vault_bridge::DaemonVaultBridge;
 pub use watch::*;
