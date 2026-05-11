@@ -23,10 +23,18 @@
 //! end
 //!
 //! -- Search notes (async) - semantic search
-//! local results = cru.kiln.search("machine learning", {limit = 5})
+//! local results = cru.kiln.search("machine learning", {limit = 5, threshold = 0.6})
 //! for _, result in ipairs(results) do
-//!     print(result.path, result.score)
+//!     print(result.path, result.title, result.score, result.snippet)
 //! end
+//!
+//! -- Create a note (daemon-only; writes file and indexes synchronously)
+//! local path = cru.kiln.create_note({
+//!   path = "Entities/Jane Doe.md",
+//!   body = "# Jane Doe\n\nWorks on [[Crucible]].",
+//!   frontmatter = { type = "entity", aliases = { "jane", "JD" } },
+//!   overwrite = false,           -- default; set true to replace existing
+//! })
 //!
 //! -- Get outgoing links from a note (sync)
 //! local links = cru.kiln.outlinks("path/to/note.md")
@@ -39,10 +47,58 @@
 //! ```
 
 use crate::error::LuaError;
+use crate::json_query::lua_to_json;
 use crate::lua_util::register_in_namespaces;
 use crucible_core::storage::{GraphView, NoteStore};
 use mlua::{Lua, LuaSerdeExt, Table, Value};
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
+
+/// One hit returned by [`DaemonVaultApi::search`].
+#[derive(Debug, Clone)]
+pub struct SearchHit {
+    pub path: String,
+    pub title: String,
+    pub score: f64,
+    pub snippet: Option<String>,
+}
+
+/// Daemon-side vault API consumed by `cru.kiln.create_note` and `cru.kiln.search`.
+///
+/// Implemented by `crucible-daemon` so the Lua crate stays free of pipeline /
+/// embedding-provider concerns. Mirrors the stub-then-upgrade pattern used by
+/// [`crate::team::DaemonTeamApi`] and friends.
+pub trait DaemonVaultApi: Send + Sync {
+    /// Write a note to disk under the kiln, then parse + index synchronously
+    /// so callers can immediately `search`/`get` it. Returns the absolute path
+    /// of the written file on success.
+    ///
+    /// * `relative_path` is kiln-relative (e.g. `"Entities/Jane Doe.md"`).
+    /// * `frontmatter` is an optional JSON object; serialized to YAML.
+    /// * If `overwrite` is `false` and the file already exists, returns
+    ///   `Err(...)` without touching the file.
+    fn create_note(
+        &self,
+        relative_path: String,
+        body: String,
+        frontmatter: Option<serde_json::Value>,
+        overwrite: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>>;
+
+    /// Embed `query` and return the top `limit` notes by similarity. Hits
+    /// below `threshold` (cosine score) are filtered out. `threshold = 0.0`
+    /// returns all top-k results.
+    fn search(
+        &self,
+        query: String,
+        limit: usize,
+        threshold: f64,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<SearchHit>, String>> + Send>>;
+}
+
+/// Default top-N when callers omit `limit`.
+const DEFAULT_SEARCH_LIMIT: usize = 10;
 
 /// Register the kiln module with a Lua state
 ///
@@ -66,6 +122,16 @@ pub fn register_vault_module(lua: &Lua) -> Result<(), LuaError> {
             Ok(Value::Table(table))
         })?;
     vault.set("search", search_stub)?;
+
+    // create_note stub: error when no daemon is connected. This is async
+    // because the real implementation goes through the pipeline (which is
+    // async), and stub callers should hit the same shape.
+    let create_note_stub = lua.create_async_function(|_, _opts: Table| async move {
+        Err::<Value, _>(mlua::Error::runtime(
+            "cru.kiln.create_note: no daemon connected (vault API not initialized)",
+        ))
+    })?;
+    vault.set("create_note", create_note_stub)?;
 
     let outlinks_stub = lua.create_function(|lua, _path: String| {
         let table = lua.create_table()?;
@@ -140,12 +206,120 @@ pub fn register_vault_module_with_store(
     })?;
     vault.set("get", get_fn)?;
 
+    // `search` remains a stub here; `register_vault_module_with_api` upgrades
+    // it. We re-install the stub so a partial upgrade (store but no api)
+    // doesn't leak a previously-registered real fn.
     let search_fn = lua.create_async_function(
         move |lua, (_query, _opts): (String, Option<Table>)| async move {
             let table = lua.create_table()?;
             Ok(Value::Table(table))
         },
     )?;
+    vault.set("search", search_fn)?;
+
+    Ok(())
+}
+
+/// Upgrade `cru.kiln.create_note` and `cru.kiln.search` to call into a
+/// daemon-backed [`DaemonVaultApi`].
+///
+/// `register_vault_module` (or `register_vault_module_with_store`) must be
+/// called first so the `cru.kiln` table exists.
+pub fn register_vault_module_with_api(
+    lua: &Lua,
+    api: Arc<dyn DaemonVaultApi>,
+) -> Result<(), LuaError> {
+    let globals = lua.globals();
+    let cru: Table = globals.get("cru")?;
+    let vault: Table = cru.get("kiln")?;
+
+    // -- create_note ------------------------------------------------------
+    let api_create = Arc::clone(&api);
+    let create_note_fn = lua.create_async_function(move |lua, opts: Table| {
+        let api = Arc::clone(&api_create);
+        async move {
+            let path: String = opts
+                .get("path")
+                .map_err(|_| mlua::Error::runtime("create_note: 'path' (string) is required"))?;
+            let body: String = opts
+                .get("body")
+                .map_err(|_| mlua::Error::runtime("create_note: 'body' (string) is required"))?;
+            let overwrite: bool = opts.get("overwrite").unwrap_or(false);
+
+            // frontmatter is optional. When present it must be a table; we
+            // convert through json so YAML serialization on the daemon side
+            // matches what the existing MCP create_note tool does.
+            let frontmatter_json = match opts.get::<Value>("frontmatter") {
+                Ok(Value::Nil) | Err(_) => None,
+                Ok(Value::Table(t)) => {
+                    let json = lua_to_json(&lua, Value::Table(t)).map_err(|e| {
+                        mlua::Error::runtime(format!("create_note: invalid frontmatter table: {e}"))
+                    })?;
+                    Some(json)
+                }
+                Ok(other) => {
+                    return Err(mlua::Error::runtime(format!(
+                        "create_note: 'frontmatter' must be a table, got {}",
+                        other.type_name()
+                    )))
+                }
+            };
+
+            match api
+                .create_note(path, body, frontmatter_json, overwrite)
+                .await
+            {
+                Ok(abs_path) => Ok(Value::String(lua.create_string(&abs_path)?)),
+                Err(e) => Err(mlua::Error::runtime(format!("create_note: {e}"))),
+            }
+        }
+    })?;
+    vault.set("create_note", create_note_fn)?;
+
+    // -- search -----------------------------------------------------------
+    let api_search = Arc::clone(&api);
+    let search_fn =
+        lua.create_async_function(move |lua, (query, opts): (String, Option<Table>)| {
+            let api = Arc::clone(&api_search);
+            async move {
+                let (limit, threshold) = match opts {
+                    Some(t) => {
+                        let limit: usize = t
+                            .get::<Option<usize>>("limit")
+                            .ok()
+                            .flatten()
+                            .unwrap_or(DEFAULT_SEARCH_LIMIT);
+                        // Accept either f64 or integer from Lua.
+                        let threshold: f64 = t
+                            .get::<Option<f64>>("threshold")
+                            .ok()
+                            .flatten()
+                            .unwrap_or(0.0);
+                        (limit, threshold)
+                    }
+                    None => (DEFAULT_SEARCH_LIMIT, 0.0),
+                };
+
+                let hits = api
+                    .search(query, limit, threshold)
+                    .await
+                    .map_err(|e| mlua::Error::runtime(format!("search: {e}")))?;
+
+                let table = lua.create_table()?;
+                for (i, hit) in hits.into_iter().enumerate() {
+                    let row = lua.create_table()?;
+                    row.set("path", hit.path)?;
+                    row.set("title", hit.title)?;
+                    row.set("score", hit.score)?;
+                    match hit.snippet {
+                        Some(s) => row.set("snippet", s)?,
+                        None => row.set("snippet", Value::Nil)?,
+                    }
+                    table.set(i + 1, row)?;
+                }
+                Ok(Value::Table(table))
+            }
+        })?;
     vault.set("search", search_fn)?;
 
     Ok(())
@@ -727,5 +901,347 @@ mod graph_tests {
             .unwrap();
 
         assert_eq!(result.len().unwrap(), 0);
+    }
+}
+
+#[cfg(test)]
+mod api_tests {
+    //! Tests for [`DaemonVaultApi`]-backed `cru.kiln.create_note` and
+    //! `cru.kiln.search`. The daemon implementation lives in
+    //! `crucible-daemon::vault_bridge`; here we drive both surfaces through a
+    //! stub `DaemonVaultApi` to verify argument plumbing, error shape, and
+    //! that `register_vault_module_with_api` wires the Lua-visible API.
+
+    use super::*;
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::Mutex;
+
+    /// Records every call so individual tests can assert on argument shape.
+    struct StubVaultApi {
+        last_create: Mutex<Option<CreateCall>>,
+        last_search: Mutex<Option<SearchCall>>,
+        create_result: Mutex<Result<String, String>>,
+        search_result: Mutex<Result<Vec<SearchHit>, String>>,
+    }
+
+    #[derive(Clone)]
+    struct CreateCall {
+        path: String,
+        body: String,
+        frontmatter: Option<serde_json::Value>,
+        overwrite: bool,
+    }
+
+    #[derive(Clone)]
+    struct SearchCall {
+        query: String,
+        limit: usize,
+        threshold: f64,
+    }
+
+    impl StubVaultApi {
+        fn new() -> Self {
+            Self {
+                last_create: Mutex::new(None),
+                last_search: Mutex::new(None),
+                create_result: Mutex::new(Ok("/abs/path/note.md".to_string())),
+                search_result: Mutex::new(Ok(Vec::new())),
+            }
+        }
+
+        fn with_create_result(self, r: Result<String, String>) -> Self {
+            *self.create_result.lock().unwrap() = r;
+            self
+        }
+
+        fn with_search_hits(self, hits: Vec<SearchHit>) -> Self {
+            *self.search_result.lock().unwrap() = Ok(hits);
+            self
+        }
+    }
+
+    impl DaemonVaultApi for StubVaultApi {
+        fn create_note(
+            &self,
+            relative_path: String,
+            body: String,
+            frontmatter: Option<serde_json::Value>,
+            overwrite: bool,
+        ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
+            *self.last_create.lock().unwrap() = Some(CreateCall {
+                path: relative_path,
+                body,
+                frontmatter,
+                overwrite,
+            });
+            let result = self.create_result.lock().unwrap().clone();
+            Box::pin(async move { result })
+        }
+
+        fn search(
+            &self,
+            query: String,
+            limit: usize,
+            threshold: f64,
+        ) -> Pin<Box<dyn Future<Output = Result<Vec<SearchHit>, String>> + Send>> {
+            *self.last_search.lock().unwrap() = Some(SearchCall {
+                query,
+                limit,
+                threshold,
+            });
+            let result = self.search_result.lock().unwrap().clone();
+            Box::pin(async move { result })
+        }
+    }
+
+    fn make_lua_with_api(api: Arc<dyn DaemonVaultApi>) -> Lua {
+        let lua = Lua::new();
+        register_vault_module(&lua).expect("stub vault");
+        register_vault_module_with_api(&lua, api).expect("vault api");
+        lua
+    }
+
+    // -------- create_note --------
+
+    #[tokio::test]
+    async fn create_note_passes_path_body_and_frontmatter_to_api() {
+        let stub = Arc::new(StubVaultApi::new());
+        let lua = make_lua_with_api(stub.clone() as Arc<dyn DaemonVaultApi>);
+
+        let abs: String = lua
+            .load(
+                r##"
+                return cru.kiln.create_note({
+                    path = "Entities/Jane Doe.md",
+                    body = "# Jane Doe\n\nWorks on [[Crucible]].",
+                    frontmatter = {
+                        type = "entity",
+                        aliases = { "jane", "JD" },
+                    },
+                })
+                "##,
+            )
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert_eq!(abs, "/abs/path/note.md");
+
+        let call = stub.last_create.lock().unwrap().clone().expect("called");
+        assert_eq!(call.path, "Entities/Jane Doe.md");
+        assert!(call.body.contains("[[Crucible]]"));
+        assert!(!call.overwrite);
+        let fm = call.frontmatter.expect("frontmatter forwarded");
+        assert_eq!(fm["type"], "entity");
+        let aliases = fm["aliases"].as_array().unwrap();
+        assert_eq!(aliases.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn create_note_overwrite_flag_propagates() {
+        let stub = Arc::new(StubVaultApi::new());
+        let lua = make_lua_with_api(stub.clone() as Arc<dyn DaemonVaultApi>);
+
+        let _: String = lua
+            .load(
+                r#"
+                return cru.kiln.create_note({
+                    path = "a.md", body = "x", overwrite = true
+                })
+                "#,
+            )
+            .eval_async()
+            .await
+            .unwrap();
+
+        let call = stub.last_create.lock().unwrap().clone().unwrap();
+        assert!(call.overwrite);
+    }
+
+    #[tokio::test]
+    async fn create_note_surfaces_api_error_as_lua_error() {
+        let stub = Arc::new(StubVaultApi::new().with_create_result(Err("file exists".to_string())));
+        let lua = make_lua_with_api(stub as Arc<dyn DaemonVaultApi>);
+
+        let err = lua
+            .load(
+                r#"
+                return cru.kiln.create_note({ path = "a.md", body = "x" })
+                "#,
+            )
+            .eval_async::<Value>()
+            .await
+            .unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("file exists"), "got: {msg}");
+    }
+
+    #[tokio::test]
+    async fn create_note_requires_path_and_body() {
+        let stub = Arc::new(StubVaultApi::new());
+        let lua = make_lua_with_api(stub as Arc<dyn DaemonVaultApi>);
+
+        // missing path
+        let err = lua
+            .load(r#"return cru.kiln.create_note({ body = "x" })"#)
+            .eval_async::<Value>()
+            .await
+            .unwrap_err();
+        assert!(format!("{err}").contains("'path'"));
+
+        // missing body
+        let err = lua
+            .load(r#"return cru.kiln.create_note({ path = "a.md" })"#)
+            .eval_async::<Value>()
+            .await
+            .unwrap_err();
+        assert!(format!("{err}").contains("'body'"));
+    }
+
+    #[tokio::test]
+    async fn create_note_stub_errors_when_no_daemon_connected() {
+        // Just register the bare stub (no upgrade). Calling create_note
+        // should error rather than silently no-op.
+        let lua = Lua::new();
+        register_vault_module(&lua).unwrap();
+
+        let err = lua
+            .load(r#"return cru.kiln.create_note({ path = "a.md", body = "x" })"#)
+            .eval_async::<Value>()
+            .await
+            .unwrap_err();
+        assert!(
+            format!("{err}").contains("no daemon connected"),
+            "got: {err}"
+        );
+    }
+
+    // -------- search --------
+
+    #[tokio::test]
+    async fn search_returns_empty_when_no_match() {
+        let stub = Arc::new(StubVaultApi::new()); // default empty
+        let lua = make_lua_with_api(stub as Arc<dyn DaemonVaultApi>);
+
+        let table: Table = lua
+            .load(r#"return cru.kiln.search("anything", { limit = 5 })"#)
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert_eq!(table.len().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn search_returns_results_ordered_by_score_desc() {
+        // The api is expected to return results pre-sorted desc by score;
+        // we verify the Lua surface preserves that order.
+        let hits = vec![
+            SearchHit {
+                path: "a.md".into(),
+                title: "A".into(),
+                score: 0.95,
+                snippet: Some("snip a".into()),
+            },
+            SearchHit {
+                path: "b.md".into(),
+                title: "B".into(),
+                score: 0.80,
+                snippet: Some("snip b".into()),
+            },
+            SearchHit {
+                path: "c.md".into(),
+                title: "C".into(),
+                score: 0.60,
+                snippet: None,
+            },
+        ];
+        let stub = Arc::new(StubVaultApi::new().with_search_hits(hits));
+        let lua = make_lua_with_api(stub as Arc<dyn DaemonVaultApi>);
+
+        let table: Table = lua
+            .load(r#"return cru.kiln.search("q", { limit = 10 })"#)
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert_eq!(table.len().unwrap(), 3);
+        let first: Table = table.get(1).unwrap();
+        let second: Table = table.get(2).unwrap();
+        let third: Table = table.get(3).unwrap();
+        assert_eq!(first.get::<String>("path").unwrap(), "a.md");
+        assert_eq!(first.get::<String>("title").unwrap(), "A");
+        assert!((first.get::<f64>("score").unwrap() - 0.95).abs() < 1e-6);
+        assert_eq!(first.get::<String>("snippet").unwrap(), "snip a");
+        assert_eq!(second.get::<String>("path").unwrap(), "b.md");
+        assert_eq!(third.get::<String>("path").unwrap(), "c.md");
+        // snippet was None — should be nil in Lua
+        let snip: Value = third.get("snippet").unwrap();
+        assert!(matches!(snip, Value::Nil));
+    }
+
+    #[tokio::test]
+    async fn search_forwards_limit_and_threshold_to_api() {
+        let stub = Arc::new(StubVaultApi::new());
+        let lua = make_lua_with_api(stub.clone() as Arc<dyn DaemonVaultApi>);
+
+        let _: Table = lua
+            .load(r#"return cru.kiln.search("q", { limit = 3, threshold = 0.6 })"#)
+            .eval_async()
+            .await
+            .unwrap();
+
+        let call = stub.last_search.lock().unwrap().clone().unwrap();
+        assert_eq!(call.query, "q");
+        assert_eq!(call.limit, 3);
+        assert!((call.threshold - 0.6).abs() < 1e-6);
+    }
+
+    #[tokio::test]
+    async fn search_uses_default_limit_when_opts_omitted() {
+        let stub = Arc::new(StubVaultApi::new());
+        let lua = make_lua_with_api(stub.clone() as Arc<dyn DaemonVaultApi>);
+
+        let _: Table = lua
+            .load(r#"return cru.kiln.search("q")"#)
+            .eval_async()
+            .await
+            .unwrap();
+
+        let call = stub.last_search.lock().unwrap().clone().unwrap();
+        assert_eq!(call.limit, DEFAULT_SEARCH_LIMIT);
+        assert_eq!(call.threshold, 0.0);
+    }
+
+    #[tokio::test]
+    async fn search_returns_empty_table_when_called_from_runtime_without_api() {
+        // Without an upgrade, the bare stub returns an empty table. This is
+        // the documented "no daemon connected" behaviour for search; only
+        // create_note returns an error in that state (it has nothing
+        // sensible to return).
+        let lua = Lua::new();
+        register_vault_module(&lua).unwrap();
+
+        let table: Table = lua
+            .load(r#"return cru.kiln.search("q", { limit = 5 })"#)
+            .eval_async()
+            .await
+            .unwrap();
+        assert_eq!(table.len().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn search_surfaces_api_error_as_lua_error() {
+        let stub = Arc::new(StubVaultApi::new());
+        *stub.search_result.lock().unwrap() = Err("embed failed".to_string());
+        let lua = make_lua_with_api(stub as Arc<dyn DaemonVaultApi>);
+
+        let err = lua
+            .load(r#"return cru.kiln.search("q")"#)
+            .eval_async::<Value>()
+            .await
+            .unwrap_err();
+        assert!(format!("{err}").contains("embed failed"), "got: {err}");
     }
 }
