@@ -184,12 +184,23 @@ pub(crate) async fn handle_lua_execute_hook(
 pub(crate) async fn handle_lua_shutdown_session(
     req: Request,
     lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
+    sessions: &Arc<SessionManager>,
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
 
     // Fire on_session_end hooks before removing the Lua session.
-    // Note: hooks may also fire via handle_session_end (dispatch.rs) — plugins
-    // must be idempotent (OCI plugin guards with `if not active then return end`).
+    //
+    // Why this path exists in addition to dispatch.rs::handle_session_end:
+    // The CLI fires `lua.shutdown_session` whenever the chat REPL exits,
+    // including paths that never called `session.end` (process kill,
+    // unhandled error, daemon shutdown). For those cases this is the only
+    // chance to run `on_session_end` handlers, so we tag the reason as
+    // `Shutdown`.
+    //
+    // If `session.end` already fired (reason=User), this call will fire the
+    // hooks again with reason=Shutdown. Plugins must therefore be idempotent
+    // (e.g. the OCI plugin guards with `if not active then return end`).
+    let daemon_session = sessions.get_session(session_id);
     if let Some(state) = lua_sessions.get(session_id) {
         let state = state.value().clone();
         let mut state = state.lock().await;
@@ -197,6 +208,15 @@ pub(crate) async fn handle_lua_shutdown_session(
             warn!(session_id = %session_id, error = %e, "Failed to sync session_end hooks");
         }
         if let Some(session) = state.executor.session_manager().get_current() {
+            if let Some(ds) = daemon_session.as_ref() {
+                session.set_kiln_path(ds.kiln.to_string_lossy().to_string());
+                if let Some(agent) = ds.agent.as_ref() {
+                    if let Some(name) = agent.agent_name.as_deref() {
+                        session.set_agent_name(name);
+                    }
+                }
+            }
+            session.set_end_reason(crucible_core::session::EndReason::Shutdown);
             if let Err(e) = state.executor.fire_session_end_hooks(&session) {
                 warn!(session_id = %session_id, error = %e, "Failed to fire session_end hooks");
             }

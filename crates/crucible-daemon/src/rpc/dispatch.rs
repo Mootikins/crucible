@@ -850,14 +850,23 @@ impl RpcDispatcher {
     }
 
     async fn handle_session_end(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        // Fire on_session_end Lua hooks before ending the session
-        // Plugins use this for cleanup (e.g., releasing resources, stopping services)
+        // Fire on_session_end Lua hooks before ending the session.
+        // Plugins use this for cleanup (e.g., releasing resources, stopping
+        // services) and for agent-learning extraction (session digest, entity
+        // memory). Before firing, enrich the Session userdata with kiln_path,
+        // agent_name, and end_reason so handlers don't need extra RPC
+        // round-trips to do their work.
         let session_id = req
             .params
             .get("session_id")
             .and_then(|v| v.as_str())
             .unwrap_or("");
         if !session_id.is_empty() {
+            // Look up the durable session record to read its kiln path and
+            // agent name. Both are immutable for the session's lifetime, so
+            // this races only with deletion (which would return None).
+            let daemon_session = self.ctx.sessions.get_session(session_id);
+
             if let Some(state) = self.ctx.lua_sessions.get(session_id) {
                 let state = state.value().clone();
                 let mut state = state.lock().await;
@@ -865,6 +874,15 @@ impl RpcDispatcher {
                     tracing::warn!(session_id = %session_id, error = %e, "Failed to sync session_end hooks");
                 }
                 if let Some(session) = state.executor.session_manager().get_current() {
+                    if let Some(ds) = daemon_session.as_ref() {
+                        session.set_kiln_path(ds.kiln.to_string_lossy().to_string());
+                        if let Some(agent) = ds.agent.as_ref() {
+                            if let Some(name) = agent.agent_name.as_deref() {
+                                session.set_agent_name(name);
+                            }
+                        }
+                    }
+                    session.set_end_reason(crucible_core::session::EndReason::User);
                     if let Err(e) = state.executor.fire_session_end_hooks(&session) {
                         tracing::warn!(session_id = %session_id, error = %e, "Failed to fire session_end hooks");
                     }
@@ -1136,9 +1154,12 @@ impl RpcDispatcher {
     }
 
     async fn handle_lua_shutdown_session(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::lua::handle_lua_shutdown_session(req.clone(), &self.ctx.lua_sessions)
-                .await;
+        let resp = crate::server::lua::handle_lua_shutdown_session(
+            req.clone(),
+            &self.ctx.lua_sessions,
+            &self.ctx.sessions,
+        )
+        .await;
         map_server_resp(resp)
     }
 
