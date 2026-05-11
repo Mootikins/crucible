@@ -27,6 +27,6 @@
 mod types;
 
 pub use types::{
-    validate_output, ContextStrategy, OutputValidation, RecordingMode, Session, SessionAgent,
-    SessionState, SessionSummary, SessionType,
+    validate_output, ContextStrategy, EndReason, OutputValidation, RecordingMode, Session,
+    SessionAgent, SessionState, SessionSummary, SessionType,
 };

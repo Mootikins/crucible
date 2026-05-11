@@ -11,6 +11,6 @@ mod tests;
 
 pub use agent::SessionAgent;
 pub use config::{validate_output, ContextStrategy, OutputValidation};
-pub use enums::{RecordingMode, SessionState, SessionType};
+pub use enums::{EndReason, RecordingMode, SessionState, SessionType};
 pub use session::Session;
 pub use summary::SessionSummary;
