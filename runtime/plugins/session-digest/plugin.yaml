@@ -1,0 +1,37 @@
+name: session-digest
+version: "0.1.0"
+description: Extract digests + entity notes from completed sessions
+author: Crucible Team
+license: MIT
+
+main: init.lua
+
+capabilities:
+  - kiln
+  - agent
+  - config
+
+config:
+  properties:
+    enabled:
+      type: boolean
+      default: true
+    model:
+      type: string
+      description: "Model for extraction; defaults to cheapest available chat backend"
+    dedupe_threshold:
+      type: number
+      default: 0.80
+    min_session_turns:
+      type: number
+      default: 3
+    truncate_strategy:
+      type: string
+      enum: [last_n_turns, summary]
+      default: last_n_turns
+    last_n_turns:
+      type: number
+      default: 40
+
+exports:
+  auto_discover: true
