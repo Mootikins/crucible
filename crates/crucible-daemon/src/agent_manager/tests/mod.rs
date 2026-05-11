@@ -677,6 +677,7 @@ fn create_test_agent_manager_with_both(
 
 mod concurrency;
 mod dispatch;
+mod grammar;
 mod init_lua;
 mod lifecycle;
 mod messaging;

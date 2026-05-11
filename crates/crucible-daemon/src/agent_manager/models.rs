@@ -860,6 +860,86 @@ impl AgentManager {
         Ok(agent_config.validation_retries)
     }
 
+    /// Attach a GBNF grammar to a session.
+    ///
+    /// Hard-errors with [`AgentError::NotSupported`] if the session's
+    /// backend doesn't expose GBNF support. The design plan is explicit
+    /// on this: silently dropping the constraint at completion time is
+    /// worse than failing at attach time, because the caller doesn't
+    /// learn that the next turn isn't actually constrained until output
+    /// drifts.
+    pub async fn set_grammar(
+        &self,
+        session_id: &str,
+        grammar: crucible_core::types::Grammar,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        let (_, current_config) = self.get_session_with_agent(session_id)?;
+        if !current_config.provider.supports_grammar() {
+            return Err(AgentError::NotSupported(format!(
+                "backend '{}' does not support GBNF grammars (only llama.cpp-based backends do)",
+                current_config.provider.as_str()
+            )));
+        }
+        let grammar_name = grammar.name.clone();
+        self.update_agent_config_and_emit(
+            session_id,
+            event_tx,
+            "grammar_changed",
+            serde_json::json!({
+                "grammar_name": grammar_name,
+                "attached": true,
+            }),
+            "Failed to emit grammar_changed event (no subscribers)",
+            |agent_config| {
+                agent_config.grammar = Some(grammar.clone());
+                Ok(())
+            },
+            || {
+                info!(
+                    session_id = %session_id,
+                    grammar = ?grammar_name,
+                    "Grammar attached (agent cache invalidated)"
+                );
+            },
+        )
+        .await
+    }
+
+    /// Detach any grammar from a session. Idempotent.
+    pub async fn clear_grammar(
+        &self,
+        session_id: &str,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        self.update_agent_config_and_emit(
+            session_id,
+            event_tx,
+            "grammar_changed",
+            serde_json::json!({ "attached": false }),
+            "Failed to emit grammar_changed event (no subscribers)",
+            |agent_config| {
+                agent_config.grammar = None;
+                Ok(())
+            },
+            || {
+                info!(
+                    session_id = %session_id,
+                    "Grammar cleared (agent cache invalidated)"
+                );
+            },
+        )
+        .await
+    }
+
+    pub fn get_grammar(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<crucible_core::types::Grammar>, AgentError> {
+        let (_, agent_config) = self.get_session_with_agent(session_id)?;
+        Ok(agent_config.grammar.clone())
+    }
+
     /// Undo the last N agent turns for a session by rewinding the
     /// scheduler-owned `ConversationTree` cursor. The agent handle
     /// holds no history between turns — the tree is the authoritative

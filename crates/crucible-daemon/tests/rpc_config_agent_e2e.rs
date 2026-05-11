@@ -538,3 +538,137 @@ async fn test_config_get_on_nonexistent_session_fails() {
 
     server.shutdown().await;
 }
+
+// =============================================================================
+// Grammar set/get/clear (Wave 2 Item 5)
+// =============================================================================
+
+/// Helper: like `setup_session_with_agent`, but with a backend that
+/// supports GBNF so we can exercise the happy path. Mock is the only
+/// such backend until llama.cpp is wired in.
+async fn setup_session_with_grammar_capable_agent(server: &TestServer) -> (String, DaemonClient) {
+    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+    let client = DaemonClient::connect_to(&server.socket_path)
+        .await
+        .expect("Failed to connect");
+    let result = client
+        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+            session_type: "chat".to_string(),
+            kiln: kiln_dir.path().to_path_buf(),
+            workspace: None,
+            connect_kilns: vec![],
+            recording_mode: None,
+            recording_path: None,
+            agent_type: None,
+        })
+        .await
+        .expect("session_create failed");
+    let session_id = result["session_id"].as_str().unwrap().to_string();
+
+    let agent = SessionAgent {
+        agent_type: "internal".to_string(),
+        agent_name: None,
+        provider_key: Some("mock".to_string()),
+        provider: BackendType::Mock,
+        model: "mock-chat-model".to_string(),
+        system_prompt: "Test.".to_string(),
+        temperature: Some(0.7),
+        max_tokens: Some(1024),
+        max_context_tokens: None,
+        thinking_budget: None,
+        endpoint: None,
+        env_overrides: std::collections::HashMap::new(),
+        mcp_servers: vec![],
+        agent_card_name: None,
+        capabilities: None,
+        agent_description: None,
+        delegation_config: None,
+        precognition_enabled: false,
+        precognition_results: 5,
+        max_iterations: None,
+        execution_timeout_secs: None,
+        context_budget: None,
+        context_strategy: Default::default(),
+        context_window: None,
+        output_validation: OutputValidation::default(),
+        validation_retries: 3,
+        autocompact_threshold: None,
+        grammar: None,
+    };
+    client
+        .session_configure_agent(&session_id, &agent)
+        .await
+        .expect("configure_agent failed");
+    std::mem::forget(kiln_dir);
+    (session_id, client)
+}
+
+#[tokio::test]
+async fn test_grammar_round_trip_on_mock_backend() {
+    let server = TestServer::start().await.expect("server start");
+    let (session_id, client) = setup_session_with_grammar_capable_agent(&server).await;
+
+    // Initially nothing attached.
+    let g = client
+        .session_get_grammar(&session_id)
+        .await
+        .expect("get_grammar");
+    assert!(g.is_none(), "fresh session should have no grammar");
+
+    // Attach + read back.
+    let grammar = crucible_core::types::Grammar::named("yn", r#"root ::= "yes" | "no""#);
+    client
+        .session_set_grammar(&session_id, &grammar)
+        .await
+        .expect("set_grammar on Mock backend should succeed");
+    let g = client
+        .session_get_grammar(&session_id)
+        .await
+        .expect("get_grammar after set");
+    let g = g.expect("grammar must be present after set");
+    assert_eq!(g.content, grammar.content);
+    assert_eq!(g.name.as_deref(), Some("yn"));
+
+    // Clear and confirm.
+    client
+        .session_clear_grammar(&session_id)
+        .await
+        .expect("clear_grammar");
+    let g = client
+        .session_get_grammar(&session_id)
+        .await
+        .expect("get_grammar after clear");
+    assert!(g.is_none(), "grammar should be cleared");
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn test_grammar_hard_errors_on_unsupported_backend() {
+    // The session set up by `setup_session_with_agent` uses Ollama,
+    // which does NOT support GBNF. The RPC must surface that as an
+    // error rather than silently no-oping.
+    let server = TestServer::start().await.expect("server start");
+    let (session_id, client) = setup_session_with_agent(&server).await;
+
+    let grammar = crucible_core::types::Grammar::named("yn", r#"root ::= "yes" | "no""#);
+    let result = client.session_set_grammar(&session_id, &grammar).await;
+    let err = result.expect_err("set_grammar must fail on Ollama backend");
+    let s = err.to_string();
+    assert!(
+        s.contains("ollama") || s.to_lowercase().contains("grammar"),
+        "expected backend / grammar mention in error, got: {s}"
+    );
+
+    // And the session must not have been mutated.
+    let g = client
+        .session_get_grammar(&session_id)
+        .await
+        .expect("get_grammar");
+    assert!(
+        g.is_none(),
+        "no grammar should be attached after hard error"
+    );
+
+    server.shutdown().await;
+}

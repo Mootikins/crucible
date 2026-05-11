@@ -32,6 +32,7 @@ mod empty_providers;
 pub mod enrichment;
 pub mod event_emitter;
 pub mod file_watch_bridge;
+pub mod grammar_bridge;
 pub mod internal_events;
 pub mod kiln_manager;
 pub mod lifecycle;
@@ -79,6 +80,7 @@ pub use background_manager::{
 };
 pub use daemon_plugins::{daemon_plugin_paths, default_daemon_plugin_paths, DaemonPluginLoader};
 pub use file_watch_bridge::{create_event_bridge, DaemonEventBridge};
+pub use grammar_bridge::DaemonGrammarBridge;
 pub use kiln_manager::KilnManager;
 pub use lifecycle::{remove_socket, socket_path, wait_for_shutdown};
 pub use mcp_host::InProcessMcpHost;

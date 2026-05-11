@@ -299,6 +299,15 @@ impl Server {
                     warn!("Failed to upgrade Lua tools module: {}", e);
                 }
 
+                let grammar_api: Arc<dyn crucible_lua::DaemonGrammarApi> =
+                    Arc::new(crate::grammar_bridge::DaemonGrammarBridge::new(
+                        self.agent_manager.clone(),
+                        self.event_tx.clone(),
+                    ));
+                if let Err(e) = loader.upgrade_with_grammar(grammar_api) {
+                    warn!("Failed to upgrade Lua grammar module: {}", e);
+                }
+
                 // Bootstrap declared plugins from plugins.toml before discovery
                 let plugins_toml =
                     dirs::config_dir().map(|d| d.join("crucible").join("plugins.toml"));

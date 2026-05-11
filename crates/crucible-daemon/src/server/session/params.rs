@@ -757,6 +757,103 @@ pub(crate) async fn handle_session_get_autocompact_threshold(
 /// `session.cache_stats` — return the per-session prompt-cache aggregate.
 /// `hit_rate` is `null` until at least one completion has reported cache
 /// fields, distinguishing "never had a cache event" from "0%".
+/// `session.set_grammar` — attach a GBNF grammar.
+///
+/// Body: `{ "session_id": "...", "content": "...", "name": "..." }`.
+/// `name` is optional. Backend-unsupported attach hard-errors with the
+/// daemon `NotSupported` shape (METHOD_NOT_FOUND code so callers can
+/// distinguish "wrong feature" from "wrong session").
+pub(crate) async fn handle_session_set_grammar(
+    req: Request,
+    am: &Arc<AgentManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    let session_id = require_param!(req, "session_id", as_str);
+    let content = require_param!(req, "content", as_str);
+    let name = optional_param!(req, "name", as_str).map(|s| s.to_string());
+
+    let grammar = match name {
+        Some(n) => crucible_core::types::Grammar::named(n, content),
+        None => crucible_core::types::Grammar::new(content),
+    };
+
+    match am.set_grammar(session_id, grammar, Some(event_tx)).await {
+        Ok(()) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "attached": true,
+            }),
+        ),
+        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
+            session_not_found(req.id, &id)
+        }
+        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
+            agent_not_configured(req.id, &id)
+        }
+        Err(crate::agent_manager::AgentError::NotSupported(msg))
+        | Err(crate::agent_manager::AgentError::Chat(
+            crucible_core::traits::chat::ChatError::NotSupported(msg),
+        )) => Response::error(req.id, crate::protocol::METHOD_NOT_FOUND, msg),
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
+/// `session.clear_grammar` — detach any attached grammar. Idempotent.
+pub(crate) async fn handle_session_clear_grammar(
+    req: Request,
+    am: &Arc<AgentManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    let session_id = require_param!(req, "session_id", as_str);
+    match am.clear_grammar(session_id, Some(event_tx)).await {
+        Ok(()) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "attached": false,
+            }),
+        ),
+        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
+            session_not_found(req.id, &id)
+        }
+        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
+            agent_not_configured(req.id, &id)
+        }
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
+/// `session.get_grammar` — read the currently-attached grammar (or null).
+pub(crate) async fn handle_session_get_grammar(req: Request, am: &Arc<AgentManager>) -> Response {
+    let session_id = require_param!(req, "session_id", as_str);
+    match am.get_grammar(session_id) {
+        Ok(opt) => {
+            let body = match opt {
+                Some(g) => serde_json::json!({
+                    "session_id": session_id,
+                    "grammar": {
+                        "content": g.content,
+                        "name": g.name,
+                    },
+                }),
+                None => serde_json::json!({
+                    "session_id": session_id,
+                    "grammar": null,
+                }),
+            };
+            Response::success(req.id, body)
+        }
+        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
+            session_not_found(req.id, &id)
+        }
+        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
+            agent_not_configured(req.id, &id)
+        }
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
 pub(crate) async fn handle_session_cache_stats(req: Request, am: &Arc<AgentManager>) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
     let stats = am.get_cache_stats(session_id);

@@ -42,9 +42,10 @@ pub(crate) use notifications::{
     handle_session_list_notifications,
 };
 pub(crate) use params::{
-    handle_session_cache_stats, handle_session_can_undo, handle_session_get_autocompact_threshold,
-    handle_session_get_context_budget, handle_session_get_context_strategy,
-    handle_session_get_context_window, handle_session_get_execution_timeout,
+    handle_session_cache_stats, handle_session_can_undo, handle_session_clear_grammar,
+    handle_session_get_autocompact_threshold, handle_session_get_context_budget,
+    handle_session_get_context_strategy, handle_session_get_context_window,
+    handle_session_get_execution_timeout, handle_session_get_grammar,
     handle_session_get_max_iterations, handle_session_get_max_tokens,
     handle_session_get_output_validation, handle_session_get_precognition,
     handle_session_get_precognition_results, handle_session_get_system_prompt,
@@ -52,7 +53,7 @@ pub(crate) use params::{
     handle_session_get_validation_retries, handle_session_set_autocompact_threshold,
     handle_session_set_context_budget, handle_session_set_context_strategy,
     handle_session_set_context_window, handle_session_set_execution_timeout,
-    handle_session_set_max_iterations, handle_session_set_max_tokens,
+    handle_session_set_grammar, handle_session_set_max_iterations, handle_session_set_max_tokens,
     handle_session_set_output_validation, handle_session_set_precognition,
     handle_session_set_precognition_results, handle_session_set_system_prompt,
     handle_session_set_temperature, handle_session_set_thinking_budget,

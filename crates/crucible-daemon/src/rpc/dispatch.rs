@@ -94,6 +94,9 @@ pub const METHODS: &[&str] = &[
     "session.undo",
     "session.can_undo",
     "session.undo_depth",
+    "session.set_grammar",
+    "session.clear_grammar",
+    "session.get_grammar",
     "plugin.reload",
     "plugin.list",
     "lua.init_session",
@@ -309,6 +312,13 @@ impl RpcDispatcher {
             "session.undo" => to_response(id, self.handle_session_undo(&req).await),
             "session.can_undo" => to_response(id, self.handle_session_can_undo(&req).await),
             "session.undo_depth" => to_response(id, self.handle_session_undo_depth(&req).await),
+
+            // Grammar handlers (Wave 2 Item 5)
+            "session.set_grammar" => to_response(id, self.handle_session_set_grammar(&req).await),
+            "session.clear_grammar" => {
+                to_response(id, self.handle_session_clear_grammar(&req).await)
+            }
+            "session.get_grammar" => to_response(id, self.handle_session_get_grammar(&req).await),
 
             // Lua RPC handlers
             "lua.init_session" => to_response(id, self.handle_lua_init_session(&req).await),
@@ -1089,6 +1099,32 @@ impl RpcDispatcher {
         map_server_resp(resp)
     }
 
+    async fn handle_session_set_grammar(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_set_grammar(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_clear_grammar(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_clear_grammar(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_get_grammar(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp =
+            crate::server::session::handle_session_get_grammar(req.clone(), &self.ctx.agents).await;
+        map_server_resp(resp)
+    }
+
     // ── Lua RPC wrappers ─────────────────────────────────────────────────
 
     async fn handle_lua_init_session(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -1437,7 +1473,14 @@ mod tests {
 
     #[test]
     fn methods_count() {
-        assert_eq!(METHODS.len(), 120, "Update when adding RPC methods");
+        assert_eq!(METHODS.len(), 123, "Update when adding RPC methods");
+    }
+
+    #[test]
+    fn methods_list_includes_grammar_rpcs() {
+        assert!(METHODS.contains(&"session.set_grammar"));
+        assert!(METHODS.contains(&"session.clear_grammar"));
+        assert!(METHODS.contains(&"session.get_grammar"));
     }
 
     #[tokio::test]
