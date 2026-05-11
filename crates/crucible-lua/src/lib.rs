@@ -55,6 +55,7 @@ mod executor;
 #[cfg(feature = "fennel")]
 mod fennel;
 mod fs;
+pub mod grammar;
 mod graph;
 mod handlers;
 mod hooks;
@@ -125,6 +126,10 @@ pub use executor::LuaExecutor;
 #[cfg(feature = "fennel")]
 pub use fennel::FennelCompiler;
 pub use fs::register_fs_module;
+pub use grammar::{
+    register_grammar_module, register_grammar_module_with_api, DaemonGrammarApi, GrammarHandle,
+    LuaGrammar,
+};
 pub use graph::{
     register_graph_module, register_graph_module_full, register_graph_module_with_all,
     register_graph_module_with_executor, register_graph_module_with_store,
