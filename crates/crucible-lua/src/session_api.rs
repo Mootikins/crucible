@@ -277,10 +277,28 @@ impl SessionConfigRpc for ChannelSessionRpc {
 }
 
 /// Session object with property access (returned by get_session())
+///
+/// In addition to the RPC-backed mutable fields (temperature, model, ...), this
+/// userdata carries three read-only metadata fields populated by the daemon
+/// so that `on_session_end` hooks can react without extra RPC round-trips:
+///
+/// - `kiln_path` — absolute path of the active kiln (where agent learning
+///   notes should be written)
+/// - `agent_name` — agent that drove the session (used for tagging extraction
+///   outputs)
+/// - `end_reason` — why the session ended; `nil` while the session is still
+///   active. One of `"user"`, `"error"`, `"timeout"`, `"shutdown"`.
+///
+/// All three are stored as `Arc<Mutex<Option<...>>>` so the daemon can populate
+/// them late (e.g. just before firing end hooks) without re-creating the
+/// userdata or threading them through every constructor.
 #[derive(Clone)]
 pub struct Session {
     rpc: Arc<Mutex<Option<Box<dyn SessionConfigRpc>>>>,
     id: String,
+    kiln_path: Arc<Mutex<Option<String>>>,
+    agent_name: Arc<Mutex<Option<String>>>,
+    end_reason: Arc<Mutex<Option<crucible_core::session::EndReason>>>,
 }
 
 impl Session {
@@ -288,6 +306,9 @@ impl Session {
         Self {
             rpc: Arc::new(Mutex::new(None)),
             id,
+            kiln_path: Arc::new(Mutex::new(None)),
+            agent_name: Arc::new(Mutex::new(None)),
+            end_reason: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -303,6 +324,38 @@ impl Session {
             .rpc
             .lock()
             .expect("session_config_rpc: poisoned while unbinding RPC client") = None;
+    }
+
+    /// Set the kiln_path metadata field. Visible to Lua as `session.kiln_path`.
+    pub fn set_kiln_path(&self, path: impl Into<String>) {
+        *self.kiln_path.lock().expect("session kiln_path: poisoned") = Some(path.into());
+    }
+
+    /// Set the agent_name metadata field. Visible to Lua as `session.agent_name`.
+    pub fn set_agent_name(&self, name: impl Into<String>) {
+        *self
+            .agent_name
+            .lock()
+            .expect("session agent_name: poisoned") = Some(name.into());
+    }
+
+    /// Set the end_reason. Visible to Lua as `session.end_reason`.
+    ///
+    /// `nil` (None) while the session is active; populated by the dispatch path
+    /// that fires `on_session_end` hooks.
+    pub fn set_end_reason(&self, reason: crucible_core::session::EndReason) {
+        *self
+            .end_reason
+            .lock()
+            .expect("session end_reason: poisoned") = Some(reason);
+    }
+
+    /// Read the end_reason. Mostly for tests.
+    pub fn end_reason(&self) -> Option<crucible_core::session::EndReason> {
+        *self
+            .end_reason
+            .lock()
+            .expect("session end_reason: poisoned")
     }
 
     fn with_rpc<F, T>(&self, f: F) -> mlua::Result<T>
@@ -323,6 +376,36 @@ impl UserData for Session {
         methods.add_meta_method(MetaMethod::Index, |lua, this, key: String| {
             match key.as_str() {
                 "id" => lua.create_string(&this.id).map(Value::String),
+                "kiln_path" => {
+                    let guard = this
+                        .kiln_path
+                        .lock()
+                        .map_err(|e| mlua::Error::runtime(e.to_string()))?;
+                    match guard.as_deref() {
+                        Some(s) => lua.create_string(s).map(Value::String),
+                        None => Ok(Value::Nil),
+                    }
+                }
+                "agent_name" => {
+                    let guard = this
+                        .agent_name
+                        .lock()
+                        .map_err(|e| mlua::Error::runtime(e.to_string()))?;
+                    match guard.as_deref() {
+                        Some(s) => lua.create_string(s).map(Value::String),
+                        None => Ok(Value::Nil),
+                    }
+                }
+                "end_reason" => {
+                    let guard = this
+                        .end_reason
+                        .lock()
+                        .map_err(|e| mlua::Error::runtime(e.to_string()))?;
+                    match *guard {
+                        Some(reason) => lua.create_string(reason.to_string()).map(Value::String),
+                        None => Ok(Value::Nil),
+                    }
+                }
                 "temperature" => this
                     .with_rpc(|r| Ok(r.get_temperature()))
                     .map(|v| v.map(Value::Number).unwrap_or(Value::Nil)),
@@ -353,7 +436,9 @@ impl UserData for Session {
         methods.add_meta_method(
             MetaMethod::NewIndex,
             |lua, this, (key, val): (String, Value)| match key.as_str() {
-                "id" | "model" => Err(mlua::Error::runtime(format!("{} is read-only", key))),
+                "id" | "model" | "kiln_path" | "agent_name" | "end_reason" => {
+                    Err(mlua::Error::runtime(format!("{} is read-only", key)))
+                }
                 "temperature" => {
                     let temp: f64 = lua.unpack(val)?;
                     if !(0.0..=2.0).contains(&temp) {
@@ -763,5 +848,163 @@ pub mod tests {
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("locked"));
+    }
+
+    #[test]
+    fn test_session_kiln_path_field_reads_back() {
+        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+
+        let session = Session::new("s1".to_string());
+        session.bind(Box::new(MockRpc::new()));
+        session.set_kiln_path("/home/user/kiln");
+        mgr.set_current(session);
+
+        let kp: String = lua
+            .load("return crucible.get_session().kiln_path")
+            .eval()
+            .unwrap();
+        assert_eq!(kp, "/home/user/kiln");
+    }
+
+    #[test]
+    fn test_session_kiln_path_nil_when_unset() {
+        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+
+        let session = Session::new("s1".to_string());
+        session.bind(Box::new(MockRpc::new()));
+        mgr.set_current(session);
+
+        let kp: mlua::Value = lua
+            .load("return crucible.get_session().kiln_path")
+            .eval()
+            .unwrap();
+        assert!(kp.is_nil());
+    }
+
+    #[test]
+    fn test_session_agent_name_field_reads_back() {
+        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+
+        let session = Session::new("s1".to_string());
+        session.bind(Box::new(MockRpc::new()));
+        session.set_agent_name("claude");
+        mgr.set_current(session);
+
+        let name: String = lua
+            .load("return crucible.get_session().agent_name")
+            .eval()
+            .unwrap();
+        assert_eq!(name, "claude");
+    }
+
+    #[test]
+    fn test_session_end_reason_is_nil_when_session_still_active() {
+        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+
+        let session = Session::new("s1".to_string());
+        session.bind(Box::new(MockRpc::new()));
+        mgr.set_current(session);
+
+        let v: mlua::Value = lua
+            .load("return crucible.get_session().end_reason")
+            .eval()
+            .unwrap();
+        assert!(v.is_nil(), "end_reason should be nil mid-session");
+    }
+
+    #[test]
+    fn test_session_end_reason_user_string() {
+        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+
+        let session = Session::new("s1".to_string());
+        session.bind(Box::new(MockRpc::new()));
+        session.set_end_reason(crucible_core::session::EndReason::User);
+        mgr.set_current(session);
+
+        let r: String = lua
+            .load("return crucible.get_session().end_reason")
+            .eval()
+            .unwrap();
+        assert_eq!(r, "user");
+    }
+
+    #[test]
+    fn test_session_end_reason_all_variants_lowercase() {
+        use crucible_core::session::EndReason;
+        for (reason, expected) in [
+            (EndReason::User, "user"),
+            (EndReason::Error, "error"),
+            (EndReason::Timeout, "timeout"),
+            (EndReason::Shutdown, "shutdown"),
+        ] {
+            let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+            let session = Session::new("s1".to_string());
+            session.bind(Box::new(MockRpc::new()));
+            session.set_end_reason(reason);
+            mgr.set_current(session);
+
+            let r: String = lua
+                .load("return crucible.get_session().end_reason")
+                .eval()
+                .unwrap();
+            assert_eq!(r, expected, "EndReason::{:?}", reason);
+        }
+    }
+
+    #[test]
+    fn test_session_new_metadata_fields_are_read_only() {
+        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+
+        let session = Session::new("s1".to_string());
+        session.bind(Box::new(MockRpc::new()));
+        mgr.set_current(session);
+
+        for key in ["kiln_path", "agent_name", "end_reason"] {
+            let script = format!("crucible.get_session().{} = 'x'", key);
+            let result: mlua::Result<()> = lua.load(&script).exec();
+            assert!(result.is_err(), "{} should be read-only", key);
+            assert!(result.unwrap_err().to_string().contains("read-only"));
+        }
+    }
+
+    #[test]
+    fn test_session_end_hook_legacy_handler_still_runs_with_new_fields() {
+        // Backward compat: a handler that only reads `id` (i.e. ignores the
+        // new fields) keeps working when the daemon has populated kiln_path,
+        // agent_name, end_reason.
+        use crate::executor::LuaExecutor;
+
+        let mut executor = LuaExecutor::new().unwrap();
+        executor
+            .lua()
+            .load(
+                r#"
+                legacy_called = false
+                legacy_id = nil
+                crucible.on_session_end(function(s)
+                    legacy_called = true
+                    legacy_id = s.id
+                end)
+            "#,
+            )
+            .exec()
+            .unwrap();
+        executor.sync_session_end_hooks().unwrap();
+
+        let session = Session::new("legacy-session".to_string());
+        session.bind(Box::new(MockRpc::new()));
+        session.set_kiln_path("/k");
+        session.set_agent_name("a");
+        session.set_end_reason(crucible_core::session::EndReason::User);
+        executor.fire_session_end_hooks(&session).unwrap();
+
+        let called: bool = executor
+            .lua()
+            .load("return legacy_called")
+            .eval()
+            .unwrap();
+        let id: String = executor.lua().load("return legacy_id").eval().unwrap();
+        assert!(called);
+        assert_eq!(id, "legacy-session");
     }
 }
