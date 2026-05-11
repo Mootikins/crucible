@@ -998,11 +998,7 @@ pub mod tests {
         session.set_end_reason(crucible_core::session::EndReason::User);
         executor.fire_session_end_hooks(&session).unwrap();
 
-        let called: bool = executor
-            .lua()
-            .load("return legacy_called")
-            .eval()
-            .unwrap();
+        let called: bool = executor.lua().load("return legacy_called").eval().unwrap();
         let id: String = executor.lua().load("return legacy_id").eval().unwrap();
         assert!(called);
         assert_eq!(id, "legacy-session");
