@@ -200,7 +200,9 @@ impl RpcDispatcher {
             | "session.set_system_prompt"
             | "session.set_precognition"
             | "session.set_precognition_results"
-            | "session.set_autocompact_threshold" => {
+            | "session.set_autocompact_threshold"
+            | "session.set_grammar"
+            | "session.clear_grammar" => {
                 to_response(id, self.dispatch_session_config_setter(&req).await)
             }
             "session.get_thinking_budget"
@@ -216,7 +218,8 @@ impl RpcDispatcher {
             | "session.get_system_prompt"
             | "session.get_precognition"
             | "session.get_precognition_results"
-            | "session.get_autocompact_threshold" => {
+            | "session.get_autocompact_threshold"
+            | "session.get_grammar" => {
                 to_response(id, self.dispatch_session_config_getter(&req).await)
             }
             "session.cache_stats" => to_response(id, self.handle_session_cache_stats(&req).await),
@@ -312,13 +315,6 @@ impl RpcDispatcher {
             "session.undo" => to_response(id, self.handle_session_undo(&req).await),
             "session.can_undo" => to_response(id, self.handle_session_can_undo(&req).await),
             "session.undo_depth" => to_response(id, self.handle_session_undo_depth(&req).await),
-
-            // Grammar handlers (Wave 2 Item 5)
-            "session.set_grammar" => to_response(id, self.handle_session_set_grammar(&req).await),
-            "session.clear_grammar" => {
-                to_response(id, self.handle_session_clear_grammar(&req).await)
-            }
-            "session.get_grammar" => to_response(id, self.handle_session_get_grammar(&req).await),
 
             // Lua RPC handlers
             "lua.init_session" => to_response(id, self.handle_lua_init_session(&req).await),
@@ -619,6 +615,22 @@ impl RpcDispatcher {
                 )
                 .await
             }
+            "session.set_grammar" => {
+                session::handle_session_set_grammar(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx,
+                )
+                .await
+            }
+            "session.clear_grammar" => {
+                session::handle_session_clear_grammar(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx,
+                )
+                .await
+            }
             _ => unreachable!("dispatch match already filtered to known setter methods"),
         };
         map_server_resp(resp)
@@ -673,6 +685,9 @@ impl RpcDispatcher {
             "session.get_autocompact_threshold" => {
                 session::handle_session_get_autocompact_threshold(req.clone(), &self.ctx.agents)
                     .await
+            }
+            "session.get_grammar" => {
+                session::handle_session_get_grammar(req.clone(), &self.ctx.agents).await
             }
             _ => unreachable!("dispatch match already filtered to known getter methods"),
         };
@@ -1096,32 +1111,6 @@ impl RpcDispatcher {
     async fn handle_session_undo_depth(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::session::handle_session_undo_depth(req.clone(), &self.ctx.agents).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_set_grammar(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_set_grammar(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_clear_grammar(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_clear_grammar(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_get_grammar(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::session::handle_session_get_grammar(req.clone(), &self.ctx.agents).await;
         map_server_resp(resp)
     }
 

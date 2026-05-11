@@ -14,6 +14,14 @@ crates/crucible-cli/src/tui/oil/components/tool_render.rs
 # === Batch 2 (blocked on refactor/daemon-owns-setup) ===
 crates/crucible-daemon/src/provider/genai_handle.rs
 
+# === RPC dispatch registry (structural — grows ~30 lines per feature) ===
+# dispatch.rs is the canonical RPC method registry: METHODS const +
+# match arms for every method + per-method handler wrappers. Each new
+# RPC adds 20-40 lines structurally. Slated for a registry-table
+# decomposition (one match arm per category) once the table shape
+# stabilises. Wave 2 Item 5 grammar surface tipped it over.
+crates/crucible-daemon/src/rpc/dispatch.rs
+
 # === Batch 3 (blocked on TUI SessionEventStream stabilization) ===
 
 # === Test files (lowest priority; split when convenient) ===
