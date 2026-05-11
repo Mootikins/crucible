@@ -72,9 +72,7 @@ impl AgentHandle for CannedAgent {
 /// The factory inspects `agent_config.model` to figure out which team
 /// member it's instantiating (because `target_profile_to_session_agent`
 /// stores the profile key in `model`).
-fn canned_factory(
-    responses: HashMap<String, (String, Option<Duration>)>,
-) -> SubagentFactory {
+fn canned_factory(responses: HashMap<String, (String, Option<Duration>)>) -> SubagentFactory {
     let responses = Arc::new(responses);
     Box::new(move |agent_config, _workspace| {
         let responses = Arc::clone(&responses);
@@ -139,9 +137,8 @@ fn make_team_ctx(
     members: &[&str],
 ) -> TeamCtx {
     let (tx, _) = broadcast::channel(64);
-    let manager = Arc::new(
-        BackgroundJobManager::new(tx).with_subagent_factory(canned_factory(responses)),
-    );
+    let manager =
+        Arc::new(BackgroundJobManager::new(tx).with_subagent_factory(canned_factory(responses)));
     let available_agents: HashMap<String, AgentProfile> =
         members.iter().map(|n| (n.to_string(), profile())).collect();
     TeamCtx {
@@ -296,7 +293,10 @@ impl RouterClassifier for FixedClassifier {
 #[tokio::test]
 async fn router_dispatches_based_on_classifier() {
     let mut responses = HashMap::new();
-    responses.insert("research_agent".to_string(), ("researched!".to_string(), None));
+    responses.insert(
+        "research_agent".to_string(),
+        ("researched!".to_string(), None),
+    );
     responses.insert("write_agent".to_string(), ("written!".to_string(), None));
     let ctx = make_team_ctx(responses, &["research_agent", "write_agent"]);
 
@@ -312,11 +312,7 @@ async fn router_dispatches_based_on_classifier() {
     let result = router.run("anything").await.expect("router ok");
     assert_eq!(result, "researched!");
 
-    let router2 = Router::new(
-        ctx,
-        routes,
-        Arc::new(FixedClassifier("writer".to_string())),
-    );
+    let router2 = Router::new(ctx, routes, Arc::new(FixedClassifier("writer".to_string())));
     let result2 = router2.run("anything").await.expect("router ok");
     assert_eq!(result2, "written!");
 }
@@ -326,11 +322,7 @@ async fn router_returns_classifier_error_when_route_missing() {
     let responses = HashMap::new();
     let ctx = make_team_ctx(responses, &["x"]);
     let routes = HashMap::new();
-    let router = Router::new(
-        ctx,
-        routes,
-        Arc::new(FixedClassifier("nope".to_string())),
-    );
+    let router = Router::new(ctx, routes, Arc::new(FixedClassifier("nope".to_string())));
     let err = router.run("anything").await.expect_err("should fail");
     assert!(matches!(err, RouterError::UnknownRoute(ref r) if r == "nope"));
 }
@@ -364,15 +356,15 @@ async fn broadcast_runs_agents_in_parallel() {
     responses.insert("c".to_string(), ("rc".to_string(), Some(delay)));
     let ctx = make_team_ctx(responses, &["a", "b", "c"]);
 
-    let bc = Broadcast::new(
-        ctx,
-        vec!["a".to_string(), "b".to_string(), "c".to_string()],
-    );
+    let bc = Broadcast::new(ctx, vec!["a".to_string(), "b".to_string(), "c".to_string()]);
     let start = Instant::now();
     let results = bc.run("ping").await.expect("broadcast ok");
     let elapsed = start.elapsed();
 
-    assert_eq!(results, vec!["ra".to_string(), "rb".to_string(), "rc".to_string()]);
+    assert_eq!(
+        results,
+        vec!["ra".to_string(), "rb".to_string(), "rc".to_string()]
+    );
     assert!(
         elapsed < Duration::from_millis(250),
         "broadcast took {elapsed:?}, expected <250ms with parallel execution"
@@ -385,19 +377,29 @@ async fn broadcast_preserves_input_order_in_results() {
     // last. If we sorted by completion time we'd get [c, b, a]; we
     // should get [a, b, c] because we map over input order.
     let mut responses = HashMap::new();
-    responses.insert("a".to_string(), ("first".to_string(), Some(Duration::from_millis(120))));
-    responses.insert("b".to_string(), ("second".to_string(), Some(Duration::from_millis(80))));
-    responses.insert("c".to_string(), ("third".to_string(), Some(Duration::from_millis(40))));
+    responses.insert(
+        "a".to_string(),
+        ("first".to_string(), Some(Duration::from_millis(120))),
+    );
+    responses.insert(
+        "b".to_string(),
+        ("second".to_string(), Some(Duration::from_millis(80))),
+    );
+    responses.insert(
+        "c".to_string(),
+        ("third".to_string(), Some(Duration::from_millis(40))),
+    );
     let ctx = make_team_ctx(responses, &["a", "b", "c"]);
 
-    let bc = Broadcast::new(
-        ctx,
-        vec!["a".to_string(), "b".to_string(), "c".to_string()],
-    );
+    let bc = Broadcast::new(ctx, vec!["a".to_string(), "b".to_string(), "c".to_string()]);
     let results = bc.run("ping").await.expect("broadcast ok");
     assert_eq!(
         results,
-        vec!["first".to_string(), "second".to_string(), "third".to_string()]
+        vec![
+            "first".to_string(),
+            "second".to_string(),
+            "third".to_string()
+        ]
     );
 }
 
@@ -417,10 +419,7 @@ async fn broadcast_collects_per_agent_failures() {
     let mut responses = HashMap::new();
     responses.insert("a".to_string(), ("aaa".to_string(), None));
     let ctx = make_team_ctx(responses, &["a", "ghost"]);
-    let bc = Broadcast::new(
-        ctx,
-        vec!["a".to_string(), "ghost".to_string()],
-    );
+    let bc = Broadcast::new(ctx, vec!["a".to_string(), "ghost".to_string()]);
     let results = bc.run("ping").await.expect("broadcast ok");
     assert_eq!(results.len(), 2);
     assert_eq!(results[0], "aaa");
@@ -449,3 +448,120 @@ async fn run_member_returns_underlying_output() {
 // compile-time failure here.
 #[allow(dead_code)]
 fn _job_result_typecheck(_: JobResult) {}
+
+// ---- End-to-end: Lua → DaemonTeamBridge → BackgroundJobManager ----
+
+/// Builds a [`crate::team_bridge::DaemonTeamBridge`] over the same fake
+/// factory/profile machinery the Rust-side team tests use. This is the
+/// minimum needed to exercise `cru.team.*` Lua surface against real
+/// orchestration logic.
+fn make_bridge(
+    responses: HashMap<String, (String, Option<Duration>)>,
+    members: &[&str],
+) -> crate::team_bridge::DaemonTeamBridge {
+    let (tx, _) = broadcast::channel(64);
+    let manager =
+        Arc::new(BackgroundJobManager::new(tx).with_subagent_factory(canned_factory(responses)));
+    let available_agents: HashMap<String, AgentProfile> =
+        members.iter().map(|n| (n.to_string(), profile())).collect();
+    crate::team_bridge::DaemonTeamBridge::new(
+        manager,
+        "team-session".to_string(),
+        parent_agent(),
+        available_agents,
+        std::env::temp_dir(),
+    )
+}
+
+#[tokio::test]
+async fn lua_broadcast_returns_outputs_in_order() {
+    let mut responses = HashMap::new();
+    responses.insert("a".to_string(), ("ra".to_string(), None));
+    responses.insert("b".to_string(), ("rb".to_string(), None));
+    let bridge = make_bridge(responses, &["a", "b"]);
+    let api: Arc<dyn crucible_lua::DaemonTeamApi> = Arc::new(bridge);
+
+    let lua = mlua::Lua::new();
+    crucible_lua::register_team_module(&lua, api).expect("register");
+
+    let out: Vec<String> = lua
+        .load(
+            r#"
+            local r, err = cru.team.broadcast({ "a", "b" }, "go")
+            assert(err == nil, "err: " .. tostring(err))
+            return r
+            "#,
+        )
+        .eval_async()
+        .await
+        .unwrap();
+    assert_eq!(out, vec!["ra".to_string(), "rb".to_string()]);
+}
+
+#[tokio::test]
+async fn lua_router_dispatches_through_real_bridge() {
+    let mut responses = HashMap::new();
+    responses.insert(
+        "researcher_impl".to_string(),
+        ("researched".to_string(), None),
+    );
+    responses.insert("writer_impl".to_string(), ("written".to_string(), None));
+    let bridge = make_bridge(responses, &["researcher_impl", "writer_impl"]);
+    let api: Arc<dyn crucible_lua::DaemonTeamApi> = Arc::new(bridge);
+
+    let lua = mlua::Lua::new();
+    crucible_lua::register_team_module(&lua, api).expect("register");
+
+    let out: String = lua
+        .load(
+            r#"
+            local r = cru.team.router({
+                classifier = function(input)
+                    if input:find("write") then return "writer" else return "researcher" end
+                end,
+                routes = { researcher = "researcher_impl", writer = "writer_impl" }
+            })
+            local result, err = r:run("please write a summary")
+            assert(err == nil, "err: " .. tostring(err))
+            return result
+            "#,
+        )
+        .eval_async()
+        .await
+        .unwrap();
+    assert_eq!(out, "written");
+}
+
+#[tokio::test]
+async fn lua_supervisor_drives_real_bridge_to_completion() {
+    let mut responses = HashMap::new();
+    responses.insert("a".to_string(), ("alpha".to_string(), None));
+    responses.insert("b".to_string(), ("beta".to_string(), None));
+    let bridge = make_bridge(responses, &["a", "b"]);
+    let api: Arc<dyn crucible_lua::DaemonTeamApi> = Arc::new(bridge);
+
+    let lua = mlua::Lua::new();
+    crucible_lua::register_team_module(&lua, api).expect("register");
+
+    let out: String = lua
+        .load(
+            r#"
+            local t = cru.team.supervisor({
+                agents = { "a", "b" },
+                decider = function(task, history)
+                    if #history == 0 then return { agent = "a", prompt = "first" } end
+                    if #history == 1 then return { agent = "b", prompt = "second" } end
+                    return { done = true }
+                end
+            })
+            local r, err = t:run("the task")
+            assert(err == nil, "err: " .. tostring(err))
+            return r
+            "#,
+        )
+        .eval_async()
+        .await
+        .unwrap();
+    // Last worker's output is what we return.
+    assert_eq!(out, "beta");
+}

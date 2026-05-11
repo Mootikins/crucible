@@ -82,6 +82,8 @@ mod shell;
 pub mod statusline;
 mod storage_api;
 pub mod stubs;
+#[cfg(feature = "send")]
+pub mod team;
 mod timer;
 mod tools_api;
 mod types;
@@ -196,5 +198,10 @@ pub use session_api::{
 };
 pub use sessions::{
     register_sessions_module, register_sessions_module_with_api, DaemonSessionApi, ResponsePart,
+};
+#[cfg(feature = "send")]
+pub use team::{
+    register_team_module, register_team_module_stub, DaemonTeamApi, LuaClassifyFn,
+    LuaSupervisorDecideFn, LuaSupervisorDecision, TeamHandle, TeamHistoryEntry,
 };
 pub use tools_api::{register_tools_module, register_tools_module_with_api, DaemonToolsApi};

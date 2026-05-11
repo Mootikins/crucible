@@ -60,12 +60,12 @@ pub struct Supervisor {
 }
 
 impl Supervisor {
-    pub fn new(
-        ctx: TeamCtx,
-        agents: Vec<String>,
-        decider: Arc<dyn SupervisorDecider>,
-    ) -> Self {
-        Self { ctx, agents, decider }
+    pub fn new(ctx: TeamCtx, agents: Vec<String>, decider: Arc<dyn SupervisorDecider>) -> Self {
+        Self {
+            ctx,
+            agents,
+            decider,
+        }
     }
 
     /// Run the supervisor loop until [`SupervisorDecision::Done`].

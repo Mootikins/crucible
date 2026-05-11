@@ -56,8 +56,7 @@ impl Router {
         // `run` concurrently for the same Router (each call still spawns
         // sequentially relative to its own future, but a caller could
         // share the Router across tasks).
-        self.ctx
-            .register_context(self.routes.len().max(1) as u32)?;
+        self.ctx.register_context(self.routes.len().max(1) as u32)?;
 
         let route_key = self
             .classifier

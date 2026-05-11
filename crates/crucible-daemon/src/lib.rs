@@ -59,6 +59,7 @@ pub mod skills;
 pub mod storage;
 pub mod subscription;
 pub mod team;
+pub mod team_bridge;
 pub mod test_support;
 pub mod tool_dispatch;
 pub mod tools;
