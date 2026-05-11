@@ -559,6 +559,7 @@ mod tests {
             output_validation: Default::default(),
             validation_retries: 3,
             autocompact_threshold: None,
+            grammar: None,
         }
     }
 

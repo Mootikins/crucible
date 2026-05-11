@@ -16,6 +16,7 @@
 //! let custom = Grammar::new(r#"root ::= "yes" | "no""#);
 //! ```
 
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use thiserror::Error;
 
@@ -41,11 +42,12 @@ pub type GrammarResult<T> = Result<T, GrammarError>;
 /// - Structured tool calling
 /// - JSON output
 /// - Enum-like responses
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Grammar {
     /// Raw GBNF content
     pub content: String,
     /// Optional name/description
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 }
 

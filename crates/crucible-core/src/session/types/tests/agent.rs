@@ -35,6 +35,7 @@ fn test_session_agent_serialization() {
         output_validation: OutputValidation::default(),
         validation_retries: default_validation_retries(),
         autocompact_threshold: None,
+        grammar: None,
     };
 
     let json = serde_json::to_string(&agent).unwrap();
@@ -83,6 +84,7 @@ fn test_session_agent_typed_provider_serialization() {
         output_validation: OutputValidation::default(),
         validation_retries: default_validation_retries(),
         autocompact_threshold: None,
+        grammar: None,
     };
 
     let json = serde_json::to_string(&agent).unwrap();
@@ -134,6 +136,7 @@ fn test_session_agent_typed_provider_round_trip() {
         output_validation: OutputValidation::default(),
         validation_retries: default_validation_retries(),
         autocompact_threshold: None,
+        grammar: None,
     };
 
     let json = serde_json::to_string(&original).unwrap();
@@ -178,6 +181,7 @@ fn test_session_agent_with_capabilities() {
         output_validation: OutputValidation::default(),
         validation_retries: default_validation_retries(),
         autocompact_threshold: None,
+        grammar: None,
     };
 
     let json = serde_json::to_string(&agent).unwrap();
@@ -222,6 +226,7 @@ fn test_session_agent_with_agent_description() {
         output_validation: OutputValidation::default(),
         validation_retries: default_validation_retries(),
         autocompact_threshold: None,
+        grammar: None,
     };
 
     let json = serde_json::to_string(&agent).unwrap();
@@ -276,6 +281,7 @@ fn test_session_agent_with_delegation_config() {
         output_validation: OutputValidation::default(),
         validation_retries: default_validation_retries(),
         autocompact_threshold: None,
+        grammar: None,
     };
 
     let json = serde_json::to_string(&agent).unwrap();
@@ -362,6 +368,7 @@ fn test_session_agent_round_trip_with_all_fields() {
         output_validation: OutputValidation::default(),
         validation_retries: default_validation_retries(),
         autocompact_threshold: None,
+        grammar: None,
     };
 
     let json = serde_json::to_string(&original).unwrap();

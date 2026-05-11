@@ -1,6 +1,7 @@
 //! Session agent configuration.
 
 use crate::config::{AgentProfile, BackendType, DelegationConfig};
+use crate::types::Grammar;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -124,6 +125,13 @@ pub struct SessionAgent {
     /// parsers) to disable. Range: 0.0..=1.0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub autocompact_threshold: Option<f32>,
+
+    /// GBNF grammar constraining LLM output. `None` = unconstrained.
+    /// Only honored by backends that support GBNF (llama.cpp today);
+    /// attaching to OpenAI/Anthropic-style backends hard-errors at
+    /// `set_grammar` time so callers can't silently lose the constraint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grammar: Option<Grammar>,
 }
 
 impl SessionAgent {
@@ -171,6 +179,7 @@ impl SessionAgent {
             output_validation: OutputValidation::default(),
             validation_retries: default_validation_retries(),
             autocompact_threshold: None,
+            grammar: None,
         }
     }
 }

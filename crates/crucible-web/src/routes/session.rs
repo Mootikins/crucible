@@ -275,6 +275,7 @@ async fn create_session(
         output_validation: OutputValidation::default(),
         validation_retries: 3,
         autocompact_threshold: None,
+        grammar: None,
     };
 
     state
