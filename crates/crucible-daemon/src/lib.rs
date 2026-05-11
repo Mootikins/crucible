@@ -58,6 +58,7 @@ pub mod session_storage;
 pub mod skills;
 pub mod storage;
 pub mod subscription;
+pub mod team;
 pub mod test_support;
 pub mod tool_dispatch;
 pub mod tools;
