@@ -1273,6 +1273,145 @@ mod tests {
         assert!(manager.list().await.is_empty());
     }
 
+    // =========================================================================
+    // Memory Scoping — Lance post-filter
+    // =========================================================================
+    //
+    // These tests verify the LanceDB → SQLite post-filter pipeline. Lance
+    // is the similarity oracle; SQLite is the scope oracle. A hit must
+    // pass BOTH to reach the caller.
+
+    /// Default LanceDB dim (matches `LanceVectorIndex::open`).
+    const LANCE_DIM: usize = 768;
+
+    fn unit_embedding() -> Vec<f32> {
+        let mut v = vec![0.0_f32; LANCE_DIM];
+        v[0] = 1.0;
+        v
+    }
+
+    /// Seed a note into a kiln by upserting a NoteRecord with both a
+    /// known embedding (so Lance picks it up) and an explicit scope.
+    async fn seed_note_with_scope(
+        km: &KilnManager,
+        kiln: &Path,
+        path: &str,
+        scope: crucible_core::storage::Scope,
+    ) {
+        let handle = km.get_or_open(kiln).await.unwrap();
+        let emb = unit_embedding();
+        let record =
+            crucible_core::storage::NoteRecord::new(path, crucible_core::parser::BlockHash::zero())
+                .with_title(path)
+                .with_embedding(emb.clone())
+                .with_scope(scope);
+
+        // Upsert into SQLite (scope-stamped) and Lance (vector key).
+        let store = handle.as_note_store();
+        store.upsert(record.clone()).await.unwrap();
+        // Lance keys by note path; if upsert fails the test will surface
+        // it as an empty hit list (the assertion below).
+        handle
+            .vectors
+            .upsert(path, emb)
+            .await
+            .expect("Lance upsert");
+    }
+
+    #[tokio::test]
+    async fn lance_search_vectors_post_filters_by_scope() {
+        let tmp = TempDir::new().unwrap();
+        let kiln_path = tmp.path().to_path_buf();
+        std::fs::create_dir_all(kiln_path.join(".crucible")).unwrap();
+        let km = KilnManager::new();
+        km.open(&kiln_path).await.unwrap();
+
+        seed_note_with_scope(
+            &km,
+            &kiln_path,
+            "own.md",
+            crucible_core::storage::Scope::workspace(&kiln_path),
+        )
+        .await;
+        seed_note_with_scope(
+            &km,
+            &kiln_path,
+            "stranger.md",
+            crucible_core::storage::Scope::Workspace {
+                path: std::path::PathBuf::from("/some/other/kiln"),
+            },
+        )
+        .await;
+        seed_note_with_scope(
+            &km,
+            &kiln_path,
+            "public.md",
+            crucible_core::storage::Scope::Global,
+        )
+        .await;
+
+        let handle = km.get(&kiln_path).await.unwrap();
+        let query = unit_embedding();
+
+        // Authority = this kiln's workspace. own.md + public.md must
+        // appear, stranger.md must NOT.
+        let auth = crucible_core::storage::Scope::workspace(&kiln_path);
+        let hits = handle
+            .search_vectors_scoped(query, 10, &auth)
+            .await
+            .unwrap();
+        let ids: Vec<_> = hits.iter().map(|(id, _)| id.as_str()).collect();
+        assert!(ids.contains(&"own.md"), "got: {:?}", ids);
+        assert!(ids.contains(&"public.md"), "got: {:?}", ids);
+        assert!(
+            !ids.contains(&"stranger.md"),
+            "Lance post-filter leaked cross-scope: {:?}",
+            ids
+        );
+    }
+
+    #[tokio::test]
+    async fn lance_results_excluded_when_scope_mismatch() {
+        // A pure-cross-scope kiln (every note belongs to a stranger workspace)
+        // returns an empty hit list under workspace authority.
+        let tmp = TempDir::new().unwrap();
+        let kiln_path = tmp.path().to_path_buf();
+        std::fs::create_dir_all(kiln_path.join(".crucible")).unwrap();
+        let km = KilnManager::new();
+        km.open(&kiln_path).await.unwrap();
+
+        seed_note_with_scope(
+            &km,
+            &kiln_path,
+            "alien_a.md",
+            crucible_core::storage::Scope::Workspace {
+                path: std::path::PathBuf::from("/strangers/A"),
+            },
+        )
+        .await;
+        seed_note_with_scope(
+            &km,
+            &kiln_path,
+            "alien_b.md",
+            crucible_core::storage::Scope::Workspace {
+                path: std::path::PathBuf::from("/strangers/B"),
+            },
+        )
+        .await;
+
+        let handle = km.get(&kiln_path).await.unwrap();
+        let auth = crucible_core::storage::Scope::workspace(&kiln_path);
+        let hits = handle
+            .search_vectors_scoped(unit_embedding(), 10, &auth)
+            .await
+            .unwrap();
+        assert!(
+            hits.is_empty(),
+            "every note is cross-scope, must return no hits — got {:?}",
+            hits
+        );
+    }
+
     #[test]
     fn normalize_note_path_strips_absolute_prefix() {
         let tmp = TempDir::new().unwrap();
