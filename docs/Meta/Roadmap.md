@@ -68,15 +68,20 @@ Waves are dependency-ordered. **Items inside a wave can be parallelized**; later
 - ✅ **`session.fork()`** — already shipped in `cru.sessions.fork(id, opts)` before this wave.
 - ✅ **LuaCATS Type Stubs** — auto-generates on daemon start to `~/.config/crucible/luals/`; `cru.context` added to `UNIVERSAL_MODULES`.
 
-### Wave 2 — Agent learning & teams (depends on Wave 1)
+### Wave 2 — Agent learning & teams (shipped 2026-05-11)
 
-> `cru.tools.call`, `cru.tools.batch`, and `cru.sessions.messages/inject/collect_subagents` all shipped — these enable runtime plugins to do real work.
+> 5 roadmap items shipped as 4 features: `entity-memory` + `session-digest` collapsed into one plugin running ONE LLM pass at session end (per-turn extraction rejected as 10-30% generation overhead). Memory Scoping reframed as a security boundary enforced at the storage query layer, not a tag filter.
 
-- **`entity-memory` runtime plugin** — facts → atomic notes via `turn:complete` hook; deduplicates against existing entity notes via `semantic_search`
-- **`session-digest` runtime plugin** — completed sessions → linked notes; captures decisions, topics, entities
-- **Memory Scoping** — per-user / workspace / global tagging; precognition filters by active scope. Depends on entity-memory tagging convention.
-- **Team Patterns** (core Rust) — supervisor / router / broadcast on existing subagent infrastructure
-- **Grammar + Lua Integration** — constrained generation for structured agent outputs (parallel; weak dep on type stubs)
+- ✅ **`session-digest` runtime plugin** — completed sessions → linked notes (digests + atomic entity notes) via `on_session_end` hook; one LLM call per session, grammar-constrained JSON output, dedupes entities via `cru.kiln.search`. Absorbs `entity-memory` (which would have been a redundant second pass).
+- ✅ **Memory Scoping** — `Scope::User/Workspace/Global` enforced at `SqliteNoteStore` and Lance post-filter; write-side validation prevents privilege escalation; raw-SQL escape hatch gated to `#[cfg(test)]`. Scope elevation deferred to a later wave.
+- ✅ **Team Patterns** (core Rust) — `cru.team.{supervisor, router, broadcast}` on top of existing subagent infrastructure; supervisor sequential, broadcast parallel via `tokio::join_all`.
+- ✅ **Grammar + Lua Integration** — `cru.grammar.{new, presets, set/clear/get_session_grammar}` with GBNF; hard-error on backends that don't support grammar (no silent fallback). Wired through `SessionAgent` config + RPC.
+
+> Prerequisites that landed alongside the wave: `cru.kiln.create_note` (writes notes + reindexes), `cru.kiln.search` (semantic search wired to daemon vectors), and enriched `Session` userdata (`kiln_path`, `agent_name`, `end_reason`) on the `on_session_end` hook.
+
+Known follow-ups (tracked separately, not blocking Wave 3):
+- Wire `upgrade_with_team` into the session lifecycle so `cru.team.*` invokes real subagents (currently the bridge exists but isn't called from `Server::run`).
+- Wire llama-cpp backend to consume `SessionAgent.grammar` — until then `supports_grammar()` returns `false` everywhere and `set_session_grammar` hard-errors. The session-digest plugin gracefully degrades to prompt-only JSON discipline.
 
 ### Wave 3 — Workflows Phase 2 (parser + engine landed; finish out)
 
