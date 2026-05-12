@@ -46,7 +46,11 @@ pub(crate) async fn handle_lua_init_session(
 
     lua_sessions.insert(
         session_id.clone(),
-        Arc::new(Mutex::new(LuaSessionState { executor, registry })),
+        Arc::new(Mutex::new(LuaSessionState {
+            executor,
+            registry,
+            end_hooks_fired: false,
+        })),
     );
 
     Response::success(
@@ -197,29 +201,38 @@ pub(crate) async fn handle_lua_shutdown_session(
     // chance to run `on_session_end` handlers, so we tag the reason as
     // `Shutdown`.
     //
-    // If `session.end` already fired (reason=User), this call will fire the
-    // hooks again with reason=Shutdown. Plugins must therefore be idempotent
-    // (e.g. the OCI plugin guards with `if not active then return end`).
+    // Daemon ensures one fire per session lifecycle: whichever of
+    // `session.end` (reason=User) or `lua.shutdown_session` (reason=Shutdown)
+    // arrives first sets `end_hooks_fired`; the second is a no-op. Plugins
+    // do NOT need to be idempotent.
     let daemon_session = sessions.get_session(session_id);
     if let Some(state) = lua_sessions.get(session_id) {
         let state = state.value().clone();
         let mut state = state.lock().await;
-        if let Err(e) = state.executor.sync_session_end_hooks() {
-            warn!(session_id = %session_id, error = %e, "Failed to sync session_end hooks");
-        }
-        if let Some(session) = state.executor.session_manager().get_current() {
-            if let Some(ds) = daemon_session.as_ref() {
-                session.set_kiln_path(ds.kiln.to_string_lossy().to_string());
-                if let Some(agent) = ds.agent.as_ref() {
-                    if let Some(name) = agent.agent_name.as_deref() {
-                        session.set_agent_name(name);
+        if state.end_hooks_fired {
+            tracing::debug!(
+                session_id = %session_id,
+                "on_session_end hooks already fired; skipping"
+            );
+        } else {
+            if let Err(e) = state.executor.sync_session_end_hooks() {
+                warn!(session_id = %session_id, error = %e, "Failed to sync session_end hooks");
+            }
+            if let Some(session) = state.executor.session_manager().get_current() {
+                if let Some(ds) = daemon_session.as_ref() {
+                    session.set_kiln_path(ds.kiln.to_string_lossy().to_string());
+                    if let Some(agent) = ds.agent.as_ref() {
+                        if let Some(name) = agent.agent_name.as_deref() {
+                            session.set_agent_name(name);
+                        }
                     }
                 }
+                session.set_end_reason(crucible_core::session::EndReason::Shutdown);
+                if let Err(e) = state.executor.fire_session_end_hooks(&session) {
+                    warn!(session_id = %session_id, error = %e, "Failed to fire session_end hooks");
+                }
             }
-            session.set_end_reason(crucible_core::session::EndReason::Shutdown);
-            if let Err(e) = state.executor.fire_session_end_hooks(&session) {
-                warn!(session_id = %session_id, error = %e, "Failed to fire session_end hooks");
-            }
+            state.end_hooks_fired = true;
         }
     }
 
