@@ -121,22 +121,40 @@ pub trait LuaClassifyFn: Send + Sync {
 /// Stub: register `cru.team.*` with placeholders that return
 /// `(nil, "no daemon connected")`. Lets the stub generator and pre-daemon
 /// init phase reference `cru.team` without crashing.
+///
+/// Each stub also emits a `tracing::warn!` when fired so that running
+/// against the stub at runtime is loud — the daemon MUST call
+/// `upgrade_with_team` after construction to replace these. If the warn
+/// fires in production, `Server::run` regressed (e.g. someone deleted the
+/// `upgrade_with_team` call again).
 pub fn register_team_module_stub(lua: &Lua) -> Result<(), LuaError> {
     let team = lua.create_table()?;
 
     let supervisor = lua.create_function(|lua, _opts: Table| {
+        tracing::warn!(
+            "cru.team.supervisor called but daemon never upgraded the team module \
+             (Server::run is missing upgrade_with_team)"
+        );
         let err = lua.create_string("no daemon connected")?;
         Ok((Value::Nil, Value::String(err)))
     })?;
     team.set("supervisor", supervisor)?;
 
     let router = lua.create_function(|lua, _opts: Table| {
+        tracing::warn!(
+            "cru.team.router called but daemon never upgraded the team module \
+             (Server::run is missing upgrade_with_team)"
+        );
         let err = lua.create_string("no daemon connected")?;
         Ok((Value::Nil, Value::String(err)))
     })?;
     team.set("router", router)?;
 
     let broadcast = lua.create_async_function(|lua, _args: (Value, String)| async move {
+        tracing::warn!(
+            "cru.team.broadcast called but daemon never upgraded the team module \
+             (Server::run is missing upgrade_with_team)"
+        );
         let err = lua.create_string("no daemon connected")?;
         Ok((Value::Nil, Value::String(err)))
     })?;
