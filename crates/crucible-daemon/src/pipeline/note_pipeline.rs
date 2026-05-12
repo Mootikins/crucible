@@ -454,14 +454,16 @@ impl NotePipeline {
 /// Ensure `properties["scope"]` is present and bound. See
 /// [`NotePipeline::enriched_to_record`] for precedence rules.
 ///
-/// - If `properties["scope"]` is missing → stamp `workspace` derived from
-///   `kiln_root`. If `kiln_root` is also missing (rare, test-only),
-///   stamp `Scope::Global` so existence is preserved but the visibility
-///   defaults to the safest workspace-derived form when known.
+/// - If `properties["scope"]` is missing or unparseable → stamp `workspace`
+///   derived from `kiln_root` (canonicalized if possible).
 /// - If `properties["scope"]` is an unbound workspace placeholder (the
 ///   frontmatter said `scope: workspace` with no path) → bind it to
 ///   `kiln_root`.
 /// - Otherwise leave the property as-is.
+///
+/// If `kiln_root` is `None` (rare, test-only) the property is stamped with
+/// an unbound workspace placeholder — the post-prune storage layer treats
+/// an unbound scope as invisible to every authority, which fails closed.
 ///
 /// Public-in-crate so tests can exercise the migration logic directly
 /// without spinning up a full pipeline.
@@ -472,22 +474,24 @@ pub(crate) fn stamp_scope_on_properties(
     use crucible_core::storage::note_store::SCOPE_PROPERTY_KEY;
     use crucible_core::storage::Scope;
 
+    // Pre-prune `from_property_value` returned `Option<Scope>`. It now
+    // returns `Option<Result<Scope, ScopeError>>` because legacy `global`
+    // and `user:*` kinds are refused. Treat any error as "missing" so a
+    // stale frontmatter `scope: global` flips back to the kiln workspace.
     let existing = properties
         .get(SCOPE_PROPERTY_KEY)
-        .and_then(Scope::from_property_value);
+        .and_then(|v| Scope::from_property_value(v).and_then(Result::ok));
 
     let bound = match existing {
-        Some(scope) if scope.is_unbound_workspace() => {
-            // `scope: workspace` (no path) → bind to kiln root.
-            match kiln_root {
-                Some(root) => scope.bind_to_workspace(root),
-                None => Scope::Global,
-            }
-        }
+        Some(scope) if scope.is_unbound_workspace() => match kiln_root {
+            Some(root) => scope.bind_to_workspace(root),
+            None => scope,
+        },
         Some(scope) => scope,
         None => match kiln_root {
-            Some(root) => Scope::workspace(root),
-            None => Scope::Global,
+            Some(root) => Scope::workspace(root)
+                .unwrap_or_else(|_| Scope::workspace_unchecked(root)),
+            None => Scope::workspace_unchecked(std::path::PathBuf::new()),
         },
     };
 

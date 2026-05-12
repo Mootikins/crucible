@@ -267,10 +267,10 @@ mod tests {
     }
 
     /// Memory-scoping regression: `SqliteClientHandle::as_knowledge_repository()`
-    /// MUST bind to the handle's kiln path so reads enforce
-    /// `Scope::Workspace(kiln)` authority. Pre-fix this method dropped any
-    /// kiln path and the resulting repo defaulted to `Scope::Global` —
-    /// leaking user-scoped notes into every precognition turn.
+    /// MUST bind to the handle's kiln path so reads enforce same-workspace
+    /// authority. Pre-fix this method dropped the kiln path and the
+    /// resulting repo defaulted to an unbound authority — leaking
+    /// sibling-workspace notes into every precognition turn.
     #[tokio::test]
     async fn as_knowledge_repository_is_kiln_scoped() {
         use crucible_core::parser::BlockHash;
@@ -279,6 +279,7 @@ mod tests {
 
         let tempdir = TempDir::new().unwrap();
         let kiln_root = tempdir.path().to_path_buf();
+        let sibling_root = tempdir.path().join("sibling-elsewhere");
         let db_path = kiln_root.join("test.db");
         let config = SqliteConfig::new(&db_path);
 
@@ -287,24 +288,26 @@ mod tests {
             .unwrap()
             .with_kiln_path(kiln_root.clone());
 
-        // Seed a user-scoped note that workspace authority must NOT see.
-        let alice = NoteRecord {
-            path: "notes/alice.md".to_string(),
+        // Seed a sibling-workspace note that this kiln's authority must NOT see.
+        let alien = NoteRecord {
+            path: "notes/alien.md".to_string(),
             content_hash: BlockHash::zero(),
             embedding: Some(vec![1.0, 0.0]),
-            title: "Alice".to_string(),
+            title: "Alien".to_string(),
             tags: vec![],
             links_to: vec![],
             properties: Default::default(),
             updated_at: chrono::Utc::now(),
             ..Default::default()
         }
-        .with_scope(crucible_core::storage::Scope::user("alice"));
-        NoteStore::upsert(client.as_note_store().as_ref(), alice)
+        .with_scope(crucible_core::storage::Scope::workspace_unchecked(
+            &sibling_root,
+        ));
+        NoteStore::upsert(client.as_note_store().as_ref(), alien)
             .await
             .unwrap();
 
-        // Seed a workspace-scoped note that workspace authority CAN see.
+        // Seed an own-workspace note that authority CAN see.
         let ws_note = NoteRecord {
             path: "notes/visible.md".to_string(),
             content_hash: BlockHash::zero(),
@@ -316,7 +319,9 @@ mod tests {
             updated_at: chrono::Utc::now(),
             ..Default::default()
         }
-        .with_scope(crucible_core::storage::Scope::workspace(&kiln_root));
+        .with_scope(crucible_core::storage::Scope::workspace_unchecked(
+            &kiln_root,
+        ));
         NoteStore::upsert(client.as_note_store().as_ref(), ws_note)
             .await
             .unwrap();

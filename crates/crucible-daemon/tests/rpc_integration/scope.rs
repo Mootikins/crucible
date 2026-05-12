@@ -60,7 +60,7 @@ async fn search_vectors_rpc_accepts_scope_param() {
             kiln_dir.path(),
             &vec![0.1; 768],
             5,
-            Some(Scope::workspace(kiln_dir.path())),
+            Some(Scope::workspace_unchecked(kiln_dir.path())),
         )
         .await;
 
@@ -95,7 +95,10 @@ async fn list_notes_rpc_filters_by_scope() {
     // Seed a note in workspace authority. A client passing a stranger
     // workspace should see zero results.
     let (server, kiln_path, client) =
-        seed_scope_test(Scope::workspace(std::env::temp_dir().join("never-used"))).await;
+        seed_scope_test(Scope::workspace_unchecked(
+            std::env::temp_dir().join("never-used"),
+        ))
+        .await;
 
     // List with the actual kiln's workspace scope — depending on how
     // canonicalization works for the seeded scope, the note may or may

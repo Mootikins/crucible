@@ -13,7 +13,12 @@ use crucible_core::storage::Scope;
 /// so callers can surface a precise `INVALID_PARAMS` response.
 fn decode_request_scope(req: &Request, kiln_path: &Path) -> Result<Scope, String> {
     match req.params.get("scope") {
-        Some(serde_json::Value::Null) | None => Ok(Scope::workspace(kiln_path)),
+        // No explicit scope — bind to the kiln. Canonicalization is best-
+        // effort; if the kiln path doesn't yet resolve (e.g. during early
+        // setup) we fall back to the unchecked path so the request still
+        // reaches the storage layer.
+        Some(serde_json::Value::Null) | None => Ok(Scope::workspace(kiln_path)
+            .unwrap_or_else(|_| Scope::workspace_unchecked(kiln_path))),
         Some(v) => serde_json::from_value::<Scope>(v.clone())
             .map_err(|e| format!("invalid `scope` param: {}", e)),
     }

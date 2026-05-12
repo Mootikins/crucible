@@ -100,16 +100,18 @@ pub fn register_vault_module(lua: &Lua) -> Result<(), LuaError> {
 
 /// Register the kiln module with NoteStore for database-backed queries.
 ///
-/// Equivalent to [`register_vault_module_with_store_scoped`] with
-/// `Scope::Global` — i.e. no scope filtering. Production callers should
-/// use the `_scoped` variant with the kiln's workspace scope so a Lua
-/// plugin cannot read notes from other workspaces via `cru.kiln.list` /
-/// `cru.kiln.get`.
+/// Test/convenience wrapper: passes an unbound workspace authority so notes
+/// with no `scope:` property stay invisible. Production daemon callers
+/// must use the `_scoped` variant with the kiln workspace path.
 pub fn register_vault_module_with_store(
     lua: &Lua,
     store: Arc<dyn NoteStore>,
 ) -> Result<(), LuaError> {
-    register_vault_module_with_store_scoped(lua, store, Scope::Global)
+    register_vault_module_with_store_scoped(
+        lua,
+        store,
+        Scope::workspace_unchecked(std::path::PathBuf::new()),
+    )
 }
 
 /// Scoped variant: every `cru.kiln.list` and `cru.kiln.get` call is

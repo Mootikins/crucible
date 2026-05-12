@@ -56,7 +56,10 @@ impl KilnTools {
         // Use indexed data from NoteStore when available — workspace
         // authority bound to this MCP server's kiln.
         if let Some(store) = &self.note_store {
-            let authority = crucible_core::storage::Scope::workspace(&self.kiln_path);
+            let authority = crucible_core::storage::Scope::workspace(&self.kiln_path)
+                .unwrap_or_else(|_| {
+                    crucible_core::storage::Scope::workspace_unchecked(&self.kiln_path)
+                });
             let notes = store.list(&authority).await.map_err(|e| rmcp::ErrorData {
                 code: rmcp::model::ErrorCode(-32603), // INTERNAL_ERROR
                 message: format!("Failed to list notes: {e}").into(),

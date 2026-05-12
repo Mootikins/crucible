@@ -128,7 +128,8 @@ pub use fs::register_fs_module;
 pub use graph::{
     register_graph_module, register_graph_module_full, register_graph_module_with_all,
     register_graph_module_with_executor, register_graph_module_with_store,
-    register_graph_view_functions, register_note_store_functions,
+    register_graph_module_with_store_scoped, register_graph_view_functions,
+    register_note_store_functions,
 };
 pub use hooks::{
     fire_tools_registered_hooks, get_session_start_hooks, get_tools_registered_hooks,
@@ -161,7 +162,7 @@ pub use timer::register_timer_module;
 pub use types::{LuaExecutionResult, LuaTool, ToolParam, ToolResult};
 pub use vault::{
     register_vault_module, register_vault_module_full, register_vault_module_with_graph,
-    register_vault_module_with_store,
+    register_vault_module_with_store, register_vault_module_with_store_scoped,
 };
 pub use ws::register_ws_module;
 

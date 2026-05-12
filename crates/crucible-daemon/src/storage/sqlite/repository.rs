@@ -69,8 +69,9 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
         // present). Repos constructed via `new()` without a kiln path fall
         // back to `Global` — they're test/admin paths.
         let authority = match &self.kiln_path {
-            Some(p) => crucible_core::storage::Scope::workspace(p),
-            None => crucible_core::storage::Scope::Global,
+            Some(p) => crucible_core::storage::Scope::workspace(p)
+                .unwrap_or_else(|_| crucible_core::storage::Scope::workspace_unchecked(p)),
+            None => crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new()),
         };
 
         // Get all notes and find one matching by path or title
@@ -120,8 +121,9 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
         use crucible_core::storage::NoteStore;
 
         let authority = match &self.kiln_path {
-            Some(p) => crucible_core::storage::Scope::workspace(p),
-            None => crucible_core::storage::Scope::Global,
+            Some(p) => crucible_core::storage::Scope::workspace(p)
+                .unwrap_or_else(|_| crucible_core::storage::Scope::workspace_unchecked(p)),
+            None => crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new()),
         };
 
         let notes =
@@ -160,10 +162,11 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
     async fn search_vectors(&self, vector: Vec<f32>) -> CrucibleResult<Vec<SearchResult>> {
         use crucible_core::storage::{Filter, NoteStore};
 
-        let scope_filter = self
-            .kiln_path
-            .as_ref()
-            .map(|p| Filter::Scope(crucible_core::storage::Scope::workspace(p)));
+        let scope_filter = self.kiln_path.as_ref().map(|p| {
+            let scope = crucible_core::storage::Scope::workspace(p)
+                .unwrap_or_else(|_| crucible_core::storage::Scope::workspace_unchecked(p));
+            Filter::Scope(scope)
+        });
 
         let results = self
             .store
@@ -386,24 +389,25 @@ mod tests {
     }
 
     /// Memory-scoping regression test: a `KnowledgeRepository` bound to a
-    /// kiln must NOT return notes scoped to other users.
+    /// kiln must NOT return notes scoped to a sibling workspace.
     ///
     /// Pre-fix, `KilnManager::as_knowledge_repository()` flowed through
     /// `SqliteClientHandle::as_knowledge_repository()` which constructed
     /// `SqliteKnowledgeRepository::new(store)` with `kiln_path: None`.
-    /// That made every read default to `Scope::Global` authority — leaking
-    /// `User`-scoped notes (and any other workspace's notes) into precognition.
+    /// That made every read default to an unbound authority — leaking
+    /// notes from other workspaces into precognition.
     #[tokio::test]
-    async fn precognition_does_not_see_user_scoped_notes_from_other_users() {
+    async fn precognition_does_not_see_sibling_workspace_notes() {
         let tempdir = tempfile::TempDir::new().unwrap();
         let kiln_root = tempdir.path().to_path_buf();
+        let sibling_root = tempdir.path().join("sibling-elsewhere");
 
         let config = SqliteConfig::memory();
         let pool = SqlitePool::new(config).unwrap();
         let store = create_note_store(pool).await.unwrap();
         let store_arc = Arc::new(store);
 
-        // Workspace-scoped note: visible to a session running in this kiln.
+        // Own-workspace note.
         let workspace_note = NoteRecord {
             path: "notes/workspace_only.md".to_string(),
             content_hash: BlockHash::zero(),
@@ -415,34 +419,36 @@ mod tests {
             updated_at: Utc::now(),
             ..Default::default()
         }
-        .with_scope(crucible_core::storage::Scope::workspace(&kiln_root));
+        .with_scope(crucible_core::storage::Scope::workspace_unchecked(
+            &kiln_root,
+        ));
         NoteStore::upsert(store_arc.as_ref(), workspace_note)
             .await
             .unwrap();
 
-        // User-scoped note for alice: should NEVER appear in workspace reads.
-        let alice_note = NoteRecord {
-            path: "notes/alice_private.md".to_string(),
+        // Sibling-workspace note: should NEVER appear in this kiln's reads.
+        let sibling_note = NoteRecord {
+            path: "notes/sibling_private.md".to_string(),
             content_hash: BlockHash::zero(),
             embedding: Some(vec![0.5, 0.5, 0.0]),
-            title: "Alice Private".to_string(),
+            title: "Sibling Private".to_string(),
             tags: vec![],
             links_to: vec![],
             properties: Default::default(),
             updated_at: Utc::now(),
             ..Default::default()
         }
-        .with_scope(crucible_core::storage::Scope::user("alice"));
-        NoteStore::upsert(store_arc.as_ref(), alice_note)
+        .with_scope(crucible_core::storage::Scope::workspace_unchecked(
+            &sibling_root,
+        ));
+        NoteStore::upsert(store_arc.as_ref(), sibling_note)
             .await
             .unwrap();
 
-        // The kiln-bound repo: every read derives a Workspace authority
-        // from the bound kiln path. Workspace cannot read User scopes.
         let repo =
             SqliteKnowledgeRepository::with_kiln_path(Arc::clone(&store_arc), kiln_root.clone());
 
-        // list_notes must only see the workspace note.
+        // list_notes must only see the own-workspace note.
         let listed = repo.list_notes(None).await.unwrap();
         assert_eq!(
             listed.len(),
@@ -452,20 +458,17 @@ mod tests {
         );
         assert_eq!(listed[0].path, "notes/workspace_only.md");
 
-        // get_note_by_name must not surface the user-scoped note.
-        let alice_hit = repo.get_note_by_name("Alice Private").await.unwrap();
+        let sibling_hit = repo.get_note_by_name("Sibling Private").await.unwrap();
         assert!(
-            alice_hit.is_none(),
-            "user-scoped 'Alice Private' note leaked through workspace-authority read"
+            sibling_hit.is_none(),
+            "sibling-workspace 'Sibling Private' leaked through workspace-authority read"
         );
 
-        // search_vectors must only return the workspace-scoped note even
-        // when both notes share the same embedding.
         let results = repo.search_vectors(vec![0.5, 0.5, 0.0]).await.unwrap();
         for result in &results {
             assert_ne!(
-                result.document_id.0, "notes/alice_private.md",
-                "user-scoped 'alice_private.md' leaked into vector search"
+                result.document_id.0, "notes/sibling_private.md",
+                "sibling-workspace 'sibling_private.md' leaked into vector search"
             );
         }
     }

@@ -253,7 +253,15 @@ pub fn register_graph_module_with_executor(
 /// end
 /// ```
 pub fn register_note_store_functions(lua: &Lua, store: Arc<dyn NoteStore>) -> Result<(), LuaError> {
-    register_note_store_functions_scoped(lua, store, crucible_core::storage::Scope::Global)
+    // Test/convenience callers: pass an unbound workspace authority. Notes
+    // upserted without a `scope:` property are invisible (note.scope() ==
+    // None → denied). Real production callers should use the `_scoped`
+    // variant with the active kiln's workspace path.
+    register_note_store_functions_scoped(
+        lua,
+        store,
+        crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new()),
+    )
 }
 
 /// Same as [`register_note_store_functions`] but scoped: every read through
@@ -330,7 +338,12 @@ pub fn register_graph_module_with_store(
     lua: &Lua,
     store: Arc<dyn NoteStore>,
 ) -> Result<(), LuaError> {
-    register_graph_module_with_store_scoped(lua, store, crucible_core::storage::Scope::Global)
+    // See [`register_note_store_functions`] — test/convenience wrapper.
+    register_graph_module_with_store_scoped(
+        lua,
+        store,
+        crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new()),
+    )
 }
 
 /// Same as [`register_graph_module_with_store`] but scoped — see

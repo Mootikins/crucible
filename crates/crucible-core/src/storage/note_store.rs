@@ -184,14 +184,15 @@ impl NoteRecord {
 
     /// Read the note's [`Scope`] from `properties["scope"]`.
     ///
-    /// Returns `None` if the property is unset or unparseable. Callers that
-    /// need a guaranteed scope (e.g. RPC handlers enforcing read filters)
-    /// should treat `None` as "deny" or fall back to a derived default —
-    /// never as "allow".
+    /// Returns `None` if the property is unset, unparseable, or refers to a
+    /// no-longer-supported kind (`global`, `user:*` from the pre-Wave-2
+    /// schema). Callers that need a guaranteed scope (e.g. RPC handlers
+    /// enforcing read filters) should treat `None` as "deny" or fall back
+    /// to a derived default — never as "allow".
     pub fn scope(&self) -> Option<Scope> {
         self.properties
             .get(SCOPE_PROPERTY_KEY)
-            .and_then(Scope::from_property_value)
+            .and_then(|v| Scope::from_property_value(v).and_then(Result::ok))
     }
 
     /// Set the note's [`Scope`] into `properties["scope"]`.

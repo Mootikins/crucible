@@ -301,7 +301,8 @@ impl SearchTools {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         // Get all notes from the store — workspace authority derived from
         // the kiln this MCP server is bound to.
-        let authority = crucible_core::storage::Scope::workspace(&self.kiln_path);
+        let authority = crucible_core::storage::Scope::workspace(&self.kiln_path)
+            .unwrap_or_else(|_| crucible_core::storage::Scope::workspace_unchecked(&self.kiln_path));
         let all_notes = note_store
             .list(&authority)
             .await

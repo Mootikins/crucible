@@ -249,12 +249,10 @@ impl NoteStore for DaemonNoteStore {
     }
 
     async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
-        // Internal existence check — Global authority (see note on
-        // SqliteNoteStore::upsert about pipeline/bookkeeping paths).
-        let existed = self
-            .get(path, &crucible_core::storage::Scope::Global)
-            .await?
-            .is_some();
+        // Internal existence check bound to this client's kiln so the
+        // bookkeeping `get` doesn't need an admin authority.
+        let authority = crucible_core::storage::Scope::workspace_unchecked(self.client.kiln_path());
+        let existed = self.get(path, &authority).await?.is_some();
 
         self.client
             .client
@@ -317,7 +315,9 @@ impl NoteStore for DaemonNoteStore {
         // Hydrate results — use the same authority for hydration as the
         // search itself so we never reveal a note that the search filter
         // would have hidden.
-        let hydration_authority = scope.unwrap_or(crucible_core::storage::Scope::Global);
+        let hydration_authority = scope.unwrap_or_else(|| {
+            crucible_core::storage::Scope::workspace_unchecked(self.client.kiln_path())
+        });
         let mut hits = Vec::with_capacity(results.len());
         for (doc_id, score) in results {
             if let Ok(Some(note)) = self.get(&doc_id, &hydration_authority).await {

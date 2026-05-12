@@ -87,20 +87,6 @@ impl StorageHandle {
     /// stored at upsert time and looked up in SQLite if metadata hydration
     /// is required.
     ///
-    /// This unscoped variant is equivalent to
-    /// `search_vectors_scoped(vector, limit, &Scope::Global)` — i.e. the
-    /// caller acknowledges they have global authority. Most callers should
-    /// use [`Self::search_vectors_scoped`] with the active session's
-    /// derived scope so cross-scope hits are filtered out.
-    pub async fn search_vectors(
-        &self,
-        vector: Vec<f32>,
-        limit: usize,
-    ) -> Result<Vec<(String, f64)>> {
-        self.search_vectors_scoped(vector, limit, &crucible_core::storage::Scope::Global)
-            .await
-    }
-
     /// Scope-aware vector search.
     ///
     /// Over-fetches the Lance index (~2x `limit`, capped at 4x) so the
@@ -114,15 +100,6 @@ impl StorageHandle {
         limit: usize,
         authority: &crucible_core::storage::Scope,
     ) -> Result<Vec<(String, f64)>> {
-        // Global authority — no scope work needed beyond the vector search.
-        if matches!(authority, crucible_core::storage::Scope::Global) {
-            let matches = self.vectors.search(&vector, limit).await?;
-            return Ok(matches
-                .into_iter()
-                .map(|m| (m.id, m.similarity as f64))
-                .collect());
-        }
-
         let fetch = limit.max(1).saturating_mul(2).min(limit.max(1) * 4);
         let matches = self.vectors.search(&vector, fetch).await?;
 
@@ -1151,7 +1128,7 @@ mod tests {
             .unwrap();
 
         // Verify all 3 notes exist in the store
-        let auth = crucible_core::storage::Scope::Global;
+        let auth = crucible_core::storage::Scope::workspace_unchecked(&kiln_path);
         let notes = note_store.list(&auth).await.unwrap();
         assert_eq!(notes.len(), 3, "DB should contain 3 notes");
 
@@ -1314,7 +1291,7 @@ mod tests {
             &km,
             &kiln_path,
             "own.md",
-            crucible_core::storage::Scope::workspace(&kiln_path),
+            crucible_core::storage::Scope::workspace_unchecked(&kiln_path),
         )
         .await;
         seed_note_with_scope(
@@ -1326,27 +1303,18 @@ mod tests {
             },
         )
         .await;
-        seed_note_with_scope(
-            &km,
-            &kiln_path,
-            "public.md",
-            crucible_core::storage::Scope::Global,
-        )
-        .await;
-
         let handle = km.get(&kiln_path).await.unwrap();
         let query = unit_embedding();
 
-        // Authority = this kiln's workspace. own.md + public.md must
-        // appear, stranger.md must NOT.
-        let auth = crucible_core::storage::Scope::workspace(&kiln_path);
+        // Authority = this kiln's workspace. own.md must appear,
+        // stranger.md must NOT.
+        let auth = crucible_core::storage::Scope::workspace_unchecked(&kiln_path);
         let hits = handle
             .search_vectors_scoped(query, 10, &auth)
             .await
             .unwrap();
         let ids: Vec<_> = hits.iter().map(|(id, _)| id.as_str()).collect();
         assert!(ids.contains(&"own.md"), "got: {:?}", ids);
-        assert!(ids.contains(&"public.md"), "got: {:?}", ids);
         assert!(
             !ids.contains(&"stranger.md"),
             "Lance post-filter leaked cross-scope: {:?}",
@@ -1384,7 +1352,7 @@ mod tests {
         .await;
 
         let handle = km.get(&kiln_path).await.unwrap();
-        let auth = crucible_core::storage::Scope::workspace(&kiln_path);
+        let auth = crucible_core::storage::Scope::workspace_unchecked(&kiln_path);
         let hits = handle
             .search_vectors_scoped(unit_embedding(), 10, &auth)
             .await
