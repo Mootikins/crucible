@@ -67,14 +67,13 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 
 > Agents that get smarter over time. Learning is implemented as **notes in the kiln** — not opaque database stores. Entity facts, session summaries, and accumulated knowledge are all atomic zettelkasten-style markdown notes with wikilinks, tags, and frontmatter. This means agent memory is human-readable, editable, searchable via the existing knowledge graph, and available to precognition for future context injection.
 >
-> **Two-tier model**: Core Rust features (precognition, auto-linking) handle the fast path. Default runtime Lua plugins (entity-memory, session-digest) handle higher-level knowledge extraction. Both are toggleable and overridable. See [[#Core Agent Features]] and [[#Default Runtime Plugins]].
+> **Two-tier model**: Core Rust features (precognition, auto-linking) handle the fast path. Default runtime Lua plugins handle higher-level knowledge extraction. Both are toggleable and overridable. See [[#Core Agent Features]] and [[#Default Runtime Plugins]].
 >
 > **Informed by**: Agno framework analysis (2026-02). Agno uses six opaque DB-backed learning stores. Crucible's approach is strictly better — same learning capabilities but with human-readable, editable, wikilinked notes as the storage layer. Local embeddings, metadata (wikilinks, tags, frontmatter), and potential future LSP integration provide rich fetchable context without custom storage.
 
 - [x] **Precognition** `P0` — Auto-RAG: inject relevant kiln/session context before each agent turn; default on; `:set precognition`; the core differentiator — every conversation is knowledge-graph-aware · `crucible-cli`, `crucible-daemon` (acp)
 - [x] **Session Persistence** `P0` — Conversations saved as markdown + JSONL in kiln; indexed for semantic search · `crucible-daemon` (observe)
-- [x] **Session Digest Plugin** `P1` — Default runtime Lua plugin at `runtime/plugins/session-digest/`; ONE LLM pass at `on_session_end` produces both a session digest (decisions, topics, action items) AND atomic entity notes; dedupes entities via `cru.kiln.search`; grammar-constrained JSON output; ≤1 LLM call per session. Absorbs the originally separate `entity-memory` plugin (per-turn extraction rejected: 10-30% generation overhead) · `runtime/plugins/session-digest/`
-- [x] **Memory Scoping** `P2` — `Scope::User/Workspace/Global` enforced at the storage query layer (`SqliteNoteStore` filter + Lance post-filter join). Write-side validation prevents privilege escalation; raw-SQL escape hatch gated `#[cfg(test)]`. Scope elevation API deferred to a future wave · `crucible-core`, `crucible-daemon`
+- [x] **Memory Scoping** `P2` — `Scope::Workspace { path }` (single variant, workspace-only) enforced at the storage query layer (`SqliteNoteStore` filter + Lance post-filter). Write-side validation prevents writes targeting a sibling workspace; raw-SQL escape hatch gated `#[cfg(test)]`. Pre-prune `Global` and `User { id }` variants removed in the 2026-05-12 consolidation pass — neither had any in-tree consumer once session-digest shipped, then was retracted · `crucible-core`, `crucible-daemon`
 
 ## Context & Execution (Core Runtime)
 
@@ -162,7 +161,7 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 - [x] **MCP Tool System** `P0` — Permission prompts via `PermissionGate` trait, ACP integration, `McpProxyTool` injection · `crucible-daemon` (tools), `crucible-daemon` (acp)
 - [x] **Error Handling UX** `P0` — Toast notifications, contextual messages, graceful degradation for DB lock/search/kiln fallback, `BackendError::is_retryable()` + `retry_delay_secs()`, RPC `call_with_retry()` for idempotent daemon ops, recovery suggestions in error messages · `crucible-cli`, `crucible-core`, `crucible-daemon` (rpc)
 - [x] **Per-session MCP Servers** `P0` — Agent cards define MCP servers; `mcp_servers` propagated to `SessionAgent` and wired in daemon · `crucible-daemon` (acp)
-- [x] **Grammar + Lua Integration** `P1` — `cru.grammar.{new, presets.json, set/clear/get_session_grammar}` GBNF bindings; threads through `SessionAgent` config + RPC; hard-errors on backends without grammar support (no silent fallback). Llama-cpp backend not yet wired (followup) — current `BackendType::supports_grammar()` returns `false` for every wired provider · `crucible-core`, `crucible-lua`, `crucible-daemon`
+- [ ] **Grammar + Lua Integration** — `cru.grammar.{new, presets.*, set/clear/get_session_grammar}` GBNF bindings shipped briefly in Wave 2 but had no working backend; removed in the 2026-05-12 prune. Will revisit once llama-cpp is integrated · `crucible-core`, `crucible-lua`, `crucible-daemon`
 
 ## Terminal Interface (TUI)
 
@@ -401,7 +400,7 @@ HTTP Gateway (crucible-web wired to daemon)
 > Same-named user plugin at any higher path **shadows** the runtime version. `:plugins` shows provenance: `[core]`, `[runtime]`, `[user]`, `[kiln]`.
 
 - [x] **Runtime Plugin Infrastructure** `P1` — `$CRUCIBLE_RUNTIME/plugins/` path with `PluginSource` provenance tracking; `plugin.list` RPC includes source/version; shadow-by-name semantics · `crucible-lua`, `crucible-daemon`
-- [x] **`session-digest` Runtime Plugin** `P1` — Default runtime Lua plugin at `runtime/plugins/session-digest/`; one LLM pass at `on_session_end` produces both digests AND entity notes (collapsed from the originally separate `entity-memory` plugin per the per-turn-extraction-too-expensive constraint) · `runtime/plugins/session-digest/`
+- [ ] **`session-digest` Runtime Plugin** — Shipped in Wave 2 then removed in the 2026-05-12 prune. LLM-judged dedupe risked wrong merges and kiln pollution; users preferred prompted refinement over automatic digests · `runtime/plugins/session-digest/` (removed)
 
 ### Ecosystem & Shareability (P1-P2)
 

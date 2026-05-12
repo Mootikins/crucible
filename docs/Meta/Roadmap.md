@@ -68,24 +68,25 @@ Waves are dependency-ordered. **Items inside a wave can be parallelized**; later
 - ✅ **`session.fork()`** — already shipped in `cru.sessions.fork(id, opts)` before this wave.
 - ✅ **LuaCATS Type Stubs** — auto-generates on daemon start to `~/.config/crucible/luals/`; `cru.context` added to `UNIVERSAL_MODULES`.
 
-### Wave 2 — Agent learning & teams (shipped 2026-05-11)
+### Wave 2 — Agent learning & teams (shipped 2026-05-11, pruned 2026-05-12)
 
-> 5 roadmap items shipped as 4 features: `entity-memory` + `session-digest` collapsed into one plugin running ONE LLM pass at session end (per-turn extraction rejected as 10-30% generation overhead). Memory Scoping reframed as a security boundary enforced at the storage query layer, not a tag filter.
+> Shipped as 2 features after a consolidation prune. `session-digest`, `entity-memory`, and `cru.grammar.*` were removed: digest's LLM-judged dedupe risked wrong merges and kiln pollution (user preference: prompted refinement over automatic digests), and the grammar plumbing had no working backend. Memory Scoping kept as a per-kiln security boundary; `Scope` collapsed to a single workspace-only variant.
 
-- ✅ **`session-digest` runtime plugin** — completed sessions → linked notes (digests + atomic entity notes) via `on_session_end` hook; one LLM call per session, grammar-constrained JSON output, dedupes entities via `cru.kiln.search`. Absorbs `entity-memory` (which would have been a redundant second pass).
-- ✅ **Memory Scoping** — `Scope::User/Workspace/Global` enforced at `SqliteNoteStore` and Lance post-filter; write-side validation prevents privilege escalation; raw-SQL escape hatch gated to `#[cfg(test)]`. Scope elevation deferred to a later wave.
+- ✅ **Memory Scoping** — single-variant `Scope::Workspace { path }` enforced at `SqliteNoteStore` and Lance post-filter; write-side validation prevents writes that name a different workspace; raw-SQL escape hatch gated to `#[cfg(test)]`. `Scope::workspace()` is fallible — silent canonicalization fallback removed.
 - ✅ **Team Patterns** (core Rust) — `cru.team.{supervisor, router, broadcast}` on top of existing subagent infrastructure; supervisor sequential, broadcast parallel via `tokio::join_all`.
-- ✅ **Grammar + Lua Integration** — `cru.grammar.{new, presets, set/clear/get_session_grammar}` with GBNF; hard-error on backends that don't support grammar (no silent fallback). Wired through `SessionAgent` config + RPC.
 
-> Prerequisites that landed alongside the wave: `cru.kiln.create_note` (writes notes + reindexes), `cru.kiln.search` (semantic search wired to daemon vectors), and enriched `Session` userdata (`kiln_path`, `agent_name`, `end_reason`) on the `on_session_end` hook.
+Removed in the prune:
+- `runtime/plugins/session-digest/` (10 files, ~2098 LOC) — speculative LLM dedupe consumer.
+- `cru.grammar.*` Lua module + `SessionAgent.grammar` + `BackendType::supports_grammar` + RPC + `AgentManager::{set,clear,get}_grammar` + `DaemonGrammarBridge` (~1500 LOC) — no working backend, every call path hard-errored.
+- `cru.kiln.create_note` write path + `DaemonVaultApi::search` real impl + `DaemonVaultBridge` (~843 LOC) — only consumer was session-digest.
+- `EndReason` enum + read-only `Session` userdata fields `kiln_path`/`agent_name`/`end_reason` — populated daemon-side for session-digest's `on_session_end` handler.
+- Pre-prune `Scope::Global` / `Scope::User { id }` variants and the `can_read`/`can_write` matrix — replaced by `same_workspace(other) -> bool`.
+- Unscoped `*_scoped` client RPC suffix dropped now that there's only one shape.
 
-Code-review findings landed after the initial flip (4 critical fixes, 4 commits): `SqliteClientHandle` now binds the kiln path so `KnowledgeRepository` reads enforce workspace scope (precognition was bypassing the boundary at `Scope::Global`); `cru.team.*` is wired through `DaemonTeamServerBridge` from `Server::run` (previously stubbed); daemon-side idempotency guard ensures `on_session_end` fires exactly once per session (was firing twice — once from `session.end`, once from CLI shutdown — doubling extraction cost); `cru.kiln.search` over-fetch math corrected.
+Daemon-side idempotency guard (`LuaSessionState.end_hooks_fired`) for `on_session_end` stays — independent correctness fix.
 
-Remaining follow-ups (tracked separately, not blocking Wave 3):
-- Wire llama-cpp backend to consume `SessionAgent.grammar` — until then `supports_grammar()` returns `false` everywhere and `set_session_grammar` hard-errors. The session-digest plugin gracefully degrades to prompt-only JSON discipline.
-- Tighten `Scope::workspace()` canonicalization — currently falls back to non-canonical path when `canonicalize()` fails, creating asymmetric scope-equality paths.
-- Legacy `DaemonStorageClient` read methods use unscoped RPC variants; user-scoped notes can leak through CLI / MCP `semantic_search` callers within a kiln.
-- Per-session `digest: false` opt-out — needs session frontmatter on Session userdata to be implemented.
+Remaining follow-ups (not blocking Wave 3):
+- Legacy frontmatter `scope: global` / `scope: user:*` are now refused with `ScopeError::Unsupported` — notes carrying those values become invisible and will need a one-time migration if any user data has them.
 
 ### Wave 3 — Workflows Phase 2 (parser + engine landed; finish out)
 
