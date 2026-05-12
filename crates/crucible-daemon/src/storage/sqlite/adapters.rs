@@ -3,12 +3,15 @@
 //! Storage adapters for daemon compatibility.
 
 use crate::storage::sqlite::connection::SqlitePool;
+#[cfg(test)]
 use crate::storage::sqlite::error_ext::SqliteResultExt;
 use crate::storage::sqlite::note_store::SqliteNoteStore;
 use crate::storage::sqlite::SqliteConfig;
 use anyhow::Result;
 use crucible_core::storage::{NoteStore, PropertyStore};
+#[cfg(test)]
 use crucible_core::{QueryResult, Record, RecordId};
+#[cfg(test)]
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -52,8 +55,28 @@ impl SqliteClientHandle {
         )
     }
 
-    /// Execute a SQL query and return results
-    pub async fn query(&self, sql: &str, _params: &[serde_json::Value]) -> Result<QueryResult> {
+    /// Execute a raw SQL query against the kiln's SQLite store.
+    ///
+    /// # SECURITY — test-only escape hatch
+    ///
+    /// This bypasses every typed-storage safety net, **including memory
+    /// scoping**. A SELECT here returns rows regardless of
+    /// `properties.scope` because nothing is appending the scope filter
+    /// for you. Production code paths MUST go through the [`NoteStore`]
+    /// trait (which carries a `Scope` authority) or one of the typed
+    /// `note.*` RPC handlers — never this method.
+    ///
+    /// Gated behind `#[cfg(test)]` so no production build ever links
+    /// this symbol. The Lua `cru.storage` surface intentionally exposes
+    /// only the property-store (EAV) API, not raw SQL. The only
+    /// production-facing wrapper that historically called this method
+    /// (`crucible_core::CrucibleCore::query`) is itself a test helper.
+    #[cfg(test)]
+    pub(crate) async fn query(
+        &self,
+        sql: &str,
+        _params: &[serde_json::Value],
+    ) -> Result<QueryResult> {
         use rusqlite::params_from_iter;
         use std::time::Instant;
 
@@ -116,7 +139,9 @@ impl SqliteClientHandle {
     }
 }
 
-/// Convert a rusqlite row value to serde_json::Value
+/// Convert a rusqlite row value to serde_json::Value (test-only helper
+/// for [`SqliteClientHandle::query`]).
+#[cfg(test)]
 fn row_value_to_json(row: &rusqlite::Row, idx: usize) -> serde_json::Value {
     // Try different types in order
     if let Ok(v) = row.get::<_, i64>(idx) {
