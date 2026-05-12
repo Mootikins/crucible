@@ -164,26 +164,6 @@ pub trait AgentHandle: crate::turn::Agent + Send + Sync {
         None
     }
 
-    /// Attach a GBNF grammar to constrain future LLM output.
-    ///
-    /// Returns [`ChatError::NotSupported`] for backends that cannot
-    /// honor GBNF (everything outside llama.cpp today). The plan
-    /// explicitly forbids silent fallback — silently dropping the
-    /// constraint at completion time is worse than failing here.
-    async fn set_grammar(&mut self, _grammar: crate::types::Grammar) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_grammar".into()))
-    }
-
-    /// Clear any attached grammar. Idempotent.
-    async fn clear_grammar(&mut self) -> ChatResult<()> {
-        Err(ChatError::NotSupported("clear_grammar".into()))
-    }
-
-    /// Get the currently-attached grammar, if any.
-    fn get_grammar(&self) -> Option<crate::types::Grammar> {
-        None
-    }
-
     async fn set_system_prompt(&mut self, _prompt: &str) -> ChatResult<()> {
         Err(ChatError::NotSupported("set_system_prompt".into()))
     }
@@ -451,18 +431,6 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
 
     fn get_thinking_budget(&self) -> Option<i64> {
         (**self).get_thinking_budget()
-    }
-
-    async fn set_grammar(&mut self, grammar: crate::types::Grammar) -> ChatResult<()> {
-        (**self).set_grammar(grammar).await
-    }
-
-    async fn clear_grammar(&mut self) -> ChatResult<()> {
-        (**self).clear_grammar().await
-    }
-
-    fn get_grammar(&self) -> Option<crate::types::Grammar> {
-        (**self).get_grammar()
     }
 
     async fn set_system_prompt(&mut self, prompt: &str) -> ChatResult<()> {

@@ -1,9 +1,9 @@
 use crate::error::LuaError;
 use crate::{
-    register_context_module_stub, register_grammar_module, register_graph_module,
-    register_mcp_module_stub, register_oq_module, register_paths_module, register_popup_module,
-    register_sessions_module, register_statusline_module, register_tools_module,
-    register_ui_module, register_vault_module, LuaExecutor, PathsContext,
+    register_context_module_stub, register_graph_module, register_mcp_module_stub,
+    register_oq_module, register_paths_module, register_popup_module, register_sessions_module,
+    register_statusline_module, register_tools_module, register_ui_module, register_vault_module,
+    LuaExecutor, PathsContext,
 };
 
 #[cfg(feature = "send")]
@@ -32,7 +32,6 @@ const UNIVERSAL_MODULES: &[&str] = &[
     "notify",
     "ask",
     "team",
-    "grammar",
 ];
 
 const UI_ONLY_MODULES: &[&str] = &["oil", "popup", "panel", "interaction", "statusline"];
@@ -72,7 +71,6 @@ impl StubGenerator {
         register_statusline_module(lua)?;
         #[cfg(feature = "send")]
         register_team_module_stub(lua)?;
-        register_grammar_module(lua)?;
 
         mirror_modules_into_cru(lua)?;
 
@@ -126,7 +124,6 @@ fn mirror_modules_into_cru(lua: &Lua) -> Result<(), LuaError> {
     copy_global_table(&globals, &cru, "statusline", "statusline")?;
     copy_global_table(&globals, &cru, "ui", "panel")?;
     copy_global_table(&globals, &cru, "team", "team")?;
-    copy_global_table(&globals, &cru, "grammar", "grammar")?;
 
     if let Ok(get_session) = cru.get::<Value>("get_session") {
         if matches!(get_session, Value::Function(_)) {

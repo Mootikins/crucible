@@ -290,6 +290,5 @@ fn default_team_parent_agent() -> SessionAgent {
         output_validation: Default::default(),
         validation_retries: 3,
         autocompact_threshold: None,
-        grammar: None,
     }
 }

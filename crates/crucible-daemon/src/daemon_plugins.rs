@@ -10,15 +10,15 @@
 use crucible_core::storage::NoteStore;
 use crucible_core::storage::PropertyStore;
 use crucible_lua::{
-    register_context_module, register_context_validators, register_grammar_module,
-    register_grammar_module_with_api, register_graph_module, register_graph_module_with_store,
-    register_oq_module, register_paths_module, register_schedule_module, register_sessions_module,
-    register_sessions_module_with_api, register_shell_module, register_storage_module,
-    register_storage_module_with_store, register_team_module, register_team_module_stub,
-    register_tools_module, register_tools_module_with_api, register_vault_module,
-    register_vault_module_with_api, register_vault_module_with_store, register_ws_module,
-    DaemonGrammarApi, DaemonSessionApi, DaemonTeamApi, DaemonToolsApi, DaemonVaultApi, LuaExecutor,
-    LuaValidatorRegistry, PathsContext, PluginManager, PluginSource, PluginSpec, ShellPolicy,
+    register_context_module, register_context_validators, register_graph_module,
+    register_graph_module_with_store, register_oq_module, register_paths_module,
+    register_schedule_module, register_sessions_module, register_sessions_module_with_api,
+    register_shell_module, register_storage_module, register_storage_module_with_store,
+    register_team_module, register_team_module_stub, register_tools_module,
+    register_tools_module_with_api, register_vault_module, register_vault_module_with_api,
+    register_vault_module_with_store, register_ws_module, DaemonSessionApi, DaemonTeamApi,
+    DaemonToolsApi, DaemonVaultApi, LuaExecutor, LuaValidatorRegistry, PathsContext, PluginManager,
+    PluginSource, PluginSpec, ShellPolicy,
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
@@ -87,11 +87,6 @@ impl DaemonPluginLoader {
         // until `upgrade_with_team` is called with a real BackgroundJobManager
         // bridge. Plugins can still see the module shape during init.
         reg("team", register_team_module_stub(lua))?;
-        // `cru.grammar.*` is stub-registered here so plugin init can call
-        // `cru.grammar.new(...)` / presets (which are pure) without waiting
-        // for the daemon-backed upgrade. Session set/clear/get return
-        // "no daemon connected" until `upgrade_with_grammar` runs.
-        reg("grammar", register_grammar_module(lua))?;
         reg("config", Self::register_plugin_config(lua, plugin_config))?;
 
         let plugin_manager = PluginManager::new();
@@ -275,20 +270,6 @@ impl DaemonPluginLoader {
         register_vault_module_with_api(self.executor.lua(), api)
             .map_err(|e| anyhow::anyhow!("vault api upgrade: {e}"))?;
         info!("Lua vault module upgraded with daemon API (create_note + search)");
-        Ok(())
-    }
-
-    /// Upgrade `cru.grammar.*` to a daemon-backed implementation.
-    ///
-    /// After the session/agent managers are ready, swaps the
-    /// "no daemon connected" stubs for `set/clear/get_session_grammar`
-    /// with the [`crate::grammar_bridge::DaemonGrammarBridge`]. The pure
-    /// constructor (`cru.grammar.new`) and presets are untouched — they
-    /// were never stubs.
-    pub fn upgrade_with_grammar(&self, api: Arc<dyn DaemonGrammarApi>) -> anyhow::Result<()> {
-        register_grammar_module_with_api(self.executor.lua(), api)
-            .map_err(|e| anyhow::anyhow!("grammar upgrade: {e}"))?;
-        info!("Lua grammar module upgraded with daemon API");
         Ok(())
     }
 

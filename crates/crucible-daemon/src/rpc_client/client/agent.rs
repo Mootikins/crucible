@@ -139,21 +139,6 @@ pub struct SessionSetAutocompactThresholdRequest {
     pub autocompact_threshold: Option<f32>,
 }
 
-/// Request for `session.set_grammar`.
-///
-/// `content` is the raw GBNF body; `name` is an optional human-readable
-/// label (carried through to events / logs only). Field names match what
-/// the server-side handler reads — be paranoid here: silent renames
-/// produce silent "grammar didn't stick" bugs that only surface when an
-/// agent generates malformed output many seconds later.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetGrammarRequest {
-    pub session_id: String,
-    pub content: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-}
-
 /// Request for `models.list` (no active session required).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ListAllModelsRequest {
@@ -723,66 +708,4 @@ impl DaemonClient {
         .await
     }
 
-    /// Attach a GBNF grammar to a session.
-    ///
-    /// Daemon-side, the `AgentManager` checks `BackendType::supports_grammar`
-    /// before persisting. Unsupported backends produce a METHOD_NOT_FOUND
-    /// RPC error carrying the backend name in the message.
-    pub async fn session_set_grammar(
-        &self,
-        session_id: &str,
-        grammar: &crucible_core::types::Grammar,
-    ) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_grammar",
-            SessionSetGrammarRequest {
-                session_id: session_id.to_string(),
-                content: grammar.content.clone(),
-                name: grammar.name.clone(),
-            },
-        )
-        .await
-    }
-
-    /// Clear the grammar on a session. Idempotent.
-    pub async fn session_clear_grammar(&self, session_id: &str) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.clear_grammar",
-            SessionIdRequest {
-                session_id: session_id.to_string(),
-            },
-        )
-        .await
-    }
-
-    /// Get the current grammar attached to a session, if any.
-    pub async fn session_get_grammar(
-        &self,
-        session_id: &str,
-    ) -> Result<Option<crucible_core::types::Grammar>> {
-        let result: serde_json::Value = self
-            .typed_call_with_retry(
-                "session.get_grammar",
-                SessionIdRequest {
-                    session_id: session_id.to_string(),
-                },
-            )
-            .await?;
-        let g = result.get("grammar");
-        match g {
-            None | Some(serde_json::Value::Null) => Ok(None),
-            Some(obj) => {
-                let content = obj
-                    .get("content")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| anyhow::anyhow!("missing grammar.content in response"))?
-                    .to_string();
-                let name = obj
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-                Ok(Some(crucible_core::types::Grammar { content, name }))
-            }
-        }
-    }
 }

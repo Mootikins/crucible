@@ -94,9 +94,6 @@ pub const METHODS: &[&str] = &[
     "session.undo",
     "session.can_undo",
     "session.undo_depth",
-    "session.set_grammar",
-    "session.clear_grammar",
-    "session.get_grammar",
     "plugin.reload",
     "plugin.list",
     "lua.init_session",
@@ -200,9 +197,7 @@ impl RpcDispatcher {
             | "session.set_system_prompt"
             | "session.set_precognition"
             | "session.set_precognition_results"
-            | "session.set_autocompact_threshold"
-            | "session.set_grammar"
-            | "session.clear_grammar" => {
+            | "session.set_autocompact_threshold" => {
                 to_response(id, self.dispatch_session_config_setter(&req).await)
             }
             "session.get_thinking_budget"
@@ -218,8 +213,7 @@ impl RpcDispatcher {
             | "session.get_system_prompt"
             | "session.get_precognition"
             | "session.get_precognition_results"
-            | "session.get_autocompact_threshold"
-            | "session.get_grammar" => {
+            | "session.get_autocompact_threshold" => {
                 to_response(id, self.dispatch_session_config_getter(&req).await)
             }
             "session.cache_stats" => to_response(id, self.handle_session_cache_stats(&req).await),
@@ -615,22 +609,6 @@ impl RpcDispatcher {
                 )
                 .await
             }
-            "session.set_grammar" => {
-                session::handle_session_set_grammar(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.event_tx,
-                )
-                .await
-            }
-            "session.clear_grammar" => {
-                session::handle_session_clear_grammar(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.event_tx,
-                )
-                .await
-            }
             _ => unreachable!("dispatch match already filtered to known setter methods"),
         };
         map_server_resp(resp)
@@ -685,9 +663,6 @@ impl RpcDispatcher {
             "session.get_autocompact_threshold" => {
                 session::handle_session_get_autocompact_threshold(req.clone(), &self.ctx.agents)
                     .await
-            }
-            "session.get_grammar" => {
-                session::handle_session_get_grammar(req.clone(), &self.ctx.agents).await
             }
             _ => unreachable!("dispatch match already filtered to known getter methods"),
         };
@@ -1494,14 +1469,7 @@ mod tests {
 
     #[test]
     fn methods_count() {
-        assert_eq!(METHODS.len(), 123, "Update when adding RPC methods");
-    }
-
-    #[test]
-    fn methods_list_includes_grammar_rpcs() {
-        assert!(METHODS.contains(&"session.set_grammar"));
-        assert!(METHODS.contains(&"session.clear_grammar"));
-        assert!(METHODS.contains(&"session.get_grammar"));
+        assert_eq!(METHODS.len(), 120, "Update when adding RPC methods");
     }
 
     #[tokio::test]

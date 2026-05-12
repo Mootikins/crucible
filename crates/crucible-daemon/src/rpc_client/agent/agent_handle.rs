@@ -177,44 +177,6 @@ impl AgentHandle for DaemonAgentHandle {
         self.cached_thinking_budget
     }
 
-    async fn set_grammar(&mut self, grammar: crucible_core::types::Grammar) -> ChatResult<()> {
-        tracing::info!(
-            session_id = %self.session_id,
-            name = ?grammar.name,
-            "Setting grammar via daemon"
-        );
-        self.client
-            .session_set_grammar(&self.session_id, &grammar)
-            .await
-            // Backend-unsupported errors round-trip as METHOD_NOT_FOUND →
-            // `ChatError::NotSupported` so the TUI can show "not
-            // supported" rather than "communication failure".
-            .map_err(|e| {
-                let s = e.to_string();
-                if s.contains("does not support") || s.contains("not support") {
-                    ChatError::NotSupported(s)
-                } else {
-                    ChatError::Communication(format!("Failed to set grammar: {s}"))
-                }
-            })?;
-        self.cached_grammar = Some(grammar);
-        Ok(())
-    }
-
-    async fn clear_grammar(&mut self) -> ChatResult<()> {
-        tracing::info!(session_id = %self.session_id, "Clearing grammar via daemon");
-        self.client
-            .session_clear_grammar(&self.session_id)
-            .await
-            .map_err(|e| ChatError::Communication(format!("Failed to clear grammar: {e}")))?;
-        self.cached_grammar = None;
-        Ok(())
-    }
-
-    fn get_grammar(&self) -> Option<crucible_core::types::Grammar> {
-        self.cached_grammar.clone()
-    }
-
     async fn set_system_prompt(&mut self, prompt: &str) -> ChatResult<()> {
         tracing::debug!(session_id = %self.session_id, "Setting system prompt via daemon");
         self.client

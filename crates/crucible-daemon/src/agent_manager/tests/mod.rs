@@ -494,7 +494,6 @@ fn test_agent() -> SessionAgent {
         output_validation: OutputValidation::default(),
         validation_retries: 3,
         autocompact_threshold: None,
-        grammar: None,
     }
 }
 
@@ -677,7 +676,6 @@ fn create_test_agent_manager_with_both(
 
 mod concurrency;
 mod dispatch;
-mod grammar;
 mod init_lua;
 mod lifecycle;
 mod messaging;

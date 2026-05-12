@@ -176,7 +176,6 @@ async fn test_tui_daemon_agent_full_flow() {
         output_validation: OutputValidation::default(),
         validation_retries: 3,
         autocompact_threshold: None,
-        grammar: None,
     };
 
     client

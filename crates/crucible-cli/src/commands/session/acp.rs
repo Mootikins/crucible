@@ -148,7 +148,6 @@ pub(super) mod rpc {
             output_validation: OutputValidation::default(),
             validation_retries: 3,
             autocompact_threshold: None,
-            grammar: None,
         }
     }
 
@@ -483,7 +482,6 @@ pub(super) mod rpc {
             output_validation: OutputValidation::default(),
             validation_retries: 3,
             autocompact_threshold: None,
-            grammar: None,
         };
 
         client.session_configure_agent(session_id, &agent).await?;

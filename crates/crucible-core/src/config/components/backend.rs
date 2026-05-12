@@ -255,23 +255,6 @@ impl BackendType {
         self.metadata().is_local
     }
 
-    /// Whether this backend supports GBNF grammar constraints.
-    ///
-    /// Currently no live backend supports GBNF — llama.cpp is the
-    /// upstream that does, but it's not wired into Crucible yet. Returns
-    /// `false` everywhere, which makes `set_session_grammar` hard-error
-    /// (by design — silently dropping the constraint is worse). When a
-    /// llama-cpp backend lands, add its variant to the `true` arm.
-    pub fn supports_grammar(&self) -> bool {
-        match self {
-            // No GBNF-capable backend is integrated today. Mock returns
-            // true so test-utils consumers can exercise the happy path
-            // without spinning up a real llama.cpp process.
-            Self::Mock => true,
-            _ => false,
-        }
-    }
-
     /// Get the default trust level for this backend
     pub fn default_trust_level(&self) -> TrustLevel {
         self.metadata().default_trust_level
@@ -1221,32 +1204,6 @@ mod tests {
         );
         // And it's not local
         assert!(!BackendType::GitHubCopilot.is_local());
-    }
-
-    #[test]
-    fn test_supports_grammar_only_mock_today() {
-        // GBNF support is currently mock-only — llama.cpp isn't wired in
-        // yet. The hard-error semantics in `set_session_grammar` rely on
-        // this returning false for every cloud / Ollama backend.
-        assert!(BackendType::Mock.supports_grammar());
-        for v in [
-            BackendType::Ollama,
-            BackendType::OpenAI,
-            BackendType::Anthropic,
-            BackendType::Cohere,
-            BackendType::VertexAI,
-            BackendType::FastEmbed,
-            BackendType::Burn,
-            BackendType::GitHubCopilot,
-            BackendType::OpenRouter,
-            BackendType::ZAI,
-            BackendType::Custom,
-        ] {
-            assert!(
-                !v.supports_grammar(),
-                "{v:?} should not support grammar yet"
-            );
-        }
     }
 
     #[test]
