@@ -439,10 +439,8 @@ mod tests {
 
         // The kiln-bound repo: every read derives a Workspace authority
         // from the bound kiln path. Workspace cannot read User scopes.
-        let repo = SqliteKnowledgeRepository::with_kiln_path(
-            Arc::clone(&store_arc),
-            kiln_root.clone(),
-        );
+        let repo =
+            SqliteKnowledgeRepository::with_kiln_path(Arc::clone(&store_arc), kiln_root.clone());
 
         // list_notes must only see the workspace note.
         let listed = repo.list_notes(None).await.unwrap();

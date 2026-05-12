@@ -1610,9 +1610,7 @@ mod tests {
             )
             .exec()
             .expect("install end hook");
-        executor
-            .sync_session_end_hooks()
-            .expect("sync end hooks");
+        executor.sync_session_end_hooks().expect("sync end hooks");
 
         // Bind a LuaSession into the executor's session manager so the
         // hook dispatcher has a target.
@@ -1640,7 +1638,11 @@ mod tests {
                 ),
             )
             .await;
-        assert!(resp1.error.is_none(), "session.end failed: {:?}", resp1.error);
+        assert!(
+            resp1.error.is_none(),
+            "session.end failed: {:?}",
+            resp1.error
+        );
 
         // Second: lua.shutdown_session (Shutdown reason) — pre-fix this
         // re-fires the hook against the same Lua session.
