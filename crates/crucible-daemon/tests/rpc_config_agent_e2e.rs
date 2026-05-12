@@ -536,4 +536,3 @@ async fn test_config_get_on_nonexistent_session_fails() {
 
     server.shutdown().await;
 }
-

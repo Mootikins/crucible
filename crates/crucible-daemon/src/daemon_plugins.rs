@@ -15,10 +15,9 @@ use crucible_lua::{
     register_schedule_module, register_sessions_module, register_sessions_module_with_api,
     register_shell_module, register_storage_module, register_storage_module_with_store,
     register_team_module, register_team_module_stub, register_tools_module,
-    register_tools_module_with_api, register_vault_module, register_vault_module_with_api,
-    register_vault_module_with_store, register_ws_module, DaemonSessionApi, DaemonTeamApi,
-    DaemonToolsApi, DaemonVaultApi, LuaExecutor, LuaValidatorRegistry, PathsContext, PluginManager,
-    PluginSource, PluginSpec, ShellPolicy,
+    register_tools_module_with_api, register_vault_module, register_vault_module_with_store,
+    register_ws_module, DaemonSessionApi, DaemonTeamApi, DaemonToolsApi, LuaExecutor,
+    LuaValidatorRegistry, PathsContext, PluginManager, PluginSource, PluginSpec, ShellPolicy,
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
@@ -256,20 +255,6 @@ impl DaemonPluginLoader {
         register_team_module(self.executor.lua(), api)
             .map_err(|e| anyhow::anyhow!("team upgrade: {e}"))?;
         info!("Lua team module upgraded with daemon API");
-        Ok(())
-    }
-
-    /// Upgrade `cru.kiln.create_note` + `cru.kiln.search` with a daemon-
-    /// backed implementation.
-    ///
-    /// Call from `handle_kiln_open` after `upgrade_with_storage` so the
-    /// vault module already has its NoteStore wired (list/get/etc) before
-    /// we add the write+search surface. The bridge is per-kiln; calling
-    /// this again with a new bridge replaces the previous one.
-    pub fn upgrade_with_vault_api(&self, api: Arc<dyn DaemonVaultApi>) -> anyhow::Result<()> {
-        register_vault_module_with_api(self.executor.lua(), api)
-            .map_err(|e| anyhow::anyhow!("vault api upgrade: {e}"))?;
-        info!("Lua vault module upgraded with daemon API (create_note + search)");
         Ok(())
     }
 

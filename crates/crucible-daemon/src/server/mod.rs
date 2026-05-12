@@ -92,11 +92,10 @@ pub struct LuaSessionState {
     pub(crate) registry: LuaScriptHandlerRegistry,
     /// Set to `true` after `on_session_end` hooks fire for this session.
     ///
-    /// Both `session.end` (User reason) and `lua.shutdown_session`
-    /// (Shutdown reason) try to fire `on_session_end` hooks — the CLI
-    /// chat REPL invokes both for the same session lifecycle. Without
-    /// this guard, plugins like session-digest would extract twice per
-    /// session (double LLM call, racing entity merges).
+    /// Both `session.end` and `lua.shutdown_session` try to fire
+    /// `on_session_end` hooks — the CLI chat REPL invokes both for the
+    /// same session lifecycle. Without this guard, non-idempotent hooks
+    /// (LLM calls, file writes) would run twice.
     ///
     /// The daemon enforces a single fire per session; plugins do NOT
     /// need to be idempotent.

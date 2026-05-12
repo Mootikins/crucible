@@ -837,17 +837,12 @@ impl RpcDispatcher {
             .and_then(|v| v.as_str())
             .unwrap_or("");
         if !session_id.is_empty() {
-            // Look up the durable session record to read its kiln path and
-            // agent name. Both are immutable for the session's lifetime, so
-            // this races only with deletion (which would return None).
-            let daemon_session = self.ctx.sessions.get_session(session_id);
-
             if let Some(state) = self.ctx.lua_sessions.get(session_id) {
                 let state = state.value().clone();
                 let mut state = state.lock().await;
                 // Daemon-side idempotency: `lua.shutdown_session` also fires
-                // these hooks (with reason=Shutdown). Whichever path reaches
-                // us first sets the flag; the second is a no-op.
+                // these hooks. Whichever path reaches us first sets the flag;
+                // the second is a no-op.
                 if state.end_hooks_fired {
                     tracing::debug!(
                         session_id = %session_id,
@@ -858,15 +853,6 @@ impl RpcDispatcher {
                         tracing::warn!(session_id = %session_id, error = %e, "Failed to sync session_end hooks");
                     }
                     if let Some(session) = state.executor.session_manager().get_current() {
-                        if let Some(ds) = daemon_session.as_ref() {
-                            session.set_kiln_path(ds.kiln.to_string_lossy().to_string());
-                            if let Some(agent) = ds.agent.as_ref() {
-                                if let Some(name) = agent.agent_name.as_deref() {
-                                    session.set_agent_name(name);
-                                }
-                            }
-                        }
-                        session.set_end_reason(crucible_core::session::EndReason::User);
                         if let Err(e) = state.executor.fire_session_end_hooks(&session) {
                             tracing::warn!(session_id = %session_id, error = %e, "Failed to fire session_end hooks");
                         }
@@ -1140,12 +1126,9 @@ impl RpcDispatcher {
     }
 
     async fn handle_lua_shutdown_session(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::lua::handle_lua_shutdown_session(
-            req.clone(),
-            &self.ctx.lua_sessions,
-            &self.ctx.sessions,
-        )
-        .await;
+        let resp =
+            crate::server::lua::handle_lua_shutdown_session(req.clone(), &self.ctx.lua_sessions)
+                .await;
         map_server_resp(resp)
     }
 
@@ -1530,12 +1513,11 @@ mod tests {
         assert_eq!(subscribed[0], "session-123");
     }
 
-    /// Regression for Bug 3: `session.end` and `lua.shutdown_session` both
+    /// Regression: `session.end` and `lua.shutdown_session` both
     /// fire `on_session_end` hooks. The CLI chat REPL invokes both — once
     /// when the user runs `:end` and again when the REPL exits — so an
     /// `on_session_end` handler was being fired twice per session lifecycle.
-    /// session-digest's `run_for_session` is NOT idempotent, so this
-    /// translated into a 2x cost regression (double LLM call + races).
+    /// Non-idempotent hooks (LLM calls, file writes) would have run twice.
     ///
     /// Fix: the daemon tracks per-session `end_hooks_fired` in
     /// `LuaSessionState`. The second caller short-circuits.

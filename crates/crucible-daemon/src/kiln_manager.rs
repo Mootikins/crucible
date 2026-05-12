@@ -398,20 +398,6 @@ impl KilnManager {
     /// Opens the kiln if not already open, then processes the file.
     /// Returns Ok(true) if file was processed, Ok(false) if skipped (unchanged).
     pub async fn process_file(&self, kiln_path: &Path, file_path: &Path) -> Result<bool> {
-        self.process_file_forced(kiln_path, file_path, false).await
-    }
-
-    /// Like [`process_file`] but lets the caller force a reparse even when
-    /// the change detector says the file hasn't changed.
-    ///
-    /// Used by `vault_bridge::DaemonVaultBridge::create_note` so a freshly-
-    /// written note is unconditionally indexed before the call returns.
-    pub async fn process_file_forced(
-        &self,
-        kiln_path: &Path,
-        file_path: &Path,
-        force: bool,
-    ) -> Result<bool> {
         // Ensure kiln is open
         self.open(kiln_path).await?;
 
@@ -425,23 +411,15 @@ impl KilnManager {
             .ok_or_else(|| anyhow::anyhow!("Kiln not found after opening"))?;
 
         conn.last_access = Instant::now();
-        conn.pipeline.set_force_reprocess(force);
 
         // Process file through pipeline
         use crate::pipeline::ProcessingResult;
-        let result = match conn.pipeline.process(file_path).await {
+        match conn.pipeline.process(file_path).await {
             Ok(ProcessingResult::Success { .. }) => Ok(true),
             Ok(ProcessingResult::Skipped) => Ok(false),
             Ok(ProcessingResult::NoChanges) => Ok(false),
             Err(e) => Err(e),
-        };
-
-        // Reset force flag so subsequent file-watcher events don't reprocess
-        // unchanged files unexpectedly.
-        if force {
-            conn.pipeline.set_force_reprocess(false);
         }
-        result
     }
 
     pub async fn handle_file_deleted(&self, kiln_path: &Path, file_path: &Path) -> Result<bool> {

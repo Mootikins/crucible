@@ -160,8 +160,8 @@ pub use storage_api::{register_storage_module, register_storage_module_with_stor
 pub use timer::register_timer_module;
 pub use types::{LuaExecutionResult, LuaTool, ToolParam, ToolResult};
 pub use vault::{
-    register_vault_module, register_vault_module_full, register_vault_module_with_api,
-    register_vault_module_with_graph, register_vault_module_with_store, DaemonVaultApi, SearchHit,
+    register_vault_module, register_vault_module_full, register_vault_module_with_graph,
+    register_vault_module_with_store,
 };
 pub use ws::register_ws_module;
 

@@ -188,7 +188,6 @@ pub(crate) async fn handle_lua_execute_hook(
 pub(crate) async fn handle_lua_shutdown_session(
     req: Request,
     lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
-    sessions: &Arc<SessionManager>,
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
 
@@ -205,7 +204,6 @@ pub(crate) async fn handle_lua_shutdown_session(
     // `session.end` (reason=User) or `lua.shutdown_session` (reason=Shutdown)
     // arrives first sets `end_hooks_fired`; the second is a no-op. Plugins
     // do NOT need to be idempotent.
-    let daemon_session = sessions.get_session(session_id);
     if let Some(state) = lua_sessions.get(session_id) {
         let state = state.value().clone();
         let mut state = state.lock().await;
@@ -219,15 +217,6 @@ pub(crate) async fn handle_lua_shutdown_session(
                 warn!(session_id = %session_id, error = %e, "Failed to sync session_end hooks");
             }
             if let Some(session) = state.executor.session_manager().get_current() {
-                if let Some(ds) = daemon_session.as_ref() {
-                    session.set_kiln_path(ds.kiln.to_string_lossy().to_string());
-                    if let Some(agent) = ds.agent.as_ref() {
-                        if let Some(name) = agent.agent_name.as_deref() {
-                            session.set_agent_name(name);
-                        }
-                    }
-                }
-                session.set_end_reason(crucible_core::session::EndReason::Shutdown);
                 if let Err(e) = state.executor.fire_session_end_hooks(&session) {
                     warn!(session_id = %session_id, error = %e, "Failed to fire session_end hooks");
                 }

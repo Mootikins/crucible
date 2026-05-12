@@ -46,20 +46,6 @@ pub(crate) async fn handle_kiln_open(
             if let Err(e) = loader.upgrade_with_property_store(property_store) {
                 warn!("Failed to upgrade Lua storage module: {}", e);
             }
-            // Wire `cru.kiln.create_note` + `cru.kiln.search` against the
-            // daemon-side pipeline + embedding provider. The vault bridge
-            // is per-kiln; reopening another kiln rebinds the API to the
-            // new path. Must come AFTER `upgrade_with_storage` so the
-            // base vault module is registered first.
-            let vault_api: Arc<dyn crucible_lua::DaemonVaultApi> =
-                Arc::new(crate::vault_bridge::DaemonVaultBridge::new(
-                    Arc::clone(km),
-                    kiln_path.to_path_buf(),
-                    km.enrichment_config().cloned(),
-                ));
-            if let Err(e) = loader.upgrade_with_vault_api(vault_api) {
-                warn!("Failed to upgrade Lua vault API: {}", e);
-            }
         }
     }
 
