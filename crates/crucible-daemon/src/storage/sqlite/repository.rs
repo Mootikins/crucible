@@ -384,4 +384,95 @@ mod tests {
             );
         }
     }
+
+    /// Memory-scoping regression test: a `KnowledgeRepository` bound to a
+    /// kiln must NOT return notes scoped to other users.
+    ///
+    /// Pre-fix, `KilnManager::as_knowledge_repository()` flowed through
+    /// `SqliteClientHandle::as_knowledge_repository()` which constructed
+    /// `SqliteKnowledgeRepository::new(store)` with `kiln_path: None`.
+    /// That made every read default to `Scope::Global` authority — leaking
+    /// `User`-scoped notes (and any other workspace's notes) into precognition.
+    #[tokio::test]
+    async fn precognition_does_not_see_user_scoped_notes_from_other_users() {
+        let tempdir = tempfile::TempDir::new().unwrap();
+        let kiln_root = tempdir.path().to_path_buf();
+
+        let config = SqliteConfig::memory();
+        let pool = SqlitePool::new(config).unwrap();
+        let store = create_note_store(pool).await.unwrap();
+        let store_arc = Arc::new(store);
+
+        // Workspace-scoped note: visible to a session running in this kiln.
+        let workspace_note = NoteRecord {
+            path: "notes/workspace_only.md".to_string(),
+            content_hash: BlockHash::zero(),
+            embedding: Some(vec![0.5, 0.5, 0.0]),
+            title: "Workspace Only".to_string(),
+            tags: vec![],
+            links_to: vec![],
+            properties: Default::default(),
+            updated_at: Utc::now(),
+            ..Default::default()
+        }
+        .with_scope(crucible_core::storage::Scope::workspace(&kiln_root));
+        NoteStore::upsert(store_arc.as_ref(), workspace_note)
+            .await
+            .unwrap();
+
+        // User-scoped note for alice: should NEVER appear in workspace reads.
+        let alice_note = NoteRecord {
+            path: "notes/alice_private.md".to_string(),
+            content_hash: BlockHash::zero(),
+            embedding: Some(vec![0.5, 0.5, 0.0]),
+            title: "Alice Private".to_string(),
+            tags: vec![],
+            links_to: vec![],
+            properties: Default::default(),
+            updated_at: Utc::now(),
+            ..Default::default()
+        }
+        .with_scope(crucible_core::storage::Scope::user("alice"));
+        NoteStore::upsert(store_arc.as_ref(), alice_note)
+            .await
+            .unwrap();
+
+        // The kiln-bound repo: every read derives a Workspace authority
+        // from the bound kiln path. Workspace cannot read User scopes.
+        let repo = SqliteKnowledgeRepository::with_kiln_path(
+            Arc::clone(&store_arc),
+            kiln_root.clone(),
+        );
+
+        // list_notes must only see the workspace note.
+        let listed = repo.list_notes(None).await.unwrap();
+        assert_eq!(
+            listed.len(),
+            1,
+            "expected exactly the workspace-scoped note, got: {:?}",
+            listed.iter().map(|n| &n.path).collect::<Vec<_>>()
+        );
+        assert_eq!(listed[0].path, "notes/workspace_only.md");
+
+        // get_note_by_name must not surface the user-scoped note.
+        let alice_hit = repo.get_note_by_name("Alice Private").await.unwrap();
+        assert!(
+            alice_hit.is_none(),
+            "user-scoped 'Alice Private' note leaked through workspace-authority read"
+        );
+
+        // search_vectors must only return the workspace-scoped note even
+        // when both notes share the same embedding.
+        let results = repo.search_vectors(vec![0.5, 0.5, 0.0]).await.unwrap();
+        for result in &results {
+            assert_ne!(
+                result.document_id.0, "notes/alice_private.md",
+                "user-scoped 'alice_private.md' leaked into vector search"
+            );
+        }
+    }
+
+    // NOTE: `sqlite_client_handle_as_knowledge_repository_is_kiln_scoped`
+    // lives in `adapters.rs` so it can reach the `SqliteClientHandle` API
+    // directly without circular dependencies.
 }

@@ -268,7 +268,7 @@ impl KilnManager {
 
         info!("Opening kiln at {:?}", db_path);
 
-        let handle = create_storage_handle(&db_path).await?;
+        let handle = create_storage_handle(&db_path, &canonical).await?;
         info!(
             "Kiln opened with {} backend at {:?}",
             handle.backend_name(),
@@ -736,9 +736,15 @@ async fn create_pipeline(
 /// Open both backends for a kiln. SQLite for metadata + properties at
 /// `<kiln>/.crucible/crucible-sqlite.db`; LanceDB vector index at
 /// `<kiln>/.crucible/crucible-vectors.lance/`.
-async fn create_storage_handle(sqlite_db_path: &Path) -> Result<StorageHandle> {
+///
+/// `kiln_path` is the kiln root (canonicalized by `open()`); the SQLite
+/// handle is bound to it so `as_knowledge_repository()` enforces
+/// `Scope::Workspace(kiln_path)` authority on reads.
+async fn create_storage_handle(sqlite_db_path: &Path, kiln_path: &Path) -> Result<StorageHandle> {
     let sqlite_config = SqliteConfig::new(sqlite_db_path);
-    let sqlite = sqlite_adapters::create_sqlite_client(sqlite_config).await?;
+    let sqlite = sqlite_adapters::create_sqlite_client(sqlite_config)
+        .await?
+        .with_kiln_path(kiln_path.to_path_buf());
 
     let lance_dir = sqlite_db_path
         .parent()
