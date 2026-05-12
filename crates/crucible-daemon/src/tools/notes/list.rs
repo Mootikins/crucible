@@ -17,8 +17,12 @@ impl NoteTools {
         include_frontmatter: bool,
         recursive: bool,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        // MCP tools are scoped to the kiln they're serving. A plugin/agent
+        // hosting MCP against this kiln gets workspace authority; cross-kiln
+        // notes are not visible through this surface.
+        let authority = crucible_core::storage::Scope::workspace(&self.kiln_path);
         let all_notes = note_store
-            .list()
+            .list(&authority)
             .await
             .mcp_err_ctx("Failed to list notes from store")?;
 

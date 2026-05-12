@@ -253,15 +253,32 @@ pub fn register_graph_module_with_executor(
 /// end
 /// ```
 pub fn register_note_store_functions(lua: &Lua, store: Arc<dyn NoteStore>) -> Result<(), LuaError> {
+    register_note_store_functions_scoped(lua, store, crucible_core::storage::Scope::Global)
+}
+
+/// Same as [`register_note_store_functions`] but scoped: every read through
+/// `graph.note_get` / `graph.note_list` is filtered by the given authority.
+///
+/// Production callers (`daemon_plugins::upgrade_with_storage`) pass
+/// `Scope::Workspace { path: kiln_path }` so a Lua plugin running inside
+/// kiln A cannot read notes scoped to kiln B even via the lower-level
+/// `graph.*` surface.
+pub fn register_note_store_functions_scoped(
+    lua: &Lua,
+    store: Arc<dyn NoteStore>,
+    authority: crucible_core::storage::Scope,
+) -> Result<(), LuaError> {
     // Get the graph table (must exist from prior registration)
     let graph: Table = lua.globals().get("graph")?;
 
     // note_get - Get a note by path
     let s = Arc::clone(&store);
+    let auth = authority.clone();
     let note_get = lua.create_async_function(move |lua, path: String| {
         let s = Arc::clone(&s);
+        let auth = auth.clone();
         async move {
-            match s.get(&path).await {
+            match s.get(&path, &auth).await {
                 Ok(Some(record)) => {
                     // Convert NoteRecord to Lua table
                     note_record_to_lua(&lua, &record)
@@ -275,10 +292,12 @@ pub fn register_note_store_functions(lua: &Lua, store: Arc<dyn NoteStore>) -> Re
 
     // note_list - List notes with optional limit
     let s = Arc::clone(&store);
+    let auth = authority.clone();
     let note_list = lua.create_async_function(move |lua, limit: Option<usize>| {
         let s = Arc::clone(&s);
+        let auth = auth.clone();
         async move {
-            match s.list().await {
+            match s.list(&auth).await {
                 Ok(records) => {
                     let table = lua.create_table()?;
                     let iter = records.iter();
@@ -311,11 +330,21 @@ pub fn register_graph_module_with_store(
     lua: &Lua,
     store: Arc<dyn NoteStore>,
 ) -> Result<(), LuaError> {
+    register_graph_module_with_store_scoped(lua, store, crucible_core::storage::Scope::Global)
+}
+
+/// Same as [`register_graph_module_with_store`] but scoped — see
+/// [`register_note_store_functions_scoped`] for security semantics.
+pub fn register_graph_module_with_store_scoped(
+    lua: &Lua,
+    store: Arc<dyn NoteStore>,
+    authority: crucible_core::storage::Scope,
+) -> Result<(), LuaError> {
     if lua.globals().get::<Option<Table>>("graph")?.is_none() {
         register_graph_module(lua)?;
     }
 
-    register_note_store_functions(lua, store)?;
+    register_note_store_functions_scoped(lua, store, authority)?;
 
     Ok(())
 }
@@ -890,7 +919,11 @@ mod note_store_tests {
             Ok(vec![event])
         }
 
-        async fn get(&self, path: &str) -> StorageResult<Option<NoteRecord>> {
+        async fn get(
+            &self,
+            path: &str,
+            _authority: &crucible_core::storage::Scope,
+        ) -> StorageResult<Option<NoteRecord>> {
             let map = self.notes.lock().unwrap();
             Ok(map.get(path).cloned())
         }
@@ -904,12 +937,19 @@ mod note_store_tests {
             }))
         }
 
-        async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
+        async fn list(
+            &self,
+            _authority: &crucible_core::storage::Scope,
+        ) -> StorageResult<Vec<NoteRecord>> {
             let map = self.notes.lock().unwrap();
             Ok(map.values().cloned().collect())
         }
 
-        async fn get_by_hash(&self, _hash: &BlockHash) -> StorageResult<Option<NoteRecord>> {
+        async fn get_by_hash(
+            &self,
+            _hash: &BlockHash,
+            _authority: &crucible_core::storage::Scope,
+        ) -> StorageResult<Option<NoteRecord>> {
             Ok(None)
         }
 
@@ -1381,7 +1421,11 @@ mod graph_view_tests {
                 });
                 Ok(vec![event])
             }
-            async fn get(&self, _path: &str) -> StorageResult<Option<NoteRecord>> {
+            async fn get(
+                &self,
+                _path: &str,
+                _authority: &crucible_core::storage::Scope,
+            ) -> StorageResult<Option<NoteRecord>> {
                 Ok(None)
             }
             async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
@@ -1390,10 +1434,17 @@ mod graph_view_tests {
                     existed: false,
                 }))
             }
-            async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
+            async fn list(
+                &self,
+                _authority: &crucible_core::storage::Scope,
+            ) -> StorageResult<Vec<NoteRecord>> {
                 Ok(vec![])
             }
-            async fn get_by_hash(&self, _hash: &BlockHash) -> StorageResult<Option<NoteRecord>> {
+            async fn get_by_hash(
+                &self,
+                _hash: &BlockHash,
+                _authority: &crucible_core::storage::Scope,
+            ) -> StorageResult<Option<NoteRecord>> {
                 Ok(None)
             }
             async fn search(

@@ -290,7 +290,11 @@ pub(crate) async fn handle_session_reindex(req: Request, km: &Arc<KilnManager>) 
         let path = format!("sessions/{}", id.as_str());
 
         if !force {
-            match note_store.get(&path).await {
+            // Internal observability scan — system-level authority.
+            match note_store
+                .get(&path, &crucible_core::storage::Scope::Global)
+                .await
+            {
                 Ok(Some(_)) => {
                     skipped += 1;
                     continue;

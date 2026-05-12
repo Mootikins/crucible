@@ -217,7 +217,9 @@ impl NoteTools {
 
         // Try NoteStore first for faster indexed access
         if let Some(ref note_store) = self.note_store {
-            if let Ok(Some(note_record)) = note_store.get(&path).await {
+            // Workspace authority derived from this MCP server's bound kiln.
+            let authority = crucible_core::storage::Scope::workspace(&self.kiln_path);
+            if let Ok(Some(note_record)) = note_store.get(&path, &authority).await {
                 // Build frontmatter from NoteRecord
                 let mut frontmatter = serde_json::json!({
                     "title": note_record.title,

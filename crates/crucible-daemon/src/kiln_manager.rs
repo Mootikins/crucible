@@ -86,21 +86,79 @@ impl StorageHandle {
     /// Vector index lives in LanceDB; the document_id is the note path
     /// stored at upsert time and looked up in SQLite if metadata hydration
     /// is required.
+    ///
+    /// This unscoped variant is equivalent to
+    /// `search_vectors_scoped(vector, limit, &Scope::Global)` — i.e. the
+    /// caller acknowledges they have global authority. Most callers should
+    /// use [`Self::search_vectors_scoped`] with the active session's
+    /// derived scope so cross-scope hits are filtered out.
     pub async fn search_vectors(
         &self,
         vector: Vec<f32>,
         limit: usize,
     ) -> Result<Vec<(String, f64)>> {
-        let matches = self.vectors.search(&vector, limit).await?;
-        Ok(matches
-            .into_iter()
-            .map(|m| (m.id, m.similarity as f64))
-            .collect())
+        self.search_vectors_scoped(vector, limit, &crucible_core::storage::Scope::Global)
+            .await
+    }
+
+    /// Scope-aware vector search.
+    ///
+    /// Over-fetches the Lance index (~2x `limit`, capped at 4x) so the
+    /// SQLite scope post-filter doesn't return fewer than `limit` results
+    /// when the filter rejects some hits. Lance is the similarity oracle;
+    /// SQLite is the scope oracle. Both layers must approve for a hit to
+    /// reach the caller.
+    pub async fn search_vectors_scoped(
+        &self,
+        vector: Vec<f32>,
+        limit: usize,
+        authority: &crucible_core::storage::Scope,
+    ) -> Result<Vec<(String, f64)>> {
+        // Global authority — no scope work needed beyond the vector search.
+        if matches!(authority, crucible_core::storage::Scope::Global) {
+            let matches = self.vectors.search(&vector, limit).await?;
+            return Ok(matches
+                .into_iter()
+                .map(|m| (m.id, m.similarity as f64))
+                .collect());
+        }
+
+        let fetch = limit.max(1).saturating_mul(2).min(limit.max(1) * 4);
+        let matches = self.vectors.search(&vector, fetch).await?;
+
+        // Post-filter: hydrate each match through the SQLite note store
+        // (scoped read). If the record is missing or out-of-scope, drop it.
+        // `NoteStore::get` is already authority-aware so we get both
+        // existence and visibility in one call.
+        let note_store = self.sqlite.as_note_store();
+        let mut filtered: Vec<(String, f64)> = Vec::with_capacity(matches.len());
+        for m in matches {
+            let visible = note_store
+                .get(&m.id, authority)
+                .await
+                .map(|opt| opt.is_some())
+                .unwrap_or(false);
+            if visible {
+                filtered.push((m.id, m.similarity as f64));
+                if filtered.len() >= limit {
+                    break;
+                }
+            }
+        }
+        Ok(filtered)
     }
 
     /// List notes by metadata filter. Always reads from SQLite.
-    pub async fn list_notes(&self, path_filter: Option<&str>) -> Result<Vec<NoteInfo>> {
-        let records = self.sqlite.as_note_store().list().await?;
+    ///
+    /// `authority` is the request authority — see [`crucible_core::storage::Scope`].
+    /// Records whose stored scope is outside the caller's authority are
+    /// filtered out at the SQL layer.
+    pub async fn list_notes(
+        &self,
+        path_filter: Option<&str>,
+        authority: &crucible_core::storage::Scope,
+    ) -> Result<Vec<NoteInfo>> {
+        let records = self.sqlite.as_note_store().list(authority).await?;
         Ok(records
             .into_iter()
             .filter(|r| path_filter.is_none_or(|p| r.path.contains(p)))
@@ -120,8 +178,14 @@ impl StorageHandle {
     }
 
     /// Case-insensitive fuzzy lookup by path or title.
-    pub async fn get_note_by_name(&self, name: &str) -> Result<Option<NoteRecord>> {
-        let records = self.sqlite.as_note_store().list().await?;
+    ///
+    /// `authority` is the request authority — see [`crucible_core::storage::Scope`].
+    pub async fn get_note_by_name(
+        &self,
+        name: &str,
+        authority: &crucible_core::storage::Scope,
+    ) -> Result<Option<NoteRecord>> {
+        let records = self.sqlite.as_note_store().list(authority).await?;
         let name_lower = name.to_lowercase();
         Ok(records.into_iter().find(|r| {
             r.path.to_lowercase().contains(&name_lower)
@@ -1103,7 +1167,8 @@ mod tests {
             .unwrap();
 
         // Verify all 3 notes exist in the store
-        let notes = note_store.list().await.unwrap();
+        let auth = crucible_core::storage::Scope::Global;
+        let notes = note_store.list(&auth).await.unwrap();
         assert_eq!(notes.len(), 3, "DB should contain 3 notes");
 
         // Delete beta.md from disk
@@ -1118,21 +1183,21 @@ mod tests {
         );
 
         // Verify DB now has exactly 2 notes
-        let notes = note_store.list().await.unwrap();
+        let notes = note_store.list(&auth).await.unwrap();
         assert_eq!(notes.len(), 2, "DB should contain 2 notes after deletion");
 
         // Verify the deleted note is gone
         assert!(
-            note_store.get("beta.md").await.unwrap().is_none(),
+            note_store.get("beta.md", &auth).await.unwrap().is_none(),
             "deleted note should not be in the store",
         );
 
         // Verify the remaining 2 notes are intact
-        let alpha = note_store.get("alpha.md").await.unwrap();
+        let alpha = note_store.get("alpha.md", &auth).await.unwrap();
         assert!(alpha.is_some(), "alpha.md should still exist");
         assert_eq!(alpha.unwrap().title, "Alpha");
 
-        let gamma = note_store.get("gamma.md").await.unwrap();
+        let gamma = note_store.get("gamma.md", &auth).await.unwrap();
         assert!(gamma.is_some(), "gamma.md should still exist");
         assert_eq!(gamma.unwrap().title, "Gamma");
     }

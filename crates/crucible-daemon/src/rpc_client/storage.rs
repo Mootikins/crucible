@@ -236,17 +236,25 @@ impl NoteStore for DaemonNoteStore {
         )])
     }
 
-    async fn get(&self, path: &str) -> StorageResult<Option<NoteRecord>> {
+    async fn get(
+        &self,
+        path: &str,
+        authority: &crucible_core::storage::Scope,
+    ) -> StorageResult<Option<NoteRecord>> {
         self.client
             .client
-            .note_get(self.client.kiln_path(), path)
+            .note_get_scoped(self.client.kiln_path(), path, Some(authority.clone()))
             .await
             .storage_backend()
     }
 
     async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
-        // Check if note exists before deleting
-        let existed = self.get(path).await?.is_some();
+        // Internal existence check — Global authority (see note on
+        // SqliteNoteStore::upsert about pipeline/bookkeeping paths).
+        let existed = self
+            .get(path, &crucible_core::storage::Scope::Global)
+            .await?
+            .is_some();
 
         self.client
             .client
@@ -260,18 +268,24 @@ impl NoteStore for DaemonNoteStore {
         }))
     }
 
-    async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
+    async fn list(
+        &self,
+        authority: &crucible_core::storage::Scope,
+    ) -> StorageResult<Vec<NoteRecord>> {
         self.client
             .client
-            .note_list(self.client.kiln_path())
+            .note_list_scoped(self.client.kiln_path(), Some(authority.clone()))
             .await
             .storage_backend()
     }
 
-    async fn get_by_hash(&self, hash: &BlockHash) -> StorageResult<Option<NoteRecord>> {
-        // Not yet implemented via RPC - would need new endpoint
-        // For now, do a linear scan (inefficient but correct)
-        let notes = self.list().await?;
+    async fn get_by_hash(
+        &self,
+        hash: &BlockHash,
+        authority: &crucible_core::storage::Scope,
+    ) -> StorageResult<Option<NoteRecord>> {
+        // Not yet implemented via RPC — linear scan, scope-filtered by list.
+        let notes = self.list(authority).await?;
         Ok(notes.into_iter().find(|n| &n.content_hash == hash))
     }
 
@@ -279,20 +293,34 @@ impl NoteStore for DaemonNoteStore {
         &self,
         query_embedding: &[f32],
         limit: usize,
-        _filter: Option<crucible_core::storage::Filter>,
+        filter: Option<crucible_core::storage::Filter>,
     ) -> StorageResult<Vec<StorageSearchResult>> {
-        // Use existing search_vectors RPC
+        // Extract scope from the filter if the caller passed one. This is
+        // the canonical entry point — daemon-side handlers also accept
+        // scope explicitly via `search_vectors_scoped`. We pull scope out
+        // of the filter so plugins that built a `Filter::Scope(...)` get
+        // the same enforcement as direct RPC callers.
+        let scope = filter.as_ref().and_then(extract_scope_from_filter);
+
         let results = self
             .client
             .client
-            .search_vectors(self.client.kiln_path(), query_embedding, limit)
+            .search_vectors_scoped(
+                self.client.kiln_path(),
+                query_embedding,
+                limit,
+                scope.clone(),
+            )
             .await
             .storage_backend()?;
 
-        // Convert to StorageSearchResult - we need to fetch the full NoteRecord for each hit
+        // Hydrate results — use the same authority for hydration as the
+        // search itself so we never reveal a note that the search filter
+        // would have hidden.
+        let hydration_authority = scope.unwrap_or(crucible_core::storage::Scope::Global);
         let mut hits = Vec::with_capacity(results.len());
         for (doc_id, score) in results {
-            if let Ok(Some(note)) = self.get(&doc_id).await {
+            if let Ok(Some(note)) = self.get(&doc_id, &hydration_authority).await {
                 hits.push(StorageSearchResult {
                     note,
                     score: score as f32,
@@ -301,6 +329,22 @@ impl NoteStore for DaemonNoteStore {
         }
 
         Ok(hits)
+    }
+}
+
+/// Walk a `Filter` tree and pull out a scope authority if one was specified.
+/// Used by [`DaemonNoteStore::search`] so callers can express scope via
+/// `Filter::Scope(...)` and the RPC carries it as a top-level param.
+fn extract_scope_from_filter(
+    f: &crucible_core::storage::Filter,
+) -> Option<crucible_core::storage::Scope> {
+    use crucible_core::storage::Filter;
+    match f {
+        Filter::Scope(s) => Some(s.clone()),
+        Filter::And(filters) | Filter::Or(filters) => {
+            filters.iter().find_map(extract_scope_from_filter)
+        }
+        _ => None,
     }
 }
 

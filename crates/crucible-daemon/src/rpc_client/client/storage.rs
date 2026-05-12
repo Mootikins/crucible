@@ -25,10 +25,15 @@ pub struct KilnSetClassificationRequest {
 }
 
 /// Request for `get_note_by_name`.
+///
+/// `scope` is the request authority — defaults server-side to
+/// `Scope::Workspace { path: kiln }` when absent.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct GetNoteByNameRequest {
     pub kiln: String,
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<crucible_core::storage::Scope>,
 }
 
 /// Request for `note.upsert`.
@@ -38,11 +43,27 @@ pub struct NoteUpsertRequest {
     pub note: serde_json::Value,
 }
 
+/// Request for `note.list`. `scope` is the request authority; absent →
+/// server defaults to `Scope::Workspace { path: kiln }`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct NoteListRequest {
+    pub kiln: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<crucible_core::storage::Scope>,
+}
+
 /// Request for `note.get` and `note.delete`.
+///
+/// `note.get` accepts an optional `scope` field — the request authority.
+/// When absent, the server defaults to `Scope::Workspace { path: kiln }`
+/// (workspace-scoped read, which is the safest default for legacy callers
+/// without a session context). `note.delete` ignores `scope`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct NotePathRequest {
     pub kiln: String,
     pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<crucible_core::storage::Scope>,
 }
 
 /// Request for `process_batch`.
@@ -80,11 +101,18 @@ pub struct McpStartRequest {
 }
 
 /// Request for `search_vectors`.
+///
+/// `scope` is the request authority — defaults server-side to
+/// `Scope::Workspace { path: kiln }` when absent. Hits whose stored
+/// `properties.scope` is outside the authority are filtered out (via a
+/// SQLite post-filter on the Lance hit IDs).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SearchVectorsRequest {
     pub kiln: String,
     pub vector: Vec<f32>,
     pub limit: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<crucible_core::storage::Scope>,
 }
 
 /// Request for `embed.query`.
@@ -95,11 +123,16 @@ pub struct EmbedQueryRequest {
 }
 
 /// Request for `list_notes`.
+///
+/// `scope` is the request authority — defaults server-side to
+/// `Scope::Workspace { path: kiln }` when absent.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ListNotesRequest {
     pub kiln: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path_filter: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<crucible_core::storage::Scope>,
 }
 
 impl DaemonClient {
@@ -186,6 +219,21 @@ impl DaemonClient {
         vector: &[f32],
         limit: usize,
     ) -> Result<Vec<(String, f64)>> {
+        self.search_vectors_scoped(kiln_path, vector, limit, None)
+            .await
+    }
+
+    /// Scope-aware variant of [`Self::search_vectors`]. Passes the caller's
+    /// authority to the daemon so cross-scope hits are filtered out before
+    /// they cross the RPC boundary. `None` means "server default" (workspace
+    /// scope derived from kiln).
+    pub async fn search_vectors_scoped(
+        &self,
+        kiln_path: &Path,
+        vector: &[f32],
+        limit: usize,
+        scope: Option<crucible_core::storage::Scope>,
+    ) -> Result<Vec<(String, f64)>> {
         let result: serde_json::Value = self
             .typed_call(
                 "search_vectors",
@@ -193,6 +241,7 @@ impl DaemonClient {
                     kiln: kiln_path.to_string_lossy().to_string(),
                     vector: vector.to_vec(),
                     limit,
+                    scope,
                 },
             )
             .await?;
@@ -216,12 +265,23 @@ impl DaemonClient {
         kiln_path: &Path,
         path_filter: Option<&str>,
     ) -> Result<Vec<(String, String, Option<String>, Vec<String>, Option<String>)>> {
+        self.list_notes_scoped(kiln_path, path_filter, None).await
+    }
+
+    /// Scope-aware variant of [`Self::list_notes`].
+    pub async fn list_notes_scoped(
+        &self,
+        kiln_path: &Path,
+        path_filter: Option<&str>,
+        scope: Option<crucible_core::storage::Scope>,
+    ) -> Result<Vec<(String, String, Option<String>, Vec<String>, Option<String>)>> {
         let result: serde_json::Value = self
             .typed_call(
                 "list_notes",
                 ListNotesRequest {
                     kiln: kiln_path.to_string_lossy().to_string(),
                     path_filter: path_filter.map(|f| f.to_string()),
+                    scope,
                 },
             )
             .await?;
@@ -273,12 +333,23 @@ impl DaemonClient {
         kiln_path: &Path,
         name: &str,
     ) -> Result<Option<serde_json::Value>> {
+        self.get_note_by_name_scoped(kiln_path, name, None).await
+    }
+
+    /// Scope-aware variant of [`Self::get_note_by_name`].
+    pub async fn get_note_by_name_scoped(
+        &self,
+        kiln_path: &Path,
+        name: &str,
+        scope: Option<crucible_core::storage::Scope>,
+    ) -> Result<Option<serde_json::Value>> {
         let result: serde_json::Value = self
             .typed_call(
                 "get_note_by_name",
                 GetNoteByNameRequest {
                     kiln: kiln_path.to_string_lossy().to_string(),
                     name: name.to_string(),
+                    scope,
                 },
             )
             .await?;
@@ -316,12 +387,23 @@ impl DaemonClient {
         kiln_path: &Path,
         path: &str,
     ) -> Result<Option<crucible_core::storage::NoteRecord>> {
+        self.note_get_scoped(kiln_path, path, None).await
+    }
+
+    /// Scope-aware variant of [`Self::note_get`].
+    pub async fn note_get_scoped(
+        &self,
+        kiln_path: &Path,
+        path: &str,
+        scope: Option<crucible_core::storage::Scope>,
+    ) -> Result<Option<crucible_core::storage::NoteRecord>> {
         let result: serde_json::Value = self
             .typed_call(
                 "note.get",
                 NotePathRequest {
                     kiln: kiln_path.to_string_lossy().to_string(),
                     path: path.to_string(),
+                    scope,
                 },
             )
             .await?;
@@ -341,6 +423,7 @@ impl DaemonClient {
                 NotePathRequest {
                     kiln: kiln_path.to_string_lossy().to_string(),
                     path: path.to_string(),
+                    scope: None,
                 },
             )
             .await?;
@@ -351,10 +434,20 @@ impl DaemonClient {
         &self,
         kiln_path: &Path,
     ) -> Result<Vec<crucible_core::storage::NoteRecord>> {
+        self.note_list_scoped(kiln_path, None).await
+    }
+
+    /// Scope-aware variant of [`Self::note_list`].
+    pub async fn note_list_scoped(
+        &self,
+        kiln_path: &Path,
+        scope: Option<crucible_core::storage::Scope>,
+    ) -> Result<Vec<crucible_core::storage::NoteRecord>> {
         self.typed_call(
             "note.list",
-            KilnPathRequest {
+            NoteListRequest {
                 kiln: kiln_path.to_string_lossy().to_string(),
+                scope,
             },
         )
         .await

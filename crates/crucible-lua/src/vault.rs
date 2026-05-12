@@ -49,7 +49,7 @@
 use crate::error::LuaError;
 use crate::json_query::lua_to_json;
 use crate::lua_util::register_in_namespaces;
-use crucible_core::storage::{GraphView, NoteStore};
+use crucible_core::storage::{GraphView, NoteStore, Scope};
 use mlua::{Lua, LuaSerdeExt, Table, Value};
 use std::future::Future;
 use std::pin::Pin;
@@ -157,9 +157,27 @@ pub fn register_vault_module(lua: &Lua) -> Result<(), LuaError> {
 }
 
 /// Register the kiln module with NoteStore for database-backed queries.
+///
+/// Equivalent to [`register_vault_module_with_store_scoped`] with
+/// `Scope::Global` — i.e. no scope filtering. Production callers should
+/// use the `_scoped` variant with the kiln's workspace scope so a Lua
+/// plugin cannot read notes from other workspaces via `cru.kiln.list` /
+/// `cru.kiln.get`.
 pub fn register_vault_module_with_store(
     lua: &Lua,
     store: Arc<dyn NoteStore>,
+) -> Result<(), LuaError> {
+    register_vault_module_with_store_scoped(lua, store, Scope::Global)
+}
+
+/// Scoped variant: every `cru.kiln.list` and `cru.kiln.get` call is
+/// filtered by the given authority. The daemon wires this with
+/// `Scope::Workspace { path: kiln_path }` so a plugin running in kiln A
+/// cannot read kiln B's notes — even with adversarial path arguments.
+pub fn register_vault_module_with_store_scoped(
+    lua: &Lua,
+    store: Arc<dyn NoteStore>,
+    authority: Scope,
 ) -> Result<(), LuaError> {
     register_vault_module(lua)?;
 
@@ -168,10 +186,12 @@ pub fn register_vault_module_with_store(
     let vault: Table = cru.get("kiln")?;
 
     let s = Arc::clone(&store);
+    let auth = authority.clone();
     let list_fn = lua.create_async_function(move |lua, limit: Option<usize>| {
         let s = Arc::clone(&s);
+        let auth = auth.clone();
         async move {
-            match s.list().await {
+            match s.list(&auth).await {
                 Ok(records) => {
                     let table = lua.create_table()?;
                     let iter = records.iter();
@@ -194,10 +214,12 @@ pub fn register_vault_module_with_store(
     vault.set("list", list_fn)?;
 
     let s = Arc::clone(&store);
+    let auth = authority.clone();
     let get_fn = lua.create_async_function(move |lua, path: String| {
         let s = Arc::clone(&s);
+        let auth = auth.clone();
         async move {
-            match s.get(&path).await {
+            match s.get(&path, &auth).await {
                 Ok(Some(record)) => note_record_to_lua(&lua, &record),
                 Ok(None) => Ok(Value::Nil),
                 Err(e) => Err(mlua::Error::runtime(format!("Kiln error: {}", e))),
@@ -559,7 +581,11 @@ mod store_tests {
             Ok(vec![event])
         }
 
-        async fn get(&self, path: &str) -> StorageResult<Option<NoteRecord>> {
+        async fn get(
+            &self,
+            path: &str,
+            _authority: &crucible_core::storage::Scope,
+        ) -> StorageResult<Option<NoteRecord>> {
             let map = self.notes.lock().unwrap();
             Ok(map.get(path).cloned())
         }
@@ -573,12 +599,19 @@ mod store_tests {
             }))
         }
 
-        async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
+        async fn list(
+            &self,
+            _authority: &crucible_core::storage::Scope,
+        ) -> StorageResult<Vec<NoteRecord>> {
             let map = self.notes.lock().unwrap();
             Ok(map.values().cloned().collect())
         }
 
-        async fn get_by_hash(&self, _hash: &BlockHash) -> StorageResult<Option<NoteRecord>> {
+        async fn get_by_hash(
+            &self,
+            _hash: &BlockHash,
+            _authority: &crucible_core::storage::Scope,
+        ) -> StorageResult<Option<NoteRecord>> {
             Ok(None)
         }
 

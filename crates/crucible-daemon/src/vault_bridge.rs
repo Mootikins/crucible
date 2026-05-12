@@ -142,12 +142,19 @@ impl DaemonVaultApi for DaemonVaultBridge {
                 .await
                 .map_err(|e| format!("open kiln: {e}"))?;
 
+            // The vault bridge is bound to a single kiln; its authority is
+            // workspace-scoped to that kiln. A Lua plugin running in kiln A
+            // cannot see kiln B's notes even with a crafted `cru.kiln.search`
+            // call — Lance is over-fetched and the SQLite scope post-filter
+            // (inside `search_vectors_scoped`) drops any cross-scope hit.
+            let authority = crucible_core::storage::Scope::workspace(&kiln_path);
+
             // Search the LanceDB vector index. Results are (path, score).
             // We over-fetch a bit so the threshold filter doesn't underflow
             // the requested top-N — but cap at 4x to keep latency bounded.
             let fetch = limit.max(1).saturating_mul(2).min(limit.max(1) * 4);
             let raw = handle
-                .search_vectors(vector, fetch)
+                .search_vectors_scoped(vector, fetch, &authority)
                 .await
                 .map_err(|e| format!("vector search: {e}"))?;
 
@@ -158,10 +165,11 @@ impl DaemonVaultApi for DaemonVaultBridge {
                     continue;
                 }
 
-                // Hydrate title + snippet via the note store. If the note
-                // isn't found we still emit the path so callers can see the
-                // raw hit — better than dropping it silently.
-                let (title, snippet) = match note_store.get(&path).await {
+                // Hydrate title + snippet via the note store. Pass the same
+                // authority so we never reveal a note that the search filter
+                // would have hidden (defense in depth — the search already
+                // post-filtered).
+                let (title, snippet) = match note_store.get(&path, &authority).await {
                     Ok(Some(record)) => {
                         let snip = read_snippet(&kiln_path, &record.path);
                         (record.title, snip)
@@ -377,7 +385,10 @@ mod tests {
         let handle = km.get(&kiln_path).await.expect("kiln open");
         let store = handle.as_note_store();
         let record = store
-            .get("Entities/Indexed.md")
+            .get(
+                "Entities/Indexed.md",
+                &crucible_core::storage::Scope::Global,
+            )
             .await
             .expect("store ok")
             .expect("note indexed");
@@ -406,7 +417,10 @@ mod tests {
         let handle = km.get(&kiln_path).await.unwrap();
         let record = handle
             .as_note_store()
-            .get("Notes/With Links.md")
+            .get(
+                "Notes/With Links.md",
+                &crucible_core::storage::Scope::Global,
+            )
             .await
             .unwrap()
             .unwrap();

@@ -65,9 +65,17 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
     async fn get_note_by_name(&self, name: &str) -> CrucibleResult<Option<ParsedNote>> {
         use crucible_core::storage::NoteStore;
 
+        // Workspace authority derived from this repo's bound kiln (when
+        // present). Repos constructed via `new()` without a kiln path fall
+        // back to `Global` — they're test/admin paths.
+        let authority = match &self.kiln_path {
+            Some(p) => crucible_core::storage::Scope::workspace(p),
+            None => crucible_core::storage::Scope::Global,
+        };
+
         // Get all notes and find one matching by path or title
         let notes =
-            self.store.list().await.map_err(|e| {
+            self.store.list(&authority).await.map_err(|e| {
                 CrucibleError::DatabaseError(format!("Failed to list notes: {}", e))
             })?;
 
@@ -111,8 +119,13 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
     async fn list_notes(&self, path: Option<&str>) -> CrucibleResult<Vec<NoteInfo>> {
         use crucible_core::storage::NoteStore;
 
+        let authority = match &self.kiln_path {
+            Some(p) => crucible_core::storage::Scope::workspace(p),
+            None => crucible_core::storage::Scope::Global,
+        };
+
         let notes =
-            self.store.list().await.map_err(|e| {
+            self.store.list(&authority).await.map_err(|e| {
                 CrucibleError::DatabaseError(format!("Failed to list notes: {}", e))
             })?;
 
@@ -145,11 +158,16 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
     }
 
     async fn search_vectors(&self, vector: Vec<f32>) -> CrucibleResult<Vec<SearchResult>> {
-        use crucible_core::storage::NoteStore;
+        use crucible_core::storage::{Filter, NoteStore};
+
+        let scope_filter = match &self.kiln_path {
+            Some(p) => Some(Filter::Scope(crucible_core::storage::Scope::workspace(p))),
+            None => None,
+        };
 
         let results = self
             .store
-            .search(&vector, 10, None)
+            .search(&vector, 10, scope_filter)
             .await
             .map_err(|e| CrucibleError::DatabaseError(format!("Search failed: {}", e)))?;
 

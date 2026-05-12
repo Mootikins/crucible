@@ -3,6 +3,21 @@ use crucible_core::config::{
     read_kiln_config, read_project_config, write_kiln_config, write_project_config,
     DataClassification, KilnConfig, KilnMeta, ProjectConfig,
 };
+use crucible_core::storage::Scope;
+
+/// Decode an optional `scope` JSON field from an RPC request. Falls back
+/// to `Scope::Workspace { path: kiln_path }` when absent — the broadest
+/// default that still respects workspace isolation.
+///
+/// Returns an error JSON string when the field is present but malformed
+/// so callers can surface a precise `INVALID_PARAMS` response.
+fn decode_request_scope(req: &Request, kiln_path: &Path) -> Result<Scope, String> {
+    match req.params.get("scope") {
+        Some(serde_json::Value::Null) | None => Ok(Scope::workspace(kiln_path)),
+        Some(v) => serde_json::from_value::<Scope>(v.clone())
+            .map_err(|e| format!("invalid `scope` param: {}", e)),
+    }
+}
 
 pub(crate) async fn handle_kiln_open(
     req: Request,
@@ -227,14 +242,19 @@ pub(crate) async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -
         .collect();
     let limit = optional_param!(req, "limit", as_u64).unwrap_or(20) as usize;
 
+    let scope = match decode_request_scope(&req, Path::new(kiln_path)) {
+        Ok(s) => s,
+        Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
+    };
+
     // Get or open connection to the kiln
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
         Err(e) => return internal_error(req.id, e),
     };
 
-    // Execute vector search using the backend-agnostic method
-    match handle.search_vectors(vector, limit).await {
+    // Execute vector search with scope post-filtering.
+    match handle.search_vectors_scoped(vector, limit, &scope).await {
         Ok(results) => {
             let json_results: Vec<_> = results
                 .into_iter()
@@ -282,12 +302,17 @@ pub(crate) async fn handle_list_notes(req: Request, km: &Arc<KilnManager>) -> Re
     let kiln_path = require_param!(req, "kiln", as_str);
     let path_filter = optional_param!(req, "path_filter", as_str);
 
+    let scope = match decode_request_scope(&req, Path::new(kiln_path)) {
+        Ok(s) => s,
+        Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
+    };
+
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
         Err(e) => return internal_error(req.id, e),
     };
 
-    match handle.list_notes(path_filter).await {
+    match handle.list_notes(path_filter, &scope).await {
         Ok(notes) => {
             let json_notes: Vec<_> = notes
                 .into_iter()
@@ -311,12 +336,17 @@ pub(crate) async fn handle_get_note_by_name(req: Request, km: &Arc<KilnManager>)
     let kiln_path = require_param!(req, "kiln", as_str);
     let name = require_param!(req, "name", as_str);
 
+    let scope = match decode_request_scope(&req, Path::new(kiln_path)) {
+        Ok(s) => s,
+        Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
+    };
+
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
         Err(e) => return internal_error(req.id, e),
     };
 
-    match handle.get_note_by_name(name).await {
+    match handle.get_note_by_name(name, &scope).await {
         Ok(Some(note)) => Response::success(
             req.id,
             serde_json::json!({
@@ -379,13 +409,18 @@ pub(crate) async fn handle_note_get(req: Request, km: &Arc<KilnManager>) -> Resp
     let kiln_path = require_param!(req, "kiln", as_str);
     let path = require_param!(req, "path", as_str);
 
+    let scope = match decode_request_scope(&req, Path::new(kiln_path)) {
+        Ok(s) => s,
+        Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
+    };
+
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
         Err(e) => return internal_error(req.id, e),
     };
 
     let note_store = handle.as_note_store();
-    match note_store.get(path).await {
+    match note_store.get(path, &scope).await {
         Ok(Some(note)) => match serde_json::to_value(&note) {
             Ok(v) => Response::success(req.id, v),
             Err(e) => internal_error(req.id, e),
@@ -414,13 +449,18 @@ pub(crate) async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> R
 pub(crate) async fn handle_note_list(req: Request, km: &Arc<KilnManager>) -> Response {
     let kiln_path = require_param!(req, "kiln", as_str);
 
+    let scope = match decode_request_scope(&req, Path::new(kiln_path)) {
+        Ok(s) => s,
+        Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
+    };
+
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
         Err(e) => return internal_error(req.id, e),
     };
 
     let note_store = handle.as_note_store();
-    match note_store.list().await {
+    match note_store.list(&scope).await {
         Ok(notes) => match serde_json::to_value(&notes) {
             Ok(v) => Response::success(req.id, v),
             Err(e) => internal_error(req.id, e),
@@ -579,12 +619,17 @@ pub(crate) async fn handle_suggest_links(req: Request, km: &Arc<KilnManager>) ->
     let text = require_param!(req, "text", as_str);
     let kiln_path = require_param!(req, "kiln", as_str);
 
+    let scope = match decode_request_scope(&req, Path::new(kiln_path)) {
+        Ok(s) => s,
+        Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
+    };
+
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
         Err(e) => return internal_error(req.id, e),
     };
 
-    let notes = match handle.list_notes(None).await {
+    let notes = match handle.list_notes(None, &scope).await {
         Ok(n) => n,
         Err(e) => return internal_error(req.id, e),
     };
