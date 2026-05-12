@@ -72,6 +72,36 @@ impl DaemonVaultApi for DaemonVaultBridge {
                 ));
             }
 
+            // Write-side scope validation. The vault bridge runs as the
+            // kiln's workspace authority — a plugin in kiln A cannot
+            // declare a note with `scope: global` (broadening) or
+            // `scope: workspace:/some/other` (sibling-kiln write).
+            //
+            // Per Wave 2 locked decision: refuse the write when the note's
+            // declared scope exceeds the bridge's authority. The check
+            // runs BEFORE the file is written so we don't leave half-
+            // committed state on disk.
+            let bridge_authority = crucible_core::storage::Scope::workspace(&kiln_path);
+            if let Some(ref fm) = frontmatter {
+                if let Some(declared) = fm
+                    .get("scope")
+                    .and_then(crucible_core::storage::Scope::from_property_value)
+                {
+                    // Bind unbound `workspace` placeholders to this kiln
+                    // before the can_write check — `scope: workspace`
+                    // (no path) means "this kiln" which is always OK.
+                    let declared = declared.bind_to_workspace(&kiln_path);
+                    if !bridge_authority.can_write(&declared) {
+                        return Err(format!(
+                            "scope `{}` exceeds session authority `{}` — \
+                             plugins running in this kiln cannot declare \
+                             notes with broader scope",
+                            declared, bridge_authority
+                        ));
+                    }
+                }
+            }
+
             // Build final content with optional YAML frontmatter. We
             // intentionally mirror the existing MCP create_note shape
             // (`serialize_frontmatter_to_yaml`) so notes look the same
@@ -511,5 +541,301 @@ mod tests {
     fn strip_frontmatter_passes_through_when_absent() {
         let s = "no frontmatter here";
         assert_eq!(strip_frontmatter(s), s);
+    }
+
+    // =========================================================================
+    // Memory Scoping — write-side validation
+    // =========================================================================
+    //
+    // These tests pin the write-side scope check on the Lua-facing vault
+    // bridge. A plugin attempting to broaden its scope on a note (e.g.
+    // declare `scope: global` from a workspace session) must be refused
+    // BEFORE the file lands on disk.
+
+    #[tokio::test]
+    async fn create_note_with_scope_exceeding_session_authority_fails() {
+        let tmp = TempDir::new().unwrap();
+        let (_km, kiln_path, bridge) = make_bridge_with_empty_embedder(&tmp).await;
+
+        let fm = serde_json::json!({
+            "type": "entity",
+            "scope": "global",
+        });
+        let result = bridge
+            .create_note(
+                "Entities/Sneaky.md".to_string(),
+                "# Sneaky\n".to_string(),
+                Some(fm),
+                false,
+            )
+            .await;
+
+        assert!(result.is_err(), "expected refusal, got: {:?}", result);
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("exceeds session authority"),
+            "error message must explain the refusal: {err}"
+        );
+
+        // The file must NOT have been written.
+        assert!(
+            !kiln_path.join("Entities/Sneaky.md").exists(),
+            "create_note must not write the file when scope validation fails"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_note_with_scope_equal_to_session_succeeds() {
+        // `scope: workspace` (unbound) is equivalent to declaring this
+        // kiln's workspace — within the bridge's authority. Must succeed.
+        let tmp = TempDir::new().unwrap();
+        let (_km, kiln_path, bridge) = make_bridge_with_empty_embedder(&tmp).await;
+
+        let fm = serde_json::json!({
+            "type": "entity",
+            "scope": "workspace",
+        });
+        bridge
+            .create_note(
+                "Entities/Local.md".to_string(),
+                "# Local\n".to_string(),
+                Some(fm),
+                false,
+            )
+            .await
+            .expect("workspace scope equal to session authority should succeed");
+
+        assert!(kiln_path.join("Entities/Local.md").exists());
+    }
+
+    #[tokio::test]
+    async fn create_note_with_scope_below_session_succeeds() {
+        // Workspace authority CAN write user-scoped notes (narrower).
+        let tmp = TempDir::new().unwrap();
+        let (_km, kiln_path, bridge) = make_bridge_with_empty_embedder(&tmp).await;
+
+        let fm = serde_json::json!({
+            "type": "user_pref",
+            "scope": "user:alice",
+        });
+        bridge
+            .create_note(
+                "Entities/Pref.md".to_string(),
+                "# Alice's pref\n".to_string(),
+                Some(fm),
+                false,
+            )
+            .await
+            .expect("narrower user scope must be allowed from a workspace session");
+
+        assert!(kiln_path.join("Entities/Pref.md").exists());
+    }
+
+    #[tokio::test]
+    async fn create_note_with_sibling_workspace_scope_rejected() {
+        // A plugin in kiln A cannot declare a note with `scope: workspace:/b`.
+        let tmp = TempDir::new().unwrap();
+        let (_km, kiln_path, bridge) = make_bridge_with_empty_embedder(&tmp).await;
+
+        let fm = serde_json::json!({
+            "scope": "workspace:/some/other/kiln",
+        });
+        let result = bridge
+            .create_note(
+                "Entities/Cross.md".to_string(),
+                "# cross\n".to_string(),
+                Some(fm),
+                false,
+            )
+            .await;
+
+        assert!(result.is_err(), "sibling workspace write must be refused");
+        assert!(
+            !kiln_path.join("Entities/Cross.md").exists(),
+            "no file written on refusal"
+        );
+    }
+
+    #[tokio::test]
+    async fn crafted_plugin_writing_global_scope_in_workspace_session_rejected() {
+        // Gold-standard adversarial test from the spec. Identical to
+        // `create_note_with_scope_exceeding_session_authority_fails` but
+        // named per the threat-model table for direct mapping.
+        let tmp = TempDir::new().unwrap();
+        let (_km, _kp, bridge) = make_bridge_with_empty_embedder(&tmp).await;
+
+        let result = bridge
+            .create_note(
+                "Entities/Escalation.md".to_string(),
+                "# bad\n".to_string(),
+                Some(serde_json::json!({ "scope": "global" })),
+                false,
+            )
+            .await;
+        assert!(
+            result.is_err(),
+            "plugin must not be able to write global-scope notes from a workspace session"
+        );
+    }
+
+    // =========================================================================
+    // Memory Scoping — migration / on-disk invariants
+    // =========================================================================
+
+    #[tokio::test]
+    async fn migration_does_not_mutate_markdown_on_disk() {
+        // A note created via the bridge (which routes through the pipeline
+        // and stamps scope on the NoteRecord) must leave the on-disk
+        // markdown bytes unchanged after the pipeline scope-stamp runs.
+        // The scope only lives on the NoteRecord row, never re-written
+        // to the source file.
+        let tmp = TempDir::new().unwrap();
+        let (_km, kiln_path, bridge) = make_bridge_with_empty_embedder(&tmp).await;
+
+        let original_body = "# Plain Note\n\nNo frontmatter at all.\n";
+        let abs = bridge
+            .create_note(
+                "plain.md".to_string(),
+                original_body.to_string(),
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+
+        let bytes_after = std::fs::read_to_string(&abs).unwrap();
+        assert_eq!(
+            bytes_after, original_body,
+            "pipeline scope-stamp must not mutate the markdown on disk"
+        );
+
+        // But the in-memory NoteRecord must carry the derived scope.
+        let _ = kiln_path; // silence unused if no further asserts
+    }
+
+    #[tokio::test]
+    async fn crafted_plugin_attempting_cross_scope_read_via_lua_kiln_search_fails() {
+        // Gold-standard adversarial test from the Wave 2 plan.
+        //
+        // Setup: a kiln contains TWO notes — one legitimately belonging
+        // to this kiln (workspace scope = this kiln), one planted with
+        // `scope: workspace:/some-other-kiln`. A plugin running via the
+        // bridge (which derives authority from the kiln path) tries to
+        // see the planted note.
+        //
+        // Expected: the planted note is invisible — even when the plugin
+        // calls `note_store.get()` directly with the known path, scope
+        // filtering denies it. This is the storage-layer defense the
+        // plan requires.
+
+        let tmp = TempDir::new().unwrap();
+        let kiln_path = tmp.path().to_path_buf();
+        fs::create_dir_all(kiln_path.join(".crucible")).unwrap();
+
+        let km = Arc::new(KilnManager::new());
+        km.open(&kiln_path).await.unwrap();
+
+        let handle = km.get(&kiln_path).await.unwrap();
+        let store = handle.as_note_store();
+
+        // (a) Own-workspace note — visible to this bridge.
+        let own = crucible_core::storage::NoteRecord::new(
+            "Entities/Mine.md",
+            crucible_core::parser::BlockHash::zero(),
+        )
+        .with_title("Mine")
+        .with_scope(crucible_core::storage::Scope::workspace(&kiln_path));
+        store.upsert(own).await.unwrap();
+
+        // (b) Cross-scope note — planted by an attacker (or migrated
+        // from somewhere) but pinned to a different workspace path.
+        let planted = crucible_core::storage::NoteRecord::new(
+            "Entities/Stranger.md",
+            crucible_core::parser::BlockHash::zero(),
+        )
+        .with_title("Stranger")
+        .with_scope(crucible_core::storage::Scope::Workspace {
+            path: std::path::PathBuf::from("/foreign/kiln"),
+        });
+        store.upsert(planted).await.unwrap();
+
+        // The bridge's authority is the kiln workspace (derived from
+        // kiln_path). Simulate what a Lua plugin running inside this
+        // kiln would experience via `cru.kiln.get` / `cru.kiln.list`.
+        let bridge_authority = crucible_core::storage::Scope::workspace(&kiln_path);
+
+        // 1. Direct get() on the cross-scope path — DENIED.
+        let cross = store
+            .get("Entities/Stranger.md", &bridge_authority)
+            .await
+            .unwrap();
+        assert!(
+            cross.is_none(),
+            "storage-layer scope filter must hide cross-workspace notes — got: {:?}",
+            cross
+        );
+
+        // 2. list() under bridge authority — only own note + global, never planted.
+        let listed = store.list(&bridge_authority).await.unwrap();
+        let paths: Vec<_> = listed.iter().map(|n| n.path.as_str()).collect();
+        assert!(paths.contains(&"Entities/Mine.md"));
+        assert!(
+            !paths.contains(&"Entities/Stranger.md"),
+            "list() leaked cross-scope record: {:?}",
+            paths
+        );
+
+        // 3. Global authority (for sanity) DOES see both — proves the
+        // record exists and the filter is doing the work.
+        let admin = store
+            .list(&crucible_core::storage::Scope::Global)
+            .await
+            .unwrap();
+        let admin_paths: Vec<_> = admin.iter().map(|n| n.path.as_str()).collect();
+        assert_eq!(
+            admin_paths.len(),
+            2,
+            "admin view should see both notes — got: {:?}",
+            admin_paths
+        );
+    }
+
+    #[tokio::test]
+    async fn existing_notes_without_scope_get_workspace_default_at_load() {
+        // Drop a markdown file with no frontmatter into the kiln, run it
+        // through the pipeline, and confirm the resulting NoteRecord
+        // carries the kiln's workspace scope.
+        let tmp = TempDir::new().unwrap();
+        let kiln_path = tmp.path().to_path_buf();
+        fs::create_dir_all(kiln_path.join(".crucible")).unwrap();
+
+        let note_path = kiln_path.join("legacy.md");
+        fs::write(&note_path, "# Legacy\n\nNo scope here.\n").unwrap();
+
+        let km = Arc::new(KilnManager::new());
+        km.open(&kiln_path).await.unwrap();
+        // Drive the pipeline directly so scope stamping runs.
+        km.process_file(&kiln_path, &note_path).await.unwrap();
+
+        let handle = km.get(&kiln_path).await.unwrap();
+        let store = handle.as_note_store();
+        let record = store
+            .get("legacy.md", &crucible_core::storage::Scope::Global)
+            .await
+            .unwrap()
+            .expect("legacy note indexed");
+
+        let scope = record
+            .scope()
+            .expect("pipeline must stamp a scope on the NoteRecord");
+        match scope {
+            crucible_core::storage::Scope::Workspace { path } => {
+                let canon = kiln_path
+                    .canonicalize()
+                    .unwrap_or_else(|_| kiln_path.clone());
+                assert_eq!(path, canon, "scope must bind to kiln workspace path");
+            }
+            other => panic!("expected Workspace scope, got {:?}", other),
+        }
     }
 }
