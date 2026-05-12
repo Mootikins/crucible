@@ -2,8 +2,8 @@ use crate::error::LuaError;
 use crate::{
     register_context_module_stub, register_grammar_module, register_graph_module,
     register_mcp_module_stub, register_oq_module, register_paths_module, register_popup_module,
-    register_sessions_module, register_statusline_module, register_tools_module, register_ui_module,
-    register_vault_module, LuaExecutor, PathsContext,
+    register_sessions_module, register_statusline_module, register_tools_module,
+    register_ui_module, register_vault_module, LuaExecutor, PathsContext,
 };
 
 #[cfg(feature = "send")]
