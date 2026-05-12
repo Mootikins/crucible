@@ -160,10 +160,10 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
     async fn search_vectors(&self, vector: Vec<f32>) -> CrucibleResult<Vec<SearchResult>> {
         use crucible_core::storage::{Filter, NoteStore};
 
-        let scope_filter = match &self.kiln_path {
-            Some(p) => Some(Filter::Scope(crucible_core::storage::Scope::workspace(p))),
-            None => None,
-        };
+        let scope_filter = self
+            .kiln_path
+            .as_ref()
+            .map(|p| Filter::Scope(crucible_core::storage::Scope::workspace(p)));
 
         let results = self
             .store
