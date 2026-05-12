@@ -10,13 +10,13 @@
 use crucible_core::storage::NoteStore;
 use crucible_core::storage::PropertyStore;
 use crucible_lua::{
-    register_context_module, register_context_validators, register_graph_module, register_oq_module,
-    register_paths_module, register_schedule_module, register_sessions_module,
+    register_context_module, register_context_validators, register_graph_module,
+    register_oq_module, register_paths_module, register_schedule_module, register_sessions_module,
     register_sessions_module_with_api, register_shell_module, register_storage_module,
     register_storage_module_with_store, register_team_module, register_team_module_stub,
-    register_tools_module, register_tools_module_with_api, register_vault_module, register_ws_module,
-    DaemonSessionApi, DaemonTeamApi, DaemonToolsApi, LuaExecutor, LuaValidatorRegistry,
-    PathsContext, PluginManager, PluginSource, PluginSpec, ShellPolicy,
+    register_tools_module, register_tools_module_with_api, register_vault_module,
+    register_ws_module, DaemonSessionApi, DaemonTeamApi, DaemonToolsApi, LuaExecutor,
+    LuaValidatorRegistry, PathsContext, PluginManager, PluginSource, PluginSpec, ShellPolicy,
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
@@ -187,8 +187,12 @@ impl DaemonPluginLoader {
         let lua = self.executor.lua();
         let authority = crucible_core::storage::Scope::workspace_unchecked(kiln_path);
 
-        crucible_lua::register_graph_module_with_store_scoped(lua, store.clone(), authority.clone())
-            .map_err(|e| anyhow::anyhow!("graph upgrade: {e}"))?;
+        crucible_lua::register_graph_module_with_store_scoped(
+            lua,
+            store.clone(),
+            authority.clone(),
+        )
+        .map_err(|e| anyhow::anyhow!("graph upgrade: {e}"))?;
         crucible_lua::register_vault_module_with_store_scoped(lua, store, authority)
             .map_err(|e| anyhow::anyhow!("vault upgrade: {e}"))?;
 

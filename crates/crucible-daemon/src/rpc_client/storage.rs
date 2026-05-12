@@ -139,7 +139,7 @@ impl KnowledgeRepository for DaemonStorageClient {
         // Use the backend-agnostic get_note_by_name RPC method
         let result = self
             .client
-            .get_note_by_name(&self.kiln, name)
+            .get_note_by_name(&self.kiln, name, None)
             .await
             .map_err(|e| CrucibleError::DatabaseError(e.to_string()))?;
 
@@ -153,7 +153,7 @@ impl KnowledgeRepository for DaemonStorageClient {
         // Use the backend-agnostic list_notes RPC method
         let results = self
             .client
-            .list_notes(&self.kiln, path_filter)
+            .list_notes(&self.kiln, path_filter, None)
             .await
             .map_err(|e| CrucibleError::DatabaseError(e.to_string()))?;
 
@@ -178,7 +178,7 @@ impl KnowledgeRepository for DaemonStorageClient {
         // Use the backend-agnostic search_vectors RPC method
         let results = self
             .client
-            .search_vectors(&self.kiln, &vector, 20)
+            .search_vectors(&self.kiln, &vector, 20, None)
             .await
             .map_err(|e| CrucibleError::DatabaseError(e.to_string()))?;
 
@@ -295,7 +295,7 @@ impl NoteStore for DaemonNoteStore {
     ) -> StorageResult<Vec<StorageSearchResult>> {
         // Extract scope from the filter if the caller passed one. This is
         // the canonical entry point — daemon-side handlers also accept
-        // scope explicitly via `search_vectors_scoped`. We pull scope out
+        // scope explicitly via `search_vectors`. We pull scope out
         // of the filter so plugins that built a `Filter::Scope(...)` get
         // the same enforcement as direct RPC callers.
         let scope = filter.as_ref().and_then(extract_scope_from_filter);
@@ -303,7 +303,7 @@ impl NoteStore for DaemonNoteStore {
         let results = self
             .client
             .client
-            .search_vectors_scoped(
+            .search_vectors(
                 self.client.kiln_path(),
                 query_embedding,
                 limit,

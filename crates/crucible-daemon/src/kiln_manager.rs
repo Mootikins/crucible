@@ -94,7 +94,7 @@ impl StorageHandle {
     /// when the filter rejects some hits. Lance is the similarity oracle;
     /// SQLite is the scope oracle. Both layers must approve for a hit to
     /// reach the caller.
-    pub async fn search_vectors_scoped(
+    pub async fn search_vectors(
         &self,
         vector: Vec<f32>,
         limit: usize,
@@ -1309,10 +1309,7 @@ mod tests {
         // Authority = this kiln's workspace. own.md must appear,
         // stranger.md must NOT.
         let auth = crucible_core::storage::Scope::workspace_unchecked(&kiln_path);
-        let hits = handle
-            .search_vectors_scoped(query, 10, &auth)
-            .await
-            .unwrap();
+        let hits = handle.search_vectors(query, 10, &auth).await.unwrap();
         let ids: Vec<_> = hits.iter().map(|(id, _)| id.as_str()).collect();
         assert!(ids.contains(&"own.md"), "got: {:?}", ids);
         assert!(
@@ -1354,7 +1351,7 @@ mod tests {
         let handle = km.get(&kiln_path).await.unwrap();
         let auth = crucible_core::storage::Scope::workspace_unchecked(&kiln_path);
         let hits = handle
-            .search_vectors_scoped(unit_embedding(), 10, &auth)
+            .search_vectors(unit_embedding(), 10, &auth)
             .await
             .unwrap();
         assert!(

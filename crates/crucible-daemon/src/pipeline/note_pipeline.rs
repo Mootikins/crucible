@@ -489,8 +489,9 @@ pub(crate) fn stamp_scope_on_properties(
         },
         Some(scope) => scope,
         None => match kiln_root {
-            Some(root) => Scope::workspace(root)
-                .unwrap_or_else(|_| Scope::workspace_unchecked(root)),
+            Some(root) => {
+                Scope::workspace(root).unwrap_or_else(|_| Scope::workspace_unchecked(root))
+            }
             None => Scope::workspace_unchecked(std::path::PathBuf::new()),
         },
     };

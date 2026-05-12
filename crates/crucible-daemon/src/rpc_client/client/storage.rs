@@ -213,21 +213,12 @@ impl DaemonClient {
         Ok(vector)
     }
 
+    /// Semantic vector search.
+    ///
+    /// Passes the caller's authority to the daemon so cross-scope hits are
+    /// filtered out before they cross the RPC boundary. `scope = None`
+    /// means "server default" (workspace scope derived from kiln).
     pub async fn search_vectors(
-        &self,
-        kiln_path: &Path,
-        vector: &[f32],
-        limit: usize,
-    ) -> Result<Vec<(String, f64)>> {
-        self.search_vectors_scoped(kiln_path, vector, limit, None)
-            .await
-    }
-
-    /// Scope-aware variant of [`Self::search_vectors`]. Passes the caller's
-    /// authority to the daemon so cross-scope hits are filtered out before
-    /// they cross the RPC boundary. `None` means "server default" (workspace
-    /// scope derived from kiln).
-    pub async fn search_vectors_scoped(
         &self,
         kiln_path: &Path,
         vector: &[f32],
@@ -260,16 +251,9 @@ impl DaemonClient {
         Ok(results)
     }
 
+    /// List notes by metadata filter. `scope = None` defaults to the kiln's
+    /// workspace authority server-side.
     pub async fn list_notes(
-        &self,
-        kiln_path: &Path,
-        path_filter: Option<&str>,
-    ) -> Result<Vec<(String, String, Option<String>, Vec<String>, Option<String>)>> {
-        self.list_notes_scoped(kiln_path, path_filter, None).await
-    }
-
-    /// Scope-aware variant of [`Self::list_notes`].
-    pub async fn list_notes_scoped(
         &self,
         kiln_path: &Path,
         path_filter: Option<&str>,
@@ -328,16 +312,9 @@ impl DaemonClient {
         Ok(notes)
     }
 
+    /// Case-insensitive fuzzy lookup by path or title. `scope = None`
+    /// defaults to the kiln's workspace authority server-side.
     pub async fn get_note_by_name(
-        &self,
-        kiln_path: &Path,
-        name: &str,
-    ) -> Result<Option<serde_json::Value>> {
-        self.get_note_by_name_scoped(kiln_path, name, None).await
-    }
-
-    /// Scope-aware variant of [`Self::get_note_by_name`].
-    pub async fn get_note_by_name_scoped(
         &self,
         kiln_path: &Path,
         name: &str,

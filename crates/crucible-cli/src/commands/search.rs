@@ -71,7 +71,7 @@ pub async fn execute(
         let query_lower = query.to_lowercase();
 
         for kiln in &all_kilns {
-            let notes = match client.list_notes(kiln, None).await {
+            let notes = match client.list_notes(kiln, None, None).await {
                 Ok(n) => n,
                 Err(e) => {
                     output::warning(&format!(
@@ -228,7 +228,7 @@ async fn run_semantic_search(
         .await
         .context("Failed to generate query embedding via daemon")?;
     client
-        .search_vectors(kiln_path, &query_embedding, limit)
+        .search_vectors(kiln_path, &query_embedding, limit, None)
         .await
         .context("Vector search failed")
 }

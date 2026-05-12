@@ -203,7 +203,7 @@ async fn test_list_notes_returns_seeded_notes() {
         .expect("kiln_open failed");
 
     let notes = client
-        .list_notes(kiln_dir.path(), None)
+        .list_notes(kiln_dir.path(), None, None)
         .await
         .expect("list_notes RPC failed");
 
@@ -246,7 +246,7 @@ async fn test_get_note_by_name_returns_matching_note() {
 
     // Search by name fragment
     let result = client
-        .get_note_by_name(kiln_dir.path(), "daily")
+        .get_note_by_name(kiln_dir.path(), "daily", None)
         .await
         .expect("get_note_by_name RPC failed");
 
@@ -262,7 +262,7 @@ async fn test_get_note_by_name_returns_matching_note() {
 
     // Non-existent note should return None
     let result = client
-        .get_note_by_name(kiln_dir.path(), "nonexistent-xyz-abc")
+        .get_note_by_name(kiln_dir.path(), "nonexistent-xyz-abc", None)
         .await
         .expect("get_note_by_name RPC failed");
     assert!(result.is_none(), "Non-existent note should return None");
@@ -291,7 +291,7 @@ async fn test_kiln_lifecycle_open_query_close() {
 
     // Query with path filter
     let notes = client
-        .list_notes(kiln_dir.path(), Some("projects/"))
+        .list_notes(kiln_dir.path(), Some("projects/"), None)
         .await
         .expect("list_notes with filter failed");
     assert_eq!(notes.len(), 1, "Filter should match one note");
@@ -302,7 +302,7 @@ async fn test_kiln_lifecycle_open_query_close() {
 
     // get_note_by_name for the found note
     let note = client
-        .get_note_by_name(kiln_dir.path(), "rust")
+        .get_note_by_name(kiln_dir.path(), "rust", None)
         .await
         .expect("get_note_by_name failed")
         .expect("Should find rust project note");

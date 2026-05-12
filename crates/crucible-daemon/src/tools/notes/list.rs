@@ -20,8 +20,10 @@ impl NoteTools {
         // MCP tools are scoped to the kiln they're serving. A plugin/agent
         // hosting MCP against this kiln gets workspace authority; cross-kiln
         // notes are not visible through this surface.
-        let authority = crucible_core::storage::Scope::workspace(&self.kiln_path)
-            .unwrap_or_else(|_| crucible_core::storage::Scope::workspace_unchecked(&self.kiln_path));
+        let authority =
+            crucible_core::storage::Scope::workspace(&self.kiln_path).unwrap_or_else(|_| {
+                crucible_core::storage::Scope::workspace_unchecked(&self.kiln_path)
+            });
         let all_notes = note_store
             .list(&authority)
             .await

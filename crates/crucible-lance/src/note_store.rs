@@ -997,7 +997,10 @@ mod tests {
         store.upsert(note.clone()).await.expect("Failed to upsert");
 
         let retrieved = store
-            .get("test/note.md", &Scope::workspace_unchecked(std::path::PathBuf::new()))
+            .get(
+                "test/note.md",
+                &Scope::workspace_unchecked(std::path::PathBuf::new()),
+            )
             .await
             .expect("Failed to get")
             .expect("Note should exist");
@@ -1023,7 +1026,10 @@ mod tests {
         store.upsert(note2).await.expect("Failed to update");
 
         let retrieved = store
-            .get("test/update.md", &Scope::workspace_unchecked(std::path::PathBuf::new()))
+            .get(
+                "test/update.md",
+                &Scope::workspace_unchecked(std::path::PathBuf::new()),
+            )
             .await
             .expect("Failed to get")
             .expect("Note should exist");
@@ -1032,7 +1038,10 @@ mod tests {
         assert_eq!(retrieved.tags, vec!["new-tag"]);
 
         // Verify no duplicates
-        let all = store.list(&Scope::workspace_unchecked(std::path::PathBuf::new())).await.expect("Failed to list");
+        let all = store
+            .list(&Scope::workspace_unchecked(std::path::PathBuf::new()))
+            .await
+            .expect("Failed to list");
         assert_eq!(all.len(), 1);
     }
 
@@ -1044,7 +1053,10 @@ mod tests {
         store.upsert(note).await.expect("Failed to upsert");
 
         assert!(store
-            .get("test/delete.md", &Scope::workspace_unchecked(std::path::PathBuf::new()))
+            .get(
+                "test/delete.md",
+                &Scope::workspace_unchecked(std::path::PathBuf::new())
+            )
             .await
             .unwrap()
             .is_some());
@@ -1055,7 +1067,10 @@ mod tests {
             .expect("Failed to delete");
 
         let result = store
-            .get("test/delete.md", &Scope::workspace_unchecked(std::path::PathBuf::new()))
+            .get(
+                "test/delete.md",
+                &Scope::workspace_unchecked(std::path::PathBuf::new()),
+            )
             .await
             .expect("Failed to get");
         assert!(result.is_none());
@@ -1083,7 +1098,10 @@ mod tests {
         let (_dir, store) = setup().await;
 
         let result = store
-            .get("never/existed.md", &Scope::workspace_unchecked(std::path::PathBuf::new()))
+            .get(
+                "never/existed.md",
+                &Scope::workspace_unchecked(std::path::PathBuf::new()),
+            )
             .await
             .expect("Failed to get");
         assert!(result.is_none());
@@ -1098,7 +1116,10 @@ mod tests {
             store.upsert(note).await.expect("Failed to upsert");
         }
 
-        let all = store.list(&Scope::workspace_unchecked(std::path::PathBuf::new())).await.expect("Failed to list");
+        let all = store
+            .list(&Scope::workspace_unchecked(std::path::PathBuf::new()))
+            .await
+            .expect("Failed to list");
         assert_eq!(all.len(), 3);
     }
 
@@ -1106,7 +1127,10 @@ mod tests {
     async fn test_list_empty() {
         let (_dir, store) = setup().await;
 
-        let all = store.list(&Scope::workspace_unchecked(std::path::PathBuf::new())).await.expect("Failed to list");
+        let all = store
+            .list(&Scope::workspace_unchecked(std::path::PathBuf::new()))
+            .await
+            .expect("Failed to list");
         assert!(all.is_empty());
     }
 
@@ -1119,7 +1143,10 @@ mod tests {
         store.upsert(note).await.expect("Failed to upsert");
 
         let found = store
-            .get_by_hash(&hash, &Scope::workspace_unchecked(std::path::PathBuf::new()))
+            .get_by_hash(
+                &hash,
+                &Scope::workspace_unchecked(std::path::PathBuf::new()),
+            )
             .await
             .expect("Failed to get by hash")
             .expect("Note should be found");
@@ -1134,7 +1161,10 @@ mod tests {
 
         let hash = BlockHash::new([99u8; 32]);
         let result = store
-            .get_by_hash(&hash, &Scope::workspace_unchecked(std::path::PathBuf::new()))
+            .get_by_hash(
+                &hash,
+                &Scope::workspace_unchecked(std::path::PathBuf::new()),
+            )
             .await
             .expect("Failed to get by hash");
         assert!(result.is_none());
@@ -1217,7 +1247,10 @@ mod tests {
         store.upsert(note).await.expect("upsert");
 
         let retrieved = store
-            .get("props.md", &Scope::workspace_unchecked(std::path::PathBuf::new()))
+            .get(
+                "props.md",
+                &Scope::workspace_unchecked(std::path::PathBuf::new()),
+            )
             .await
             .unwrap()
             .unwrap();
@@ -1239,7 +1272,10 @@ mod tests {
         store.upsert(note).await.expect("upsert");
 
         let retrieved = store
-            .get("embed.md", &Scope::workspace_unchecked(std::path::PathBuf::new()))
+            .get(
+                "embed.md",
+                &Scope::workspace_unchecked(std::path::PathBuf::new()),
+            )
             .await
             .unwrap()
             .unwrap();
@@ -1267,7 +1303,10 @@ mod tests {
         store.upsert(note).await.expect("upsert");
 
         let retrieved = store
-            .get("empty.md", &Scope::workspace_unchecked(std::path::PathBuf::new()))
+            .get(
+                "empty.md",
+                &Scope::workspace_unchecked(std::path::PathBuf::new()),
+            )
             .await
             .unwrap()
             .unwrap();

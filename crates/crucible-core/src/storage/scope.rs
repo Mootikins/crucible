@@ -91,10 +91,12 @@ impl Scope {
     /// compare unequal.
     pub fn workspace(path: impl AsRef<Path>) -> Result<Self, ScopeError> {
         let p = path.as_ref();
-        let canon = p.canonicalize().map_err(|source| ScopeError::Canonicalize {
-            path: p.to_path_buf(),
-            source,
-        })?;
+        let canon = p
+            .canonicalize()
+            .map_err(|source| ScopeError::Canonicalize {
+                path: p.to_path_buf(),
+                source,
+            })?;
         Ok(Scope::Workspace { path: canon })
     }
 

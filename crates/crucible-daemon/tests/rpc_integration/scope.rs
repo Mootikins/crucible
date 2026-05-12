@@ -56,7 +56,7 @@ async fn search_vectors_rpc_accepts_scope_param() {
     client.kiln_open(kiln_dir.path()).await.expect("open");
 
     let result = client
-        .search_vectors_scoped(
+        .search_vectors(
             kiln_dir.path(),
             &vec![0.1; 768],
             5,
@@ -84,7 +84,7 @@ async fn search_vectors_rpc_defaults_to_workspace_when_scope_missing() {
     client.kiln_open(kiln_dir.path()).await.expect("open");
 
     let result = client
-        .search_vectors(kiln_dir.path(), &vec![0.1; 768], 5)
+        .search_vectors(kiln_dir.path(), &vec![0.1; 768], 5, None)
         .await;
     assert!(result.is_ok(), "legacy RPC must still work: {:?}", result);
     server.shutdown().await;
@@ -94,11 +94,10 @@ async fn search_vectors_rpc_defaults_to_workspace_when_scope_missing() {
 async fn list_notes_rpc_filters_by_scope() {
     // Seed a note in workspace authority. A client passing a stranger
     // workspace should see zero results.
-    let (server, kiln_path, client) =
-        seed_scope_test(Scope::workspace_unchecked(
-            std::env::temp_dir().join("never-used"),
-        ))
-        .await;
+    let (server, kiln_path, client) = seed_scope_test(Scope::workspace_unchecked(
+        std::env::temp_dir().join("never-used"),
+    ))
+    .await;
 
     // List with the actual kiln's workspace scope — depending on how
     // canonicalization works for the seeded scope, the note may or may
@@ -108,7 +107,7 @@ async fn list_notes_rpc_filters_by_scope() {
         path: std::path::PathBuf::from("/this/path/does/not/exist/anywhere"),
     };
     let results = client
-        .list_notes_scoped(&kiln_path, None, Some(stranger))
+        .list_notes(&kiln_path, None, Some(stranger))
         .await
         .expect("list_notes_scoped");
 

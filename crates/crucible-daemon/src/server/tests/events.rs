@@ -123,12 +123,18 @@ async fn test_file_deleted_event_removes_note_from_store() {
         .unwrap();
 
     assert!(note_store
-        .get(deleted_note_path, &crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new()))
+        .get(
+            deleted_note_path,
+            &crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new())
+        )
         .await
         .unwrap()
         .is_some());
     assert!(note_store
-        .get(keep_note_path, &crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new()))
+        .get(
+            keep_note_path,
+            &crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new())
+        )
         .await
         .unwrap()
         .is_some());
@@ -144,7 +150,10 @@ async fn test_file_deleted_event_removes_note_from_store() {
     let removed = tokio::time::timeout(Duration::from_secs(2), async {
         loop {
             if note_store
-                .get(deleted_note_path, &crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new()))
+                .get(
+                    deleted_note_path,
+                    &crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new()),
+                )
                 .await
                 .unwrap()
                 .is_none()
@@ -177,7 +186,10 @@ async fn test_file_deleted_event_removes_note_from_store() {
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert!(note_store
-        .get(keep_note_path, &crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new()))
+        .get(
+            keep_note_path,
+            &crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new())
+        )
         .await
         .unwrap()
         .is_some());
