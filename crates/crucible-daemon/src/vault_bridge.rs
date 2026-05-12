@@ -180,9 +180,11 @@ impl DaemonVaultApi for DaemonVaultBridge {
             let authority = crucible_core::storage::Scope::workspace(&kiln_path);
 
             // Search the LanceDB vector index. Results are (path, score).
-            // We over-fetch a bit so the threshold filter doesn't underflow
-            // the requested top-N — but cap at 4x to keep latency bounded.
-            let fetch = limit.max(1).saturating_mul(2).min(limit.max(1) * 4);
+            // Over-fetch 2x so the threshold + scope post-filters don't
+            // underflow the requested top-N. The previous `.min(limit*4)`
+            // cap was unreachable (`min(limit*2, limit*4) == limit*2`); the
+            // intent was always 2x.
+            let fetch = limit.max(1).saturating_mul(2);
             let raw = handle
                 .search_vectors_scoped(vector, fetch, &authority)
                 .await
