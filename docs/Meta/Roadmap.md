@@ -79,9 +79,13 @@ Waves are dependency-ordered. **Items inside a wave can be parallelized**; later
 
 > Prerequisites that landed alongside the wave: `cru.kiln.create_note` (writes notes + reindexes), `cru.kiln.search` (semantic search wired to daemon vectors), and enriched `Session` userdata (`kiln_path`, `agent_name`, `end_reason`) on the `on_session_end` hook.
 
-Known follow-ups (tracked separately, not blocking Wave 3):
-- Wire `upgrade_with_team` into the session lifecycle so `cru.team.*` invokes real subagents (currently the bridge exists but isn't called from `Server::run`).
+Code-review findings landed after the initial flip (4 critical fixes, 4 commits): `SqliteClientHandle` now binds the kiln path so `KnowledgeRepository` reads enforce workspace scope (precognition was bypassing the boundary at `Scope::Global`); `cru.team.*` is wired through `DaemonTeamServerBridge` from `Server::run` (previously stubbed); daemon-side idempotency guard ensures `on_session_end` fires exactly once per session (was firing twice — once from `session.end`, once from CLI shutdown — doubling extraction cost); `cru.kiln.search` over-fetch math corrected.
+
+Remaining follow-ups (tracked separately, not blocking Wave 3):
 - Wire llama-cpp backend to consume `SessionAgent.grammar` — until then `supports_grammar()` returns `false` everywhere and `set_session_grammar` hard-errors. The session-digest plugin gracefully degrades to prompt-only JSON discipline.
+- Tighten `Scope::workspace()` canonicalization — currently falls back to non-canonical path when `canonicalize()` fails, creating asymmetric scope-equality paths.
+- Legacy `DaemonStorageClient` read methods use unscoped RPC variants; user-scoped notes can leak through CLI / MCP `semantic_search` callers within a kiln.
+- Per-session `digest: false` opt-out — needs session frontmatter on Session userdata to be implemented.
 
 ### Wave 3 — Workflows Phase 2 (parser + engine landed; finish out)
 
