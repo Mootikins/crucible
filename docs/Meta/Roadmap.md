@@ -70,12 +70,12 @@ Waves are dependency-ordered. **Items inside a wave can be parallelized**; later
 
 ### Wave 2 — Agent learning & teams (shipped 2026-05-11, pruned 2026-05-12)
 
-> Shipped as 2 features after a consolidation prune. `session-digest`, `entity-memory`, and `cru.grammar.*` were removed: digest's LLM-judged dedupe risked wrong merges and kiln pollution (user preference: prompted refinement over automatic digests), and the grammar plumbing had no working backend. Memory Scoping kept as a per-kiln security boundary; `Scope` collapsed to a single workspace-only variant.
+> Shipped as 1 feature after two consolidation passes. The first prune (2026-05-12) removed `session-digest`, `entity-memory`, and `cru.grammar.*` — digest's LLM-judged dedupe risked wrong merges and kiln pollution (user preference: prompted refinement over automatic digests), and the grammar plumbing had no working backend. A second pass (2026-05-12) pulled `cru.team.*` after recognising that supervisor/router/broadcast are delegation *patterns* users want to script with primitives, not hardcoded Rust orchestrators — see [[Help/Delegation Patterns]]. Memory Scoping kept as a per-kiln security boundary; `Scope` collapsed to a single workspace-only variant.
 
 - ✅ **Memory Scoping** — single-variant `Scope::Workspace { path }` enforced at `SqliteNoteStore` and Lance post-filter; write-side validation prevents writes that name a different workspace; raw-SQL escape hatch gated to `#[cfg(test)]`. `Scope::workspace()` is fallible — silent canonicalization fallback removed.
-- ✅ **Team Patterns** (core Rust) — `cru.team.{supervisor, router, broadcast}` on top of existing subagent infrastructure; supervisor sequential, broadcast parallel via `tokio::join_all`.
 
 Removed in the prune:
+- `cru.team.{supervisor, router, broadcast}` — supervisor, router, broadcast are 5–20 line Lua recipes against `cru.sessions.{create, configure_agent, send_and_collect, end_session, collect_subagents}`; the hardcoded Rust shapes shut out variants (Lua decider vs LLM, regex classifier vs LLM, etc.) and shipped without consumers. Documented as [[Help/Delegation Patterns]]. ~1984 LOC removed (`crucible-daemon/src/team/` + `team_bridge.rs` + `crucible-lua/src/team.rs`).
 - `runtime/plugins/session-digest/` (10 files, ~2098 LOC) — speculative LLM dedupe consumer.
 - `cru.grammar.*` Lua module + `SessionAgent.grammar` + `BackendType::supports_grammar` + RPC + `AgentManager::{set,clear,get}_grammar` + `DaemonGrammarBridge` (~1500 LOC) — no working backend, every call path hard-errored.
 - `cru.kiln.create_note` write path + `DaemonVaultApi::search` real impl + `DaemonVaultBridge` (~843 LOC) — only consumer was session-digest.
