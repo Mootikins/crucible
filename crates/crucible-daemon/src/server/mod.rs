@@ -309,21 +309,6 @@ impl Server {
                     warn!("Failed to upgrade Lua tools module: {}", e);
                 }
 
-                // Wire cru.team.* to the real daemon-side bridge. Without
-                // this, the stub registered in DaemonPluginLoader::new
-                // returns "(nil, 'no daemon connected')" for every team
-                // call — supervisor/router/broadcast are documented but
-                // unusable.
-                let team_api: Arc<dyn crucible_lua::DaemonTeamApi> =
-                    Arc::new(crate::team_bridge::DaemonTeamServerBridge::new(
-                        self.background_manager.clone(),
-                        self.agent_manager.clone(),
-                        crucible_core::config::crucible_home(),
-                    ));
-                if let Err(e) = loader.upgrade_with_team(team_api) {
-                    warn!("Failed to upgrade Lua team module: {}", e);
-                }
-
                 // Bootstrap declared plugins from plugins.toml before discovery
                 let plugins_toml =
                     dirs::config_dir().map(|d| d.join("crucible").join("plugins.toml"));

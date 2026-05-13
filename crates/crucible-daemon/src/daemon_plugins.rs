@@ -13,9 +13,8 @@ use crucible_lua::{
     register_context_module, register_context_validators, register_graph_module,
     register_oq_module, register_paths_module, register_schedule_module, register_sessions_module,
     register_sessions_module_with_api, register_shell_module, register_storage_module,
-    register_storage_module_with_store, register_team_module, register_team_module_stub,
-    register_tools_module, register_tools_module_with_api, register_vault_module,
-    register_ws_module, DaemonSessionApi, DaemonTeamApi, DaemonToolsApi, LuaExecutor,
+    register_storage_module_with_store, register_tools_module, register_tools_module_with_api,
+    register_vault_module, register_ws_module, DaemonSessionApi, DaemonToolsApi, LuaExecutor,
     LuaValidatorRegistry, PathsContext, PluginManager, PluginSource, PluginSpec, ShellPolicy,
 };
 use mlua::LuaSerdeExt;
@@ -81,10 +80,6 @@ impl DaemonPluginLoader {
         reg("sessions", register_sessions_module(lua))?;
         reg("tools", register_tools_module(lua))?;
         reg("schedule", register_schedule_module(lua))?;
-        // Stub registration only — `cru.team.*` returns "no daemon connected"
-        // until `upgrade_with_team` is called with a real BackgroundJobManager
-        // bridge. Plugins can still see the module shape during init.
-        reg("team", register_team_module_stub(lua))?;
         reg("config", Self::register_plugin_config(lua, plugin_config))?;
 
         let plugin_manager = PluginManager::new();
@@ -246,19 +241,6 @@ impl DaemonPluginLoader {
         register_tools_module_with_api(self.executor.lua(), api)
             .map_err(|e| anyhow::anyhow!("tools upgrade: {e}"))?;
         info!("Lua tools module upgraded with daemon API");
-        Ok(())
-    }
-
-    /// Upgrade team module with real daemon-backed implementations.
-    ///
-    /// Call once the `BackgroundJobManager` is wired up (i.e. after a
-    /// session is configured with its agent profiles and workspace).
-    /// Replaces the stub `cru.team.*` table with one backed by
-    /// `crucible_daemon::team_bridge::DaemonTeamBridge`.
-    pub fn upgrade_with_team(&self, api: Arc<dyn DaemonTeamApi>) -> anyhow::Result<()> {
-        register_team_module(self.executor.lua(), api)
-            .map_err(|e| anyhow::anyhow!("team upgrade: {e}"))?;
-        info!("Lua team module upgraded with daemon API");
         Ok(())
     }
 

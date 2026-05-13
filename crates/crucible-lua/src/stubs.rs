@@ -6,8 +6,6 @@ use crate::{
     LuaExecutor, PathsContext,
 };
 
-#[cfg(feature = "send")]
-use crate::register_team_module_stub;
 use mlua::{Lua, Table, Value};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -31,7 +29,6 @@ const UNIVERSAL_MODULES: &[&str] = &[
     "hooks",
     "notify",
     "ask",
-    "team",
 ];
 
 const UI_ONLY_MODULES: &[&str] = &["oil", "popup", "panel", "interaction", "statusline"];
@@ -69,8 +66,6 @@ impl StubGenerator {
         register_popup_module(lua)?;
         register_ui_module(lua)?;
         register_statusline_module(lua)?;
-        #[cfg(feature = "send")]
-        register_team_module_stub(lua)?;
 
         mirror_modules_into_cru(lua)?;
 
@@ -123,7 +118,6 @@ fn mirror_modules_into_cru(lua: &Lua) -> Result<(), LuaError> {
     copy_global_table(&globals, &cru, "popup", "popup")?;
     copy_global_table(&globals, &cru, "statusline", "statusline")?;
     copy_global_table(&globals, &cru, "ui", "panel")?;
-    copy_global_table(&globals, &cru, "team", "team")?;
 
     if let Ok(get_session) = cru.get::<Value>("get_session") {
         if matches!(get_session, Value::Function(_)) {

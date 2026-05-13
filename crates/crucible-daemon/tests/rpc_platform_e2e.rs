@@ -126,50 +126,6 @@ async fn test_lua_session_lifecycle() {
     server.shutdown().await;
 }
 
-/// Regression for Bug 2: `cru.team.broadcast` MUST resolve to the real
-/// daemon bridge after `Server::run` wires it up. Pre-fix, `Server::run`
-/// never called `upgrade_with_team`, so the stub registered in
-/// `DaemonPluginLoader::new` stayed live and every team call returned
-/// `(nil, "no daemon connected")`.
-///
-/// We use `cru.team.broadcast({}, "ping")` because an empty agent list
-/// is the only invocation that succeeds without spawning a real subagent
-/// — Broadcast over zero agents returns an empty Lua table. With the
-/// stub, broadcast still returns "no daemon connected".
-#[tokio::test]
-async fn test_cru_team_broadcast_resolved_after_server_run() {
-    let server = TestServer::start().await.expect("Failed to start server");
-
-    let client = DaemonClient::connect_to(&server.socket_path)
-        .await
-        .expect("Failed to connect");
-
-    // Probe the stub error first: with NO daemon-connected fix, the
-    // broadcast call returns "no daemon connected" as the err string.
-    let result = client
-        .call(
-            "lua.eval",
-            serde_json::json!({
-                "code": "local r, err = cru.team.broadcast({}, \"ping\"); \
-                         return tostring(err) .. \"::\" .. tostring(type(r))",
-            }),
-        )
-        .await
-        .expect("lua.eval RPC failed");
-
-    let response = result["result"]
-        .as_str()
-        .expect("lua.eval should return a string")
-        .to_string();
-    assert!(
-        !response.contains("no daemon connected"),
-        "cru.team.broadcast still returns 'no daemon connected'; \
-         Server::run did not upgrade the team module. got: {response}"
-    );
-
-    server.shutdown().await;
-}
-
 // =============================================================================
 // Plugin RPC tests
 // =============================================================================
