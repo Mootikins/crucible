@@ -76,6 +76,7 @@ Navigate by topic:
 - **[[Help/Extending/Agent Cards]]** — Configure AI agents
 - **[[Help/Extending/Internal Agent]]** — Built-in agent with session memory
 - **[[Help/Config/agents]]** — Agent configuration options
+- **[[Help/Delegation Patterns]]** — Broadcast / router / supervisor recipes in Lua
 
 ### Scripting Languages
 - **[[Help/Concepts/Scripting Languages]]** — Overview
