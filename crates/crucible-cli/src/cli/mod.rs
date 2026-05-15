@@ -385,6 +385,12 @@ Examples:
     )]
     Plugin(crate::commands::plugin::PluginCommands),
 
+    /// Install a plugin from a git URL (alias for `cru plugin add`)
+    #[command(
+        long_about = "Install a plugin from a git URL. Shorthand for `cru plugin add`.\n\nExamples:\n  cru install user/repo\n  cru install https://github.com/user/repo.git --branch main\n  cru install user/repo --pin v1.2.0"
+    )]
+    Install(crate::commands::plugin::AddArgs),
+
     /// Evaluate Lua code in the daemon's plugin runtime
     #[command(
         long_about = "Evaluate Lua code in the daemon's plugin runtime.\n\nRuns code in the same Lua VM that plugins use. Use '=' prefix for expressions.\n\nExamples:\n  # Evaluate an expression\n  cru lua '=1+1'\n\n  # Call a function\n  cru lua 'print(\"hello\")'\n\n  # Inspect the cru namespace\n  cru lua '=cru'\n\n  # Run a script file\n  cru lua --file plugin_test.lua\n\n  # Pipe from stdin\n  echo 'print(42)' | cru lua -"

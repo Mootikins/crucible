@@ -9,6 +9,7 @@ use crate::config::CliConfig;
 
 mod add;
 mod health;
+mod list;
 mod new;
 mod remove;
 mod stubs;
@@ -16,6 +17,7 @@ mod test;
 mod update;
 
 pub use add::AddArgs;
+pub use list::ListArgs;
 pub use remove::RemoveArgs;
 pub use update::UpdateArgs;
 
@@ -31,6 +33,8 @@ pub enum PluginCommands {
     Health(HealthArgs),
     /// Add a plugin from a git URL
     Add(AddArgs),
+    /// List declared plugins and their clone status
+    List(ListArgs),
     /// Remove a plugin declaration
     Remove(RemoveArgs),
     /// Update installed plugins (git pull)
@@ -85,6 +89,7 @@ pub async fn execute(config: CliConfig, cmd: PluginCommands) -> Result<()> {
         PluginCommands::Stubs(args) => stubs::execute(config, args).await,
         PluginCommands::Health(args) => health::execute(config, args).await,
         PluginCommands::Add(args) => add::execute(args).await,
+        PluginCommands::List(args) => list::execute(args).await,
         PluginCommands::Remove(args) => remove::execute(args).await,
         PluginCommands::Update(args) => update::execute(args).await,
     }
