@@ -164,10 +164,11 @@ pub(crate) async fn handle_lua_execute_hook(
                 "content": content,
                 "position": position,
             }),
-            Ok(ScriptHandlerResult::Handled { result }) => serde_json::json!({
+            Ok(ScriptHandlerResult::Handled { result, terminate }) => serde_json::json!({
                 "handler": handler.name,
                 "type": "handled",
                 "result": result,
+                "terminate": terminate,
             }),
             Err(e) => {
                 serde_json::json!({"handler": handler.name, "type": "error", "error": e.to_string()})

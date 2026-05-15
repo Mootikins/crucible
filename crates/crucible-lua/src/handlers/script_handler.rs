@@ -33,8 +33,15 @@ pub enum ScriptHandlerResult {
         position: String,
     },
     /// Handler fully handled the event — use this result instead of default execution.
-    /// Returned when Lua handler returns `{ handled = true, result = ... }`.
-    Handled { result: JsonValue },
+    /// Returned when Lua handler returns `{ handled = true, result = ..., terminate = bool }`.
+    ///
+    /// `terminate=true` signals the agent loop should end the turn after this tool
+    /// batch (conjunctive across batch: only stops if every tool result in the batch
+    /// sets terminate=true).
+    Handled {
+        result: JsonValue,
+        terminate: bool,
+    },
 }
 
 /// Handler for Lua script execution
@@ -208,7 +215,7 @@ impl LuaScriptHandler {
                 );
                 Ok(event)
             }
-            ScriptHandlerResult::Handled { result } => {
+            ScriptHandlerResult::Handled { result, .. } => {
                 debug!("Handler returned Handled result");
                 Ok(result)
             }
@@ -254,13 +261,14 @@ pub fn interpret_handler_result(result: &Value) -> LuaResult<ScriptHandlerResult
                     .unwrap_or_else(|_| "user_prefix".to_string());
                 return Ok(ScriptHandlerResult::Inject { content, position });
             }
-            // {handled=true, result=...}
+            // {handled=true, result=..., terminate=bool}
             if let Ok(true) = t.get::<bool>("handled") {
                 let result = match lua_table_to_json(t) {
                     Ok(json) => json.get("result").cloned().unwrap_or(JsonValue::Null),
                     Err(_) => JsonValue::Null,
                 };
-                return Ok(ScriptHandlerResult::Handled { result });
+                let terminate = t.get::<bool>("terminate").unwrap_or(false);
+                return Ok(ScriptHandlerResult::Handled { result, terminate });
             }
             // {cancel=true, reason="..."}
             if t.get::<bool>("cancel").unwrap_or(false) {

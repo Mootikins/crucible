@@ -84,6 +84,11 @@ pub struct ChatToolResult {
     /// LLM-assigned call ID for matching results to the correct tool call
     #[serde(default)]
     pub call_id: Option<String>,
+    /// Tool signaled the agent loop should end after this batch.
+    /// The loop only honors termination when *every* result in the batch
+    /// sets this — one tool can't unilaterally cut another's work short.
+    #[serde(default)]
+    pub terminate: bool,
 }
 
 /// Runtime handle to an active agent.

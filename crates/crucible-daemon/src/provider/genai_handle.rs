@@ -922,6 +922,7 @@ impl GenaiAgentHandle {
                                 result: result_str,
                                 error: error.clone(),
                                 call_id: Some(id.clone()),
+                                terminate: false,
                             });
                         }
                         TurnEvent::HandlerInjection { content, .. } => {

@@ -142,7 +142,7 @@ async fn execute_runtime_handler_returns_handled() {
         .await;
     assert!(result.is_ok());
     match result.unwrap() {
-        ScriptHandlerResult::Handled { result } => {
+        ScriptHandlerResult::Handled { result, .. } => {
             assert_eq!(result["output"], "from plugin");
         }
         other => panic!("Expected Handled, got: {:?}", other),

@@ -342,3 +342,92 @@ fn event_patterns_match_event_type() {
     });
     assert_eq!(pre_tool.event_type(), "pre_tool_call");
 }
+
+#[tokio::test]
+async fn runtime_pre_tool_handled_with_terminate_ends_turn() {
+    // Pi-style conjunctive early-stop: if a pre_tool_call handler returns
+    // { handled=true, result=..., terminate=true }, and that's the only tool
+    // in the batch, the agent loop ends after the batch.
+    let mut h = ReactorTestHarness::new().await;
+
+    let session_state = h.agent_manager.get_or_create_session_state(&h.session_id);
+    {
+        let state = session_state.lock().await;
+        state
+            .lua
+            .load(
+                r#"
+            crucible.on("pre_tool_call", function(ctx, event)
+                return { handled = true, result = "final answer", terminate = true }
+            end)
+        "#,
+            )
+            .exec()
+            .unwrap();
+    }
+
+    // Single tool_call only; the scripted stream emits ToolBatchEnd and
+    // waits for ToolResult feedback. With terminate=true the loop should
+    // end after the batch instead of returning to the model.
+    h.inject_streaming_agent(vec![script::tool_call(
+        "call-terminate",
+        "submit_answer",
+        serde_json::json!({ "answer": "x" }),
+    )]);
+
+    h.send("test").await;
+
+    let tool_result = h.wait_for("tool_result").await;
+    assert_eq!(tool_result.data["tool"], "submit_answer");
+
+    let ended = h.wait_for("ended").await;
+    assert!(
+        ended.data["reason"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("terminate"),
+        "ended reason should mention terminate, got: {:?}",
+        ended.data
+    );
+}
+
+#[tokio::test]
+async fn runtime_pre_tool_terminate_mixed_batch_does_not_end() {
+    // Conjunctive: if any result in the batch lacks terminate=true, the
+    // loop continues normally — one tool can't unilaterally cut another's
+    // work short.
+    let mut h = ReactorTestHarness::new().await;
+
+    let session_state = h.agent_manager.get_or_create_session_state(&h.session_id);
+    {
+        let state = session_state.lock().await;
+        state
+            .lua
+            .load(
+                r#"
+            crucible.on("pre_tool_call", function(ctx, event)
+                local tool = event.payload.tool
+                if tool == "submit_final" then
+                    return { handled = true, result = "done", terminate = true }
+                elseif tool == "keep_going" then
+                    return { handled = true, result = "more work", terminate = false }
+                end
+            end)
+        "#,
+            )
+            .exec()
+            .unwrap();
+    }
+
+    // Two tools in one batch: only one signals terminate.
+    h.inject_streaming_agent(vec![
+        script::tool_call("call-1", "submit_final", serde_json::json!({})),
+        script::tool_call("call-2", "keep_going", serde_json::json!({})),
+    ]);
+
+    h.send("test").await;
+
+    // Mixed batch should NOT terminate — flow completes normally
+    // (scripted stream yields Done after ToolResults round-trip).
+    h.wait_for("message_complete").await;
+}

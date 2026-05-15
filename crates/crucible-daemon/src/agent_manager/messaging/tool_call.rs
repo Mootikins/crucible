@@ -58,6 +58,7 @@ impl AgentManager {
                         result: String::new(),
                         error: Some(error_msg),
                         call_id: Some(call_id.clone()),
+                        terminate: false,
                     });
                 }
                 Ok(EmitResult::Failed { handler, error, .. }) => {
@@ -125,9 +126,10 @@ impl AgentManager {
                             result: String::new(),
                             error: Some(error_msg),
                             call_id: Some(call_id.clone()),
+                            terminate: false,
                         });
                     }
-                    Ok(crucible_lua::ScriptHandlerResult::Handled { result }) => {
+                    Ok(crucible_lua::ScriptHandlerResult::Handled { result, terminate }) => {
                         debug!(
                             session_id = %stream_ctx.session_id,
                             tool = %tool_call.name,
@@ -163,6 +165,7 @@ impl AgentManager {
                             result: result_string,
                             error: None,
                             call_id: Some(call_id.clone()),
+                            terminate,
                         });
                     }
                     Ok(_) => {}
@@ -190,6 +193,7 @@ impl AgentManager {
                     tool_call.name
                 )),
                 call_id: Some(call_id.clone()),
+                terminate: false,
             });
         }
 
@@ -426,6 +430,7 @@ impl AgentManager {
             result: result_str,
             error: error_str,
             call_id: Some(call_id),
+            terminate: false,
         })
     }
 

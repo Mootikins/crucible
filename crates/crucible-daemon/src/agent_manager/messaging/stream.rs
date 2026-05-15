@@ -309,6 +309,11 @@ impl AgentManager {
         // Set once the runtime sent DepthCapHit, so the empty-response
         // branch below can surface the right error reason.
         let mut depth_cap_triggered = false;
+        // Conjunctive early-stop signals collected per batch. The loop
+        // ends after the batch only when every result in this vec is
+        // true (and the vec is non-empty) — one tool can't unilaterally
+        // cut another tool's work short.
+        let mut batch_terminate_signals: Vec<bool> = Vec::new();
 
         // Terminal state
         let mut last_usage: Option<TokenUsage> = None;
@@ -485,6 +490,7 @@ impl AgentManager {
                             result: String::new(),
                             error: Some(blocked_error),
                             call_id: Some(id.clone()),
+                            terminate: false,
                         })
                     } else {
                         attempt = Some(tracker.record_call(&name, &args));
@@ -543,6 +549,7 @@ impl AgentManager {
                         result: String::new(),
                         error: Some("tool dispatcher returned no result".to_string()),
                         call_id: Some(id.clone()),
+                        terminate: false,
                     });
 
                     // Commit ToolResult to scheduler-owned tree before
@@ -561,6 +568,10 @@ impl AgentManager {
                             },
                         );
                     }
+
+                    // Record this result's terminate flag for the
+                    // conjunctive batch-terminate check at ToolBatchEnd.
+                    batch_terminate_signals.push(tool_result.terminate);
 
                     // Feed back to the adapter so it can continue the turn.
                     let reply = TurnEvent::ToolResult {
@@ -632,6 +643,29 @@ impl AgentManager {
                     // as a new batch and re-checks the depth cap.
                     in_tool_batch = false;
                     capped_this_batch = false;
+
+                    // Conjunctive early-stop: if every result in this
+                    // batch set terminate=true, end the turn now instead
+                    // of looping back to the model. Empty batches are
+                    // ignored.
+                    let should_terminate = !batch_terminate_signals.is_empty()
+                        && batch_terminate_signals.iter().all(|t| *t);
+                    batch_terminate_signals.clear();
+                    if should_terminate {
+                        if !emit_event(
+                            &stream_ctx.event_tx,
+                            SessionEventMessage::ended(
+                                &stream_ctx.session_id,
+                                "tool requested terminate".to_string(),
+                            ),
+                        ) {
+                            warn!(
+                                session_id = %stream_ctx.session_id,
+                                "No subscribers for terminate ended event"
+                            );
+                        }
+                        return;
+                    }
                 }
                 TurnEvent::Usage(usage) => {
                     last_usage = Some(usage);
