@@ -571,7 +571,7 @@ impl InternalSessionEvent {
             Self::PreToolCall { name, .. } => format!("pre:tool:{}", name),
             Self::PreParse { path, .. } => format!("pre:parse:{}", path.display()),
             Self::PreLlmCall { model, .. } => format!("pre:llm:{}", model),
-            Self::TransformContext { model, .. } => format!("transform_context:{}", model),
+            Self::TransformContext { model, .. } => format!("pre:transform_context:{}", model),
             Self::PostLlmCall { model, .. } => format!("post:llm:{}", model),
             Self::PrecognitionComplete { .. } => "precognition:complete".into(),
             Self::ClassificationRequired { kiln_path, .. } => {

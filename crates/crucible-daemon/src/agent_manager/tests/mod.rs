@@ -461,26 +461,11 @@ impl ReactorTestHarness {
             .unwrap();
     }
 
+    /// Inject a capturing agent and return both capture handles. Most
+    /// tests only need the prompt; transform_context tests want the
+    /// message array. One method, drop the unused half if you don't
+    /// need it.
     fn inject_capturing_agent(
-        &self,
-        events: Vec<TurnEvent>,
-    ) -> Arc<std::sync::Mutex<Option<String>>> {
-        let received_prompt = Arc::new(std::sync::Mutex::new(None::<String>));
-        let received_messages = Arc::new(std::sync::Mutex::new(None));
-        self.agent_manager.agent_cache.insert(
-            self.session_id.clone(),
-            Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
-                received_prompt: received_prompt.clone(),
-                received_messages,
-                events,
-            }) as BoxedAgentHandle)),
-        );
-        received_prompt
-    }
-
-    /// Same as inject_capturing_agent but also returns the message
-    /// capture handle (for transform_context tests).
-    fn inject_full_capturing_agent(
         &self,
         events: Vec<TurnEvent>,
     ) -> (

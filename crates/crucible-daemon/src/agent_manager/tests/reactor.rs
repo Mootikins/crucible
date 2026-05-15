@@ -12,7 +12,7 @@ async fn reactor_pre_llm_modifies_prompt() {
         behavior: MockHandlerBehavior::ModifyPrompt("MODIFIED: hello".to_string()),
     })
     .await;
-    let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
+    let (received_prompt, _) = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
 
     h.send("hello").await;
     h.wait_for("message_complete").await;
@@ -35,7 +35,7 @@ async fn reactor_pre_llm_cancel_aborts() {
     })
     .await;
 
-    let received_prompt =
+    let (received_prompt, _) =
         h.inject_capturing_agent(vec![script::text("should-not-run"), script::done()]);
 
     h.send("hello").await;
@@ -53,7 +53,7 @@ async fn reactor_pre_llm_cancel_aborts() {
 #[tokio::test]
 async fn reactor_pre_llm_empty_passthrough() {
     let mut h = ReactorTestHarness::new().await;
-    let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
+    let (received_prompt, _) = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
 
     h.send("hello").await;
     h.wait_for("message_complete").await;
@@ -75,7 +75,7 @@ async fn reactor_pre_llm_error_fails_open() {
     })
     .await;
 
-    let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
+    let (received_prompt, _) = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
 
     h.send("hello").await;
     h.wait_for("message_complete").await;
@@ -162,7 +162,7 @@ async fn runtime_dispatch_pre_llm_call_transforms_prompt() {
             .unwrap();
     }
 
-    let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
+    let (received_prompt, _) = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
 
     h.send("hello").await;
     h.wait_for("message_complete").await;
@@ -308,7 +308,7 @@ async fn reactor_lua_handler_discovery_empty_dir() {
         assert!(state.reactor.is_empty());
     }
 
-    let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
+    let (received_prompt, _) = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
 
     h.send("hello").await;
     h.wait_for("message_complete").await;
@@ -373,7 +373,7 @@ async fn runtime_transform_context_appends_system_message() {
     }
 
     let (_prompt, messages) =
-        h.inject_full_capturing_agent(ReactorTestHarness::default_ok_events());
+        h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
 
     h.send("tell me about widgets").await;
     h.wait_for("message_complete").await;
