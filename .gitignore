@@ -69,6 +69,7 @@ crates/crucible-llm/.fastembed_cache/
 
 # Temporary directories
 tree/
+.worktrees/
 .cargo/*
 !.cargo/config.toml
 WORKTREE.md
