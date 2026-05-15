@@ -448,12 +448,25 @@ impl AgentManager {
         // Empty context block (no results) → don't inject anything; the
         // empty message would just waste tokens.
         if context_block.trim().is_empty() {
-            None
-        } else {
-            Some(crucible_core::traits::ContextMessage::system(context_block))
+            return None;
         }
+
+        // Tag the message so the drop-protection check in
+        // `apply_transform_context_handlers` can identify it by metadata
+        // rather than content. Lets a Lua handler legitimately mutate
+        // the precog content (translate, redact, summarize) without
+        // tripping the re-prepend logic — as long as the handler
+        // preserves the tag.
+        let mut msg = crucible_core::traits::ContextMessage::system(context_block);
+        msg.metadata.tags.push(PRECOGNITION_TAG.to_string());
+        Some(msg)
     }
 }
+
+/// Metadata tag that marks a message as the built-in Precognition
+/// system block. The `transform_context` seam uses this to detect when
+/// a Lua handler has dropped the message and needs it re-prepended.
+pub(super) const PRECOGNITION_TAG: &str = "precognition";
 
 fn apply_precognition_char_cap(results: &mut [crucible_core::SearchResult], cap: usize) {
     if results.is_empty() {

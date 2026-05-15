@@ -451,20 +451,31 @@ impl AgentManager {
 
         // Defensive: if a Lua handler returned a new `messages` array
         // that dropped the built-in Precognition block, re-prepend it.
-        // Identity check is by content (the block is a fresh String per
-        // turn; matching content is sufficient). A plugin that
-        // explicitly wants to suppress Precognition can do so by setting
-        // `agent_config.precognition_enabled = false` at the right
-        // layer — not by silently mutating the messages array.
+        //
+        // Identity is by `metadata.tags` containing PRECOGNITION_TAG,
+        // not by content. This lets a Lua handler legitimately mutate
+        // the precog content (translate, redact, summarize) as long as
+        // it preserves the tag — only handlers that fully rebuild the
+        // array from scratch (losing metadata) or remove the message
+        // entirely trigger the re-prepend.
+        //
+        // A plugin that explicitly wants to suppress Precognition
+        // should configure that at the agent layer
+        // (`agent_config.precognition_enabled = false`), not via the
+        // messages array — silent stripping is what we're guarding
+        // against, not legitimate config.
         if let Some(ref precog_msg) = stream_ctx.precognition_message {
-            let still_present = current
-                .iter()
-                .any(|m| m.role == precog_msg.role && m.content == precog_msg.content);
+            let still_present = current.iter().any(|m| {
+                m.metadata
+                    .tags
+                    .iter()
+                    .any(|t| t == crate::agent_manager::precognition::PRECOGNITION_TAG)
+            });
             if !still_present {
                 warn!(
                     session_id = %stream_ctx.session_id,
                     "transform_context handler dropped Precognition message; re-prepending. \
-                     If this is intentional, disable Precognition in agent config instead."
+                     To suppress legitimately, set precognition_enabled=false in agent config."
                 );
                 let mut with_precog = Vec::with_capacity(current.len() + 1);
                 with_precog.push(precog_msg.clone());

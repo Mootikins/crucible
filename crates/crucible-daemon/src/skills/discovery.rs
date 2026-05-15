@@ -191,10 +191,10 @@ pub fn default_discovery_paths(
         // visible to Crucible). On by default — matches Pi's ecosystem
         // stance — but observable + opt-out, since silently reading other
         // tools' config dirs is surprising the first time you notice it.
-        let enabled = match std::env::var("CRUCIBLE_CROSS_HARNESS_SKILLS").as_deref() {
-            Ok("0") | Ok("false") | Ok("off") => false,
-            _ => true,
-        };
+        let enabled = !matches!(
+            std::env::var("CRUCIBLE_CROSS_HARNESS_SKILLS").as_deref(),
+            Ok("0") | Ok("false") | Ok("off")
+        );
         if enabled {
             let extras = cross_harness_home_paths(
                 home,

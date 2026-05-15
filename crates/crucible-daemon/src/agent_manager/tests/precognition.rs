@@ -572,3 +572,198 @@ async fn test_precognition_emits_note_info_in_event() {
 
     crate::embedding::clear_embedding_provider_cache();
 }
+
+/// Common setup for drop-protection tests: a kiln with one indexed
+/// note that Precognition will match, plus a configured session with
+/// precognition_enabled. Returns the agent_manager, session id, event
+/// channels, and captured messages handle. Tests register their own
+/// Lua handler and then send a message.
+async fn setup_precog_drop_protection(
+    lua_handler: &str,
+) -> (
+    Arc<AgentManager>,
+    String,
+    broadcast::Sender<SessionEventMessage>,
+    broadcast::Receiver<SessionEventMessage>,
+    Arc<StdMutex<Option<Vec<crucible_core::traits::ContextMessage>>>>,
+    TempDir,
+) {
+    crate::embedding::clear_embedding_provider_cache();
+
+    let tmp = TempDir::new().unwrap();
+    let kiln_path = tmp.path().to_path_buf();
+    std::fs::write(
+        kiln_path.join("Note.md"),
+        "---\ntitle: Note\ntags:\n  - test\n---\n\nIndexed note content.\n",
+    )
+    .unwrap();
+
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            kiln_path.clone(),
+            Some(kiln_path.clone()),
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+    let session_id = session.id.clone();
+
+    let agent_manager = Arc::new(create_test_agent_manager_with_enrichment(
+        session_manager.clone(),
+        crucible_core::config::EmbeddingProviderConfig::mock(Some(384)),
+    ));
+
+    let handle = agent_manager
+        .kiln_manager
+        .get_or_open(&kiln_path)
+        .await
+        .unwrap();
+    handle
+        .as_note_store()
+        .upsert(
+            crucible_core::storage::note_store::NoteRecord::new(
+                "Note.md",
+                crucible_core::parser::BlockHash::zero(),
+            )
+            .with_title("Note")
+            .with_embedding(vec![0.1; 384])
+            .with_embedding_metadata("mock-model".to_string(), 384),
+        )
+        .await
+        .unwrap();
+
+    let mut agent = test_agent();
+    agent.precognition_enabled = true;
+    agent_manager
+        .configure_agent(&session_id, agent)
+        .await
+        .unwrap();
+
+    // Register the test's Lua transform_context handler.
+    let state = agent_manager.get_or_create_session_state(&session_id);
+    {
+        let s = state.lock().await;
+        s.lua.load(lua_handler).exec().unwrap();
+    }
+
+    let received_messages = Arc::new(StdMutex::new(None));
+    agent_manager.agent_cache.insert(
+        session_id.clone(),
+        Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
+            received_prompt: Arc::new(StdMutex::new(None)),
+            received_messages: received_messages.clone(),
+            events: vec![script::text("ok"), script::done()],
+        }) as BoxedAgentHandle)),
+    );
+
+    let (event_tx, event_rx) = broadcast::channel::<SessionEventMessage>(64);
+
+    (
+        agent_manager,
+        session_id,
+        event_tx,
+        event_rx,
+        received_messages,
+        tmp,
+    )
+}
+
+#[tokio::test]
+async fn test_transform_context_handler_dropping_precog_triggers_reprepend() {
+    // Buggy plugin: returns a fresh messages array that doesn't include
+    // the precog block. The drop-protection check should detect the
+    // missing tag and re-prepend the system message before the agent
+    // sees it.
+    let lua = r#"
+        crucible.on("transform_context", function(ctx, event)
+            -- Rebuild without the precog system message (losing its tag)
+            local out = {}
+            for _, m in ipairs(event.payload.messages) do
+                if m.role == "user" then
+                    table.insert(out, { role = m.role, content = m.content })
+                end
+            end
+            return { messages = out }
+        end)
+    "#;
+
+    let (am, sid, event_tx, mut event_rx, received_messages, _tmp) =
+        setup_precog_drop_protection(lua).await;
+
+    am.send_message(&sid, "query".into(), &event_tx, true, None)
+        .await
+        .unwrap();
+    let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
+
+    let messages = received_messages.lock().unwrap().clone().unwrap();
+    let has_precog_tag = messages.iter().any(|m| {
+        m.metadata
+            .tags
+            .iter()
+            .any(|t| t == "precognition")
+    });
+    assert!(
+        has_precog_tag,
+        "drop protection should re-prepend tagged precog message; got: {:?}",
+        messages
+            .iter()
+            .map(|m| (&m.role, &m.metadata.tags))
+            .collect::<Vec<_>>()
+    );
+
+    crate::embedding::clear_embedding_provider_cache();
+}
+
+#[tokio::test]
+async fn test_transform_context_handler_mutating_precog_does_not_duplicate() {
+    // Legitimate use: plugin prefixes the precog content (e.g., for
+    // redaction or translation). Tag is preserved → re-prepend logic
+    // should NOT fire. Result: exactly one precog-tagged message, with
+    // the mutated content.
+    let lua = r#"
+        crucible.on("transform_context", function(ctx, event)
+            for _, m in ipairs(event.payload.messages) do
+                if m.metadata and m.metadata.tags then
+                    for _, tag in ipairs(m.metadata.tags) do
+                        if tag == "precognition" then
+                            m.content = "[redacted] " .. m.content
+                        end
+                    end
+                end
+            end
+            return { messages = event.payload.messages }
+        end)
+    "#;
+
+    let (am, sid, event_tx, mut event_rx, received_messages, _tmp) =
+        setup_precog_drop_protection(lua).await;
+
+    am.send_message(&sid, "query".into(), &event_tx, true, None)
+        .await
+        .unwrap();
+    let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
+
+    let messages = received_messages.lock().unwrap().clone().unwrap();
+    let precog_msgs: Vec<&crucible_core::traits::ContextMessage> = messages
+        .iter()
+        .filter(|m| m.metadata.tags.iter().any(|t| t == "precognition"))
+        .collect();
+
+    assert_eq!(
+        precog_msgs.len(),
+        1,
+        "mutated precog should not be duplicated by re-prepend; got {} precog-tagged messages",
+        precog_msgs.len()
+    );
+    assert!(
+        precog_msgs[0].content.starts_with("[redacted] "),
+        "mutated content should reach the agent, got: {}",
+        precog_msgs[0].content
+    );
+
+    crate::embedding::clear_embedding_provider_cache();
+}
