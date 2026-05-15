@@ -354,6 +354,133 @@ impl AgentManager {
         Some(current_content)
     }
 
+    /// Fire `transform_context` for handlers that want to mutate the
+    /// `Vec<ContextMessage>` going to the provider. This is the rich-
+    /// message-array seam (Pi's `transformContext`); the existing
+    /// `pre_llm_call` is the later string-level seam. Both fire per turn.
+    ///
+    /// Returns the (possibly mutated) message vec. `None` means a
+    /// handler cancelled and the caller should abort the turn.
+    pub(super) async fn apply_transform_context_handlers(
+        messages: Vec<crucible_core::traits::ContextMessage>,
+        stream_ctx: &StreamContext,
+        stream_config: &AgentStreamConfig,
+    ) -> Option<Vec<crucible_core::traits::ContextMessage>> {
+        let mut state = stream_ctx.session_state.lock().await;
+        let mut current = messages;
+
+        // Internal reactor handlers (Rust-side subscribers) see the
+        // event but can't mutate the messages today — they're observers.
+        // Cancel propagates as a hard stop.
+        let event = SessionEvent::internal(InternalSessionEvent::TransformContext {
+            messages: current.clone(),
+            model: stream_config.model.clone(),
+        });
+        match state.reactor.emit(event).await {
+            Ok(EmitResult::Completed { .. }) => {}
+            Ok(EmitResult::Cancelled { by_handler, .. }) => {
+                warn!(
+                    session_id = %stream_ctx.session_id,
+                    handler = %by_handler,
+                    "TransformContext cancelled by handler"
+                );
+                if !emit_event(
+                    &stream_ctx.event_tx,
+                    SessionEventMessage::ended(
+                        &stream_ctx.session_id,
+                        format!("cancelled by handler: {}", by_handler),
+                    ),
+                ) {
+                    warn!(
+                        session_id = %stream_ctx.session_id,
+                        "No subscribers for cancelled event"
+                    );
+                }
+                return None;
+            }
+            Ok(EmitResult::Failed { handler, error, .. }) => {
+                warn!(
+                    session_id = %stream_ctx.session_id,
+                    handler = %handler,
+                    error = %error,
+                    "TransformContext handler failed (fail-open)"
+                );
+            }
+            Err(error) => {
+                warn!(
+                    session_id = %stream_ctx.session_id,
+                    error = %error,
+                    "TransformContext emit failed (fail-open)"
+                );
+            }
+        }
+
+        // Lua runtime handlers can replace the message array entirely
+        // by returning `{ messages = ... }` from their callback.
+        let handlers = state.registry.runtime_handlers_for("transform_context", None);
+        for handler in handlers {
+            let event = SessionEvent::Custom {
+                name: "transform_context".to_string(),
+                payload: serde_json::json!({
+                    "messages": &current,
+                    "model": &stream_config.model,
+                }),
+            };
+            match state
+                .registry
+                .execute_runtime_handler(&state.lua, &handler.name, &event)
+                .await
+            {
+                Ok(crucible_lua::ScriptHandlerResult::Transform(val)) => {
+                    if let Some(msgs_val) = val.get("messages") {
+                        match serde_json::from_value::<Vec<crucible_core::traits::ContextMessage>>(
+                            msgs_val.clone(),
+                        ) {
+                            Ok(new_messages) => current = new_messages,
+                            Err(e) => warn!(
+                                session_id = %stream_ctx.session_id,
+                                handler = %handler.name,
+                                error = %e,
+                                "transform_context handler returned invalid messages, keeping previous"
+                            ),
+                        }
+                    }
+                }
+                Ok(crucible_lua::ScriptHandlerResult::Cancel { reason }) => {
+                    debug!(
+                        session_id = %stream_ctx.session_id,
+                        reason = %reason,
+                        "transform_context handler cancelled"
+                    );
+                    if !emit_event(
+                        &stream_ctx.event_tx,
+                        SessionEventMessage::ended(
+                            &stream_ctx.session_id,
+                            format!("cancelled by handler: {}", handler.name),
+                        ),
+                    ) {
+                        warn!(
+                            session_id = %stream_ctx.session_id,
+                            "No subscribers for cancelled event"
+                        );
+                    }
+                    return None;
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    warn!(
+                        session_id = %stream_ctx.session_id,
+                        handler = %handler.name,
+                        error = %error,
+                        "transform_context handler error (fail-open)"
+                    );
+                }
+            }
+        }
+
+        Some(current)
+    }
+
     pub(super) async fn handle_permission_request(
         stream_ctx: &StreamContext,
         tool_call: &crucible_core::traits::chat::ChatToolCall,

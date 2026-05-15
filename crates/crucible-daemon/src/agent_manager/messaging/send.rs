@@ -89,7 +89,7 @@ impl AgentManager {
             crate::workspace_snapshot::WorkspaceSnapshot::create(&session.workspace).await;
         self.snapshots
             .insert(session_id.to_string(), snapshot_key_node.index(), snapshot);
-        {
+        let is_first_user_message = {
             let mut t = conversation_tree.lock().await;
             let parent = t.current();
             let _user_node = t.add_child_and_advance(
@@ -98,13 +98,18 @@ impl AgentManager {
                     text: original_content.clone(),
                 },
             );
-        }
+            // After append+advance, undo_depth() is the count of User
+            // nodes on the current path — 1 means this turn is the first.
+            t.undo_depth() == 1
+        };
 
         info!(target: "ttft", session_id = %session_id, stage = "precognition_start", elapsed_ms = ttft_start.elapsed().as_millis() as u64, "ttft");
-        let content = if agent_config.precognition_enabled
-            && !original_content.starts_with("/search")
-            && !session.kiln.as_os_str().is_empty()
-        {
+        let content = if crate::agent_manager::precognition::should_run_precognition(
+            agent_config.precognition_enabled,
+            &original_content,
+            &session.kiln,
+            is_first_user_message,
+        ) {
             self.enrich_with_precognition(
                 session_id,
                 &original_content,

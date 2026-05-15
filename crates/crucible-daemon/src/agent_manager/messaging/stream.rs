@@ -259,6 +259,22 @@ impl AgentManager {
             tree.flatten_current_path_to_context()
         };
 
+        // Two-stage context seam (Pi-style): transform_context fires
+        // here, on the rich Vec<ContextMessage>, before linearization.
+        // pre_llm_call already fired above on the string `content`.
+        // Kiln/Precognition handlers should attach here, not at
+        // pre_llm_call — they get structured messages instead of having
+        // to parse the prompt string.
+        let Some(flattened_messages) = Self::apply_transform_context_handlers(
+            flattened_messages,
+            &stream_ctx,
+            &stream_config,
+        )
+        .await
+        else {
+            return;
+        };
+
         let (inbound_tx, inbound_rx) = mpsc::channel::<TurnEvent>(32);
         let mut turn_ctx = TurnContext::new(content)
             .with_inbound(inbound_rx)

@@ -254,6 +254,7 @@ async fn test_precognition_enriched_content_reaches_agent() {
         session.id.clone(),
         Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
             received_prompt: received.clone(),
+            received_messages: Arc::new(std::sync::Mutex::new(None)),
             events: vec![script::text("ok"), script::done()],
         }) as BoxedAgentHandle)),
     );

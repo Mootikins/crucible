@@ -344,6 +344,53 @@ fn event_patterns_match_event_type() {
 }
 
 #[tokio::test]
+async fn runtime_transform_context_appends_system_message() {
+    // Pi-style two-stage seam: a transform_context handler operates on
+    // the rich message array BEFORE prompt linearization. This is the
+    // natural injection point for kiln/Precognition context — Lua sees
+    // the structured messages, not just a prompt string.
+    let mut h = ReactorTestHarness::new().await;
+
+    let session_state = h.agent_manager.get_or_create_session_state(&h.session_id);
+    {
+        let state = session_state.lock().await;
+        state
+            .lua
+            .load(
+                r#"
+            crucible.on("transform_context", function(ctx, event)
+                local msgs = event.payload.messages
+                table.insert(msgs, {
+                    role = "system",
+                    content = "[precognition] note about widgets",
+                })
+                return { messages = msgs }
+            end)
+        "#,
+            )
+            .exec()
+            .unwrap();
+    }
+
+    let (_prompt, messages) =
+        h.inject_full_capturing_agent(ReactorTestHarness::default_ok_events());
+
+    h.send("tell me about widgets").await;
+    h.wait_for("message_complete").await;
+
+    let captured = messages.lock().unwrap();
+    let messages = captured.as_ref().expect("agent should have captured messages");
+    let injected = messages
+        .iter()
+        .find(|m| m.content.contains("[precognition] note about widgets"));
+    assert!(
+        injected.is_some(),
+        "transform_context handler should have appended a system message; got: {:?}",
+        messages.iter().map(|m| (&m.role, &m.content)).collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
 async fn runtime_pre_tool_handled_with_terminate_ends_turn() {
     // Pi-style conjunctive early-stop: if a pre_tool_call handler returns
     // { handled=true, result=..., terminate=true }, and that's the only tool

@@ -39,7 +39,13 @@ pub struct ContextMessage {
     pub role: MessageRole,
     /// Message content
     pub content: String,
-    /// Associated metadata
+    /// Associated metadata.
+    ///
+    /// `serde(default)` lets Lua handlers return minimal `{role, content}`
+    /// tables without having to populate metadata — important for the
+    /// `transform_context` ergonomics (injection from a Lua plugin
+    /// shouldn't require filling in token estimates by hand).
+    #[serde(default)]
     pub metadata: MessageMetadata,
 }
 

@@ -212,6 +212,8 @@ impl Handler for MockHandler {
 
 struct PromptCapturingAgent {
     received_prompt: Arc<std::sync::Mutex<Option<String>>>,
+    received_messages:
+        Arc<std::sync::Mutex<Option<Vec<crucible_core::traits::ContextMessage>>>>,
     events: Vec<TurnEvent>,
 }
 
@@ -225,6 +227,7 @@ impl crucible_core::turn::Agent for PromptCapturingAgent {
         ctx: crucible_core::turn::TurnContext,
     ) -> Result<futures::stream::BoxStream<'a, TurnEvent>, crucible_core::turn::AgentError> {
         *self.received_prompt.lock().unwrap() = Some(ctx.content.clone());
+        *self.received_messages.lock().unwrap() = Some(ctx.messages.clone());
         Ok(scripted_events_stream(self.events.clone(), ctx))
     }
     async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
@@ -419,14 +422,38 @@ impl ReactorTestHarness {
         events: Vec<TurnEvent>,
     ) -> Arc<std::sync::Mutex<Option<String>>> {
         let received_prompt = Arc::new(std::sync::Mutex::new(None::<String>));
+        let received_messages = Arc::new(std::sync::Mutex::new(None));
         self.agent_manager.agent_cache.insert(
             self.session_id.clone(),
             Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
                 received_prompt: received_prompt.clone(),
+                received_messages,
                 events,
             }) as BoxedAgentHandle)),
         );
         received_prompt
+    }
+
+    /// Same as inject_capturing_agent but also returns the message
+    /// capture handle (for transform_context tests).
+    fn inject_full_capturing_agent(
+        &self,
+        events: Vec<TurnEvent>,
+    ) -> (
+        Arc<std::sync::Mutex<Option<String>>>,
+        Arc<std::sync::Mutex<Option<Vec<crucible_core::traits::ContextMessage>>>>,
+    ) {
+        let received_prompt = Arc::new(std::sync::Mutex::new(None::<String>));
+        let received_messages = Arc::new(std::sync::Mutex::new(None));
+        self.agent_manager.agent_cache.insert(
+            self.session_id.clone(),
+            Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
+                received_prompt: received_prompt.clone(),
+                received_messages: received_messages.clone(),
+                events,
+            }) as BoxedAgentHandle)),
+        );
+        (received_prompt, received_messages)
     }
 
     fn inject_streaming_agent(&self, events: Vec<TurnEvent>) {

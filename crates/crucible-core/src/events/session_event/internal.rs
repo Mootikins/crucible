@@ -224,6 +224,22 @@ pub enum InternalSessionEvent {
         model: String,
     },
 
+    /// Pre-event before context messages are passed to the provider.
+    ///
+    /// Fires AFTER the conversation tree is flattened to ContextMessages
+    /// but BEFORE the model sees them. Handlers can append, replace, or
+    /// prune messages. This is the natural injection point for kiln /
+    /// Precognition note injection — operates on rich messages, not on
+    /// the linearized prompt string (which is what `PreLlmCall` sees).
+    ///
+    /// Two-stage seam (Pi-style): `TransformContext` → `PreLlmCall`.
+    TransformContext {
+        /// The conversation messages going to the provider.
+        messages: Vec<crate::traits::ContextMessage>,
+        /// The model being used.
+        model: String,
+    },
+
     /// Post-event after LLM call completes (fire-and-forget notification).
     PostLlmCall {
         /// Summary of the response (first 200 chars, truncated).
@@ -431,6 +447,7 @@ impl InternalSessionEvent {
             Self::PreToolCall { .. } => "pre_tool_call",
             Self::PreParse { .. } => "pre_parse",
             Self::PreLlmCall { .. } => "pre_llm_call",
+            Self::TransformContext { .. } => "transform_context",
             Self::PostLlmCall { .. } => "post_llm_call",
             Self::PrecognitionComplete { .. } => "precognition_complete",
             Self::ClassificationRequired { .. } => "classification_required",
@@ -476,6 +493,7 @@ impl InternalSessionEvent {
             Self::PreToolCall { .. } => "PreToolCall",
             Self::PreParse { .. } => "PreParse",
             Self::PreLlmCall { .. } => "PreLlmCall",
+            Self::TransformContext { .. } => "TransformContext",
             Self::PostLlmCall { .. } => "PostLlmCall",
             Self::PrecognitionComplete { .. } => "PrecognitionComplete",
             Self::ClassificationRequired { .. } => "ClassificationRequired",
@@ -553,6 +571,7 @@ impl InternalSessionEvent {
             Self::PreToolCall { name, .. } => format!("pre:tool:{}", name),
             Self::PreParse { path, .. } => format!("pre:parse:{}", path.display()),
             Self::PreLlmCall { model, .. } => format!("pre:llm:{}", model),
+            Self::TransformContext { model, .. } => format!("transform_context:{}", model),
             Self::PostLlmCall { model, .. } => format!("post:llm:{}", model),
             Self::PrecognitionComplete { .. } => "precognition:complete".into(),
             Self::ClassificationRequired { kiln_path, .. } => {
@@ -621,9 +640,10 @@ impl InternalSessionEvent {
             | Self::RelationDeleted { .. }
             | Self::TagAssociated { .. } => EventCategory::Storage,
 
-            Self::PreToolCall { .. } | Self::PreParse { .. } | Self::PreLlmCall { .. } => {
-                EventCategory::Pre
-            }
+            Self::PreToolCall { .. }
+            | Self::PreParse { .. }
+            | Self::PreLlmCall { .. }
+            | Self::TransformContext { .. } => EventCategory::Pre,
 
             Self::SessionCompacted { .. }
             | Self::SessionStateChanged { .. }
@@ -676,6 +696,9 @@ impl InternalSessionEvent {
             Self::PreToolCall { name, .. } => name.len() + 50,
             Self::PreParse { .. } => 50,
             Self::PreLlmCall { prompt, .. } => prompt.len(),
+            Self::TransformContext { messages, .. } => {
+                messages.iter().map(|m| m.content.len()).sum::<usize>() + 50
+            }
             Self::PostLlmCall {
                 response_summary, ..
             } => response_summary.len(),
@@ -806,6 +829,9 @@ impl InternalSessionEvent {
             Self::PreParse { path } => format!("path={}", path.display()),
             Self::PreLlmCall { prompt, model } => {
                 format!("model={}, prompt_len={}", model, prompt.len())
+            }
+            Self::TransformContext { messages, model } => {
+                format!("model={}, message_count={}", model, messages.len())
             }
             Self::PostLlmCall {
                 response_summary,
@@ -1005,6 +1031,9 @@ impl InternalSessionEvent {
             Self::PreToolCall { args, .. } => Some(args.to_string()),
             Self::PreParse { path } => Some(path.display().to_string()),
             Self::PreLlmCall { prompt, .. } => Some(prompt.clone()),
+            Self::TransformContext { messages, .. } => {
+                Some(format!("{} messages", messages.len()))
+            }
             Self::PostLlmCall {
                 response_summary, ..
             } => Some(response_summary.clone()),
