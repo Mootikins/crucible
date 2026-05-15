@@ -80,7 +80,7 @@ fn test_runtime_skill_discovered() {
     );
 
     // When: default_discovery_paths() builds search paths
-    let paths = default_discovery_paths(None, None);
+    let paths = default_discovery_paths(None, None, None);
 
     let has_runtime_path = paths
         .iter()

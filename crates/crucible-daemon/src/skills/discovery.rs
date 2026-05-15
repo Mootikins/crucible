@@ -54,7 +54,11 @@ impl FolderDiscovery {
     /// - `<workspace>/.<agent>/skills/` for each known agent (workspace)
     /// - `<kiln>/skills/` if kiln path provided (kiln)
     pub fn with_default_paths(workspace: &Path, kiln: Option<&Path>) -> Self {
-        let paths = default_discovery_paths(Some(workspace), kiln);
+        let paths = default_discovery_paths(
+            Some(workspace),
+            kiln,
+            dirs::home_dir().as_deref(),
+        );
         Self::new(paths)
     }
 
@@ -124,8 +128,51 @@ impl FolderDiscovery {
     }
 }
 
-/// Build default discovery paths for Crucible
-pub fn default_discovery_paths(workspace: Option<&Path>, kiln: Option<&Path>) -> Vec<SearchPath> {
+/// Add skill paths from other coding-agent harnesses' home directories.
+///
+/// Pi explicitly cross-discovers other harnesses' skill libraries (see
+/// `pi-mono/packages/coding-agent/docs/skills.md` § "Using Skills from
+/// Other Harnesses"). We do the same: users invest in skill collections
+/// inside `~/.claude/skills`, `~/.codex/skills`, etc.; refusing to read
+/// them deepens ecosystem fragmentation for no real benefit.
+///
+/// Known harness shapes:
+/// - `claude`, `codex`, `opencode` → `~/.<harness>/skills/`
+/// - `pi`                          → `~/.pi/agent/skills/`
+///
+/// Unknown harness names are ignored (the helper only knows shapes it
+/// has been taught). Missing directories are silently skipped.
+///
+/// All cross-harness paths get `SkillScope::Personal` — they sit at the
+/// same priority as `~/.config/crucible/skills`, lower than workspace
+/// and kiln. The `agent` tag records the source harness so callers can
+/// disambiguate name clashes (`commit` from Claude vs Crucible) and
+/// show provenance.
+pub fn cross_harness_home_paths(home: &Path, harnesses: &[&str]) -> Vec<SearchPath> {
+    let mut paths = Vec::new();
+    for harness in harnesses {
+        let candidate = match *harness {
+            "claude" | "codex" | "opencode" => home.join(format!(".{harness}")).join("skills"),
+            "pi" => home.join(".pi").join("agent").join("skills"),
+            _ => continue,
+        };
+        if candidate.exists() {
+            paths.push(SearchPath::new(candidate, SkillScope::Personal).with_agent(*harness));
+        }
+    }
+    paths
+}
+
+/// Build default discovery paths for Crucible.
+///
+/// In production, callers pass `dirs::home_dir().as_deref()` for `home`.
+/// Tests inject a tempdir so they don't depend on the host's real
+/// `~/.claude/skills` / `~/.codex/skills` / `~/.pi/agent/skills` contents.
+pub fn default_discovery_paths(
+    workspace: Option<&Path>,
+    kiln: Option<&Path>,
+    home: Option<&Path>,
+) -> Vec<SearchPath> {
     let mut paths = Vec::new();
 
     if let Some(config_dir) = dirs::config_dir() {
@@ -136,6 +183,13 @@ pub fn default_discovery_paths(workspace: Option<&Path>, kiln: Option<&Path>) ->
             )
             .with_agent("crucible"),
         );
+    }
+
+    if let Some(home) = home {
+        paths.extend(cross_harness_home_paths(
+            home,
+            &["claude", "codex", "opencode", "pi"],
+        ));
     }
 
     if let Some(ws) = workspace {
@@ -211,6 +265,75 @@ mod tests {
             "---\nname: {skill_name}\ndescription: {description}\n---\n\nInstructions for {skill_name}.\n"
         );
         std::fs::write(skill_dir.join("SKILL.md"), content).unwrap();
+    }
+
+    #[test]
+    fn cross_harness_home_paths_includes_known_harness_skill_dirs() {
+        let tmp = TempDir::new().unwrap();
+        let home = tmp.path();
+
+        let claude_skills = home.join(".claude").join("skills");
+        std::fs::create_dir_all(&claude_skills).unwrap();
+        write_skill(&claude_skills, "claude-commit", "Claude commit skill");
+
+        let codex_skills = home.join(".codex").join("skills");
+        std::fs::create_dir_all(&codex_skills).unwrap();
+        write_skill(&codex_skills, "codex-review", "Codex review skill");
+
+        // Pi's home-skill path is one level deeper than Claude/Codex.
+        let pi_skills = home.join(".pi").join("agent").join("skills");
+        std::fs::create_dir_all(&pi_skills).unwrap();
+        write_skill(&pi_skills, "pi-plan", "Pi plan skill");
+
+        let paths = cross_harness_home_paths(home, &["claude", "codex", "pi"]);
+        let by_agent: HashMap<String, &SearchPath> = paths
+            .iter()
+            .map(|p| (p.agent.clone().unwrap_or_default(), p))
+            .collect();
+
+        assert_eq!(
+            paths.len(),
+            3,
+            "expected one path per harness, got {paths:?}"
+        );
+        assert_eq!(by_agent["claude"].path, claude_skills);
+        assert_eq!(by_agent["codex"].path, codex_skills);
+        assert_eq!(by_agent["pi"].path, pi_skills);
+
+        // All cross-harness home paths are Personal scope (user-level
+        // libraries, lower priority than workspace/kiln).
+        for p in &paths {
+            assert_eq!(p.scope, SkillScope::Personal);
+        }
+    }
+
+    #[test]
+    fn cross_harness_home_paths_skips_missing_dirs() {
+        let tmp = TempDir::new().unwrap();
+        let home = tmp.path();
+
+        let claude_skills = home.join(".claude").join("skills");
+        std::fs::create_dir_all(&claude_skills).unwrap();
+        // Intentionally do not create codex or pi dirs.
+
+        let paths = cross_harness_home_paths(home, &["claude", "codex", "pi"]);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].agent.as_deref(), Some("claude"));
+    }
+
+    #[test]
+    fn cross_harness_home_paths_unknown_harness_is_skipped() {
+        let tmp = TempDir::new().unwrap();
+        // Even if a "made-up" harness dir exists, the helper only
+        // knows the shapes of harnesses it lists explicitly.
+        let weird = tmp.path().join(".made-up").join("skills");
+        std::fs::create_dir_all(&weird).unwrap();
+
+        let paths = cross_harness_home_paths(tmp.path(), &["made-up"]);
+        assert!(
+            paths.is_empty(),
+            "unknown harnesses should not contribute paths"
+        );
     }
 
     #[test]
@@ -376,7 +499,10 @@ mod tests {
     #[test]
     fn with_default_paths_includes_personal() {
         let tmp = TempDir::new().unwrap();
-        let discovery = FolderDiscovery::with_default_paths(tmp.path(), None);
+        // Inject an empty home dir so the test isn't affected by the
+        // host's real ~/.claude / ~/.codex / ~/.pi skill libraries.
+        let paths = default_discovery_paths(Some(tmp.path()), None, Some(tmp.path()));
+        let discovery = FolderDiscovery::new(paths);
 
         // Should not panic, and discover should work on nonexistent paths
         let resolved = discovery.discover().unwrap();
