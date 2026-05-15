@@ -809,6 +809,9 @@ impl AgentManager {
                 conversation_tree: stream_ctx.conversation_tree.clone(),
                 cache_stats: stream_ctx.cache_stats.clone(),
                 session_manager: stream_ctx.session_manager.clone(),
+                // Don't re-inject Precognition on a validation retry —
+                // the original turn already prepended it.
+                precognition_message: None,
             };
 
             Box::pin(Self::execute_agent_stream(

@@ -7,6 +7,7 @@
 //! UI modules (oil, popup, panel, statusline) are intentionally excluded —
 //! the daemon is headless.
 
+use anyhow::Context;
 use crucible_core::storage::NoteStore;
 use crucible_core::storage::PropertyStore;
 use crucible_lua::{
@@ -705,90 +706,119 @@ pub fn default_daemon_plugin_paths() -> Vec<(PathBuf, PluginSource)> {
     daemon_plugin_paths(&[])
 }
 
-/// Bootstrap declared plugins by git-cloning any that are missing.
+/// Outcome of attempting to bootstrap a single plugin entry.
+#[derive(Debug)]
+pub enum BootstrapOutcome {
+    /// Plugin already cloned at the expected destination; no work done.
+    AlreadyPresent,
+    /// Disabled in config; skipped.
+    Disabled,
+    /// Successfully cloned (and pinned, if specified).
+    Cloned { dest: PathBuf },
+}
+
+/// Bootstrap a single plugin entry: clone if missing, check out pin if
+/// set. Returns a structured outcome so callers (CLI vs daemon startup)
+/// can decide how loudly to react to failures.
 ///
-/// Reads `PluginEntry` declarations (typically from `plugins.toml`) and
-/// shallow-clones repos into `~/.config/crucible/plugins/<name>/` when
-/// the target directory does not already exist.
-pub async fn bootstrap_plugins(
-    entries: &[crucible_core::config::PluginEntry],
-) -> anyhow::Result<()> {
+/// Pin handling: when a pin is set we drop `--depth 1` because a shallow
+/// clone often won't contain the target SHA on the tip. Tags and branch
+/// names usually work shallow, but SHAs need full history. Trading
+/// bandwidth for correctness.
+pub async fn bootstrap_plugin_entry(
+    entry: &crucible_core::config::PluginEntry,
+) -> anyhow::Result<BootstrapOutcome> {
+    if !entry.enabled {
+        return Ok(BootstrapOutcome::Disabled);
+    }
+
     let plugins_dir = dirs::config_dir()
         .ok_or_else(|| anyhow::anyhow!("could not determine config directory"))?
         .join("crucible")
         .join("plugins");
 
+    let name = plugin_name_from_url(&entry.url).ok_or_else(|| {
+        anyhow::anyhow!("Plugin URL '{}' has no usable name segment", entry.url)
+    })?;
+    let dest = plugins_dir.join(&name);
+    if dest.exists() {
+        return Ok(BootstrapOutcome::AlreadyPresent);
+    }
+
+    let url = normalize_git_url(&entry.url);
+    info!("Cloning plugin '{}' from {}", name, url);
+
+    let mut cmd = tokio::process::Command::new("git");
+    cmd.arg("clone");
+    // Shallow clone unless we need to check out a specific SHA later —
+    // shallow clones often don't contain the target SHA.
+    if entry.pin.is_none() {
+        cmd.args(["--depth", "1"]);
+    }
+    if let Some(ref branch) = entry.branch {
+        cmd.args(["--branch", branch]);
+    }
+    cmd.arg(&url).arg(&dest);
+
+    let output = cmd
+        .output()
+        .await
+        .with_context(|| format!("failed to spawn git clone for '{}'", name))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("git clone failed for '{}': {}", name, stderr.trim());
+    }
+
+    if let Some(ref pin) = entry.pin {
+        let checkout = tokio::process::Command::new("git")
+            .args(["checkout", pin])
+            .current_dir(&dest)
+            .output()
+            .await
+            .with_context(|| format!("failed to spawn git checkout for pin '{}'", pin))?;
+        if !checkout.status.success() {
+            // Roll back the cloned dir so retries don't get stuck on
+            // a half-installed plugin.
+            let _ = tokio::fs::remove_dir_all(&dest).await;
+            let stderr = String::from_utf8_lossy(&checkout.stderr);
+            anyhow::bail!(
+                "git checkout failed for pin '{}' of plugin '{}': {}",
+                pin,
+                name,
+                stderr.trim()
+            );
+        }
+    }
+
+    Ok(BootstrapOutcome::Cloned { dest })
+}
+
+/// Bootstrap declared plugins by git-cloning any that are missing.
+///
+/// Reads `PluginEntry` declarations (typically from `plugins.toml`).
+/// Failures are warned and skipped — the daemon should start even if
+/// one plugin can't be fetched. For per-entry error reporting (e.g.
+/// `cru install`), use `bootstrap_plugin_entry` directly.
+pub async fn bootstrap_plugins(
+    entries: &[crucible_core::config::PluginEntry],
+) -> anyhow::Result<()> {
     for entry in entries {
-        if !entry.enabled {
-            continue;
-        }
-        let name = match plugin_name_from_url(&entry.url) {
-            Some(n) => n,
-            None => {
-                warn!("Skipping plugin with unparseable URL: '{}'", entry.url);
-                continue;
-            }
-        };
-        let dest = plugins_dir.join(&name);
-        if dest.exists() {
-            continue;
-        }
-
-        let url = normalize_git_url(&entry.url);
-        info!("Bootstrapping plugin '{}' from {}", name, url);
-
-        let mut cmd = tokio::process::Command::new("git");
-        cmd.args(["clone", "--depth", "1"]);
-        if let Some(ref branch) = entry.branch {
-            cmd.args(["--branch", branch]);
-        }
-        cmd.arg(&url).arg(&dest);
-
-        match cmd.output().await {
-            Ok(output) if output.status.success() => {
-                info!("Cloned plugin '{}'", name);
-                if let Some(ref pin) = entry.pin {
-                    let checkout = tokio::process::Command::new("git")
-                        .args(["checkout", pin])
-                        .current_dir(&dest)
-                        .output()
-                        .await;
-                    if let Ok(out) = checkout {
-                        if !out.status.success() {
-                            warn!("Failed to checkout pin '{}' for plugin '{}'", pin, name);
-                        }
-                    }
-                }
-            }
-            Ok(output) => {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                warn!("Failed to clone plugin '{}': {}", name, stderr.trim());
-            }
+        match bootstrap_plugin_entry(entry).await {
+            Ok(_) => {}
             Err(e) => {
-                warn!("Failed to run git clone for plugin '{}': {}", name, e);
+                warn!("Plugin bootstrap failed: {}", e);
             }
         }
     }
     Ok(())
 }
 
-/// Extract plugin name from URL (last path segment, sans `.git`).
-///
-/// Returns `None` if the extracted name is empty, `.`, or `..` — callers
-/// should skip/warn rather than creating directories with unsafe names.
+/// Local alias for `crucible_core::config::plugin_name_from_url` so
+/// the existing call sites in this file read naturally. The canonical
+/// implementation lives in core so CLI, daemon, and any future
+/// consumer share the same definition of "safe plugin directory name".
 fn plugin_name_from_url(url: &str) -> Option<String> {
-    let name = url
-        .trim_end_matches('/')
-        .rsplit('/')
-        .next()
-        .unwrap_or("")
-        .trim_end_matches(".git")
-        .to_string();
-    if name.is_empty() || name == "." || name == ".." {
-        None
-    } else {
-        Some(name)
-    }
+    crucible_core::config::plugin_name_from_url(url)
 }
 
 /// Normalize shorthand URLs to full git URLs.

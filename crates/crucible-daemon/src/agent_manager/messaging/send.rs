@@ -80,7 +80,14 @@ impl AgentManager {
         // `undo_turns(n)` the cursor lands on that exact node — the
         // parent of the rewound User — so on undo the daemon looks up
         // the snapshot under the new cursor and restores it.
-        let conversation_tree = self.get_or_create_session_tree(session_id);
+        // Use the rebuilding variant so a daemon restart that resumes a
+        // persisted session sees its prior history. Without this the
+        // first-user-message gate (Precognition / digest) treats every
+        // post-restart message as first.
+        let jsonl_path = session.storage_path().join("session.jsonl");
+        let conversation_tree = self
+            .get_or_rebuild_session_tree(session_id, &jsonl_path)
+            .await;
         let snapshot_key_node = {
             let t = conversation_tree.lock().await;
             t.current()
@@ -104,24 +111,33 @@ impl AgentManager {
         };
 
         info!(target: "ttft", session_id = %session_id, stage = "precognition_start", elapsed_ms = ttft_start.elapsed().as_millis() as u64, "ttft");
-        let content = if crate::agent_manager::precognition::should_run_precognition(
-            agent_config.precognition_enabled,
-            &original_content,
-            &session.kiln,
-            is_first_user_message,
-        ) {
-            self.enrich_with_precognition(
-                session_id,
+        let precognition_message =
+            if crate::agent_manager::precognition::should_run_precognition(
+                agent_config.precognition_enabled,
                 &original_content,
-                &session,
-                &agent_config,
-                event_tx,
-            )
-            .await
-        } else {
-            original_content.clone()
-        };
+                &session.kiln,
+                is_first_user_message,
+            ) {
+                self.compute_precognition_message(
+                    session_id,
+                    &original_content,
+                    &session,
+                    &agent_config,
+                    event_tx,
+                )
+                .await
+            } else {
+                None
+            };
         info!(target: "ttft", session_id = %session_id, stage = "precognition_done", elapsed_ms = ttft_start.elapsed().as_millis() as u64, "ttft");
+        // Pass the user's content through to the stream loop unchanged;
+        // the Precognition system block (if any) is staged on
+        // StreamContext and prepended by apply_transform_context_handlers
+        // when the seam fires. This is the migration from string-level
+        // mutation (old enrich_with_precognition) to the message-array
+        // seam — Lua transform_context handlers can now further mutate
+        // the precognition message via the same seam.
+        let content = original_content.clone();
 
         let session_id_owned = session_id.to_string();
         let request_state = self.request_state.clone();
@@ -145,6 +161,7 @@ impl AgentManager {
             conversation_tree,
             cache_stats: self.cache_stats_handle(),
             session_manager: self.session_manager.clone(),
+            precognition_message,
         };
 
         let task = tokio::spawn(async move {

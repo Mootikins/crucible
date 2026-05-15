@@ -308,6 +308,14 @@ struct StreamContext {
     /// request compaction when prompt usage exceeds the configured
     /// threshold.
     session_manager: Arc<SessionManager>,
+    /// Pre-computed kiln/Precognition system message to prepend to the
+    /// context vector. Computed upstream of the stream loop (because
+    /// kiln search needs &AgentManager) and injected by
+    /// `apply_transform_context_handlers` before Lua transform_context
+    /// handlers run, so Lua plugins can further mutate it. `None` when
+    /// Precognition is gated off (disabled, /search command, no kiln,
+    /// or not the first user message of the session).
+    precognition_message: Option<crucible_core::traits::ContextMessage>,
 }
 
 #[allow(dead_code)] // fields capture config snapshot; model used in events, others reserved for stream configuration
@@ -563,19 +571,46 @@ impl AgentManager {
     }
 
     /// Look up or create the scheduler-owned `ConversationTree` for a
-    /// session. The tree is initialised with just the root; callers
-    /// append user/agent/tool nodes as events arrive.
-    pub(crate) fn get_or_create_session_tree(
+    /// session. When the entry is first inserted (e.g. after a daemon
+    /// restart resuming a persisted session, or a freshly-attached
+    /// AgentManager for an existing session), rebuild its contents from
+    /// the session JSONL log if one exists. Without this, the
+    /// first-user-message gate (Precognition, digest, etc.) sees an
+    /// empty tree post-restart and treats the next turn as "first" —
+    /// re-injecting on every restart.
+    ///
+    /// `jsonl_path` is the session's event log; when it doesn't exist
+    /// (the common case for in-progress sessions), the tree starts
+    /// empty.
+    pub(crate) async fn get_or_rebuild_session_tree(
         &self,
         session_id: &str,
+        jsonl_path: &std::path::Path,
     ) -> Arc<tokio::sync::Mutex<crucible_core::turn::ConversationTree>> {
+        if let Some(existing) = self.session_trees.get(session_id) {
+            return existing.clone();
+        }
+
+        let initial = if jsonl_path.exists() {
+            match crate::observe::rebuild::rebuild_tree_from_jsonl(jsonl_path).await {
+                Ok(tree) => tree,
+                Err(error) => {
+                    tracing::warn!(
+                        session_id = %session_id,
+                        path = %jsonl_path.display(),
+                        error = %error,
+                        "Failed to rebuild conversation tree from JSONL; starting fresh"
+                    );
+                    crucible_core::turn::ConversationTree::new()
+                }
+            }
+        } else {
+            crucible_core::turn::ConversationTree::new()
+        };
+
         self.session_trees
             .entry(session_id.to_string())
-            .or_insert_with(|| {
-                Arc::new(tokio::sync::Mutex::new(
-                    crucible_core::turn::ConversationTree::new(),
-                ))
-            })
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(initial)))
             .clone()
     }
 
@@ -716,6 +751,10 @@ impl AgentManager {
 
         self.agent_cache.remove(session_id);
         self.session_dispatchers.remove(session_id);
+        // Drop the in-memory conversation tree so a re-attach to this
+        // session rebuilds from on-disk JSONL rather than reusing stale
+        // pointers (and frees memory for ended sessions).
+        self.session_trees.remove(session_id);
 
         if let Some((_, mut state)) = self.request_state.remove(session_id) {
             if let Some(cancel_tx) = state.cancel_tx.take() {

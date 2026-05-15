@@ -190,6 +190,142 @@ async fn test_precognition_complete_event_emitted_when_enrichment_runs() {
 }
 
 #[tokio::test]
+async fn test_precognition_runs_only_on_first_user_message_of_session() {
+    // Pi-style heuristic (project_context_injection_frequency memory):
+    // even when precognition_enabled, only inject on the first user
+    // message of a session — not every turn.
+    crate::embedding::clear_embedding_provider_cache();
+
+    let tmp = TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            Some(tmp.path().to_path_buf()),
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let agent_manager = create_test_agent_manager_with_enrichment(
+        session_manager.clone(),
+        crucible_core::config::EmbeddingProviderConfig::mock(Some(384)),
+    );
+    let mut agent = test_agent();
+    agent.precognition_enabled = true;
+    agent_manager
+        .configure_agent(&session.id, agent)
+        .await
+        .unwrap();
+
+    // First turn: agent emits a quick "ok" + done so we can send a second
+    // message after it. Reused for both turns; scripted_events_stream
+    // returns once Done is yielded so the agent_cache instance survives.
+    agent_manager.agent_cache.insert(
+        session.id.clone(),
+        Arc::new(Mutex::new(Box::new(MultiTurnScriptedAgent {
+            scripts: std::sync::Mutex::new(vec![
+                vec![script::text("ok"), script::done()],
+                vec![script::text("ok2"), script::done()],
+            ]),
+        }))),
+    );
+
+    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(128);
+
+    // Turn 1.
+    agent_manager
+        .send_message(&session.id, "first question".into(), &event_tx, true, None)
+        .await
+        .unwrap();
+    let _ = next_event_or_skip(&mut event_rx, "precognition_complete").await;
+    // Drain to message_complete so we know the turn ended.
+    let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
+
+    // Turn 2. Precognition must NOT fire — assertion is "no precog event
+    // arrives before the next message_complete."
+    agent_manager
+        .send_message(&session.id, "follow-up question".into(), &event_tx, true, None)
+        .await
+        .unwrap();
+    assert_no_event_until_message_complete(&mut event_rx, "precognition_complete").await;
+
+    crate::embedding::clear_embedding_provider_cache();
+}
+
+#[tokio::test]
+async fn test_precognition_does_not_re_fire_when_session_has_prior_history() {
+    // Defends against the daemon-restart-style bug: if session storage
+    // recorded prior conversation (subagent fork, session bridge copy,
+    // future event persistence), a fresh AgentManager must rebuild its
+    // in-memory tree from JSONL so the first-message gate sees the
+    // session's true history, not "this daemon process's history."
+    crate::embedding::clear_embedding_provider_cache();
+
+    let tmp = TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage.clone()));
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            Some(tmp.path().to_path_buf()),
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+    let session_id = session.id.clone();
+
+    // Simulate prior history persisted to session.jsonl (as a fork or
+    // subagent copy would produce). One User event is enough — the
+    // rebuild_tree path counts User nodes.
+    use crate::session_storage::SessionStorage;
+    let prior_event = r#"{"type":"user","ts":"2026-05-15T12:00:00Z","content":"earlier message"}"#;
+    storage
+        .append_event(&session, prior_event)
+        .await
+        .unwrap();
+
+    // Fresh AgentManager — session_trees is empty, simulating restart
+    // or a fresh client attaching to a persisted session.
+    let am = create_test_agent_manager_with_enrichment(
+        session_manager.clone(),
+        crucible_core::config::EmbeddingProviderConfig::mock(Some(384)),
+    );
+    let mut agent_cfg = test_agent();
+    agent_cfg.precognition_enabled = true;
+    am.configure_agent(&session_id, agent_cfg).await.unwrap();
+    am.agent_cache.insert(
+        session_id.clone(),
+        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+            events: vec![script::text("ok"), script::done()],
+        }))),
+    );
+
+    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    am.send_message(
+        &session_id,
+        "follow-up after resume".into(),
+        &event_tx,
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Critical assertion: precognition must NOT fire on the resumed
+    // session — there's prior history, so this isn't the first user
+    // message of the session.
+    assert_no_event_until_message_complete(&mut event_rx, "precognition_complete").await;
+
+    crate::embedding::clear_embedding_provider_cache();
+}
+
+#[tokio::test]
 async fn test_precognition_enriched_content_reaches_agent() {
     crate::embedding::clear_embedding_provider_cache();
 
@@ -250,11 +386,12 @@ async fn test_precognition_enriched_content_reaches_agent() {
         .unwrap();
 
     let received = Arc::new(StdMutex::new(None::<String>));
+    let received_messages = Arc::new(StdMutex::new(None));
     agent_manager.agent_cache.insert(
         session.id.clone(),
         Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
             received_prompt: received.clone(),
-            received_messages: Arc::new(std::sync::Mutex::new(None)),
+            received_messages: received_messages.clone(),
             events: vec![script::text("ok"), script::done()],
         }) as BoxedAgentHandle)),
     );
@@ -284,24 +421,35 @@ async fn test_precognition_enriched_content_reaches_agent() {
     // Wait for the agent stream to complete so the mock agent has been called
     let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
 
-    // The agent should have received enriched content with precognition context
-    let enriched = received
+    // Post-migration: the user content is no longer string-mutated.
+    // The agent receives the original prompt verbatim AND a separate
+    // system ContextMessage carrying the kiln-injected block, prepended
+    // by apply_transform_context_handlers.
+    let user_content = received
         .lock()
         .unwrap()
         .clone()
-        .expect("agent should have received a message");
+        .expect("agent should have received a prompt");
+    assert_eq!(user_content, "Tell me about Rust ownership");
+
+    let messages = received_messages
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("agent should have received messages");
+    let kiln_msg = messages
+        .iter()
+        .find(|m| m.content.contains("Rust Ownership"))
+        .unwrap_or_else(|| {
+            panic!(
+                "expected a message containing the kiln note title, got: {:?}",
+                messages.iter().map(|m| (&m.role, &m.content)).collect::<Vec<_>>()
+            )
+        });
     assert!(
-        enriched.contains("Rust Ownership"),
-        "enriched content should contain the note title, got: {enriched}"
-    );
-    assert!(
-        enriched.contains("Tell me about Rust ownership"),
-        "enriched content should preserve the original user message, got: {enriched}"
-    );
-    // The enriched content should be longer than the original (context was prepended)
-    assert!(
-        enriched.len() > "Tell me about Rust ownership".len(),
-        "enriched content should be longer than original message"
+        matches!(kiln_msg.role, crucible_core::traits::llm::MessageRole::System),
+        "kiln-injected note should be a system message, got role={:?}",
+        kiln_msg.role
     );
 
     crate::embedding::clear_embedding_provider_cache();

@@ -369,6 +369,17 @@ impl AgentManager {
         let mut state = stream_ctx.session_state.lock().await;
         let mut current = messages;
 
+        // Built-in producer: prepend the pre-computed Precognition
+        // system block, if any. Runs *before* Lua handlers so plugins
+        // can observe / mutate / remove the injected block via the
+        // same `transform_context` seam they'd use to inject their own.
+        if let Some(ref precog_msg) = stream_ctx.precognition_message {
+            let mut with_precog = Vec::with_capacity(current.len() + 1);
+            with_precog.push(precog_msg.clone());
+            with_precog.extend(current);
+            current = with_precog;
+        }
+
         // Internal reactor handlers (Rust-side subscribers) see the
         // event but can't mutate the messages today — they're observers.
         // Cancel propagates as a hard stop.

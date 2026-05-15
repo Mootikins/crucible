@@ -597,3 +597,32 @@ pub struct PluginEntry {
     #[serde(default = "default_true")]
     pub enabled: bool,
 }
+
+impl PluginEntry {
+    /// Derive the plugin's directory name from its URL — last path
+    /// segment, sans trailing `.git`. Returns `None` if the result
+    /// would be empty, `.`, or `..` (unsafe directory names).
+    pub fn name(&self) -> Option<String> {
+        plugin_name_from_url(&self.url)
+    }
+}
+
+/// Extract a safe plugin directory name from a git URL.
+///
+/// Returns `None` when the trailing path segment is empty, `.`, or
+/// `..` — callers should warn rather than create a directory with an
+/// unsafe name.
+pub fn plugin_name_from_url(url: &str) -> Option<String> {
+    let name = url
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or("")
+        .trim_end_matches(".git")
+        .to_string();
+    if name.is_empty() || name == "." || name == ".." {
+        None
+    } else {
+        Some(name)
+    }
+}

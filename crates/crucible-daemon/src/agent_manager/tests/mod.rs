@@ -210,6 +210,50 @@ impl Handler for MockHandler {
     }
 }
 
+/// Mock agent that delivers a different scripted event sequence per
+/// turn. Used by tests that need to send multiple messages and observe
+/// per-turn behavior (e.g. the precognition first-message gate).
+struct MultiTurnScriptedAgent {
+    scripts: std::sync::Mutex<Vec<Vec<TurnEvent>>>,
+}
+
+#[async_trait::async_trait]
+impl crucible_core::turn::Agent for MultiTurnScriptedAgent {
+    fn capabilities(&self) -> crucible_core::turn::AgentCapabilities {
+        crucible_core::turn::AgentCapabilities::default()
+    }
+    async fn turn<'a>(
+        &'a mut self,
+        ctx: crucible_core::turn::TurnContext,
+    ) -> Result<futures::stream::BoxStream<'a, TurnEvent>, crucible_core::turn::AgentError> {
+        let events = {
+            let mut guard = self.scripts.lock().unwrap();
+            if guard.is_empty() {
+                vec![script::text("ok"), script::done()]
+            } else {
+                guard.remove(0)
+            }
+        };
+        Ok(scripted_events_stream(events, ctx))
+    }
+    async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
+        Ok(())
+    }
+    async fn switch_model(&mut self, _: &str) -> Result<(), crucible_core::turn::NotSupported> {
+        Err(crucible_core::turn::NotSupported::new("switch_model"))
+    }
+}
+
+#[async_trait::async_trait]
+impl AgentHandle for MultiTurnScriptedAgent {
+    async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
+        Ok(())
+    }
+    async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
+        Ok(())
+    }
+}
+
 struct PromptCapturingAgent {
     received_prompt: Arc<std::sync::Mutex<Option<String>>>,
     received_messages:

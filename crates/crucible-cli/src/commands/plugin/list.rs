@@ -33,7 +33,7 @@ pub async fn execute(args: ListArgs) -> Result<()> {
             .plugin
             .iter()
             .map(|p| {
-                let name = name_from_url(&p.url);
+                let name = p.name();
                 let cloned = name
                     .as_ref()
                     .map(|n| plugins_dir.join(n).exists())
@@ -60,7 +60,7 @@ pub async fn execute(args: ListArgs) -> Result<()> {
 
     println!("{:<24} {:<10} {:<10} {}", "NAME", "STATE", "PIN", "URL");
     for entry in &config.plugin {
-        let name = name_from_url(&entry.url).unwrap_or_else(|| "(invalid)".into());
+        let name = entry.name().unwrap_or_else(|| "(invalid)".into());
         let cloned = plugins_dir.join(&name).exists();
         let state = match (entry.enabled, cloned) {
             (false, _) => "disabled",
@@ -72,15 +72,4 @@ pub async fn execute(args: ListArgs) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn name_from_url(url: &str) -> Option<String> {
-    let n = url
-        .trim_end_matches('/')
-        .rsplit('/')
-        .next()
-        .unwrap_or("")
-        .trim_end_matches(".git")
-        .to_string();
-    (!n.is_empty() && n != "." && n != "..").then_some(n)
 }

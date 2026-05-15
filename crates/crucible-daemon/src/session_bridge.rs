@@ -1050,7 +1050,9 @@ mod tests {
             .unwrap();
 
         // Seed the tree with three non-root nodes: User → Agent → User.
-        let tree = agent_manager.get_or_create_session_tree(&session.id);
+        let tree = agent_manager
+            .get_or_rebuild_session_tree(&session.id, std::path::Path::new("/nonexistent"))
+            .await;
         {
             let mut t = tree.lock().await;
             let root = t.root();
@@ -1118,7 +1120,9 @@ mod tests {
             .unwrap();
 
         // Seed the tree with three non-root nodes.
-        let tree = agent_manager.get_or_create_session_tree(&session.id);
+        let tree = agent_manager
+            .get_or_rebuild_session_tree(&session.id, std::path::Path::new("/nonexistent"))
+            .await;
         {
             let mut t = tree.lock().await;
             let root = t.root();
@@ -1176,7 +1180,9 @@ mod tests {
             .unwrap();
 
         // Seed two complete turns: User → Agent → User → Agent.
-        let tree = agent_manager.get_or_create_session_tree(&session.id);
+        let tree = agent_manager
+            .get_or_rebuild_session_tree(&session.id, std::path::Path::new("/nonexistent"))
+            .await;
         {
             let mut t = tree.lock().await;
             let root = t.root();

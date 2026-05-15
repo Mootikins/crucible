@@ -87,6 +87,20 @@ pub struct ChatToolResult {
     /// Tool signaled the agent loop should end after this batch.
     /// The loop only honors termination when *every* result in the batch
     /// sets this — one tool can't unilaterally cut another's work short.
+    ///
+    /// **Producer scope (v1):** today this is only set by Lua
+    /// `pre_tool_call` handlers returning `{ handled = true,
+    /// terminate = true }`. The native `ToolExecutor::execute_tool` trait
+    /// returns `serde_json::Value` and has no way to signal terminate —
+    /// non-Lua tools always send `terminate: false`.
+    ///
+    /// **Consumer scope (v1):** the conjunctive check fires at
+    /// `TurnEvent::ToolBatchEnd`. The genai agent loop emits that event
+    /// after every tool batch. The ACP delegation path
+    /// (`provider/acp.rs`) does not yet emit `ToolBatchEnd`, so this
+    /// flag has no effect for `cru chat -a claude / opencode / gemini`
+    /// sessions. Wire `ToolBatchEnd` through the ACP adapter when an
+    /// ACP-side use case appears.
     #[serde(default)]
     pub terminate: bool,
 }

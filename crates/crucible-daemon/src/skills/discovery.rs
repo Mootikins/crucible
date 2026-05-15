@@ -186,10 +186,32 @@ pub fn default_discovery_paths(
     }
 
     if let Some(home) = home {
-        paths.extend(cross_harness_home_paths(
-            home,
-            &["claude", "codex", "opencode", "pi"],
-        ));
+        // Set `CRUCIBLE_CROSS_HARNESS_SKILLS=0` to disable cross-harness
+        // discovery (e.g. for users who don't want their `~/.claude/skills`
+        // visible to Crucible). On by default — matches Pi's ecosystem
+        // stance — but observable + opt-out, since silently reading other
+        // tools' config dirs is surprising the first time you notice it.
+        let enabled = match std::env::var("CRUCIBLE_CROSS_HARNESS_SKILLS").as_deref() {
+            Ok("0") | Ok("false") | Ok("off") => false,
+            _ => true,
+        };
+        if enabled {
+            let extras = cross_harness_home_paths(
+                home,
+                &["claude", "codex", "opencode", "pi"],
+            );
+            if !extras.is_empty() {
+                let names: Vec<&str> = extras
+                    .iter()
+                    .filter_map(|p| p.agent.as_deref())
+                    .collect();
+                tracing::info!(
+                    harnesses = ?names,
+                    "Discovered skill libraries from other coding-agent harnesses; set CRUCIBLE_CROSS_HARNESS_SKILLS=0 to disable"
+                );
+            }
+            paths.extend(extras);
+        }
     }
 
     if let Some(ws) = workspace {

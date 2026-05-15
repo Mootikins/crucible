@@ -76,7 +76,8 @@ pub use background_manager::{
     BackgroundError, BackgroundJobManager, SubagentContext, SubagentFactory,
 };
 pub use daemon_plugins::{
-    bootstrap_plugins, daemon_plugin_paths, default_daemon_plugin_paths, DaemonPluginLoader,
+    bootstrap_plugin_entry, bootstrap_plugins, daemon_plugin_paths, default_daemon_plugin_paths,
+    BootstrapOutcome, DaemonPluginLoader,
 };
 pub use file_watch_bridge::{create_event_bridge, DaemonEventBridge};
 pub use kiln_manager::KilnManager;
