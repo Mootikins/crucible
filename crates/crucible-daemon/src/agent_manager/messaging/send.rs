@@ -84,9 +84,8 @@ impl AgentManager {
         // persisted session sees its prior history. Without this the
         // first-user-message gate (Precognition / digest) treats every
         // post-restart message as first.
-        let jsonl_path = session.storage_path().join("session.jsonl");
         let conversation_tree = self
-            .get_or_rebuild_session_tree(session_id, &jsonl_path)
+            .get_or_rebuild_session_tree(session_id, &session.jsonl_path())
             .await;
         let snapshot_key_node = {
             let t = conversation_tree.lock().await;

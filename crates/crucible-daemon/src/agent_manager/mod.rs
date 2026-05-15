@@ -614,9 +614,13 @@ impl AgentManager {
             .clone()
     }
 
-    /// Look up an existing session tree. Returns `None` if no session
-    /// has produced turn events yet.
-    #[allow(dead_code)] // exposed for future RPC/test inspection of the shadow tree
+    /// Look up an existing session tree without rebuilding from JSONL.
+    /// Returns `None` if the session has no in-memory tree yet.
+    ///
+    /// Production paths use `get_or_rebuild_session_tree` so a resumed
+    /// session's history loads on first access. This sibling is for
+    /// tests inspecting the in-memory state without touching disk.
+    #[cfg(test)]
     pub(crate) fn get_session_tree(
         &self,
         session_id: &str,

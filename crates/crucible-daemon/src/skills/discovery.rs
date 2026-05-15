@@ -302,12 +302,16 @@ mod tests {
         std::fs::create_dir_all(&codex_skills).unwrap();
         write_skill(&codex_skills, "codex-review", "Codex review skill");
 
-        // Pi's home-skill path is one level deeper than Claude/Codex.
+        let opencode_skills = home.join(".opencode").join("skills");
+        std::fs::create_dir_all(&opencode_skills).unwrap();
+        write_skill(&opencode_skills, "opencode-debug", "OpenCode debug skill");
+
+        // Pi's home-skill path is one level deeper than the others.
         let pi_skills = home.join(".pi").join("agent").join("skills");
         std::fs::create_dir_all(&pi_skills).unwrap();
         write_skill(&pi_skills, "pi-plan", "Pi plan skill");
 
-        let paths = cross_harness_home_paths(home, &["claude", "codex", "pi"]);
+        let paths = cross_harness_home_paths(home, &["claude", "codex", "opencode", "pi"]);
         let by_agent: HashMap<String, &SearchPath> = paths
             .iter()
             .map(|p| (p.agent.clone().unwrap_or_default(), p))
@@ -315,11 +319,12 @@ mod tests {
 
         assert_eq!(
             paths.len(),
-            3,
+            4,
             "expected one path per harness, got {paths:?}"
         );
         assert_eq!(by_agent["claude"].path, claude_skills);
         assert_eq!(by_agent["codex"].path, codex_skills);
+        assert_eq!(by_agent["opencode"].path, opencode_skills);
         assert_eq!(by_agent["pi"].path, pi_skills);
 
         // All cross-harness home paths are Personal scope (user-level

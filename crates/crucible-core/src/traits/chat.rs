@@ -97,10 +97,11 @@ pub struct ChatToolResult {
     /// **Consumer scope (v1):** the conjunctive check fires at
     /// `TurnEvent::ToolBatchEnd`. The genai agent loop emits that event
     /// after every tool batch. The ACP delegation path
-    /// (`provider/acp.rs`) does not yet emit `ToolBatchEnd`, so this
-    /// flag has no effect for `cru chat -a claude / opencode / gemini`
-    /// sessions. Wire `ToolBatchEnd` through the ACP adapter when an
-    /// ACP-side use case appears.
+    /// (`crucible-daemon/src/acp_handle.rs`) does not yet emit
+    /// `ToolBatchEnd`, so this flag has no effect for
+    /// `cru chat -a claude / opencode / gemini` sessions. Wire
+    /// `ToolBatchEnd` through the ACP adapter when an ACP-side use case
+    /// appears.
     #[serde(default)]
     pub terminate: bool,
 }

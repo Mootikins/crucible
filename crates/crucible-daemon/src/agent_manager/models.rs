@@ -881,14 +881,19 @@ impl AgentManager {
         // keyed by the node that was `current` at the moment the
         // rewound turn began — which is exactly where the cursor lands
         // post-rewind.
-        let (summaries, new_cursor_id) = match self.get_session_tree(session_id) {
-            Some(tree) => {
-                let mut t = tree.lock().await;
-                let summaries = t.undo_turns(count);
-                let new_cursor = t.current().index();
-                (summaries, Some(new_cursor))
-            }
-            None => (Vec::new(), None),
+        //
+        // Use the rebuilding variant so a daemon restart that resumes
+        // a persisted session sees its prior turns; without it, `undo`
+        // would silently no-op (empty tree, nothing to undo).
+        let jsonl_path = session.jsonl_path();
+        let (summaries, new_cursor_id) = {
+            let tree = self
+                .get_or_rebuild_session_tree(session_id, &jsonl_path)
+                .await;
+            let mut t = tree.lock().await;
+            let summaries = t.undo_turns(count);
+            let new_cursor = t.current().index();
+            (summaries, Some(new_cursor))
         };
 
         if !summaries.is_empty() {
@@ -933,11 +938,12 @@ impl AgentManager {
     }
 
     /// Check whether a session has any turns that can be undone.
-    pub fn can_undo(&self, session_id: &str) -> Result<bool, AgentError> {
-        let _ = self.get_session_with_agent(session_id)?;
-        let Some(tree) = self.get_session_tree(session_id) else {
-            return Ok(false);
-        };
+    pub async fn can_undo(&self, session_id: &str) -> Result<bool, AgentError> {
+        let (session, _) = self.get_session_with_agent(session_id)?;
+        let jsonl_path = session.jsonl_path();
+        let tree = self
+            .get_or_rebuild_session_tree(session_id, &jsonl_path)
+            .await;
         let result = match tree.try_lock() {
             Ok(t) => t.can_undo(),
             Err(_) => false,
@@ -946,11 +952,12 @@ impl AgentManager {
     }
 
     /// Return the number of turns that can be undone.
-    pub fn undo_depth(&self, session_id: &str) -> Result<usize, AgentError> {
-        let _ = self.get_session_with_agent(session_id)?;
-        let Some(tree) = self.get_session_tree(session_id) else {
-            return Ok(0);
-        };
+    pub async fn undo_depth(&self, session_id: &str) -> Result<usize, AgentError> {
+        let (session, _) = self.get_session_with_agent(session_id)?;
+        let jsonl_path = session.jsonl_path();
+        let tree = self
+            .get_or_rebuild_session_tree(session_id, &jsonl_path)
+            .await;
         let result = match tree.try_lock() {
             Ok(t) => t.undo_depth(),
             Err(_) => 0,
@@ -961,14 +968,15 @@ impl AgentManager {
     /// Return one summary per undoable turn on the current path,
     /// oldest-to-newest. Each entry serialises to `{ messages_removed }`.
     /// Read-only — does not rewind the tree.
-    pub fn undo_history(
+    pub async fn undo_history(
         &self,
         session_id: &str,
     ) -> Result<Vec<crucible_core::types::UndoSummary>, AgentError> {
-        let _ = self.get_session_with_agent(session_id)?;
-        let Some(tree) = self.get_session_tree(session_id) else {
-            return Ok(Vec::new());
-        };
+        let (session, _) = self.get_session_with_agent(session_id)?;
+        let jsonl_path = session.jsonl_path();
+        let tree = self
+            .get_or_rebuild_session_tree(session_id, &jsonl_path)
+            .await;
         let result = match tree.try_lock() {
             Ok(t) => t.turn_summaries(),
             Err(_) => Vec::new(),
@@ -987,8 +995,11 @@ impl AgentManager {
     ///   when unset.
     /// * `percent` — `prompt_tokens / budget * 100`, or 0 when budget
     ///   is unset/zero.
-    pub fn get_context_usage(&self, session_id: &str) -> Result<serde_json::Value, AgentError> {
-        let (_, agent_config) = self.get_session_with_agent(session_id)?;
+    pub async fn get_context_usage(
+        &self,
+        session_id: &str,
+    ) -> Result<serde_json::Value, AgentError> {
+        let (session, agent_config) = self.get_session_with_agent(session_id)?;
         let stats = self.get_cache_stats(session_id);
         let prompt_tokens = stats.prompt_tokens;
         let budget = agent_config.context_budget.unwrap_or(0) as u64;
@@ -997,12 +1008,13 @@ impl AgentManager {
         } else {
             (prompt_tokens as f64 / budget as f64) * 100.0
         };
-        let messages = match self.get_session_tree(session_id) {
-            Some(tree) => match tree.try_lock() {
-                Ok(t) => t.path_to_here(t.current()).len().saturating_sub(1),
-                Err(_) => 0,
-            },
-            None => 0,
+        let jsonl_path = session.jsonl_path();
+        let tree = self
+            .get_or_rebuild_session_tree(session_id, &jsonl_path)
+            .await;
+        let messages = match tree.try_lock() {
+            Ok(t) => t.path_to_here(t.current()).len().saturating_sub(1),
+            Err(_) => 0,
         };
         Ok(serde_json::json!({
             "messages": messages,
@@ -1021,10 +1033,11 @@ impl AgentManager {
         session_id: &str,
         range: crucible_core::traits::context_ops::Range,
     ) -> Result<usize, AgentError> {
-        let _ = self.get_session_with_agent(session_id)?;
-        let Some(tree) = self.get_session_tree(session_id) else {
-            return Ok(0);
-        };
+        let (session, _) = self.get_session_with_agent(session_id)?;
+        let jsonl_path = session.jsonl_path();
+        let tree = self
+            .get_or_rebuild_session_tree(session_id, &jsonl_path)
+            .await;
         let mut t = tree.lock().await;
         Ok(t.remove_range(range))
     }

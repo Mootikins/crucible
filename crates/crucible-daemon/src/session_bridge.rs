@@ -610,7 +610,9 @@ impl DaemonSessionApi for DaemonSessionBridge {
 
     fn context_usage(&self, session_id: String) -> BoxFut<serde_json::Value> {
         bridge_async!(self.agent_manager, |am| async move {
-            am.get_context_usage(&session_id).map_err(|e| e.to_string())
+            am.get_context_usage(&session_id)
+                .await
+                .map_err(|e| e.to_string())
         })
     }
 
@@ -658,19 +660,22 @@ impl DaemonSessionApi for DaemonSessionBridge {
 
     fn can_undo(&self, session_id: String) -> BoxFut<bool> {
         bridge_async!(self.agent_manager, |am| async move {
-            am.can_undo(&session_id).map_err(|e| e.to_string())
+            am.can_undo(&session_id).await.map_err(|e| e.to_string())
         })
     }
 
     fn undo_depth(&self, session_id: String) -> BoxFut<usize> {
         bridge_async!(self.agent_manager, |am| async move {
-            am.undo_depth(&session_id).map_err(|e| e.to_string())
+            am.undo_depth(&session_id).await.map_err(|e| e.to_string())
         })
     }
 
     fn undo_history(&self, session_id: String) -> BoxFut<Vec<serde_json::Value>> {
         bridge_async!(self.agent_manager, |am| async move {
-            let summaries = am.undo_history(&session_id).map_err(|e| e.to_string())?;
+            let summaries = am
+                .undo_history(&session_id)
+                .await
+                .map_err(|e| e.to_string())?;
             Ok(summaries
                 .into_iter()
                 .enumerate()

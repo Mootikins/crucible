@@ -63,8 +63,12 @@ pub async fn execute(args: AddArgs) -> Result<()> {
             println!("Plugin '{}' is already cloned; declaring in plugins.toml", name);
         }
         crucible_daemon::BootstrapOutcome::Disabled => {
-            // Won't happen — we construct entry with enabled = true.
-            unreachable!("freshly-constructed entry should not be disabled");
+            // We construct entry with enabled = true so this branch is
+            // unreachable today, but a future flag like --disabled would
+            // change that — bail instead of panicking in the terminal.
+            anyhow::bail!(
+                "internal: bootstrap_plugin_entry returned Disabled for an entry constructed with enabled=true"
+            );
         }
     }
 

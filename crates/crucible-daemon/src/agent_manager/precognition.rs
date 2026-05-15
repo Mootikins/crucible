@@ -101,6 +101,14 @@ impl AgentManager {
     ///
     /// Returns an empty string for empty results so callers can detect
     /// the "nothing to inject" case and skip prepending entirely.
+    ///
+    /// **Empty-results behavior for the `precognition_format` Lua hook:**
+    /// the hook does NOT fire on empty results — we short-circuit
+    /// before invocation. This matches the pre-migration string-mutating
+    /// implementation; plugin authors who want to inject a "no notes"
+    /// message on empty results should use the `transform_context` Lua
+    /// hook instead (which fires every turn) and check whether a
+    /// system Precognition message is already present.
     async fn format_precognition_context_block(
         session_id: &str,
         original_content: &str,

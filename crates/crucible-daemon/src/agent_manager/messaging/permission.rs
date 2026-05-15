@@ -366,64 +366,24 @@ impl AgentManager {
         stream_ctx: &StreamContext,
         stream_config: &AgentStreamConfig,
     ) -> Option<Vec<crucible_core::traits::ContextMessage>> {
-        let mut state = stream_ctx.session_state.lock().await;
+        let state = stream_ctx.session_state.lock().await;
         let mut current = messages;
 
         // Built-in producer: prepend the pre-computed Precognition
         // system block, if any. Runs *before* Lua handlers so plugins
-        // can observe / mutate / remove the injected block via the
-        // same `transform_context` seam they'd use to inject their own.
+        // can observe and mutate it via the same `transform_context`
+        // seam they'd use to inject their own context.
+        //
+        // We protect against accidental drop: a buggy handler that
+        // returns `{messages = ...}` without including the precog block
+        // would otherwise silently strip kiln context. Below, after
+        // Lua handlers run, we check whether the block is still
+        // present and re-prepend if not.
         if let Some(ref precog_msg) = stream_ctx.precognition_message {
             let mut with_precog = Vec::with_capacity(current.len() + 1);
             with_precog.push(precog_msg.clone());
             with_precog.extend(current);
             current = with_precog;
-        }
-
-        // Internal reactor handlers (Rust-side subscribers) see the
-        // event but can't mutate the messages today — they're observers.
-        // Cancel propagates as a hard stop.
-        let event = SessionEvent::internal(InternalSessionEvent::TransformContext {
-            messages: current.clone(),
-            model: stream_config.model.clone(),
-        });
-        match state.reactor.emit(event).await {
-            Ok(EmitResult::Completed { .. }) => {}
-            Ok(EmitResult::Cancelled { by_handler, .. }) => {
-                warn!(
-                    session_id = %stream_ctx.session_id,
-                    handler = %by_handler,
-                    "TransformContext cancelled by handler"
-                );
-                if !emit_event(
-                    &stream_ctx.event_tx,
-                    SessionEventMessage::ended(
-                        &stream_ctx.session_id,
-                        format!("cancelled by handler: {}", by_handler),
-                    ),
-                ) {
-                    warn!(
-                        session_id = %stream_ctx.session_id,
-                        "No subscribers for cancelled event"
-                    );
-                }
-                return None;
-            }
-            Ok(EmitResult::Failed { handler, error, .. }) => {
-                warn!(
-                    session_id = %stream_ctx.session_id,
-                    handler = %handler,
-                    error = %error,
-                    "TransformContext handler failed (fail-open)"
-                );
-            }
-            Err(error) => {
-                warn!(
-                    session_id = %stream_ctx.session_id,
-                    error = %error,
-                    "TransformContext emit failed (fail-open)"
-                );
-            }
         }
 
         // Lua runtime handlers can replace the message array entirely
@@ -486,6 +446,30 @@ impl AgentManager {
                         "transform_context handler error (fail-open)"
                     );
                 }
+            }
+        }
+
+        // Defensive: if a Lua handler returned a new `messages` array
+        // that dropped the built-in Precognition block, re-prepend it.
+        // Identity check is by content (the block is a fresh String per
+        // turn; matching content is sufficient). A plugin that
+        // explicitly wants to suppress Precognition can do so by setting
+        // `agent_config.precognition_enabled = false` at the right
+        // layer — not by silently mutating the messages array.
+        if let Some(ref precog_msg) = stream_ctx.precognition_message {
+            let still_present = current
+                .iter()
+                .any(|m| m.role == precog_msg.role && m.content == precog_msg.content);
+            if !still_present {
+                warn!(
+                    session_id = %stream_ctx.session_id,
+                    "transform_context handler dropped Precognition message; re-prepending. \
+                     If this is intentional, disable Precognition in agent config instead."
+                );
+                let mut with_precog = Vec::with_capacity(current.len() + 1);
+                with_precog.push(precog_msg.clone());
+                with_precog.extend(current);
+                current = with_precog;
             }
         }
 

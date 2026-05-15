@@ -474,7 +474,34 @@ async fn runtime_pre_tool_terminate_mixed_batch_does_not_end() {
 
     h.send("test").await;
 
-    // Mixed batch should NOT terminate — flow completes normally
-    // (scripted stream yields Done after ToolResults round-trip).
-    h.wait_for("message_complete").await;
+    // Mixed batch should NOT terminate. Stronger assertion than just
+    // "message_complete arrives": assert we never see an `ended` event
+    // carrying the terminate reason. Without this, the test would pass
+    // even if the conjunctive check were broken (e.g. firing
+    // unconditionally) — message_complete still arrives because Done
+    // gets emitted as well — and the bug would slip through.
+    let mut saw_terminate_ended = false;
+    let complete = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            match h.event_rx.recv().await {
+                Ok(event) if event.event == "ended" => {
+                    let reason = event.data["reason"].as_str().unwrap_or_default();
+                    if reason.contains("terminate") {
+                        saw_terminate_ended = true;
+                    }
+                }
+                Ok(event) if event.event == "message_complete" => return event,
+                Ok(_) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(err) => panic!("event channel closed: {err}"),
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for message_complete");
+
+    assert!(
+        !saw_terminate_ended,
+        "mixed batch should not emit terminate-reason ended; saw: {complete:?}"
+    );
 }

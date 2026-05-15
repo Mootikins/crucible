@@ -778,13 +778,24 @@ pub async fn bootstrap_plugin_entry(
             .with_context(|| format!("failed to spawn git checkout for pin '{}'", pin))?;
         if !checkout.status.success() {
             // Roll back the cloned dir so retries don't get stuck on
-            // a half-installed plugin.
-            let _ = tokio::fs::remove_dir_all(&dest).await;
+            // a half-installed plugin. Warn loudly if rollback itself
+            // fails — the user needs to know `dest` is dirty so they
+            // can clean it up manually.
+            if let Err(rb_err) = tokio::fs::remove_dir_all(&dest).await {
+                warn!(
+                    plugin = %name,
+                    path = %dest.display(),
+                    error = %rb_err,
+                    "Failed to roll back half-installed plugin after pin checkout failure; \
+                     remove the directory manually before retrying"
+                );
+            }
             let stderr = String::from_utf8_lossy(&checkout.stderr);
             anyhow::bail!(
-                "git checkout failed for pin '{}' of plugin '{}': {}",
+                "git checkout failed for pin '{}' of plugin '{}' (manually remove {} if it still exists): {}",
                 pin,
                 name,
+                dest.display(),
                 stderr.trim()
             );
         }

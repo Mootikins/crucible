@@ -81,14 +81,14 @@ async fn send_message_emits_text_delta_events_in_order() {
     drop(tree);
 
     // One complete turn = undo_depth of 1; undo rewinds the cursor.
-    assert_eq!(agent_manager.undo_depth(&session.id).unwrap(), 1);
-    assert!(agent_manager.can_undo(&session.id).unwrap());
+    assert_eq!(agent_manager.undo_depth(&session.id).await.unwrap(), 1);
+    assert!(agent_manager.can_undo(&session.id).await.unwrap());
     let summaries = agent_manager
         .undo(&session.id, 1, None)
         .await
         .expect("undo should succeed");
     assert_eq!(summaries.len(), 1);
-    assert_eq!(agent_manager.undo_depth(&session.id).unwrap(), 0);
+    assert_eq!(agent_manager.undo_depth(&session.id).await.unwrap(), 0);
 }
 
 #[tokio::test]
