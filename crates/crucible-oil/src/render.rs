@@ -7,11 +7,18 @@
 use crate::ansi::strip_ansi;
 use crate::layout::{build_layout_tree, render_layout_tree_compact};
 use crate::node::Node;
+use crate::taffy_layout::{build_layout_tree_with_engine, LayoutEngine};
 
 /// Maximum height Taffy may use when computing standalone layout. Taffy
 /// returns the tree's natural height (which the CellGrid then matches);
 /// this cap only bounds pathological flex-grow trees that ask for infinity.
 const STANDALONE_HEIGHT: u16 = 500;
+
+/// Sentinel passed as `height` to `render_tree` when the caller wants the
+/// tree's natural height with no viewport clip. Internally maps to
+/// `STANDALONE_HEIGHT` so Taffy still has a finite ceiling for pathological
+/// flex-grow trees.
+pub const NATURAL_HEIGHT: u16 = u16::MAX;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CursorInfo {
@@ -89,6 +96,63 @@ pub fn render_with_cursor(node: &Node, width: usize) -> RenderResult {
     // CellGrid is sized to Taffy's reported tree height; per-line trailing
     // padding is stripped at the grid level. We don't post-trim rows — empty
     // rows in the output are intentional (they were in the tree).
+    let (content, cursor_info) = render_layout_tree_compact(&layout_tree);
+
+    RenderResult {
+        content,
+        cursor: cursor_info,
+    }
+}
+
+/// Unified render entrypoint.
+///
+/// Renders `node` at `width` columns into a CellGrid of `height` rows.
+/// Output is per-line right-trimmed of trailing unstyled padding (styled
+/// cells preserved). Cursor info is reported relative to the rendered
+/// content's bottom row.
+///
+/// Pass `NATURAL_HEIGHT` (`u16::MAX`) as `height` to render the tree's
+/// natural height with no viewport clip — useful for scrollback graduation
+/// and standalone test rendering.
+pub fn render_tree(node: &Node, width: u16, height: u16) -> RenderResult {
+    let mut engine = LayoutEngine::new();
+    render_tree_with_engine(&mut engine, node, width, height)
+}
+
+/// Same as `render_tree` but reuses a caller-owned `LayoutEngine` for
+/// taffy node-pool reuse across frames. Production viewport rendering
+/// uses this; `render_tree` allocates a transient engine.
+pub(crate) fn render_tree_with_engine(
+    engine: &mut LayoutEngine,
+    node: &Node,
+    width: u16,
+    height: u16,
+) -> RenderResult {
+    if width == 0 {
+        return RenderResult {
+            content: String::new(),
+            cursor: CursorInfo::default(),
+        };
+    }
+
+    if let Node::Raw(raw) = node {
+        let mut content = raw.content.clone();
+        let pad = (width as usize).saturating_sub(raw.display_width as usize);
+        if pad > 0 {
+            content.push_str(&" ".repeat(pad));
+        }
+        return RenderResult {
+            content,
+            cursor: CursorInfo::default(),
+        };
+    }
+
+    let layout_height = if height == NATURAL_HEIGHT {
+        STANDALONE_HEIGHT
+    } else {
+        height
+    };
+    let layout_tree = build_layout_tree_with_engine(engine, node, width, layout_height);
     let (content, cursor_info) = render_layout_tree_compact(&layout_tree);
 
     RenderResult {
@@ -436,5 +500,62 @@ mod tests {
         let node = raw("[img]", 5, 1);
         let output = render_to_string(&node, 12);
         assert_snapshot!(format!("{output:?}"));
+    }
+
+    // ─── render_tree (Stage B) ────────────────────────────────────────────
+
+    #[test]
+    fn render_tree_natural_height_matches_render_to_string() {
+        let trees: Vec<Node> = vec![
+            text("Hello, World!"),
+            col(vec![text("Line 1"), text("Line 2"), text("Line 3")]),
+            row(vec![text("alpha"), text("beta"), text("gamma")]),
+            styled("Bold", Style::new().bold().fg(Color::Red)),
+            raw("[img]", 5, 1),
+        ];
+
+        for tree in trees {
+            for width in [10u16, 40, 80, 120] {
+                let via_render_tree = render_tree(&tree, width, NATURAL_HEIGHT).content;
+                let via_legacy = render_to_string(&tree, width as usize);
+                assert_eq!(
+                    via_render_tree, via_legacy,
+                    "render_tree(.., {width}, NATURAL_HEIGHT) diverged from render_to_string(.., {width})\n\
+                     tree: {tree:?}\nleft: {via_render_tree:?}\nright: {via_legacy:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn render_tree_height_is_taffy_hint_not_hard_clip() {
+        // height is passed to Taffy as available-space, not a hard clip
+        // (clipping is the OutputBuffer's job). For non-flex-grow trees,
+        // natural height is independent of the height bound.
+        let tree = col((0..10).map(|i| text(format!("row {i}"))));
+        let at_5 = render_tree(&tree, 80, 5).content;
+        let at_natural = render_tree(&tree, 80, NATURAL_HEIGHT).content;
+        assert_eq!(
+            at_5, at_natural,
+            "non-flex-grow tree should render identically regardless of height bound"
+        );
+        assert_eq!(at_natural.lines().count(), 10);
+    }
+
+    #[test]
+    fn render_tree_zero_width_returns_empty() {
+        let tree = text("ignored");
+        let result = render_tree(&tree, 0, NATURAL_HEIGHT);
+        assert_eq!(result.content, "");
+        assert!(!result.cursor.visible);
+    }
+
+    #[test]
+    fn render_tree_raw_node_pads_to_width() {
+        let tree = raw("[img]", 5, 1);
+        let result = render_tree(&tree, 12, NATURAL_HEIGHT);
+        // Raw node escapes are written verbatim, followed by space padding to width.
+        assert!(result.content.starts_with("[img]"));
+        assert_eq!(result.content.len(), 12);
     }
 }
