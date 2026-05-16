@@ -13,7 +13,7 @@ impl AgentManager {
     ) -> Result<String, AgentError> {
         let ttft_start = Instant::now();
         info!(target: "ttft", session_id = %session_id, stage = "send_message_entry", elapsed_ms = 0, "ttft");
-        let session = self
+        let mut session = self
             .session_manager
             .get_session(session_id)
             .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
@@ -95,7 +95,7 @@ impl AgentManager {
             crate::workspace_snapshot::WorkspaceSnapshot::create(&session.workspace).await;
         self.snapshots
             .insert(session_id.to_string(), snapshot_key_node.index(), snapshot);
-        let is_first_user_message = {
+        {
             let mut t = conversation_tree.lock().await;
             let parent = t.current();
             let _user_node = t.add_child_and_advance(
@@ -104,30 +104,55 @@ impl AgentManager {
                     text: original_content.clone(),
                 },
             );
-            // After append+advance, undo_depth() is the count of User
-            // nodes on the current path — 1 means this turn is the first.
-            t.undo_depth() == 1
-        };
+        }
+
+        // "First user message" is now a durable flag on the session itself
+        // rather than the path-relative undo_depth heuristic. This fixes
+        // two regressions:
+        //   - Undo + resend (M1): depth would return to 1 and re-fire precog.
+        //   - Resumed legacy sessions (H3): depth > 1 from prior history
+        //     would silently skip precog forever after the first-message-only
+        //     change.
+        // Sessions migrated from before this field default to false, so
+        // they get one precog injection on their next message (UX call A in
+        // the H3 plan).
+        let is_first_user_message = !session.precognition_has_fired;
 
         info!(target: "ttft", session_id = %session_id, stage = "precognition_start", elapsed_ms = ttft_start.elapsed().as_millis() as u64, "ttft");
-        let precognition_message =
-            if crate::agent_manager::precognition::should_run_precognition(
-                agent_config.precognition_enabled,
+        let attempted_precognition = crate::agent_manager::precognition::should_run_precognition(
+            agent_config.precognition_enabled,
+            &original_content,
+            &session.kiln,
+            is_first_user_message,
+        );
+        let precognition_message = if attempted_precognition {
+            self.compute_precognition_message(
+                session_id,
                 &original_content,
-                &session.kiln,
-                is_first_user_message,
-            ) {
-                self.compute_precognition_message(
-                    session_id,
-                    &original_content,
-                    &session,
-                    &agent_config,
-                    event_tx,
-                )
-                .await
-            } else {
-                None
-            };
+                &session,
+                &agent_config,
+                event_tx,
+            )
+            .await
+        } else {
+            None
+        };
+
+        // Persist the "has fired" marker on first attempt — even when the
+        // attempt yielded no message (empty results, embed failure). The
+        // user already paid the embedding + search cost; retrying on every
+        // subsequent turn would re-do the same work for the same likely
+        // outcome. Matches the pre-H3 once-per-session behavior.
+        if attempted_precognition && !session.precognition_has_fired {
+            session.precognition_has_fired = true;
+            if let Err(e) = self.session_manager.update_session(&session).await {
+                warn!(
+                    session_id = %session_id,
+                    error = %e,
+                    "Failed to persist precognition_has_fired marker — will re-fire on next turn"
+                );
+            }
+        }
         info!(target: "ttft", session_id = %session_id, stage = "precognition_done", elapsed_ms = ttft_start.elapsed().as_millis() as u64, "ttft");
         // Pass the user's content through to the stream loop unchanged;
         // the Precognition system block (if any) is staged on
