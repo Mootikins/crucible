@@ -346,11 +346,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
         }
 
         Some(Commands::Install(args)) => {
-            commands::plugin::execute(
-                config,
-                commands::plugin::PluginCommands::Add(args),
-            )
-            .await?;
+            commands::plugin::execute(config, commands::plugin::PluginCommands::Add(args)).await?;
         }
 
         Some(Commands::Lua { code, file }) => {

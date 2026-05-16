@@ -58,7 +58,7 @@ pub async fn execute(args: ListArgs) -> Result<()> {
         return Ok(());
     }
 
-    println!("{:<24} {:<10} {:<10} {}", "NAME", "STATE", "PIN", "URL");
+    println!("{:<24} {:<10} {:<10} URL", "NAME", "STATE", "PIN");
     for entry in &config.plugin {
         let name = entry.name().unwrap_or_else(|| "(invalid)".into());
         let cloned = plugins_dir.join(&name).exists();

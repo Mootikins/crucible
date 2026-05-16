@@ -60,7 +60,10 @@ pub async fn execute(args: AddArgs) -> Result<()> {
             println!("Cloned '{}' to {}", name, dest.display());
         }
         crucible_daemon::BootstrapOutcome::AlreadyPresent => {
-            println!("Plugin '{}' is already cloned; declaring in plugins.toml", name);
+            println!(
+                "Plugin '{}' is already cloned; declaring in plugins.toml",
+                name
+            );
         }
         crucible_daemon::BootstrapOutcome::Disabled => {
             // We construct entry with enabled = true so this branch is
