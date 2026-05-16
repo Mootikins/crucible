@@ -359,6 +359,18 @@ impl AgentManager {
     /// message-array seam (Pi's `transformContext`); the existing
     /// `pre_llm_call` is the later string-level seam. Both fire per turn.
     ///
+    /// **Precognition is out-of-band.** The daemon-issued kiln-grounding
+    /// block does NOT appear in the `messages` payload Lua handlers see.
+    /// Instead, it is exposed as a read-only `event.payload.precognition`
+    /// field that handlers can inspect but cannot return or replace via
+    /// `messages`. After all handlers run, the daemon unconditionally
+    /// prepends its own precognition message to the result. This makes
+    /// `transform_context`'s contract honest — it transforms the
+    /// **conversation**, not daemon-managed system context — and forces
+    /// plugins that want to modify precog content to use the dedicated
+    /// `precognition_format` hook (the correct architectural seam, fires
+    /// before message construction and returns a string).
+    ///
     /// Returns the (possibly mutated) message vec. `None` means a
     /// handler cancelled and the caller should abort the turn.
     pub(super) async fn apply_transform_context_handlers(
@@ -369,32 +381,20 @@ impl AgentManager {
         let state = stream_ctx.session_state.lock().await;
         let mut current = messages;
 
-        // Built-in producer: prepend the pre-computed Precognition
-        // system block, if any. Runs *before* Lua handlers so plugins
-        // can observe and mutate it via the same `transform_context`
-        // seam they'd use to inject their own context.
-        //
-        // We protect against accidental drop: a buggy handler that
-        // returns `{messages = ...}` without including the precog block
-        // would otherwise silently strip kiln context. Below, after
-        // Lua handlers run, we check whether the block is still
-        // present and re-prepend if not.
-        if let Some(ref precog_msg) = stream_ctx.precognition_message {
-            let mut with_precog = Vec::with_capacity(current.len() + 1);
-            with_precog.push(precog_msg.clone());
-            with_precog.extend(current);
-            current = with_precog;
-        }
-
         // Lua runtime handlers can replace the message array entirely
-        // by returning `{ messages = ... }` from their callback.
-        let handlers = state.registry.runtime_handlers_for("transform_context", None);
+        // by returning `{ messages = ... }` from their callback. The
+        // precognition block is exposed alongside (read-only) so plugins
+        // can observe it without being able to drop or substitute it.
+        let handlers = state
+            .registry
+            .runtime_handlers_for("transform_context", None);
         for handler in handlers {
             let event = SessionEvent::Custom {
                 name: "transform_context".to_string(),
                 payload: serde_json::json!({
                     "messages": &current,
                     "model": &stream_config.model,
+                    "precognition": stream_ctx.precognition_message.as_ref(),
                 }),
             };
             match state
@@ -449,39 +449,16 @@ impl AgentManager {
             }
         }
 
-        // Defensive: if a Lua handler returned a new `messages` array
-        // that dropped the built-in Precognition block, re-prepend it.
-        //
-        // Identity is by `metadata.tags` containing PRECOGNITION_TAG,
-        // not by content. This lets a Lua handler legitimately mutate
-        // the precog content (translate, redact, summarize) as long as
-        // it preserves the tag — only handlers that fully rebuild the
-        // array from scratch (losing metadata) or remove the message
-        // entirely trigger the re-prepend.
-        //
-        // A plugin that explicitly wants to suppress Precognition
-        // should configure that at the agent layer
-        // (`agent_config.precognition_enabled = false`), not via the
-        // messages array — silent stripping is what we're guarding
-        // against, not legitimate config.
+        // Daemon-owned: always prepend the precog block AFTER handlers
+        // run, regardless of what Lua returned. Plugins that want to
+        // suppress Precognition should set `agent_config.precognition_enabled
+        // = false` at session config time. Plugins that want to MODIFY
+        // precog content should use the `precognition_format` hook.
         if let Some(ref precog_msg) = stream_ctx.precognition_message {
-            let still_present = current.iter().any(|m| {
-                m.metadata
-                    .tags
-                    .iter()
-                    .any(|t| t == crate::agent_manager::precognition::PRECOGNITION_TAG)
-            });
-            if !still_present {
-                warn!(
-                    session_id = %stream_ctx.session_id,
-                    "transform_context handler dropped Precognition message; re-prepending. \
-                     To suppress legitimately, set precognition_enabled=false in agent config."
-                );
-                let mut with_precog = Vec::with_capacity(current.len() + 1);
-                with_precog.push(precog_msg.clone());
-                with_precog.extend(current);
-                current = with_precog;
-            }
+            let mut with_precog = Vec::with_capacity(current.len() + 1);
+            with_precog.push(precog_msg.clone());
+            with_precog.extend(current);
+            current = with_precog;
         }
 
         Some(current)
