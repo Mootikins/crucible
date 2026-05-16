@@ -15,6 +15,7 @@ mod child_sessions;
 mod delegation_e2e;
 mod events;
 mod graph;
+mod kiln_scope_validation;
 mod lifecycle;
 mod models_settings;
 mod persist_event;
