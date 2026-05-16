@@ -2,14 +2,15 @@
 //!
 //! All rendering goes through the Taffy layout engine — the same pipeline
 //! used by the production TUI (`FramePlanner`). These convenience wrappers
-//! build a standalone layout tree and render in compact mode.
+//! build a standalone layout tree and render at its natural height.
 
-use crate::ansi::{strip_ansi, visual_rows};
+use crate::ansi::strip_ansi;
 use crate::layout::{build_layout_tree, render_layout_tree_compact};
 use crate::node::Node;
 
-/// Maximum standalone render height. The CellGrid is allocated at this height;
-/// trailing blank lines are trimmed from compact output.
+/// Maximum height Taffy may use when computing standalone layout. Taffy
+/// returns the tree's natural height (which the CellGrid then matches);
+/// this cap only bounds pathological flex-grow trees that ask for infinity.
 const STANDALONE_HEIGHT: u16 = 500;
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -85,53 +86,15 @@ pub fn render_with_cursor(node: &Node, width: usize) -> RenderResult {
     }
 
     let layout_tree = build_layout_tree(node, width as u16, STANDALONE_HEIGHT);
-    // Compact mode strips per-line trailing padding at the CellGrid level
-    // (before converting to string), correctly handling styled cells.
-    let (full_content, mut cursor_info) = render_layout_tree_compact(&layout_tree);
-
-    // Trim trailing blank lines from the full-height CellGrid output.
-    let content = trim_trailing_blank_lines(&full_content);
-
-    // Recalculate row_from_end against the trimmed content
-    if cursor_info.visible {
-        let full_line_count = full_content.lines().count();
-        let line_count = content.lines().count();
-        let cursor_abs_row = full_line_count.saturating_sub(cursor_info.row_from_end as usize + 1);
-
-        // Adjust for visual wrapping
-        let lines: Vec<&str> = content.lines().collect();
-        let visual_rows_below: usize = lines
-            .get(cursor_abs_row + 1..)
-            .unwrap_or(&[])
-            .iter()
-            .map(|line| visual_rows(line, width))
-            .sum();
-        cursor_info.row_from_end = visual_rows_below as u16;
-
-        // Clamp if cursor is beyond trimmed content
-        if cursor_abs_row >= line_count {
-            cursor_info.row_from_end = 0;
-        }
-    }
+    // CellGrid is sized to Taffy's reported tree height; per-line trailing
+    // padding is stripped at the grid level. We don't post-trim rows — empty
+    // rows in the output are intentional (they were in the tree).
+    let (content, cursor_info) = render_layout_tree_compact(&layout_tree);
 
     RenderResult {
         content,
         cursor: cursor_info,
     }
-}
-
-/// Trim trailing blank lines from CellGrid compact output.
-pub(crate) fn trim_trailing_blank_lines(content: &str) -> String {
-    let lines: Vec<&str> = content.lines().collect();
-
-    // Find last line with visible content
-    let last_content_idx = lines
-        .iter()
-        .rposition(|line| !line.trim().is_empty())
-        .map(|i| i + 1)
-        .unwrap_or(0);
-
-    lines[..last_content_idx].join("\r\n")
 }
 
 #[cfg(test)]

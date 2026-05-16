@@ -5,7 +5,7 @@ use crate::layout::{
 
 use crate::node::{Node, OverlayNode};
 use crate::overlay::{extract_overlays, filter_overlays, OverlayAnchor};
-use crate::render::{trim_trailing_blank_lines, RenderResult};
+use crate::render::RenderResult;
 
 /// Graduated content ready for terminal output.
 ///
@@ -163,8 +163,7 @@ impl FramePlanner {
             .map(|overlay_node| {
                 let layout_tree = build_layout_tree(&overlay_node.child, self.width, self.height);
                 let (content, _) = render_layout_tree_compact(&layout_tree);
-                let trimmed = trim_trailing_blank_lines(&content);
-                let lines: Vec<String> = trimmed.lines().map(String::from).collect();
+                let lines: Vec<String> = content.lines().map(String::from).collect();
                 RenderedOverlay {
                     lines,
                     anchor: overlay_node.anchor,

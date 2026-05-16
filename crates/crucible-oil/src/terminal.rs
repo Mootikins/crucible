@@ -102,6 +102,16 @@ impl Terminal<Stdout> {
         self.height = height;
         self.output.set_size(width as usize, height as usize);
         self.planner.set_size(width, height);
+        // Scrub the old viewport before the next render. clear() uses the
+        // still-current prev_visual_rows to emit MoveUp + ClearFromCursorDown,
+        // which removes content that would otherwise become orphaned under
+        // the new wrap. Cursor position after SIGWINCH is emulator-dependent
+        // so this is best-effort; if the terminal already reflowed, residual
+        // rows may persist until the next full-screen render. force_redraw
+        // then ensures even a same-shape viewport gets repainted (otherwise
+        // the all-equal early-return in render_with_overlays would skip it).
+        self.output.clear()?;
+        self.output.force_redraw();
         Ok(())
     }
 
@@ -144,6 +154,12 @@ impl Terminal<Vec<u8>> {
         self.height = height;
         self.output.set_size(width as usize, height as usize);
         self.planner.set_size(width, height);
+        // Mirror handle_resize. clear() returns io::Result but a Vec<u8>
+        // writer cannot fail; in any case, a swallowed error during test-
+        // only resize would only show as a missing escape sequence, which
+        // assertions will surface.
+        let _ = self.output.clear();
+        self.output.force_redraw();
     }
 }
 
@@ -344,6 +360,36 @@ mod tests {
         assert!(!bytes.is_empty());
         let output = String::from_utf8_lossy(&bytes);
         assert!(output.contains("Hello World"));
+    }
+
+    #[test]
+    fn set_size_scrubs_old_viewport_and_invalidates_snapshot() {
+        use crate::node::{col, text};
+
+        // Render once at width 80 to populate the previous-frame snapshot.
+        let mut term = Terminal::headless(80, 24);
+        let tree = col([text("Hello World")]);
+        term.render(&tree, "").unwrap();
+        let _ = term.take_bytes();
+        assert!(term.output.height() > 0, "snapshot recorded");
+
+        // Resize to width 40. set_size must (a) emit a clearing escape
+        // sequence so the old content doesn't survive under the new wrap,
+        // and (b) drop the stale-width snapshot so the next diff doesn't
+        // compare new wrapping against old.
+        term.set_size(40, 24);
+        let bytes = term.take_bytes();
+        let output = String::from_utf8_lossy(&bytes);
+        assert!(
+            output.contains("\x1b[J"),
+            "set_size must emit ClearFromCursorDown to scrub old viewport (got: {:?})",
+            output
+        );
+        assert_eq!(
+            term.output.height(),
+            0,
+            "set_size drops the previous-frame snapshot at the old width"
+        );
     }
 
     #[test]

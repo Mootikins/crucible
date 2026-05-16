@@ -91,17 +91,41 @@ impl CellGrid {
                             }
                         }
                     }
-                    // OSC / APC / DCS: skip entirely without interpreting as visible chars
+                    // OSC / APC / DCS: skip entirely without interpreting as visible chars.
+                    // Bounded to 256 characters — a malformed unterminated sequence in
+                    // user content must not consume the rest of the line.
+                    //
+                    // NOTE: the parallel skip in `ansi::strip_ansi` / `visible_width`
+                    // is unbounded today (see `ansi.rs::skip_until_st_or_bel`). For
+                    // legitimate well-terminated escapes the two agree by reaching the
+                    // terminator first; for malformed input this asymmetry would only
+                    // matter if width and blit ran on the same malformed payload, which
+                    // no current path does. Stage B (render path unification) is the
+                    // right place to converge them.
                     Some(&']') | Some(&'_') | Some(&'P') => {
                         chars.next();
+                        let mut consumed = 0usize;
+                        let mut terminated = false;
                         while let Some(sc) = chars.next() {
+                            consumed += 1;
                             if sc == '\x07' {
+                                terminated = true;
                                 break;
                             }
                             if sc == '\x1b' && chars.peek() == Some(&'\\') {
                                 chars.next();
+                                terminated = true;
                                 break;
                             }
+                            if consumed >= 256 {
+                                break;
+                            }
+                        }
+                        if !terminated {
+                            tracing::debug!(
+                                consumed,
+                                "dropped malformed OSC/APC/DCS escape (no terminator within 256 characters)"
+                            );
                         }
                     }
                     _ => {}
@@ -330,6 +354,21 @@ mod tests {
         assert!(lines[0].starts_with("Line1"));
         assert!(lines[0].contains("Short"));
         assert!(lines[1].starts_with("Line2"));
+    }
+
+    #[test]
+    fn unterminated_osc_does_not_consume_visible_content() {
+        // Malformed OSC (set-title) with no BEL/ST terminator, followed by
+        // visible content. The parser must drop the escape and resume.
+        let mut grid = CellGrid::new(20, 1);
+        let malformed = format!("\x1b]52;c;{}TAIL", "A".repeat(400));
+        grid.blit_line(&malformed, 0, 0);
+        // After the 256-byte cap kicks in, subsequent characters keep blitting.
+        // We don't pin which suffix bytes survive (depends on where the cap
+        // landed inside "AAAA...TAIL"), only that we don't lock up and the
+        // grid retains its allocated width.
+        let line = &grid.to_lines()[0];
+        assert_eq!(line.chars().count(), 20);
     }
 
     /// Locks in the asymmetric composition rule documented above

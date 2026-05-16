@@ -8,10 +8,19 @@ use std::io::{self, Stdout, Write};
 pub(crate) const BEGIN_SYNCHRONIZED_UPDATE: &str = "\x1b[?2026h";
 pub(crate) const END_SYNCHRONIZED_UPDATE: &str = "\x1b[?2026l";
 
+/// Snapshot of the last viewport written, used for incremental diffing
+/// on the next frame. `lines` and `visual_rows` always describe the same
+/// frame — collapsing them into one option makes inconsistent state
+/// unrepresentable.
+#[derive(Default)]
+struct PreviousFrame {
+    lines: Vec<String>,
+    visual_rows: usize,
+}
+
 pub struct OutputBuffer<W: Write = Stdout> {
     stdout: W,
-    previous_lines: Vec<String>,
-    previous_visual_rows: usize,
+    previous: Option<PreviousFrame>,
     terminal_width: usize,
     terminal_height: usize,
     force_next_redraw: bool,
@@ -40,8 +49,7 @@ impl<W: Write> OutputBuffer<W> {
     pub fn with_writer(writer: W, width: usize, height: usize) -> Self {
         Self {
             stdout: writer,
-            previous_lines: Vec::new(),
-            previous_visual_rows: 0,
+            previous: None,
             terminal_width: width,
             terminal_height: height,
             force_next_redraw: false,
@@ -111,11 +119,15 @@ impl<W: Write> OutputBuffer<W> {
             .map(|line| visual_rows(line, self.terminal_width))
             .sum();
 
+        let prev = self.previous.as_ref();
+        let prev_lines: &[String] = prev.map(|p| p.lines.as_slice()).unwrap_or(&[]);
+        let prev_visual_rows = prev.map(|p| p.visual_rows).unwrap_or(0);
+
         let all_equal = !self.force_next_redraw
-            && viewport_lines.len() == self.previous_lines.len()
+            && viewport_lines.len() == prev_lines.len()
             && viewport_lines
                 .iter()
-                .zip(self.previous_lines.iter())
+                .zip(prev_lines.iter())
                 .all(|(a, b)| lines_visually_equal(a, b));
 
         if all_equal {
@@ -123,7 +135,7 @@ impl<W: Write> OutputBuffer<W> {
         }
 
         tracing::debug!(
-            prev_rows = self.previous_visual_rows,
+            prev_rows = prev_visual_rows,
             next_rows = viewport_visual_rows,
             line_count = viewport_lines.len(),
             width = self.terminal_width,
@@ -136,10 +148,10 @@ impl<W: Write> OutputBuffer<W> {
 
         // Move cursor to top of viewport.
         // Caller ensures cursor is at viewport bottom before calling.
-        if self.previous_visual_rows > 0 {
-            let move_up_amount = (self.previous_visual_rows as u16).saturating_sub(1);
+        if prev_visual_rows > 0 {
+            let move_up_amount = (prev_visual_rows as u16).saturating_sub(1);
             tracing::debug!(
-                previous_visual_rows = self.previous_visual_rows,
+                previous_visual_rows = prev_visual_rows,
                 move_up_amount,
                 "render: moving cursor up before diff"
             );
@@ -156,13 +168,13 @@ impl<W: Write> OutputBuffer<W> {
 
         // Line-level diff: only rewrite lines that changed.
         // Reduces per-frame data ~10-30x for SSH/slow connections.
-        let prev_len = self.previous_lines.len();
+        let prev_len = prev_lines.len();
         let new_len = viewport_lines.len();
         let common = prev_len.min(new_len);
 
         // Find first line that differs
         let first_diff = (0..common)
-            .find(|&i| !lines_visually_equal(&viewport_lines[i], &self.previous_lines[i]))
+            .find(|&i| !lines_visually_equal(&viewport_lines[i], &prev_lines[i]))
             .unwrap_or(common);
 
         if first_diff < common || new_len != prev_len {
@@ -220,8 +232,10 @@ impl<W: Write> OutputBuffer<W> {
         }
 
         self.stdout.flush()?;
-        self.previous_lines = viewport_lines;
-        self.previous_visual_rows = viewport_visual_rows;
+        self.previous = Some(PreviousFrame {
+            lines: viewport_lines,
+            visual_rows: viewport_visual_rows,
+        });
 
         Ok(true)
     }
@@ -232,13 +246,14 @@ impl<W: Write> OutputBuffer<W> {
     /// before calling this. This simplifies the math: we only need
     /// `previous_visual_rows` to compute how far up to move.
     pub fn clear(&mut self) -> io::Result<()> {
+        let prev_visual_rows = self.previous.as_ref().map(|p| p.visual_rows).unwrap_or(0);
         tracing::debug!(
-            previous_visual_rows = self.previous_visual_rows,
+            previous_visual_rows = prev_visual_rows,
             terminal_height = self.terminal_height,
             "[clear] clearing viewport"
         );
-        if self.previous_visual_rows > 0 {
-            let move_up_amount = (self.previous_visual_rows as u16).saturating_sub(1);
+        if prev_visual_rows > 0 {
+            let move_up_amount = (prev_visual_rows as u16).saturating_sub(1);
             if move_up_amount > 0 {
                 execute!(
                     self.stdout,
@@ -253,25 +268,22 @@ impl<W: Write> OutputBuffer<W> {
                     terminal::Clear(terminal::ClearType::FromCursorDown),
                 )?;
             }
-            self.previous_lines.clear();
-            self.previous_visual_rows = 0;
+            self.previous = None;
         }
         Ok(())
     }
 
     pub fn height(&self) -> usize {
-        self.previous_visual_rows
+        self.previous.as_ref().map(|p| p.visual_rows).unwrap_or(0)
     }
 
     #[allow(dead_code)] // WIP: reset not yet used
     pub fn reset(&mut self) {
-        self.previous_lines.clear();
-        self.previous_visual_rows = 0;
+        self.previous = None;
     }
 
     pub fn force_redraw(&mut self) {
-        self.previous_lines.clear();
-        self.previous_visual_rows = 0;
+        self.previous = None;
         self.force_next_redraw = true;
     }
 
@@ -289,8 +301,7 @@ impl<W: Write> OutputBuffer<W> {
         write!(self.stdout, "{}", END_SYNCHRONIZED_UPDATE)?;
         self.stdout.flush()?;
 
-        self.previous_lines.clear();
-        self.previous_visual_rows = 0;
+        self.previous = None;
 
         Ok(())
     }
@@ -379,7 +390,7 @@ mod tests {
     fn test_output_buffer_creation() {
         let buffer = OutputBuffer::new(80, 24);
         assert_eq!(buffer.height(), 0);
-        assert!(buffer.previous_lines.is_empty());
+        assert!(buffer.previous.is_none());
     }
 
     #[test]

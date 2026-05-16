@@ -53,6 +53,12 @@ pub fn strip_ansi(s: &str) -> String {
 }
 
 /// Consume chars until String Terminator (ST = `\x1b\\`) or BEL (`\x07`).
+///
+/// NOTE: unbounded — a malformed unterminated escape consumes to end of
+/// input. The parallel skip in `cell_grid::blit_line` is bounded at 256
+/// characters. The two only diverge for malformed payloads; on
+/// well-formed input both reach the terminator first. Converge during
+/// Stage B (render path unification).
 fn skip_until_st_or_bel(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
     while let Some(c) = chars.next() {
         if c == '\x07' {
