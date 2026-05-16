@@ -543,7 +543,7 @@ fn measure_text_lines(content: &str, width: usize) -> usize {
 mod tests {
     use super::*;
     use crate::ansi::strip_ansi;
-    use crate::layout::{build_layout_tree, render_layout_tree_compact, LayoutContent};
+    use crate::layout::{build_layout_tree, render_layout_tree, LayoutContent};
     use crate::node::{col, flex as oil_flex, row, text};
 
     #[test]
@@ -712,7 +712,7 @@ mod tests {
     fn rendered_line_count(content: &str, width: u16) -> usize {
         let node = text(content);
         let layout_tree = build_layout_tree(&node, width, 500);
-        let (rendered, _) = render_layout_tree_compact(&layout_tree);
+        let (rendered, _) = render_layout_tree(&layout_tree);
         let plain = strip_ansi(&rendered);
         // Count non-empty lines (compact mode trims trailing blanks)
         plain.lines().count()
@@ -780,7 +780,7 @@ mod tests {
         let height: u16 = 24;
 
         let layout_tree = build_layout_tree(&node, width, height);
-        let (rendered, _) = render_layout_tree_compact(&layout_tree);
+        let (rendered, _) = render_layout_tree(&layout_tree);
         let plain = strip_ansi(&rendered);
         let lines: Vec<&str> = plain.lines().collect();
 
@@ -813,7 +813,7 @@ mod tests {
         let width: u16 = 80;
 
         let layout_tree = build_layout_tree(&node, width, 24);
-        let (rendered, _) = render_layout_tree_compact(&layout_tree);
+        let (rendered, _) = render_layout_tree(&layout_tree);
         let plain = strip_ansi(&rendered);
 
         assert_eq!(

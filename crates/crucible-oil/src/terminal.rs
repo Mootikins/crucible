@@ -304,9 +304,8 @@ impl<W: Write> Terminal<W> {
     }
 
     pub fn render_fullscreen(&mut self, tree: &Node) -> io::Result<()> {
-        let layout = crate::layout::build_layout_tree(tree, self.width, self.height);
-        let (content, _cursor) = crate::layout::render_layout_tree(&layout);
-        self.output.render_fullscreen(&content)?;
+        let result = crate::render::render_tree(tree, self.width, self.height);
+        self.output.render_fullscreen(&result.content)?;
         Ok(())
     }
 

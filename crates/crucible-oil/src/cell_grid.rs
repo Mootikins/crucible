@@ -185,10 +185,6 @@ impl CellGrid {
         self.cells.iter().map(|row| cells_to_string(row)).collect()
     }
 
-    pub fn to_string_joined(&self) -> String {
-        self.to_lines().join("\r\n")
-    }
-
     /// Extract rows `[y_start, y_end)` as a compact string (trailing padding stripped).
     ///
     /// Each row is rendered with `cells_to_string_compact`, joined with `\r\n`.

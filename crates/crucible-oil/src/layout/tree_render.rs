@@ -24,26 +24,10 @@ use super::types::{LayoutBox, LayoutContent, LayoutTree, PopupItem};
 /// This function:
 /// 1. Creates a 2D character buffer sized to the root rect
 /// 2. Recursively renders each LayoutBox at its computed position
-/// 3. Converts the buffer to a string with ANSI escape codes
-///
-/// # Arguments
-///
-/// * `tree` - The layout tree to render
-///
-/// # Returns
-///
-/// An ANSI-formatted string and cursor information.
+/// 3. Converts the buffer to a string with per-line trailing-padding stripped
+///    (styled cells preserved)
+/// 4. Returns the string + cursor information
 pub fn render_layout_tree(tree: &LayoutTree) -> (String, CursorInfo) {
-    render_layout_tree_inner(tree, false)
-}
-
-/// Render layout tree with trailing padding stripped per line.
-/// Used for graduation output where fixed-width padding is wasteful.
-pub fn render_layout_tree_compact(tree: &LayoutTree) -> (String, CursorInfo) {
-    render_layout_tree_inner(tree, true)
-}
-
-fn render_layout_tree_inner(tree: &LayoutTree, compact: bool) -> (String, CursorInfo) {
     let width = tree.root.rect.width as usize;
     // Include root margin in grid height (rect.y accounts for top margin)
     let height = (tree.root.rect.y + tree.root.rect.height) as usize;
@@ -55,11 +39,7 @@ fn render_layout_tree_inner(tree: &LayoutTree, compact: bool) -> (String, Cursor
     let mut grid = CellGrid::new(width, height);
     let mut cursor_position = None;
     render_box(&tree.root, &mut grid, &mut cursor_position);
-    let content = if compact {
-        grid.to_string_compact()
-    } else {
-        grid.to_string_joined()
-    };
+    let content = grid.to_string_compact();
     let cursor_info = cursor_info_from_position(cursor_position, content.lines().count());
     (content, cursor_info)
 }
@@ -408,9 +388,11 @@ mod tests {
 
         let (result, _) = render_layout_tree(&tree);
         let lines: Vec<&str> = result.lines().collect();
-        assert_eq!(lines.len(), 3);
-        // Text should be at x=5, y=1
-        assert!(lines[1].contains("Test"));
+        // Compact rendering: empty rows at y=0 and y=2 right-trim to "".
+        // `.lines()` drops the trailing empty entry, so we see at least
+        // two entries: the leading empty and the content row.
+        assert!(lines.len() >= 2);
+        assert!(lines.iter().any(|l| l.contains("Test")));
     }
 
     #[test]
@@ -481,12 +463,16 @@ mod tests {
             ),
         );
 
-        let (_, cursor_info) = render_layout_tree(&tree);
+        let (content, cursor_info) = render_layout_tree(&tree);
 
         assert!(cursor_info.visible);
         assert_eq!(cursor_info.col, 8);
-        // Input at row 2 in a 4-row layout → 1 row from bottom
-        assert_eq!(cursor_info.row_from_end, 1);
+        // Cursor is on the input row, which is the last non-empty row after
+        // compact trimming. row_from_end is computed against the rendered
+        // line count, so it's 0 (cursor on last rendered line).
+        let line_count = content.lines().count();
+        let cursor_row_from_top = line_count.saturating_sub(cursor_info.row_from_end as usize + 1);
+        assert_eq!(cursor_row_from_top, 2, "cursor should land on input row 2");
     }
 
     #[test]

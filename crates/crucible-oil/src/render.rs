@@ -1,23 +1,26 @@
 //! Render functions for Oil node trees.
 //!
-//! All rendering goes through the Taffy layout engine — the same pipeline
-//! used by the production TUI (`FramePlanner`). These convenience wrappers
-//! build a standalone layout tree and render at its natural height.
+//! `render_tree` is the single entry point. All other functions in this
+//! module are thin wrappers that adapt it for specific call sites.
+//!
+//! Output is per-line right-trimmed of trailing unstyled padding; styled
+//! cells are preserved. The same path is used by the production TUI
+//! (`FramePlanner`), graduation (scrollback), overlays, and standalone
+//! test rendering — they are byte-identical for the same tree+dims.
 
 use crate::ansi::strip_ansi;
-use crate::layout::{build_layout_tree, render_layout_tree_compact};
+use crate::layout::render_layout_tree;
 use crate::node::Node;
 use crate::taffy_layout::{build_layout_tree_with_engine, LayoutEngine};
 
-/// Maximum height Taffy may use when computing standalone layout. Taffy
-/// returns the tree's natural height (which the CellGrid then matches);
-/// this cap only bounds pathological flex-grow trees that ask for infinity.
-const STANDALONE_HEIGHT: u16 = 500;
+/// Upper bound on the height Taffy receives when the caller requested
+/// `NATURAL_HEIGHT`. High enough that ordinary trees report their own
+/// natural height; bounded so flex-grow trees can't ask for infinity.
+const NATURAL_HEIGHT_CAP: u16 = 500;
 
 /// Sentinel passed as `height` to `render_tree` when the caller wants the
-/// tree's natural height with no viewport clip. Internally maps to
-/// `STANDALONE_HEIGHT` so Taffy still has a finite ceiling for pathological
-/// flex-grow trees.
+/// tree's natural height with no viewport clip. Internally clamped to
+/// `NATURAL_HEIGHT_CAP` so Taffy still has a finite ceiling.
 pub const NATURAL_HEIGHT: u16 = u16::MAX;
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -33,9 +36,70 @@ pub struct RenderResult {
     pub cursor: CursorInfo,
 }
 
-/// Render a node tree to an ANSI string (compact, no trailing blank lines).
+/// Unified render entrypoint.
+///
+/// Renders `node` at `width` columns. `height` is a Taffy available-space
+/// hint (not a hard clip — clipping is the OutputBuffer's job). Pass
+/// `NATURAL_HEIGHT` (`u16::MAX`) to let the tree pick its own height.
+pub fn render_tree(node: &Node, width: u16, height: u16) -> RenderResult {
+    let mut engine = LayoutEngine::new();
+    render_tree_with_engine(&mut engine, node, width, height)
+}
+
+/// Same as `render_tree` but reuses a caller-owned `LayoutEngine` for
+/// Taffy node-pool reuse across frames. Production viewport rendering
+/// uses this; `render_tree` allocates a transient engine.
+pub(crate) fn render_tree_with_engine(
+    engine: &mut LayoutEngine,
+    node: &Node,
+    width: u16,
+    height: u16,
+) -> RenderResult {
+    if width == 0 {
+        return RenderResult {
+            content: String::new(),
+            cursor: CursorInfo::default(),
+        };
+    }
+
+    // Raw nodes bypass CellGrid — their content contains escape sequences
+    // (iTerm2 image protocol, etc.) that must pass through verbatim.
+    if let Node::Raw(raw) = node {
+        let mut content = raw.content.clone();
+        let pad = (width as usize).saturating_sub(raw.display_width as usize);
+        if pad > 0 {
+            content.push_str(&" ".repeat(pad));
+        }
+        return RenderResult {
+            content,
+            cursor: CursorInfo::default(),
+        };
+    }
+
+    let layout_height = if height == NATURAL_HEIGHT {
+        NATURAL_HEIGHT_CAP
+    } else {
+        height
+    };
+    let layout_tree = build_layout_tree_with_engine(engine, node, width, layout_height);
+    let (content, cursor_info) = render_layout_tree(&layout_tree);
+
+    RenderResult {
+        content,
+        cursor: cursor_info,
+    }
+}
+
+/// Render a node tree to an ANSI string at its natural height.
+/// Thin wrapper around `render_tree`.
 pub fn render_to_string(node: &Node, width: usize) -> String {
-    render_with_cursor(node, width).content
+    render_tree(node, width as u16, NATURAL_HEIGHT).content
+}
+
+/// Render a node tree to an ANSI string with cursor tracking, at the
+/// tree's natural height. Thin wrapper around `render_tree`.
+pub fn render_with_cursor(node: &Node, width: usize) -> RenderResult {
+    render_tree(node, width as u16, NATURAL_HEIGHT)
 }
 
 /// Render a node tree to plain text (ANSI stripped, no carriage returns).
@@ -66,98 +130,6 @@ fn render_node_plain_text(node: &Node, width: usize, output: &mut String) {
             let rendered = render_to_string(other, width);
             output.push_str(&strip_ansi(&rendered).replace('\r', ""));
         }
-    }
-}
-
-/// Render a node tree to an ANSI string with cursor tracking.
-pub fn render_with_cursor(node: &Node, width: usize) -> RenderResult {
-    if width == 0 {
-        return RenderResult {
-            content: String::new(),
-            cursor: CursorInfo::default(),
-        };
-    }
-
-    // Raw nodes bypass CellGrid — their content contains escape sequences
-    // that must be passed through verbatim (iTerm2 image protocol, etc.).
-    if let Node::Raw(raw) = node {
-        let mut content = raw.content.clone();
-        let pad = width.saturating_sub(raw.display_width as usize);
-        if pad > 0 {
-            content.push_str(&" ".repeat(pad));
-        }
-        return RenderResult {
-            content,
-            cursor: CursorInfo::default(),
-        };
-    }
-
-    let layout_tree = build_layout_tree(node, width as u16, STANDALONE_HEIGHT);
-    // CellGrid is sized to Taffy's reported tree height; per-line trailing
-    // padding is stripped at the grid level. We don't post-trim rows — empty
-    // rows in the output are intentional (they were in the tree).
-    let (content, cursor_info) = render_layout_tree_compact(&layout_tree);
-
-    RenderResult {
-        content,
-        cursor: cursor_info,
-    }
-}
-
-/// Unified render entrypoint.
-///
-/// Renders `node` at `width` columns into a CellGrid of `height` rows.
-/// Output is per-line right-trimmed of trailing unstyled padding (styled
-/// cells preserved). Cursor info is reported relative to the rendered
-/// content's bottom row.
-///
-/// Pass `NATURAL_HEIGHT` (`u16::MAX`) as `height` to render the tree's
-/// natural height with no viewport clip — useful for scrollback graduation
-/// and standalone test rendering.
-pub fn render_tree(node: &Node, width: u16, height: u16) -> RenderResult {
-    let mut engine = LayoutEngine::new();
-    render_tree_with_engine(&mut engine, node, width, height)
-}
-
-/// Same as `render_tree` but reuses a caller-owned `LayoutEngine` for
-/// taffy node-pool reuse across frames. Production viewport rendering
-/// uses this; `render_tree` allocates a transient engine.
-pub(crate) fn render_tree_with_engine(
-    engine: &mut LayoutEngine,
-    node: &Node,
-    width: u16,
-    height: u16,
-) -> RenderResult {
-    if width == 0 {
-        return RenderResult {
-            content: String::new(),
-            cursor: CursorInfo::default(),
-        };
-    }
-
-    if let Node::Raw(raw) = node {
-        let mut content = raw.content.clone();
-        let pad = (width as usize).saturating_sub(raw.display_width as usize);
-        if pad > 0 {
-            content.push_str(&" ".repeat(pad));
-        }
-        return RenderResult {
-            content,
-            cursor: CursorInfo::default(),
-        };
-    }
-
-    let layout_height = if height == NATURAL_HEIGHT {
-        STANDALONE_HEIGHT
-    } else {
-        height
-    };
-    let layout_tree = build_layout_tree_with_engine(engine, node, width, layout_height);
-    let (content, cursor_info) = render_layout_tree_compact(&layout_tree);
-
-    RenderResult {
-        content,
-        cursor: cursor_info,
     }
 }
 
