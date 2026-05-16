@@ -737,15 +737,15 @@ pub async fn bootstrap_plugin_entry(
         .join("crucible")
         .join("plugins");
 
-    let name = plugin_name_from_url(&entry.url).ok_or_else(|| {
-        anyhow::anyhow!("Plugin URL '{}' has no usable name segment", entry.url)
-    })?;
+    let name = plugin_name_from_url(&entry.url)
+        .ok_or_else(|| anyhow::anyhow!("Plugin URL '{}' has no usable name segment", entry.url))?;
     let dest = plugins_dir.join(&name);
     if dest.exists() {
         return Ok(BootstrapOutcome::AlreadyPresent);
     }
 
-    let url = normalize_git_url(&entry.url);
+    let url =
+        normalize_git_url(&entry.url).with_context(|| format!("rejecting plugin '{}'", name))?;
     info!("Cloning plugin '{}' from {}", name, url);
 
     let mut cmd = tokio::process::Command::new("git");
@@ -758,7 +758,9 @@ pub async fn bootstrap_plugin_entry(
     if let Some(ref branch) = entry.branch {
         cmd.args(["--branch", branch]);
     }
-    cmd.arg(&url).arg(&dest);
+    // Defense-in-depth: `--` stops git from parsing any subsequent argv
+    // as flags, even if a future caller bypasses normalize_git_url.
+    cmd.arg("--").arg(&url).arg(&dest);
 
     let output = cmd
         .output()
@@ -832,15 +834,61 @@ fn plugin_name_from_url(url: &str) -> Option<String> {
     crucible_core::config::plugin_name_from_url(url)
 }
 
-/// Normalize shorthand URLs to full git URLs.
+/// Normalize and validate a plugin git URL.
 ///
-/// Passes through full URLs (`http`, `git@`, `ssh://`) unchanged.
-/// Treats anything else as a GitHub `user/repo` shorthand.
-fn normalize_git_url(url: &str) -> String {
-    if url.starts_with("http") || url.starts_with("git@") || url.starts_with("ssh://") {
-        url.to_string()
+/// Accepted forms:
+/// - `https://...` / `http://...`
+/// - `ssh://git@host/repo[.git]`
+/// - `git@host:user/repo[.git]`
+/// - Bare `user/repo` shorthand (expanded to `https://github.com/user/repo.git`)
+///
+/// Rejected:
+/// - URLs starting with `-` (parsed as a git flag — CVE-2017-1000117 family)
+/// - URLs containing `::` (git external transport — RCE vector via `ext::sh ...`)
+/// - Other schemes (`file://`, `git://`, custom) — narrows the attack surface to
+///   forms with a vetted use case
+/// - Shorthand containing anything outside `[A-Za-z0-9._/-]` (defends against
+///   shell-quoting hazards if the value ever lands in a non-`exec`-style context)
+fn normalize_git_url(url: &str) -> anyhow::Result<String> {
+    if url.is_empty() {
+        anyhow::bail!("plugin URL is empty");
+    }
+    if url.starts_with('-') {
+        anyhow::bail!(
+            "plugin URL '{}' starts with '-' (would be parsed as a git flag)",
+            url
+        );
+    }
+    if url.contains("::") {
+        anyhow::bail!(
+            "plugin URL '{}' contains '::' (git external transport, disallowed)",
+            url
+        );
+    }
+
+    if url.starts_with("https://")
+        || url.starts_with("http://")
+        || url.starts_with("ssh://git@")
+        || url.starts_with("git@")
+    {
+        Ok(url.to_string())
+    } else if url.contains("://") {
+        anyhow::bail!(
+            "plugin URL '{}' uses unsupported scheme (allowed: https, http, ssh://git@, git@host:repo)",
+            url
+        )
     } else {
-        format!("https://github.com/{}.git", url)
+        if !url
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '-' | '_' | '.'))
+        {
+            anyhow::bail!(
+                "plugin shorthand '{}' must match [A-Za-z0-9._/-]+ (got '{}')",
+                url,
+                url
+            );
+        }
+        Ok(format!("https://github.com/{}.git", url))
     }
 }
 
@@ -1013,7 +1061,7 @@ mod tests {
     #[test]
     fn normalize_passes_https_through() {
         assert_eq!(
-            normalize_git_url("https://github.com/user/repo.git"),
+            normalize_git_url("https://github.com/user/repo.git").unwrap(),
             "https://github.com/user/repo.git"
         );
     }
@@ -1021,7 +1069,7 @@ mod tests {
     #[test]
     fn normalize_passes_ssh_through() {
         assert_eq!(
-            normalize_git_url("git@github.com:user/repo.git"),
+            normalize_git_url("git@github.com:user/repo.git").unwrap(),
             "git@github.com:user/repo.git"
         );
     }
@@ -1029,7 +1077,7 @@ mod tests {
     #[test]
     fn normalize_expands_shorthand() {
         assert_eq!(
-            normalize_git_url("user/repo"),
+            normalize_git_url("user/repo").unwrap(),
             "https://github.com/user/repo.git"
         );
     }
@@ -1037,9 +1085,68 @@ mod tests {
     #[test]
     fn normalize_passes_ssh_scheme_through() {
         assert_eq!(
-            normalize_git_url("ssh://git@host/repo.git"),
+            normalize_git_url("ssh://git@host/repo.git").unwrap(),
             "ssh://git@host/repo.git"
         );
+    }
+
+    #[test]
+    fn normalize_rejects_leading_dash() {
+        // -oProxyCommand=... and similar option-injection forms would be
+        // parsed by git as flags rather than a URL.
+        assert!(normalize_git_url("-oProxyCommand=whoami").is_err());
+        assert!(normalize_git_url("--upload-pack=evil").is_err());
+        assert!(normalize_git_url("-bad").is_err());
+    }
+
+    #[test]
+    fn normalize_rejects_ext_transport() {
+        // git's `ext::` transport can execute arbitrary shell commands
+        // and was historically chained with submodule init for RCE.
+        assert!(normalize_git_url("ext::sh -c id").is_err());
+        assert!(normalize_git_url("https://example.com/ext::evil").is_err());
+    }
+
+    #[test]
+    fn normalize_rejects_file_scheme() {
+        // file:// could be used to read arbitrary repos off disk.
+        assert!(normalize_git_url("file:///etc/passwd").is_err());
+    }
+
+    #[test]
+    fn normalize_rejects_unknown_scheme() {
+        assert!(normalize_git_url("git://example.com/repo").is_err());
+        assert!(normalize_git_url("ftp://example.com/repo").is_err());
+        assert!(normalize_git_url("ssh://nobody@host/repo").is_err()); // requires ssh://git@
+    }
+
+    #[test]
+    fn normalize_rejects_shorthand_with_meta_chars() {
+        assert!(normalize_git_url("user/$(whoami)").is_err());
+        assert!(normalize_git_url("user/repo;rm -rf").is_err());
+        assert!(normalize_git_url("user/with space").is_err());
+    }
+
+    #[test]
+    fn normalize_rejects_empty() {
+        assert!(normalize_git_url("").is_err());
+    }
+
+    #[test]
+    fn plugin_name_rejects_leading_dash() {
+        // A name like "-rf" would be interpreted as an `rm -rf` flag if
+        // it ever lands in a non-`exec`-style context.
+        assert_eq!(plugin_name_from_url("user/-rf"), None);
+        assert_eq!(plugin_name_from_url("-rf"), None);
+    }
+
+    #[test]
+    fn plugin_name_rejects_shell_meta_chars() {
+        assert_eq!(plugin_name_from_url("user/$(whoami)"), None);
+        assert_eq!(plugin_name_from_url("user/repo;rm"), None);
+        assert_eq!(plugin_name_from_url("user/with space"), None);
+        // Newlines were rejected before; keep that invariant.
+        assert_eq!(plugin_name_from_url("user/foo\n"), None);
     }
 
     #[tokio::test]

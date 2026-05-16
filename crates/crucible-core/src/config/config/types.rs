@@ -609,11 +609,12 @@ impl PluginEntry {
 
 /// Extract a safe plugin directory name from a git URL.
 ///
-/// Returns `None` when the trailing path segment is empty, `.`, or
-/// `..`, OR when it contains control characters (newline, NUL, etc).
-/// Control chars in a plugin name can spoof log lines and produce
-/// unsafe paths on some filesystems — reject defensively even though
-/// normalized git URLs shouldn't produce them.
+/// Returns `None` when the derived name would be unsafe: empty, `.`,
+/// `..`, starts with `-` (would be parsed as a CLI flag by tools we
+/// later pass it to), or contains anything outside `[A-Za-z0-9._-]`.
+/// The strict character set prevents log-spoofing, shell-quoting
+/// hazards, and unsafe-path edge cases on filesystems that accept
+/// odd characters.
 pub fn plugin_name_from_url(url: &str) -> Option<String> {
     let name = url
         .trim_end_matches('/')
@@ -625,7 +626,10 @@ pub fn plugin_name_from_url(url: &str) -> Option<String> {
     if name.is_empty()
         || name == "."
         || name == ".."
-        || name.chars().any(|c| c.is_control())
+        || name.starts_with('-')
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
     {
         None
     } else {
