@@ -209,7 +209,13 @@ impl CellGrid {
     }
 
     /// Render to compact string with trailing padding stripped per line.
-    /// Used for graduation output where fixed-width padding is wasteful.
+    /// Styled cells (non-empty `style`) preserved even if their glyph is space.
+    ///
+    /// Callers counting rendered lines must use `str::lines()`, not
+    /// `split("\r\n").count()` — trailing empty rows produce no terminator,
+    /// so `lines()` drops them but `split` would yield one extra entry. The
+    /// unified cursor-info `row_from_end` math (`tree_render.rs`) relies on
+    /// this and would silently desync if a caller picked the wrong API.
     pub fn to_string_compact(&self) -> String {
         self.cells
             .iter()

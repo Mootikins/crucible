@@ -388,11 +388,11 @@ mod tests {
 
         let (result, _) = render_layout_tree(&tree);
         let lines: Vec<&str> = result.lines().collect();
-        // Compact rendering: empty rows at y=0 and y=2 right-trim to "".
-        // `.lines()` drops the trailing empty entry, so we see at least
-        // two entries: the leading empty and the content row.
-        assert!(lines.len() >= 2);
-        assert!(lines.iter().any(|l| l.contains("Test")));
+        // Compact rendering: leading empty row at y=0 preserved as "",
+        // content row at y=1, trailing empty row at y=2 dropped by .lines().
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0], "", "y=0 row should be empty");
+        assert_eq!(lines[1], "     Test", "text at x=5, y=1 with no padding");
     }
 
     #[test]
