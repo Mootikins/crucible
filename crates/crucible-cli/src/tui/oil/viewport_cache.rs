@@ -1,48 +1,7 @@
-use crate::tui::oil::utils::wrap_words;
 use crucible_core::types::acp::FileDiff;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
-
-use super::chat_app::Role;
-
-#[derive(Debug, Clone)]
-pub struct CachedMessage {
-    pub id: String,
-    pub role: Role,
-    content: Arc<str>,
-    wrapped: Option<(usize, Vec<String>)>,
-}
-
-impl CachedMessage {
-    pub fn new(id: impl Into<String>, role: Role, content: impl AsRef<str>) -> Self {
-        Self {
-            id: id.into(),
-            role,
-            content: Arc::from(content.as_ref()),
-            wrapped: None,
-        }
-    }
-
-    pub fn content(&self) -> &str {
-        &self.content
-    }
-
-    pub fn wrapped_lines(&mut self, width: usize) -> &[String] {
-        if self.wrapped.as_ref().map(|(w, _)| *w) != Some(width) {
-            let lines = wrap_words(&self.content, width);
-            self.wrapped = Some((width, lines));
-        }
-        self.wrapped
-            .as_ref()
-            .map(|(_, lines)| lines.as_slice())
-            .unwrap_or(&[])
-    }
-
-    pub fn invalidate_wrap(&mut self) {
-        self.wrapped = None;
-    }
-}
 
 pub const TOOL_OUTPUT_MAX_TAIL_LINES: usize = 50;
 
@@ -255,100 +214,6 @@ impl CachedSubagent {
             self.status,
             SubagentStatus::Completed | SubagentStatus::Failed
         )
-    }
-}
-
-#[derive(Debug, Clone)]
-#[allow(dead_code)] // WIP: CachedChatItem not yet used
-pub enum CachedChatItem {
-    Message(CachedMessage),
-    ToolCall(CachedToolCall),
-    ShellExecution(CachedShellExecution),
-    Subagent(CachedSubagent),
-    Delegation(CachedSubagent),
-}
-
-#[allow(dead_code)] // WIP: multiple methods not yet used
-impl CachedChatItem {
-    #[allow(dead_code)] // WIP: id method not yet used
-    pub fn id(&self) -> &str {
-        match self {
-            CachedChatItem::Message(m) => &m.id,
-            CachedChatItem::ToolCall(t) => &t.id,
-            CachedChatItem::ShellExecution(s) => &s.id,
-            CachedChatItem::Subagent(s) => &s.id,
-            CachedChatItem::Delegation(d) => &d.id,
-        }
-    }
-
-    pub fn content(&self) -> Option<&str> {
-        match self {
-            CachedChatItem::Message(m) => Some(m.content()),
-            _ => None,
-        }
-    }
-
-    pub fn as_message(&self) -> Option<&CachedMessage> {
-        match self {
-            CachedChatItem::Message(m) => Some(m),
-            _ => None,
-        }
-    }
-
-    pub fn as_message_mut(&mut self) -> Option<&mut CachedMessage> {
-        match self {
-            CachedChatItem::Message(m) => Some(m),
-            _ => None,
-        }
-    }
-
-    pub fn as_tool_call(&self) -> Option<&CachedToolCall> {
-        match self {
-            CachedChatItem::ToolCall(t) => Some(t),
-            _ => None,
-        }
-    }
-
-    pub fn as_tool_call_mut(&mut self) -> Option<&mut CachedToolCall> {
-        match self {
-            CachedChatItem::ToolCall(t) => Some(t),
-            _ => None,
-        }
-    }
-
-    pub fn as_shell_execution(&self) -> Option<&CachedShellExecution> {
-        match self {
-            CachedChatItem::ShellExecution(s) => Some(s),
-            _ => None,
-        }
-    }
-
-    pub fn as_subagent(&self) -> Option<&CachedSubagent> {
-        match self {
-            CachedChatItem::Subagent(s) => Some(s),
-            _ => None,
-        }
-    }
-
-    pub fn as_subagent_mut(&mut self) -> Option<&mut CachedSubagent> {
-        match self {
-            CachedChatItem::Subagent(s) => Some(s),
-            _ => None,
-        }
-    }
-
-    pub fn as_delegation(&self) -> Option<&CachedSubagent> {
-        match self {
-            CachedChatItem::Delegation(d) => Some(d),
-            _ => None,
-        }
-    }
-
-    pub fn as_delegation_mut(&mut self) -> Option<&mut CachedSubagent> {
-        match self {
-            CachedChatItem::Delegation(d) => Some(d),
-            _ => None,
-        }
     }
 }
 

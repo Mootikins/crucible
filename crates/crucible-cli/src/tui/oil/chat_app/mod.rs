@@ -209,6 +209,10 @@ impl App for OilChatApp {
                 self.tick_shell_modal();
                 Action::Continue
             }
+            // Dimensions and previous-frame invalidation are handled by
+            // Terminal::handle_resize before this event reaches the app.
+            // The app holds no width-dependent cached state — every render
+            // wraps from source — so there's nothing else to invalidate.
             Event::Resize { .. } => Action::Continue,
             Event::Quit => Action::Quit,
         }

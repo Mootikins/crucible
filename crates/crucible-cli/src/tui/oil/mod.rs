@@ -49,7 +49,6 @@ pub use lua_view::{LuaView, ViewAction};
 pub use render_state::RenderState;
 pub use runner::{run_sync, OilRunner};
 pub use test_harness::AppHarness;
-pub use viewport_cache::CachedMessage;
 
 // Re-export commonly used crucible-oil types
 pub use crucible_oil::focus::*;

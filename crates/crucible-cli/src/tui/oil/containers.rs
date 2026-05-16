@@ -356,7 +356,11 @@ impl ContainerList {
                 }
             }
         }
-        tracing::debug!(name = %name, call_id = ?call_id, "tool update for unknown tool (already graduated or never received)");
+        tracing::warn!(
+            name = %name,
+            call_id = ?call_id,
+            "tool update missed all live ToolGroups — tool already graduated to scrollback, or its call was never received"
+        );
     }
 
     /// Update the most recent tool with the given call_id (without
@@ -375,7 +379,10 @@ impl ContainerList {
                 }
             }
         }
-        tracing::debug!(call_id = %call_id, "tool update by call_id for unknown tool (already graduated or never received)");
+        tracing::warn!(
+            call_id = %call_id,
+            "tool update by call_id missed all live ToolGroups — tool already graduated to scrollback, or its call was never received"
+        );
     }
 
     pub fn add_agent_task(&mut self, agent: CachedSubagent) {
@@ -733,6 +740,32 @@ mod tests {
         // All three should graduate
         assert!(list.is_empty());
         assert!(grad.node != Node::Empty);
+    }
+
+    #[test]
+    fn update_tool_after_graduation_does_not_invoke_closure() {
+        // After a tool graduates, late updates (e.g. delayed ACP tool_call
+        // result events) must not silently mutate a now-scrollback tool.
+        // The closure should not run; a warn is logged at the call site.
+        let mut list = ContainerList::new();
+        let mut tool = CachedToolCall::new("t1", "read_file", "{}");
+        tool.mark_complete();
+        list.add_tool_call(tool);
+        list.complete_response();
+        let grad = drain(&mut list);
+        assert!(grad.is_some(), "tool should graduate");
+        assert!(list.is_empty());
+
+        let called = std::cell::Cell::new(false);
+        list.update_tool("read_file", None, |_| called.set(true));
+        assert!(!called.get(), "closure must not run for graduated tool");
+
+        let called_by_id = std::cell::Cell::new(false);
+        list.update_tool_by_call_id("any-id", |_| called_by_id.set(true));
+        assert!(
+            !called_by_id.get(),
+            "closure must not run for unknown call_id"
+        );
     }
 
     #[test]
